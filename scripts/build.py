@@ -21,6 +21,8 @@ TARGETS = {
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Build a self-contained yadinassi executable")
     parser.add_argument("--target", choices=sorted(set(TARGETS.values())),
                         help="validate native target; does not enable cross-compilation")
@@ -31,6 +33,7 @@ def main() -> int:
     if args.target is not None and args.target != host:
         parser.error(f"Target {args.target} requires its own runner; this host builds {host}")
     env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
     env["PYINSTALLER_CONFIG_DIR"] = str(ROOT / "build" / "pyinstaller-cache")
     command = [
         sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
@@ -46,7 +49,7 @@ def main() -> int:
     subprocess.run(command, cwd=ROOT, env=env, check=True)
     executable = ROOT / "dist" / host / ("yadinassi.exe" if host == "windows" else "yadinassi")
     subprocess.run([sys.executable, str(ROOT / "scripts" / "smoke_test.py"), str(executable)],
-                   cwd=ROOT, check=True)
+                   cwd=ROOT, env=env, check=True)
     files = [(executable, executable.name), (ROOT / "README.md", "README.md"),
              (ROOT / "LICENSE", "LICENSE"), (ROOT / "code_samples" / "basic.bsl", "basic.bsl")]
     if host == "windows":

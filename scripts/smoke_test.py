@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
+    # Redirected Windows output can default to cp1252, which cannot encode BSL text.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     executable = str(Path(sys.argv[1]).resolve())
     expected = (ROOT / "tests" / "fixtures" / "basic.out").read_text(encoding="utf-8")
     env = {key: value for key, value in os.environ.items()
@@ -25,7 +28,7 @@ def main() -> None:
             ([str(sample)], None, expected, 0),
             (["-c", 'Сообщить("Привет")'], None, "Привет\n", 0),
             (["-с", 'Сообщить("Кириллица")'], None, "Кириллица\n", 0),
-            ([], 'х = 40;\nЕсли Истина Тогда\nх = х + 2;\nКонецЕсли;\nСообщить(х);\n:exit\n', "42\n", 0),
+            ([], 'х = 40;\nЕсли Истина Тогда\nх = х + 2;\nКонецЕсли;\nСообщить(х);\n/exit\n', "42\n", 0),
             (["-"], 'Сообщить("stdin")', "stdin\n", 0),
             (["-c", "Сообщить(1 / 0)"], None, "", 1),
         ]
@@ -38,6 +41,11 @@ def main() -> None:
                 raise AssertionError(result.stderr)
             if code and ("Деление на ноль" not in result.stderr or "Traceback" in result.stderr):
                 raise AssertionError(result.stderr)
+        if os.name != "nt":
+            from console_check import check_console
+
+            check_console([executable], cwd=temporary, env=env)
+            print("Binary terminal tests passed: cursor editing, history, multiline input")
     print("Binary smoke tests passed: file, -c, -с, console, stdin, errors")
 
 

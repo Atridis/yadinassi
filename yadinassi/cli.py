@@ -13,13 +13,19 @@ from .values import to_string
 
 def repl(interpreter: Interpreter) -> int:
     interactive = sys.stdin.isatty()
+    read_line = input
     if interactive:
-        print(f"yadinassi {__version__} — консоль 1С. :help — помощь, :exit — выход.")
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.history import InMemoryHistory
+
+        session = PromptSession(history=InMemoryHistory(), reserve_space_for_menu=0)
+        read_line = session.prompt
+        print(f"yadinassi {__version__} — Yet Another oDIN ASS Interpreter. /help — помощь, /exit — выход.")
     buffer = ""
     had_error = False
     while True:
         try:
-            line = input(("... " if buffer else ">>> ") if interactive else "")
+            line = read_line(("... " if buffer else ">>> ") if interactive else "")
         except EOFError:
             if buffer:
                 try:
@@ -36,12 +42,13 @@ def repl(interpreter: Interpreter) -> int:
                 print("\nВвод отменен.")
                 continue
             return 130
-        if not buffer and line.strip() in (":exit", ":quit"):
+        if not buffer and line.strip() in ("/exit", "/quit"):
             return int(had_error)
-        if not buffer and line.strip() == ":help":
+        if not buffer and line.strip() == "/help":
             print("Введите код 1С. Блоки и скобки можно продолжать на следующих строках.\n"
                   "Выражения выводят значение; переменные сохраняются между командами.\n"
-                  ":exit / :quit — выход; Ctrl+C — отмена ввода или исполнения.")
+                  "←/→ — перемещение курсора; ↑/↓ — история команд текущего сеанса.\n"
+                  "/exit / /quit — выход; Ctrl+C — отмена ввода или исполнения.")
             continue
         buffer += line + "\n"
         try:

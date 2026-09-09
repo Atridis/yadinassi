@@ -48,13 +48,13 @@ x
 Сообщить(
 "многострочный вызов"
 )
-:exit
+/exit
 ''')
         self.assertEqual((result.returncode, result.stdout, result.stderr),
                          (0, "42\nмногострочный вызов\n", ""))
 
     def test_repl_recovers_from_parse_and_runtime_errors(self):
-        result = self.run_cli(stdin='@\nСообщить(1/0);\nСообщить("жив");\n:exit\n')
+        result = self.run_cli(stdin='@\nСообщить(1/0);\nСообщить("жив");\n/exit\n')
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "жив\n")
         self.assertIn("Неожиданный символ", result.stderr)
@@ -90,47 +90,11 @@ x
         self.assertNotIn("Traceback", result.stderr)
 
     @unittest.skipIf(os.name == "nt", "POSIX pseudo-terminal test")
-    def test_interactive_console_prompt(self):
-        import errno
-        import pty
-        import select
-        import termios
-        import time
+    def test_interactive_console_editing_and_history(self):
+        from scripts.console_check import check_console
 
-        master, slave = pty.openpty()
-        attributes = termios.tcgetattr(slave)
-        attributes[3] &= ~termios.ECHO
-        termios.tcsetattr(slave, termios.TCSANOW, attributes)
-        process = subprocess.Popen([sys.executable, "-m", "yadinassi"],
-                                   stdin=slave, stdout=slave, stderr=slave, cwd=ROOT)
-        os.close(slave)
-        data = b""
-        try:
-            os.write(master, 'Сообщить("интерактив");\n:exit\n'.encode("utf-8"))
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline:
-                if select.select([master], [], [], 0.2)[0]:
-                    try:
-                        chunk = os.read(master, 65536)
-                    except OSError as error:
-                        if error.errno == errno.EIO:
-                            break
-                        raise
-                    if not chunk:
-                        break
-                    data += chunk
-                elif process.poll() is not None:
-                    break
-            self.assertEqual(process.wait(timeout=2), 0)
-            output = data.decode("utf-8")
-            self.assertIn("консоль 1С", output)
-            self.assertIn(">>> ", output)
-            self.assertIn(">>> интерактив\r\n", output)
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.wait()
-            os.close(master)
+        output = check_console([sys.executable, "-m", "yadinassi"], cwd=ROOT)
+        self.assertIn("— Yet Another oDIN ASS Interpreter.", output)
 
 
 if __name__ == "__main__":
