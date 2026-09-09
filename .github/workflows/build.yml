@@ -1,0 +1,81 @@
+name: Test and build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            os: windows-2022
+            architecture: x64
+          - target: linux
+            os: ubuntu-22.04
+            architecture: x64
+          - target: mac-x86
+            os: macos-15-intel
+            architecture: x64
+          - target: mac-arm
+            os: macos-14
+            architecture: arm64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.architecture }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install build dependencies
+        run: python -m pip install -e ".[build]"
+      - name: Test interpreter and CLI
+        run: python -m unittest discover -s tests -v
+      - name: Build, test binary, and create archive
+        run: python scripts/build.py --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: yadinassi-${{ matrix.target }}
+          path: |
+            dist/yadinassi-*.zip
+            dist/yadinassi-*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: yadinassi-*
+          merge-multiple: true
+          path: artifacts
+      - name: Create checksums
+        working-directory: artifacts
+        run: sha256sum yadinassi-* > SHA256SUMS
+      - name: Publish release with all platform archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" artifacts/* --clobber

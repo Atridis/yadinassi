@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yadinassi"
+version = "0.1.0"
+description = "An extensible interpreter for a subset of the 1C BSL language"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+build = ["pyinstaller==6.22.2"]
+
+[project.scripts]
+yadinassi = "yadinassi.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["yadinassi*"]
