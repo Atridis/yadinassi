@@ -46,15 +46,15 @@ jobs:
       - name: Test interpreter and CLI
         run: python -m unittest discover -s tests -v
       - name: Build, test binary, and create archive
+        id: package
+        env:
+          YADINASSI_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: python scripts/build.py --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
-          name: yadinassi-${{ matrix.target }}
-          path: |
-            dist/yadinassi-*.zip
-            dist/yadinassi-*.tar.gz
+          path: ${{ steps.package.outputs.archive-path }}
+          archive: false
           if-no-files-found: error
-          compression-level: 0
 
   release:
     name: Publish tagged release
@@ -68,6 +68,7 @@ jobs:
         with:
           pattern: yadinassi-*
           merge-multiple: true
+          skip-decompress: true
           path: artifacts
       - name: Create checksums
         working-directory: artifacts

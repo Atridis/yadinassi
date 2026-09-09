@@ -4,18 +4,23 @@ Yet Another oDIN ASS Interpreter
 
 ## Запуск
 
-Скачайте архив своей платформы из GitHub Releases, распакуйте и запустите 
+Скачайте архив своей платформы из [GitHub Releases](https://github.com/Atridis/yadinassi/releases), распакуйте и запустите
  - `yadinassi.exe` для Windows.
  - `./yadinassi` для Linux/macOS
 
-в консоли
+можно запустить на исполнение файл с кодом
 ```console
-yadinassi
-yadinassi -c 'Сообщить("Привет")'
-yadinassi code_samples/basic.bsl
+yadinassi basic.bsl
 ```
 
-Без аргументов запускается консоль с сохранением переменных между командами:
+либо передать код в параметре
+```console
+yadinassi -c 'Сообщить("Привет")'
+```
+либо запустить консоль интерактивно
+```console
+yadinassi
+```
 
 ```text
 >>> а = 40;
@@ -28,14 +33,9 @@ yadinassi code_samples/basic.bsl
 >>> /exit
 ```
 
-Незавершенные блоки, вызовы и выражения продолжаются на следующих строках.
-Стрелки ←/→ перемещают курсор для редактирования строки, Backspace удаляет
-символ слева. Стрелки ↑/↓ перебирают историю введенных строк текущего сеанса;
-история не записывается на диск. Редактирование работает и при вводе блоков
-с приглашением `...`.
 `/help` выводит помощь; `/exit`, `/quit` или конец ввода завершают сеанс.
 `Ctrl+C` отменяет текущий ввод или исполнение. Консоль продолжает работу после
-ошибки. Изменения переменных, выполненные до ошибки, сохраняются.
+ошибки.
 
 Дополнительные варианты:
 
@@ -86,10 +86,10 @@ Python, стандартная библиотека и модули интерп
 
 | Цель | ОС и архитектура сборки | Бинарник | Архив |
 | --- | --- | --- | --- |
-| `windows` | Windows x86-64 | `dist/windows/yadinassi.exe` | `dist/yadinassi-windows.zip` |
-| `linux` | Linux x86-64 | `dist/linux/yadinassi` | `dist/yadinassi-linux.tar.gz` |
-| `mac-x86` | macOS Intel x86-64 | `dist/mac-x86/yadinassi` | `dist/yadinassi-mac-x86.tar.gz` |
-| `mac-arm` | macOS Apple Silicon arm64 | `dist/mac-arm/yadinassi` | `dist/yadinassi-mac-arm.tar.gz` |
+| `windows` | Windows x86-64 | `dist/windows/yadinassi.exe` | `dist/yadinassi-<версия>-windows.zip` |
+| `linux` | Linux x86-64 | `dist/linux/yadinassi` | `dist/yadinassi-<версия>-linux.tar.gz` |
+| `mac-x86` | macOS Intel x86-64 | `dist/mac-x86/yadinassi` | `dist/yadinassi-<версия>-mac-x86.tar.gz` |
+| `mac-arm` | macOS Apple Silicon arm64 | `dist/mac-arm/yadinassi` | `dist/yadinassi-<версия>-mac-arm.tar.gz` |
 
 `python scripts/build.py --target mac-arm` дополнительно проверяет соответствие
 хоста выбранной цели. PyInstaller [требует сборки на целевой ОС](https://pyinstaller.org/en/stable/),
@@ -119,19 +119,18 @@ Workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) работ
 `GITHUB_TOKEN`, отдельные секреты не нужны. Право `contents: write` выдается
 только заданию публикации; pull request не публикует релиз.
 
-Перед релизом обновите версию в `pyproject.toml` и `yadinassi/__init__.py`, затем:
+Перед релизом измените только `__version__` в `yadinassi/__init__.py`,
+закоммитьте изменение и создайте соответствующий тег. Например, для `0.2.0`:
 
 ```console
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 ## Расширение интерпретатора
 
 ```text
-исходный BSL → lexer.py → parser.py → ast.py → runtime.py
-                                                ↓
-                                            values.py
+исходный BSL → lexer.py → parser.py → ast.py → runtime.py → values.py
 ```
 
 `lexer.py` содержит токены и словарь ключевых слов; `parser.py` строит AST,

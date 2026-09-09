@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yadinassi"
-version = "0.1.0"
+dynamic = ["version"]
 description = "An extensible interpreter for a subset of the 1C BSL language"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -19,3 +19,6 @@ yadinassi = "yadinassi.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["yadinassi*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "yadinassi.__version__"}
