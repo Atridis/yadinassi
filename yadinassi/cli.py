@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.file is not None and args.command is not None:
         parser.error("файл и -c нельзя использовать одновременно")
-    interpreter = Interpreter()
+    interpreter = Interpreter(encoding=args.encoding)
     try:
         if args.command is not None:
             interpreter.execute(args.command, "<команда>")

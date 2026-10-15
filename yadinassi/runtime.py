@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal, localcontext
+from pathlib import Path
 from typing import Callable
 
 from . import ast
@@ -33,8 +34,22 @@ class _Reference:
     set: Callable[[object], None]
 
 
+class _Module:
+    """Only exported BSL routines are callable; no Python member reflection."""
+
+    def __init__(self, interpreter: "Interpreter", path: Path):
+        self.interpreter = interpreter
+        self.path = path
+
+    def routine(self, name: str) -> ast.Routine:
+        routine = self.interpreter.routines.get(name.casefold())
+        if routine is None or not routine.exported:
+            raise ValueError(f"Экспортная процедура или функция не найдена: {name}")
+        return routine
+
+
 class Interpreter:
-    def __init__(self, output: Callable[[str], None] = print):
+    def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig"):
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
@@ -42,6 +57,10 @@ class Interpreter:
         self.locals: dict[str, object] | None = None
         self.types: dict[str, HostFunction] = {}
         self.output = output
+        self.encoding = encoding
+        self.imports: dict[str, _Module] = {}
+        self._module_cache: dict[Path, _Module] = {}
+        self._loading: list[Path] = []
         self.register_function("Сообщить", self._message, "Message")
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
@@ -72,9 +91,34 @@ class Interpreter:
         return self.execute_program(parse(text, source))
 
     def execute_program(self, program: list[ast.Node]) -> object:
+        # A diagnostic source label need not name a readable filesystem path.
+        if not any(isinstance(node, ast.Import) for node in program):
+            return self._execute_program(program)
+        source = program[0].token.source if program else "<строка>"
+        path = None if source.startswith("<") else Path(source).resolve()
+        if path is None:
+            return self._execute_program(program)
+        self._loading.append(path)
+        try:
+            return self._execute_program(program)
+        finally:
+            self._loading.pop()
+
+    def _execute_program(self, program: list[ast.Node]) -> object:
         # Keep decimal arithmetic independent of the embedding application's context.
         with localcontext() as context:
             context.prec = 38
+            # Reserve import names before any module initialization effects.
+            names = set(self.imports)
+            names.update(Path(node.filename).stem.casefold()
+                         for node in program if isinstance(node, ast.Import))
+            for node in program:
+                declared = ([node.name] if isinstance(node, ast.Routine) else
+                            node.names if isinstance(node, ast.Var) else [])
+                if any(name.casefold() in names for name in declared):
+                    token = node.token
+                    raise BSLError("Имя импорта конфликтует с объявлением", token.source,
+                                   token.line, token.column)
             # Register module declarations before executing any module statements.
             for node in program:
                 if isinstance(node, ast.Routine):
@@ -83,7 +127,10 @@ class Interpreter:
                     for name in node.names:
                         self.module_names.add(name.casefold())
                         self.variables.setdefault(name.casefold(), None)
-            return self.block(program)
+            for node in program:
+                if isinstance(node, ast.Import):
+                    self.visit(node)
+            return self.block([node for node in program if not isinstance(node, ast.Import)])
 
     def block(self, statements: list[ast.Node]) -> object:
         result = None
@@ -114,6 +161,8 @@ class Interpreter:
             return value.get() if isinstance(value, _Reference) else value
         if name in self.variables and (self.locals is None or name in self.module_names):
             return self.variables[name]
+        if name in self.imports:
+            raise TypeError(f"Имя модуля допустимо только при вызове его подпрограммы: {node.name}")
         if name in self.routines:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
@@ -194,39 +243,51 @@ class Interpreter:
         callee = self.ungroup(node.callee)
         routine = (self.routines.get(callee.name.casefold())
                    if isinstance(callee, ast.Name) else None)
+        owner = self
+        if isinstance(callee, ast.Attribute):
+            receiver = self.ungroup(callee.object)
+            if (isinstance(receiver, ast.Name)
+                    and receiver.name.casefold() in self.imports
+                    and (self.locals is None or receiver.name.casefold() not in self.locals)):
+                module = self.imports[receiver.name.casefold()]
+                owner = module.interpreter
+                routine = module.routine(callee.name)
         if routine is not None:
-            function = routine
-            if require_value and not function.is_function:
-                raise TypeError(f"Процедура не возвращает значение: {function.name}")
-            required = max((index + 1 for index, parameter in enumerate(function.parameters)
-                            if parameter.default is None), default=0)
-            if not required <= len(node.arguments) <= len(function.parameters):
-                raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
-                                f"получено {len(node.arguments)}")
-            # Bind left to right in the caller's frame. Val snapshots the value,
-            # while ordinary parameters keep a live alias to assignable storage.
-            bindings = {}
-            for index, parameter in enumerate(function.parameters):
-                argument = node.arguments[index] if index < len(node.arguments) else None
-                if argument is None or isinstance(argument, ast.OmittedArgument):
-                    value = self.visit(parameter.default) if parameter.default is not None else None
-                else:
-                    value = self.visit(argument) if parameter.by_value else self.argument(argument)
-                bindings[parameter.name.casefold()] = value
-            previous = self.locals
-            self.locals = bindings
-            try:
-                self.block(function.body)
-            except _Return as returned:
-                return returned.value
-            finally:
-                self.locals = previous
-            return None
+            return self.call_routine(routine, node.arguments, owner, require_value=require_value)
         self.reject_host_omissions(node.arguments)
         function = self.visit(node.callee)
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
         return function(*(self.visit(argument) for argument in node.arguments))
+
+    def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
+                     owner: "Interpreter", *, require_value: bool) -> object:
+        if require_value and not function.is_function:
+            raise TypeError(f"Процедура не возвращает значение: {function.name}")
+        required = max((index + 1 for index, parameter in enumerate(function.parameters)
+                        if parameter.default is None), default=0)
+        if not required <= len(arguments) <= len(function.parameters):
+            raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
+                            f"получено {len(arguments)}")
+        # Bind left to right in the caller's frame. Val snapshots the value,
+        # while ordinary parameters keep a live alias to assignable storage.
+        bindings = {}
+        for index, parameter in enumerate(function.parameters):
+            argument = arguments[index] if index < len(arguments) else None
+            if argument is None or isinstance(argument, ast.OmittedArgument):
+                value = self.visit(parameter.default) if parameter.default is not None else None
+            else:
+                value = self.visit(argument) if parameter.by_value else self.argument(argument)
+            bindings[parameter.name.casefold()] = value
+        previous = owner.locals
+        owner.locals = bindings
+        try:
+            owner.block(function.body)
+        except _Return as returned:
+            return returned.value
+        finally:
+            owner.locals = previous
+        return None
 
     @staticmethod
     def reject_host_omissions(arguments: list[ast.Node]) -> None:
@@ -279,12 +340,47 @@ class Interpreter:
 
     def set_variable(self, name: str, value: object) -> None:
         name = name.casefold()
+        if name in self.imports and self.locals is None:
+            raise ValueError(f"Нельзя присвоить значение имени импорта: {name}")
         if self.locals is None or (name in self.module_names and name not in self.locals):
             self.variables[name] = value
         elif isinstance(self.locals.get(name), _Reference):
             self.locals[name].set(value)
         else:
             self.locals[name] = value
+
+    def visit_Import(self, node: ast.Import) -> None:
+        name = Path(node.filename).stem.casefold()
+        if name in self.variables or name in self.routines or name in self.functions:
+            raise ValueError(f"Имя импорта уже занято: {name}")
+        if node.token.source.startswith("<"):
+            raise ValueError("Для импорта нужен путь исходного файла; "
+                             "импорт из команды и консоли пока не поддерживается")
+        path = Path(node.token.source).parent / node.filename
+        try:
+            path = (Path(node.token.source).resolve().parent / node.filename).resolve()
+        except (OSError, RuntimeError) as error:
+            raise ValueError(f"Не удалось разрешить путь модуля {path}: {error}") from None
+        if name in self.imports and self.imports[name].path != path:
+            raise ValueError(f"Имя импорта уже занято другим модулем: {name}")
+        if path in self._loading:
+            chain = " -> ".join(str(item) for item in [*self._loading, path])
+            raise ValueError(f"Циклический импорт: {chain}")
+        module = self._module_cache.get(path)
+        if module is None:
+            try:
+                text = path.read_text(encoding=self.encoding)
+            except (OSError, UnicodeError, LookupError) as error:
+                raise ValueError(f"Не удалось прочитать модуль {path}: {error}") from None
+            child = Interpreter(self.output, encoding=self.encoding)
+            child.functions = self.functions.copy()
+            child.types = self.types.copy()
+            child._module_cache = self._module_cache
+            child._loading = self._loading
+            child.execute(text, str(path))
+            module = _Module(child, path)
+            self._module_cache[path] = module
+        self.imports[name] = module
 
     def visit_Routine(self, node: ast.Routine) -> None:
         # Declarations are registered by execute_program, never executed in place.
@@ -301,6 +397,8 @@ class Interpreter:
         return self.visit(node.expression)
 
     def visit_Var(self, node: ast.Var) -> None:
+        if self.locals is None and any(name.casefold() in self.imports for name in node.names):
+            raise ValueError("Имя импорта конфликтует с объявлением")
         for name in node.names:
             (self.variables if self.locals is None else self.locals).setdefault(name.casefold(), None)
 

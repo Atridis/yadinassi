@@ -47,6 +47,9 @@ class Parser:
         while self.current.kind != "EOF":
             if self.accept(";"):
                 continue
+            if token := self.accept("IMPORT"):
+                statements.append(ast.Import(token, token.value))
+                continue
             if self.current.kind in ("FUNCTION", "PROCEDURE"):
                 token = self.current
                 kind = token.kind
@@ -122,6 +125,8 @@ class Parser:
 
     def statement(self) -> ast.Node:
         token = self.current
+        if token.kind == "IMPORT":
+            self.fail("Импорт допустим только на уровне модуля")
         if token.kind in ("FUNCTION", "PROCEDURE"):
             self.fail("Процедуры и функции допустимы только на уровне модуля")
         if self.accept("RETURN"):
