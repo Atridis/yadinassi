@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import ast
-from .errors import BSLError
+from .errors import BSLError, BSLRuntimeError
 from .parser import parse
 from .lexer import KEYWORDS
 from .values import (
@@ -70,11 +70,14 @@ class Interpreter:
         self.imports: dict[str, _Module | _Namespace] = {}
         self._module_cache: dict[Path, _Module] = {}
         self._loading: list[Path] = []
+        # Imports share this dynamic handler stack, independent of variable frames.
+        self._handled_errors: list[BSLRuntimeError | None] = []
         self.register_function("Сообщить", self._message, "Message")
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
         self.register_function("Булево", boolean, "Boolean")
         self.register_function("СтрДлина", self._string_length, "StrLen")
+        self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")
 
     @property
@@ -94,6 +97,10 @@ class Interpreter:
 
     def _message(self, value: object) -> None:
         self.output(to_string(value))
+
+    def _error_description(self) -> str:
+        return (str(self._handled_errors[-1])
+                if self._handled_errors and self._handled_errors[-1] is not None else "")
 
     @staticmethod
     def _string_length(value: object) -> Decimal:
@@ -163,7 +170,7 @@ class Interpreter:
             if isinstance(error, ZeroDivisionError):
                 message = "Деление на ноль"
             token = node.token
-            raise BSLError(message, token.source, token.line, token.column) from None
+            raise BSLRuntimeError(message, token.source, token.line, token.column) from None
 
     def visit_Literal(self, node: ast.Literal) -> object:
         return node.value
@@ -465,6 +472,7 @@ class Interpreter:
             child.types = self.types.copy()
             child._module_cache = self._module_cache
             child._loading = self._loading
+            child._handled_errors = self._handled_errors
             child.execute(text, str(path))
             module = _Module(child, path)
             self._module_cache[path] = module
@@ -473,6 +481,34 @@ class Interpreter:
     def visit_Routine(self, node: ast.Routine) -> None:
         # Declarations are registered by execute_program, never executed in place.
         pass
+
+    def visit_Try(self, node: ast.Try) -> None:
+        try:
+            self.block(node.body)
+        except BSLRuntimeError as error:
+            # 1C discards parent diagnostic information on entering a nested handler.
+            # Keep frames for reliable unwinding, but never revive their stale errors.
+            for index in range(len(self._handled_errors)):
+                self._handled_errors[index] = None
+            self._handled_errors.append(error)
+            try:
+                self.block(node.handler)
+            finally:
+                self._handled_errors.pop()
+
+    def visit_Raise(self, node: ast.Raise) -> None:
+        if node.value is None:
+            if not self._handled_errors:
+                # Protect callers constructing ASTs directly, as well as the parser.
+                raise ValueError("Нет активного исключения для повторного вызова")
+            error = self._handled_errors[-1]
+            if error is None:
+                raise ValueError("Повторный вызов исключения после вложенного обработчика "
+                                 "пока не поддерживается; используйте явное сообщение")
+            raise error
+        message = to_string(self.visit(node.value))
+        token = node.token
+        raise BSLRuntimeError(message, token.source, token.line, token.column)
 
     def visit_Return(self, node: ast.Return) -> None:
         raise _Return(self.visit(node.value) if node.value is not None else None)

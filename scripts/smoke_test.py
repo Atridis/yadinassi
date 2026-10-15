@@ -53,7 +53,25 @@ def main() -> None:
         client_code = ('#If AtClient And Not Server Then\n&AtClient\n'
                        'Function F() Return 42; EndFunction\nMessage(F());\n'
                        '#Else\n# Импорт Missing.bsl\nunsupported !!!\n#EndIf\n')
+        exception_module = Path(temporary) / "Ошибки.bsl"
+        exception_module.write_text(
+            'Процедура Выполнить() Экспорт\n'
+            'Попытка\nВызватьИсключение "из модуля";\n'
+            'Исключение\nВызватьИсключение;\nКонецПопытки;\nКонецПроцедуры',
+            encoding="utf-8-sig")
+        exception_main = Path(temporary) / "Обработка.bsl"
+        exception_main.write_text(
+            '# Импорт Ошибки.bsl\nПопытка\nОшибки.Выполнить();\n'
+            'Исключение\nСообщить(ОписаниеОшибки());\nКонецПопытки;\n',
+            encoding="utf-8")
+        exception_code = ('Попытка\nСообщить(1 / 0);\nИсключение\n'
+                          'Сообщить("обработано");\nКонецПопытки;\n')
         cases = [
+            ([str(exception_main)], None, str(exception_module) + ":3:1: из модуля\n", 0),
+            (["-c", exception_code], None, "обработано\n", 0),
+            (["-"], exception_code, "обработано\n", 0),
+            ([], exception_code + '/exit\n', "обработано\n", 0),
+
             (["-c", client_code], None, "42\n", 0),
             (["-"], client_code, "42\n", 0),
             ([], client_code + '/exit\n', "42\n", 0),
@@ -83,7 +101,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: file, sibling/nested/directory imports, client compilation, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":
