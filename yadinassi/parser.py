@@ -16,6 +16,7 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.loop_depth = 0
+        self.routine_kind: str | None = None
 
     @property
     def current(self) -> Token:
@@ -40,7 +41,36 @@ class Parser:
         return token
 
     def parse(self) -> list[ast.Node]:
-        statements = self.block({"EOF"})
+        statements = []
+        routines = set()
+        while self.current.kind != "EOF":
+            if self.accept(";"):
+                continue
+            if self.current.kind in ("FUNCTION", "PROCEDURE"):
+                token = self.current
+                kind = token.kind
+                self.pos += 1
+                name = self.expect("IDENT").value
+                if name.casefold() in routines:
+                    self.fail(f"Повторное объявление процедуры или функции: {name}")
+                routines.add(name.casefold())
+                self.expect("(")
+                if self.current.kind not in (")", "EOF"):
+                    self.fail("Параметры процедур и функций пока не поддерживаются")
+                self.expect(")")
+                exported = bool(self.accept("EXPORT"))
+                self.routine_kind = kind
+                try:
+                    body = self.block({"END" + kind})
+                    self.expect("END" + kind)
+                finally:
+                    self.routine_kind = None
+                statements.append(ast.Routine(token, name, kind == "FUNCTION", exported, body))
+                # Routine brackets are not statements and need no semicolon.
+                continue
+            statements.append(self.statement())
+            if not self.accept(";") and self.current.kind != "EOF":
+                self.fail("Ожидается ';' между операторами")
         self.expect("EOF")
         return statements
 
@@ -58,6 +88,15 @@ class Parser:
 
     def statement(self) -> ast.Node:
         token = self.current
+        if token.kind in ("FUNCTION", "PROCEDURE"):
+            self.fail("Процедуры и функции допустимы только на уровне модуля")
+        if self.accept("RETURN"):
+            if self.routine_kind is None:
+                self.fail("Возврат допустим только внутри процедуры или функции")
+            empty = self.current.kind in {";", "ENDPROCEDURE", "ENDFUNCTION", "ENDIF", "ELSE", "ELSIF", "ENDDO"}
+            if self.routine_kind == "PROCEDURE" and not empty:
+                self.fail("Процедура не может возвращать значение")
+            return ast.Return(token, None if empty else self.expression())
         if self.accept("IF"):
             branches = []
             while True:
