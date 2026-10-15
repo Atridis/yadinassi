@@ -138,6 +138,10 @@ class Interpreter:
             return left % right
         raise ValueError(f"Неизвестный оператор: {operator}")
 
+    def visit_Conditional(self, node: ast.Conditional) -> object:
+        branch = node.when_true if boolean(self.visit(node.condition)) else node.when_false
+        return self.visit(branch)
+
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = self.visit(node.object)
         if not isinstance(value, BSLObject):

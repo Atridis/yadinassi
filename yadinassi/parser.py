@@ -138,6 +138,15 @@ class Parser:
             return ast.Literal(token, value)
         if self.accept("IDENT"):
             return ast.Name(token, token.value)
+        if self.accept("?"):
+            self.expect("(")
+            condition = self.expression()
+            self.expect(",")
+            when_true = self.expression()
+            self.expect(",")
+            when_false = self.expression()
+            self.expect(")")
+            return ast.Conditional(token, condition, when_true, when_false)
         if self.accept("("):
             value = self.expression()
             self.expect(")")

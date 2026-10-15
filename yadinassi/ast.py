@@ -34,6 +34,13 @@ class Binary(Node):
 
 
 @dataclass
+class Conditional(Node):
+    condition: Node
+    when_true: Node
+    when_false: Node
+
+
+@dataclass
 class Attribute(Node):
     object: Node
     name: str
