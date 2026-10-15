@@ -219,7 +219,7 @@ class ImportTests(unittest.TestCase):
         self.execute('# Импорт Side.bsl\nx = 1;')
         with self.assertRaises(BSLError) as caught:
             self.vm.execute('Side.Fail(x)', 'caller.bsl')
-        self.assertEqual((caught.exception.source, caught.exception.line), (str(side), 3))
+        self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 3))
         self.assertEqual(self.vm.variables['x'], Decimal(7))
         self.assertIsNone(self.vm.locals)
         self.assertEqual(self.vm.execute('Side.Healthy()'), Decimal(42))
@@ -231,8 +231,20 @@ class ImportTests(unittest.TestCase):
                 side = self.write('Side.bsl', code)
                 with self.assertRaises(BSLError) as caught:
                     self.execute('# Импорт Side.bsl\n', vm=vm)
-                self.assertEqual((caught.exception.source, caught.exception.line), (str(side), line))
+                self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), line))
         self.assertEqual(self.output, [])
+
+    def test_imported_diagnostics_use_canonical_path_through_directory_alias(self):
+        side = self.write('Side.bsl', 'Function Fail() Export Return 1 / 0; EndFunction')
+        alias = self.directory / 'alias'
+        try:
+            alias.symlink_to(self.directory.resolve(), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest('Symlinks are not available on this host')
+        with self.assertRaises(BSLError) as caught:
+            self.execute('# Импорт Side.bsl\nSide.Fail()', path=alias / self.main.name)
+        self.assertEqual((caught.exception.source, caught.exception.line),
+                         (str(side.resolve()), 1))
 
     def test_missing_file_and_directory_errors_point_to_import(self):
         (self.directory / 'Directory.bsl').mkdir()
@@ -300,7 +312,7 @@ class ImportTests(unittest.TestCase):
                 with self.assertRaisesRegex(BSLError, 'Циклический импорт') as caught:
                     self.execute(main, vm=vm)
                 self.assertEqual((caught.exception.source, caught.exception.line),
-                                 (str(error_source), line))
+                                 (str(error_source.resolve() if side is not None else error_source), line))
         self.assertEqual(self.output, [])
 
     def test_cycle_failure_does_not_leave_loading_state(self):
@@ -319,7 +331,7 @@ class ImportTests(unittest.TestCase):
         program = parse(self.main.read_text(encoding='utf-8'), str(self.main))
         with self.assertRaisesRegex(BSLError, 'Циклический импорт') as caught:
             self.vm.execute_program(program)
-        self.assertEqual(caught.exception.source, str(self.directory / 'Side.bsl'))
+        self.assertEqual(caught.exception.source, str((self.directory / 'Side.bsl').resolve()))
         self.write('Side.bsl', 'Function F() Export Return 42; EndFunction')
         self.vm.execute_program(program)
         self.assertEqual(self.vm.execute('Side.F()'), Decimal(42))
@@ -328,7 +340,7 @@ class ImportTests(unittest.TestCase):
         side = self.write('Side.bsl', '\n# Импорт Missing.bsl\n')
         with self.assertRaises(BSLError) as caught:
             self.execute('# Импорт Side.bsl\n')
-        self.assertEqual((caught.exception.source, caught.exception.line), (str(side), 2))
+        self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 2))
         self.assertIn('Missing.bsl', str(caught.exception))
 
     def test_case_insensitive_extension_preserves_disk_filename(self):
