@@ -67,7 +67,7 @@ def main() -> None:
         exception_code = ('Попытка\nСообщить(1 / 0);\nИсключение\n'
                           'Сообщить("обработано");\nКонецПопытки;\n')
         cases = [
-            ([str(exception_main)], None, str(exception_module) + ":3:1: из модуля\n", 0),
+            ([str(exception_main)], None, str(exception_module.resolve()) + ":3:1: из модуля\n", 0),
             (["-c", exception_code], None, "обработано\n", 0),
             (["-"], exception_code, "обработано\n", 0),
             ([], exception_code + '/exit\n', "обработано\n", 0),

@@ -509,7 +509,7 @@ class ExceptionImportTests(unittest.TestCase):
     def test_imported_routine_error_is_caught_at_original_source(self):
         side = self.write('Side.bsl', 'Function Fail() Export\n Raise "module";\nEndFunction')
         self.execute('# Импорт Side.bsl\nTry Side.Fail(); Except Message(ErrorDescription()); EndTry;')
-        self.assertEqual(self.output, [str(side) + ':2:2: module'])
+        self.assertEqual(self.output, [str(side.resolve()) + ':2:2: module'])
         self.assertIsNone(self.vm.locals)
         self.assertEqual(self.vm.execute('ErrorDescription()'), '')
         self.assertEqual(self.vm.variables, {})
@@ -556,7 +556,7 @@ class ExceptionImportTests(unittest.TestCase):
         self.execute('# Импорт Side.bsl\n')
         with self.assertRaises(BSLRuntimeError) as caught:
             self.vm.execute('Try Side.Fail(); Except Raise; EndTry;', 'caller.bsl')
-        self.assertEqual((caught.exception.source, caught.exception.line), (str(side), 2))
+        self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 2))
         self.assertEqual(caught.exception.message, 'module')
         self.assertIsNone(self.vm.locals)
         self.assertIsNone(self.vm.imports['side'].interpreter.locals)
@@ -568,7 +568,7 @@ class ExceptionImportTests(unittest.TestCase):
                                     'Function Value() Export Return value; EndFunction\n'
                                     'Function Describe() Export Return ErrorDescription(); EndFunction')
         self.execute('# Импорт Side.bsl\nMessage(Side.Value()); Message(Side.Describe() = "");')
-        self.assertEqual(self.output, [str(side) + ':2:5: startup', 'Да'])
+        self.assertEqual(self.output, [str(side.resolve()) + ':2:5: startup', 'Да'])
         self.assertEqual(self.vm.execute('ErrorDescription()'), '')
 
     def test_imported_syntax_error_is_not_converted_to_runtime_error(self):
@@ -576,7 +576,7 @@ class ExceptionImportTests(unittest.TestCase):
         with self.assertRaises(BSLError) as caught:
             self.execute('# Импорт Side.bsl\nTry Message("bad"); Except EndTry;')
         self.assertNotIsInstance(caught.exception, BSLRuntimeError)
-        self.assertEqual(caught.exception.source, str(side))
+        self.assertEqual(caught.exception.source, str(side.resolve()))
         self.assertEqual(caught.exception.line, 2)
         self.assertEqual(self.output, [])
 
@@ -647,7 +647,7 @@ class ExceptionCLITests(unittest.TestCase):
                             'Try Side.Fail(); Except Message(ErrorDescription()); EndTry;', encoding='utf-8-sig')
             result = self.run_cli(str(main), cwd=directory)
             self.assertEqual((result.returncode, result.stdout, result.stderr),
-                             (0, str(side) + ':2:2: module\n', ''))
+                             (0, str(side.resolve()) + ':2:2: module\n', ''))
 
 
 if __name__ == '__main__':
