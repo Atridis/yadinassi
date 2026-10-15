@@ -375,7 +375,7 @@ class ImportTests(unittest.TestCase):
 
     def test_unsupported_directive_forms_fail_before_statement_effects(self):
         directives = ['# Import Side.bsl', '# Импорт "Side.bsl"', '# Импорт Side',
-                      '# Импорт Side.txt', '# Импорт Side.part.bsl', '# Импорт ./Side.bsl',
+                      '# Импорт Side.txt', '# Импорт Side..part.bsl', '# Импорт ./Side.bsl',
                       '# Импорт ../Side.bsl', '# Импорт folder/Side.bsl',
                       '# Импорт folder\\Side.bsl', '# Импорт /tmp/Side.bsl',
                       '# Импорт C:\\Side.bsl', '# Импорт Side-name.bsl',
@@ -465,6 +465,183 @@ class ImportTests(unittest.TestCase):
         self.vm.register_function('Double', lambda value: value * 2)
         self.write('Side.bsl', 'Function F() Export Return Double(21); EndFunction')
         self.assertEqual(self.execute('# Импорт Side.bsl\nSide.F()'), Decimal(42))
+
+    def test_nested_imports_share_multilevel_namespace_and_preserve_ast(self):
+        directive = parse('\n  # Импорт Справочник.Группа.Побочное.BSL\n', str(self.main))[0]
+        self.assertEqual(directive.filename, 'Справочник.Группа.Побочное.BSL')
+        self.assertEqual((directive.token.line, directive.token.column), (2, 3))
+        self.write('Справочник/Группа/Побочное.BSL',
+                   'Function Answer() Export Return 42; EndFunction')
+        self.write('Справочник/Группа/Other.bsl',
+                   'Function Answer() Export Return 7; EndFunction')
+        self.write('Справочник/Peer.bsl', 'Function Answer() Export Return 3; EndFunction')
+        self.execute('# Импорт Справочник.Группа.Побочное.BSL\n'
+                     '# Импорт Справочник.Группа.Other.bsl\n'
+                     '# Импорт Справочник.Peer.bsl\n'
+                     'Message(((СПРАВОЧНИК.группа).ПОБОЧНОЕ.Answer)()); '
+                     'Message(Справочник.Группа.Other.Answer()); Message(Справочник.Peer.Answer());')
+        self.assertEqual(self.output, ['42', '7', '3'])
+
+    def test_nested_direct_and_transitive_imports_share_canonical_cache(self):
+        shared = self.write('Package/Shared.bsl', 'Message("init"); Var n; n = 0; '
+                            'Function Next() Export n = n + 1; Return n; EndFunction')
+        self.write('Package/Outer.bsl', '# Импорт Shared.bsl\n'
+                   'Function Next() Export Return Shared.Next(); EndFunction')
+        self.execute('# Импорт Package.Outer.bsl\n# Импорт Package.Shared.bsl\n'
+                     '# Импорт Package.Shared.bsl\n'
+                     'Message(Package.Outer.Next()); Message(Package.Shared.Next());')
+        shared.write_text('@ invalid replacement', encoding='utf-8')
+        self.execute('# Импорт Package.Shared.bsl\nMessage(Package.Shared.Next());')
+        self.assertEqual(self.output, ['init', '1', '2', '3'])
+
+    def test_nested_calls_preserve_reference_value_defaults_and_local_frames(self):
+        self.write('Package/Calls.bsl', '''
+            Procedure Change(reference, Val value) Export reference = reference + value; value = 99; EndProcedure
+            Function Join(Val a = "A", Val b = "B") Export Return a + b; EndFunction
+        ''')
+        self.execute('''# Импорт Package.Calls.bsl
+            x = 10;
+            Function Local(Val x)
+                y = 3; Package.Calls.Change(x, y); Message(y); Return x;
+            EndFunction
+            Message(Local(2)); Message(x); Message(Package.Calls.Join(, "Z"));
+        ''')
+        self.assertEqual(self.output, ['3', '5', '10', 'AZ'])
+        self.assertIsNone(self.vm.locals)
+
+    def test_nested_namespaces_do_not_expose_values_python_members_or_reexports(self):
+        self.write('Package/Inner.bsl', 'Function F() Export Return 9; EndFunction')
+        self.write('Package/Side.bsl', '''# Импорт Inner.bsl
+            Var secret; secret = 42;
+            Function Private() Return secret; EndFunction
+            Function Public() Export Return Private(); EndFunction
+        ''')
+        self.execute('# Импорт Package.Side.bsl\n')
+        for expression in ['Package', 'Package.Side', 'Package.Side.Public',
+                           'Package[0]', 'Package()', 'Package.Side()',
+                           'Package.Inner.F()', 'Package.Side.Inner.F()',
+                           'Package.Side.Private()', 'Package.Side.secret',
+                           'Package.members', 'Package.path', 'Package.__dict__',
+                           'Package.__class__', 'Package.Side.interpreter',
+                           'Package.Side.routine("Public")', 'Package.Side.__class__']:
+            with self.subTest(expression=expression), self.assertRaises(BSLError):
+                self.vm.execute(expression)
+        self.assertEqual(self.vm.execute('Package.Side.Public()'), Decimal(42))
+
+    def test_nested_module_namespace_collisions_in_both_orders(self):
+        self.write('Package/Side.bsl', 'Message("module"); Function F() Export Return 1; EndFunction')
+        self.write('Package/Side/Leaf.bsl', 'Message("leaf"); Function F() Export Return 2; EndFunction')
+        for first, second, expression, value, output in [
+            ('Package.Side', 'Package.Side.Leaf', 'Package.Side.F()', 1, 'module'),
+            ('Package.Side.Leaf', 'Package.Side', 'Package.Side.Leaf.F()', 2, 'leaf'),
+        ]:
+            with self.subTest(first=first):
+                self.output.clear()
+                vm = Interpreter(output=self.output.append)
+                self.execute(f'# Импорт {first}.bsl\n', vm=vm)
+                with self.assertRaisesRegex(BSLError, 'занято|конфликт'):
+                    self.execute(f'# Импорт {second}.bsl\n', vm=vm)
+                self.assertEqual(vm.execute(expression), Decimal(value))
+                self.assertEqual(self.output, [output])
+
+    def test_nested_directory_namespace_cannot_merge_different_source_directories(self):
+        self.write('Package/Left.bsl', 'Function F() Export Return 1; EndFunction')
+        self.write('other/Package/Right.bsl', 'Message("bad");')
+        self.execute('# Импорт Package.Left.bsl\n')
+        with self.assertRaisesRegex(BSLError, 'занято|конфликт'):
+            self.execute('# Импорт Package.Right.bsl\n', path=self.directory / 'other/Main.bsl')
+        self.assertEqual(self.vm.execute('Package.Left.F()'), Decimal(1))
+        self.assertEqual(self.output, [])
+
+    def test_nested_casefold_collisions_do_not_initialize_other_disk_module(self):
+        first = self.write('Package/Side.bsl', 'Function F() Export Return 1; EndFunction')
+        other = self.directory / 'Package/side.bsl'
+        if other.exists() and other.samefile(first):
+            self.skipTest('Case-distinct filenames are not available on this host')
+        self.write('Package/side.bsl', 'Message("bad");')
+        self.execute('# Импорт Package.Side.bsl\n')
+        with self.assertRaisesRegex(BSLError, 'занято|конфликт'):
+            self.execute('# Импорт Package.side.bsl\n')
+        self.assertEqual(self.vm.execute('package.SIDE.F()'), Decimal(1))
+        self.assertEqual(self.output, [])
+
+    def test_nested_symlinked_module_shares_original_directory_namespace(self):
+        target = self.write('elsewhere/Actual.bsl',
+                            'Function F() Export Return 1; EndFunction')
+        self.write('Package/Peer.bsl', 'Function F() Export Return 2; EndFunction')
+        try:
+            (self.directory / 'Package/Alias.bsl').symlink_to(target)
+        except (OSError, NotImplementedError):
+            self.skipTest('Symlinks are not available on this host')
+        for first, second in [('Alias', 'Peer'), ('Peer', 'Alias')]:
+            with self.subTest(first=first):
+                vm = Interpreter(output=self.output.append)
+                self.assertEqual(self.execute(
+                    f'# Импорт Package.{first}.bsl\n# Импорт Package.{second}.bsl\n'
+                    'Package.Alias.F() + Package.Peer.F()', vm=vm), Decimal(3))
+
+    def test_nested_root_names_are_read_only_but_locals_shadow_normally(self):
+        self.write('Package/Side.bsl', 'Function F() Export Return 42; EndFunction')
+        self.execute('''# Импорт Package.Side.bsl
+            Function Local() Var Package; Package = 7; Return Package; EndFunction
+            Function Parameter(Val Package) Return Package.Count(); EndFunction
+            a = New Array; a.Add(1); Message(Local()); Message(Parameter(a));
+        ''')
+        for code in ['Package = 7', 'Var Package;', 'If True Then Var Package; EndIf;']:
+            with self.subTest(code=code), self.assertRaises(BSLError):
+                self.vm.execute(code)
+        self.assertEqual(self.output, ['7', '1'])
+        self.assertEqual(self.vm.execute('Package.Side.F()'), Decimal(42))
+
+    def test_nested_failed_loads_leave_no_namespace_and_can_be_retried(self):
+        for failure in [None, '@', 'x = 1 / 0;']:
+            with self.subTest(failure=failure):
+                vm = Interpreter(output=self.output.append)
+                path = self.directory / 'Package/Side.bsl'
+                if path.exists():
+                    path.unlink()
+                if failure is not None:
+                    self.write('Package/Side.bsl', failure)
+                with self.assertRaises(BSLError):
+                    self.execute('# Импорт Package.Side.bsl\n', vm=vm)
+                self.assertNotIn('package', vm.imports)
+                self.write('Package/Side.bsl', 'Function F() Export Return 42; EndFunction')
+                self.assertEqual(self.execute('# Импорт Package.Side.bsl\nPackage.Side.F()', vm=vm),
+                                 Decimal(42))
+
+    def test_nested_cycle_reports_importing_source_and_recovers(self):
+        self.write('Package/Left.bsl', '# Импорт Right.bsl\n'
+                   'Function F() Export Return Right.F(); EndFunction')
+        right = self.write('Package/Right.bsl', '\n  # Импорт Left.bsl\n')
+        with self.assertRaisesRegex(BSLError, 'Циклический импорт') as caught:
+            self.execute('# Импорт Package.Left.bsl\n')
+        self.assertEqual((caught.exception.source, caught.exception.line, caught.exception.column),
+                         (str(right.resolve()), 2, 3))
+        right.write_text('Function F() Export Return 42; EndFunction', encoding='utf-8')
+        self.assertEqual(self.execute('# Импорт Package.Left.bsl\nPackage.Left.F()'), Decimal(42))
+
+    def test_nested_import_and_call_diagnostics_keep_correct_source(self):
+        with self.assertRaises(BSLError) as caught:
+            self.execute('\n  # Импорт Package.Missing.bsl\n')
+        self.assertEqual((caught.exception.source, caught.exception.line, caught.exception.column),
+                         (str(self.main), 2, 3))
+        side = self.write('Package/Side.bsl', 'Function F(Val x) Export\nReturn x / 0;\nEndFunction')
+        self.execute('# Импорт Package.Side.bsl\n')
+        for expression, source, line in [('Package.Side.F(1)', str(side.resolve()), 2),
+                                         ('\nPackage.Side.F(1 / 0)', 'caller.bsl', 2),
+                                         ('\nPackage.Missing.F()', 'caller.bsl', 2)]:
+            with self.subTest(expression=expression), self.assertRaises(BSLError) as caught:
+                self.vm.execute(expression, 'caller.bsl')
+            self.assertEqual((caught.exception.source, caught.exception.line), (source, line))
+        self.assertIsNone(self.vm.locals)
+
+    def test_invalid_nested_import_segments_fail_before_statement_effects(self):
+        for name in ['.Package.Side', 'Package..Side', 'Package.Side.',
+                     'Package.Function.Side', 'Package.Если', 'Package.1Side',
+                     'Package.bad-name', 'Package/Side', 'Package\\Side']:
+            with self.subTest(name=name), self.assertRaises(BSLError):
+                self.execute(f'Message("bad");\n# Импорт {name}.bsl\n')
+        self.assertEqual(self.output, [])
 
 
 if __name__ == '__main__':

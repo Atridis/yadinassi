@@ -113,6 +113,55 @@ class CLITests(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout, result.stderr),
                              (0, "соседний\n", ""))
 
+    def test_nested_import_from_unrelated_cwd_with_bom_and_shared_namespace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            project = directory / "project"
+            nested = project / "Справочник"
+            deeper = nested / "Вложенное"
+            deeper.mkdir(parents=True)
+            main = project / "Основное.bsl"
+            main.write_text(
+                '# Импорт Справочник.Побочное.bsl\n'
+                '# Импорт Справочник.Вложенное.Другое.bsl\n'
+                'Сообщить(справочник.ПОБОЧНОЕ.получитьсумму(1, 2));\n'
+                'Сообщить(СПРАВОЧНИК.вложенное.ДРУГОЕ.ответ());',
+                encoding="utf-8-sig")
+            (nested / "Побочное.bsl").write_text(
+                'Функция ПолучитьСумму(А, Б) Экспорт Возврат А + Б; КонецФункции',
+                encoding="utf-8-sig")
+            (deeper / "Другое.bsl").write_text(
+                'Функция Ответ() Экспорт Возврат "вложенный"; КонецФункции',
+                encoding="utf-8-sig")
+            wrong = directory / "Справочник"
+            wrong.mkdir()
+            (wrong / "Побочное.bsl").write_text('Сообщить("не тот файл");', encoding="utf-8")
+            for path in (main, Path("project") / main.name):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=directory)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, "3\nвложенный\n", ""))
+
+    def test_nested_import_errors_have_clean_source_aware_diagnostics(self):
+        cases = [('# Импорт Справочник.Нет.bsl\n', 'Основное.bsl:1:'),
+                 ('# Импорт Справочник\n', 'Основное.bsl:1:'),
+                 ('# Импорт Справочник.Побочное.bsl\n'
+                  'Сообщить(Справочник.Побочное.Ошибка());', 'Побочное.bsl:2:')]
+        for source, location in cases:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                nested = directory / "Справочник"
+                nested.mkdir()
+                (nested / "Побочное.bsl").write_text(
+                    'Функция Ошибка() Экспорт\nВозврат 1 / 0;\nКонецФункции',
+                    encoding="utf-8")
+                main = directory / "Основное.bsl"
+                main.write_text(source, encoding="utf-8")
+                result = self.run_cli(str(main))
+                self.assertEqual((result.returncode, result.stdout), (1, ""))
+                self.assertIn(location, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_encoding_option_applies_to_transitive_imports(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

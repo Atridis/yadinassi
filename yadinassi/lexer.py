@@ -94,16 +94,21 @@ class Lexer:
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 directive = self.text[start:self.pos].split("//", 1)[0].strip()
-                match = re.fullmatch(r"#\s*Импорт\s+(\w+\.bsl)\s*", directive,
+                match = re.fullmatch(r"#\s*Импорт\s+(\w+(?:\.\w+)*\.bsl)\s*", directive,
                                      re.IGNORECASE)
-                if match is None or not (match.group(1)[0].isalpha() or match.group(1)[0] == "_"):
-                    raise BSLError("Поддерживается только # Импорт ИмяМодуля.bsl; "
-                                   "каталоги, пути и составные имена пока не поддерживаются",
+                if match is None:
+                    raise BSLError("Ожидается # Импорт ИмяМодуля.bsl или "
+                                   "# Импорт Каталог.ИмяМодуля.bsl; "
+                                   "импорт целого каталога и пути с разделителями пока не поддерживаются",
                                    self.source, line, column)
                 value, kind = match.group(1), "IMPORT"
-                if value[:-4].casefold() in KEYWORDS:
-                    raise BSLError("Имя модуля не может быть ключевым словом",
-                                   self.source, line, column)
+                for part in value[:-4].split("."):
+                    if not (part[0].isalpha() or part[0] == "_"):
+                        raise BSLError("Каждая часть имени импорта должна быть идентификатором",
+                                       self.source, line, column)
+                    if part.casefold() in KEYWORDS:
+                        raise BSLError("Имя модуля или каталога не может быть ключевым словом",
+                                       self.source, line, column)
             elif char.isalpha() or char == "_":
                 start = self.pos
                 while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
