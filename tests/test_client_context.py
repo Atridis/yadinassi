@@ -204,5 +204,5 @@ server-only !!!
             side.write_text('Message("bad");\n&AtServer\nProcedure P() EndProcedure', encoding='utf-8')
             with self.assertRaises(BSLError) as caught:
                 self.vm.execute('# Импорт Side.bsl\nMessage("bad root");', str(root / 'Main.bsl'))
-            self.assertEqual((caught.exception.source, caught.exception.line), (str(side), 2))
+            self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 2))
             self.assertEqual(self.output, [])
