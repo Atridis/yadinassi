@@ -204,12 +204,8 @@ class ParameterTests(unittest.TestCase):
         cases = [
             ('Procedure P(a, A) EndProcedure', 'Повторное'),
             ('Procedure P(x) Var X; EndProcedure', 'уже объявлена'),
-            ('Function F(x = 1) EndFunction', 'по умолчанию'),
             ('Procedure P(Val) EndProcedure', 'IDENT'),
             ('Procedure P(x,) EndProcedure', 'IDENT'),
-            ('P(,1)', 'Пропуск аргументов'),
-            ('P(1,)', 'Пропуск аргументов'),
-            ('P(1,,2)', 'Пропуск аргументов'),
         ]
         for code, message in cases:
             with self.subTest(code=code), self.assertRaisesRegex(BSLError, message):

@@ -198,16 +198,21 @@ class Interpreter:
             function = routine
             if require_value and not function.is_function:
                 raise TypeError(f"Процедура не возвращает значение: {function.name}")
-            if len(node.arguments) != len(function.parameters):
+            required = max((index + 1 for index, parameter in enumerate(function.parameters)
+                            if parameter.default is None), default=0)
+            if not required <= len(node.arguments) <= len(function.parameters):
                 raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                                 f"получено {len(node.arguments)}")
             # Bind left to right in the caller's frame. Val snapshots the value,
             # while ordinary parameters keep a live alias to assignable storage.
             bindings = {}
-            for parameter, argument in zip(function.parameters, node.arguments):
-                bindings[parameter.name.casefold()] = (
-                    self.visit(argument) if parameter.by_value else self.argument(argument)
-                )
+            for index, parameter in enumerate(function.parameters):
+                argument = node.arguments[index] if index < len(node.arguments) else None
+                if argument is None or isinstance(argument, ast.OmittedArgument):
+                    value = self.visit(parameter.default) if parameter.default is not None else None
+                else:
+                    value = self.visit(argument) if parameter.by_value else self.argument(argument)
+                bindings[parameter.name.casefold()] = value
             previous = self.locals
             self.locals = bindings
             try:
@@ -217,10 +222,17 @@ class Interpreter:
             finally:
                 self.locals = previous
             return None
+        self.reject_host_omissions(node.arguments)
         function = self.visit(node.callee)
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
         return function(*(self.visit(argument) for argument in node.arguments))
+
+    @staticmethod
+    def reject_host_omissions(arguments: list[ast.Node]) -> None:
+        if any(isinstance(argument, ast.OmittedArgument) for argument in arguments):
+            raise TypeError("Пропуск аргументов встроенных функций, методов и конструкторов "
+                            "пока не поддерживается")
 
     def argument(self, node: ast.Node) -> object:
         if isinstance(node, ast.Name):
@@ -249,6 +261,7 @@ class Interpreter:
         return node
 
     def visit_New(self, node: ast.New) -> object:
+        self.reject_host_omissions(node.arguments)
         factory = self.types.get(node.name.casefold())
         if factory is None:
             raise ValueError(f"Тип не определен: {node.name}")

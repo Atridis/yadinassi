@@ -87,12 +87,26 @@ class Parser:
             if name.casefold() in names:
                 self.fail(f"Повторное объявление параметра: {name}")
             names.add(name.casefold())
-            parameters.append(ast.Parameter(token, name, by_value))
-            if self.current.kind == "=":
-                self.fail("Значения параметров по умолчанию пока не поддерживаются")
+            default = self.parameter_default() if self.accept("=") else None
+            parameters.append(ast.Parameter(token, name, by_value, default))
             if not self.accept(","):
                 self.expect(")")
                 return parameters
+
+    def parameter_default(self) -> ast.Node:
+        # BSL defaults are constants, not arbitrary expressions or Python defaults.
+        token = self.current
+        if token.kind in ("+", "-"):
+            self.pos += 1
+            value = self.expect("NUMBER")
+            default = ast.Unary(token, token.kind, ast.Literal(value, value.value))
+        elif token.kind in ("NUMBER", "STRING", "TRUE", "FALSE", "UNDEFINED"):
+            default = self.primary()
+        else:
+            self.fail("Ожидается литерал значения параметра по умолчанию")
+        if self.current.kind not in (",", ")"):
+            self.fail("Значение параметра по умолчанию должно быть литералом")
+        return default
 
     def block(self, endings: set[str]) -> list[ast.Node]:
         statements = []
@@ -234,14 +248,19 @@ class Parser:
 
     def arguments(self) -> list[ast.Node]:
         arguments = []
-        if not self.accept(")"):
-            while True:
-                if self.current.kind in (",", ")"):
-                    self.fail("Пропуск аргументов пока не поддерживается")
+        if self.accept(")"):
+            return arguments
+        while True:
+            if self.current.kind == ",":
+                arguments.append(ast.OmittedArgument(self.current))
+            else:
                 arguments.append(self.expression())
-                if not self.accept(","):
-                    break
-            self.expect(")")
+            if not self.accept(","):
+                break
+            if self.current.kind == ")":
+                self.fail("Запятая в конце списка аргументов пока не поддерживается; "
+                          "опустите конечные необязательные параметры без запятой")
+        self.expect(")")
         return arguments
 
 

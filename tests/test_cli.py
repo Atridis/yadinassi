@@ -50,6 +50,24 @@ class CLITests(unittest.TestCase):
                                    'x = 7;\nP(x)\nx\n/exit\n')
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "8\n", ""))
 
+    def test_default_parameters_command_file_and_multiline_repl(self):
+        code = ('Функция Сумма(Знач а = 2, б = 3) Возврат а + б; '
+                'КонецФункции Сообщить(Сумма()); Сообщить(Сумма(, 5));')
+        result = self.run_cli("-c", code)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "5\n7\n", ""))
+        result = self.run_cli("-", stdin=code)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "5\n7\n", ""))
+        result = self.run_cli(stdin='Function F(x =\n-2)\nReturn x;\nEndFunction\n'
+                                   'F()\nF(\n-2)\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "-2\n-2\n", ""))
+
+    def test_missing_required_argument_has_clean_cli_error(self):
+        code = 'Procedure P(a = 1, b) EndProcedure P()'
+        result = self.run_cli("-c", code)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("<команда>:1:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_cp1251_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "legacy.bsl"
