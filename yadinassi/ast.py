@@ -21,6 +21,11 @@ class Name(Node):
 
 
 @dataclass
+class Group(Node):
+    expression: Node
+
+
+@dataclass
 class Unary(Node):
     operator: str
     operand: Node
@@ -118,8 +123,15 @@ class Var(Node):
 
 
 @dataclass
+class Parameter(Node):
+    name: str
+    by_value: bool
+
+
+@dataclass
 class Routine(Node):
     name: str
+    parameters: list[Parameter]
     is_function: bool
     exported: bool
     body: list[Node]

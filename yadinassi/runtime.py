@@ -1,5 +1,6 @@
 """Tree-walking interpreter with persistent state and injectable builtins."""
 
+from dataclasses import dataclass
 from decimal import Decimal, localcontext
 from typing import Callable
 
@@ -22,6 +23,14 @@ class _Continue(Exception):
 class _Return(Exception):
     def __init__(self, value: object):
         self.value = value
+
+
+@dataclass
+class _Reference:
+    """A caller-owned storage location, captured before entering the callee."""
+
+    get: Callable[[], object]
+    set: Callable[[object], None]
 
 
 class Interpreter:
@@ -101,7 +110,8 @@ class Interpreter:
     def visit_Name(self, node: ast.Name) -> object:
         name = node.name.casefold()
         if self.locals is not None and name in self.locals:
-            return self.locals[name]
+            value = self.locals[name]
+            return value.get() if isinstance(value, _Reference) else value
         if name in self.variables and (self.locals is None or name in self.module_names):
             return self.variables[name]
         if name in self.routines:
@@ -109,6 +119,9 @@ class Interpreter:
         if name in self.functions:
             return self.functions[name]
         raise ValueError(f"Переменная или функция не определена: {node.name}")
+
+    def visit_Group(self, node: ast.Group) -> object:
+        return self.visit(node.expression)
 
     def visit_Unary(self, node: ast.Unary) -> object:
         value = self.visit(node.operand)
@@ -178,16 +191,25 @@ class Interpreter:
         return self.call(node, require_value=True)
 
     def call(self, node: ast.Call, *, require_value: bool) -> object:
-        routine = (self.routines.get(node.callee.name.casefold())
-                   if isinstance(node.callee, ast.Name) else None)
+        callee = self.ungroup(node.callee)
+        routine = (self.routines.get(callee.name.casefold())
+                   if isinstance(callee, ast.Name) else None)
         if routine is not None:
             function = routine
             if require_value and not function.is_function:
                 raise TypeError(f"Процедура не возвращает значение: {function.name}")
-            if node.arguments:
-                raise TypeError(f"{function.name} ожидает 0 аргументов")
+            if len(node.arguments) != len(function.parameters):
+                raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
+                                f"получено {len(node.arguments)}")
+            # Bind left to right in the caller's frame. Val snapshots the value,
+            # while ordinary parameters keep a live alias to assignable storage.
+            bindings = {}
+            for parameter, argument in zip(function.parameters, node.arguments):
+                bindings[parameter.name.casefold()] = (
+                    self.visit(argument) if parameter.by_value else self.argument(argument)
+                )
             previous = self.locals
-            self.locals = {}
+            self.locals = bindings
             try:
                 self.block(function.body)
             except _Return as returned:
@@ -199,6 +221,32 @@ class Interpreter:
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
         return function(*(self.visit(argument) for argument in node.arguments))
+
+    def argument(self, node: ast.Node) -> object:
+        if isinstance(node, ast.Name):
+            name = node.name.casefold()
+            if self.locals is not None and name in self.locals:
+                scope = self.locals
+            elif name in self.variables and (self.locals is None or name in self.module_names):
+                scope = self.variables
+            else:
+                return self.visit(node)
+            if isinstance(scope[name], _Reference):
+                return scope[name]
+            return _Reference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
+        target = self.ungroup(node)
+        if isinstance(target, (ast.Name, ast.Index, ast.Attribute)):
+            raise TypeError("Передача свойства, элемента массива или переменной в скобках "
+                            "по ссылке пока не поддерживается; используйте Знач/Val "
+                            "или отдельную переменную")
+        # Literals and computed expressions have no caller storage to rebind.
+        return self.visit(node)
+
+    @staticmethod
+    def ungroup(node: ast.Node) -> ast.Node:
+        while isinstance(node, ast.Group):
+            node = node.expression
+        return node
 
     def visit_New(self, node: ast.New) -> object:
         factory = self.types.get(node.name.casefold())
@@ -220,6 +268,8 @@ class Interpreter:
         name = name.casefold()
         if self.locals is None or (name in self.module_names and name not in self.locals):
             self.variables[name] = value
+        elif isinstance(self.locals.get(name), _Reference):
+            self.locals[name].set(value)
         else:
             self.locals[name] = value
 
@@ -231,9 +281,10 @@ class Interpreter:
         raise _Return(self.visit(node.value) if node.value is not None else None)
 
     def visit_ExpressionStatement(self, node: ast.ExpressionStatement) -> object:
-        if isinstance(node.expression, ast.Call):
+        expression = self.ungroup(node.expression)
+        if isinstance(expression, ast.Call):
             # A procedure is allowed only when its result is discarded.
-            return self.call(node.expression, require_value=False)
+            return self.call(expression, require_value=False)
         return self.visit(node.expression)
 
     def visit_Var(self, node: ast.Var) -> None:

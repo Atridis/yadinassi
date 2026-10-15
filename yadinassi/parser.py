@@ -17,6 +17,7 @@ class Parser:
         self.pos = 0
         self.loop_depth = 0
         self.routine_kind: str | None = None
+        self.parameter_names: set[str] = set()
 
     @property
     def current(self) -> Token:
@@ -55,17 +56,17 @@ class Parser:
                     self.fail(f"Повторное объявление процедуры или функции: {name}")
                 routines.add(name.casefold())
                 self.expect("(")
-                if self.current.kind not in (")", "EOF"):
-                    self.fail("Параметры процедур и функций пока не поддерживаются")
-                self.expect(")")
+                parameters = self.parameters()
                 exported = bool(self.accept("EXPORT"))
                 self.routine_kind = kind
+                self.parameter_names = {parameter.name.casefold() for parameter in parameters}
                 try:
                     body = self.block({"END" + kind})
                     self.expect("END" + kind)
                 finally:
                     self.routine_kind = None
-                statements.append(ast.Routine(token, name, kind == "FUNCTION", exported, body))
+                    self.parameter_names = set()
+                statements.append(ast.Routine(token, name, parameters, kind == "FUNCTION", exported, body))
                 # Routine brackets are not statements and need no semicolon.
                 continue
             statements.append(self.statement())
@@ -73,6 +74,25 @@ class Parser:
                 self.fail("Ожидается ';' между операторами")
         self.expect("EOF")
         return statements
+
+    def parameters(self) -> list[ast.Parameter]:
+        parameters = []
+        names = set()
+        if self.accept(")"):
+            return parameters
+        while True:
+            by_value = bool(self.accept("VAL"))
+            token = self.expect("IDENT")
+            name = token.value
+            if name.casefold() in names:
+                self.fail(f"Повторное объявление параметра: {name}")
+            names.add(name.casefold())
+            parameters.append(ast.Parameter(token, name, by_value))
+            if self.current.kind == "=":
+                self.fail("Значения параметров по умолчанию пока не поддерживаются")
+            if not self.accept(","):
+                self.expect(")")
+                return parameters
 
     def block(self, endings: set[str]) -> list[ast.Node]:
         statements = []
@@ -132,6 +152,9 @@ class Parser:
             names = [self.expect("IDENT").value]
             while self.accept(","):
                 names.append(self.expect("IDENT").value)
+            for name in names:
+                if name.casefold() in self.parameter_names:
+                    self.fail(f"Переменная уже объявлена как параметр: {name}")
             return ast.Var(token, names)
         # Assignment is a statement, while '=' in an expression is comparison.
         if token.kind == "IDENT":
@@ -189,7 +212,7 @@ class Parser:
         if self.accept("("):
             value = self.expression()
             self.expect(")")
-            return value
+            return ast.Group(token, value)
         if self.accept("NEW"):
             name = self.expect("IDENT").value
             arguments = self.arguments() if self.accept("(") else []
@@ -212,9 +235,12 @@ class Parser:
     def arguments(self) -> list[ast.Node]:
         arguments = []
         if not self.accept(")"):
-            arguments.append(self.expression())
-            while self.accept(","):
+            while True:
+                if self.current.kind in (",", ")"):
+                    self.fail("Пропуск аргументов пока не поддерживается")
                 arguments.append(self.expression())
+                if not self.accept(","):
+                    break
             self.expect(")")
         return arguments
 

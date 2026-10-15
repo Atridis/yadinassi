@@ -36,6 +36,7 @@ for kind, aliases in {
     "RETURN": ("Возврат", "Return"),
     "EXPORT": ("Экспорт", "Export"),
     "VAR": ("Перем", "Var"),
+    "VAL": ("Знач", "Val"),
 }.items():
     KEYWORDS.update((alias.casefold(), kind) for alias in aliases)
 
