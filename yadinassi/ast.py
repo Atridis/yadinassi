@@ -16,6 +16,11 @@ class Literal(Node):
 
 
 @dataclass
+class OmittedArgument(Node):
+    pass
+
+
+@dataclass
 class Name(Node):
     name: str
 
@@ -126,6 +131,7 @@ class Var(Node):
 class Parameter(Node):
     name: str
     by_value: bool
+    default: Node | None = None
 
 
 @dataclass
