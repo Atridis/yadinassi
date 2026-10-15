@@ -146,3 +146,8 @@ class Routine(Node):
 @dataclass
 class Return(Node):
     value: Node | None
+
+
+@dataclass
+class Import(Node):
+    filename: str

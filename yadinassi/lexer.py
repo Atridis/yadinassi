@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
+import re
 
 from .errors import BSLError, IncompleteInput
 
@@ -84,7 +85,26 @@ class Lexer:
                     self.advance()
                 continue
             line, column = self.line, self.column
-            if char.isalpha() or char == "_":
+            if char == "#":
+                # A directive owns its line; comments and strings are lexed separately.
+                if self.text[self.text.rfind("\n", 0, self.pos) + 1:self.pos].strip():
+                    raise BSLError("Директива импорта должна начинать строку",
+                                   self.source, line, column)
+                start = self.pos
+                while self.peek() and self.peek() not in "\r\n":
+                    self.advance()
+                directive = self.text[start:self.pos].split("//", 1)[0].strip()
+                match = re.fullmatch(r"#\s*Импорт\s+(\w+\.bsl)\s*", directive,
+                                     re.IGNORECASE)
+                if match is None or not (match.group(1)[0].isalpha() or match.group(1)[0] == "_"):
+                    raise BSLError("Поддерживается только # Импорт ИмяМодуля.bsl; "
+                                   "каталоги, пути и составные имена пока не поддерживаются",
+                                   self.source, line, column)
+                value, kind = match.group(1), "IMPORT"
+                if value[:-4].casefold() in KEYWORDS:
+                    raise BSLError("Имя модуля не может быть ключевым словом",
+                                   self.source, line, column)
+            elif char.isalpha() or char == "_":
                 start = self.pos
                 while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
                     self.advance()

@@ -24,7 +24,14 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="yadinassi-smoke-") as temporary:
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "code_samples" / "basic.bsl").read_bytes())
+        module = Path(temporary) / "Побочное.bsl"
+        module.write_text('Функция ПолучитьСумму(А, Б = 2) Экспорт\n'
+                          'Возврат А + Б;\nКонецФункции\n', encoding="utf-8-sig")
+        importer = Path(temporary) / "Основное.bsl"
+        importer.write_text('# Импорт Побочное.bsl\n'
+                            'Сообщить(Побочное.ПолучитьСумму(1));', encoding="utf-8")
         cases = [
+            ([str(importer)], None, "3\n", 0),
             ([str(sample)], None, expected, 0),
             (["-c", 'Сообщить("Привет")'], None, "Привет\n", 0),
             (["-с", 'Сообщить("Кириллица")'], None, "Кириллица\n", 0),
@@ -46,7 +53,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: file, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: file, import, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":
