@@ -29,6 +29,12 @@ for kind, aliases in {
     "AND": ("И", "And"),
     "OR": ("Или", "Or"),
     "NOT": ("Не", "Not"),
+    "FUNCTION": ("Функция", "Function"),
+    "ENDFUNCTION": ("КонецФункции", "EndFunction"),
+    "PROCEDURE": ("Процедура", "Procedure"),
+    "ENDPROCEDURE": ("КонецПроцедуры", "EndProcedure"),
+    "RETURN": ("Возврат", "Return"),
+    "EXPORT": ("Экспорт", "Export"),
     "VAR": ("Перем", "Var"),
 }.items():
     KEYWORDS.update((alias.casefold(), kind) for alias in aliases)

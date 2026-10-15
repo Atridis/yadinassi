@@ -115,3 +115,16 @@ class Continue(Node):
 @dataclass
 class Var(Node):
     names: list[str]
+
+
+@dataclass
+class Routine(Node):
+    name: str
+    is_function: bool
+    exported: bool
+    body: list[Node]
+
+
+@dataclass
+class Return(Node):
+    value: Node | None

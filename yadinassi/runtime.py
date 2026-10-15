@@ -19,10 +19,18 @@ class _Continue(Exception):
     pass
 
 
+class _Return(Exception):
+    def __init__(self, value: object):
+        self.value = value
+
+
 class Interpreter:
     def __init__(self, output: Callable[[str], None] = print):
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
+        self.routines: dict[str, ast.Routine] = {}
+        self.module_names: set[str] = set()
+        self.locals: dict[str, object] | None = None
         self.types: dict[str, HostFunction] = {}
         self.output = output
         self.register_function("Сообщить", self._message, "Message")
@@ -58,6 +66,14 @@ class Interpreter:
         # Keep decimal arithmetic independent of the embedding application's context.
         with localcontext() as context:
             context.prec = 38
+            # Register module declarations before executing any module statements.
+            for node in program:
+                if isinstance(node, ast.Routine):
+                    self.routines[node.name.casefold()] = node
+                elif isinstance(node, ast.Var):
+                    for name in node.names:
+                        self.module_names.add(name.casefold())
+                        self.variables.setdefault(name.casefold(), None)
             return self.block(program)
 
     def block(self, statements: list[ast.Node]) -> object:
@@ -84,8 +100,12 @@ class Interpreter:
 
     def visit_Name(self, node: ast.Name) -> object:
         name = node.name.casefold()
-        if name in self.variables:
+        if self.locals is not None and name in self.locals:
+            return self.locals[name]
+        if name in self.variables and (self.locals is None or name in self.module_names):
             return self.variables[name]
+        if name in self.routines:
+            raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
         raise ValueError(f"Переменная или функция не определена: {node.name}")
@@ -155,6 +175,26 @@ class Interpreter:
         return value.get(self.visit(node.index))
 
     def visit_Call(self, node: ast.Call) -> object:
+        return self.call(node, require_value=True)
+
+    def call(self, node: ast.Call, *, require_value: bool) -> object:
+        routine = (self.routines.get(node.callee.name.casefold())
+                   if isinstance(node.callee, ast.Name) else None)
+        if routine is not None:
+            function = routine
+            if require_value and not function.is_function:
+                raise TypeError(f"Процедура не возвращает значение: {function.name}")
+            if node.arguments:
+                raise TypeError(f"{function.name} ожидает 0 аргументов")
+            previous = self.locals
+            self.locals = {}
+            try:
+                self.block(function.body)
+            except _Return as returned:
+                return returned.value
+            finally:
+                self.locals = previous
+            return None
         function = self.visit(node.callee)
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
@@ -168,7 +208,7 @@ class Interpreter:
 
     def visit_Assign(self, node: ast.Assign) -> None:
         if isinstance(node.target, ast.Name):
-            self.variables[node.target.name.casefold()] = self.visit(node.value)
+            self.set_variable(node.target.name, self.visit(node.value))
         else:
             value = self.visit(node.target.object)
             if not isinstance(value, BSLArray):
@@ -176,12 +216,29 @@ class Interpreter:
             index = self.visit(node.target.index)
             value.set(index, self.visit(node.value))
 
+    def set_variable(self, name: str, value: object) -> None:
+        name = name.casefold()
+        if self.locals is None or (name in self.module_names and name not in self.locals):
+            self.variables[name] = value
+        else:
+            self.locals[name] = value
+
+    def visit_Routine(self, node: ast.Routine) -> None:
+        # Declarations are registered by execute_program, never executed in place.
+        pass
+
+    def visit_Return(self, node: ast.Return) -> None:
+        raise _Return(self.visit(node.value) if node.value is not None else None)
+
     def visit_ExpressionStatement(self, node: ast.ExpressionStatement) -> object:
+        if isinstance(node.expression, ast.Call):
+            # A procedure is allowed only when its result is discarded.
+            return self.call(node.expression, require_value=False)
         return self.visit(node.expression)
 
     def visit_Var(self, node: ast.Var) -> None:
         for name in node.names:
-            self.variables.setdefault(name.casefold(), None)
+            (self.variables if self.locals is None else self.locals).setdefault(name.casefold(), None)
 
     def visit_If(self, node: ast.If) -> None:
         for condition, body in node.branches:
@@ -203,18 +260,18 @@ class Interpreter:
         start = require_number(self.visit(node.start))
         end = require_number(self.visit(node.end))
         name = node.name.casefold()
-        self.variables[name] = start
-        while require_number(self.variables[name]) <= end:
+        self.set_variable(name, start)
+        while require_number(self.visit_Name(ast.Name(node.token, name))) <= end:
             if not self.iteration(node.body):
                 break
-            self.variables[name] = require_number(self.variables[name]) + Decimal(1)
+            self.set_variable(name, require_number(self.visit_Name(ast.Name(node.token, name))) + Decimal(1))
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = self.visit(node.collection)
         if not isinstance(collection, BSLArray):
             raise TypeError("Для Каждого ожидает массив")
         for item in collection:
-            self.variables[node.name.casefold()] = item
+            self.set_variable(node.name, item)
             if not self.iteration(node.body):
                 break
 

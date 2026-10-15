@@ -34,6 +34,13 @@ class CLITests(unittest.TestCase):
         result = self.run_cli(stdin='?(\nЛожь,\n1 / 0,\n42)\n/exit\n')
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
 
+    def test_routine_command_and_multiline_repl(self):
+        code = 'Функция Ответ() Возврат 42; КонецФункции Сообщить(Ответ());'
+        result = self.run_cli("-c", code)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+        result = self.run_cli(stdin='Function F()\nReturn 42;\nEndFunction\nF()\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+
     def test_cp1251_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "legacy.bsl"
