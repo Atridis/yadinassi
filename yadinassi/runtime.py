@@ -48,6 +48,14 @@ class _Module:
         return routine
 
 
+class _Namespace:
+    """A directory's explicitly imported children, never arbitrary Python members."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.members: dict[str, _Module | _Namespace] = {}
+
+
 class Interpreter:
     def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig"):
         self.variables: dict[str, object] = {}
@@ -58,7 +66,7 @@ class Interpreter:
         self.types: dict[str, HostFunction] = {}
         self.output = output
         self.encoding = encoding
-        self.imports: dict[str, _Module] = {}
+        self.imports: dict[str, _Module | _Namespace] = {}
         self._module_cache: dict[Path, _Module] = {}
         self._loading: list[Path] = []
         self.register_function("Сообщить", self._message, "Message")
@@ -110,7 +118,7 @@ class Interpreter:
             context.prec = 38
             # Reserve import names before any module initialization effects.
             names = set(self.imports)
-            names.update(Path(node.filename).stem.casefold()
+            names.update(node.filename.split(".")[0].casefold()
                          for node in program if isinstance(node, ast.Import))
             for node in program:
                 declared = ([node.name] if isinstance(node, ast.Routine) else
@@ -245,11 +253,10 @@ class Interpreter:
                    if isinstance(callee, ast.Name) else None)
         owner = self
         if isinstance(callee, ast.Attribute):
-            receiver = self.ungroup(callee.object)
-            if (isinstance(receiver, ast.Name)
-                    and receiver.name.casefold() in self.imports
-                    and (self.locals is None or receiver.name.casefold() not in self.locals)):
-                module = self.imports[receiver.name.casefold()]
+            module = self.import_receiver(callee.object)
+            if module is not None:
+                if not isinstance(module, _Module):
+                    raise TypeError("Пространство каталога не содержит вызываемых подпрограмм")
                 owner = module.interpreter
                 routine = module.routine(callee.name)
         if routine is not None:
@@ -259,6 +266,26 @@ class Interpreter:
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
         return function(*(self.visit(argument) for argument in node.arguments))
+
+    def import_receiver(self, node: ast.Node) -> _Module | _Namespace | None:
+        """Resolve only explicit namespace syntax; ordinary values keep normal dispatch."""
+        node = self.ungroup(node)
+        if isinstance(node, ast.Name):
+            name = node.name.casefold()
+            if self.locals is not None and name in self.locals:
+                return None
+            return self.imports.get(name)
+        if isinstance(node, ast.Attribute):
+            parent = self.import_receiver(node.object)
+            if parent is None:
+                return None
+            if not isinstance(parent, _Namespace):
+                raise TypeError("Вложенное имя допустимо только для пространства каталога")
+            child = parent.members.get(node.name.casefold())
+            if child is None:
+                raise ValueError(f"Импортированное имя не найдено: {node.name}")
+            return child
+        return None
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
@@ -350,19 +377,38 @@ class Interpreter:
             self.locals[name] = value
 
     def visit_Import(self, node: ast.Import) -> None:
-        name = Path(node.filename).stem.casefold()
+        name = node.filename.split(".")[0].casefold()
         if name in self.variables or name in self.routines or name in self.functions:
             raise ValueError(f"Имя импорта уже занято: {name}")
         if node.token.source.startswith("<"):
             raise ValueError("Для импорта нужен путь исходного файла; "
                              "импорт из команды и консоли пока не поддерживается")
-        path = Path(node.token.source).parent / node.filename
+        parts = node.filename[:-4].split(".")
+        relative = Path(*parts[:-1], parts[-1] + node.filename[-4:])
+        path = Path(node.token.source).parent / relative
         try:
-            path = (Path(node.token.source).resolve().parent / node.filename).resolve()
+            base = Path(node.token.source).resolve().parent
+            path = (base / relative).resolve()
+            directories = [(base / Path(*parts[:index + 1])).resolve()
+                           for index in range(len(parts) - 1)]
         except (OSError, RuntimeError) as error:
             raise ValueError(f"Не удалось разрешить путь модуля {path}: {error}") from None
-        if name in self.imports and self.imports[name].path != path:
-            raise ValueError(f"Имя импорта уже занято другим модулем: {name}")
+        # Validate the entire binding before loading code or changing namespaces.
+        members = self.imports
+        pending = []
+        for index, part in enumerate(parts):
+            key = part.casefold()
+            last = index == len(parts) - 1
+            target = path if last else directories[index]
+            existing = members.get(key)
+            if existing is not None:
+                if (isinstance(existing, _Module) != last or existing.path != target):
+                    raise ValueError(f"Имя импорта уже занято другим модулем или каталогом: {part}")
+            elif not last:
+                existing = _Namespace(target)
+                pending.append((members, key, existing))
+            if not last:
+                members = existing.members
         if path in self._loading:
             chain = " -> ".join(str(item) for item in [*self._loading, path])
             raise ValueError(f"Циклический импорт: {chain}")
@@ -380,7 +426,9 @@ class Interpreter:
             child.execute(text, str(path))
             module = _Module(child, path)
             self._module_cache[path] = module
-        self.imports[name] = module
+        for parent, key, namespace in pending:
+            parent[key] = namespace
+        members[parts[-1].casefold()] = module
 
     def visit_Routine(self, node: ast.Routine) -> None:
         # Declarations are registered by execute_program, never executed in place.

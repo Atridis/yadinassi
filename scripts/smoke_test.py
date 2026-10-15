@@ -30,8 +30,24 @@ def main() -> None:
         importer = Path(temporary) / "Основное.bsl"
         importer.write_text('# Импорт Побочное.bsl\n'
                             'Сообщить(Побочное.ПолучитьСумму(1));', encoding="utf-8")
+        project = Path(temporary) / "project"
+        nested = project / "Справочник"
+        deeper = nested / "Вложенное"
+        deeper.mkdir(parents=True)
+        (nested / module.name).write_bytes(module.read_bytes())
+        (deeper / "Другое.bsl").write_text(
+            'Функция Ответ() Экспорт Возврат "вложенный"; КонецФункции',
+            encoding="utf-8-sig")
+        nested_importer = project / "Основное.bsl"
+        nested_importer.write_text(
+            '# Импорт Справочник.Побочное.bsl\n'
+            '# Импорт Справочник.Вложенное.Другое.bsl\n'
+            'Сообщить(справочник.ПОБОЧНОЕ.получитьсумму(1, 2));\n'
+            'Сообщить(СПРАВОЧНИК.вложенное.ДРУГОЕ.ответ());', encoding="utf-8-sig")
         cases = [
             ([str(importer)], None, "3\n", 0),
+            ([str(nested_importer)], None, "3\nвложенный\n", 0),
+            ([str(Path("project") / nested_importer.name)], None, "3\nвложенный\n", 0),
             ([str(sample)], None, expected, 0),
             (["-c", 'Сообщить("Привет")'], None, "Привет\n", 0),
             (["-с", 'Сообщить("Кириллица")'], None, "Кириллица\n", 0),
@@ -53,7 +69,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: file, import, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: file, sibling/nested imports, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":
