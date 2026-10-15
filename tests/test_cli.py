@@ -64,6 +64,48 @@ class CLITests(unittest.TestCase):
                                    'F()\nF(\n-2)\n/exit\n')
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "-2\n-2\n", ""))
 
+    def test_client_compilation_command_stdin_and_repl(self):
+        code = ('#If Server Then\n&AtServer\nunsupported !\n#Else\n'
+                '&НаКлиенте\nФункция Ответ() Возврат 42; КонецФункции\n'
+                'Сообщить(Ответ());\n#EndIf\n')
+        for arguments, stdin in [(('-c', code), None), (('-',), code), ((), code + '/exit\n')]:
+            with self.subTest(arguments=arguments):
+                result = self.run_cli(*arguments, stdin=stdin)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+        result = self.run_cli(stdin='&AtClient\nFunction F()\nReturn 42;\nEndFunction\nF()\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+
+    def test_client_compilation_imported_file_from_unrelated_cwd(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / 'project'
+            project.mkdir()
+            (project / 'Side.bsl').write_text(
+                '#If Client Then\n&AtClient\nFunction F() Export Return 42; EndFunction\n'
+                '#Else\n&AtServer\nunsupported !\n#EndIf', encoding='utf-8')
+            main = project / 'Main.bsl'
+            main.write_text('#If AtClient Then\n# Импорт Side.bsl\n#Else\n'
+                            '# Импорт Missing.bsl\n#EndIf\nMessage(Side.F());', encoding='utf-8-sig')
+            result = self.run_cli(str(main), cwd=root)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+
+    def test_client_compilation_clean_diagnostics_and_unfinished_repl(self):
+        cases = [('&AtServer\nProcedure P() EndProcedure', 'только клиентский контекст'),
+                 ('#If Client Then\nMessage(1);', '#КонецЕсли'),
+                 ('#Else', 'соответствующей #Если')]
+        for code, message in cases:
+            with self.subTest(code=code):
+                result = self.run_cli('-c', code)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(message, result.stderr)
+                self.assertIn('<команда>:', result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertEqual(result.stdout, '')
+        result = self.run_cli(stdin='#If Client Then\nMessage(1);\n')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        self.assertIn('#КонецЕсли', result.stderr)
+
     def test_missing_required_argument_has_clean_cli_error(self):
         code = 'Procedure P(a = 1, b) EndProcedure P()'
         result = self.run_cli("-c", code)

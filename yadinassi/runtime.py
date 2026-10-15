@@ -77,6 +77,11 @@ class Interpreter:
         self.register_function("СтрДлина", self._string_length, "StrLen")
         self.register_type("Массив", BSLArray, "Array")
 
+    @property
+    def execution_context(self) -> str:
+        """Standalone root code, routines and imports run in the client context only."""
+        return "client"
+
     def register_function(self, name: str, function: Callable, *aliases: str) -> None:
         wrapper = HostFunction(name, function)
         for alias in (name, *aliases):
@@ -290,6 +295,8 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
+        if function.execution_context != owner.execution_context:
+            raise ValueError("Подпрограмма требует неподдерживаемый контекст исполнения")
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
         required = max((index + 1 for index, parameter in enumerate(function.parameters)

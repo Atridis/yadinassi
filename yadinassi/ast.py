@@ -141,6 +141,7 @@ class Routine(Node):
     is_function: bool
     exported: bool
     body: list[Node]
+    execution_context: str = "client"
 
 
 @dataclass
