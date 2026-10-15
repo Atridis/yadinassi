@@ -94,15 +94,15 @@ class Lexer:
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 directive = self.text[start:self.pos].split("//", 1)[0].strip()
-                match = re.fullmatch(r"#\s*Импорт\s+(\w+(?:\.\w+)*\.bsl)\s*", directive,
+                match = re.fullmatch(r"#\s*Импорт\s+(\w+(?:\.\w+)*)\s*", directive,
                                      re.IGNORECASE)
                 if match is None:
                     raise BSLError("Ожидается # Импорт ИмяМодуля.bsl или "
-                                   "# Импорт Каталог.ИмяМодуля.bsl; "
-                                   "импорт целого каталога и пути с разделителями пока не поддерживаются",
+                                   "# Импорт Каталог; пути с разделителями не поддерживаются",
                                    self.source, line, column)
                 value, kind = match.group(1), "IMPORT"
-                for part in value[:-4].split("."):
+                parts = value[:-4] if value.casefold().endswith(".bsl") else value
+                for part in parts.split("."):
                     if not (part[0].isalpha() or part[0] == "_"):
                         raise BSLError("Каждая часть имени импорта должна быть идентификатором",
                                        self.source, line, column)

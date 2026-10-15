@@ -142,9 +142,27 @@ class CLITests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
                                      (0, "3\nвложенный\n", ""))
 
+    def test_directory_import_from_other_working_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            project = directory / "project"
+            package = project / "Справочник"
+            package.mkdir(parents=True)
+            (package / "Побочное.bsl").write_text(
+                'Функция ПолучитьСумму(А, Б) Экспорт Возврат А + Б; КонецФункции',
+                encoding="cp1251")
+            main = project / "Основное.bsl"
+            main.write_text('# Импорт Справочник\n'
+                            'Сообщить(Справочник.Побочное.ПолучитьСумму(1, 2));',
+                            encoding="cp1251")
+            for path in (main, Path("project") / main.name):
+                with self.subTest(path=path):
+                    result = self.run_cli("--encoding", "cp1251", str(path), cwd=directory)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "3\n", ""))
+
     def test_nested_import_errors_have_clean_source_aware_diagnostics(self):
         cases = [('# Импорт Справочник.Нет.bsl\n', 'Основное.bsl:1:'),
-                 ('# Импорт Справочник\n', 'Основное.bsl:1:'),
+                 ('# Импорт НетКаталога\n', 'Основное.bsl:1:'),
                  ('# Импорт Справочник.Побочное.bsl\n'
                   'Сообщить(Справочник.Побочное.Ошибка());', 'Побочное.bsl:2:')]
         for source, location in cases:

@@ -44,7 +44,15 @@ def main() -> None:
             '# Импорт Справочник.Вложенное.Другое.bsl\n'
             'Сообщить(справочник.ПОБОЧНОЕ.получитьсумму(1, 2));\n'
             'Сообщить(СПРАВОЧНИК.вложенное.ДРУГОЕ.ответ());', encoding="utf-8-sig")
+        directory_importer = project / "Каталог.bsl"
+        directory_importer.write_text(
+            '# Импорт Справочник\n'
+            '# Импорт Справочник.Вложенное\n'
+            'Сообщить(Справочник.Побочное.ПолучитьСумму(1, 2));\n'
+            'Сообщить(Справочник.Вложенное.Другое.Ответ());', encoding="utf-8")
         cases = [
+            ([str(directory_importer)], None, "3\nвложенный\n", 0),
+
             ([str(importer)], None, "3\n", 0),
             ([str(nested_importer)], None, "3\nвложенный\n", 0),
             ([str(Path("project") / nested_importer.name)], None, "3\nвложенный\n", 0),
@@ -69,7 +77,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: file, sibling/nested imports, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: file, sibling/nested/directory imports, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":

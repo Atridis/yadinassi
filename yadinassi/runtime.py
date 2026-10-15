@@ -8,6 +8,7 @@ from typing import Callable
 from . import ast
 from .errors import BSLError
 from .parser import parse
+from .lexer import KEYWORDS
 from .values import (
     BSLArray, BSLObject, HostFunction, boolean, equal, number, require_number, to_string,
 )
@@ -383,32 +384,66 @@ class Interpreter:
         if node.token.source.startswith("<"):
             raise ValueError("Для импорта нужен путь исходного файла; "
                              "импорт из команды и консоли пока не поддерживается")
-        parts = node.filename[:-4].split(".")
-        relative = Path(*parts[:-1], parts[-1] + node.filename[-4:])
+        is_file = node.filename.casefold().endswith(".bsl")
+        parts = (node.filename[:-4] if is_file else node.filename).split(".")
+        relative = (Path(*parts[:-1], parts[-1] + node.filename[-4:])
+                    if is_file else Path(*parts))
         path = Path(node.token.source).parent / relative
         try:
             base = Path(node.token.source).resolve().parent
             path = (base / relative).resolve()
             directories = [(base / Path(*parts[:index + 1])).resolve()
-                           for index in range(len(parts) - 1)]
+                           for index in range(len(parts) - int(is_file))]
+            children = []
+            if not is_file:
+                for child in sorted(path.iterdir(), key=lambda item: (item.name.casefold(), item.name)):
+                    if child.suffix.casefold() != ".bsl" or not child.is_file():
+                        continue
+                    stem = child.stem
+                    if (not stem or not (stem[0].isalpha() or stem[0] == "_")
+                            or not all(char.isalnum() or char == "_" for char in stem)
+                            or stem.casefold() in KEYWORDS):
+                        raise ValueError(f"Имя модуля должно быть идентификатором: {child.name}")
+                    children.append((stem, child.resolve()))
         except (OSError, RuntimeError) as error:
-            raise ValueError(f"Не удалось разрешить путь модуля {path}: {error}") from None
-        # Validate the entire binding before loading code or changing namespaces.
+            raise ValueError(f"Не удалось прочитать путь импорта {path}: {error}") from None
+        # Stage every namespace and check every collision before loading any code.
         members = self.imports
         pending = []
         for index, part in enumerate(parts):
             key = part.casefold()
-            last = index == len(parts) - 1
-            target = path if last else directories[index]
+            module_leaf = is_file and index == len(parts) - 1
+            target = path if module_leaf else directories[index]
             existing = members.get(key)
             if existing is not None:
-                if (isinstance(existing, _Module) != last or existing.path != target):
-                    raise ValueError(f"Имя импорта уже занято другим модулем или каталогом: {part}")
-            elif not last:
+                self._check_import_binding(existing, target, module_leaf, part)
+            elif not module_leaf:
                 existing = _Namespace(target)
                 pending.append((members, key, existing))
-            if not last:
+            if not module_leaf:
                 members = existing.members
+        if is_file:
+            children = [(parts[-1], path)]
+        seen = set()
+        for name, target in children:
+            key = name.casefold()
+            if key in seen:
+                raise ValueError(f"Имя импорта конфликтует с другим файлом: {name}")
+            seen.add(key)
+            if key in members:
+                self._check_import_binding(members[key], target, True, name)
+        loaded = [(name.casefold(), self._load_module(target)) for name, target in children]
+        for parent, key, namespace in pending:
+            parent[key] = namespace
+        members.update(loaded)
+
+    @staticmethod
+    def _check_import_binding(existing: _Module | _Namespace, path: Path,
+                              is_module: bool, name: str) -> None:
+        if isinstance(existing, _Module) != is_module or existing.path != path:
+            raise ValueError(f"Имя импорта уже занято другим модулем или каталогом: {name}")
+
+    def _load_module(self, path: Path) -> _Module:
         if path in self._loading:
             chain = " -> ".join(str(item) for item in [*self._loading, path])
             raise ValueError(f"Циклический импорт: {chain}")
@@ -426,9 +461,7 @@ class Interpreter:
             child.execute(text, str(path))
             module = _Module(child, path)
             self._module_cache[path] = module
-        for parent, key, namespace in pending:
-            parent[key] = namespace
-        members[parts[-1].casefold()] = module
+        return module
 
     def visit_Routine(self, node: ast.Routine) -> None:
         # Declarations are registered by execute_program, never executed in place.

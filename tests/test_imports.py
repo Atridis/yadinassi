@@ -1,6 +1,9 @@
 """Sibling-file imports, export boundaries, and cross-module BSL calls."""
 from decimal import Decimal
 from pathlib import Path
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -374,8 +377,8 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(self.output, [])
 
     def test_unsupported_directive_forms_fail_before_statement_effects(self):
-        directives = ['# Import Side.bsl', '# Импорт "Side.bsl"', '# Импорт Side',
-                      '# Импорт Side.txt', '# Импорт Side..part.bsl', '# Импорт ./Side.bsl',
+        directives = ['# Import Side.bsl', '# Импорт "Side.bsl"', '# Импорт .Side',
+                      '# Импорт Side..part.bsl', '# Импорт ./Side.bsl',
                       '# Импорт ../Side.bsl', '# Импорт folder/Side.bsl',
                       '# Импорт folder\\Side.bsl', '# Импорт /tmp/Side.bsl',
                       '# Импорт C:\\Side.bsl', '# Импорт Side-name.bsl',
@@ -642,6 +645,200 @@ class ImportTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(BSLError):
                 self.execute(f'Message("bad");\n# Импорт {name}.bsl\n')
         self.assertEqual(self.output, [])
+
+    def test_directory_root_collisions_fail_before_initialization(self):
+        self.write('Package/Side.bsl', 'Message("bad");')
+        for declaration in ['Var Package;', 'Function Package() Return 1; EndFunction']:
+            with self.subTest(declaration=declaration), self.assertRaisesRegex(BSLError, 'конфликт'):
+                self.execute('# Импорт Package\n' + declaration)
+        for declaration in ['Package = 1;', 'Var Package;']:
+            vm = Interpreter(output=self.output.append)
+            vm.execute(declaration)
+            with self.assertRaisesRegex(BSLError, 'занято'):
+                self.execute('# Импорт Package\n', vm=vm)
+        self.write('Message/Side.bsl', 'Message("bad");')
+        with self.assertRaisesRegex(BSLError, 'занято'):
+            self.execute('# Импорт Message\n')
+        self.assertEqual(self.output, [])
+
+    def test_directory_import_russian_example_and_dotted_directory(self):
+        self.write('Библиотека/Справочник/Побочное.BSL',
+                   'Функция ПолучитьСумму(А, Б = 2) Экспорт Возврат А + Б; КонецФункции')
+        directive = parse('\n  #иМпОрТ Библиотека.Справочник // ok\n', str(self.main))[0]
+        self.assertEqual(directive.filename, 'Библиотека.Справочник')
+        self.assertEqual((directive.token.line, directive.token.column), (2, 3))
+        self.assertEqual(self.execute('# Импорт Библиотека.Справочник\n'
+                                     'библиотека.СПРАВОЧНИК.побочное.ПолучитьСумму(1)'), Decimal(3))
+
+    def test_directory_import_is_nonrecursive_and_ordered(self):
+        for name in ['z', 'B', 'a']:
+            self.write(f'Package/{name}.bsl', f'Message("{name}");')
+        self.write('Package/Other.txt', '@')
+        self.write('Package/Sub/Bad.bsl', '@')
+        (self.directory / 'Package/Directory.bsl').mkdir()
+        self.execute('# Импорт Package\nMessage("main");')
+        self.assertEqual(self.output, ['a', 'B', 'z', 'main'])
+        for expression in ['Package.Sub.Bad.F()', 'Package.Other.F()', 'Package.Directory.F()']:
+            with self.subTest(expression=expression), self.assertRaises(BSLError):
+                self.vm.execute(expression)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'Named pipes are unavailable on this host')
+    def test_directory_ignores_nonregular_bsl_entries_without_blocking(self):
+        self.write('Package/Side.bsl', 'Function F() Export Return 42; EndFunction')
+        os.mkfifo(self.directory / 'Package/Pipe.bsl')
+        self.main.write_text('# Импорт Package\nMessage(Package.Side.F());', encoding='utf-8')
+        result = subprocess.run([sys.executable, '-m', 'yadinassi', str(self.main)],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '42\n', ''))
+
+    def test_directory_and_explicit_imports_are_idempotent_in_both_orders(self):
+        self.write('Package/Side.bsl', 'Message("init"); Var n; n = 0; '
+                   'Function Next() Export n = n + 1; Return n; EndFunction')
+        for first, second in [('Package', 'Package.Side.bsl'), ('Package.Side.bsl', 'Package')]:
+            with self.subTest(first=first):
+                self.output.clear()
+                vm = Interpreter(output=self.output.append)
+                self.execute(f'# Импорт {first}\n# Импорт {second}\n# Импорт Package\n'
+                             'Message(Package.Side.Next());', vm=vm)
+                self.execute('# Импорт Package\nMessage(Package.Side.Next());', vm=vm)
+                self.assertEqual(self.output, ['init', '1', '2'])
+
+    def test_directory_transitive_imports_share_cache(self):
+        self.write('Package/A.bsl', '# Импорт Z.bsl\n'
+                   'Function Next() Export Return Z.Next(); EndFunction')
+        self.write('Package/Z.bsl', 'Message("init"); Var n; n = 0; '
+                   'Function Next() Export n = n + 1; Return n; EndFunction')
+        self.execute('# Импорт Package\nMessage(Package.A.Next()); Message(Package.Z.Next());')
+        self.assertEqual(self.output, ['init', '1', '2'])
+
+    def test_empty_directory_is_valid_read_only_namespace_and_can_gain_files(self):
+        (self.directory / 'Empty').mkdir()
+        self.execute('# Импорт Empty\n# Импорт Empty\n')
+        for code in ['Empty', 'Empty = 1', 'Var Empty;', 'Empty.F()']:
+            with self.subTest(code=code), self.assertRaises(BSLError):
+                self.vm.execute(code)
+        self.write('Empty/Side.bsl', 'Function F() Export Return 42; EndFunction')
+        self.assertEqual(self.execute('# Импорт Empty\nEmpty.Side.F()'), Decimal(42))
+
+    def test_missing_or_nondirectory_import_reports_directive(self):
+        self.write('File', 'unused')
+        for name in ['Missing', 'File', 'Missing.Nested']:
+            with self.subTest(name=name), self.assertRaises(BSLError) as caught:
+                self.execute(f'\n  # Импорт {name}\n')
+            self.assertEqual((caught.exception.source, caught.exception.line, caught.exception.column),
+                             (str(self.main), 2, 3))
+        self.assertEqual(self.vm.imports, {})
+
+    def test_directory_invalid_module_names_fail_before_any_initialization(self):
+        self.write('Package/A.bsl', 'Message("bad");')
+        for name in ['bad-name', '1Bad', 'Function', 'Если', 'Two.Parts']:
+            with self.subTest(name=name):
+                bad = self.write(f'Package/{name}.bsl', 'Message("bad");')
+                with self.assertRaisesRegex(BSLError, 'идентификатор'):
+                    self.execute('# Импорт Package\n')
+                bad.unlink()
+                self.assertEqual(self.vm.imports, {})
+        self.assertEqual(self.output, [])
+
+    def test_directory_casefold_collision_validated_before_initialization(self):
+        first = self.write('Package/Side.bsl', 'Message("bad");')
+        other = self.directory / 'Package/side.bsl'
+        if other.exists() and other.samefile(first):
+            self.skipTest('Case-distinct filenames are not available on this host')
+        self.write('Package/side.bsl', 'Message("bad");')
+        with self.assertRaisesRegex(BSLError, 'конфликт'):
+            self.execute('# Импорт Package\n')
+        self.assertEqual(self.output, [])
+        self.assertEqual(self.vm.imports, {})
+
+    def test_directory_and_module_collisions_in_both_orders(self):
+        self.write('Package.bsl', 'Function F() Export Return 1; EndFunction')
+        (self.directory / 'Package').mkdir()
+        for first, second in [('Package', 'Package.bsl'), ('Package.bsl', 'Package')]:
+            with self.subTest(first=first):
+                vm = Interpreter(output=self.output.append)
+                self.execute(f'# Импорт {first}\n', vm=vm)
+                with self.assertRaisesRegex(BSLError, 'занято'):
+                    self.execute(f'# Импорт {second}\n', vm=vm)
+
+    def test_directory_children_cannot_replace_existing_nested_namespace(self):
+        self.write('Package/Z/Leaf.bsl', 'Function F() Export Return 42; EndFunction')
+        self.execute('# Импорт Package.Z.Leaf.bsl\n')
+        self.write('Package/A.bsl', 'Message("bad");')
+        self.write('Package/Z.bsl', 'Message("bad");')
+        with self.assertRaisesRegex(BSLError, 'занято'):
+            self.execute('# Импорт Package\n')
+        self.assertEqual(self.output, [])
+        self.assertEqual(self.vm.execute('Package.Z.Leaf.F()'), Decimal(42))
+
+    def test_directory_cannot_merge_different_source_directories(self):
+        (self.directory / 'Package').mkdir()
+        self.write('other/Package/Side.bsl', 'Message("bad");')
+        self.execute('# Импорт Package\n')
+        with self.assertRaisesRegex(BSLError, 'занято'):
+            self.execute('# Импорт Package\n', path=self.directory / 'other/Main.bsl')
+        self.assertEqual(self.output, [])
+
+    def test_directory_failure_is_atomic_but_successful_modules_remain_cached(self):
+        self.write('Package/A.bsl', 'Message("init"); Function F() Export Return 42; EndFunction')
+        broken = self.write('Package/Z.bsl', '\nx = 1 / 0;')
+        with self.assertRaises(BSLError) as caught:
+            self.execute('# Импорт Package\n')
+        self.assertEqual((caught.exception.source, caught.exception.line), (str(broken.resolve()), 2))
+        self.assertEqual(self.vm.imports, {})
+        broken.write_text('Function F() Export Return 7; EndFunction', encoding='utf-8')
+        self.execute('# Импорт Package\nMessage(Package.A.F() + Package.Z.F());')
+        self.assertEqual(self.output, ['init', '49'])
+
+    def test_directory_failure_preserves_existing_namespace_without_partial_children(self):
+        self.write('Package/Existing.bsl', 'Function F() Export Return 42; EndFunction')
+        self.execute('# Импорт Package.Existing.bsl\n')
+        self.write('Package/A.bsl', 'Function F() Export Return 1; EndFunction')
+        self.write('Package/Z.bsl', '@')
+        with self.assertRaises(BSLError):
+            self.execute('# Импорт Package\n')
+        self.assertEqual(self.vm.execute('Package.Existing.F()'), Decimal(42))
+        with self.assertRaises(BSLError):
+            self.vm.execute('Package.A.F()')
+
+    def test_directory_symlinks_share_cache_and_preserve_namespace_paths(self):
+        target = self.write('Actual.bsl', 'Message("init"); Function F() Export Return 42; EndFunction')
+        (self.directory / 'Package').mkdir()
+        try:
+            (self.directory / 'Package/Alias.bsl').symlink_to(target)
+            (self.directory / 'Linked').symlink_to(self.directory / 'Package', target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest('Symlinks are not available on this host')
+        self.execute('# Импорт Package\n# Импорт Actual.bsl\n# Импорт Linked\n'
+                     'Message(Package.Alias.F()); Message(Linked.Alias.F());')
+        self.assertEqual(self.output, ['init', '42', '42'])
+
+    def test_directory_cycle_is_source_aware_and_can_be_retried(self):
+        module = self.write('Package/A.bsl', '# Импорт Loop\n')
+        try:
+            (self.directory / 'Package/Loop').symlink_to(self.directory / 'Package', target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest('Symlinks are not available on this host')
+        with self.assertRaisesRegex(BSLError, 'Циклический импорт') as caught:
+            self.execute('# Импорт Package\n')
+        self.assertEqual(caught.exception.source, str(module.resolve()))
+        self.assertEqual(self.vm.imports, {})
+        module.write_text('Function F() Export Return 42; EndFunction', encoding='utf-8')
+        self.assertEqual(self.execute('# Импорт Package\nPackage.A.F()'), Decimal(42))
+
+    def test_directory_preserves_exports_reference_defaults_and_value_boundaries(self):
+        self.write('Package/Side.bsl', '''
+            Procedure Change(x, Val y = 2) Export x = x + y; EndProcedure
+            Function Join(Val a = "A", Val b = "B") Export Return a + b; EndFunction
+            Function Private() Return 0; EndFunction
+        ''')
+        self.execute('# Импорт Package\nx = 1; Package.Side.Change(x); Message(x); '
+                     'Message(Package.Side.Join(, "Z"));')
+        self.assertEqual(self.output, ['3', 'AZ'])
+        for expression in ['Package', 'Package.Side', 'Package.Side.Private()',
+                           'Package.members', 'Package.Side.interpreter']:
+            with self.subTest(expression=expression), self.assertRaises(BSLError):
+                self.vm.execute(expression)
 
 
 if __name__ == '__main__':
