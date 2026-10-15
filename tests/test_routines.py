@@ -149,7 +149,6 @@ class RoutineTests(unittest.TestCase):
         cases = [
             'Return 1;',
             'Procedure P() Return 1; EndProcedure',
-            'Function F(x) Return x; EndFunction',
             'Function F() EndProcedure',
             'Function F() EndFunction Function f() EndFunction',
             'If True Then Procedure P() EndProcedure EndIf',

@@ -41,6 +41,15 @@ class CLITests(unittest.TestCase):
         result = self.run_cli(stdin='Function F()\nReturn 42;\nEndFunction\nF()\n/exit\n')
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
 
+    def test_parameter_command_and_multiline_repl(self):
+        code = ('Функция ПолучитьСумму(Знач а, Знач б) Возврат а + б; '
+                'КонецФункции Сообщить(ПолучитьСумму(1, 2));')
+        result = self.run_cli("-c", code)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "3\n", ""))
+        result = self.run_cli(stdin='Procedure P(\nx)\nx = x + 1;\nEndProcedure\n'
+                                   'x = 7;\nP(x)\nx\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "8\n", ""))
+
     def test_cp1251_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "legacy.bsl"
