@@ -28,6 +28,12 @@ class CLITests(unittest.TestCase):
             result = self.run_cli(str(path))
             self.assertEqual((result.returncode, result.stdout), (0, "файл\n"))
 
+    def test_conditional_command_and_multiline_repl(self):
+        result = self.run_cli("-c", 'Сообщить(?(Истина, 42, 1 / 0))')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+        result = self.run_cli(stdin='?(\nЛожь,\n1 / 0,\n42)\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+
     def test_cp1251_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "legacy.bsl"
