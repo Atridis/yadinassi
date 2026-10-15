@@ -25,8 +25,8 @@ def main() -> None:
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "code_samples" / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
-        module.write_text('Функция ПолучитьСумму(А, Б = 2) Экспорт\n'
-                          'Возврат А + Б;\nКонецФункции\n', encoding="utf-8-sig")
+        module.write_text('#Если Клиент Тогда\n&НаКлиенте\nФункция ПолучитьСумму(А, Б = 2) Экспорт\n'
+                          'Возврат А + Б;\nКонецФункции\n#Иначе\n&AtServer\ninvalid !!!\n#КонецЕсли\n', encoding="utf-8-sig")
         importer = Path(temporary) / "Основное.bsl"
         importer.write_text('# Импорт Побочное.bsl\n'
                             'Сообщить(Побочное.ПолучитьСумму(1));', encoding="utf-8")
@@ -50,7 +50,13 @@ def main() -> None:
             '# Импорт Справочник.Вложенное\n'
             'Сообщить(Справочник.Побочное.ПолучитьСумму(1, 2));\n'
             'Сообщить(Справочник.Вложенное.Другое.Ответ());', encoding="utf-8")
+        client_code = ('#If AtClient And Not Server Then\n&AtClient\n'
+                       'Function F() Return 42; EndFunction\nMessage(F());\n'
+                       '#Else\n# Импорт Missing.bsl\nunsupported !!!\n#EndIf\n')
         cases = [
+            (["-c", client_code], None, "42\n", 0),
+            (["-"], client_code, "42\n", 0),
+            ([], client_code + '/exit\n', "42\n", 0),
             ([str(directory_importer)], None, "3\nвложенный\n", 0),
 
             ([str(importer)], None, "3\n", 0),
@@ -77,7 +83,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: file, sibling/nested/directory imports, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: file, sibling/nested/directory imports, client compilation, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":

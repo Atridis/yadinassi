@@ -50,6 +50,9 @@ class Parser:
             if token := self.accept("IMPORT"):
                 statements.append(ast.Import(token, token.value))
                 continue
+            if self.accept("ATCLIENT"):
+                if self.current.kind not in ("FUNCTION", "PROCEDURE"):
+                    self.fail("После &НаКлиенте ожидается объявление процедуры или функции")
             if self.current.kind in ("FUNCTION", "PROCEDURE"):
                 token = self.current
                 kind = token.kind
@@ -125,6 +128,8 @@ class Parser:
 
     def statement(self) -> ast.Node:
         token = self.current
+        if token.kind == "ATCLIENT":
+            self.fail("Директива исполнения допустима только перед подпрограммой уровня модуля")
         if token.kind == "IMPORT":
             self.fail("Импорт допустим только на уровне модуля")
         if token.kind in ("FUNCTION", "PROCEDURE"):

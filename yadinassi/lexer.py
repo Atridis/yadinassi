@@ -5,6 +5,7 @@ from decimal import Decimal
 import re
 
 from .errors import BSLError, IncompleteInput
+from .preprocessor import ConditionalCompilation
 
 
 KEYWORDS: dict[str, str] = {}
@@ -75,10 +76,16 @@ class Lexer:
 
     def tokens(self) -> list[Token]:
         result = []
+        compilation = ConditionalCompilation(self.source)
         while self.peek():
             char = self.peek()
             if char.isspace():
                 self.advance()
+                continue
+            if not compilation.active and char != "#":
+                # Excluded lines need not be valid BSL; no imports or annotations run.
+                while self.peek() and self.peek() not in "\r\n":
+                    self.advance()
                 continue
             if char == "/" and self.peek(1) == "/":
                 while self.peek() and self.peek() != "\n":
@@ -88,12 +95,16 @@ class Lexer:
             if char == "#":
                 # A directive owns its line; comments and strings are lexed separately.
                 if self.text[self.text.rfind("\n", 0, self.pos) + 1:self.pos].strip():
-                    raise BSLError("Директива импорта должна начинать строку",
+                    raise BSLError("Директива должна начинать строку",
                                    self.source, line, column)
                 start = self.pos
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 directive = self.text[start:self.pos].split("//", 1)[0].strip()
+                if compilation.process(directive, line, column):
+                    continue
+                if not compilation.active:
+                    continue
                 match = re.fullmatch(r"#\s*Импорт\s+(\w+(?:\.\w+)*)\s*", directive,
                                      re.IGNORECASE)
                 if match is None:
@@ -109,6 +120,24 @@ class Lexer:
                     if part.casefold() in KEYWORDS:
                         raise BSLError("Имя модуля или каталога не может быть ключевым словом",
                                        self.source, line, column)
+            elif char == "&":
+                if self.text[self.text.rfind("\n", 0, self.pos) + 1:self.pos].strip():
+                    raise BSLError("Директива исполнения должна начинать строку",
+                                   self.source, line, column)
+                start = self.pos
+                while self.peek() and self.peek() not in "\r\n":
+                    self.advance()
+                directive = self.text[start:self.pos].split("//", 1)[0].strip()
+                match = re.fullmatch(r"&([^\W\d]\w*)", directive)
+                if match is None:
+                    raise BSLError("Ожидается директива исполнения на отдельной строке",
+                                   self.source, line, column)
+                name = match.group(1).casefold()
+                if name not in {"наклиенте", "atclient"}:
+                    raise BSLError(f"Директива {directive} не поддерживается: "
+                                   "доступен только клиентский контекст &НаКлиенте / &AtClient",
+                                   self.source, line, column)
+                value, kind = directive, "ATCLIENT"
             elif char.isalpha() or char == "_":
                 start = self.pos
                 while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
@@ -137,6 +166,7 @@ class Lexer:
                 else:
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
             result.append(Token(kind, value, line, column, self.source))
+        compilation.finish(self.line, self.column)
         result.append(Token("EOF", None, self.line, self.column, self.source))
         return result
 
