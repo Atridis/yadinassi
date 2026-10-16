@@ -23,7 +23,7 @@ def main() -> None:
     env["PATH"] = os.environ.get("SystemRoot", r"C:\Windows") + r"\System32" if os.name == "nt" else "/usr/bin:/bin"
     with tempfile.TemporaryDirectory(prefix="yadinassi-smoke-") as temporary:
         sample = Path(temporary) / "пример.bsl"
-        sample.write_bytes((ROOT / "code_samples" / "basic.bsl").read_bytes())
+        sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
         module.write_text('#Если Клиент Тогда\n&НаКлиенте\nФункция ПолучитьСумму(А, Б = 2) Экспорт\n'
                           'Возврат А + Б;\nКонецФункции\n#Иначе\n&AtServer\ninvalid !!!\n#КонецЕсли\n', encoding="utf-8-sig")

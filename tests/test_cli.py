@@ -319,12 +319,13 @@ x
         self.assertEqual((result.returncode, result.stdout), (0, ""))
 
     def test_argument_conflict(self):
-        result = self.run_cli("code_samples/basic.bsl", "-c", "")
+        result = self.run_cli("integrational_tests/tests/basic.bsl", "-c", "")
         self.assertEqual(result.returncode, 2)
         self.assertIn("нельзя", result.stderr)
 
     def test_missing_file_and_unknown_encoding(self):
-        for arguments in (("missing.bsl",), ("--encoding", "no-such-codec", "code_samples/basic.bsl")):
+        for arguments in (("missing.bsl",),
+                          ("--encoding", "no-such-codec", "integrational_tests/tests/basic.bsl")):
             with self.subTest(arguments=arguments):
                 result = self.run_cli(*arguments)
                 self.assertEqual(result.returncode, 1)

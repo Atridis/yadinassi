@@ -21,7 +21,7 @@ class InterpreterTests(unittest.TestCase):
         return self.output
 
     def test_basic_sample_exact_output(self):
-        code = (ROOT / "code_samples" / "basic.bsl").read_text(encoding="utf-8")
+        code = (ROOT / "integrational_tests" / "tests" / "basic.bsl").read_text(encoding="utf-8")
         expected = (ROOT / "tests" / "fixtures" / "basic.out").read_text(encoding="utf-8")
         self.assertEqual("\n".join(self.run_bsl(code)) + "\n", expected)
 

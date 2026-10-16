@@ -28,7 +28,7 @@ yadinassi                             # запуск интерактивног�
 
 ```console
 yadinassi --encoding cp1251 legacy.bsl
-yadinassi - < code_samples/basic.bsl
+yadinassi - < integrational_tests/tests/basic.bsl
 yadinassi --version
 ```
 
@@ -56,13 +56,28 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[build]"
 python -m unittest discover -s tests -v
-python -m yadinassi code_samples/basic.bsl
+python -m yadinassi integrational_tests/tests/basic.bsl
 ```
 
 На Windows создайте окружение через `py -3 -m venv .venv` и активируйте
 `.venv\Scripts\Activate.ps1` (PowerShell) или `.venv\Scripts\activate.bat` (cmd).
 Установка `python -m pip install -e .` добавляет команду `yadinassi` без пакетов
 для сборки. Тесты используют стандартный `unittest`.
+
+### Ручной запуск тестов на платформе 1С
+
+На компьютере с установленной 1С можно собрать и выполнить `.bsl` из
+`integrational_tests/tests`, включая модули с процедурами и функциями:
+
+```console
+python integrational_tests/test_launcher.py --bd "C:\Bases\TestBase" --path-1c "C:\Program Files\1cv8\8.3.27.1859\bin"
+```
+
+Вывод сохраняется в `integrational_tests/output/<имя теста>.out`.
+Каталог `integrational_tests` содержит самостоятельный генератор эталонного
+вывода на 1С. Его Python-проверки запускаются отдельно командой
+`python integrational_tests/check_launcher.py`.
+Инструкция и требования к базе: [integrational_tests/README.md](integrational_tests/README.md).
 
 ## Автономная сборка
 

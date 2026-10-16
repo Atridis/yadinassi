@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"
+    xmlns:app="http://v8.1c.ru/8.2/managed-application/core"
+    xmlns:v8="http://v8.1c.ru/8.1/data/core"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.4">
+    <Form uuid="3dab0372-e1d9-448b-a176-3c7888144367">
+        <Properties>
+            <Name>Main</Name>
+            <Synonym/>
+            <Comment/>
+            <FormType>Managed</FormType>
+            <IncludeHelpInContents>false</IncludeHelpInContents>
+            <UsePurposes>
+                <v8:Value xsi:type="app:ApplicationUsePurpose">PersonalComputer</v8:Value>
+            </UsePurposes>
+            <ExtendedPresentation/>
+        </Properties>
+    </Form>
+</MetaDataObject>
