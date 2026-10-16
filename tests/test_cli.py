@@ -39,6 +39,9 @@ class CLITests(unittest.TestCase):
                  ('Array', 'Массив', 'New Array'),
                  ('Structure', 'Структура', 'New Structure'),
                  ('Map', 'Соответствие', 'New Map'),
+                 ('FixedArray', 'ФиксированныйМассив', 'New FixedArray(New Array)'),
+                 ('FixedStructure', 'ФиксированнаяСтруктура', 'New FixedStructure'),
+                 ('FixedMap', 'ФиксированноеСоответствие', 'New FixedMap(New Map)'),
                  ('KeyAndValue', 'КлючИЗначение', 'pair'),
                  ('Type', 'Тип', 'Type("Number")')]
         code = ('s = New Structure("Item", 1);\n'
@@ -60,6 +63,263 @@ class CLITests(unittest.TestCase):
                     result = self.run_cli(*arguments, stdin=stdin)
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
                                      (0, expected, ''))
+
+    def test_fixed_collections_command_file_stdin_and_console(self):
+        code = '''source = New Array(2);
+source[0] = 10; source[1] = 20;
+frozen = Новый ФиксированныйМассив(source);
+source[0] = 99; source.Add(30);
+Message(frozen.Count()); Сообщить(frozen.ВГраница());
+Message(frozen.Get(0)); Сообщить(frozen.Получить(1));
+Message(frozen.Find(20)); Message(frozen.Найти(99) = Undefined);
+total = 0;
+For Each item In frozen Do total = total + item; EndDo;
+Message(total);
+record = New FixedStructure("Name,Count", "ёж", 7);
+Message(record.NAME); Message(record["name"]);
+Message(record.Count); Message(record.Count());
+Var found;
+Message(record.Property("nAmE", found)); Message(found);
+Сообщить(record.Свойство("Missing", found)); Message(found = Undefined);
+mutableRecord = Новый Структура("Name", "исходное");
+snapshot = Новый ФиксированнаяСтруктура(mutableRecord);
+mutableRecord.Name = "изменено"; mutableRecord.Insert("Extra", 1);
+Message(snapshot.Name); Message(snapshot.Количество());
+visited = 0;
+For Each pair In record Do
+    visited = visited + 1;
+    Message(TypeOf(pair) = Type("KeyAndValue"));
+EndDo;
+Message(visited);
+sourceMap = New Map;
+sourceMap[True] = "булево"; sourceMap[1] = "число";
+lookup = Новый ФиксированноеСоответствие(sourceMap);
+sourceMap[1] = "изменено"; sourceMap.Insert("extra", 3);
+Message(lookup.Count()); Message(lookup.Get(True));
+Message(lookup.Получить(1)); Message(lookup["missing"] = Undefined);
+visited = 0;
+For Each pair In lookup Do visited = visited + 1; EndDo;
+Message(visited);
+arrayCopy = New Array(frozen); arrayCopy[0] = 40; arrayCopy.Add(50);
+recordCopy = New Structure(record); recordCopy.Name = "копия";
+mapCopy = New Map(lookup); mapCopy[1] = "копия"; mapCopy.Insert(2, 2);
+Message(frozen[0]); Message(arrayCopy.Count());
+Message(record.Name); Message(recordCopy.Name);
+Message(lookup[1]); Message(mapCopy.Count());
+Message(TypeOf(frozen) = Тип("ФиксированныйМассив"));
+Message(TypeOf(record) = Type("FixedStructure"));
+Message(TypeOf(lookup) = Type("FixedMap"));
+Message(TypeOf(arrayCopy)); Message(TypeOf(recordCopy)); Message(TypeOf(mapCopy));
+'''
+        expected = ('2\n1\n10\n20\n1\nДа\n30\nёж\nёж\n7\n2\nДа\nёж\nНет\nДа\n'
+                    'исходное\n1\nДа\nДа\n2\n2\nбулево\nчисло\nДа\n2\n10\n3\n'
+                    'ёж\nкопия\nчисло\n3\nДа\nДа\nДа\nМассив\nСтруктура\nСоответствие\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Фиксированные.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [(('-c', code), None), ((str(path),), None),
+                     (('-',), code), ((), code + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+
+    def test_fixed_collection_mutations_and_unsupported_operations_are_catchable(self):
+        setup = ('a = New FixedArray(New Array(1));\n'
+                 's = New FixedStructure("Name", "original");\n'
+                 'm = New FixedMap(New Map); keys = New Map;\n'
+                 'nested = New Array; nested.Add(New Array);\n')
+        actions = ['a[0] = 1', 's.Name = "changed"', 's["Name"] = "changed"',
+                   'm[1] = 1', 'a.Add(1)', 'a.Добавить(1)', 'a.Set(0, 1)',
+                   'a.Установить(0, 1)', 'a.Insert(0, 1)', 'a.Вставить(0, 1)',
+                   'a.Delete(0)', 'a.Удалить(0)', 'a.Clear()', 'a.Очистить()',
+                   's.Insert("Other", 1)', 's.Вставить("Other", 1)',
+                   's.Delete("Name")', 's.Удалить("Name")',
+                   's.Clear()', 's.Очистить()', 'm.Insert(1, 1)',
+                   'm.Вставить(1, 1)', 'm.Delete(1)', 'm.Удалить(1)',
+                   'm.Clear()', 'm.Очистить()']
+        actions += [f'Message({name} {operator} {other})'
+                    for name, constructor in [('a', 'New FixedArray(New Array)'),
+                                              ('s', 'New FixedStructure'),
+                                              ('m', 'New FixedMap(New Map)')]
+                    for operator in ('=', '<>') for other in (name, constructor)]
+        actions += [f'keys[{name}] = 1' for name in ('a', 's', 'm')]
+        actions += ['New FixedArray(nested)', 'New FixedArray(a)',
+                    'New FixedStructure(s)', 'New FixedMap(m)']
+        code = setup + ''.join(f'Try\n{action};\nExcept\nMessage("blocked");\nEndTry;\n'
+                               for action in actions)
+        code += ('Message(a.Count()); Message(a[0] = Undefined);\n'
+                 'Message(s.Name); Message(s.Count()); Message(m.Count()); Message(keys.Count());\n')
+        expected = 'blocked\n' * len(actions) + '1\nДа\noriginal\n1\n0\n0\n'
+        for arguments, stdin in [(('-c', code), None), (('-',), code),
+                                 ((), code + '/exit\n')]:
+            with self.subTest(arguments=arguments):
+                result = self.run_cli(*arguments, stdin=stdin)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (0, expected, ''))
+
+    def test_fixed_collection_errors_command_file_and_stdin_diagnostics(self):
+        cases = [('a = New FixedArray(New Array(1));', 'a[0] = 2;', 'недоступны для записи'),
+                 ('s = New FixedStructure("Name", 1);', 's.Name = 2;', 'недоступно для записи'),
+                 ('m = New FixedMap(New Map);', 'm[1] = 2;', 'недоступны для записи'),
+                 ('a = New FixedArray(New Array(1));', 'a.Add(2);', 'не найдено: Add'),
+                 ('s = New FixedStructure("Name", 1);', 's.Clear();', 'не найден: Clear'),
+                 ('m = New FixedMap(New Map);', 'm.Insert(1, 2);', 'не найден: Insert'),
+                 ('// incorrect source', 'New FixedArray(1);', 'ожидает массив'),
+                 ('// incorrect source', 'New FixedStructure(1);', 'ожидает строку свойств или структуру'),
+                 ('// incorrect source', 'New FixedMap(1);', 'ожидает соответствие')]
+        cases = [(setup, action, message, 1) for setup, action, message in cases] + [
+            ('a = New FixedArray(New Array);', 'Message(a = a);',
+             'Сравнение фиксированных коллекций пока не поддерживается', 11),
+            ('a = New FixedArray(New Array); keys = New Map;', 'keys[a] = 1;',
+             'Фиксированные коллекции в качестве ключей соответствия пока не поддерживаются', 1),
+            ('a = New Array; a.Add(New Array);', 'New FixedArray(a);',
+             'ФиксированныйМассив с вложенным изменяемым массивом пока не поддерживается', 1),
+            ('s = New FixedStructure;', 'New FixedStructure(s);',
+             'ФиксированнаяСтруктура ожидает строку свойств или структуру', 1),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            project = directory / 'project'
+            project.mkdir()
+            path = project / 'ОшибкаФиксированной.bsl'
+            for setup, action, message, column in cases:
+                code = setup + '\n' + action + '\n'
+                path.write_text(code, encoding='utf-8-sig')
+                for arguments, stdin, source in [
+                        (('-c', code), None, '<команда>'),
+                        ((str(path.resolve()),), None, str(path.resolve())),
+                        ((str(Path('project') / path.name),), None, str(Path('project') / path.name)),
+                        (('-',), code, '<stdin>')]:
+                    with self.subTest(action=action, source=source, arguments=arguments):
+                        result = self.run_cli(*arguments, stdin=stdin, cwd=directory)
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
+                        self.assertIn(f'{source}:2:{column}:', result.stderr)
+                        if not source.startswith('<'):
+                            label = result.stderr.split(f':2:{column}:', 1)[0]
+                            diagnostic_path = Path(label)
+                            if not diagnostic_path.is_absolute():
+                                diagnostic_path = directory / diagnostic_path
+                            self.assertEqual(diagnostic_path.resolve(), path.resolve())
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
+    def test_fixed_collection_console_multiline_state_and_error_recovery(self):
+        code = '''Function Frozen(Val size)
+Return New FixedArray(
+New Array(size));
+EndFunction
+frozen = Frozen(2);
+record = New FixedStructure(
+"Name,Count", "сохранено", 7);
+lookup = New FixedMap(New Map);
+frozen[0] = 99;
+frozen.Count()
+record.Name = "потеряно";
+record.Name
+lookup[1] = 99;
+lookup.Count()
+frozen.Add(99);
+frozen.UBound()
+TypeOf(frozen)
+Var value;
+record.Property("NAME", value)
+value
+Try
+record.Clear();
+Except
+Message("перехвачено");
+EndTry;
+copy = New Array(frozen);
+copy[0] = 5;
+copy[0]
+(frozen[0] = Undefined)
+/exit
+'''
+        result = self.run_cli(stdin=code)
+        self.assertEqual((result.returncode, result.stdout),
+                         (1, '2\nсохранено\n0\n1\nФиксированныйМассив\nДа\nсохранено\n'
+                          'перехвачено\n5\nДа\n'))
+        self.assertEqual(result.stderr.count('<консоль>:1:'), 4)
+        self.assertEqual(result.stderr.count('недоступны для записи'), 2)
+        self.assertIn('недоступно для записи', result.stderr)
+        self.assertIn('не найдено: Add', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
+    def test_fixed_collections_cross_imported_routines(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            project = directory / 'project'
+            project.mkdir()
+            (project / 'Снимки.bsl').write_text(
+                'Function Values() Export Return New FixedArray(New Array(2)); EndFunction\n'
+                'Function Record() Export Return New FixedStructure("Name", "из модуля"); EndFunction\n'
+                'Function Lookup() Export\n'
+                'm = New Map; m["key"] = 42; Return New FixedMap(m);\nEndFunction\n',
+                encoding='utf-8-sig')
+            main = project / 'Основное.bsl'
+            main.write_text('// #Импорт Снимки.bsl\n'
+                            'a = Снимки.Values(); s = Снимки.Record(); m = Снимки.Lookup();\n'
+                            'Message(a.Count()); Message(s.Name); Message(m["key"]);\n'
+                            'Message(TypeOf(a)); Message(TypeOf(s)); Message(TypeOf(m));\n',
+                            encoding='utf-8-sig')
+            for path in (main, Path('project') / main.name):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=directory)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, '2\nиз модуля\n42\nФиксированныйМассив\n'
+                                      'ФиксированнаяСтруктура\nФиксированноеСоответствие\n', ''))
+
+    def test_imported_fixed_collection_errors_preserve_canonical_path(self):
+        actions = [('a = New FixedArray(New Array(1));', 'a[0] = 99;', 'недоступны для записи'),
+                   ('s = New FixedStructure("Name", 1);', 's.Name = 99;', 'недоступно для записи'),
+                   ('m = New FixedMap(New Map);', 'm[1] = 99;', 'недоступны для записи')]
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            project = directory / 'project'
+            project.mkdir()
+            module = project / 'Фиксированные.bsl'
+            main = project / 'Основное.bsl'
+            for setup, action, message in actions:
+                module.write_text('Procedure Fail() Export\n' + setup + '\n' + action +
+                                  '\nEndProcedure\n', encoding='utf-8-sig')
+                main.write_text('// #Импорт Фиксированные.bsl\nФиксированные.Fail();\n',
+                                encoding='utf-8')
+                with self.subTest(action=action):
+                    result = self.run_cli(str(Path('project') / main.name), cwd=directory)
+                    self.assertEqual((result.returncode, result.stdout), (1, ''))
+                    self.assertIn(f'{module.resolve()}:3:', result.stderr)
+                    self.assertIn(message, result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+                    main.write_text('// #Импорт Фиксированные.bsl\nTry\nФиксированные.Fail();\n'
+                                    'Except\nMessage(ErrorDescription());\nEndTry;\n'
+                                    'Message("продолжено");\n', encoding='utf-8')
+                    result = self.run_cli(str(main), cwd=directory)
+                    self.assertEqual((result.returncode, result.stderr), (0, ''))
+                    self.assertTrue(result.stdout.startswith(f'{module.resolve()}:3:'))
+                    self.assertIn(message, result.stdout)
+                    self.assertTrue(result.stdout.endswith('\nпродолжено\n'))
+
+    def test_fixed_collection_file_diagnostic_identifies_symlinked_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            actual = directory / 'actual'
+            actual.mkdir()
+            link = directory / 'linked'
+            try:
+                link.symlink_to(actual, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest('Symlinks are not available on this host')
+            path = link / 'Ошибка.bsl'
+            path.write_text('a = New FixedArray(New Array(1));\na[0] = 2;\n', encoding='utf-8-sig')
+            result = self.run_cli(str(path), cwd=directory)
+            self.assertEqual((result.returncode, result.stdout), (1, ''))
+            self.assertIn(f'{path}:2:1:', result.stderr)
+            label = result.stderr.split(':2:1:', 1)[0]
+            self.assertEqual(Path(label).resolve(), (actual / path.name).resolve())
+            self.assertIn('недоступны для записи', result.stderr)
+            self.assertNotIn('Traceback', result.stderr)
 
     def test_type_values_console_state_collections_and_multiline_calls(self):
         code = '''kind = Тип("число");
@@ -304,7 +564,7 @@ EndTry;
             path = Path(temporary) / 'Незавершенная.bsl'
             path.write_text(code, encoding='utf-8')
             cases = [(('-c', code), None, '<команда>'),
-                     ((str(path),), None, str(path)),
+                     ((str(path.resolve()),), None, str(path.resolve())),
                      (('-',), code, '<stdin>'), ((), code, '<консоль>')]
             for arguments, stdin, source in cases:
                 with self.subTest(source=source):
@@ -339,7 +599,7 @@ EndTry;
             path = Path(temporary) / 'Ошибка.bsl'
             path.write_text(code, encoding='utf-8')
             cases = [(('-c', code), None, '<команда>'),
-                     ((str(path),), None, str(path)),
+                     ((str(path.resolve()),), None, str(path.resolve())),
                      (('-',), code, '<stdin>'), ((), code + '/exit\n', '<консоль>')]
             for arguments, stdin, source in cases:
                 with self.subTest(source=source):

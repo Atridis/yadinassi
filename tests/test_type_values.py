@@ -22,6 +22,9 @@ class TypeValueTests(unittest.TestCase):
         pairs = [('Неопределено', 'Undefined'), ('Булево', 'Boolean'),
                  ('Число', 'Number'), ('Строка', 'String'), ('Массив', 'Array'),
                  ('Структура', 'Structure'), ('Соответствие', 'Map'),
+                 ('ФиксированныйМассив', 'FixedArray'),
+                 ('ФиксированнаяСтруктура', 'FixedStructure'),
+                 ('ФиксированноеСоответствие', 'FixedMap'),
                  ('КлючИЗначение', 'KeyAndValue'), ('Тип', 'Type')]
         values = []
         for russian, english in pairs:
@@ -33,7 +36,7 @@ class TypeValueTests(unittest.TestCase):
                 self.assertEqual(self.vm.execute(f'String(Type("{english}"))'), russian)
                 self.assertIs(self.evaluate(f'TypeOf(Type("{english}")) = Тип("Тип")'), True)
                 values.append(value)
-        self.assertEqual(len(set(values)), 9)
+        self.assertEqual(len(set(values)), 12)
 
     def test_type_of_each_supported_value(self):
         cases = [('Undefined', 'Undefined'), ('Неопределено', 'Undefined'),
@@ -41,6 +44,9 @@ class TypeValueTests(unittest.TestCase):
                  ('-0', 'Number'), ('1.25', 'Number'), ('Number("42")', 'Number'),
                  ('""', 'String'), ('"Число"', 'String'), ('New Array', 'Array'),
                  ('New Structure', 'Structure'), ('New Map', 'Map'),
+                 ('New FixedArray(New Array)', 'FixedArray'),
+                 ('New FixedStructure(New Structure)', 'FixedStructure'),
+                 ('New FixedMap(New Map)', 'FixedMap'),
                  ('Тип("Число")', 'Type')]
         for expression, name in cases:
             with self.subTest(expression=expression):
@@ -48,6 +54,19 @@ class TypeValueTests(unittest.TestCase):
                 self.assertIs(self.evaluate(f'TyPeOf({expression}) <> Тип("{name}")'), False)
         self.vm.execute('Var empty;')
         self.assertIs(self.evaluate('TypeOf(empty) = Type("Undefined")'), True)
+
+    def test_fixed_and_mutable_types_remain_distinct_identities(self):
+        for mutable, fixed in [('Array', 'FixedArray'), ('Structure', 'FixedStructure'),
+                               ('Map', 'FixedMap')]:
+            with self.subTest(type=fixed):
+                self.assertIs(self.evaluate(f'Type("{mutable}") = Type("{fixed}")'), False)
+                self.assertIs(self.evaluate(f'TypeOf(New {fixed}(New {mutable})) = Type("{mutable}")'), False)
+                self.vm.execute(f'''
+                    kinds = New Map; kinds[Type("{mutable}")] = "mutable";
+                    kinds[Type("{fixed}")] = "fixed";
+                    Message(kinds.Count()); Message(kinds[TypeOf(New {fixed}(New {mutable}))]);
+                ''')
+        self.assertEqual(self.output, ['2', 'fixed'] * 3)
 
     def test_type_of_tracks_current_value_not_variable_declaration(self):
         self.vm.execute('''
@@ -145,7 +164,7 @@ class TypeValueTests(unittest.TestCase):
 
     def test_unknown_and_out_of_scope_type_names_are_catchable(self):
         for name in ['', ' Number ', 'Число ', 'Date', 'Дата', 'Null',
-                     'FixedArray', 'ФиксированнаяСтруктура', 'TypeDescription',
+                     'FixedList', 'ФиксированныйСписок', 'TypeDescription',
                      'СправочникСсылка.Товары', '__class__', 'Decimal', 'int']:
             with self.subTest(name=name):
                 self.vm.execute(f'''Try Type("{name}");

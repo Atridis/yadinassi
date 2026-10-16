@@ -2,9 +2,9 @@
 
 from decimal import Decimal
 
-from .maps import BSLMap
-from .structures import BSLKeyAndValue, BSLStructure
-from .values import BSLArray, BSLType
+from .maps import BSLFixedMap, BSLMap
+from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from .values import BSLArray, BSLFixedArray, BSLType
 
 
 _VALUE_TYPES = (
@@ -15,6 +15,9 @@ _VALUE_TYPES = (
     (BSLArray, BSLType.ARRAY, "Array"),
     (BSLStructure, BSLType.STRUCTURE, "Structure"),
     (BSLMap, BSLType.MAP, "Map"),
+    (BSLFixedArray, BSLType.FIXED_ARRAY, "FixedArray"),
+    (BSLFixedStructure, BSLType.FIXED_STRUCTURE, "FixedStructure"),
+    (BSLFixedMap, BSLType.FIXED_MAP, "FixedMap"),
     (BSLKeyAndValue, BSLType.KEY_AND_VALUE, "KeyAndValue"),
     (BSLType, BSLType.TYPE, "Type"),
 )

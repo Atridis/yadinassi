@@ -16,6 +16,9 @@ class BSLType(Enum):
     ARRAY = "Массив"
     STRUCTURE = "Структура"
     MAP = "Соответствие"
+    FIXED_ARRAY = "ФиксированныйМассив"
+    FIXED_STRUCTURE = "ФиксированнаяСтруктура"
+    FIXED_MAP = "ФиксированноеСоответствие"
     KEY_AND_VALUE = "КлючИЗначение"
     TYPE = "Тип"
 
@@ -71,7 +74,11 @@ def integer(value: object) -> int:
 
 def equal(left: object, right: object) -> bool:
     # Python equates True and 1; BSL values keep their types.
-    return type(left) is type(right) and left == right
+    if type(left) is not type(right):
+        return False
+    if issubclass(type(left), BSLFixedCollection):
+        raise TypeError("Сравнение фиксированных коллекций пока не поддерживается")
+    return left == right
 
 
 class BSLObject:
@@ -89,12 +96,12 @@ class BSLObject:
         raise ValueError(f"Свойство недоступно для записи: {name}")
 
 
-class BSLArray(BSLObject):
-    def __init__(self, size: Decimal = Decimal(0)):
-        length = integer(size)
-        if length < 0:
-            raise ValueError("Размер массива не может быть отрицательным")
-        self.items: list[object] = [None] * length
+class BSLFixedCollection:
+    """Marker for the explicitly unverified fixed-value comparison boundary."""
+
+
+class _ArrayBase(BSLObject):
+    """Shared reads; fixed arrays do not inherit any mutable collection API."""
 
     def __iter__(self):
         return iter(self.items)
@@ -110,6 +117,42 @@ class BSLArray(BSLObject):
         return self.items[self.checked_index(index)]
 
     def set(self, index: object, value: object) -> None:
+        raise ValueError("Элементы фиксированного массива недоступны для записи")
+
+    def find(self, value: object) -> object:
+        for index, item in enumerate(self.items):
+            if equal(item, value):
+                return Decimal(index)
+        return None
+
+    def get_member(self, name: str) -> object:
+        methods = {
+            "количество": lambda: Decimal(len(self.items)),
+            "count": lambda: Decimal(len(self.items)),
+            "вграница": lambda: Decimal(len(self.items) - 1),
+            "ubound": lambda: Decimal(len(self.items) - 1),
+            "получить": self.get, "get": self.get,
+            "найти": self.find, "find": self.find,
+        }
+        method = methods.get(name.casefold())
+        if method is None:
+            return super().get_member(name)
+        return HostFunction(name, method)
+
+
+class BSLArray(_ArrayBase):
+    def __init__(self, size: object = Decimal(0)):
+        if isinstance(size, BSLFixedArray):
+            # The platform recursively converts direct fixed-array elements.
+            self.items = [BSLArray(item) if isinstance(item, BSLFixedArray) else item
+                          for item in size.items]
+            return
+        length = integer(size)
+        if length < 0:
+            raise ValueError("Размер массива не может быть отрицательным")
+        self.items: list[object] = [None] * length
+
+    def set(self, index: object, value: object) -> None:
         self.items[self.checked_index(index)] = value
 
     def add(self, value: object) -> None:
@@ -121,30 +164,33 @@ class BSLArray(BSLObject):
     def delete(self, index: object) -> None:
         del self.items[self.checked_index(index)]
 
-    def find(self, value: object) -> object:
-        for index, item in enumerate(self.items):
-            if equal(item, value):
-                return Decimal(index)
-        return None
-
     def get_member(self, name: str) -> object:
         methods = {
             "добавить": self.add, "add": self.add,
-            "количество": lambda: Decimal(len(self.items)),
-            "count": lambda: Decimal(len(self.items)),
-            "вграница": lambda: Decimal(len(self.items) - 1),
-            "ubound": lambda: Decimal(len(self.items) - 1),
-            "получить": self.get, "get": self.get,
             "установить": self.set, "set": self.set,
             "вставить": self.insert, "insert": self.insert,
             "удалить": self.delete, "delete": self.delete,
             "очистить": self.items.clear, "clear": self.items.clear,
-            "найти": self.find, "find": self.find,
         }
         method = methods.get(name.casefold())
         if method is None:
             return super().get_member(name)
         return HostFunction(name, method)
+
+
+class BSLFixedArray(_ArrayBase, BSLFixedCollection):
+    def __init__(self, source: object):
+        if not isinstance(source, BSLArray):
+            raise TypeError("ФиксированныйМассив ожидает массив")
+        # Do not guess whether native freezing recursively converts array items.
+        # Direct fixed-array items are already read-only and can be thawed below.
+        if any(isinstance(item, BSLArray) for item in source.items):
+            raise TypeError("ФиксированныйМассив с вложенным изменяемым массивом "
+                            "пока не поддерживается; зафиксируйте вложенный массив отдельно")
+        self.items = tuple(source.items)
+
+    def __str__(self) -> str:
+        return "ФиксированныйМассив"
 
 
 @dataclass
