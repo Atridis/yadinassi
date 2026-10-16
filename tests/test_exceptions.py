@@ -239,7 +239,7 @@ class ExceptionTests(unittest.TestCase):
             ('a = New Array; a[0] = 1;', 'Индекс массива'),
             ('a = New Array; a.Unknown();', 'Метод или свойство'),
             ('x = New Missing;', 'Тип не определен'),
-            ('StrLen(1);', 'ожидает строку'),
+            ('StrConcat(1);', 'ожидает массив'),
             ('For Each x In 1 Do EndDo;', 'ожидает массив'),
             ('If "text" Then EndIf;', 'Ожидается булево'),
         ]
@@ -462,7 +462,7 @@ class ExceptionParserTests(unittest.TestCase):
                  'Try Raise "x" Raise "y"; Except EndTry;',
                  'Try Except EndTry Message(1);',
                  'Try Function F() EndFunction Except EndTry;',
-                 'Try Except\n# Импорт Side.bsl\nEndTry;']
+                 'Try Except\n// #Импорт Side.bsl\nEndTry;']
         for code in cases:
             with self.subTest(code=code), self.assertRaises(BSLError) as caught:
                 parse(code, 'malformed.bsl')
@@ -508,7 +508,7 @@ class ExceptionImportTests(unittest.TestCase):
 
     def test_imported_routine_error_is_caught_at_original_source(self):
         side = self.write('Side.bsl', 'Function Fail() Export\n Raise "module";\nEndFunction')
-        self.execute('# Импорт Side.bsl\nTry Side.Fail(); Except Message(ErrorDescription()); EndTry;')
+        self.execute('// #Импорт Side.bsl\nTry Side.Fail(); Except Message(ErrorDescription()); EndTry;')
         self.assertEqual(self.output, [str(side.resolve()) + ':2:2: module'])
         self.assertIsNone(self.vm.locals)
         self.assertEqual(self.vm.execute('ErrorDescription()'), '')
@@ -516,14 +516,14 @@ class ExceptionImportTests(unittest.TestCase):
 
     def test_handler_description_is_shared_across_transitive_module_calls(self):
         self.write('Leaf.bsl', 'Function Describe() Export Return ErrorDescription(); EndFunction')
-        self.write('Side.bsl', '''# Импорт Leaf.bsl
+        self.write('Side.bsl', '''// #Импорт Leaf.bsl
             Function Describe() Export Return Leaf.Describe(); EndFunction
             Function Catch() Export
                 Try Raise "side";
                 Except Return Leaf.Describe() = ErrorDescription(); EndTry;
             EndFunction
         ''')
-        self.execute('''# Импорт Side.bsl
+        self.execute('''// #Импорт Side.bsl
             Message(Side.Describe() = "");
             Try Raise "main";
             Except
@@ -544,7 +544,7 @@ class ExceptionImportTests(unittest.TestCase):
                 Try Raise "inner"; Except EndTry;
             EndProcedure
         ''')
-        self.execute('# Импорт Side.bsl\n')
+        self.execute('// #Импорт Side.bsl\n')
         with self.assertRaisesRegex(BSLRuntimeError, 'после вложенного обработчика пока не поддерживается'):
             self.vm.execute('Try Raise "outer"; Except Side.Catch(); Raise; EndTry;')
         self.assertEqual(self.vm.execute('ErrorDescription()'), '')
@@ -553,7 +553,7 @@ class ExceptionImportTests(unittest.TestCase):
     def test_imported_rethrow_preserves_source_and_restores_frames(self):
         side = self.write('Side.bsl', 'Function Fail() Export\n'
                                     ' Try Raise "module"; Except Raise; EndTry;\nEndFunction')
-        self.execute('# Импорт Side.bsl\n')
+        self.execute('// #Импорт Side.bsl\n')
         with self.assertRaises(BSLRuntimeError) as caught:
             self.vm.execute('Try Side.Fail(); Except Raise; EndTry;', 'caller.bsl')
         self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 2))
@@ -567,14 +567,14 @@ class ExceptionImportTests(unittest.TestCase):
                                     'Try Raise "startup"; Except value = ErrorDescription(); EndTry;\n'
                                     'Function Value() Export Return value; EndFunction\n'
                                     'Function Describe() Export Return ErrorDescription(); EndFunction')
-        self.execute('# Импорт Side.bsl\nMessage(Side.Value()); Message(Side.Describe() = "");')
+        self.execute('// #Импорт Side.bsl\nMessage(Side.Value()); Message(Side.Describe() = "");')
         self.assertEqual(self.output, [str(side.resolve()) + ':2:5: startup', 'Да'])
         self.assertEqual(self.vm.execute('ErrorDescription()'), '')
 
     def test_imported_syntax_error_is_not_converted_to_runtime_error(self):
         side = self.write('Side.bsl', 'Try\n x = ;\nExcept Message("bad"); EndTry;')
         with self.assertRaises(BSLError) as caught:
-            self.execute('# Импорт Side.bsl\nTry Message("bad"); Except EndTry;')
+            self.execute('// #Импорт Side.bsl\nTry Message("bad"); Except EndTry;')
         self.assertNotIsInstance(caught.exception, BSLRuntimeError)
         self.assertEqual(caught.exception.source, str(side.resolve()))
         self.assertEqual(caught.exception.line, 2)
@@ -583,10 +583,10 @@ class ExceptionImportTests(unittest.TestCase):
     def test_uncaught_module_initialization_failure_can_be_retried(self):
         self.write('Side.bsl', 'Raise "startup";')
         with self.assertRaises(BSLRuntimeError):
-            self.execute('# Импорт Side.bsl\n')
+            self.execute('// #Импорт Side.bsl\n')
         self.assertNotIn('side', self.vm.imports)
         self.write('Side.bsl', 'Function Answer() Export Return 42; EndFunction')
-        self.execute('# Импорт Side.bsl\nMessage(Side.Answer());')
+        self.execute('// #Импорт Side.bsl\nMessage(Side.Answer());')
         self.assertEqual(self.output, ['42'])
         self.assertEqual(self.vm.execute('ErrorDescription()'), '')
 
@@ -643,7 +643,7 @@ class ExceptionCLITests(unittest.TestCase):
             side = project / 'Side.bsl'
             side.write_text('Function Fail() Export\n Raise "module";\nEndFunction', encoding='utf-8')
             main = project / 'Main.bsl'
-            main.write_text('# Импорт Side.bsl\n'
+            main.write_text('// #Импорт Side.bsl\n'
                             'Try Side.Fail(); Except Message(ErrorDescription()); EndTry;', encoding='utf-8-sig')
             result = self.run_cli(str(main), cwd=directory)
             self.assertEqual((result.returncode, result.stdout, result.stderr),

@@ -28,7 +28,7 @@ def main() -> None:
         module.write_text('#Если Клиент Тогда\n&НаКлиенте\nФункция ПолучитьСумму(А, Б = 2) Экспорт\n'
                           'Возврат А + Б;\nКонецФункции\n#Иначе\n&AtServer\ninvalid !!!\n#КонецЕсли\n', encoding="utf-8-sig")
         importer = Path(temporary) / "Основное.bsl"
-        importer.write_text('# Импорт Побочное.bsl\n'
+        importer.write_text('// #Импорт Побочное.bsl\n'
                             'Сообщить(Побочное.ПолучитьСумму(1));', encoding="utf-8")
         project = Path(temporary) / "project"
         nested = project / "Справочник"
@@ -40,19 +40,19 @@ def main() -> None:
             encoding="utf-8-sig")
         nested_importer = project / "Основное.bsl"
         nested_importer.write_text(
-            '# Импорт Справочник.Побочное.bsl\n'
-            '# Импорт Справочник.Вложенное.Другое.bsl\n'
+            '// #Импорт Справочник.Побочное.bsl\n'
+            '// #Импорт Справочник.Вложенное.Другое.bsl\n'
             'Сообщить(справочник.ПОБОЧНОЕ.получитьсумму(1, 2));\n'
             'Сообщить(СПРАВОЧНИК.вложенное.ДРУГОЕ.ответ());', encoding="utf-8-sig")
         directory_importer = project / "Каталог.bsl"
         directory_importer.write_text(
-            '# Импорт Справочник\n'
-            '# Импорт Справочник.Вложенное\n'
+            '// #Импорт Справочник\n'
+            '// #Импорт Справочник.Вложенное\n'
             'Сообщить(Справочник.Побочное.ПолучитьСумму(1, 2));\n'
             'Сообщить(Справочник.Вложенное.Другое.Ответ());', encoding="utf-8")
         client_code = ('#If AtClient And Not Server Then\n&AtClient\n'
                        'Function F() Return 42; EndFunction\nMessage(F());\n'
-                       '#Else\n# Импорт Missing.bsl\nunsupported !!!\n#EndIf\n')
+                       '#Else\n// #Импорт Missing.bsl\nunsupported !!!\n#EndIf\n')
         exception_module = Path(temporary) / "Ошибки.bsl"
         exception_module.write_text(
             'Процедура Выполнить() Экспорт\n'
@@ -61,12 +61,25 @@ def main() -> None:
             encoding="utf-8-sig")
         exception_main = Path(temporary) / "Обработка.bsl"
         exception_main.write_text(
-            '# Импорт Ошибки.bsl\nПопытка\nОшибки.Выполнить();\n'
+            '// #Импорт Ошибки.bsl\nПопытка\nОшибки.Выполнить();\n'
             'Исключение\nСообщить(ОписаниеОшибки());\nКонецПопытки;\n',
             encoding="utf-8")
         exception_code = ('Попытка\nСообщить(1 / 0);\nИсключение\n'
                           'Сообщить("обработано");\nКонецПопытки;\n')
+        string_code = ('Сообщить(СтрСоединить(СтрРазделить("ёж,;бор", ",;", Ложь), " / "));\n'
+                       'Сообщить(ВРег(СокрЛП(" ёж ")));\n'
+                       'Сообщить(Сред("A🙂B", 2, 2)); Сообщить(СтрДлина("A🙂B"));\n'
+                       'Сообщить(Найти("A🙂B", "B"));\n'
+                       'Сообщить(СтрЗаменить("aaa", "a", "x"));\n'
+                       'Сообщить(Лев("🙂", 1) + Прав("🙂", 1));\n')
+        string_output = "ёж / бор\nЁЖ\n🙂\n4\n4\nxxx\n🙂\n"
+        string_file = Path(temporary) / "Строки.bsl"
+        string_file.write_text(string_code, encoding="utf-8-sig")
         cases = [
+            ([str(string_file)], None, string_output, 0),
+            (["-c", string_code], None, string_output, 0),
+            (["-"], string_code, string_output, 0),
+            ([], string_code + '/exit\n', string_output, 0),
             ([str(exception_main)], None, str(exception_module.resolve()) + ":3:1: из модуля\n", 0),
             (["-c", exception_code], None, "обработано\n", 0),
             (["-"], exception_code, "обработано\n", 0),
@@ -101,7 +114,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":

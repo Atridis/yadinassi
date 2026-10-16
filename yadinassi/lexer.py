@@ -91,11 +91,17 @@ class Lexer:
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 continue
-            if char == "/" and self.peek(1) == "/":
-                while self.peek() and self.peek() != "\n":
-                    self.advance()
-                continue
             line, column = self.line, self.column
+            if char == "/" and self.peek(1) == "/":
+                start = self.pos
+                standalone = not self.text[self.text.rfind("\n", 0, start) + 1:start].strip()
+                while self.peek() and self.peek() not in "\r\n":
+                    self.advance()
+                directive = self.text[start + 2:self.pos].split("//", 1)[0].strip()
+                if standalone and re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE):
+                    value = self.import_name(directive, line, column)
+                    result.append(Token("IMPORT", value, line, column, self.source))
+                continue
             if char == "#":
                 # A directive owns its line; comments and strings are lexed separately.
                 if self.text[self.text.rfind("\n", 0, self.pos) + 1:self.pos].strip():
@@ -109,21 +115,12 @@ class Lexer:
                     continue
                 if not compilation.active:
                     continue
-                match = re.fullmatch(r"#\s*Импорт\s+(\w+(?:\.\w+)*)\s*", directive,
-                                     re.IGNORECASE)
-                if match is None:
-                    raise BSLError("Ожидается # Импорт ИмяМодуля.bsl или "
-                                   "# Импорт Каталог; пути с разделителями не поддерживаются",
+                if re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE):
+                    raise BSLError("Директива #Импорт не поддерживается; используйте "
+                                   "комментарий // #Импорт на отдельной строке",
                                    self.source, line, column)
-                value, kind = match.group(1), "IMPORT"
-                parts = value[:-4] if value.casefold().endswith(".bsl") else value
-                for part in parts.split("."):
-                    if not (part[0].isalpha() or part[0] == "_"):
-                        raise BSLError("Каждая часть имени импорта должна быть идентификатором",
-                                       self.source, line, column)
-                    if part.casefold() in KEYWORDS:
-                        raise BSLError("Имя модуля или каталога не может быть ключевым словом",
-                                       self.source, line, column)
+                raise BSLError(f"Директива препроцессора не поддерживается: {directive}",
+                               self.source, line, column)
             elif char == "&":
                 if self.text[self.text.rfind("\n", 0, self.pos) + 1:self.pos].strip():
                     raise BSLError("Директива исполнения должна начинать строку",
@@ -173,6 +170,24 @@ class Lexer:
         compilation.finish(self.line, self.column)
         result.append(Token("EOF", None, self.line, self.column, self.source))
         return result
+
+    def import_name(self, directive: str, line: int, column: int) -> str:
+        match = re.fullmatch(r"#\s*(?:Импорт|Import)\s+(\w+(?:\.\w+)*)\s*", directive,
+                             re.IGNORECASE)
+        if match is None:
+            raise BSLError("Ожидается // #Импорт ИмяМодуля.bsl или "
+                           "// #Импорт Каталог; пути с разделителями не поддерживаются",
+                           self.source, line, column)
+        value = match.group(1)
+        parts = value[:-4] if value.casefold().endswith(".bsl") else value
+        for part in parts.split("."):
+            if not (part[0].isalpha() or part[0] == "_"):
+                raise BSLError("Каждая часть имени импорта должна быть идентификатором",
+                               self.source, line, column)
+            if part.casefold() in KEYWORDS:
+                raise BSLError("Имя модуля или каталога не может быть ключевым словом",
+                               self.source, line, column)
+        return value
 
     def string(self, line: int, column: int) -> str:
         self.advance()
