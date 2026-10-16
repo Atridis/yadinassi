@@ -62,7 +62,8 @@ def main() -> int:
     subprocess.run([sys.executable, str(ROOT / "scripts" / "smoke_test.py"), str(executable)],
                    cwd=ROOT, env=env, check=True)
     files = [(executable, executable.name), (ROOT / "README.md", "README.md"),
-             (ROOT / "LICENSE", "LICENSE"), (ROOT / "code_samples" / "basic.bsl", "basic.bsl")]
+             (ROOT / "LICENSE", "LICENSE"),
+             (ROOT / "integrational_tests" / "tests" / "basic.bsl", "basic.bsl")]
     if host == "windows":
         archive = ROOT / "dist" / f"yadinassi-{version}-{host}.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:

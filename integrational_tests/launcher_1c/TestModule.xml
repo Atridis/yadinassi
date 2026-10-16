@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"
+    xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.4">
+    <ExternalDataProcessor uuid="5cd4c66a-fd5a-4540-8c2b-62500d2f12d3">
+        <InternalInfo>
+            <xr:ContainedObject>
+                <xr:ClassId>c3831ec8-d8d5-4f93-8a22-f9bfae07327f</xr:ClassId>
+                <xr:ObjectId>74d62206-ae4d-44c3-8a8c-e413e47887f4</xr:ObjectId>
+            </xr:ContainedObject>
+            <xr:GeneratedType name="ExternalDataProcessorObject.TestModule" category="Object">
+                <xr:TypeId>7724f79c-7f4d-49aa-be50-d3e44fefd022</xr:TypeId>
+                <xr:ValueId>db2d64e3-de24-42ea-822c-90e225b3b8d7</xr:ValueId>
+            </xr:GeneratedType>
+        </InternalInfo>
+        <Properties>
+            <Name>TestModule</Name>
+            <Synonym/>
+            <Comment/>
+            <DefaultForm/>
+            <AuxiliaryForm/>
+        </Properties>
+        <ChildObjects/>
+    </ExternalDataProcessor>
+</MetaDataObject>
