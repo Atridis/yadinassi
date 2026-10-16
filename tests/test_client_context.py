@@ -55,7 +55,7 @@ class ClientContextTests(unittest.TestCase):
         self.assertEqual(self.output, [])
 
     def test_annotation_placement_and_duplicates(self):
-        for text in ['&AtClient\nx = 1;', '&AtClient\n# Импорт Side.bsl',
+        for text in ['&AtClient\nx = 1;', '&AtClient\n// #Импорт Side.bsl',
                      '&AtClient\n&AtClient\nProcedure P() EndProcedure',
                      'Procedure P()\n&AtClient\nProcedure Q() EndProcedure\nEndProcedure',
                      'If True Then\n&AtClient\nProcedure P() EndProcedure\nEndIf',
@@ -91,7 +91,7 @@ class ClientContextTests(unittest.TestCase):
             #If Server Then
             &AtServer
             invalid !!! syntax "
-            # Импорт Missing.bsl
+            // #Импорт Missing.bsl
             #If Client Then
             Message("bad nested");
             #Else
@@ -192,8 +192,8 @@ server-only !!!
 #EndIf
 ''', encoding='utf-8')
             main = root / 'Main.bsl'
-            self.vm.execute('#If Client Then\n# Импорт Side.bsl\n#Else\n'
-                            '# Импорт Missing.bsl\n#EndIf\nMessage(Side.F());', str(main))
+            self.vm.execute('#If Client Then\n// #Импорт Side.bsl\n#Else\n'
+                            '// #Импорт Missing.bsl\n#EndIf\nMessage(Side.F());', str(main))
             self.assertEqual(self.output, ['42'])
             self.assertEqual(self.vm.imports['side'].interpreter.execution_context, 'client')
 
@@ -203,6 +203,6 @@ server-only !!!
             side = root / 'Side.bsl'
             side.write_text('Message("bad");\n&AtServer\nProcedure P() EndProcedure', encoding='utf-8')
             with self.assertRaises(BSLError) as caught:
-                self.vm.execute('# Импорт Side.bsl\nMessage("bad root");', str(root / 'Main.bsl'))
+                self.vm.execute('// #Импорт Side.bsl\nMessage("bad root");', str(root / 'Main.bsl'))
             self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 2))
             self.assertEqual(self.output, [])

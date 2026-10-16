@@ -84,8 +84,8 @@ class CLITests(unittest.TestCase):
                 '#If Client Then\n&AtClient\nFunction F() Export Return 42; EndFunction\n'
                 '#Else\n&AtServer\nunsupported !\n#EndIf', encoding='utf-8')
             main = project / 'Main.bsl'
-            main.write_text('#If AtClient Then\n# Импорт Side.bsl\n#Else\n'
-                            '# Импорт Missing.bsl\n#EndIf\nMessage(Side.F());', encoding='utf-8-sig')
+            main.write_text('#If AtClient Then\n// #Импорт Side.bsl\n#Else\n'
+                            '// #Импорт Missing.bsl\n#EndIf\nMessage(Side.F());', encoding='utf-8-sig')
             result = self.run_cli(str(main), cwd=root)
             self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
 
@@ -116,7 +116,7 @@ class CLITests(unittest.TestCase):
     def test_import_symlink_loop_has_clean_source_aware_error(self):
         with tempfile.TemporaryDirectory() as temporary:
             main = Path(temporary) / "Main.bsl"
-            main.write_text("# Импорт Side.bsl\n", encoding="utf-8")
+            main.write_text("// #Импорт Side.bsl\n", encoding="utf-8")
             side = Path(temporary) / "Side.bsl"
             try:
                 side.symlink_to(side.name)
@@ -142,7 +142,7 @@ class CLITests(unittest.TestCase):
             project = directory / "project"
             project.mkdir()
             main = project / "Основное.bsl"
-            main.write_text('# Импорт Побочное.bsl\nСообщить(Побочное.Ответ());',
+            main.write_text('// #Импорт Побочное.bsl\nСообщить(Побочное.Ответ());',
                             encoding="utf-8-sig")
             (project / "Побочное.bsl").write_text(
                 'Функция Ответ() Экспорт Возврат "соседний"; КонецФункции',
@@ -164,8 +164,8 @@ class CLITests(unittest.TestCase):
             deeper.mkdir(parents=True)
             main = project / "Основное.bsl"
             main.write_text(
-                '# Импорт Справочник.Побочное.bsl\n'
-                '# Импорт Справочник.Вложенное.Другое.bsl\n'
+                '// #Импорт Справочник.Побочное.bsl\n'
+                '// #Импорт Справочник.Вложенное.Другое.bsl\n'
                 'Сообщить(справочник.ПОБОЧНОЕ.получитьсумму(1, 2));\n'
                 'Сообщить(СПРАВОЧНИК.вложенное.ДРУГОЕ.ответ());',
                 encoding="utf-8-sig")
@@ -194,7 +194,7 @@ class CLITests(unittest.TestCase):
                 'Функция ПолучитьСумму(А, Б) Экспорт Возврат А + Б; КонецФункции',
                 encoding="cp1251")
             main = project / "Основное.bsl"
-            main.write_text('# Импорт Справочник\n'
+            main.write_text('// #Импорт Справочник\n'
                             'Сообщить(Справочник.Побочное.ПолучитьСумму(1, 2));',
                             encoding="cp1251")
             for path in (main, Path("project") / main.name):
@@ -203,9 +203,9 @@ class CLITests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "3\n", ""))
 
     def test_nested_import_errors_have_clean_source_aware_diagnostics(self):
-        cases = [('# Импорт Справочник.Нет.bsl\n', 'Основное.bsl:1:'),
-                 ('# Импорт НетКаталога\n', 'Основное.bsl:1:'),
-                 ('# Импорт Справочник.Побочное.bsl\n'
+        cases = [('// #Импорт Справочник.Нет.bsl\n', 'Основное.bsl:1:'),
+                 ('// #Импорт НетКаталога\n', 'Основное.bsl:1:'),
+                 ('// #Импорт Справочник.Побочное.bsl\n'
                   'Сообщить(Справочник.Побочное.Ошибка());', 'Побочное.bsl:2:')]
         for source, location in cases:
             with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
@@ -226,9 +226,9 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             main = directory / "Основное.bsl"
-            main.write_text('# Импорт Побочное.bsl\nСообщить(Побочное.Ответ());', encoding="cp1251")
+            main.write_text('// #Импорт Побочное.bsl\nСообщить(Побочное.Ответ());', encoding="cp1251")
             (directory / "Побочное.bsl").write_text(
-                '# Импорт Третье.bsl\nФункция Ответ() Экспорт Возврат Третье.Текст(); КонецФункции',
+                '// #Импорт Третье.bsl\nФункция Ответ() Экспорт Возврат Третье.Текст(); КонецФункции',
                 encoding="cp1251")
             (directory / "Третье.bsl").write_text(
                 'Функция Текст() Экспорт Возврат "Привет"; КонецФункции', encoding="cp1251")
@@ -242,12 +242,12 @@ class CLITests(unittest.TestCase):
                  ('Function F() Export\nReturn 1 / 0;\nEndFunction',
                   'Side.F()', 'Side.bsl:2:'),
                  ('Function F() Return 42; EndFunction', 'Side.F()', 'Main.bsl:2:'),
-                 ('# Импорт Main.bsl\n', 'Side.F()', 'Side.bsl:1:')]
+                 ('// #Импорт Main.bsl\n', 'Side.F()', 'Side.bsl:1:')]
         for module, call, location in cases:
             with self.subTest(module=module), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 main = directory / "Main.bsl"
-                main.write_text('# Импорт Side.bsl\n' + call, encoding="utf-8")
+                main.write_text('// #Импорт Side.bsl\n' + call, encoding="utf-8")
                 if module is not None:
                     (directory / "Side.bsl").write_text(module, encoding="utf-8")
                 result = self.run_cli(str(main))
@@ -257,7 +257,7 @@ class CLITests(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_import_without_source_file_is_rejected_in_command_stdin_and_repl(self):
-        code = '# Импорт Side.bsl\n'
+        code = '// #Импорт Side.bsl\n'
         cases = [(('-c', code), None, '<команда>'),
                  (('-',), code, '<stdin>'),
                  ((), code + '/exit\n', '<консоль>')]
@@ -274,7 +274,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             main = directory / "Main.bsl"
-            main.write_text('# Импорт Side.bsl\n', encoding="utf-8")
+            main.write_text('// #Импорт Side.bsl\n', encoding="utf-8")
             (directory / "Side.bsl").write_text('Сообщить("Привет")', encoding="cp1251")
             result = self.run_cli(str(main))
             self.assertEqual(result.returncode, 1)

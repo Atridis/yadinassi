@@ -5,7 +5,7 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
 
-from . import ast
+from . import ast, strings
 from .errors import BSLError, BSLRuntimeError
 from .parser import parse
 from .lexer import KEYWORDS
@@ -76,7 +76,8 @@ class Interpreter:
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
         self.register_function("Булево", boolean, "Boolean")
-        self.register_function("СтрДлина", self._string_length, "StrLen")
+        for name, function, alias in strings.BUILTINS:
+            self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")
 
@@ -101,12 +102,6 @@ class Interpreter:
     def _error_description(self) -> str:
         return (str(self._handled_errors[-1])
                 if self._handled_errors and self._handled_errors[-1] is not None else "")
-
-    @staticmethod
-    def _string_length(value: object) -> Decimal:
-        if not isinstance(value, str):
-            raise TypeError("СтрДлина ожидает строку")
-        return Decimal(len(value))
 
     def execute(self, text: str, source: str = "<строка>") -> object:
         return self.execute_program(parse(text, source))
@@ -223,7 +218,7 @@ class Interpreter:
                 return left > right
             return left >= right
         if operator == "+" and isinstance(left, str):
-            return left + to_string(right)
+            return strings.concatenate(left, to_string(right))
         left, right = require_number(left), require_number(right)
         if operator == "+":
             return left + right
