@@ -1,5 +1,6 @@
-"""Conditional compilation for Yadinassi's standalone client profile."""
+"""Conditional compilation and source regions for the standalone client profile."""
 
+from collections.abc import Collection
 from dataclasses import dataclass
 import re
 
@@ -16,6 +17,8 @@ SYMBOLS = {
 }
 OPERATORS = {"и": "and", "and": "and", "или": "or", "or": "or",
              "не": "not", "not": "not"}
+REGION_DIRECTIVES = {"область": "REGION", "region": "REGION",
+                     "конецобласти": "ENDREGION", "endregion": "ENDREGION"}
 
 
 @dataclass
@@ -35,11 +38,11 @@ class ConditionalCompilation:
     def active(self) -> bool:
         return not self.stack or self.stack[-1].active
 
-    def process(self, directive: str, line: int, column: int) -> bool:
-        """Consume a conditional directive; return False for other # directives."""
+    def process(self, directive: str, line: int, column: int) -> str | None:
+        """Consume a conditional directive and return its kind, or None."""
         match = re.fullmatch(r"#\s*([^\W\d]\w*)(.*)", directive)
         if match is None or match.group(1).casefold() not in DIRECTIVES:
-            return False
+            return None
         kind = DIRECTIVES[match.group(1).casefold()]
         rest = match.group(2).strip()
 
@@ -53,7 +56,7 @@ class ConditionalCompilation:
         if kind == "if":
             parent = self.active
             self.stack.append(_Branch(parent, condition, parent and condition))
-            return True
+            return kind
         if not self.stack:
             fail("Директива препроцессора не имеет соответствующей #Если")
         branch = self.stack[-1]
@@ -68,12 +71,71 @@ class ConditionalCompilation:
         else:
             branch.active = branch.parent_active and not branch.matched and condition
             branch.matched = branch.matched or condition
-        return True
+        return kind
 
     def finish(self, line: int, column: int) -> None:
         if self.stack:
             raise IncompleteInput("Не завершена #Если: ожидается #КонецЕсли",
                                   self.source, line, column)
+
+
+@dataclass
+class _Region:
+    name: str
+    line: int
+    column: int
+    conditional_depth: int
+
+
+class SourceRegions:
+    """Validate active region directives without creating runtime scopes."""
+
+    def __init__(self, source: str):
+        self.source = source
+        self.stack: list[_Region] = []
+
+    def process(self, directive: str, line: int, column: int,
+                conditional_depth: int, keywords: Collection[str]) -> tuple[str, str] | None:
+        match = re.fullmatch(r"#\s*([^\W\d]\w*)(.*)", directive)
+        if match is None or match.group(1).casefold() not in REGION_DIRECTIVES:
+            return None
+        kind = REGION_DIRECTIVES[match.group(1).casefold()]
+        name = match.group(2).strip()
+        if kind == "REGION":
+            if (not name or not (name[0].isalpha() or name[0] == "_")
+                    or not all(char.isalnum() or char == "_" for char in name)
+                    or name.casefold() in keywords):
+                raise BSLError("После #Область ожидается имя-идентификатор",
+                               self.source, line, column)
+            self.stack.append(_Region(name, line, column, conditional_depth))
+        else:
+            if name:
+                raise BSLError("После #КонецОбласти не должно быть имени или выражения",
+                               self.source, line, column)
+            if not self.stack:
+                raise BSLError("#КонецОбласти не имеет соответствующей #Область",
+                               self.source, line, column)
+            if self.stack[-1].conditional_depth != conditional_depth:
+                self.crossing(line, column)
+            self.stack.pop()
+        return kind, name
+
+    def conditional_boundary(self, kind: str, previous_depth: int,
+                             line: int, column: int) -> None:
+        if (kind != "if" and self.stack
+                and self.stack[-1].conditional_depth == previous_depth):
+            self.crossing(line, column)
+
+    def crossing(self, line: int, column: int) -> None:
+        raise BSLError("Область пересекает границу условной компиляции",
+                       self.source, line, column)
+
+    def finish(self) -> None:
+        if self.stack:
+            region = self.stack[-1]
+            raise IncompleteInput(
+                f"Не завершена #Область {region.name}: ожидается #КонецОбласти",
+                self.source, region.line, region.column)
 
 
 class _Condition:

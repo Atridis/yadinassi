@@ -106,6 +106,119 @@ class CLITests(unittest.TestCase):
         self.assertEqual(result.stdout, '')
         self.assertIn('#КонецЕсли', result.stderr)
 
+    def test_regions_command_file_stdin_and_multiline_repl(self):
+        code = ('#Область Модуль\n#Region Routines\nФункция Ответ()\n'
+                '    #Область Тело\n    Возврат 42;\n    #КонецОбласти\n'
+                'КонецФункции\n#EndRegion\nСообщить(Ответ());\n#КонецОбласти\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Области.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [(('-c', code), None), ((str(path),), None),
+                     (('-',), code), ((), code + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, '42\n', ''))
+
+    def test_region_repl_executes_nested_block_once_after_closing(self):
+        code = ('счетчик = 0;\n#Область Внешняя\nсчетчик = счетчик + 1;\n'
+                '#Region Inner\nсчетчик = счетчик + 1;\n#EndRegion\n'
+                'Сообщить(счетчик);\n#КонецОбласти\nсчетчик\n/exit\n')
+        result = self.run_cli(stdin=code)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '2\n2\n', ''))
+
+    def test_unfinished_regions_do_not_execute_in_command_file_stdin_or_repl(self):
+        code = ('#Область Внешняя\nСообщить("рано");\n#Region Inner\n'
+                'Сообщить("тоже рано");\n#EndRegion\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Незавершенная.bsl'
+            path.write_text(code, encoding='utf-8')
+            cases = [(('-c', code), None, '<команда>'),
+                     ((str(path),), None, str(path)),
+                     (('-',), code, '<stdin>'), ((), code, '<консоль>')]
+            for arguments, stdin, source in cases:
+                with self.subTest(source=source):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout), (1, ''))
+                    self.assertIn(source + ':1:', result.stderr)
+                    self.assertIn('#КонецОбласти', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
+    def test_malformed_regions_have_clean_diagnostics_and_repl_recovers(self):
+        cases = [('#КонецОбласти', 1), ('#EndRegion', 1),
+                 ('#Область', 1), ('#Region', 1),
+                 ('#Область 123', 1), ('#Region 123', 1),
+                 ('#Область Имя хвост', 1), ('#Region Name extra', 1),
+                 ('#Область Имя\n#КонецОбласти хвост', 2),
+                 ('#Region Name\n#EndRegion extra', 2)]
+        for code, line in cases:
+            for arguments, stdin, source, stdout in [
+                    (('-c', code), None, '<команда>', ''),
+                    (('-',), code, '<stdin>', ''),
+                    ((), code + '\nСообщить("жив");\n/exit\n', '<консоль>', 'жив\n')]:
+                with self.subTest(code=code, source=source):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                    self.assertIn(f'{source}:{line}:', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
+    def test_regions_preserve_runtime_error_source_lines(self):
+        code = ('#Область Внешняя\n#Region Inner\nСообщить(1 / 0);\n'
+                '#EndRegion\n#КонецОбласти\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Ошибка.bsl'
+            path.write_text(code, encoding='utf-8')
+            cases = [(('-c', code), None, '<команда>'),
+                     ((str(path),), None, str(path)),
+                     (('-',), code, '<stdin>'), ((), code + '/exit\n', '<консоль>')]
+            for arguments, stdin, source in cases:
+                with self.subTest(source=source):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout), (1, ''))
+                    self.assertIn(source + ':3:', result.stderr)
+                    self.assertIn('Деление на ноль', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
+    def test_regions_imported_file_from_unrelated_cwd(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            project = directory / 'project'
+            project.mkdir()
+            main = project / 'Основное.bsl'
+            main.write_text('#Область Импорты\n// #Импорт Побочное.bsl\n'
+                            '#КонецОбласти\nСообщить(Побочное.Ответ());\n', encoding='utf-8-sig')
+            (project / 'Побочное.bsl').write_text(
+                '#Region PublicAPI\nФункция Ответ() Экспорт\n#Область Тело\n'
+                'Возврат 42;\n#КонецОбласти\nКонецФункции\n#EndRegion\n',
+                encoding='utf-8-sig')
+            for path in (main, Path('project') / main.name):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=directory)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, '42\n', ''))
+
+    def test_imported_regions_preserve_error_source_lines(self):
+        cases = [('#Область API\nФункция Ответ() Экспорт\n#Region Body\n'
+                  'Возврат 1 / 0;\n#EndRegion\nКонецФункции\n#КонецОбласти\n',
+                  4, 'Деление на ноль'),
+                 ('#Область API\n// комментарий\n#КонецОбласти хвост\n',
+                  3, '#КонецОбласти'),
+                 ('// комментарий\n#EndRegion\n', 2, '#Область')]
+        for code, line, message in cases:
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                main = directory / 'Основное.bsl'
+                main.write_text('// #Импорт Побочное.bsl\nСообщить(Побочное.Ответ());\n',
+                                encoding='utf-8')
+                module = directory / 'Побочное.bsl'
+                module.write_text(code, encoding='utf-8-sig')
+                result = self.run_cli(str(main))
+                self.assertEqual((result.returncode, result.stdout), (1, ''))
+                self.assertIn(f'{module.resolve()}:{line}:', result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+
     def test_missing_required_argument_has_clean_cli_error(self):
         code = 'Procedure P(a = 1, b) EndProcedure P()'
         result = self.run_cli("-c", code)

@@ -45,7 +45,11 @@ class Parser:
     def parse(self) -> list[ast.Node]:
         statements = []
         routines = set()
+        regions = []
         while self.current.kind != "EOF":
+            self.region_directives(regions)
+            if self.current.kind == "EOF":
+                break
             if self.accept(";"):
                 continue
             if token := self.accept("IMPORT"):
@@ -77,7 +81,9 @@ class Parser:
                 # Routine brackets are not statements and need no semicolon.
                 continue
             statements.append(self.statement())
-            if not self.accept(";") and self.current.kind != "EOF":
+            separated = self.accept(";")
+            self.region_directives(regions)
+            if not separated and self.current.kind != "EOF":
                 self.fail("Ожидается ';' между операторами")
         self.expect("EOF")
         return statements
@@ -117,15 +123,35 @@ class Parser:
 
     def block(self, endings: set[str]) -> list[ast.Node]:
         statements = []
-        while self.current.kind not in endings:
+        regions = []
+        while True:
+            self.region_directives(regions)
+            if self.current.kind in endings:
+                break
             if self.current.kind == "EOF":
                 self.fail("Не завершен блок: ожидается " + "/".join(sorted(endings)))
             if self.accept(";"):
                 continue
             statements.append(self.statement())
-            if not self.accept(";") and self.current.kind not in endings:
+            separated = self.accept(";")
+            self.region_directives(regions)
+            if not separated and self.current.kind not in endings:
                 self.fail("Ожидается ';' между операторами")
+        if regions:
+            self.fail("Область пересекает границу синтаксической конструкции")
         return statements
+
+    def region_directives(self, regions: list[Token]) -> None:
+        # Regions share the surrounding statement list and its variable/routine scope.
+        # Each block owns its nesting, so a region cannot cross a routine or branch.
+        while self.current.kind in {"REGION", "ENDREGION"}:
+            if self.current.kind == "REGION":
+                regions.append(self.current)
+            elif not regions:
+                self.fail("Область пересекает границу синтаксической конструкции")
+            else:
+                regions.pop()
+            self.pos += 1
 
     def statement(self) -> ast.Node:
         token = self.current
@@ -138,7 +164,7 @@ class Parser:
         if self.accept("RETURN"):
             if self.routine_kind is None:
                 self.fail("Возврат допустим только внутри процедуры или функции")
-            empty = self.current.kind in {";", "ENDPROCEDURE", "ENDFUNCTION", "ENDIF", "ELSE", "ELSIF", "ENDDO", "EXCEPT", "ENDTRY"}
+            empty = self.current.kind in {";", "ENDPROCEDURE", "ENDFUNCTION", "ENDIF", "ELSE", "ELSIF", "ENDDO", "EXCEPT", "ENDTRY", "ENDREGION"}
             if self.routine_kind == "PROCEDURE" and not empty:
                 self.fail("Процедура не может возвращать значение")
             return ast.Return(token, None if empty else self.expression())
@@ -155,7 +181,7 @@ class Parser:
         if self.accept("RAISE"):
             empty = self.current.kind in {
                 ";", "EOF", "ENDPROCEDURE", "ENDFUNCTION", "ENDIF", "ELSE",
-                "ELSIF", "ENDDO", "EXCEPT", "ENDTRY",
+                "ELSIF", "ENDDO", "EXCEPT", "ENDTRY", "ENDREGION",
             }
             if empty and not self.handler_depth:
                 self.fail("ВызватьИсключение без выражения допустимо только внутри Исключение")
@@ -243,6 +269,13 @@ class Parser:
             return ast.Literal(token, value)
         if self.accept("IDENT"):
             return ast.Name(token, token.value)
+        if self.accept("REGION"):
+            # EDT admits a complete expression as a region's contents, including
+            # an optional trailing semicolon. The region adds no runtime node.
+            value = self.expression()
+            self.accept(";")
+            self.expect("ENDREGION")
+            return value
         if self.accept("?"):
             self.expect("(")
             condition = self.expression()

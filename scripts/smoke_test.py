@@ -25,8 +25,11 @@ def main() -> None:
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
-        module.write_text('#Если Клиент Тогда\n&НаКлиенте\nФункция ПолучитьСумму(А, Б = 2) Экспорт\n'
-                          'Возврат А + Б;\nКонецФункции\n#Иначе\n&AtServer\ninvalid !!!\n#КонецЕсли\n', encoding="utf-8-sig")
+        module.write_text('#Область ПубличныйИнтерфейс\n#Если Клиент Тогда\n&НаКлиенте\n'
+                          'Функция ПолучитьСумму(А, Б = 2) Экспорт\n'
+                          '#Область Вычисление\nВозврат А + Б;\n#КонецОбласти\n'
+                          'КонецФункции\n#Иначе\n&AtServer\ninvalid !!!\n'
+                          '#КонецЕсли\n#КонецОбласти\n', encoding="utf-8-sig")
         importer = Path(temporary) / "Основное.bsl"
         importer.write_text('// #Импорт Побочное.bsl\n'
                             'Сообщить(Побочное.ПолучитьСумму(1));', encoding="utf-8")
@@ -53,6 +56,20 @@ def main() -> None:
         client_code = ('#If AtClient And Not Server Then\n&AtClient\n'
                        'Function F() Return 42; EndFunction\nMessage(F());\n'
                        '#Else\n// #Импорт Missing.bsl\nunsupported !!!\n#EndIf\n')
+        region_code = ('#Область Модуль\nФункция Ответ()\n'
+                       '    #Область Тело\n    Возврат 42;\n    #КонецОбласти\n'
+                       'КонецФункции\nСообщить(Ответ());\n#КонецОбласти\n')
+        region_file = Path(temporary) / 'Области.bsl'
+        region_file.write_text(region_code, encoding='utf-8-sig')
+        region_error_module = Path(temporary) / 'ОшибкаОбласти.bsl'
+        region_error_module.write_text(
+            '#Область API\nФункция Ответ() Экспорт\n#Область Тело\n'
+            'Возврат 1 / 0;\n#КонецОбласти\nКонецФункции\n#КонецОбласти\n',
+            encoding='utf-8-sig')
+        region_error_main = Path(temporary) / 'ОшибкаИмпортаОбласти.bsl'
+        region_error_main.write_text(
+            '// #Импорт ОшибкаОбласти.bsl\nСообщить(ОшибкаОбласти.Ответ());\n',
+            encoding='utf-8')
         exception_module = Path(temporary) / "Ошибки.bsl"
         exception_module.write_text(
             'Процедура Выполнить() Экспорт\n'
@@ -126,6 +143,11 @@ def main() -> None:
         map_file = Path(temporary) / "Соответствия.bsl"
         map_file.write_text(map_code, encoding="utf-8-sig")
         cases = [
+            ([str(region_file)], None, '42\n', 0),
+            (['-c', region_code], None, '42\n', 0),
+            (['-'], region_code, '42\n', 0),
+            ([], region_code + '/exit\n', '42\n', 0),
+            (['-c', '#Region Example\nMessage(42);\n#EndRegion\n'], None, '42\n', 0),
             ([str(map_file)], None, map_output, 0),
             (["-c", map_code], None, map_output, 0),
             (["-"], map_code, map_output, 0),
@@ -167,12 +189,31 @@ def main() -> None:
                 raise AssertionError(result.stderr)
             if code and ("Деление на ноль" not in result.stderr or "Traceback" in result.stderr):
                 raise AssertionError(result.stderr)
+        unfinished_region = '#Область Незавершенная\nСообщить("рано");\n'
+        region_errors = [
+            (['-c', '#EndRegion'], None, '<команда>:1:', '#Область'),
+            (['-c', '#Область'], None, '<команда>:1:', '#Область'),
+            (['-c', '#Region Name extra'], None, '<команда>:1:', '#Область'),
+            (['-c', '#Область Имя\n#КонецОбласти хвост'], None,
+             '<команда>:2:', '#КонецОбласти'),
+            (['-c', unfinished_region], None, '<команда>:1:', '#КонецОбласти'),
+            (['-'], unfinished_region, '<stdin>:1:', '#КонецОбласти'),
+            ([], unfinished_region, '<консоль>:1:', '#КонецОбласти'),
+            ([str(region_error_main)], None, str(region_error_module.resolve()) + ':4:',
+             'Деление на ноль'),
+        ]
+        for arguments, stdin, location, message in region_errors:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=temporary, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed region diagnostics {arguments!r}: {result!r}')
         if os.name != "nt":
             from console_check import check_console
 
             check_console([executable], cwd=temporary, env=env)
-            print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
+            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation")
+    print("Binary smoke tests passed: maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":
