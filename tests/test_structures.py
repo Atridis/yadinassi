@@ -594,6 +594,11 @@ class StructureImportTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Helpers.Public().Value'), Decimal(7))
 
     def test_imported_host_output_failure_preserves_source_scope_and_prior_writes(self):
+        # Exercise canonical import paths even where temporary directories do
+        # not themselves contain aliases (unlike macOS and Windows runners).
+        subdirectory = self.directory / 'path_alias'
+        subdirectory.mkdir()
+        self.directory = subdirectory / '..'
         self.load('''
             Procedure Fill(Val s, output) Export
                 s.Property("Value", output);
@@ -602,7 +607,7 @@ class StructureImportTests(unittest.TestCase):
         ''', 's = New Structure("Value", 42); result = 7;')
         with self.assertRaises(BSLRuntimeError) as caught:
             self.vm.execute('Helpers.Fill(s, result)', 'caller.bsl')
-        self.assertEqual(caught.exception.source, str(self.directory / 'Helpers.bsl'))
+        self.assertEqual(caught.exception.source, str((self.directory / 'Helpers.bsl').resolve()))
         self.assertEqual(self.vm.variables['result'], Decimal(42))
         self.assertIsNone(self.vm.locals)
         self.assertEqual(self.vm.execute('s.Value'), Decimal(42))
