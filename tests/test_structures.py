@@ -91,14 +91,14 @@ class StructureTests(unittest.TestCase):
                 with self.assertRaises(BSLRuntimeError):
                     self.vm.execute('s = New Structure(keys);')
 
-    def test_duplicate_constructor_keys_replace_values_keep_initial_spelling(self):
+    def test_duplicate_constructor_keys_use_insert_replacement_semantics(self):
         self.vm.execute('''
             s = New Structure("First, first, FIRST", 1, 2, 3);
             Message(s.Count()); Message(s.First);
             For Each pair In s Do Message(pair.Key); EndDo;
             t = New Structure("Name,NAME", 1); Message(t.Name = Undefined);
         ''')
-        self.assertEqual(self.output, ['1', '3', 'First', 'Да'])
+        self.assertEqual(self.output, ['1', '3', 'FIRST', 'Да'])
 
     def test_surplus_constructor_values_are_evaluated_then_ignored(self):
         self.vm.execute('''
@@ -118,14 +118,14 @@ class StructureTests(unittest.TestCase):
         ''')
         self.assertEqual(self.output, ['1', '2', '3'])
 
-    def test_insert_replaces_case_insensitively_and_preserves_key_spelling(self):
+    def test_insert_replaces_case_insensitively_and_updates_key_spelling(self):
         self.vm.execute('''
             s = New Structure("MiXeD", 1);
             s.Вставить("mixed", 2); s.Insert("MIXED", 3);
             Message(s.Count()); Message(s.mixed); Message(s["mIxEd"]);
             For Each p In s Do Message(p.Key); EndDo;
         ''')
-        self.assertEqual(self.output, ['1', '3', '3', 'MiXeD'])
+        self.assertEqual(self.output, ['1', '3', '3', 'MIXED'])
 
     def test_insert_optional_value_is_undefined_even_when_replacing(self):
         self.vm.execute('''
@@ -195,7 +195,7 @@ class StructureTests(unittest.TestCase):
 
     def test_direct_key_arguments_are_strict_and_failure_preserves_outputs(self):
         self.vm.execute('s = New Structure("Known", 7); result = 99;')
-        for key in ['""', '" Known "', '"bad-key"', '"a.b"',
+        for key in ['""', '"bad-key"', '"a.b"',
                     '0', 'True', 'Undefined', 'New Array']:
             for code in [f's.Property({key}, result)', f's.Delete({key})',
                          f's[{key}]', f's[{key}] = 8', f's.Insert({key}, 8)']:
@@ -204,6 +204,37 @@ class StructureTests(unittest.TestCase):
                 self.assertEqual(self.vm.variables['result'], Decimal(99))
                 self.assertEqual(self.vm.execute('s.Count()'), Decimal(1))
                 self.assertEqual(self.vm.execute('s.Known'), Decimal(7))
+
+    def test_property_ignores_outer_ascii_spaces_and_preserves_output_contract(self):
+        # Confirmed by the owner-supplied native collections.out, unlike other
+        # whitespace characters or trimming in Insert/Delete/index operations.
+        self.vm.execute('''
+            s = New Structure("Known,Empty", 7); result = 99;
+            Message(s.Property("  kNoWn  ", result)); Message(result);
+            Message(s.Свойство(" Known "));
+            Message(s.Property(" Empty ", result)); Message(result = Undefined);
+            result = 99;
+            Message(s.Property(" Missing ", result)); Message(result = Undefined);
+            Message(s.Count());
+        ''')
+        self.assertEqual(self.output, ['Да', '7', 'Да', 'Да', 'Да', 'Нет', 'Да', '2'])
+
+    def test_property_trimming_does_not_change_keys_or_other_name_operations(self):
+        self.vm.execute('s = New Structure("Known", 7); result = 99;')
+        self.vm.execute('s.Property(" known ", result); '
+                        'For Each pair In s Do Message(pair.Key); EndDo;')
+        self.assertEqual(self.output, ['Known'])
+        for code in ['s.Insert(" Known ", 8)', 's.Delete(" Known ")',
+                     's[" Known "]', 's[" Known "] = 8']:
+            with self.subTest(code=code), self.assertRaises(BSLRuntimeError):
+                self.vm.execute(code)
+            self.assertEqual(self.vm.execute('s.Known'), Decimal(7))
+        for key in [' ', 'Known Name', '\tKnown\t', '\u00a0Known\u00a0']:
+            with self.subTest(key=repr(key)):
+                self.vm.variables['key'] = key
+                with self.assertRaises(BSLRuntimeError):
+                    self.vm.execute('s.Property(key, result)')
+                self.assertEqual(self.vm.variables['result'], Decimal(7))
 
     def test_wrong_method_arities_do_not_mutate_structure_or_output(self):
         self.vm.execute('s = New Structure("Known", 7); result = 99;')
