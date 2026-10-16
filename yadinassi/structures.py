@@ -76,8 +76,8 @@ class BSLStructure(BSLObject):
         key = _key(name)
         if key not in self._items:
             self._version += 1
-        else:
-            name = self._items[key][0]
+        # Native collections.bsl: Insert replaces the spelling as well as the
+        # value. Ordinary property/index assignment still keeps the current name.
         self._items[key] = name, value
 
     def delete(self, name: str) -> None:
@@ -92,7 +92,9 @@ class BSLStructure(BSLObject):
             self._version += 1
 
     def property(self, name: str, output: object = None) -> bool:
-        key = _key(name)
+        # The native probe accepts surrounding U+0020 spaces for Property.
+        # Other whitespace and other key-taking operations have no such evidence.
+        key = _key(name.strip(" ") if isinstance(name, str) else name)
         found = key in self._items
         if isinstance(output, Reference):
             output.set(self._items[key][1] if found else None)

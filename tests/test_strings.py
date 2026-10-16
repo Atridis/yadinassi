@@ -1,6 +1,7 @@
-"""Independent examples for the documented string builtin contract.
+"""String unit tests, including regressions from committed native 1C output.
 
-These are interpreter unit tests, not output captured on a native 1C platform.
+Native-derived cases are identified below; broader Unicode simple-case tests
+check the interpreter contract, not full native-platform equivalence.
 """
 
 from decimal import Decimal
@@ -146,6 +147,49 @@ class StringTests(unittest.TestCase):
             ('Upper("中文🙂")', '中文🙂'), ('Lower("中文🙂")', '中文🙂'),
         ])
 
+    def test_case_regressions_from_native_string_output(self):
+        # strings.bsl/out at 6958f83: case.expanding and case.dotted-i.
+        self.assert_cases([
+            ('Upper("Straße")', 'STRAßE'), ('ВРег("Straße")', 'STRAßE'),
+            ('Lower("İ")', 'i'), ('НРег("İ")', 'i'),
+        ])
+
+    def test_simple_casing_does_not_expand_or_remove_existing_marks(self):
+        # Unicode simple-case generalization, beyond the two native examples.
+        self.assert_cases([
+            ('Upper("ß ﬀ ﬃ և")', 'ß ﬀ ﬃ և'),
+            ('Lower("İİ I İ̇")', 'ii i i̇'),
+            ('Lower("ẞ")', 'ß'), ('Upper("ǆǅǄ")', 'ǄǄǄ'),
+            ('Lower("ΟΣ ΟΣΑ")', 'οσ οσα'),
+        ])
+
+    def test_simple_uppercase_uses_greek_single_character_alternatives(self):
+        # UnicodeData field 12: these 27 letters have a simple uppercase even
+        # though Python full uppercase expands them into multiple characters.
+        pairs = [(chr(code), chr(code + 8))
+                 for start in (0x1f80, 0x1f90, 0x1fa0)
+                 for code in range(start, start + 8)]
+        pairs.extend([('ᾳ', 'ᾼ'), ('ῃ', 'ῌ'), ('ῳ', 'ῼ')])
+        for source, expected in pairs:
+            with self.subTest(code=hex(ord(source))):
+                self.vm.variables['text'] = source
+                self.assertEqual(self.evaluate('Upper(text)'), expected)
+                self.vm.variables['text'] = expected
+                self.assertEqual(self.evaluate('Upper(text)'), expected)
+                self.assertEqual(self.evaluate('Lower(text)'), source)
+
+    def test_simple_casing_keeps_supplementary_letters_and_surrogates(self):
+        # Unicode Deseret simple-case mappings are supplementary code points;
+        # they remain paired, while isolated surrogate halves stay unchanged.
+        self.assert_cases([
+            ('Upper("𐐨🙂")', '𐐀🙂'), ('Lower("𐐀🙂")', '𐐨🙂'),
+            ('StrLen(Upper("ßᾳİ𐐨"))', Decimal(5)),
+            ('StrLen(Lower("ßᾼİ𐐀"))', Decimal(5)),
+        ])
+        self.vm.variables['text'] = '\ud83dA\ude42'
+        self.assertEqual(self.evaluate('Upper(text)'), '\ud83dA\ude42')
+        self.assertEqual(self.evaluate('Lower(text)'), '\ud83da\ude42')
+
     def test_string_arguments_use_current_string_presentation(self):
         self.assert_cases([
             ('StrLen(123)', Decimal(3)), ('StrLen(Undefined)', Decimal(0)),
@@ -173,6 +217,20 @@ class StringTests(unittest.TestCase):
                          ['', 'a', '', 'b', ''])
         # Removing empty fields is not trimming nonempty fields.
         self.assertEqual(self.evaluate('StrSplit("a, ,b", ",", False)').items, ['a', ' ', 'b'])
+
+    def test_split_explicit_undefined_drops_empty_fields(self):
+        # strings.bsl/out at 6958f83: split.undefined-flag produces [а, б].
+        self.assertEqual(self.evaluate('СтрРазделить("а,,б", ",", Неопределено)').items,
+                         ['а', 'б'])
+        self.assertEqual(self.evaluate('StrSplit(",a,,b,", ",", Undefined)').items,
+                         ['a', 'b'])
+        self.assertEqual(self.evaluate('StrSplit(",a,,b,", ",")').items,
+                         ['', 'a', '', 'b', ''])
+        self.assertEqual(self.evaluate('StrSplit("", ",", Undefined)').items, [])
+        self.assertEqual(self.evaluate('StrSplit(" , ", ",", Undefined)').items, [' ', ' '])
+        self.assertEqual(self.evaluate('StrSplit("a,b", "", Undefined)').items, ['a,b'])
+        with self.assertRaises(BSLError):
+            self.evaluate('Boolean(Undefined)')
 
     def test_split_empty_input_and_empty_delimiters(self):
         cases = [('StrSplit("", ",")', ['']), ('StrSplit("", ",", False)', []),
@@ -243,7 +301,7 @@ class StringTests(unittest.TestCase):
     def test_bad_numeric_or_boolean_arguments_raise_catchable_bsl_errors(self):
         for expression in ['Left("x", Undefined)', 'Right("x", New Array)',
                            'Mid("x", "bad")', 'Mid("x", 1, Undefined)',
-                           'StrSplit("x", ",", Undefined)', 'StrSplit("x", ",", "yes")',
+                           'StrSplit("x", ",", "yes")',
                            'StrConcat("x")', 'StrConcat(Undefined)']:
             with self.subTest(expression=expression):
                 with self.assertRaises(BSLError) as caught:

@@ -16,6 +16,18 @@ _WHITESPACE = (" \t\n\v\f\r\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004"
                "\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000")
 _OMITTED = object()
 
+# Complete nonidentity simple-case alternatives where full casing expands,
+# from UnicodeData 15.1 fields 12/13 (also unchanged in Unicode 16.0).
+# https://www.unicode.org/Public/15.1.0/ucd/UnicodeData.txt
+# Other expansions have no simple mapping and preserve the original character.
+_SIMPLE_UPPER_ALTERNATIVES = {
+    chr(code): chr(code + 8)
+    for start in (0x1f80, 0x1f90, 0x1fa0)
+    for code in range(start, start + 8)
+}
+_SIMPLE_UPPER_ALTERNATIVES.update({"\u1fb3": "\u1fbc", "\u1fc3": "\u1fcc", "\u1ff3": "\u1ffc"})
+_SIMPLE_LOWER_ALTERNATIVES = {"\u0130": "\u0069"}
+
 
 def _units(value: object) -> str:
     text = to_string(value)
@@ -97,17 +109,31 @@ def is_blank(value: object) -> bool:
     return not trim_all(value)
 
 
+def _simple_upper(character: str) -> str:
+    mapped = character.upper()
+    return mapped if len(mapped) == 1 else _SIMPLE_UPPER_ALTERNATIVES.get(character, character)
+
+
+def _simple_lower(character: str) -> str:
+    mapped = character.lower()
+    return mapped if len(mapped) == 1 else _SIMPLE_LOWER_ALTERNATIVES.get(character, character)
+
+
 def upper(value: object) -> str:
-    return to_string(value).upper()
+    # Native samples are consistent with simple, nonexpanding casing. Map each
+    # character independently, without full or contextual string casing rules.
+    return "".join(_simple_upper(character) for character in to_string(value))
 
 
 def lower(value: object) -> str:
-    return to_string(value).lower()
+    return "".join(_simple_lower(character) for character in to_string(value))
 
 
 def split(value: object, separators: object, include_empty: object = True) -> BSLArray:
     text, delimiters = _units(value), set(_units(separators))
-    include_empty = boolean(include_empty)
+    # Explicit Undefined is false in the native StrSplit result; omission still
+    # uses the True default. Do not broaden global Boolean conversion here.
+    include_empty = False if include_empty is None else boolean(include_empty)
     result = BSLArray()
     start = 0
     for index, character in enumerate(text):
