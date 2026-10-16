@@ -75,7 +75,24 @@ def main() -> None:
         string_output = "ёж / бор\nЁЖ\n🙂\n4\n4\nxxx\n🙂\n"
         string_file = Path(temporary) / "Строки.bsl"
         string_file.write_text(string_code, encoding="utf-8-sig")
+        structure_code = ('с = Новый Структура("Имя,Count", "ёж", 7); '
+                          'с["ИМЯ"] = "бор"; Перем результат; '
+                          'Сообщить(с.Свойство("имя", результат)); Сообщить(результат); '
+                          'Сообщить(с.Count); Сообщить(с.Count()); '
+                          'с.Удалить("Count"); '
+                          'Для Каждого пара Из с Цикл '
+                          'Сообщить(пара.Ключ + ":" + пара.Значение); КонецЦикла; '
+                          'с.Property("нет", результат); Сообщить(результат = Undefined); '
+                          'Попытка с.Нет = 1; Исключение Сообщить("обработано"); КонецПопытки; '
+                          'Сообщить(Строка(с));\n')
+        structure_output = "Да\nбор\n7\n2\nИмя:бор\nДа\nобработано\nСтруктура\n"
+        structure_file = Path(temporary) / "Структуры.bsl"
+        structure_file.write_text(structure_code, encoding="utf-8-sig")
         cases = [
+            ([str(structure_file)], None, structure_output, 0),
+            (["-c", structure_code], None, structure_output, 0),
+            (["-"], structure_code, structure_output, 0),
+            ([], structure_code + '/exit\n', structure_output, 0),
             ([str(string_file)], None, string_output, 0),
             (["-c", string_code], None, string_output, 0),
             (["-"], string_code, string_output, 0),
@@ -114,7 +131,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":

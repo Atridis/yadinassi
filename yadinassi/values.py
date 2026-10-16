@@ -1,5 +1,6 @@
 """BSL values and explicit host API; Python attributes are never exposed."""
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Callable
 
@@ -61,6 +62,14 @@ class BSLObject:
     def get_member(self, name: str) -> object:
         raise ValueError(f"Метод или свойство не найдено: {name}")
 
+    def get_method(self, name: str) -> object:
+        # Existing extensions expose methods through get_member. Collections with
+        # dynamic properties can override this to keep method names independent.
+        return self.get_member(name)
+
+    def set_member(self, name: str, value: object) -> None:
+        raise ValueError(f"Свойство недоступно для записи: {name}")
+
 
 class BSLArray(BSLObject):
     def __init__(self, size: Decimal = Decimal(0)):
@@ -120,12 +129,22 @@ class BSLArray(BSLObject):
         return HostFunction(name, method)
 
 
+@dataclass
+class Reference:
+    """A caller-owned storage location; never exposed as a BSL object."""
+
+    get: Callable[[], object]
+    set: Callable[[object], None]
+
+
 class HostFunction:
     """Only explicitly registered callables may be invoked from BSL."""
 
-    def __init__(self, name: str, function: Callable):
+    def __init__(self, name: str, function: Callable, *,
+                 reference_parameters: frozenset[int] = frozenset()):
         self.name = name
         self.function = function
+        self.reference_parameters = reference_parameters
 
     def __call__(self, *arguments: object) -> object:
         return self.function(*arguments)

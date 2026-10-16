@@ -1,0 +1,121 @@
+"""Named BSL collections with explicit properties, methods, and output slots."""
+
+from dataclasses import dataclass
+from decimal import Decimal
+
+from .strings import trim_all
+from .values import BSLObject, HostFunction, Reference
+
+
+def _key(name: object) -> str:
+    if not isinstance(name, str):
+        raise TypeError("Имя свойства структуры должно быть строкой")
+    if (not name or not (name[0].isalpha() or name[0] == "_")
+            or not all(char.isalnum() or char == "_" for char in name)):
+        raise ValueError(f"Недопустимое имя свойства структуры: {name}")
+    return name.casefold()
+
+
+@dataclass(frozen=True, eq=False)
+class BSLKeyAndValue(BSLObject):
+    key: str
+    value: object
+
+    def __str__(self) -> str:
+        return "КлючИЗначение"
+
+    def get_member(self, name: str) -> object:
+        if name.casefold() in {"ключ", "key"}:
+            return self.key
+        if name.casefold() in {"значение", "value"}:
+            return self.value
+        return super().get_member(name)
+
+
+class BSLStructure(BSLObject):
+    def __init__(self, keys: str = "", *values: object):
+        if not isinstance(keys, str):
+            raise TypeError("Список свойств структуры должен быть строкой")
+        names = [name for part in keys.split(",") if (name := trim_all(part))]
+        self._items: dict[str, tuple[str, object]] = {}
+        self._version = 0
+        for index, name in enumerate(names):
+            self.insert(name, values[index] if index < len(values) else None)
+
+    def __str__(self) -> str:
+        return "Структура"
+
+    def __iter__(self):
+        version = self._version
+        keys = iter(self._items)
+        while True:
+            # 1C leaves composition changes during enumeration undefined. Use a
+            # catchable diagnostic rather than leak Python's dictionary errors.
+            if version != self._version:
+                raise ValueError("Изменение состава структуры во время обхода пока не поддерживается")
+            try:
+                key = next(keys)
+            except StopIteration:
+                return
+            name, value = self._items[key]
+            yield BSLKeyAndValue(name, value)
+
+    def get(self, name: object) -> object:
+        key = _key(name)
+        if key not in self._items:
+            raise ValueError(f"Свойство структуры не найдено: {name}")
+        return self._items[key][1]
+
+    def set(self, name: object, value: object) -> None:
+        key = _key(name)
+        if key not in self._items:
+            raise ValueError(f"Свойство структуры не найдено: {name}")
+        self._items[key] = self._items[key][0], value
+
+    def insert(self, name: str, value: object = None) -> None:
+        key = _key(name)
+        if key not in self._items:
+            self._version += 1
+        else:
+            name = self._items[key][0]
+        self._items[key] = name, value
+
+    def delete(self, name: str) -> None:
+        key = _key(name)
+        if key in self._items:
+            del self._items[key]
+            self._version += 1
+
+    def clear(self) -> None:
+        if self._items:
+            self._items.clear()
+            self._version += 1
+
+    def property(self, name: str, output: object = None) -> bool:
+        key = _key(name)
+        found = key in self._items
+        if isinstance(output, Reference):
+            output.set(self._items[key][1] if found else None)
+        return found
+
+    def get_member(self, name: str) -> object:
+        return self.get(name)
+
+    def set_member(self, name: str, value: object) -> None:
+        self.set(name, value)
+
+    def get_method(self, name: str) -> object:
+        methods = {
+            "вставить": self.insert, "insert": self.insert,
+            "удалить": self.delete, "delete": self.delete,
+            "очистить": self.clear, "clear": self.clear,
+            "количество": lambda: Decimal(len(self._items)),
+            "count": lambda: Decimal(len(self._items)),
+            "свойство": self.property, "property": self.property,
+        }
+        key = name.casefold()
+        method = methods.get(key)
+        if method is None:
+            raise ValueError(f"Метод структуры не найден: {name}")
+        references = frozenset({1}) if key in {"свойство", "property"} else frozenset()
+        return HostFunction(name, method, reference_parameters=references)
