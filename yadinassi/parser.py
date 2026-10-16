@@ -204,7 +204,7 @@ class Parser:
             start = self.pos
             target = self.postfix(self.primary())
             if self.accept("="):
-                if not isinstance(target, (ast.Name, ast.Index)):
+                if not isinstance(target, (ast.Name, ast.Index, ast.Attribute)):
                     self.fail("Недопустимая цель присваивания")
                 return ast.Assign(token, target, self.expression())
             self.pos = start

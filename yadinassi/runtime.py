@@ -1,6 +1,5 @@
 """Tree-walking interpreter with persistent state and injectable builtins."""
 
-from dataclasses import dataclass
 from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
@@ -9,8 +8,10 @@ from . import ast, strings
 from .errors import BSLError, BSLRuntimeError
 from .parser import parse
 from .lexer import KEYWORDS
+from .structures import BSLStructure
 from .values import (
-    BSLArray, BSLObject, HostFunction, boolean, equal, number, require_number, to_string,
+    BSLArray, BSLObject, HostFunction, Reference as _Reference,
+    boolean, equal, number, require_number, to_string,
 )
 
 
@@ -25,14 +26,6 @@ class _Continue(Exception):
 class _Return(Exception):
     def __init__(self, value: object):
         self.value = value
-
-
-@dataclass
-class _Reference:
-    """A caller-owned storage location, captured before entering the callee."""
-
-    get: Callable[[], object]
-    set: Callable[[object], None]
 
 
 class _Module:
@@ -80,6 +73,7 @@ class Interpreter:
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")
+        self.register_type("Структура", BSLStructure, "Structure")
 
     @property
     def execution_context(self) -> str:
@@ -248,8 +242,8 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = self.visit(node.object)
-        if not isinstance(value, BSLArray):
-            raise TypeError("Индексирование поддерживается только для массива")
+        if not isinstance(value, (BSLArray, BSLStructure)):
+            raise TypeError("Индексирование поддерживается только для массива и структуры")
         return value.get(self.visit(node.index))
 
     def visit_Call(self, node: ast.Call) -> object:
@@ -270,10 +264,18 @@ class Interpreter:
         if routine is not None:
             return self.call_routine(routine, node.arguments, owner, require_value=require_value)
         self.reject_host_omissions(node.arguments)
-        function = self.visit(node.callee)
+        if isinstance(callee, ast.Attribute):
+            receiver = self.visit(callee.object)
+            if not isinstance(receiver, BSLObject):
+                raise TypeError("Значение не имеет методов или свойств")
+            function = receiver.get_method(callee.name)
+        else:
+            function = self.visit(node.callee)
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
-        return function(*(self.visit(argument) for argument in node.arguments))
+        return function(*(self.argument(argument) if index in function.reference_parameters
+                          else self.visit(argument)
+                          for index, argument in enumerate(node.arguments)))
 
     def import_receiver(self, node: ast.Node) -> _Module | _Namespace | None:
         """Resolve only explicit namespace syntax; ordinary values keep normal dispatch."""
@@ -370,10 +372,15 @@ class Interpreter:
             self.set_variable(node.target.name, self.visit(node.value))
         else:
             value = self.visit(node.target.object)
-            if not isinstance(value, BSLArray):
-                raise TypeError("Индексирование поддерживается только для массива")
-            index = self.visit(node.target.index)
-            value.set(index, self.visit(node.value))
+            if isinstance(node.target, ast.Attribute):
+                if not isinstance(value, BSLObject):
+                    raise TypeError("Значение не имеет методов или свойств")
+                value.set_member(node.target.name, self.visit(node.value))
+            else:
+                if not isinstance(value, (BSLArray, BSLStructure)):
+                    raise TypeError("Индексирование поддерживается только для массива и структуры")
+                index = self.visit(node.target.index)
+                value.set(index, self.visit(node.value))
 
     def set_variable(self, name: str, value: object) -> None:
         name = name.casefold()
@@ -549,8 +556,8 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = self.visit(node.collection)
-        if not isinstance(collection, BSLArray):
-            raise TypeError("Для Каждого ожидает массив")
+        if not isinstance(collection, (BSLArray, BSLStructure)):
+            raise TypeError("Для Каждого ожидает массив или структуру")
         for item in collection:
             self.set_variable(node.name, item)
             if not self.iteration(node.body):
