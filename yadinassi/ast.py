@@ -152,3 +152,14 @@ class Return(Node):
 @dataclass
 class Import(Node):
     filename: str
+
+
+@dataclass
+class Try(Node):
+    body: list[Node]
+    handler: list[Node]
+
+
+@dataclass
+class Raise(Node):
+    value: Node | None

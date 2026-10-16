@@ -15,3 +15,7 @@ class BSLError(Exception):
 
 class IncompleteInput(BSLError):
     """The parser needs more input; used by the multiline REPL."""
+
+
+class BSLRuntimeError(BSLError):
+    """A recoverable execution error, catchable by BSL Try/Except."""

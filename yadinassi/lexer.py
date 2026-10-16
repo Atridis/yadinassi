@@ -10,6 +10,10 @@ from .preprocessor import ConditionalCompilation
 
 KEYWORDS: dict[str, str] = {}
 for kind, aliases in {
+    "TRY": ("Попытка", "Try"),
+    "EXCEPT": ("Исключение", "Except"),
+    "ENDTRY": ("КонецПопытки", "EndTry"),
+    "RAISE": ("ВызватьИсключение", "Raise"),
     "IF": ("Если", "If"),
     "THEN": ("Тогда", "Then"),
     "ELSIF": ("ИначеЕсли", "ElsIf"),

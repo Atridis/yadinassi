@@ -16,6 +16,7 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.loop_depth = 0
+        self.handler_depth = 0
         self.routine_kind: str | None = None
         self.parameter_names: set[str] = set()
 
@@ -137,10 +138,28 @@ class Parser:
         if self.accept("RETURN"):
             if self.routine_kind is None:
                 self.fail("Возврат допустим только внутри процедуры или функции")
-            empty = self.current.kind in {";", "ENDPROCEDURE", "ENDFUNCTION", "ENDIF", "ELSE", "ELSIF", "ENDDO"}
+            empty = self.current.kind in {";", "ENDPROCEDURE", "ENDFUNCTION", "ENDIF", "ELSE", "ELSIF", "ENDDO", "EXCEPT", "ENDTRY"}
             if self.routine_kind == "PROCEDURE" and not empty:
                 self.fail("Процедура не может возвращать значение")
             return ast.Return(token, None if empty else self.expression())
+        if self.accept("TRY"):
+            body = self.block({"EXCEPT"})
+            self.expect("EXCEPT")
+            self.handler_depth += 1
+            try:
+                handler = self.block({"ENDTRY"})
+                self.expect("ENDTRY")
+            finally:
+                self.handler_depth -= 1
+            return ast.Try(token, body, handler)
+        if self.accept("RAISE"):
+            empty = self.current.kind in {
+                ";", "EOF", "ENDPROCEDURE", "ENDFUNCTION", "ENDIF", "ELSE",
+                "ELSIF", "ENDDO", "EXCEPT", "ENDTRY",
+            }
+            if empty and not self.handler_depth:
+                self.fail("ВызватьИсключение без выражения допустимо только внутри Исключение")
+            return ast.Raise(token, None if empty else self.expression())
         if self.accept("IF"):
             branches = []
             while True:
