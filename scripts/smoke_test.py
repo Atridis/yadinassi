@@ -142,7 +142,78 @@ def main() -> None:
                       "только чтение\n5\n0\nСоответствие\n")
         map_file = Path(temporary) / "Соответствия.bsl"
         map_file.write_text(map_code, encoding="utf-8-sig")
+        type_code = '''Сообщить(ТипЗнч(Неопределено));
+Message(TypeOf(True));
+Сообщить(ТипЗнч(12.5));
+Message(TypeOf("ёж"));
+Сообщить(ТипЗнч(Новый Массив));
+Message(TypeOf(New Structure));
+Сообщить(ТипЗнч(Новый Соответствие));
+Message(TypeOf(Type("Number")));
+kind = тИп("чИсЛо");
+Message(kind = tYpE("nUmBeR"));
+Message(kind = "Число");
+Message(TypeOf(True) = kind);
+values = New Array;
+values.Add(kind);
+s = New Structure("Kind", values[0]);
+m = New Map;
+m[s.Kind] = Type("String");
+m["Число"] = "строковый ключ";
+Message(m[TypeOf(42)]);
+Message(m["Число"]);
+Message(m.Count());
+Message(values.Find(TypeOf(1)));
+For Each pair In s Do
+    Message(TypeOf(pair));
+EndDo;
+For Each pair In m Do
+    Message(ТипЗнч(pair) = Type("kEyAnDvAlUe"));
+EndDo;
+Try
+    Type("Date");
+Except
+    Message("неизвестный тип");
+EndTry;
+Try
+    TypeOf(Message);
+Except
+    Message("внешнее значение");
+EndTry;
+Message(TypeOf(kind) = Тип("Тип"));
+'''
+        type_output = ('Неопределено\nБулево\nЧисло\nСтрока\nМассив\nСтруктура\n'
+                       'Соответствие\nТип\nДа\nНет\nНет\nСтрока\nстроковый ключ\n'
+                       '2\n0\nКлючИЗначение\nДа\nДа\nнеизвестный тип\nвнешнее значение\nДа\n')
+        type_file = Path(temporary) / 'Типы.bsl'
+        type_file.write_text(type_code, encoding='utf-8-sig')
+        type_module = Path(temporary) / 'ТипыМодуля.bsl'
+        type_module.write_text(
+            'Function Failure() Export\nReturn Type("Date");\nEndFunction\n'
+            'Function Kind(Val value) Export Return TypeOf(value); EndFunction\n'
+            'Function Mapping() Export\n'
+            'm = New Map; m[Тип("Число")] = Тип("Строка"); Return m;\nEndFunction\n',
+            encoding='utf-8-sig')
+        type_importer = Path(temporary) / 'ИмпортТипов.bsl'
+        type_importer.write_text(
+            '// #Импорт ТипыМодуля.bsl\n'
+            'm = ТипыМодуля.Mapping(); Сообщить(m[TypeOf(1)]);\n'
+            'Сообщить(ТипыМодуля.Kind(m[Type("Number")]));\n'
+            'Try\nТипыМодуля.Failure();\nExcept\n'
+            'Message(ErrorDescription());\nEndTry;\n'
+            'Message(TypeOf(1) = Тип("Число"));\n', encoding='utf-8')
+        type_error_importer = Path(temporary) / 'ОшибкаИмпортаТипов.bsl'
+        type_error_importer.write_text(
+            '// #Импорт ТипыМодуля.bsl\nТипыМодуля.Failure();\n', encoding='utf-8')
+        type_error_file = (Path(temporary) / 'ОшибкаТипа.bsl').resolve()
+        type_error_file.write_text('// строка перед ошибкой\nTypeOf(Message);\n', encoding='utf-8-sig')
         cases = [
+            ([str(type_file)], None, type_output, 0),
+            (['-c', type_code], None, type_output, 0),
+            (['-'], type_code, type_output, 0),
+            ([], type_code + '/exit\n', type_output, 0),
+            ([str(type_importer)], None,
+             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: Date\nДа\n', 0),
             ([str(region_file)], None, '42\n', 0),
             (['-c', region_code], None, '42\n', 0),
             (['-'], region_code, '42\n', 0),
@@ -189,6 +260,26 @@ def main() -> None:
                 raise AssertionError(result.stderr)
             if code and ("Деление на ноль" not in result.stderr or "Traceback" in result.stderr):
                 raise AssertionError(result.stderr)
+        type_errors = [
+            (['-c', 'Type("Date");'], None, '', '<команда>:1:', 'Тип не поддерживается: Date'),
+            (['-c', 'Тип(1);'], None, '', '<команда>:1:', 'Имя типа должно быть строкой'),
+            (['-c', 'TypeOf(Message);'], None, '', '<команда>:1:',
+             'ТипЗнч для этого значения пока не поддерживается'),
+            (['-'], 'Тип("Дата");\n', '', '<stdin>:1:', 'Тип не поддерживается: Дата'),
+            ([str(type_error_file)], None, '', str(type_error_file) + ':2:',
+             'ТипЗнч для этого значения пока не поддерживается'),
+            ([str(type_error_importer)], None, '', str(type_module.resolve()) + ':2:',
+             'Тип не поддерживается: Date'),
+            ([], 'kind = Type("Number");\nkind = Type("Date");\n'
+             'kind\nTypeOf(kind)\n/exit\n', 'Число\nТип\n', '<консоль>:1:',
+             'Тип не поддерживается: Date'),
+        ]
+        for arguments, stdin, stdout, location, message in type_errors:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=temporary, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed type diagnostics {arguments!r}: {result!r}')
         unfinished_region = '#Область Незавершенная\nСообщить("рано");\n'
         region_errors = [
             (['-c', '#EndRegion'], None, '<команда>:1:', '#Область'),
@@ -212,8 +303,8 @@ def main() -> None:
             from console_check import check_console
 
             check_console([executable], cwd=temporary, env=env)
-            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation")
-    print("Binary smoke tests passed: maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
+            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values and error recovery")
+    print("Binary smoke tests passed: type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,41 @@
+"""Type/TypeOf for the explicit standalone BSL value model, not Python reflection."""
+
+from decimal import Decimal
+
+from .maps import BSLMap
+from .structures import BSLKeyAndValue, BSLStructure
+from .values import BSLArray, BSLType
+
+
+_VALUE_TYPES = (
+    (type(None), BSLType.UNDEFINED, "Undefined"),
+    (bool, BSLType.BOOLEAN, "Boolean"),
+    (Decimal, BSLType.NUMBER, "Number"),
+    (str, BSLType.STRING, "String"),
+    (BSLArray, BSLType.ARRAY, "Array"),
+    (BSLStructure, BSLType.STRUCTURE, "Structure"),
+    (BSLMap, BSLType.MAP, "Map"),
+    (BSLKeyAndValue, BSLType.KEY_AND_VALUE, "KeyAndValue"),
+    (BSLType, BSLType.TYPE, "Type"),
+)
+_BY_NAME = {name.casefold(): value_type
+            for _, value_type, alias in _VALUE_TYPES
+            for name in (str(value_type), alias)}
+
+
+def type_by_name(name: object) -> BSLType:
+    if type(name) is not str:
+        raise TypeError("Имя типа должно быть строкой")
+    value_type = _BY_NAME.get(name.casefold())
+    if value_type is None:
+        raise ValueError(f"Тип не поддерживается: {name}")
+    return value_type
+
+
+def type_of(value: object) -> BSLType:
+    # Exact identity keeps bool distinct from numbers and rejects arbitrary host
+    # objects/subclasses without invoking their metaclass equality or hash hooks.
+    for python_type, value_type, _ in _VALUE_TYPES:
+        if type(value) is python_type:
+            return value_type
+    raise TypeError("ТипЗнч для этого значения пока не поддерживается")

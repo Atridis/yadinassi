@@ -84,16 +84,37 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Сообщить("Вложенная");\n', forbidden_lines=region_output)
         send("... ", "#EndRegion\n", forbidden_lines=region_output)
         send("... ", "#КонецОбласти\n", forbidden_lines=region_output)
+        send(">>> ", 'kind = Тип("ЧиСлО");\n')
+        send(">>> ", 'kind\n')
+        send(">>> ", 'm = New Map; m[kind] = "типовой ключ";\n')
+        send(">>> ", 'm[TypeOf(1)]\n')
+        send(">>> ", 'ТипЗнч(\n')
+        send("... ", 'kind)\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'TypeOf(Message);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("Перехвачено");\n')
+        send("... ", 'EndTry;\n')
+        # An uncaught failure must preserve the value and restore the main prompt.
+        send(">>> ", 'kind = Type("Date");\n')
+        send(">>> ", 'kind\n')
+        send(">>> ", '(TypeOf(True) = Type("bOoLeAn"))\n')
+        send(">>> ", '(kind = "Число")\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
             pass
         code = process.wait(timeout=2)
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
-        if code != 0 or "Traceback" in output or "^[[D" in output:
+        if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
+        if (output.count('<консоль>:1:') != 1
+                or output.count('Тип не поддерживается: Date') != 1):
+            raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("Курсор", 2), ("Вниз", 1), ("Блок", 1),
-                               ("Область", 1), ("Вложенная", 1)):
+                               ("Область", 1), ("Вложенная", 1), ("Число", 2),
+                               ("типовой ключ", 1), ("Тип", 1), ("Перехвачено", 1),
+                               ("Да", 1), ("Нет", 1)):
             if output.count(f"\r\n{message}\r\n") != count:
                 raise AssertionError(f"Unexpected console output for {message!r}: {output}")
         return output

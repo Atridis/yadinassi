@@ -2,7 +2,25 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
+from enum import Enum
 from typing import Callable
+
+
+class BSLType(Enum):
+    """Opaque, immutable type identities; presentations are not their identity."""
+
+    UNDEFINED = "Неопределено"
+    BOOLEAN = "Булево"
+    NUMBER = "Число"
+    STRING = "Строка"
+    ARRAY = "Массив"
+    STRUCTURE = "Структура"
+    MAP = "Соответствие"
+    KEY_AND_VALUE = "КлючИЗначение"
+    TYPE = "Тип"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 def to_string(value: object) -> str:
