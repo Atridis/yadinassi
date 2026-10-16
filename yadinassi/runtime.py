@@ -8,6 +8,7 @@ from . import ast, strings
 from .errors import BSLError, BSLRuntimeError
 from .parser import parse
 from .lexer import KEYWORDS
+from .maps import BSLMap
 from .structures import BSLStructure
 from .values import (
     BSLArray, BSLObject, HostFunction, Reference as _Reference,
@@ -74,6 +75,7 @@ class Interpreter:
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
+        self.register_type("Соответствие", BSLMap, "Map")
 
     @property
     def execution_context(self) -> str:
@@ -242,8 +244,8 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = self.visit(node.object)
-        if not isinstance(value, (BSLArray, BSLStructure)):
-            raise TypeError("Индексирование поддерживается только для массива и структуры")
+        if not isinstance(value, (BSLArray, BSLStructure, BSLMap)):
+            raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
         return value.get(self.visit(node.index))
 
     def visit_Call(self, node: ast.Call) -> object:
@@ -377,8 +379,8 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, self.visit(node.value))
             else:
-                if not isinstance(value, (BSLArray, BSLStructure)):
-                    raise TypeError("Индексирование поддерживается только для массива и структуры")
+                if not isinstance(value, (BSLArray, BSLStructure, BSLMap)):
+                    raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
                 index = self.visit(node.target.index)
                 value.set(index, self.visit(node.value))
 
@@ -556,8 +558,8 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = self.visit(node.collection)
-        if not isinstance(collection, (BSLArray, BSLStructure)):
-            raise TypeError("Для Каждого ожидает массив или структуру")
+        if not isinstance(collection, (BSLArray, BSLStructure, BSLMap)):
+            raise TypeError("Для Каждого ожидает массив, структуру или соответствие")
         for item in collection:
             self.set_variable(node.name, item)
             if not self.iteration(node.body):

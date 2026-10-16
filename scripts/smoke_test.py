@@ -88,7 +88,48 @@ def main() -> None:
         structure_output = "Да\nбор\n7\n2\nИмя:бор\nДа\nобработано\nСтруктура\n"
         structure_file = Path(temporary) / "Структуры.bsl"
         structure_file.write_text(structure_code, encoding="utf-8-sig")
+        map_code = '''Данные = Новый Соответствие;
+Данные.Вставить(Истина, "булево");
+Данные[1] = "число";
+Данные["Имя"] = "верх";
+Данные["имя"] = "низ";
+Данные[Неопределено] = "пустой ключ";
+Ключ = Новый Массив;
+Данные.Вставить(Ключ, 7);
+Ключ.Добавить(1);
+Сообщить(Данные.Количество());
+Сообщить(Данные[Истина]);
+Сообщить(Данные.Получить(1));
+Сообщить(Данные["Имя"] + ":" + Данные["имя"]);
+Сообщить(Данные[Неопределено]);
+Сообщить(Данные[Ключ]);
+Сообщить(Данные[Новый Массив] = Неопределено);
+Посещено = 0;
+Для Каждого Пара Из Данные Цикл
+    Посещено = Посещено + 1;
+КонецЦикла;
+Сообщить(Посещено);
+Попытка
+    Пара.Значение = 99;
+Исключение
+    Сообщить("только чтение");
+КонецПопытки;
+Данные.Удалить(Ключ);
+Данные.Удалить("нет");
+Сообщить(Данные.Количество());
+Данные.Очистить();
+Сообщить(Данные.Количество());
+Сообщить(Строка(Данные));
+'''
+        map_output = ("6\nбулево\nчисло\nверх:низ\nпустой ключ\n7\nДа\n6\n"
+                      "только чтение\n5\n0\nСоответствие\n")
+        map_file = Path(temporary) / "Соответствия.bsl"
+        map_file.write_text(map_code, encoding="utf-8-sig")
         cases = [
+            ([str(map_file)], None, map_output, 0),
+            (["-c", map_code], None, map_output, 0),
+            (["-"], map_code, map_output, 0),
+            ([], map_code + '/exit\n', map_output, 0),
             ([str(structure_file)], None, structure_output, 0),
             (["-c", structure_code], None, structure_output, 0),
             (["-"], structure_code, structure_output, 0),
@@ -131,7 +172,7 @@ def main() -> None:
 
             check_console([executable], cwd=temporary, env=env)
             print("Binary terminal tests passed: cursor editing, history, multiline input")
-    print("Binary smoke tests passed: structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
+    print("Binary smoke tests passed: maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":

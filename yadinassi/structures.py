@@ -18,7 +18,7 @@ def _key(name: object) -> str:
 
 @dataclass(frozen=True, eq=False)
 class BSLKeyAndValue(BSLObject):
-    key: str
+    key: object
     value: object
 
     def __str__(self) -> str:
