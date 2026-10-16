@@ -4,7 +4,7 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
 
-from . import ast, strings
+from . import ast, strings, type_values
 from .errors import BSLError, BSLRuntimeError
 from .parser import parse
 from .lexer import KEYWORDS
@@ -70,6 +70,8 @@ class Interpreter:
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
         self.register_function("Булево", boolean, "Boolean")
+        self.register_function("Тип", type_values.type_by_name, "Type")
+        self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
         for name, function, alias in strings.BUILTINS:
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")

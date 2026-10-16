@@ -31,6 +31,175 @@ class CLITests(unittest.TestCase):
             result = self.run_cli(str(path))
             self.assertEqual((result.returncode, result.stdout), (0, "файл\n"))
 
+    def test_type_values_command_file_stdin_and_console(self):
+        types = [('Undefined', 'Неопределено', 'Undefined'),
+                 ('Boolean', 'Булево', 'True'),
+                 ('Number', 'Число', '12.5'),
+                 ('String', 'Строка', '"ёж"'),
+                 ('Array', 'Массив', 'New Array'),
+                 ('Structure', 'Структура', 'New Structure'),
+                 ('Map', 'Соответствие', 'New Map'),
+                 ('KeyAndValue', 'КлючИЗначение', 'pair'),
+                 ('Type', 'Тип', 'Type("Number")')]
+        code = ('s = New Structure("Item", 1);\n'
+                'For Each pair In s Do EndDo;\n')
+        for english, russian, expression in types:
+            code += (f'Message(tYpE("{english.swapcase()}"));\n'
+                     f'Сообщить(тИп("{russian.swapcase()}") = Type("{english}"));\n'
+                     f'Message(tYpEoF({expression}) = Тип("{russian}"));\n'
+                     f'Сообщить(тИпЗнЧ({expression}));\n')
+        expected = ''.join(f'{russian}\nДа\nДа\n{russian}\n'
+                           for _, russian, _ in types)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Типы.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [(('-c', code), None), ((str(path),), None),
+                     (('-',), code), ((), code + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+
+    def test_type_values_console_state_collections_and_multiline_calls(self):
+        code = '''kind = Тип("число");
+values = New Array;
+values.Add(kind);
+s = New Structure("Kind", values[0]);
+m = New Map;
+m[s.Kind] = "тип числа";
+m["Число"] = "строковый ключ";
+m[TypeOf(1)]
+m["Число"]
+m.Count()
+values.Find(Type("Number"))
+TypeOf(
+kind)
+(kind = "Число")
+(TypeOf(True) = TypeOf(1))
+Function Echo(Val item)
+Return TypeOf(item);
+EndFunction
+Echo(s.Kind)
+For Each pair In m Do
+Message(TypeOf(pair) = Type("КлючИЗначение"));
+EndDo;
+/exit
+'''
+        result = self.run_cli(stdin=code)
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, 'тип числа\nстроковый ключ\n2\n0\nТип\nНет\nНет\nТип\nДа\nДа\n', ''))
+
+    def test_type_errors_are_catchable_in_command_stdin_and_console(self):
+        code = '''Попытка
+    Тип("Дата");
+Исключение
+    Сообщить("неизвестный тип");
+КонецПопытки;
+Try
+    Type(1);
+Except
+    Message("имя не строка");
+EndTry;
+Try
+    TypeOf(Message);
+Except
+    Message("внешнее значение");
+EndTry;
+Try
+    Type("Number").value;
+Except
+    Message("непрозрачный тип");
+EndTry;
+Сообщить(ТипЗнч(Тип("Массив")));
+'''
+        for arguments, stdin in [(('-c', code), None), (('-',), code),
+                                 ((), code + '/exit\n')]:
+            with self.subTest(arguments=arguments):
+                result = self.run_cli(*arguments, stdin=stdin)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (0, 'неизвестный тип\nимя не строка\nвнешнее значение\n'
+                                  'непрозрачный тип\nТип\n', ''))
+
+    def test_type_errors_have_clean_command_file_and_stdin_diagnostics(self):
+        failures = [('Тип("Дата")', 'Тип не поддерживается: Дата'),
+                    ('Type(1)', 'Имя типа должно быть строкой'),
+                    ('TypeOf(Message)', 'ТипЗнч для этого значения пока не поддерживается')]
+        with tempfile.TemporaryDirectory() as temporary:
+            path = (Path(temporary) / 'ОшибкаТипа.bsl').resolve()
+            for expression, message in failures:
+                code = '// строка перед ошибкой\n' + expression + ';\n'
+                path.write_text(code, encoding='utf-8-sig')
+                cases = [(('-c', code), None, '<команда>'),
+                         ((str(path),), None, str(path)),
+                         (('-',), code, '<stdin>')]
+                for arguments, stdin, source in cases:
+                    with self.subTest(expression=expression, source=source):
+                        result = self.run_cli(*arguments, stdin=stdin)
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
+                        self.assertIn(source + ':2:', result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
+    def test_type_console_recovers_without_overwriting_existing_value(self):
+        result = self.run_cli(stdin='kind = Type("Array");\n'
+                                   'kind = Type("Date");\nkind\n'
+                                   'TypeOf(Message)\nTypeOf(kind)\n'
+                                   'Message(TypeOf(New Array) = kind);\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout), (1, 'Массив\nТип\nДа\n'))
+        self.assertEqual(result.stderr.count('<консоль>:1:'), 2)
+        self.assertIn('Тип не поддерживается: Date', result.stderr)
+        self.assertIn('ТипЗнч для этого значения пока не поддерживается', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
+    def test_type_values_cross_imported_routines_and_map_keys(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            project = directory / 'project'
+            project.mkdir()
+            (project / 'Побочное.bsl').write_text(
+                'Function Kind(Val value) Export Return TypeOf(value); EndFunction\n'
+                'Function Mapping() Export\n'
+                'm = New Map; m[Тип("Число")] = Тип("Строка"); Return m;\n'
+                'EndFunction\n'
+                'Procedure SetKind(value) Export value = Type("Array"); EndProcedure\n',
+                encoding='utf-8-sig')
+            main = project / 'Основное.bsl'
+            main.write_text('// #Импорт Побочное.bsl\n'
+                            'kind = Тип("Булево"); Побочное.SetKind(kind);\n'
+                            'Сообщить(kind); Сообщить(Побочное.Kind(kind));\n'
+                            'm = Побочное.Mapping(); Сообщить(m[TypeOf(42)]);\n'
+                            'Сообщить(m[Тип("Число")] = Type("String"));\n', encoding='utf-8-sig')
+            for path in (main, Path('project') / main.name):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=directory)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, 'Массив\nТип\nСтрока\nДа\n', ''))
+
+    def test_imported_type_errors_preserve_canonical_path_and_are_catchable(self):
+        failures = [('Type("Date")', 12, 'Тип не поддерживается: Date'),
+                    ('TypeOf(Message)', 14, 'ТипЗнч для этого значения пока не поддерживается')]
+        for expression, column, message in failures:
+            with self.subTest(expression=expression), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                module = directory / 'Побочное.bsl'
+                module.write_text('Function Kind() Export\n'
+                                  f'Return {expression};\nEndFunction\n', encoding='utf-8-sig')
+                main = directory / 'Основное.bsl'
+                main.write_text('// #Импорт Побочное.bsl\nПобочное.Kind();\n', encoding='utf-8')
+                result = self.run_cli(str(main))
+                self.assertEqual((result.returncode, result.stdout), (1, ''))
+                self.assertIn(f'{module.resolve()}:2:', result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                main.write_text('// #Импорт Побочное.bsl\nTry\nПобочное.Kind();\n'
+                                'Except\nMessage(ErrorDescription());\nEndTry;\n'
+                                'Message(TypeOf(1) = Type("Число"));\n', encoding='utf-8')
+                result = self.run_cli(str(main))
+                self.assertEqual((result.returncode, result.stderr), (0, ''))
+                self.assertEqual(result.stdout,
+                                 f'{module.resolve()}:2:{column}: {message}\nДа\n')
+
     def test_conditional_command_and_multiline_repl(self):
         result = self.run_cli("-c", 'Сообщить(?(Истина, 42, 1 / 0))')
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))

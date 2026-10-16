@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 from .structures import BSLKeyAndValue
-from .values import BSLObject, HostFunction
+from .values import BSLObject, BSLType, HostFunction
 
 
 def _key(value: object) -> tuple[type, object]:
@@ -12,7 +12,8 @@ def _key(value: object) -> tuple[type, object]:
     # semantics. Each entry retains the original object, so its id cannot be
     # reused while the entry exists.
     kind = type(value)
-    if kind is str or kind is bool or kind is Decimal or kind is type(None):
+    if (kind is str or kind is bool or kind is Decimal or kind is type(None)
+            or kind is BSLType):
         return kind, value
     # Even an extension's metaclass can override equality/hash, so do not put
     # arbitrary types into the token or compare them through tuple membership.
