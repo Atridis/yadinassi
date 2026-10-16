@@ -53,9 +53,14 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 break
         raise AssertionError(f"Console did not show {text!r}: {data.decode('utf-8', errors='replace')}")
 
-    def send(prompt: str, keys: str) -> None:
+    def send(prompt: str, keys: str, *, forbidden_lines: tuple[str, ...] = ()) -> None:
         # The renderer can replace trailing spaces with cursor movement.
         expect(prompt.rstrip())
+        if forbidden_lines:
+            output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
+            for line in forbidden_lines:
+                if f"\r\n{line}\r\n" in output:
+                    raise AssertionError(f"Console executed an unfinished region: {output}")
         os.write(master, keys.encode("utf-8"))
         # Each completed prompt disables bracketed paste; redraws do not.
         expect("\x1b[?2004l")
@@ -72,6 +77,13 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", "Если Истина Тогда\n")
         send("... ", corrected_line("Блок"))
         send("... ", "КонецЕсли;\n")
+        send(">>> ", "#Область Внешняя\n")
+        send("... ", 'Сообщить("Область");\n')
+        region_output = ("Область", "Вложенная")
+        send("... ", "#Region Inner\n", forbidden_lines=region_output)
+        send("... ", 'Сообщить("Вложенная");\n', forbidden_lines=region_output)
+        send("... ", "#EndRegion\n", forbidden_lines=region_output)
+        send("... ", "#КонецОбласти\n", forbidden_lines=region_output)
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -80,7 +92,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 0 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        for message, count in (("Курсор", 2), ("Вниз", 1), ("Блок", 1)):
+        for message, count in (("Курсор", 2), ("Вниз", 1), ("Блок", 1),
+                               ("Область", 1), ("Вложенная", 1)):
             if output.count(f"\r\n{message}\r\n") != count:
                 raise AssertionError(f"Unexpected console output for {message!r}: {output}")
         return output

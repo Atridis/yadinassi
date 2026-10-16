@@ -5,7 +5,7 @@ from decimal import Decimal
 import re
 
 from .errors import BSLError, IncompleteInput
-from .preprocessor import ConditionalCompilation
+from .preprocessor import ConditionalCompilation, SourceRegions
 
 
 KEYWORDS: dict[str, str] = {}
@@ -81,6 +81,7 @@ class Lexer:
     def tokens(self) -> list[Token]:
         result = []
         compilation = ConditionalCompilation(self.source)
+        regions = SourceRegions(self.source)
         while self.peek():
             char = self.peek()
             if char.isspace():
@@ -111,9 +112,16 @@ class Lexer:
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 directive = self.text[start:self.pos].split("//", 1)[0].strip()
-                if compilation.process(directive, line, column):
+                previous_depth = len(compilation.stack)
+                if conditional := compilation.process(directive, line, column):
+                    regions.conditional_boundary(conditional, previous_depth, line, column)
                     continue
                 if not compilation.active:
+                    continue
+                if region := regions.process(directive, line, column,
+                                             len(compilation.stack), KEYWORDS.keys()):
+                    kind, value = region
+                    result.append(Token(kind, value, line, column, self.source))
                     continue
                 if re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE):
                     raise BSLError("Директива #Импорт не поддерживается; используйте "
@@ -168,6 +176,7 @@ class Lexer:
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
             result.append(Token(kind, value, line, column, self.source))
         compilation.finish(self.line, self.column)
+        regions.finish()
         result.append(Token("EOF", None, self.line, self.column, self.source))
         return result
 
