@@ -100,6 +100,37 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'kind\n')
         send(">>> ", '(TypeOf(True) = Type("bOoLeAn"))\n')
         send(">>> ", '(kind = "Число")\n')
+        send(">>> ", 'frozen = New FixedArray(\n')
+        send("... ", 'New Array(2));\n')
+        send(">>> ", 'frozen.Count()\n')
+        send(">>> ", 'TypeOf(frozen)\n')
+        send(">>> ", 'frozen[0] = 12;\n')
+        send(">>> ", '(frozen[0] = Undefined)\n')
+        send(">>> ", 'record = Новый ФиксированнаяСтруктура(\n')
+        send("... ", '"Name,Count", "Терминал", 7);\n')
+        send(">>> ", 'record.Name = "изменено";\n')
+        send(">>> ", 'Var value; record.Property("NAME", value);\n')
+        send(">>> ", 'value\n')
+        send(">>> ", 'TypeOf(record)\n')
+        send(">>> ", 'mutable = New Map; mutable["key"] = "фиксированный ключ";\n')
+        send(">>> ", 'lookup = New FixedMap(mutable); mutable["key"] = "изменено";\n')
+        send(">>> ", 'lookup["key"] = "изменено";\n')
+        send(">>> ", 'lookup["key"]\n')
+        send(">>> ", 'TypeOf(lookup)\n')
+        send(">>> ", 'frozen.Add(99);\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'record.Clear();\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("Фиксированное перехвачено");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'visited = 0;\n')
+        send(">>> ", 'For Each item In frozen Do\n')
+        send("... ", 'visited = visited + 1;\n')
+        send("... ", 'EndDo;\n')
+        send(">>> ", 'Message("Обход: " + String(visited));\n')
+        send(">>> ", 'copy = New Array(frozen); copy[0] = 5;\n')
+        send(">>> ", 'Message("Копия: " + String(copy[0]));\n')
+        send(">>> ", '(frozen[0] = Undefined)\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -108,13 +139,21 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 1
-                or output.count('Тип не поддерживается: Date') != 1):
+        if (output.count('<консоль>:1:') != 5
+                or output.count('Тип не поддерживается: Date') != 1
+                or output.count('недоступны для записи') != 2
+                or output.count('недоступно для записи') != 1
+                or output.count('не найдено: Add') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("Курсор", 2), ("Вниз", 1), ("Блок", 1),
                                ("Область", 1), ("Вложенная", 1), ("Число", 2),
                                ("типовой ключ", 1), ("Тип", 1), ("Перехвачено", 1),
-                               ("Да", 1), ("Нет", 1)):
+                               ("Да", 4), ("Нет", 1), ("2", 1),
+                               ("ФиксированныйМассив", 1), ("Терминал", 1),
+                               ("ФиксированнаяСтруктура", 1), ("фиксированный ключ", 1),
+                               ("ФиксированноеСоответствие", 1),
+                               ("Фиксированное перехвачено", 1), ("Обход: 2", 1),
+                               ("Копия: 5", 1)):
             if output.count(f"\r\n{message}\r\n") != count:
                 raise AssertionError(f"Unexpected console output for {message!r}: {output}")
         return output

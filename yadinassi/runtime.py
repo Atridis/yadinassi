@@ -8,12 +8,16 @@ from . import ast, strings, type_values
 from .errors import BSLError, BSLRuntimeError
 from .parser import parse
 from .lexer import KEYWORDS
-from .maps import BSLMap
-from .structures import BSLStructure
+from .maps import BSLFixedMap, BSLMap
+from .structures import BSLFixedStructure, BSLStructure
 from .values import (
-    BSLArray, BSLObject, HostFunction, Reference as _Reference,
+    BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference as _Reference,
     boolean, equal, number, require_number, to_string,
 )
+
+
+_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+                BSLMap, BSLFixedMap)
 
 
 class _Break(Exception):
@@ -78,6 +82,9 @@ class Interpreter:
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
         self.register_type("Соответствие", BSLMap, "Map")
+        self.register_type("ФиксированныйМассив", BSLFixedArray, "FixedArray")
+        self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
+        self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
     @property
     def execution_context(self) -> str:
@@ -246,7 +253,7 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = self.visit(node.object)
-        if not isinstance(value, (BSLArray, BSLStructure, BSLMap)):
+        if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
         return value.get(self.visit(node.index))
 
@@ -381,7 +388,7 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, self.visit(node.value))
             else:
-                if not isinstance(value, (BSLArray, BSLStructure, BSLMap)):
+                if not isinstance(value, _COLLECTIONS):
                     raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
                 index = self.visit(node.target.index)
                 value.set(index, self.visit(node.value))
@@ -560,7 +567,7 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = self.visit(node.collection)
-        if not isinstance(collection, (BSLArray, BSLStructure, BSLMap)):
+        if not isinstance(collection, _COLLECTIONS):
             raise TypeError("Для Каждого ожидает массив, структуру или соответствие")
         for item in collection:
             self.set_variable(node.name, item)
