@@ -17,13 +17,13 @@ class NumericHelperTests(unittest.TestCase):
         # records are explicitly pending collation, not silently rewritten.
         root = Path(__file__).resolve().parents[1] / 'integrational_tests'
         output = []
-        Interpreter(output=output.append).execute((root / 'tests/numbers.bsl').read_text())
+        Interpreter(output=output.append).execute((root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig'))
         def selected(line):
             return ((line.startswith('helper.int.') or line.startswith('helper.extrema.')
                      or line.startswith('numbers.helpers.complete:'))
                     and not line.startswith(('helper.extrema.strings.',
                                              'helper.extrema.string-case.')))
-        expected = [line for line in (root / 'output/numbers.out').read_text().splitlines()
+        expected = [line for line in (root / 'output/numbers.out').read_text(encoding='utf-8').splitlines()
                     if selected(line)]
         self.assertEqual(len(expected), 38)
         self.assertEqual([line for line in output if selected(line)], expected)
