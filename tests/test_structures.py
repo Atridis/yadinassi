@@ -37,7 +37,7 @@ class StructureTests(unittest.TestCase):
             t = New Structure("First,Second");
             Message(t.First = Undefined); Message(t.Second = Undefined);
         ''')
-        self.assertEqual(self.output, ['ёж', '12.5', 'Да', 'Да', '4', 'Да', 'Да'])
+        self.assertEqual(self.output, ['ёж', '12,5', 'Да', 'Да', '4', 'Да', 'Да'])
 
     def test_constructor_keeps_explicit_undefined_and_object_identity(self):
         self.vm.execute('''

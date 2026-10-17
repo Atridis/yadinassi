@@ -31,6 +31,210 @@ class CLITests(unittest.TestCase):
             result = self.run_cli(str(path))
             self.assertEqual((result.returncode, result.stdout), (0, "файл\n"))
 
+    def test_division_and_bounded_presentation_all_flags_bom_file_stdin_and_console(self):
+        from scripts.smoke_test import DIVISION_PROGRAM, DIVISION_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            path = temporary / 'Деление.bsl'
+            path.write_text(DIVISION_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, DIVISION_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None), (('-',), DIVISION_PROGRAM),
+                      ((), DIVISION_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, DIVISION_OUTPUT, ''))
+
+    def test_bounded_presentation_bare_console_diagnostics_and_recovery(self):
+        from scripts.smoke_test import PRESENTATION_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            for expression, message in PRESENTATION_FAILURES:
+                code = ('value = 1 / 7;\n' + expression + '\n'
+                        'value\nTypeOf(value)\n1 / 8\n/exit\n')
+                with self.subTest(expression=expression):
+                    result = self.run_cli(stdin=code, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout),
+                                     (1, '0,142857142857142857142857143\nЧисло\n0,125\n'))
+                    self.assertIn('<консоль>:1:', result.stderr)
+                    self.assertIn(message, result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
+    def test_division_diagnostics_and_console_state_recovery(self):
+        from scripts.smoke_test import DIVISION_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            path = temporary / 'ОшибкаДеления.bsl'
+            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+                code = f'value = 1 / 7;\nvalue = {expression};\n'
+                path.write_text(code, encoding='utf-8-sig')
+                cases = [((flag, code), None, '', '<команда>:2:')
+                         for flag in ('-c', '-с', '--command')]
+                cases += [((str(path),), None, '', str(path) + ':2:'),
+                          (('-',), code, '', '<stdin>:2:'),
+                          ((), code + 'value\nTypeOf(value)\n1 / 8\n/exit\n',
+                           '0,142857142857142857142857143\nЧисло\n0,125\n', '<консоль>:1:')]
+                for arguments, stdin, stdout, location in cases:
+                    with self.subTest(expression=expression, arguments=arguments):
+                        result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                        self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                        self.assertIn(location, result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
+    def test_division_crosses_bom_exported_imports_from_unrelated_cwd(self):
+        from scripts.smoke_test import DIVISION_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            project = temporary / 'project'
+            project.mkdir()
+            module = project / 'Доли.bsl'
+            module.write_text(
+                'Function Divide(a, b) Export\nReturn a / b;\nEndFunction\n'
+                'Function Seventh() Export Return 1 / 7; EndFunction\n', encoding='utf-8-sig')
+            main = project / 'Основное.bsl'
+            main.write_text(
+                '// #Импорт Доли.bsl\nvalue = Доли.Seventh();\n'
+                'Message(value); Message(Доли.Divide(value, 3));\n'
+                'Message(Доли.Divide(1, 0.3)); Message(TypeOf(value));\n'
+                'Message(value = Number("0.142857142857142857142857143"));\n'
+                'Try value = Доли.Divide(1, 268435456); Except Message("caught"); EndTry;\n'
+                'Message(value); Message(Доли.Divide(1, 8));\n', encoding='utf-8-sig')
+            expected = ('0,142857142857142857142857143\n'
+                        '0,047619047619047619047619047666666666666666666666666667\n'
+                        '3,333333333333333333\nЧисло\nДа\ncaught\n'
+                        '0,142857142857142857142857143\n0,125\n')
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+                main.write_text('// #Импорт Доли.bsl\nДоли.Divide(' +
+                                expression.replace(' / ', ', ') + ');\n', encoding='utf-8-sig')
+                for path in (main, main.relative_to(temporary)):
+                    with self.subTest(expression=expression, path=path):
+                        result = self.run_cli(str(path), cwd=temporary)
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
+                        self.assertIn(str(module.resolve()) + ':2:', result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
+    def test_numeric_presentation_all_flags_bom_file_stdin_and_console(self):
+        code = '''value = nUmBeR("-1234.5000");
+mEsSaGe(value); сОоБщИтЬ(сТрОкА(value));
+Message("value=" + value); Message(чИсЛо("1\u00a0234,5000"));
+Message(String(-0.000)); Message(String(1000.000));
+Message(TypeOf(value) = Тип("Число"));
+Message(Number(String(value)) = value);
+Message(Найти(value, ",")); Message(StrReplace(value, ",", "."));
+Message(StrConcat(StrSplit(value, ","), "|"));
+Message(СтрДлина(value));
+exact = Number("123456789012345678901234567890.123456789");
+Message(exact); Message(Number(String(exact)) = exact);
+Message(Number("+12\u00a0345")); Message(Number("-123\u00a0456,000100"));
+Message(Number("1\u00a0234\u00a0567")); Message(Number("001\u00a0234,5000"));
+Message(String("1234.5000"));
+'''
+        expected = ('-1\u00a0234,5\n-1\u00a0234,5\nvalue=-1\u00a0234,5\n'
+                    '1\u00a0234,5\n0\n1\u00a0000\nДа\nДа\n7\n'
+                    '-1\u00a0234.5\n-1\u00a0234|5\n8\n'
+                    '123\u00a0456\u00a0789\u00a0012\u00a0345\u00a0678'
+                    '\u00a0901\u00a0234\u00a0567\u00a0890,123456789\nДа\n'
+                    '12\u00a0345\n-123\u00a0456,0001\n1\u00a0234\u00a0567\n1\u00a0234,5\n1234.5000\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Числа.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [((flag, code), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None), (('-',), code), ((), code + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+
+    def test_invalid_numeric_conversion_is_catchable_across_cli_entries(self):
+        invalid = ['1,2.3', '1.2,3', '1,,2', '1,2,3', '1 234,5',
+                   'NaN', 'Infinity', 'not a number', '1,', ',5', '1,2e3',
+                   '1_000,25', '1,2_5', '١,٢', '12\u00a034,5',
+                   '1234\u00a0567', '1\u00a02345', '1\u00a0\u00a0234',
+                   '1\u00a0234.5', '1\u00a0234,5e2', '1\u202f234,5',
+                   '1\u00a0234 567,5', '1\u00a0٢٣٤,5']
+        code = 'value = Number("1\u00a0234,5");\n'
+        for text in invalid:
+            code += (f'Try\nvalue = Число("{text}");\nExcept\n'
+                     'Message("caught");\nEndTry;\n')
+        code += 'Message(value); Message(TypeOf(value)); Message(Number("0,125"));\n'
+        expected = 'caught\n' * len(invalid) + '1\u00a0234,5\nЧисло\n0,125\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'ОшибкиЧисел.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [((flag, code), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None), (('-',), code), ((), code + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+
+    def test_numeric_conversion_cli_diagnostics_and_console_recovery(self):
+        code = 'value = Number("1\u00a0234,5");\nvalue = Number("12\u00a034,5");\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'ОшибкаЧисла.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [((flag, code), None, '', '<команда>:2:')
+                     for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None, '', str(path) + ':2:'),
+                      (('-',), code, '', '<stdin>:2:'),
+                      ((), code + 'value\nTypeOf(value)\nNumber("0,125")\n/exit\n',
+                       '1\u00a0234,5\nЧисло\n0,125\n', '<консоль>:1:')]
+            for arguments, stdin, stdout, location in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                    self.assertIn(location, result.stderr)
+                    self.assertIn('Невозможно преобразовать значение в число', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
+    def test_numeric_presentation_crosses_bom_imports_from_unrelated_cwd(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / 'project'
+            project.mkdir()
+            module = project / 'Числа.bsl'
+            module.write_text(
+                'Function Parse(text) Export Return чИсЛо(text); EndFunction\n'
+                'Function Present(value) Export Return сТрОкА(value); EndFunction\n'
+                'Procedure Show(value) Export Сообщить(value); EndProcedure\n'
+                'Function Fail() Export\nReturn Number("12\u00a034,5");\nEndFunction\n',
+                encoding='utf-8-sig')
+            main = project / 'Основное.bsl'
+            code = ('// #Импорт Числа.bsl\nvalue = числа.Parse("-1\u00a0234,5000");\n'
+                    'Message(TypeOf(value)); Message(value); Числа.Show(value);\n'
+                    'Message(Числа.Present(value)); Message("value=" + value);\n'
+                    'Message(Number(Числа.Present(value)) = value);\n'
+                    'Try Числа.Fail(); Except Message("caught"); EndTry;\n'
+                    'Message(Числа.Parse("0.125"));\n')
+            main.write_text(code, encoding='utf-8-sig')
+            expected = ('Число\n-1\u00a0234,5\n-1\u00a0234,5\n-1\u00a0234,5\n'
+                        'value=-1\u00a0234,5\nДа\ncaught\n0,125\n')
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+            main.write_text('// #Импорт Числа.bsl\nЧисла.Fail();\n', encoding='utf-8-sig')
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(error_path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout), (1, ''))
+                    self.assertIn(str(module.resolve()) + ':5:', result.stderr)
+                    self.assertIn('Невозможно преобразовать значение в число', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
     def test_type_values_command_file_stdin_and_console(self):
         types = [('Undefined', 'Неопределено', 'Undefined'),
                  ('Boolean', 'Булево', 'True'),

@@ -131,6 +131,76 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'copy = New Array(frozen); copy[0] = 5;\n')
         send(">>> ", 'Message("Копия: " + String(copy[0]));\n')
         send(">>> ", '(frozen[0] = Undefined)\n')
+        send(">>> ", 'numberValue = nUmBeR("1\u00a0234,5000");\n')
+        send(">>> ", 'numberValue\n')
+        send(">>> ", 'сТрОкА(numberValue)\n')
+        send(">>> ", '"Тип числа: " + TypeOf(numberValue)\n')
+        send(">>> ", '"Число: " + numberValue\n')
+        send(">>> ", 'Число(\n')
+        send("... ", '"-0,12500")\n')
+        send(">>> ", 'StrReplace(numberValue, ",", ".")\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'Number("1,,2");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("Число перехвачено");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'numberValue = Number("12\u00a034,5");\n')
+        send(">>> ", 'numberValue\n')
+        send(">>> ", 'Number(String(numberValue))\n')
+        send(">>> ", 'Message(Number("0.125"));\n')
+        send(">>> ", 'StrConcat(StrSplit(numberValue, ","), "|")\n')
+        send(">>> ", 'Число("-12\u00a0345\u00a0678,000100")\n')
+        send(">>> ", 'exact = Number("123456789012345678901234567890.123456789");\n')
+        send(">>> ", 'exact\n')
+        send(">>> ", '(Number(String(exact)) = exact)\n')
+        send(">>> ", 'String("1234.5000")\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'Number("1\u202f234,5");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("Группировка перехвачена");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'quotient = 1 / 7;\n')
+        send(">>> ", '"Доля: " + quotient\n')
+        send(">>> ", 'part = quotient / (\n')
+        send("... ", '3);\n')
+        send(">>> ", '"Повторное деление: " + part\n')
+        send(">>> ", '"Дробный делитель: " + (1 / 0.3)\n')
+        send(">>> ", '"Отрицательное деление: " + (-1 / 6)\n')
+        send(">>> ", '"Нормализация: " + (Number("1.0000000000") / 3)\n')
+        send(">>> ", '"Тип доли: " + TypeOf(part)\n')
+        send(">>> ", '"Точная доля: " + String(part = '
+             'Number("0.047619047619047619047619047666666666666666666666666667"))\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'quotient = -3 / 268435456;\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("Половина перехвачена");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'quotient = 1 / 268435456;\n')
+        send(">>> ", '"После половины: " + quotient\n')
+        send(">>> ", 'quotient = 1 / 0;\n')
+        send(">>> ", '"После нуля: " + quotient\n')
+        send(">>> ", 'quotient = Number("1e1000000") / 3;\n')
+        send(">>> ", '"После предела: " + quotient\n')
+        send(">>> ", '"Деление продолжено: " + (1 / 8)\n')
+        long_value = '0.' + '3' * 324 + '6'
+        long_text = '0,' + '3' * 323 + '4'
+        send(">>> ", f'longValue = Number("{long_value}"); negative = -longValue;\n')
+        send(">>> ", f'"Длинное представление: " + String(String(negative) = "-{long_text}")\n')
+        send(">>> ", '"Длина представления: " + StrLen(String(negative))\n')
+        send(">>> ", '"Знак сохранён: " + String(-negative = longValue)\n')
+        send(">>> ", f'"Значение сохранено: " + String(longValue = Number("{long_value}"))\n')
+        send(">>> ", '"Представление округлено: " + String(Number(String(longValue)) <> longValue)\n')
+        send(">>> ", 'presentation = "сохранено";\n')
+        for expression, diagnostic, label in (
+            ('Number("5e-325")', 'точная половина на границе 324 позиций', 'Половина представления'),
+            ('Number("1.' + '3' * 325 + '")', 'при модуле не меньше 1', 'Модуль представления'),
+            ('Number("1e4096")', 'превышен предел ресурсов', 'Предел представления'),
+        ):
+            send(">>> ", f'Try presentation = String({expression}); Except '
+                 f'Message("{label}: " + String(Find(ErrorDescription(), "{diagnostic}") > 0)); EndTry;\n')
+            send(">>> ", expression + '\n')  # Implicit REPL presentation must also recover.
+        send(">>> ", '"Состояние числа: " + String(-negative = longValue)\n')
+        send(">>> ", '"После представления: " + presentation\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -139,21 +209,51 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 5
+        if (output.count('<консоль>:1:') != 12
                 or output.count('Тип не поддерживается: Date') != 1
                 or output.count('недоступны для записи') != 2
                 or output.count('недоступно для записи') != 1
-                or output.count('не найдено: Add') != 1):
+                or output.count('не найдено: Add') != 1
+                or output.count('Невозможно преобразовать значение в число') != 1
+                or output.count('Деление на ноль') != 1
+                or output.count('Представление числа: ') != 3
+                or output.count('Деление: точная половина на границе округления '
+                                'пока не поддерживается в Yadinassi') != 1
+                or output.count('Деление: превышен предел ресурсов Yadinassi '
+                                '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("Курсор", 2), ("Вниз", 1), ("Блок", 1),
                                ("Область", 1), ("Вложенная", 1), ("Число", 2),
                                ("типовой ключ", 1), ("Тип", 1), ("Перехвачено", 1),
-                               ("Да", 4), ("Нет", 1), ("2", 1),
+                               ("Да", 5), ("Нет", 1), ("2", 1),
                                ("ФиксированныйМассив", 1), ("Терминал", 1),
                                ("ФиксированнаяСтруктура", 1), ("фиксированный ключ", 1),
                                ("ФиксированноеСоответствие", 1),
                                ("Фиксированное перехвачено", 1), ("Обход: 2", 1),
-                               ("Копия: 5", 1)):
+                               ("Копия: 5", 1), ("1\u00a0234,5", 4), ("Тип числа: Число", 1),
+                               ("Число: 1\u00a0234,5", 1), ("-0,125", 1), ("1\u00a0234.5", 1),
+                               ("Число перехвачено", 1), ("0,125", 1), ("1\u00a0234|5", 1),
+                               ("-12\u00a0345\u00a0678,0001", 1),
+                               ("123\u00a0456\u00a0789\u00a0012\u00a0345\u00a0678"
+                                "\u00a0901\u00a0234\u00a0567\u00a0890,123456789", 1),
+                               ("1234.5000", 1), ("Группировка перехвачена", 1),
+                               ("Доля: 0,142857142857142857142857143", 1),
+                               ("Повторное деление: "
+                                "0,047619047619047619047619047666666666666666666666666667", 1),
+                               ("Дробный делитель: 3,333333333333333333", 1),
+                               ("Отрицательное деление: -0,166666666666666666666666667", 1),
+                               ("Нормализация: 0,333333333333333333333333333", 1),
+                               ("Тип доли: Число", 1), ("Точная доля: Да", 1),
+                               ("Половина перехвачена", 1),
+                               ("После половины: 0,142857142857142857142857143", 1),
+                               ("После нуля: 0,142857142857142857142857143", 1),
+                               ("После предела: 0,142857142857142857142857143", 1),
+                               ("Деление продолжено: 0,125", 1),
+                               ("Длинное представление: Да", 1), ("Длина представления: 327", 1),
+                               ("Знак сохранён: Да", 1), ("Значение сохранено: Да", 1),
+                               ("Представление округлено: Да", 1), ("Половина представления: Да", 1),
+                               ("Модуль представления: Да", 1), ("Предел представления: Да", 1),
+                               ("Состояние числа: Да", 1), ("После представления: сохранено", 1)):
             if output.count(f"\r\n{message}\r\n") != count:
                 raise AssertionError(f"Unexpected console output for {message!r}: {output}")
         return output

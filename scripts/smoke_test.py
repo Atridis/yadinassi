@@ -10,6 +10,252 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Explicit goldens are shared by the source CLI tests and the frozen checks.
+# They are not calculated with the implementation under test or a float oracle.
+DIVISION_EXAMPLES = [
+    ('1 / 3', '0,333333333333333333333333333'),
+    ('2 / 3', '0,666666666666666666666666667'),
+    ('1 / 0.3', '3,333333333333333333'),
+    ('0.1 / 3', '0,033333333333333333333333333333333333'),
+    ('-1 / 6', '-0,166666666666666666666666667'),
+    ('1 / -6', '-0,166666666666666666666666667'),
+    ('-1 / -6', '0,166666666666666666666666667'),
+    ('Number("1.0000000000") / Number("3.0000000000")',
+     '0,333333333333333333333333333'),
+    ('0.000 / 3', '0'),
+    ('1 / 3000000000', '0,000000000333333333333333333333333333'),
+    ('1 / 0.0000000003', '3\u00a0333\u00a0333\u00a0333,333333333'),
+    ('Number("123456789012345678901234567890.123456789") / 7',
+     '17\u00a0636\u00a0684\u00a0144\u00a0620\u00a0811\u00a0271\u00a0604\u00a0938\u00a0270,'
+     '017636684142857142857142857142857143'),
+    ('stored', '0,142857142857142857142857143'),
+    ('stored / 3', '0,047619047619047619047619047666666666666666666666666667'),
+]
+DIVISION_TIE = 'Деление: точная половина на границе округления пока не поддерживается в Yadinassi'
+DIVISION_LIMIT = 'Деление: превышен предел ресурсов Yadinassi (4096 десятичных разрядов)'
+DIVISION_FAILURES = [
+    ('1 / 0', 'Деление на ноль'),
+    ('1 / -0.000', 'Деление на ноль'),
+    ('1 / 268435456', DIVISION_TIE),
+    ('-1 / 268435456', DIVISION_TIE),
+    ('3 / 268435456', DIVISION_TIE),
+    ('-3 / 268435456', DIVISION_TIE),
+    ('Number("1e1000000") / 3', DIVISION_LIMIT),
+    ('Number("1e-1000000") / 3', DIVISION_LIMIT),
+    ('1 / Number("1e1000000")', DIVISION_LIMIT),
+    ('1 / Number("1e-1000000")', DIVISION_LIMIT),
+]
+DIVISION_PROGRAM = 'stored = 1 / 7;\n'
+DIVISION_OUTPUT = ''
+for _expression, _display in DIVISION_EXAMPLES:
+    _canonical = _display.replace('\u00a0', '').replace(',', '.')
+    DIVISION_PROGRAM += (f'value = {_expression};\nMessage(value);\n'
+                         f'Message(value = Number("{_canonical}"));\n'
+                         'Message(Number(String(value)) = value);\n')
+    DIVISION_OUTPUT += _display + '\nДа\nДа\n'
+DIVISION_PROGRAM += ('Message(TypeOf(value) = Тип("Число"));\n'
+                     'Message(stored = Number("0.142857142857142857142857143"));\n'
+                     'Message(stored / 3 <> 1 / 21);\nvalue = stored;\n')
+DIVISION_OUTPUT += 'Да\nДа\nДа\n'
+for _expression, _message in DIVISION_FAILURES:
+    DIVISION_PROGRAM += (f'Try\nvalue = {_expression};\nExcept\n'
+                         f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                         'EndTry;\nMessage(value = stored);\n')
+    DIVISION_OUTPUT += 'Да\nДа\n'
+DIVISION_PROGRAM += 'Message(value); Message(TypeOf(value)); Message(1 / 8);\n'
+DIVISION_OUTPUT += '0,142857142857142857142857143\nЧисло\n0,125\n'
+
+
+# Only presentation rounds beyond 324 fractional positions for abs(value) < 1.
+# Build the source text here; keep the expected output compact and test value
+# preservation separately from the deliberately lossy String roundtrip.
+_LONG_VALUE = '0.' + '3' * 324 + '6'
+_LONG_TEXT = '0,' + '3' * 323 + '4'
+DIVISION_PROGRAM += (
+    f'longValue = Number("{_LONG_VALUE}"); negative = -longValue;\n'
+    f'Message(String(longValue) = "{_LONG_TEXT}"); Message(StrLen(String(longValue)));\n'
+    f'Message(String(negative) = "-{_LONG_TEXT}"); Message(StrLen(String(negative)));\n'
+    f'Message(-negative = longValue); Message(longValue = Number("{_LONG_VALUE}"));\n'
+    'Message(Number(String(longValue)) <> longValue); text = "saved";\n')
+DIVISION_OUTPUT += 'Да\n326\nДа\n327\nДа\nДа\nДа\n'
+PRESENTATION_FAILURES = (
+    ('Number("5e-325")', 'Представление числа: точная половина на границе 324 позиций '
+     'пока не поддерживается в Yadinassi'),
+    ('Number("1.' + '3' * 325 + '")', 'Представление числа: более 324 дробных позиций '
+     'при модуле не меньше 1 пока не поддерживается в Yadinassi'),
+    ('Number("1e4096")', 'Представление числа: превышен предел ресурсов Yadinassi '
+     '(4096 десятичных разрядов)'),
+)
+for _expression, _message in PRESENTATION_FAILURES:
+    DIVISION_PROGRAM += (f'Try\ntext = String({_expression});\nExcept\n'
+                         f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                         'EndTry;\nMessage(text = "saved");\n')
+    DIVISION_OUTPUT += 'Да\nДа\n'
+
+
+def check_division(executable: str, *, directory: Path, env: dict) -> None:
+    """Exercise the division contract in the isolated frozen executable."""
+    directory.mkdir()
+    source = directory / 'Деление.bsl'
+    source.write_text(DIVISION_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, DIVISION_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], DIVISION_PROGRAM),
+              ([], DIVISION_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, DIVISION_OUTPUT, ''):
+            raise AssertionError(f'Failed division {arguments!r}: {result!r}')
+
+    module = directory / 'Доли.bsl'
+    module.write_text(
+        'Function Divide(a, b) Export\nReturn a / b;\nEndFunction\n'
+        'Function Seventh() Export Return 1 / 7; EndFunction\n', encoding='utf-8-sig')
+    importer = directory / 'ИмпортДеления.bsl'
+    importer.write_text(
+        '// #Импорт Доли.bsl\nvalue = Доли.Seventh();\n'
+        'Message(value); Message(Доли.Divide(value, 3));\n'
+        'Message(Доли.Divide(1, 0.3)); Message(TypeOf(value));\n'
+        'Message(value = Number("0.142857142857142857142857143"));\n'
+        'Try value = Доли.Divide(1, 268435456); Except Message("caught"); EndTry;\n'
+        'Message(value); Message(Доли.Divide(1, 8));\n', encoding='utf-8-sig')
+    import_output = ('0,142857142857142857142857143\n'
+                     '0,047619047619047619047619047666666666666666666666666667\n'
+                     '3,333333333333333333\nЧисло\nДа\ncaught\n'
+                     '0,142857142857142857142857143\n0,125\n')
+    for path in (importer, importer.relative_to(directory.parent)):
+        result = subprocess.run([executable, str(path)], capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, import_output, ''):
+            raise AssertionError(f'Failed imported division {path!r}: {result!r}')
+
+    # One diagnostic of each kind must have the right location on every route;
+    # all sign and exponent variants above are additionally checked as catchable.
+    for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+        error_code = f'value = 1 / 7;\nvalue = {expression};\n'
+        source.write_text(error_code, encoding='utf-8-sig')
+        importer.write_text('// #Импорт Доли.bsl\nДоли.Divide(' +
+                            expression.replace(' / ', ', ') + ');\n', encoding='utf-8-sig')
+        errors = [([flag, error_code], None, '', '<команда>:2:')
+                  for flag in ('-c', '-с', '--command')]
+        errors += [([str(source)], None, '', str(source) + ':2:'),
+                   (['-'], error_code, '', '<stdin>:2:'),
+                   ([], error_code + 'value\nTypeOf(value)\n1 / 8\n/exit\n',
+                    '0,142857142857142857142857143\nЧисло\n0,125\n', '<консоль>:1:')]
+        for path in (importer, importer.relative_to(directory.parent)):
+            errors.append(([str(path)], None, '', str(module.resolve()) + ':2:'))
+        for arguments, stdin, stdout, location in errors:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed division diagnostics {arguments!r}: {result!r}')
+    # A bare REPL value is presented by the console, outside a BSL String call.
+    # Its presentation failure must still be source-aware and allow the next input.
+    for expression, message in PRESENTATION_FAILURES:
+        code = ('value = 1 / 7;\n' + expression + '\n'
+                'value\nTypeOf(value)\n1 / 8\n/exit\n')
+        result = subprocess.run([executable], input=code, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode != 1
+                or result.stdout != '0,142857142857142857142857143\nЧисло\n0,125\n'
+                or '<консоль>:1:' not in result.stderr or message not in result.stderr
+                or 'Traceback' in result.stderr):
+            raise AssertionError(f'Failed bare presentation recovery {expression!r}: {result!r}')
+    print('Binary division passed: exact rounded values, stored/redivided values, types, '
+          'BOM files, imports, all command flags, stdin, console, bounded presentation, ties and resource limits')
+
+
+def check_numeric_presentation(executable: str, *, directory: Path, env: dict) -> None:
+    """Check the native NBSP grouping and decimal-comma contract before the native sample gate.
+
+    This is not a substitute for native comparison: main() still requires the
+    untouched owner-provided basic output, including its arithmetic precision.
+    """
+    directory.mkdir()
+    code = '''value = nUmBeR("-1234.5000");
+mEsSaGe(value); сОоБщИтЬ(сТрОкА(value));
+Message("value=" + value); Message(чИсЛо("1\u00a0234,5000"));
+Message(String(-0.000)); Message(String(1000.000));
+Message(TypeOf(value) = Тип("Число"));
+Message(Number(String(value)) = value);
+Message(Найти(value, ",")); Message(StrReplace(value, ",", "."));
+Message(StrConcat(StrSplit(value, ","), "|")); Message(СтрДлина(value));
+exact = Number("123456789012345678901234567890.123456789");
+Message(exact); Message(Number(String(exact)) = exact);
+Message(Number("+12\u00a0345")); Message(Number("-123\u00a0456,000100"));
+Message(Number("1\u00a0234\u00a0567")); Message(Number("001\u00a0234,5000"));
+Message(String("1234.5000"));
+'''
+    expected = ('-1\u00a0234,5\n-1\u00a0234,5\nvalue=-1\u00a0234,5\n'
+                '1\u00a0234,5\n0\n1\u00a0000\nДа\nДа\n7\n'
+                '-1\u00a0234.5\n-1\u00a0234|5\n8\n'
+                '123\u00a0456\u00a0789\u00a0012\u00a0345\u00a0678'
+                '\u00a0901\u00a0234\u00a0567\u00a0890,123456789\nДа\n'
+                '12\u00a0345\n-123\u00a0456,0001\n1\u00a0234\u00a0567\n1\u00a0234,5\n1234.5000\n')
+    invalid = ['1,2.3', '1.2,3', '1,,2', '1,2,3', '1 234,5', 'NaN', 'Infinity',
+               '1,', ',5', '1,2e3', '1_000,25', '1,2_5', '١,٢', '12\u00a034,5',
+               '1234\u00a0567', '1\u00a02345', '1\u00a0\u00a0234',
+               '1\u00a0234.5', '1\u00a0234,5e2', '1\u202f234,5',
+               '1\u00a0234 567,5', '1\u00a0٢٣٤,5']
+    for value in invalid:
+        code += (f'Try\nvalue = Number("{value}");\nExcept\n'
+                 'Message("caught");\nEndTry;\n')
+    code += 'Message(value); Message(TypeOf(value));\n'
+    expected += 'caught\n' * len(invalid) + '-1\u00a0234,5\nЧисло\n'
+    source = directory / 'ПредставлениеЧисел.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    module = directory / 'Числа.bsl'
+    module.write_text(
+        'Function Parse(text) Export Return Число(text); EndFunction\n'
+        'Function Present(value) Export Return Строка(value); EndFunction\n'
+        'Procedure Show(value) Export Message(value); EndProcedure\n'
+        'Function Fail() Export\nReturn Number("12\u00a034,5");\nEndFunction\n',
+        encoding='utf-8-sig')
+    importer = directory / 'ИмпортЧисел.bsl'
+    importer.write_text(
+        '// #Импорт Числа.bsl\nvalue = Числа.Parse("-1\u00a0234,5000");\n'
+        'Message(TypeOf(value)); Message(value); Числа.Show(value);\n'
+        'Message(Числа.Present(value)); Message("value=" + value);\n'
+        'Message(Number(Числа.Present(value)) = value);\n'
+        'Try Числа.Fail(); Except Message("caught"); EndTry;\n'
+        'Message(Числа.Parse("0.125"));\n', encoding='utf-8-sig')
+    import_expected = ('Число\n-1\u00a0234,5\n-1\u00a0234,5\n-1\u00a0234,5\n'
+                       'value=-1\u00a0234,5\nДа\ncaught\n0,125\n')
+    cases = [([flag, code], None, expected) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None, expected), (['-'], code, expected),
+              ([], code + '/exit\n', expected)]
+    for path in (importer, importer.relative_to(directory.parent)):
+        cases.append(([str(path)], None, import_expected))
+    for arguments, stdin, stdout in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, stdout, ''):
+            raise AssertionError(f'Failed numeric presentation {arguments!r}: {result!r}')
+    error_code = 'value = Number("1\u00a0234,5");\nvalue = Number("12\u00a034,5");\n'
+    error_file = directory / 'ОшибкаЧисла.bsl'
+    error_file.write_text(error_code, encoding='utf-8-sig')
+    error_import = directory / 'ОшибкаИмпортаЧисла.bsl'
+    error_import.write_text('// #Импорт Числа.bsl\nЧисла.Fail();\n', encoding='utf-8-sig')
+    errors = [([flag, error_code], None, '', '<команда>:2:')
+              for flag in ('-c', '-с', '--command')]
+    errors += [([str(error_file)], None, '', str(error_file) + ':2:'),
+               (['-'], error_code, '', '<stdin>:2:'),
+               ([], error_code + 'value\nTypeOf(value)\nNumber("0,125")\n/exit\n',
+                '1\u00a0234,5\nЧисло\n0,125\n', '<консоль>:1:')]
+    for path in (error_import, error_import.relative_to(directory.parent)):
+        errors.append(([str(path)], None, '', str(module.resolve()) + ':5:'))
+    for arguments, stdin, stdout, location in errors:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                or 'Невозможно преобразовать значение в число' not in result.stderr
+                or 'Traceback' in result.stderr):
+            raise AssertionError(f'Failed numeric diagnostics {arguments!r}: {result!r}')
+    print('Binary numeric presentation passed: NBSP grouping, decimal comma, exact roundtrip, aliases, '
+          'BOM files, imports, all command flags, stdin, console, and error recovery')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -26,6 +272,8 @@ def main() -> None:
         # the subprocess cwd canonical too (e.g. macOS /var, Windows aliases,
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
+        check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
+        check_division(executable, directory=Path(temporary) / "division", env=env)
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
@@ -476,8 +724,8 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             from console_check import check_console
 
             check_console([executable], cwd=temporary, env=env)
-            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values, fixed collections and error recovery")
-    print("Binary smoke tests passed: fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
+            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values, fixed collections, numeric presentation, division and error recovery")
+    print("Binary smoke tests passed: division, numeric presentation, fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":

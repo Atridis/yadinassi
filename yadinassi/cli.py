@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 from . import __version__
-from .errors import BSLError, IncompleteInput
+from .errors import BSLError, BSLRuntimeError, IncompleteInput
 from .parser import parse
 from .runtime import Interpreter
 from .values import to_string
@@ -64,7 +64,15 @@ def repl(interpreter: Interpreter) -> int:
         try:
             result = interpreter.execute_program(program)
             if result is not None:
-                print(to_string(result))
+                try:
+                    presentation = to_string(result)
+                except (ValueError, ArithmeticError) as error:
+                    # Implicit REPL output is outside Interpreter.visit, but
+                    # presentation limits still need recoverable diagnostics.
+                    token = program[-1].token
+                    raise BSLRuntimeError(str(error), token.source, token.line,
+                                          token.column) from error
+                print(presentation)
         except BSLError as error:
             print(error, file=sys.stderr)
             had_error = True

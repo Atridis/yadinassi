@@ -50,7 +50,7 @@ class MapTests(unittest.TestCase):
             Message(m.gEt("Amount")); Сообщить(m.ПОЛУЧИТЬ("Имя"));
             Message(m.cOuNt()); Сообщить(m.КОЛИЧЕСТВО());
         ''')
-        self.assertEqual(self.output, ['ёж', '12.5', '42', 'кот', '2', '2'])
+        self.assertEqual(self.output, ['ёж', '12,5', '42', 'кот', '2', '2'])
 
     def test_insert_optional_value_defaults_to_undefined_even_when_replacing(self):
         self.vm.execute('''

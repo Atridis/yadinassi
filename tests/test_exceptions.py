@@ -54,7 +54,7 @@ class ExceptionTests(unittest.TestCase):
         self.assertEqual(self.output, ['before', 'body', 'handler', 'after'])
 
     def test_raise_value_uses_bsl_string_conversion(self):
-        for expression, expected in [('42.500', '42.5'), ('True', 'Да'),
+        for expression, expected in [('42.500', '42,5'), ('True', 'Да'),
                                      ('False', 'Нет'), ('Undefined', ''),
                                      ('"a" + 2', 'a2')]:
             with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError) as caught:
