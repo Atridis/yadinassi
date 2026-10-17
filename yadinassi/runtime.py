@@ -6,6 +6,7 @@ from typing import Callable
 
 from . import ast, numbers, serialization, strings, type_values
 from .errors import BSLError, BSLRuntimeError
+from .collation import string_key
 from .parser import parse
 from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
@@ -219,6 +220,8 @@ class Interpreter:
         if operator in ("<", "<=", ">", ">="):
             if type(left) is not type(right) or not isinstance(left, (Decimal, str, bool)):
                 raise TypeError("Значения несовместимы для сравнения")
+            if isinstance(left, str):
+                left, right = string_key(left), string_key(right)
             if operator == "<":
                 return left < right
             if operator == "<=":

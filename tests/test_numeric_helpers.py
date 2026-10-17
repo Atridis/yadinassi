@@ -13,20 +13,12 @@ class NumericHelperTests(unittest.TestCase):
         self.vm = Interpreter(output=lambda message: None)
 
     def test_owner_native_numeric_subset(self):
-        # Owner upload 7800d48 supplies the expected records. The four string
-        # records are explicitly pending collation, not silently rewritten.
+        # Both owner uploads are compared without filtering pending strings.
         root = Path(__file__).resolve().parents[1] / 'integrational_tests'
         output = []
         Interpreter(output=output.append).execute((root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig'))
-        def selected(line):
-            return ((line.startswith('helper.int.') or line.startswith('helper.extrema.')
-                     or line.startswith('numbers.helpers.complete:'))
-                    and not line.startswith(('helper.extrema.strings.',
-                                             'helper.extrema.string-case.')))
-        expected = [line for line in (root / 'output/numbers.out').read_text(encoding='utf-8').splitlines()
-                    if selected(line)]
-        self.assertEqual(len(expected), 38)
-        self.assertEqual([line for line in output if selected(line)], expected)
+        expected = (root / 'output/numbers.out').read_text(encoding='utf-8').splitlines()
+        self.assertEqual(output, expected)
 
     def test_integer_part_bilingual_and_toward_zero(self):
         for expression, expected in [
@@ -109,11 +101,14 @@ class NumericHelperTests(unittest.TestCase):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
 
-    def test_string_extrema_are_explicitly_pending_not_claimed_invalid(self):
-        for expression in ('Min("2", "10")', 'Max("a", "A")', 'Min("value")'):
-            with self.subTest(expression=expression), self.assertRaisesRegex(
-                    BSLError, "порядок сравнения строк пока не поддерживается"):
-                self.vm.execute(expression)
+    def test_string_extrema(self):
+        for lower, upper in [('a', 'A'), ('Aa', 'az'), ('A', 'b'),
+                             ('е', 'ё'), ('я', 'Я'), ('a', 'aa'), ('10', '2')]:
+            for values in ((lower, upper), (upper, lower)):
+                self.assertEqual(minimum(*values), lower)
+                self.assertEqual(maximum(*values), upper)
+        self.assertEqual(minimum('value'), 'value')
+        self.assertEqual(maximum('a', 'A', 'b'), 'b')
 
     def test_extrema_numeric_boolean_multivalue_selection_and_omissions(self):
         for expression, expected in [('Min(True, False)', False), ('Max(False, True)', True),

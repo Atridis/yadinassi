@@ -3,6 +3,7 @@
 from decimal import Decimal, ROUND_DOWN
 
 from .values import number
+from .collation import string_key
 
 
 def integer_part(value: object) -> Decimal:
@@ -15,7 +16,8 @@ def integer_part(value: object) -> Decimal:
 def _extreme(first: object, rest: tuple[object, ...], *, maximum: bool) -> object:
     values = (first, *rest)
     if all(type(value) is str for value in values):
-        raise TypeError("Мин/Макс: порядок сравнения строк пока не поддерживается")
+        # min/max retain the original first argument on equal collation keys.
+        return (max if maximum else min)(values, key=string_key)
     numeric = all(type(value) in (Decimal, bool) for value in values)
     if not numeric:
         raise TypeError("Значения несовместимы для сравнения")

@@ -166,12 +166,12 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
           'BOM files, imports, all command flags, stdin, console, bounded presentation, ties and resource limits')
 
 
-NUMERIC_HELPERS_PROGRAM = 'Сообщить(ЗначениеВСтрокуВнутр(Цел(-12.99)));\nMessage(ValueToStringInternal(iNt(0.99)));\nvalue = Number("12345678901234567890123456789012345678901234567890.9");\nMessage(ValueToStringInternal(Int(value)));\nTry Int(Undefined); Except Message("integer-caught"); EndTry;\nMessage(TypeOf(Int(1 / 3)));\nMessage(ValueToStringInternal(Int(True)));\nMessage(ValueToStringInternal(Цел("12.75")));\nMessage(ValueToStringInternal(Мин(2, True)));\nMessage(ValueToStringInternal(Max(False, 0)));\nMessage(ValueToStringInternal(mIn(7, -2, 0, -1)));\nMessage(ValueToStringInternal(МАКС(-7, 2, 0, 1)));\nTry Min(2, "10"); Except Message("mixed-caught"); EndTry;\nTry Max("a", "A"); Except Message("strings-pending"); EndTry;\n'
-NUMERIC_HELPERS_OUTPUT = '{"N",-12}\n{"N",0}\n{"N",12345678901234567890123456789012345678901234567890}\ninteger-caught\nЧисло\n{"N",1}\n{"N",12}\n{"B",1}\n{"B",0}\n{"N",-2}\n{"N",2}\nmixed-caught\nstrings-pending\n'
+NUMERIC_HELPERS_PROGRAM = 'Сообщить(ЗначениеВСтрокуВнутр(Цел(-12.99)));\nMessage(ValueToStringInternal(iNt(0.99)));\nvalue = Number("12345678901234567890123456789012345678901234567890.9");\nMessage(ValueToStringInternal(Int(value)));\nTry Int(Undefined); Except Message("integer-caught"); EndTry;\nMessage(TypeOf(Int(1 / 3)));\nMessage(ValueToStringInternal(Int(True)));\nMessage(ValueToStringInternal(Цел("12.75")));\nMessage(ValueToStringInternal(Мин(2, True)));\nMessage(ValueToStringInternal(Max(False, 0)));\nMessage(ValueToStringInternal(mIn(7, -2, 0, -1)));\nMessage(ValueToStringInternal(МАКС(-7, 2, 0, 1)));\nTry Min(2, "10"); Except Message("mixed-caught"); EndTry;\nMessage(ValueToStringInternal(Max("a", "A")));\nMessage(ValueToStringInternal(Min("az", "Aa")));\nMessage(ValueToStringInternal(Min("ё", "е")));\nMessage("a" < "A");\n'
+NUMERIC_HELPERS_OUTPUT = '{"N",-12}\n{"N",0}\n{"N",12345678901234567890123456789012345678901234567890}\ninteger-caught\nЧисло\n{"N",1}\n{"N",12}\n{"B",1}\n{"B",0}\n{"N",-2}\n{"N",2}\nmixed-caught\n{"S","A"}\n{"S","Aa"}\n{"S","е"}\nДа\n'
 
 
 def check_numeric_helpers(executable: str, *, directory: Path, env: dict) -> None:
-    """Owner-derived numeric helper contract; string collation remains pending."""
+    """Owner-derived numeric helpers and shared string collation."""
     directory.mkdir()
     source = directory / 'ЦелаяЧасть.bsl'
     source.write_text(NUMERIC_HELPERS_PROGRAM, encoding='utf-8-sig')

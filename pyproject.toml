@@ -9,13 +9,16 @@ description = "An extensible interpreter for a subset of the 1C BSL language"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["prompt-toolkit==3.0.53"]
+dependencies = ["prompt-toolkit==3.0.53", "pyuca==1.2"]
 
 [project.optional-dependencies]
 build = ["pyinstaller==6.22.2"]
 
 [project.scripts]
 yadinassi = "yadinassi.cli:main"
+
+[tool.setuptools]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 
 [tool.setuptools.packages.find]
 include = ["yadinassi*"]
