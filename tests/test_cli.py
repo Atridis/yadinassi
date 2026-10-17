@@ -18,6 +18,28 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_integer_part_all_cli_inputs(self):
+        from scripts.smoke_test import INTEGER_PART_PROGRAM, INTEGER_PART_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ЦелаяЧасть.bsl'
+            source.write_text(INTEGER_PART_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, INTEGER_PART_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), INTEGER_PART_PROGRAM),
+                      ((), INTEGER_PART_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, INTEGER_PART_OUTPUT, ''))
+
+    def test_integer_part_diagnostics_and_console_recovery(self):
+        result = self.run_cli(stdin='value = Int(-12.9);\nvalue = Int();\nvalue\nInt(0.9)\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout), (1, '-12\n0\n'))
+        self.assertIn('<консоль>:1:', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
     def test_command_flags(self):
         for flag in ("-c", "-с", "--command"):
             with self.subTest(flag=flag):
