@@ -220,6 +220,35 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+STRING_TEMPLATE_PROGRAM = """
+Message(сТрШаБлОн("Привет, %1!", "мир"));
+Message(sTrTeMpLaTe("%2/%1/%2", "один", "два"));
+Message(StrTemplate("%10/%(1)0", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+Message(СтрШаблон("%%1/%%%1", "%2"));
+Message(StrTemplate("[%1]", Undefined));
+Message(StrTemplate("%1/%2", True, 1234.5));
+Message(StrTemplate(Char(55357) + "%1", Char(56832)));
+Message(TypeOf(StrTemplate("")));
+Message(ValueFromStringInternal(ValueToStringInternal(StrTemplate("[%1]", "😀"))));
+saved = "old";
+"""
+STRING_TEMPLATE_OUTPUT = ('Привет, мир!\nдва/один/два\n10/10\n%1/%%2\n[]\n'
+                          'Да/1\u00a0234,5\n😀\nСтрока\n[😀]\n')
+STRING_TEMPLATE_FAILURES = (
+    ('StrTemplate("%1")', 'недостаточно фактических параметров'),
+    ('СтрШаблон("%1", 1, 2)', 'очень много параметров'),
+    ('StrTemplate("%11", 1)', 'недопустимый формат маркера подстановки'),
+    ('СтрШаблон("%(1", 1)', 'недопустимый формат маркера подстановки'),
+)
+for _expression, _message in STRING_TEMPLATE_FAILURES:
+    STRING_TEMPLATE_PROGRAM += (f'Try saved = {_expression}; Except\n'
+                               f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                               'EndTry;\nMessage(saved);\n')
+    STRING_TEMPLATE_OUTPUT += 'Да\nold\n'
+STRING_TEMPLATE_PROGRAM += 'Message(StrTemplate("%1", "new"));\n'
+STRING_TEMPLATE_OUTPUT += 'new\n'
+
+
 STRING_BOUNDARY_PROGRAM = """
 Message(ValueToStringInternal(сТрНаЧиНаЕтСяС("Абв", "Аб")));
 Message(ValueToStringInternal(sTrStArTsWiTh("Абв", "аб")));
@@ -248,6 +277,39 @@ for _expression, _message in STRING_BOUNDARY_FAILURES:
     STRING_BOUNDARY_OUTPUT += 'Да\nДа\n'
 STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
 STRING_BOUNDARY_OUTPUT += 'Да\n'
+
+
+def check_string_template(executable: str, *, directory: Path, env: dict) -> None:
+    """Numbered string templates, failures and recovery in the binary."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ШаблонСтроки.bsl'
+    source.write_text(STRING_TEMPLATE_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, STRING_TEMPLATE_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], STRING_TEMPLATE_PROGRAM),
+              ([], STRING_TEMPLATE_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, STRING_TEMPLATE_OUTPUT, ''):
+            raise AssertionError(f'Failed string templates {arguments!r}: {result!r}')
+    for expression, message in STRING_TEMPLATE_FAILURES:
+        code = f'saved = "old";\nsaved = {expression};\n'
+        source.write_text(code, encoding='utf-8-sig')
+        cases = [([flag, code], None, '', '<команда>:2:')
+                 for flag in ('-c', '-с', '--command')]
+        cases += [([str(source)], None, '', str(source) + ':2:'),
+                  (['-'], code, '', '<stdin>:2:'),
+                  ([], code + 'saved\nStrTemplate("%1", "new")\n/exit\n',
+                   'old\nnew\n', '<консоль>:1:')]
+        for arguments, stdin, stdout, location in cases:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed string template recovery {arguments!r}: {result!r}')
+    print('Binary string templates passed: aliases, markers, arity, UTF-16, '
+          'serialization, BOM file, command flags, stdin and console recovery')
 
 
 def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> None:
@@ -697,6 +759,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_string_template(executable, directory=Path(temporary) / "templates", env=env)
         check_string_boundaries(executable, directory=Path(temporary) / "boundaries", env=env)
         check_characters(executable, directory=Path(temporary) / "characters", env=env)
         check_rounding(executable, directory=Path(temporary) / "rounding", env=env)

@@ -300,6 +300,16 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'boundary = StrStartsWith("a", "");\n')
         send(">>> ", 'Message("boundary-preserved=" + ValueToStringInternal(boundary));\n')
         send(">>> ", 'Message("boundary-suffix=" + ValueToStringInternal(СтрЗаканчиваетсяНа("x😀", Char(56832))));\n')
+        send(">>> ", 'rendered = СтрШаблон("%(1)0/%%%1", "x");\n')
+        send(">>> ", 'Message("template-result=" + rendered);\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'StrTemplate("%1");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("template-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'rendered = StrTemplate("%1", 1, 2);\n')
+        send(">>> ", 'Message("template-preserved=" + rendered);\n')
+        send(">>> ", 'Message("template-recovered=" + StrTemplate("%1", "😀"));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -308,7 +318,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 20
+        if (output.count('<консоль>:1:') != 21
+                or output.count('СтрШаблон: очень много параметров') != 1
                 or output.count('строка поиска не должна быть пустой') != 1
                 or output.count('Метка не определена') != 1
                 or output.count('Значения несовместимы для сравнения') != 2
@@ -326,6 +337,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("goto-count=3", 1), ("goto-recovered=3", 1),
+                               ('template-result=x0/%x', 1), ('template-caught', 1),
+                               ('template-preserved=x0/%x', 1), ('template-recovered=😀', 1),
                                ('boundary-prefix={"B",1}', 1), ('boundary-caught', 1),
                                ('boundary-preserved={"B",1}', 1), ('boundary-suffix={"B",1}', 1),
                                ('char-length=3', 1), ('char-nul={"N",0}', 1),
