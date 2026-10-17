@@ -166,6 +166,35 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
           'BOM files, imports, all command flags, stdin, console, bounded presentation, ties and resource limits')
 
 
+def check_internal_serialization(executable: str, *, directory: Path, env: dict) -> None:
+    """Numeric codec and external presentation remain separate in the binary."""
+    directory.mkdir()
+    code = ('value = 1234.500;\n'
+            'Message(ЗначениеВСтрокуВнутр(value));\n'
+            'Message(value);\n'
+            'Message(ValueToStringInternal(1 / 3));\n'
+            'Try ValueToStringInternal(True); Except Message("pending"); EndTry;\n'
+            'Message(ValueToStringInternal(0));\n'
+            'Message(ValueFromStringInternal(ValueToStringInternal(value)));\n'
+            'Message(ТипЗнч(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(value))));\n'
+            'Try ValueFromStringInternal("unknown"); Except Message("pending-input"); EndTry;\n'
+            'Message(ValueFromStringInternal(ValueToStringInternal(7)));\n')
+    expected = ('{"N",1234.5}\n1\u00a0234,5\n'
+                '{"N",0.333333333333333333333333333}\npending\n{"N",0}\n'
+                '1\u00a0234,5\nЧисло\npending-input\n7\n')
+    source = directory / 'Сериализация.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed internal serialization {arguments!r}: {result!r}')
+    print('Binary internal serialization passed: numeric payloads, external presentation, '
+          'inverse roundtrip, aliases, BOM file, command flags, stdin, console and error recovery')
+
+
 def check_numeric_presentation(executable: str, *, directory: Path, env: dict) -> None:
     """Check the native NBSP grouping and decimal-comma contract before the native sample gate.
 
@@ -274,6 +303,7 @@ def main() -> None:
         temporary = str(Path(temporary).resolve())
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
+        check_internal_serialization(executable, directory=Path(temporary) / "serialization", env=env)
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
