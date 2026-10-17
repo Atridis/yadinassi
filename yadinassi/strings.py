@@ -184,7 +184,57 @@ def join(values: object, separator: object = "") -> str:
     return _text(delimiter.join(to_string(value) for value in values))
 
 
+def template(value: object, *values: object) -> str:
+    """Numbered substitution; inserted presentations are never parsed again."""
+    if len(values) > 10:
+        raise ValueError("СтрШаблон: очень много параметров")
+    text = to_string(value)
+    parts: list[str | int] = []
+    required = 0
+    position = 0
+    while position < len(text):
+        marker = text.find("%", position)
+        if marker < 0:
+            parts.append(text[position:])
+            break
+        parts.append(text[position:marker])
+        position = marker + 1
+        if position < len(text) and text[position] == "%":
+            parts.append("%")
+            position += 1
+            continue
+        parenthesized = position < len(text) and text[position] == "("
+        if parenthesized:
+            position += 1
+        start = position
+        while position < len(text) and "0" <= text[position] <= "9":
+            position += 1
+        # Check length before int(): malformed huge markers must not construct
+        # giant integers or depend on Python's decimal-string conversion limit.
+        digits = text[start:position]
+        if (len(digits) not in (1, 2) or digits[0] == "0"
+                or (len(digits) == 2 and digits != "10")
+                or (parenthesized and (position == len(text) or text[position] != ")"))):
+            raise ValueError("СтрШаблон: недопустимый формат маркера подстановки")
+        if parenthesized:
+            position += 1
+        index = int(digits)
+        required = max(required, index)
+        parts.append(index)
+    if len(values) < required:
+        raise ValueError("СтрШаблон: недостаточно фактических параметров")
+    if len(values) > required:
+        raise ValueError("СтрШаблон: очень много параметров")
+    presentations: dict[int, str] = {}
+    for part in parts:
+        if isinstance(part, int) and part not in presentations:
+            presentations[part] = to_string(values[part - 1])
+    return _text("".join(presentations[part] if isinstance(part, int) else part
+                         for part in parts))
+
+
 BUILTINS = (
+    ("СтрШаблон", template, "StrTemplate"),
     ("СтрДлина", string_length, "StrLen"),
     ("Символ", character, "Char"),
     ("КодСимвола", character_code, "CharCode"),
