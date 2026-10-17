@@ -469,7 +469,7 @@ class FixedCollectionTests(unittest.TestCase):
             Message(structure = New Structure("Known", 7)); Message(map = New Map);
             Message(True = 1); Message(1 = 1.00); Message(Type("Array") = Type("Массив"));
         ''')
-        self.assertEqual(self.output, ['Да', 'Нет', 'Нет', 'Нет', 'Нет', 'Да', 'Да'])
+        self.assertEqual(self.output, ['Да', 'Нет', 'Нет', 'Нет', 'Да', 'Да', 'Да'])
 
     def test_mutable_and_fixed_array_find_fixed_values_by_identity(self):
         self.make_collections()

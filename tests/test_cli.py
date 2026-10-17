@@ -18,6 +18,29 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_numeric_boolean_comparisons_all_cli_inputs(self):
+        from scripts.smoke_test import COMPARISON_PROGRAM, COMPARISON_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'Сравнения.bsl'
+            source.write_text(COMPARISON_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, COMPARISON_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), COMPARISON_PROGRAM),
+                      ((), COMPARISON_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, COMPARISON_OUTPUT, ''))
+
+    def test_numeric_boolean_comparison_diagnostics_and_console_recovery(self):
+        result = self.run_cli(stdin='value = True = 1;\nvalue = True < "1";\nvalue\nFalse = 0\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout), (1, 'Да\nДа\n'))
+        self.assertIn('<консоль>:1:', result.stderr)
+        self.assertIn('Значения несовместимы для сравнения', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
     def test_numeric_helpers_all_cli_inputs(self):
         from scripts.smoke_test import NUMERIC_HELPERS_PROGRAM, NUMERIC_HELPERS_OUTPUT
 

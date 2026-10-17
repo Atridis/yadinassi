@@ -64,7 +64,7 @@ class InterpreterTests(unittest.TestCase):
             Если Истина Или Неизвестно() Тогда Сообщить("ok"); КонецЕсли;
             Если Не 1 = 2 И 3 > 2 Тогда Сообщить("not"); КонецЕсли;
             Сообщить(Истина = 1);
-        '''), ["ok", "not", "Нет"])
+        '''), ["ok", "not", "Да"])
 
     def test_for_bounds_evaluated_once_and_empty_loop(self):
         self.assertEqual(self.run_bsl('''
