@@ -5,7 +5,7 @@ aligned and lets slicing preserve individual surrogate halves without depending
 on the host platform's wchar_t width. See features.md for compatibility limits.
 """
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 from .values import BSLArray, BSLFixedArray, boolean, number, to_string
 
@@ -62,6 +62,23 @@ def _index(value: object, minimum: int, maximum: int) -> int:
 
 def string_length(value: object) -> Decimal:
     return Decimal(len(to_string(value).encode("utf-16-le", errors="surrogatepass")) // 2)
+
+
+def character(value: object) -> str:
+    # Truncate without host-context rounding or expanding enormous exponents.
+    # Native Char returns an empty string outside the UTF-16 code-unit range.
+    code = number(value).to_integral_value(rounding=ROUND_DOWN)
+    if code < 0 or code > 0xffff:
+        return ""
+    return chr(int(code))
+
+
+def character_code(value: object, position: object = Decimal(1)) -> Decimal:
+    text = _units(value)
+    index = _index(position, 0, len(text) + 1)
+    if index < 1 or index > len(text):
+        return Decimal(-1)
+    return Decimal(ord(text[index - 1]))
 
 
 def left(value: object, count: object) -> str:
@@ -155,6 +172,8 @@ def join(values: object, separator: object = "") -> str:
 
 BUILTINS = (
     ("СтрДлина", string_length, "StrLen"),
+    ("Символ", character, "Char"),
+    ("КодСимвола", character_code, "CharCode"),
     ("Лев", left, "Left"),
     ("Прав", right, "Right"),
     ("Сред", mid, "Mid"),
