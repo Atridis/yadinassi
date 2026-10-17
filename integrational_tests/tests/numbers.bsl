@@ -260,3 +260,14 @@
     Показать("helper.extrema.variadic.max", "error");
 КонецПопытки;
 Показать("numbers.helpers.complete", "ok");
+
+// Уточнение порядка строк: без угадывания локали, версии ICU и веса регистра.
+ПроверитьЭкстремумы("helper.strings.case-reversed", "A", "a");
+ПроверитьЭкстремумы("helper.strings.letter-before-case", "az", "Aa");
+ПроверитьЭкстремумы("helper.strings.alphabetic", "b", "A");
+ПроверитьЭкстремумы("helper.strings.cyrillic-yo", "ё", "е");
+ПроверитьЭкстремумы("helper.strings.cyrillic-case", "я", "Я");
+ПроверитьЭкстремумы("helper.strings.prefix", "a", "aa");
+ПоказатьБулево("helper.strings.operator.less", "a" < "A");
+ПоказатьБулево("helper.strings.operator.equal", "a" = "A");
+Показать("numbers.string-order.complete", "ok");

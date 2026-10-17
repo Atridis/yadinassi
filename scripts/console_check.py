@@ -91,6 +91,13 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         expect('int-recovered={"N",-12}')
         send(">>> ", 'Message("int-zero=" + ValueToStringInternal(Int(-0.99)));\n')
         expect('int-zero={"N",0}')
+        send(">>> ", 'extreme = Min(2, True); Message("min-type=" + ValueToStringInternal(extreme));\n')
+        expect('min-type={"B",1}')
+        send(">>> ", 'extreme = Max(2, "10");\n')
+        send(">>> ", 'Message("min-recovered=" + ValueToStringInternal(extreme));\n')
+        expect('min-recovered={"B",1}')
+        send(">>> ", 'Message("max-tie=" + ValueToStringInternal(Макс(False, 0)));\n')
+        expect('max-tie={"B",0}')
         send(">>> ", 'kind = Тип("ЧиСлО");\n')
         send(">>> ", 'kind\n')
         send(">>> ", 'm = New Map; m[kind] = "типовой ключ";\n')
@@ -221,13 +228,13 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 13
-                or output.count('Цел: преобразование аргумента к числу пока не поддерживается') != 1
+        if (output.count('<консоль>:1:') != 14
+                or output.count('Значения несовместимы для сравнения') != 1
+                or output.count('Невозможно преобразовать значение в число') != 2
                 or output.count('Тип не поддерживается: Date') != 1
                 or output.count('недоступны для записи') != 2
                 or output.count('недоступно для записи') != 1
                 or output.count('не найдено: Add') != 1
-                or output.count('Невозможно преобразовать значение в число') != 1
                 or output.count('Деление на ноль') != 1
                 or output.count('Представление числа: ') != 3
                 or output.count('Деление: точная половина на границе округления '

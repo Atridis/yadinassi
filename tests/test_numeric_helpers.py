@@ -1,15 +1,32 @@
-"""Helper model tests; owner-generated probes establish native parity separately."""
+"""Numeric helpers: owner-derived cases and separately identified resource guards."""
 
 from decimal import Decimal, Inexact, Rounded, ROUND_UP, localcontext
+from pathlib import Path
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.numbers import integer_part
+from yadinassi.numbers import integer_part, minimum, maximum
 
 
 class NumericHelperTests(unittest.TestCase):
     def setUp(self):
         self.vm = Interpreter(output=lambda message: None)
+
+    def test_owner_native_numeric_subset(self):
+        # Owner upload 7800d48 supplies the expected records. The four string
+        # records are explicitly pending collation, not silently rewritten.
+        root = Path(__file__).resolve().parents[1] / 'integrational_tests'
+        output = []
+        Interpreter(output=output.append).execute((root / 'tests/numbers.bsl').read_text())
+        def selected(line):
+            return ((line.startswith('helper.int.') or line.startswith('helper.extrema.')
+                     or line.startswith('numbers.helpers.complete:'))
+                    and not line.startswith(('helper.extrema.strings.',
+                                             'helper.extrema.string-case.')))
+        expected = [line for line in (root / 'output/numbers.out').read_text().splitlines()
+                    if selected(line)]
+        self.assertEqual(len(expected), 38)
+        self.assertEqual([line for line in output if selected(line)], expected)
 
     def test_integer_part_bilingual_and_toward_zero(self):
         for expression, expected in [
@@ -52,12 +69,75 @@ class NumericHelperTests(unittest.TestCase):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression, 'numeric_helpers.bsl')
 
-    def test_integer_part_pending_coercions_are_explicit(self):
-        for expression in ('Int(True)', 'Цел("12.75")', 'Int(Undefined)',
-                           'Int(New Array)'):
-            with self.subTest(expression=expression), self.assertRaisesRegex(
-                    BSLError, "преобразование аргумента к числу пока не поддерживается"):
+    def test_integer_part_numeric_conversion(self):
+        for expression, expected in [('Int(True)', 1), ('Int(False)', 0),
+                                     ('Цел("12.75")', 12), ('Int("-12.75")', -12)]:
+            with self.subTest(expression=expression):
+                actual = self.vm.execute(expression)
+                self.assertIs(type(actual), Decimal)
+                self.assertEqual(actual, Decimal(expected))
+        for expression in ('Int(Undefined)', 'Int("not a number")', 'Int(New Array)'):
+            with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
+
+    def test_extrema_bilingual_variadic_numeric_results(self):
+        for expression, expected in [('Мин(2, -3)', -3), ('Max(2, -3)', 2),
+                                     ('мИн(7, -2, 0, -1)', -2), ('MAX(-7, 2, 0, 1)', 2),
+                                     ('Min(7)', 7), ('Макс(7)', 7)]:
+            with self.subTest(expression=expression):
+                actual = self.vm.execute(expression)
+                self.assertIs(type(actual), Decimal)
+                self.assertEqual(actual, Decimal(expected))
+
+    def test_extrema_keep_winning_type_and_first_tie(self):
+        for function in (minimum, maximum):
+            for value in (Decimal(0), Decimal(1), False, True):
+                with self.subTest(function=function.__name__, value=value):
+                    self.assertIs(function(value), value)
+                    other = bool(value) if type(value) is Decimal else Decimal(int(value))
+                    self.assertIs(function(value, other), value)
+                    self.assertIs(function(other, value), other)
+        for values in ((Decimal(2), True), (True, Decimal(2))):
+            self.assertIs(minimum(*values), True)
+            self.assertIs(type(maximum(*values)), Decimal)
+            self.assertEqual(maximum(*values), Decimal(2))
+
+    def test_extrema_reject_invalid_types_and_mixed_numeric_strings(self):
+        for expression in ('Min(2, "10")', 'Max("2", 10)', 'Min(Undefined)',
+                           'Max(New Array)', 'Min(2, Undefined)', 'Max(Undefined, 2)',
+                           'Min()', 'Max()'):
+            with self.subTest(expression=expression), self.assertRaises(BSLError):
+                self.vm.execute(expression)
+
+    def test_string_extrema_are_explicitly_pending_not_claimed_invalid(self):
+        for expression in ('Min("2", "10")', 'Max("a", "A")', 'Min("value")'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(
+                    BSLError, "порядок сравнения строк пока не поддерживается"):
+                self.vm.execute(expression)
+
+    def test_extrema_numeric_boolean_multivalue_selection_and_omissions(self):
+        for expression, expected in [('Min(True, False)', False), ('Max(False, True)', True),
+                                     ('Min(0, False, -1)', Decimal(-1)),
+                                     ('Max(1, True, 0)', Decimal(1))]:
+            actual = self.vm.execute(expression)
+            self.assertIs(type(actual), type(expected))
+            self.assertEqual(actual, expected)
+        for expression in ('Min(, 1)', 'Max(1, , 2)'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(BSLError, "Пропуск аргументов"):
+                self.vm.execute(expression)
+
+    def test_extrema_do_not_round_long_numbers_or_use_host_context(self):
+        lower = Decimal('1234567890' * 12 + '.1')
+        upper = Decimal('1234567890' * 12 + '.2')
+        with localcontext() as context:
+            context.prec = 2
+            context.traps[Inexact] = context.traps[Rounded] = True
+            self.assertIs(minimum(upper, lower), lower)
+            self.assertIs(maximum(lower, upper), upper)
+        for function in (minimum, maximum):
+            for value in ('NaN', 'sNaN', 'Infinity', '-Infinity'):
+                with self.subTest(function=function.__name__, value=value), self.assertRaises(ValueError):
+                    function(Decimal(value))
 
     def test_integer_part_omitted_argument_uses_existing_guard(self):
         with self.assertRaisesRegex(BSLError, "Пропуск аргументов"):
