@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import ast, numbers, serialization, strings, type_values
+from .round_modes import ROUND_MODES
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
 from .parser import parse
@@ -193,6 +194,8 @@ class Interpreter:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
+        if name in ("режимокругления", "roundmode"):
+            return ROUND_MODES
         raise ValueError(f"Переменная или функция не определена: {node.name}")
 
     def visit_Group(self, node: ast.Group) -> object:

@@ -73,12 +73,13 @@ class InternalSerializationTests(unittest.TestCase):
         self.assertEqual(set(serialization._CODECS),
                          {kind for _, kind, _ in type_values._VALUE_TYPES})
 
-    def test_every_implemented_type_roundtrips_with_same_type(self):
+    def test_every_implemented_type_has_native_readback_behavior(self):
         vm = Interpreter()
         expressions = ['Undefined', 'True', 'False', '0', '"text"', 'New Array',
                        'New FixedArray(New Array)', 'New Structure',
                        'New FixedStructure(New Structure)', 'New Map',
-                       'New FixedMap(New Map)', 'Type("Number")']
+                       'New FixedMap(New Map)', 'Type("Number")',
+                       'RoundMode.Round15as10', 'RoundMode.Round15as20', 'RoundMode']
         vm.execute('s = New Structure("Key", 1); For Each pair In s Do EndDo;')
         expressions.append('pair')
         observed = set()
@@ -87,7 +88,12 @@ class InternalSerializationTests(unittest.TestCase):
                 original = vm.execute(expression)
                 kind = type_values.type_of(original)
                 restored = value_from_string_internal(value_to_string_internal(original))
-                self.assertIs(type_values.type_of(restored), kind)
+                if kind is BSLType.ROUND_MODES:
+                    # Owner aeb904f: namespace reads as Undefined, unlike its Type.
+                    self.assertIsNone(restored)
+                    self.assertIs(type_values.type_of(restored), BSLType.UNDEFINED)
+                else:
+                    self.assertIs(type_values.type_of(restored), kind)
                 observed.add(kind)
         self.assertEqual(observed, set(BSLType))
 

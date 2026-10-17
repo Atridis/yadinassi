@@ -3,6 +3,7 @@
 from decimal import Decimal, ROUND_DOWN
 
 from .values import number
+from .round_modes import BSLRoundMode
 from .collation import string_key
 
 
@@ -12,6 +13,53 @@ def integer_part(value: object) -> Decimal:
     # coefficients and ignores host precision, rounding, Inexact/Rounded traps.
     return value.to_integral_value(rounding=ROUND_DOWN)
 
+
+
+def round_number(value: object, precision: object = Decimal(0),
+                 mode: object = BSLRoundMode.ROUND15_AS20) -> Decimal:
+    """Round decimal coefficients exactly, bounded by the input's digit count.
+
+    Native PR25 confirms truncation of precision/numeric mode and symmetric
+    tie rules. This does not impose inferred platform precision limits. Huge
+    precision/mode inputs are compared as Decimal, never expanded to integers.
+    """
+    value = number(value)
+    precision = number(precision).to_integral_value(rounding=ROUND_DOWN)
+    if type(mode) is BSLRoundMode:
+        increase_tie = mode is BSLRoundMode.ROUND15_AS20
+    elif type(mode) is Decimal and mode.is_finite():
+        increase_tie = not mode.to_integral_value(rounding=ROUND_DOWN).is_zero()
+    else:
+        raise TypeError("Окр: ожидается число или значение РежимОкругления")
+    if value.is_zero():
+        return Decimal(0)
+    sign, digits, exponent = value.as_tuple()
+    if precision >= -exponent:
+        return value  # No padding or allocation proportional to requested precision.
+    if precision < -value.adjusted() - 1:
+        return Decimal(0)
+    # Now conversion is bounded by the actual stored exponent, not user input.
+    target_exponent = -int(precision)
+    retained = len(digits) - (target_exponent - exponent)
+    result = list(digits[:retained])
+    first_discarded = digits[retained]
+    increase = (first_discarded > 5 or
+                (first_discarded == 5 and
+                 (increase_tie or any(digits[retained + 1:]))))
+    if increase:
+        index = len(result) - 1
+        while index >= 0 and result[index] == 9:
+            result[index] = 0
+            index -= 1
+        if index < 0:
+            result.insert(0, 1)
+        else:
+            result[index] += 1
+    if not any(result):
+        return Decimal(0)
+    # Exact construction ignores host precision, rounding, exponent limits,
+    # traps and flags. Applying the sign arithmetically would not be exact.
+    return Decimal((sign, tuple(result), target_exponent))
 
 def _extreme(first: object, rest: tuple[object, ...], *, maximum: bool) -> object:
     values = (first, *rest)
@@ -42,4 +90,4 @@ def maximum(first: object, *rest: object) -> object:
 
 
 BUILTINS = (("Цел", integer_part, "Int"), ("Мин", minimum, "Min"),
-            ("Макс", maximum, "Max"))
+            ("Макс", maximum, "Max"), ("Окр", round_number, "Round"))

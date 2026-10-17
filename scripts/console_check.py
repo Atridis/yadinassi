@@ -91,6 +91,27 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         expect('int-recovered={"N",-12}')
         send(">>> ", 'Message("int-zero=" + ValueToStringInternal(Int(-0.99)));\n')
         expect('int-zero={"N",0}')
+        send(">>> ", 'rounded = оКр(-1.5); Message("round-default=" + ValueToStringInternal(rounded));\n')
+        expect('round-default={"N",-2}')
+        send(">>> ", 'rounded = Round(1250,\n')
+        send("... ", '-2, RoundMode.Round15as10);\n')
+        send(">>> ", 'Message("round-mode=" + ValueToStringInternal(rounded));\n')
+        expect('round-mode={"N",1200}')
+        send(">>> ", 'rounded = Round(1.5, 0, True);\n')
+        send(">>> ", 'rounded = Round(Undefined);\n')
+        send(">>> ", 'Message("round-recovered=" + ValueToStringInternal(rounded));\n')
+        expect('round-recovered={"N",1200}')
+        send(">>> ", 'Message("round-exact=" + ValueToStringInternal('
+             'Round(Number("123456789012345678901234567890.5"))));\n')
+        expect('round-exact={"N",123456789012345678901234567891}')
+        send(">>> ", 'mode = ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр('
+             'РежимОкругления.Окр15как20));\n')
+        send(">>> ", 'Message("round-enum=" + ValueToStringInternal(mode));\n')
+        expect('round-enum={"#",32c82ccd-fef3-4070-beb5-b9c52afc781d,1}')
+        send(">>> ", 'Message("round-type=" + TypeOf(mode)); '
+             'Message("round-restored=" + ValueToStringInternal(Round(-1.5, 0, mode)));\n')
+        expect('round-type=РежимОкругления')
+        expect('round-restored={"N",-2}')
         send(">>> ", 'extreme = Min(2, True); Message("min-type=" + ValueToStringInternal(extreme));\n')
         expect('min-type={"B",1}')
         send(">>> ", 'extreme = Max(2, "10");\n')
@@ -234,9 +255,10 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 14
+        if (output.count('<консоль>:1:') != 16
                 or output.count('Значения несовместимы для сравнения') != 1
-                or output.count('Невозможно преобразовать значение в число') != 2
+                or output.count('Невозможно преобразовать значение в число') != 3
+                or output.count('Окр: ожидается число или значение РежимОкругления') != 1
                 or output.count('Тип не поддерживается: Date') != 1
                 or output.count('недоступны для записи') != 2
                 or output.count('недоступно для записи') != 1

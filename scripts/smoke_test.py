@@ -187,6 +187,88 @@ def check_numeric_helpers(executable: str, *, directory: Path, env: dict) -> Non
           'BOM file, command flags, stdin, console and catchable error')
 
 
+# Owner-observed Round results, shared with the source entrypoint tests. Internal
+# number payloads preserve exact coefficients without presentation grouping.
+ROUNDING_EXAMPLES = [
+    ('оКр(1.5)', '2'), ('rOuNd(-1.5)', '-2'),
+    ('Round(1.5, 0, 0)', '1'), ('Окр(-1.5, 0, 0)', '-1'),
+    ('Round(-1.5001, 0, 0)', '-2'), ('Round(-1.4999, 0, 1)', '-1'),
+    ('Окр(12.345, 2)', '12.35'), ('Round(1250, -2)', '1300'),
+    ('Round(-1250, -2, 0)', '-1200'), ('Round(12.345, 1.9)', '12.3'),
+    ('Round(1250, -1.9)', '1250'), ('Round(1.5, 0, 0.9)', '1'),
+    ('Round(1.5, 0, -1)', '2'), ('Round(1.5, 0, 2)', '2'),
+    ('Round(-1.5, 0, RoundMode.Round15as10)', '-1'),
+    ('Окр(1.5, 0, РежимОкругления.Окр15как20)', '2'),
+    ('Round(Number("123456789012345678901234567890.5"))',
+     '123456789012345678901234567891'),
+]
+ROUNDING_FAILURES = [
+    ('Round(Undefined)', 'Невозможно преобразовать значение в число'),
+    ('Round(12.345, Undefined)', 'Невозможно преобразовать значение в число'),
+    ('Round(1.5, 0, True)', 'Окр: ожидается число или значение РежимОкругления'),
+    ('Round(1.5, 0, "1")', 'Окр: ожидается число или значение РежимОкругления'),
+    ('Round(1.5, 0, Undefined)', 'Окр: ожидается число или значение РежимОкругления'),
+]
+ROUNDING_PROGRAM = ''
+ROUNDING_OUTPUT = ''
+for _expression, _number in ROUNDING_EXAMPLES:
+    ROUNDING_PROGRAM += f'Message(ValueToStringInternal({_expression}));\n'
+    ROUNDING_OUTPUT += '{"N",' + _number + '}\n'
+ROUNDING_PROGRAM += ('Message(TypeOf(Round(1.5)));\n'
+                     'low = RoundMode.Round15as10; high = РежимОкругления.Окр15как20;\n'
+                     'Message(low = РежимОкругления.Окр15как10);\n'
+                     'Message(high = RoundMode.Round15as20);\n')
+ROUNDING_OUTPUT += 'Число\nДа\nДа\n'
+for _name, _index, _display in [('low', '0', 'Округлять 15 как 10'),
+                               ('high', '1', 'Округлять 15 как 20')]:
+    ROUNDING_PROGRAM += (f'Message(String({_name})); Message(TypeOf({_name}));\n'
+                         f'Message(ValueToStringInternal({_name}));\n'
+                         f'restored = ValueFromStringInternal(ValueToStringInternal({_name}));\n'
+                         f'Message(restored = {_name});\n'
+                         'Message(TypeOf(restored) = Type("RoundMode"));\n'
+                         'Message(ValueToStringInternal(Round(-1.5, 0, restored)));\n')
+    ROUNDING_OUTPUT += (_display + '\nРежимОкругления\n'
+                        '{"#",32c82ccd-fef3-4070-beb5-b9c52afc781d,' + _index + '}\n'
+                        'Да\nДа\n{"N",-' + ('1' if _index == '0' else '2') + '}\n')
+ROUNDING_PROGRAM += ('kind = Type("RoundMode"); Message(ValueToStringInternal(kind));\n'
+                     'Message(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(kind)) = '
+                     'Тип("РежимОкругления"));\nvalue = Round(12.345, 2);\n')
+ROUNDING_OUTPUT += '{"T",32c82ccd-fef3-4070-beb5-b9c52afc781d}\nДа\n'
+for _expression, _message in ROUNDING_FAILURES:
+    ROUNDING_PROGRAM += (f'Try value = {_expression}; Except\n'
+                         f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                         'EndTry; Message(value = 12.35);\n')
+    ROUNDING_OUTPUT += 'Да\nДа\n'
+ROUNDING_PROGRAM += 'Message(ValueToStringInternal(Окр(-1.5)));\n'
+ROUNDING_OUTPUT += '{"N",-2}\n'
+
+
+def check_rounding(executable: str, *, directory: Path, env: dict) -> None:
+    """Native-backed Round values, enum codecs and failed-assignment recovery."""
+    directory.mkdir()
+    source = directory / 'Округление.bsl'
+    source.write_text(ROUNDING_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, ROUNDING_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], ROUNDING_PROGRAM),
+              ([], ROUNDING_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, ROUNDING_OUTPUT, ''):
+            raise AssertionError(f'Failed rounding {arguments!r}: {result!r}')
+    for expression, message in ROUNDING_FAILURES:
+        code = f'value = Round(12.345, 2);\nvalue = {expression};\n'
+        result = subprocess.run([executable], input=code + 'value\nОкр(-1.5)\n/exit\n',
+                                capture_output=True, encoding='utf-8', cwd=directory.parent,
+                                env=env, timeout=30)
+        if (result.returncode != 1 or result.stdout != '12,35\n-2\n'
+                or '<консоль>:1:' not in result.stderr or message not in result.stderr
+                or 'Traceback' in result.stderr):
+            raise AssertionError(f'Failed rounding recovery {expression!r}: {result!r}')
+    print('Binary rounding passed: aliases, signs, precision, numeric/enum modes, exact long '
+          'coefficient, enum/type codecs, BOM file, command flags, stdin and console recovery')
+
+
 def check_internal_serialization(executable: str, *, directory: Path, env: dict) -> None:
     """All runtime codecs, graph copying and presentation in the frozen binary."""
     directory.mkdir()
@@ -343,6 +425,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_rounding(executable, directory=Path(temporary) / "rounding", env=env)
         check_internal_serialization(executable, directory=Path(temporary) / "serialization", env=env)
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
@@ -794,8 +877,8 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             from console_check import check_console
 
             check_console([executable], cwd=temporary, env=env)
-            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values, fixed collections, numeric presentation, division and error recovery")
-    print("Binary smoke tests passed: division, numeric presentation, fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
+            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values, fixed collections, numeric presentation, rounding, division and error recovery")
+    print("Binary smoke tests passed: rounding, division, numeric presentation, fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":
