@@ -220,6 +220,69 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+STRING_BOUNDARY_PROGRAM = """
+Message(ValueToStringInternal(сТрНаЧиНаЕтСяС("Абв", "Аб")));
+Message(ValueToStringInternal(sTrStArTsWiTh("Абв", "аб")));
+Message(ValueToStringInternal(СтрЗаканчиваетсяНа("Абв", "бв")));
+Message(ValueToStringInternal(sTrEnDsWiTh("Абв", "БВ")));
+Message(ValueToStringInternal(StrStartsWith("", "a")));
+Message(ValueToStringInternal(StrEndsWith("a", "aa")));
+Message(ValueToStringInternal(StrStartsWith("😀X", Char(55357))));
+Message(ValueToStringInternal(StrEndsWith("X😀", Char(56832))));
+Message(ValueToStringInternal(StrStartsWith(Char(0) + "x", Char(0))));
+Message(ValueToStringInternal(StrEndsWith("x" + Char(0), Char(0))));
+Message(TypeOf(StrStartsWith("a", "a")));
+Message(ValueFromStringInternal(ValueToStringInternal(StrEndsWith("abc", "bc"))));
+saved = True;
+"""
+STRING_BOUNDARY_OUTPUT = ('{"B",1}\n{"B",0}\n{"B",1}\n{"B",0}\n{"B",0}\n{"B",0}\n'
+                          '{"B",1}\n{"B",1}\n{"B",1}\n{"B",1}\nБулево\nДа\n')
+STRING_BOUNDARY_FAILURES = tuple(
+    (f'{name}({source}, "")', 'строка поиска не должна быть пустой')
+    for name in ('StrStartsWith', 'СтрНачинаетсяС', 'StrEndsWith', 'СтрЗаканчиваетсяНа')
+    for source in ('"abc"', '""'))
+for _expression, _message in STRING_BOUNDARY_FAILURES:
+    STRING_BOUNDARY_PROGRAM += (f'Try saved = {_expression}; Except\n'
+                               f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                               'EndTry;\nMessage(saved);\n')
+    STRING_BOUNDARY_OUTPUT += 'Да\nДа\n'
+STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
+STRING_BOUNDARY_OUTPUT += 'Да\n'
+
+
+def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> None:
+    """Exact string boundaries, empty-search failures and recovery in the binary."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ГраницыСтрок.bsl'
+    source.write_text(STRING_BOUNDARY_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, STRING_BOUNDARY_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], STRING_BOUNDARY_PROGRAM),
+              ([], STRING_BOUNDARY_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, STRING_BOUNDARY_OUTPUT, ''):
+            raise AssertionError(f'Failed string boundaries {arguments!r}: {result!r}')
+    for expression, message in STRING_BOUNDARY_FAILURES:
+        code = f'saved = True;\nsaved = {expression};\n'
+        source.write_text(code, encoding='utf-8-sig')
+        cases = [([flag, code], None, '', '<команда>:2:')
+                 for flag in ('-c', '-с', '--command')]
+        cases += [([str(source)], None, '', str(source) + ':2:'),
+                  (['-'], code, '', '<stdin>:2:'),
+                  ([], code + 'saved\nStrStartsWith("A", "A")\n/exit\n',
+                   'Да\nДа\n', '<консоль>:1:')]
+        for arguments, stdin, stdout, location in cases:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed string boundary recovery {arguments!r}: {result!r}')
+    print('Binary string boundaries passed: aliases, exact case, empty-search errors, UTF-16, '
+          'serialization, BOM file, command flags, stdin and console recovery')
+
+
 def check_characters(executable: str, *, directory: Path, env: dict) -> None:
     """UTF-16 character construction, lookup and serialization in the binary."""
     directory = directory.resolve()
@@ -634,6 +697,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_string_boundaries(executable, directory=Path(temporary) / "boundaries", env=env)
         check_characters(executable, directory=Path(temporary) / "characters", env=env)
         check_rounding(executable, directory=Path(temporary) / "rounding", env=env)
         check_numeric_boolean_comparisons(executable, directory=Path(temporary) / "comparisons", env=env)

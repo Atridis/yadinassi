@@ -104,6 +104,20 @@ def find(value: object, needle: object) -> Decimal:
     return Decimal(_units(value).find(_units(needle)) + 1)
 
 
+def starts_with(value: object, needle: object) -> bool:
+    text, search = _units(value), _units(needle)
+    if not search:
+        raise ValueError("СтрНачинаетсяС: строка поиска не должна быть пустой")
+    return text.startswith(search)
+
+
+def ends_with(value: object, needle: object) -> bool:
+    text, search = _units(value), _units(needle)
+    if not search:
+        raise ValueError("СтрЗаканчиваетсяНа: строка поиска не должна быть пустой")
+    return text.endswith(search)
+
+
 def replace(value: object, needle: object, replacement: object) -> str:
     text, old, new = _units(value), _units(needle), _units(replacement)
     # An empty needle is a no-op, not Python's insertion at every boundary.
@@ -179,6 +193,8 @@ BUILTINS = (
     ("Сред", mid, "Mid"),
     ("Найти", find, "Find"),
     ("СтрЗаменить", replace, "StrReplace"),
+    ("СтрНачинаетсяС", starts_with, "StrStartsWith"),
+    ("СтрЗаканчиваетсяНа", ends_with, "StrEndsWith"),
     ("СокрЛ", trim_left, "TrimL"),
     ("СокрП", trim_right, "TrimR"),
     ("СокрЛП", trim_all, "TrimAll"),

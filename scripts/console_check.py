@@ -290,6 +290,16 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
             send(">>> ", expression + '\n')  # Implicit REPL presentation must also recover.
         send(">>> ", '"Состояние числа: " + String(-negative = longValue)\n')
         send(">>> ", '"После представления: " + presentation\n')
+        send(">>> ", 'boundary = StrStartsWith("😀x", Char(55357));\n')
+        send(">>> ", 'Message("boundary-prefix=" + ValueToStringInternal(boundary));\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'СтрЗаканчиваетсяНа("", "");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("boundary-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'boundary = StrStartsWith("a", "");\n')
+        send(">>> ", 'Message("boundary-preserved=" + ValueToStringInternal(boundary));\n')
+        send(">>> ", 'Message("boundary-suffix=" + ValueToStringInternal(СтрЗаканчиваетсяНа("x😀", Char(56832))));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -298,7 +308,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 19
+        if (output.count('<консоль>:1:') != 20
+                or output.count('строка поиска не должна быть пустой') != 1
                 or output.count('Метка не определена') != 1
                 or output.count('Значения несовместимы для сравнения') != 2
                 or output.count('Невозможно преобразовать значение в число') != 4
@@ -315,6 +326,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("goto-count=3", 1), ("goto-recovered=3", 1),
+                               ('boundary-prefix={"B",1}', 1), ('boundary-caught', 1),
+                               ('boundary-preserved={"B",1}', 1), ('boundary-suffix={"B",1}', 1),
                                ('char-length=3', 1), ('char-nul={"N",0}', 1),
                                ('char-low={"N",56898}', 1), ('char-caught', 1),
                                ('char-recovered={"N",55357}', 1), ('char-alias=A', 1),
