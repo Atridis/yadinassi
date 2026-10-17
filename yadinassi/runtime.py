@@ -4,7 +4,7 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
 
-from . import ast, numbers, serialization, strings, type_values
+from . import ast, numbers, serialization, strings, type_values, value_checks
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
@@ -82,6 +82,7 @@ class Interpreter:
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
         self.register_function("Булево", boolean, "Boolean")
+        self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
         self.register_function("Тип", type_values.type_by_name, "Type")
         self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
         self.register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,

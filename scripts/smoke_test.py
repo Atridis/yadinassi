@@ -220,6 +220,46 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+VALUE_FILLED_PROGRAM = """
+Message(зНаЧеНиЕзАпОлНеНо(False));
+Message(vAlUeIsFiLlEd(Undefined));
+Message(ValueIsFilled(0));
+Message(ValueIsFilled(-0.01));
+Message(ValueIsFilled(" " + Char(9) + Char(10)));
+Message(ValueIsFilled("😀"));
+a = New Array;
+Message(ValueIsFilled(a));
+a.Add(Undefined);
+Message(ValueIsFilled(a));
+Message(ValueIsFilled(New FixedArray(a)));
+s = New Structure;
+Message(ValueIsFilled(s));
+s.Insert("x", Undefined);
+Message(ValueIsFilled(New FixedStructure(s)));
+m = New Map;
+Message(ValueIsFilled(m));
+m.Insert("x", Undefined);
+Message(ValueIsFilled(New FixedMap(m)));
+Message(TypeOf(ValueIsFilled(False)));
+Message(ValueToStringInternal(ValueIsFilled(0)));
+Message(ValueFromStringInternal(ValueToStringInternal(ValueIsFilled(False))));
+saved = "old";
+"""
+VALUE_FILLED_OUTPUT = ('Да\nНет\nНет\nДа\nНет\nДа\nНет\nДа\nДа\nНет\nДа\nНет\nДа\n'
+                       'Булево\n{"B",0}\nДа\n')
+VALUE_FILLED_FAILURES = (
+    ('ValueIsFilled(Type("Number"))',
+     'ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi'),
+)
+for _expression, _message in VALUE_FILLED_FAILURES:
+    VALUE_FILLED_PROGRAM += (f'Try saved = {_expression}; Except\n'
+                            f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                            'EndTry;\nMessage(saved);\n')
+    VALUE_FILLED_OUTPUT += 'Да\nold\n'
+VALUE_FILLED_PROGRAM += 'Message(ValueIsFilled(False));\n'
+VALUE_FILLED_OUTPUT += 'Да\n'
+
+
 STRING_LINES_PROGRAM = """
 Message(сТрЧиСлОсТрОк(""));
 Message(sTrLiNeCoUnT("A" + Char(13) + Char(10) + "B" + Char(13)));
@@ -301,6 +341,39 @@ for _expression, _message in STRING_BOUNDARY_FAILURES:
     STRING_BOUNDARY_OUTPUT += 'Да\nДа\n'
 STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
 STRING_BOUNDARY_OUTPUT += 'Да\n'
+
+
+def check_value_filled(executable: str, *, directory: Path, env: dict) -> None:
+    """Filled-value checks, failures and recovery in the binary."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'Заполненность.bsl'
+    source.write_text(VALUE_FILLED_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, VALUE_FILLED_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], VALUE_FILLED_PROGRAM),
+              ([], VALUE_FILLED_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, VALUE_FILLED_OUTPUT, ''):
+            raise AssertionError(f'Failed value filled {arguments!r}: {result!r}')
+    for expression, message in VALUE_FILLED_FAILURES:
+        code = f'saved = "old";\nsaved = {expression};\n'
+        source.write_text(code, encoding='utf-8-sig')
+        cases = [([flag, code], None, '', '<команда>:2:')
+                 for flag in ('-c', '-с', '--command')]
+        cases += [([str(source)], None, '', str(source) + ':2:'),
+                  (['-'], code, '', '<stdin>:2:'),
+                  ([], code + 'saved\nValueIsFilled(False)\n/exit\n',
+                   'old\nДа\n', '<консоль>:1:')]
+        for arguments, stdin, stdout, location in cases:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed value filled recovery {arguments!r}: {result!r}')
+    print('Binary value filled passed: aliases, scalars, collections, '
+          'serialization, BOM file, command flags, stdin and console recovery')
 
 
 def check_string_lines(executable: str, *, directory: Path, env: dict) -> None:
@@ -816,6 +889,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_value_filled(executable, directory=Path(temporary) / "filled", env=env)
         check_string_lines(executable, directory=Path(temporary) / "lines", env=env)
         check_string_template(executable, directory=Path(temporary) / "templates", env=env)
         check_string_boundaries(executable, directory=Path(temporary) / "boundaries", env=env)
