@@ -255,7 +255,10 @@ class Interpreter:
         value = self.visit(node.object)
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
-        return value.get(self.visit(node.index))
+        index = self.visit(node.index)
+        if isinstance(value, BSLFixedMap):
+            return value.get_index(index)
+        return value.get(index)
 
     def visit_Call(self, node: ast.Call) -> object:
         return self.call(node, require_value=True)

@@ -96,7 +96,7 @@ sourceMap[True] = "булево"; sourceMap[1] = "число";
 lookup = Новый ФиксированноеСоответствие(sourceMap);
 sourceMap[1] = "изменено"; sourceMap.Insert("extra", 3);
 Message(lookup.Count()); Message(lookup.Get(True));
-Message(lookup.Получить(1)); Message(lookup["missing"] = Undefined);
+Message(lookup.Получить(1)); Message(lookup.Get("missing") = Undefined);
 visited = 0;
 For Each pair In lookup Do visited = visited + 1; EndDo;
 Message(visited);
@@ -125,11 +125,11 @@ Message(TypeOf(arrayCopy)); Message(TypeOf(recordCopy)); Message(TypeOf(mapCopy)
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
                                      (0, expected, ''))
 
-    def test_fixed_collection_mutations_and_unsupported_operations_are_catchable(self):
+    def test_fixed_collection_mutations_and_invalid_operations_are_catchable(self):
         setup = ('a = New FixedArray(New Array(1));\n'
                  's = New FixedStructure("Name", "original");\n'
                  'm = New FixedMap(New Map); keys = New Map;\n'
-                 'nested = New Array; nested.Add(New Array);\n')
+                 'cyclic = New Array; cyclic.Add(cyclic);\n')
         actions = ['a[0] = 1', 's.Name = "changed"', 's["Name"] = "changed"',
                    'm[1] = 1', 'a.Add(1)', 'a.Добавить(1)', 'a.Set(0, 1)',
                    'a.Установить(0, 1)', 'a.Insert(0, 1)', 'a.Вставить(0, 1)',
@@ -139,13 +139,7 @@ Message(TypeOf(arrayCopy)); Message(TypeOf(recordCopy)); Message(TypeOf(mapCopy)
                    's.Clear()', 's.Очистить()', 'm.Insert(1, 1)',
                    'm.Вставить(1, 1)', 'm.Delete(1)', 'm.Удалить(1)',
                    'm.Clear()', 'm.Очистить()']
-        actions += [f'Message({name} {operator} {other})'
-                    for name, constructor in [('a', 'New FixedArray(New Array)'),
-                                              ('s', 'New FixedStructure'),
-                                              ('m', 'New FixedMap(New Map)')]
-                    for operator in ('=', '<>') for other in (name, constructor)]
-        actions += [f'keys[{name}] = 1' for name in ('a', 's', 'm')]
-        actions += ['New FixedArray(nested)', 'New FixedArray(a)',
+        actions += ['m["missing"]', 'm[a]', 'New FixedArray(cyclic)', 'New FixedArray(a)',
                     'New FixedStructure(s)', 'New FixedMap(m)']
         code = setup + ''.join(f'Try\n{action};\nExcept\nMessage("blocked");\nEndTry;\n'
                                for action in actions)
@@ -159,6 +153,40 @@ Message(TypeOf(arrayCopy)); Message(TypeOf(recordCopy)); Message(TypeOf(mapCopy)
                 self.assertEqual((result.returncode, result.stdout, result.stderr),
                                  (0, expected, ''))
 
+    def test_native_fixed_collection_contracts_work_across_cli_entry_points(self):
+        code = '''
+leaf = New Array; leaf.Add(5); root = New Array; root.Add(leaf);
+fixed = New FixedArray(root); leaf[0] = 6;
+Message(TypeOf(fixed[0]) = Type("FixedArray")); Message(fixed[0][0]);
+copy = New Array(fixed); copy[0][0] = 7; Message(fixed[0][0]); Message(copy[0][0]);
+Message(СтрСоединить(New FixedArray(StrSplit("а,б", ",")), ";"));
+'''
+        expected = 'Да\n5\n5\n7\nа;б\n'
+        for constructor in ['New FixedArray(New Array(1))',
+                            'New FixedStructure("Value", 1)', 'New FixedMap(New Map)']:
+            code += f'''
+first = {constructor}; other = {constructor}; alias = first;
+Message(first = alias); Message(first = other); Message(first <> other);
+bag = New Array; bag.Add(first); frozenBag = New FixedArray(bag);
+Message(bag.Find(alias)); Message(frozenBag.Найти(alias));
+Message(bag.Find(other) = Undefined);
+keys = New Map; keys.Insert(first, 7); keys.Вставить(other, 8);
+snapshot = New FixedMap(keys); keys.Удалить(alias);
+Message(snapshot[alias]); Message(snapshot.Получить(other)); Message(keys.Count());
+Message(snapshot.Get("missing") = Undefined);
+Try snapshot["missing"]; Except Message("missing"); EndTry;
+'''
+            expected += 'Да\nНет\nДа\n0\n0\nДа\n7\n8\n1\nДа\nmissing\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'NativeFixed.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            for arguments, stdin in [(('-c', code), None), ((str(path),), None),
+                                     (('-',), code), ((), code + '/exit\n')]:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+
     def test_fixed_collection_errors_command_file_and_stdin_diagnostics(self):
         cases = [('a = New FixedArray(New Array(1));', 'a[0] = 2;', 'недоступны для записи'),
                  ('s = New FixedStructure("Name", 1);', 's.Name = 2;', 'недоступно для записи'),
@@ -170,12 +198,12 @@ Message(TypeOf(arrayCopy)); Message(TypeOf(recordCopy)); Message(TypeOf(mapCopy)
                  ('// incorrect source', 'New FixedStructure(1);', 'ожидает строку свойств или структуру'),
                  ('// incorrect source', 'New FixedMap(1);', 'ожидает соответствие')]
         cases = [(setup, action, message, 1) for setup, action, message in cases] + [
-            ('a = New FixedArray(New Array);', 'Message(a = a);',
-             'Сравнение фиксированных коллекций пока не поддерживается', 11),
-            ('a = New FixedArray(New Array); keys = New Map;', 'keys[a] = 1;',
-             'Фиксированные коллекции в качестве ключей соответствия пока не поддерживаются', 1),
-            ('a = New Array; a.Add(New Array);', 'New FixedArray(a);',
-             'ФиксированныйМассив с вложенным изменяемым массивом пока не поддерживается', 1),
+            ('m = New FixedMap(New Map);', 'm["missing"];',
+             'Ключ фиксированного соответствия не найден', 2),
+            ('a = New FixedArray(New Array); m = New FixedMap(New Map);', 'm[a];',
+             'Ключ фиксированного соответствия не найден', 2),
+            ('a = New Array; a.Add(a);', 'New FixedArray(a);',
+             'ФиксированныйМассив с циклическими вложенными массивами пока не поддерживается', 1),
             ('s = New FixedStructure;', 'New FixedStructure(s);',
              'ФиксированнаяСтруктура ожидает строку свойств или структуру', 1),
         ]
