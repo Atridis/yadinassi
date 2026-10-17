@@ -8,7 +8,7 @@ from . import ast, numbers, serialization, strings, type_values
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
-from .parser import parse
+from .parser import parse, validate_labels
 from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
 from .structures import BSLFixedStructure, BSLStructure
@@ -20,6 +20,12 @@ from .values import (
 
 _COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap)
+
+
+class _Goto(Exception):
+    def __init__(self, node: ast.Goto):
+        self.node = node
+        self.name = node.name.casefold()
 
 
 class _Break(Exception):
@@ -132,6 +138,9 @@ class Interpreter:
             self._loading.pop()
 
     def _execute_program(self, program: list[ast.Node]) -> object:
+        # Also validate callers supplying an AST directly. No import or declaration
+        # effects may precede label resolution.
+        validate_labels(program)
         # Keep decimal arithmetic independent of the embedding application's context.
         with localcontext() as context:
             context.prec = 38
@@ -161,8 +170,18 @@ class Interpreter:
 
     def block(self, statements: list[ast.Node]) -> object:
         result = None
-        for statement in statements:
-            result = self.visit(statement)
+        labels = {node.name.casefold(): index for index, node in enumerate(statements)
+                  if isinstance(node, ast.Label)}
+        position = 0
+        while position < len(statements):
+            try:
+                result = self.visit(statements[position])
+            except _Goto as jump:
+                if jump.name not in labels:
+                    raise
+                position = labels[jump.name]
+            else:
+                position += 1
         return result
 
     def visit(self, node: ast.Node) -> object:
@@ -336,6 +355,7 @@ class Interpreter:
         if not required <= len(arguments) <= len(function.parameters):
             raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                             f"получено {len(arguments)}")
+        validate_labels(function.body)
         # Bind left to right in the caller's frame. Val snapshots the value,
         # while ordinary parameters keep a live alias to assignable storage.
         bindings = {}
@@ -507,6 +527,12 @@ class Interpreter:
             module = _Module(child, path)
             self._module_cache[path] = module
         return module
+
+    def visit_Label(self, node: ast.Label) -> None:
+        pass
+
+    def visit_Goto(self, node: ast.Goto) -> None:
+        raise _Goto(node)
 
     def visit_Routine(self, node: ast.Routine) -> None:
         # Declarations are registered by execute_program, never executed in place.

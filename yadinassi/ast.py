@@ -163,3 +163,13 @@ class Try(Node):
 @dataclass
 class Raise(Node):
     value: Node | None
+
+
+@dataclass
+class Label(Node):
+    name: str
+
+
+@dataclass
+class Goto(Node):
+    name: str
