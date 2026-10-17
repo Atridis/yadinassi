@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import ast, numbers, serialization, strings, type_values
-from .round_modes import ROUND_MODES
+from .round_modes import BSLRoundModes, ROUND_MODES
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
 from .parser import parse
@@ -578,8 +578,8 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = self.visit(node.collection)
-        if not isinstance(collection, _COLLECTIONS):
-            raise TypeError("Для Каждого ожидает массив, структуру или соответствие")
+        if not isinstance(collection, _COLLECTIONS) and type(collection) is not BSLRoundModes:
+            raise TypeError("Для Каждого ожидает массив, структуру, соответствие или пространство РежимОкругления")
         for item in collection:
             self.set_variable(node.name, item)
             if not self.iteration(node.body):

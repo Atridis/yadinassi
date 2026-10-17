@@ -112,6 +112,14 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
              'Message("round-restored=" + ValueToStringInternal(Round(-1.5, 0, mode)));\n')
         expect('round-type=РежимОкругления')
         expect('round-restored={"N",-2}')
+        send(">>> ", 'seen = New Map; For Each item In RoundMode Do '
+             'seen.Insert(item, Round(1.5, 0, item)); EndDo; '
+             'Message("enum-count=" + seen.Count()); '
+             'Message("enum-ten=" + seen[RoundMode.Round15as10]); '
+             'Message("enum-twenty=" + seen[RoundMode.Round15as20]);\n')
+        expect('enum-count=2')
+        expect('enum-ten=1')
+        expect('enum-twenty=2')
         send(">>> ", 'extreme = Min(2, True); Message("min-type=" + ValueToStringInternal(extreme));\n')
         expect('min-type={"B",1}')
         send(">>> ", 'extreme = Max(2, "10");\n')
