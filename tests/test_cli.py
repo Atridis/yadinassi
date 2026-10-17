@@ -32,19 +32,27 @@ class CLITests(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout), (0, "файл\n"))
 
     def test_numeric_presentation_all_flags_bom_file_stdin_and_console(self):
-        code = '''value = nUmBeR("-12.5000");
+        code = '''value = nUmBeR("-1234.5000");
 mEsSaGe(value); сОоБщИтЬ(сТрОкА(value));
-Message("value=" + value); Message(чИсЛо("1,2500"));
+Message("value=" + value); Message(чИсЛо("1\u00a0234,5000"));
 Message(String(-0.000)); Message(String(1000.000));
 Message(TypeOf(value) = Тип("Число"));
 Message(Number(String(value)) = value);
 Message(Найти(value, ",")); Message(StrReplace(value, ",", "."));
 Message(StrConcat(StrSplit(value, ","), "|"));
 Message(СтрДлина(value));
-Message(Number("123456789012345678901234567890.123456789"));
+exact = Number("123456789012345678901234567890.123456789");
+Message(exact); Message(Number(String(exact)) = exact);
+Message(Number("+12\u00a0345")); Message(Number("-123\u00a0456,000100"));
+Message(Number("1\u00a0234\u00a0567")); Message(Number("001\u00a0234,5000"));
+Message(String("1234.5000"));
 '''
-        expected = ('-12,5\n-12,5\nvalue=-12,5\n1,25\n0\n1000\nДа\nДа\n4\n'
-                    '-12.5\n-12|5\n5\n123456789012345678901234567890,123456789\n')
+        expected = ('-1\u00a0234,5\n-1\u00a0234,5\nvalue=-1\u00a0234,5\n'
+                    '1\u00a0234,5\n0\n1\u00a0000\nДа\nДа\n7\n'
+                    '-1\u00a0234.5\n-1\u00a0234|5\n8\n'
+                    '123\u00a0456\u00a0789\u00a0012\u00a0345\u00a0678'
+                    '\u00a0901\u00a0234\u00a0567\u00a0890,123456789\nДа\n'
+                    '12\u00a0345\n-123\u00a0456,0001\n1\u00a0234\u00a0567\n1\u00a0234,5\n1234.5000\n')
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'Числа.bsl'
             path.write_text(code, encoding='utf-8-sig')
@@ -59,13 +67,16 @@ Message(Number("123456789012345678901234567890.123456789"));
     def test_invalid_numeric_conversion_is_catchable_across_cli_entries(self):
         invalid = ['1,2.3', '1.2,3', '1,,2', '1,2,3', '1 234,5',
                    'NaN', 'Infinity', 'not a number', '1,', ',5', '1,2e3',
-                   '1_000,25', '1,2_5', '١,٢']
-        code = 'value = Number("12.5");\n'
+                   '1_000,25', '1,2_5', '١,٢', '12\u00a034,5',
+                   '1234\u00a0567', '1\u00a02345', '1\u00a0\u00a0234',
+                   '1\u00a0234.5', '1\u00a0234,5e2', '1\u202f234,5',
+                   '1\u00a0234 567,5', '1\u00a0٢٣٤,5']
+        code = 'value = Number("1\u00a0234,5");\n'
         for text in invalid:
             code += (f'Try\nvalue = Число("{text}");\nExcept\n'
                      'Message("caught");\nEndTry;\n')
         code += 'Message(value); Message(TypeOf(value)); Message(Number("0,125"));\n'
-        expected = 'caught\n' * len(invalid) + '12,5\nЧисло\n0,125\n'
+        expected = 'caught\n' * len(invalid) + '1\u00a0234,5\nЧисло\n0,125\n'
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'ОшибкиЧисел.bsl'
             path.write_text(code, encoding='utf-8-sig')
@@ -78,7 +89,7 @@ Message(Number("123456789012345678901234567890.123456789"));
                                      (0, expected, ''))
 
     def test_numeric_conversion_cli_diagnostics_and_console_recovery(self):
-        code = 'value = Number("12,5");\nvalue = Number("1,2.3");\n'
+        code = 'value = Number("1\u00a0234,5");\nvalue = Number("12\u00a034,5");\n'
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'ОшибкаЧисла.bsl'
             path.write_text(code, encoding='utf-8-sig')
@@ -87,7 +98,7 @@ Message(Number("123456789012345678901234567890.123456789"));
             cases += [((str(path),), None, '', str(path) + ':2:'),
                       (('-',), code, '', '<stdin>:2:'),
                       ((), code + 'value\nTypeOf(value)\nNumber("0,125")\n/exit\n',
-                       '12,5\nЧисло\n0,125\n', '<консоль>:1:')]
+                       '1\u00a0234,5\nЧисло\n0,125\n', '<консоль>:1:')]
             for arguments, stdin, stdout, location in cases:
                 with self.subTest(arguments=arguments):
                     result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
@@ -105,17 +116,18 @@ Message(Number("123456789012345678901234567890.123456789"));
                 'Function Parse(text) Export Return чИсЛо(text); EndFunction\n'
                 'Function Present(value) Export Return сТрОкА(value); EndFunction\n'
                 'Procedure Show(value) Export Сообщить(value); EndProcedure\n'
-                'Function Fail() Export\nReturn Number("1,2.3");\nEndFunction\n',
+                'Function Fail() Export\nReturn Number("12\u00a034,5");\nEndFunction\n',
                 encoding='utf-8-sig')
             main = project / 'Основное.bsl'
-            code = ('// #Импорт Числа.bsl\nvalue = числа.Parse("-12,5000");\n'
+            code = ('// #Импорт Числа.bsl\nvalue = числа.Parse("-1\u00a0234,5000");\n'
                     'Message(TypeOf(value)); Message(value); Числа.Show(value);\n'
                     'Message(Числа.Present(value)); Message("value=" + value);\n'
                     'Message(Number(Числа.Present(value)) = value);\n'
                     'Try Числа.Fail(); Except Message("caught"); EndTry;\n'
                     'Message(Числа.Parse("0.125"));\n')
             main.write_text(code, encoding='utf-8-sig')
-            expected = 'Число\n-12,5\n-12,5\n-12,5\nvalue=-12,5\nДа\ncaught\n0,125\n'
+            expected = ('Число\n-1\u00a0234,5\n-1\u00a0234,5\n-1\u00a0234,5\n'
+                        'value=-1\u00a0234,5\nДа\ncaught\n0,125\n')
             for path in (main, main.relative_to(temporary)):
                 with self.subTest(path=path):
                     result = self.run_cli(str(path), cwd=temporary)

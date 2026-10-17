@@ -37,10 +37,15 @@ def to_string(value: object) -> str:
             return "0"
         text = format(value, "f")
         text = text.rstrip("0").rstrip(".") if "." in text else text
-        # Standalone presentation uses a decimal comma consistently with the
-        # Russian Boolean labels above and the owner's native basic.out.
+        # The owner's native numbers.out confirms a decimal comma and groups
+        # of three integer digits separated by U+00A0 (not an ASCII space).
         # Literal syntax and canonical Number("1.5") input remain dot-based.
-        return text.replace(".", ",")
+        integer, separator, fraction = text.partition(".")
+        sign = "-" if integer.startswith("-") else ""
+        digits = integer[len(sign):]
+        groups = [digits[max(0, end - 3):end] for end in range(len(digits), 0, -3)]
+        result = sign + "\u00a0".join(reversed(groups))
+        return result + ("," + fraction if separator else "")
     if isinstance(value, BSLArray):
         return "Массив"
     return str(value)
@@ -49,13 +54,20 @@ def to_string(value: object) -> str:
 def number(value: object) -> Decimal:
     if isinstance(value, bool):
         return Decimal(int(value))
-    if isinstance(value, str) and "," in value:
-        # Accept the standalone decimal-comma presentation as well as canonical
-        # input, without guessing grouping or other regional input syntax.
+    if isinstance(value, str) and ("," in value or "\u00a0" in value):
+        # Accept this standalone presentation as well as canonical input.
+        # Localized groups are exactly three ASCII digits with U+00A0; mixed
+        # separators and other grouping conventions are not guessed.
         value = value.strip()
-        if re.fullmatch(r"[+-]?[0-9]+,[0-9]+", value) is None:
+        if "\u00a0" in value:
+            pattern = r"[+-]?[0-9]{1,3}(?:\u00a0[0-9]{3})+(?:,[0-9]+)?"
+        elif "," in value:
+            pattern = r"[+-]?[0-9]+,[0-9]+"
+        else:
+            pattern = None  # Only surrounding whitespace was localized.
+        if pattern is not None and re.fullmatch(pattern, value) is None:
             raise ValueError("Невозможно преобразовать значение в число")
-        value = value.replace(",", ".")
+        value = value.replace("\u00a0", "").replace(",", ".")
     if isinstance(value, (str, Decimal, int)):
         result = Decimal(value)
         if result.is_finite():

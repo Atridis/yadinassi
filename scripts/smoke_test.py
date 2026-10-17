@@ -11,15 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def check_numeric_presentation(executable: str, *, directory: Path, env: dict) -> None:
-    """Check the bounded decimal-comma contract before the native sample gate.
+    """Check the native NBSP grouping and decimal-comma contract before the native sample gate.
 
     This is not a substitute for native comparison: main() still requires the
     untouched owner-provided basic output, including its arithmetic precision.
     """
     directory.mkdir()
-    code = '''value = nUmBeR("-12.5000");
+    code = '''value = nUmBeR("-1234.5000");
 mEsSaGe(value); сОоБщИтЬ(сТрОкА(value));
-Message("value=" + value); Message(чИсЛо("1,2500"));
+Message("value=" + value); Message(чИсЛо("1\u00a0234,5000"));
 Message(String(-0.000)); Message(String(1000.000));
 Message(TypeOf(value) = Тип("Число"));
 Message(Number(String(value)) = value);
@@ -27,16 +27,26 @@ Message(Найти(value, ",")); Message(StrReplace(value, ",", "."));
 Message(StrConcat(StrSplit(value, ","), "|")); Message(СтрДлина(value));
 exact = Number("123456789012345678901234567890.123456789");
 Message(exact); Message(Number(String(exact)) = exact);
+Message(Number("+12\u00a0345")); Message(Number("-123\u00a0456,000100"));
+Message(Number("1\u00a0234\u00a0567")); Message(Number("001\u00a0234,5000"));
+Message(String("1234.5000"));
 '''
-    expected = ('-12,5\n-12,5\nvalue=-12,5\n1,25\n0\n1000\nДа\nДа\n4\n'
-                '-12.5\n-12|5\n5\n123456789012345678901234567890,123456789\nДа\n')
+    expected = ('-1\u00a0234,5\n-1\u00a0234,5\nvalue=-1\u00a0234,5\n'
+                '1\u00a0234,5\n0\n1\u00a0000\nДа\nДа\n7\n'
+                '-1\u00a0234.5\n-1\u00a0234|5\n8\n'
+                '123\u00a0456\u00a0789\u00a0012\u00a0345\u00a0678'
+                '\u00a0901\u00a0234\u00a0567\u00a0890,123456789\nДа\n'
+                '12\u00a0345\n-123\u00a0456,0001\n1\u00a0234\u00a0567\n1\u00a0234,5\n1234.5000\n')
     invalid = ['1,2.3', '1.2,3', '1,,2', '1,2,3', '1 234,5', 'NaN', 'Infinity',
-               '1,', ',5', '1,2e3', '1_000,25', '1,2_5', '١,٢']
+               '1,', ',5', '1,2e3', '1_000,25', '1,2_5', '١,٢', '12\u00a034,5',
+               '1234\u00a0567', '1\u00a02345', '1\u00a0\u00a0234',
+               '1\u00a0234.5', '1\u00a0234,5e2', '1\u202f234,5',
+               '1\u00a0234 567,5', '1\u00a0٢٣٤,5']
     for value in invalid:
         code += (f'Try\nvalue = Number("{value}");\nExcept\n'
                  'Message("caught");\nEndTry;\n')
     code += 'Message(value); Message(TypeOf(value));\n'
-    expected += 'caught\n' * len(invalid) + '-12,5\nЧисло\n'
+    expected += 'caught\n' * len(invalid) + '-1\u00a0234,5\nЧисло\n'
     source = directory / 'ПредставлениеЧисел.bsl'
     source.write_text(code, encoding='utf-8-sig')
     module = directory / 'Числа.bsl'
@@ -44,17 +54,18 @@ Message(exact); Message(Number(String(exact)) = exact);
         'Function Parse(text) Export Return Число(text); EndFunction\n'
         'Function Present(value) Export Return Строка(value); EndFunction\n'
         'Procedure Show(value) Export Message(value); EndProcedure\n'
-        'Function Fail() Export\nReturn Number("1,2.3");\nEndFunction\n',
+        'Function Fail() Export\nReturn Number("12\u00a034,5");\nEndFunction\n',
         encoding='utf-8-sig')
     importer = directory / 'ИмпортЧисел.bsl'
     importer.write_text(
-        '// #Импорт Числа.bsl\nvalue = Числа.Parse("-12,5000");\n'
+        '// #Импорт Числа.bsl\nvalue = Числа.Parse("-1\u00a0234,5000");\n'
         'Message(TypeOf(value)); Message(value); Числа.Show(value);\n'
         'Message(Числа.Present(value)); Message("value=" + value);\n'
         'Message(Number(Числа.Present(value)) = value);\n'
         'Try Числа.Fail(); Except Message("caught"); EndTry;\n'
         'Message(Числа.Parse("0.125"));\n', encoding='utf-8-sig')
-    import_expected = 'Число\n-12,5\n-12,5\n-12,5\nvalue=-12,5\nДа\ncaught\n0,125\n'
+    import_expected = ('Число\n-1\u00a0234,5\n-1\u00a0234,5\n-1\u00a0234,5\n'
+                       'value=-1\u00a0234,5\nДа\ncaught\n0,125\n')
     cases = [([flag, code], None, expected) for flag in ('-c', '-с', '--command')]
     cases += [([str(source)], None, expected), (['-'], code, expected),
               ([], code + '/exit\n', expected)]
@@ -65,7 +76,7 @@ Message(exact); Message(Number(String(exact)) = exact);
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, stdout, ''):
             raise AssertionError(f'Failed numeric presentation {arguments!r}: {result!r}')
-    error_code = 'value = Number("12,5");\nvalue = Number("1,2.3");\n'
+    error_code = 'value = Number("1\u00a0234,5");\nvalue = Number("12\u00a034,5");\n'
     error_file = directory / 'ОшибкаЧисла.bsl'
     error_file.write_text(error_code, encoding='utf-8-sig')
     error_import = directory / 'ОшибкаИмпортаЧисла.bsl'
@@ -75,7 +86,7 @@ Message(exact); Message(Number(String(exact)) = exact);
     errors += [([str(error_file)], None, '', str(error_file) + ':2:'),
                (['-'], error_code, '', '<stdin>:2:'),
                ([], error_code + 'value\nTypeOf(value)\nNumber("0,125")\n/exit\n',
-                '12,5\nЧисло\n0,125\n', '<консоль>:1:')]
+                '1\u00a0234,5\nЧисло\n0,125\n', '<консоль>:1:')]
     for path in (error_import, error_import.relative_to(directory.parent)):
         errors.append(([str(path)], None, '', str(module.resolve()) + ':5:'))
     for arguments, stdin, stdout, location in errors:
@@ -85,7 +96,7 @@ Message(exact); Message(Number(String(exact)) = exact);
                 or 'Невозможно преобразовать значение в число' not in result.stderr
                 or 'Traceback' in result.stderr):
             raise AssertionError(f'Failed numeric diagnostics {arguments!r}: {result!r}')
-    print('Binary numeric presentation passed: decimal comma, exact conversion, aliases, '
+    print('Binary numeric presentation passed: NBSP grouping, decimal comma, exact roundtrip, aliases, '
           'BOM files, imports, all command flags, stdin, console, and error recovery')
 
 
