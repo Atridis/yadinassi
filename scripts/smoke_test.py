@@ -220,6 +220,30 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+STRING_LINES_PROGRAM = """
+Message(сТрЧиСлОсТрОк(""));
+Message(sTrLiNeCoUnT("A" + Char(13) + Char(10) + "B" + Char(13)));
+Message(StrLineCount(Char(10) + Char(10)));
+Message(СтрПолучитьСтроку("A" + Char(13) + "Я😀", 2));
+Message(sTrGeTlInE("A" + Char(10) + "B", 1.9));
+Message("[" + StrGetLine("A", 0) + "]");
+Message(CharCode(StrGetLine("A" + Char(10) + Char(0), 2)));
+Message(TypeOf(StrLineCount("")));
+Message(TypeOf(StrGetLine("", 1)));
+Message(ValueFromStringInternal(ValueToStringInternal(StrGetLine("😀", 1))));
+saved = "old";
+"""
+STRING_LINES_OUTPUT = '1\n2\n2\nЯ😀\nA\n[]\n0\nЧисло\nСтрока\n😀\n'
+STRING_LINES_FAILURES = (('StrGetLine("A", Undefined)', 'Невозможно преобразовать значение в число'),)
+for _expression, _message in STRING_LINES_FAILURES:
+    STRING_LINES_PROGRAM += (f'Try saved = {_expression}; Except\n'
+                            f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                            'EndTry;\nMessage(saved);\n')
+    STRING_LINES_OUTPUT += 'Да\nold\n'
+STRING_LINES_PROGRAM += 'Message(StrGetLine("new", 1));\n'
+STRING_LINES_OUTPUT += 'new\n'
+
+
 STRING_TEMPLATE_PROGRAM = """
 Message(сТрШаБлОн("Привет, %1!", "мир"));
 Message(sTrTeMpLaTe("%2/%1/%2", "один", "два"));
@@ -277,6 +301,39 @@ for _expression, _message in STRING_BOUNDARY_FAILURES:
     STRING_BOUNDARY_OUTPUT += 'Да\nДа\n'
 STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
 STRING_BOUNDARY_OUTPUT += 'Да\n'
+
+
+def check_string_lines(executable: str, *, directory: Path, env: dict) -> None:
+    """Multiline string operations, failures and recovery in the binary."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'МногострочныйТекст.bsl'
+    source.write_text(STRING_LINES_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, STRING_LINES_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], STRING_LINES_PROGRAM),
+              ([], STRING_LINES_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, STRING_LINES_OUTPUT, ''):
+            raise AssertionError(f'Failed string lines {arguments!r}: {result!r}')
+    for expression, message in STRING_LINES_FAILURES:
+        code = f'saved = "old";\nsaved = {expression};\n'
+        source.write_text(code, encoding='utf-8-sig')
+        cases = [([flag, code], None, '', '<команда>:2:')
+                 for flag in ('-c', '-с', '--command')]
+        cases += [([str(source)], None, '', str(source) + ':2:'),
+                  (['-'], code, '', '<stdin>:2:'),
+                  ([], code + 'saved\nStrGetLine("new", 1)\n/exit\n',
+                   'old\nnew\n', '<консоль>:1:')]
+        for arguments, stdin, stdout, location in cases:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed string line recovery {arguments!r}: {result!r}')
+    print('Binary string lines passed: aliases, CR/LF, indices, UTF-16, '
+          'serialization, BOM file, command flags, stdin and console recovery')
 
 
 def check_string_template(executable: str, *, directory: Path, env: dict) -> None:
@@ -759,6 +816,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_string_lines(executable, directory=Path(temporary) / "lines", env=env)
         check_string_template(executable, directory=Path(temporary) / "templates", env=env)
         check_string_boundaries(executable, directory=Path(temporary) / "boundaries", env=env)
         check_characters(executable, directory=Path(temporary) / "characters", env=env)
