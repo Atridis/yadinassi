@@ -18,6 +18,42 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_goto_all_cli_inputs(self):
+        from scripts.smoke_test import GOTO_PROGRAM, GOTO_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'Переходы.bsl'
+            source.write_text(GOTO_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, GOTO_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), GOTO_PROGRAM),
+                      ((), GOTO_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, GOTO_OUTPUT, ''))
+
+    def test_goto_static_diagnostics_and_console_recovery(self):
+        from scripts.smoke_test import GOTO_ERRORS
+
+        for program, message in GOTO_ERRORS:
+            for arguments, stdin, source in [
+                (('-c', program), None, '<команда>'),
+                (('-',), program, '<stdin>'),
+            ]:
+                with self.subTest(program=program, arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin)
+                    self.assertEqual((result.returncode, result.stdout), (1, ''))
+                    self.assertIn(source + ':1:', result.stderr)
+                    self.assertIn(message, result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+        result = self.run_cli(stdin='saved = 42;\nGoto ~missing;\nsaved\n'
+                              '~done: Message("recovered");\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout), (1, '42\nrecovered\n'))
+        self.assertIn('Метка не определена', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
     def test_numeric_boolean_comparisons_all_cli_inputs(self):
         from scripts.smoke_test import COMPARISON_PROGRAM, COMPARISON_OUTPUT
 

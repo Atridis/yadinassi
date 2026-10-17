@@ -84,6 +84,17 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Сообщить("Вложенная");\n', forbidden_lines=region_output)
         send("... ", "#EndRegion\n", forbidden_lines=region_output)
         send("... ", "#КонецОбласти\n", forbidden_lines=region_output)
+        send(">>> ", "#Region GotoSession\n")
+        send("... ", "jump_count = 0;\n")
+        send("... ", "~again: jump_count = jump_count + 1;\n")
+        send("... ", "If jump_count < 3 Then Goto ~AGAIN; EndIf;\n")
+        send("... ", 'Message("goto-count=" + String(jump_count));\n')
+        send("... ", "#EndRegion\n")
+        expect("goto-count=3")
+        send(">>> ", "Goto ~missing;\n")
+        expect("Метка не определена")
+        send(">>> ", '~recovered: Message("goto-recovered=" + String(jump_count));\n')
+        expect("goto-recovered=3")
         send(">>> ", 'целая = цЕл(-12.99); Message("int-value=" + ValueToStringInternal(целая));\n')
         expect('int-value={"N",-12}')
         send(">>> ", 'целая = Int(Undefined);\n')
@@ -271,7 +282,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 17
+        if (output.count('<консоль>:1:') != 18
+                or output.count('Метка не определена') != 1
                 or output.count('Значения несовместимы для сравнения') != 2
                 or output.count('Невозможно преобразовать значение в число') != 3
                 or output.count('Окр: ожидается число или значение РежимОкругления') != 1
@@ -286,7 +298,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("Курсор", 2), ("Вниз", 1), ("Блок", 1),
+        for message, count in (("goto-count=3", 1), ("goto-recovered=3", 1),
+                               ("Курсор", 2), ("Вниз", 1), ("Блок", 1),
                                ("Область", 1), ("Вложенная", 1), ("Число", 2),
                                ("типовой ключ", 1), ("Тип", 1), ("Перехвачено", 1),
                                ("Да", 5), ("Нет", 1), ("2", 1),

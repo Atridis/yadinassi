@@ -81,11 +81,12 @@ class Parser:
                 # Routine brackets are not statements and need no semicolon.
                 continue
             statements.append(self.statement())
-            separated = self.accept(";")
+            separated = self.accept(";") or isinstance(statements[-1], ast.Label)
             self.region_directives(regions)
             if not separated and self.current.kind != "EOF":
                 self.fail("Ожидается ';' между операторами")
         self.expect("EOF")
+        validate_labels(statements)
         return statements
 
     def parameters(self) -> list[ast.Parameter]:
@@ -133,7 +134,7 @@ class Parser:
             if self.accept(";"):
                 continue
             statements.append(self.statement())
-            separated = self.accept(";")
+            separated = self.accept(";") or isinstance(statements[-1], ast.Label)
             self.region_directives(regions)
             if not separated and self.current.kind not in endings:
                 self.fail("Ожидается ';' между операторами")
@@ -155,6 +156,13 @@ class Parser:
 
     def statement(self) -> ast.Node:
         token = self.current
+        if self.accept("~"):
+            name = self.expect("IDENT").value
+            self.expect(":")
+            return ast.Label(token, name)
+        if self.accept("GOTO"):
+            self.expect("~")
+            return ast.Goto(token, self.expect("IDENT").value)
         if token.kind == "ATCLIENT":
             self.fail("Директива исполнения допустима только перед подпрограммой уровня модуля")
         if token.kind == "IMPORT":
@@ -324,6 +332,52 @@ class Parser:
                           "опустите конечные необязательные параметры без запятой")
         self.expect(")")
         return arguments
+
+
+def validate_labels(statements: list[ast.Node]) -> None:
+    """Resolve one routine/module at a time, before any execution side effects.
+
+    The current interpreter supports jumping within an active statement list or
+    outward to an ancestor list. Entering an inactive block is deliberately an
+    explicit implementation boundary, not an asserted restriction of native BSL.
+    """
+    labels: dict[str, tuple[ast.Label, tuple[int, ...]]] = {}
+    jumps: list[tuple[ast.Goto, tuple[int, ...]]] = []
+
+    def fail(node: ast.Node, message: str) -> None:
+        token = node.token
+        raise BSLError(message, token.source, token.line, token.column)
+
+    def collect(body: list[ast.Node], parents: tuple[int, ...]) -> None:
+        path = (*parents, id(body))
+        for node in body:
+            if isinstance(node, ast.Label):
+                name = node.name.casefold()
+                if name in labels:
+                    fail(node, f"Повторное объявление метки: {node.name}")
+                labels[name] = (node, path)
+            elif isinstance(node, ast.Goto):
+                jumps.append((node, path))
+            elif isinstance(node, ast.Routine):
+                validate_labels(node.body)
+            elif isinstance(node, ast.If):
+                for _, branch in node.branches:
+                    collect(branch, path)
+                collect(node.otherwise, path)
+            elif isinstance(node, (ast.For, ast.ForEach, ast.While)):
+                collect(node.body, path)
+            elif isinstance(node, ast.Try):
+                collect(node.body, path)
+                collect(node.handler, path)
+
+    collect(statements, ())
+    for node, path in jumps:
+        target = labels.get(node.name.casefold())
+        if target is None:
+            fail(node, f"Метка не определена: {node.name}")
+        target_path = target[1]
+        if path[:len(target_path)] != target_path:
+            fail(node, f"Переход внутрь другого блока пока не поддерживается: {node.name}")
 
 
 def parse(text: str, source: str = "<строка>") -> list[ast.Node]:

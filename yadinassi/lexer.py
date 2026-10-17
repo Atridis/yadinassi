@@ -10,6 +10,7 @@ from .preprocessor import ConditionalCompilation, SourceRegions
 
 KEYWORDS: dict[str, str] = {}
 for kind, aliases in {
+    "GOTO": ("Перейти", "Goto"),
     "TRY": ("Попытка", "Try"),
     "EXCEPT": ("Исключение", "Except"),
     "ENDTRY": ("КонецПопытки", "EndTry"),
@@ -170,7 +171,7 @@ class Lexer:
                 pair = char + self.peek(1)
                 if pair in ("<=", ">=", "<>"):
                     kind = value = self.advance() + self.advance()
-                elif char in "+-*/%=<>()[];.,?":
+                elif char in "+-*/%=<>()[];.,?~:":
                     kind = value = self.advance()
                 else:
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)

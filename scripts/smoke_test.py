@@ -221,6 +221,70 @@ def check_numeric_boolean_comparisons(executable: str, *, directory: Path, env: 
     print('Binary Number/Boolean comparisons passed: six operators, exact values, typed keys, CLI and recovery')
 
 
+GOTO_PROGRAM = r'''
+#Region JumpProgram
+Function Count(Val n)
+    result = 0;
+    ~again:
+    result = result + 1;
+    If result < n Then Goto ~AGAIN; EndIf;
+    Return result;
+EndFunction
+Перейти ~Начало;
+Message("skipped");
+~начало:
+Message(Count(3));
+For i = 1 To 5 Do
+    While True Do
+        Try
+            Goto ~outside;
+        Except
+            Message("caught-jump");
+        EndTry;
+    EndDo;
+EndDo;
+~outside:
+Message(i);
+Try
+    Raise "expected";
+Except
+    Goto ~done;
+EndTry;
+~done:
+Message(ErrorDescription() = "");
+Message("goto-complete");
+#EndRegion
+'''
+GOTO_OUTPUT = '3\n1\nДа\ngoto-complete\n'
+GOTO_ERRORS = [
+    ('Message("early"); Goto ~missing;', 'Метка не определена'),
+    ('Message("early"); ~a: ~A:', 'Повторное объявление метки'),
+    ('Goto ~inside; If False Then ~inside: EndIf;',
+     'Переход внутрь другого блока пока не поддерживается'),
+]
+
+
+def check_goto(executable: str, *, directory: Path, env: dict) -> None:
+    directory.mkdir()
+    source = directory / 'Переходы.bsl'
+    source.write_text(GOTO_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, GOTO_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], GOTO_PROGRAM),
+              ([], GOTO_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, GOTO_OUTPUT, ''):
+            raise AssertionError(f'Failed Goto {arguments!r}: {result!r}')
+    for program, message in GOTO_ERRORS:
+        result = subprocess.run([executable, '-c', program], capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode != 1 or result.stdout or message not in result.stderr
+                or '<команда>:1:' not in result.stderr or 'Traceback' in result.stderr):
+            raise AssertionError(f'Failed Goto diagnostic: {result!r}')
+    print('Binary Goto passed: aliases, loops, routines, try exits, CLI inputs and static diagnostics')
+
+
 # Owner-observed Round results, shared with the source entrypoint tests. Internal
 # number payloads preserve exact coefficients without presentation grouping.
 ROUNDING_EXAMPLES = [
@@ -489,6 +553,7 @@ def main() -> None:
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
         check_rounding(executable, directory=Path(temporary) / "rounding", env=env)
         check_numeric_boolean_comparisons(executable, directory=Path(temporary) / "comparisons", env=env)
+        check_goto(executable, directory=Path(temporary) / "goto", env=env)
         check_internal_serialization(executable, directory=Path(temporary) / "serialization", env=env)
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
