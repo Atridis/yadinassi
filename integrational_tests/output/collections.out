@@ -160,3 +160,1246 @@ fixed-map.get-missing: [true]
 fixed.iteration-sum: [8]
 fixed.pair-types: [3]
 collections.complete: [ok]
+internal.array.empty.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{0}
+}]
+internal.array.empty.roundtrip.type: [true]
+internal.array.empty.roundtrip.count: [true]
+internal.array.empty.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{0}
+}]
+internal.structure.empty.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{0}
+}]
+internal.structure.empty.roundtrip.type: [true]
+internal.structure.empty.roundtrip.count: [true]
+internal.structure.empty.roundtrip.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{0}
+}]
+internal.map.empty.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{0}
+}]
+internal.map.empty.roundtrip.type: [true]
+internal.map.empty.roundtrip.count: [true]
+internal.map.empty.roundtrip.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{0}
+}]
+internal.fixed-array.empty.payload: [{"#",4500381b-db30-4a10-9db4-990038032acf,
+{0}
+}]
+internal.fixed-array.empty.roundtrip.type: [true]
+internal.fixed-array.empty.roundtrip.count: [true]
+internal.fixed-array.empty.roundtrip.payload: [{"#",4500381b-db30-4a10-9db4-990038032acf,
+{0}
+}]
+internal.fixed-structure.empty.payload: [{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{0}
+}]
+internal.fixed-structure.empty.roundtrip.type: [true]
+internal.fixed-structure.empty.roundtrip.count: [true]
+internal.fixed-structure.empty.roundtrip.payload: [{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{0}
+}]
+internal.fixed-map.empty.payload: [{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{0}
+}]
+internal.fixed-map.empty.roundtrip.type: [true]
+internal.fixed-map.empty.roundtrip.count: [true]
+internal.fixed-map.empty.roundtrip.payload: [{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{0}
+}]
+internal.array.scalars.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}]
+internal.array.scalars.roundtrip.type: [true]
+internal.array.scalars.roundtrip.count: [true]
+internal.array.scalars.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}]
+internal.fixed-array.scalars.payload: [{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}]
+internal.fixed-array.scalars.roundtrip.type: [true]
+internal.fixed-array.scalars.roundtrip.count: [true]
+internal.fixed-array.scalars.roundtrip.payload: [{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}]
+internal.structure.populated.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}]
+internal.structure.populated.roundtrip.type: [true]
+internal.structure.populated.roundtrip.count: [true]
+internal.structure.populated.roundtrip.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}]
+internal.fixed-structure.populated.payload: [{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}]
+internal.fixed-structure.populated.roundtrip.type: [true]
+internal.fixed-structure.populated.roundtrip.count: [true]
+internal.fixed-structure.populated.roundtrip.payload: [{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}]
+internal.map.populated.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}]
+internal.map.populated.roundtrip.type: [true]
+internal.map.populated.roundtrip.count: [true]
+internal.map.populated.roundtrip.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}]
+internal.fixed-map.populated.payload: [{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}]
+internal.fixed-map.populated.roundtrip.type: [true]
+internal.fixed-map.populated.roundtrip.count: [true]
+internal.fixed-map.populated.roundtrip.payload: [{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}]
+internal.array.repeated-reference.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.array.repeated-reference.roundtrip.type: [true]
+internal.array.repeated-reference.roundtrip.count: [true]
+internal.array.repeated-reference.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.array.independent-equal.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.array.independent-equal.roundtrip.type: [true]
+internal.array.independent-equal.roundtrip.count: [true]
+internal.array.independent-equal.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.array.repeated-reference.restored-pair-equal: [false]
+internal.array.repeated-reference.shared-after-change: [false]
+internal.array.independent-equal.restored-pair-equal: [false]
+internal.array.independent-equal.shared-after-change: [false]
+internal.array.present: [Массив]
+internal.fixed-array.repeated-reference.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.fixed-array.repeated-reference.roundtrip.type: [true]
+internal.fixed-array.repeated-reference.roundtrip.count: [true]
+internal.fixed-array.repeated-reference.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.fixed-array.independent-equal.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.fixed-array.independent-equal.roundtrip.type: [true]
+internal.fixed-array.independent-equal.roundtrip.count: [true]
+internal.fixed-array.independent-equal.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+},
+{"#",4500381b-db30-4a10-9db4-990038032acf,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+}
+}]
+internal.fixed-array.repeated-reference.restored-pair-equal: [false]
+internal.fixed-array.independent-equal.restored-pair-equal: [false]
+internal.fixed-array.present: [ФиксированныйМассив]
+internal.structure.repeated-reference.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.structure.repeated-reference.roundtrip.type: [true]
+internal.structure.repeated-reference.roundtrip.count: [true]
+internal.structure.repeated-reference.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.structure.independent-equal.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.structure.independent-equal.roundtrip.type: [true]
+internal.structure.independent-equal.roundtrip.count: [true]
+internal.structure.independent-equal.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.structure.repeated-reference.restored-pair-equal: [false]
+internal.structure.repeated-reference.shared-after-change: [false]
+internal.structure.independent-equal.restored-pair-equal: [false]
+internal.structure.independent-equal.shared-after-change: [false]
+internal.structure.present: [Структура]
+internal.fixed-structure.repeated-reference.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.fixed-structure.repeated-reference.roundtrip.type: [true]
+internal.fixed-structure.repeated-reference.roundtrip.count: [true]
+internal.fixed-structure.repeated-reference.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.fixed-structure.independent-equal.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.fixed-structure.independent-equal.roundtrip.type: [true]
+internal.fixed-structure.independent-equal.roundtrip.count: [true]
+internal.fixed-structure.independent-equal.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+}
+}
+}]
+internal.fixed-structure.repeated-reference.restored-pair-equal: [false]
+internal.fixed-structure.independent-equal.restored-pair-equal: [false]
+internal.fixed-structure.present: [ФиксированнаяСтруктура]
+internal.map.repeated-reference.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.map.repeated-reference.roundtrip.type: [true]
+internal.map.repeated-reference.roundtrip.count: [true]
+internal.map.repeated-reference.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.map.independent-equal.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.map.independent-equal.roundtrip.type: [true]
+internal.map.independent-equal.roundtrip.count: [true]
+internal.map.independent-equal.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.map.repeated-reference.restored-pair-equal: [false]
+internal.map.repeated-reference.shared-after-change: [false]
+internal.map.independent-equal.restored-pair-equal: [false]
+internal.map.independent-equal.shared-after-change: [false]
+internal.map.present: [Соответствие]
+internal.fixed-map.repeated-reference.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.fixed-map.repeated-reference.roundtrip.type: [true]
+internal.fixed-map.repeated-reference.roundtrip.count: [true]
+internal.fixed-map.repeated-reference.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.fixed-map.independent-equal.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.fixed-map.independent-equal.roundtrip.type: [true]
+internal.fixed-map.independent-equal.roundtrip.count: [true]
+internal.fixed-map.independent-equal.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+},
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}]
+internal.fixed-map.repeated-reference.restored-pair-equal: [false]
+internal.fixed-map.independent-equal.restored-pair-equal: [false]
+internal.fixed-map.present: [ФиксированноеСоответствие]
+internal.map.typed-keys.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{5,
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"U"},
+{"S","undefined"}
+}
+}
+}]
+internal.map.typed-keys.roundtrip.type: [true]
+internal.map.typed-keys.roundtrip.count: [true]
+internal.map.typed-keys.roundtrip.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{5,
+{
+{"U"},
+{"S","undefined"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+}
+}
+}]
+internal.map.typed-keys-again.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{5,
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"U"},
+{"S","undefined"}
+}
+}
+}]
+internal.map.typed-keys-again.roundtrip.type: [true]
+internal.map.typed-keys-again.roundtrip.count: [true]
+internal.map.typed-keys-again.roundtrip.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{5,
+{
+{"U"},
+{"S","undefined"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+}
+}
+}]
+internal.map.reverse-insertion.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{5,
+{
+{"U"},
+{"S","undefined"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+}
+}
+}]
+internal.map.reverse-insertion.roundtrip.type: [true]
+internal.map.reverse-insertion.roundtrip.count: [true]
+internal.map.reverse-insertion.roundtrip.payload: [{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{5,
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"U"},
+{"S","undefined"}
+}
+}
+}]
+internal.structure.order-ab.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","А"},
+{"N",1}
+},
+{
+{"S","б"},
+{"N",2}
+}
+}
+}]
+internal.structure.order-ab.roundtrip.type: [true]
+internal.structure.order-ab.roundtrip.count: [true]
+internal.structure.order-ab.roundtrip.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","А"},
+{"N",1}
+},
+{
+{"S","б"},
+{"N",2}
+}
+}
+}]
+internal.structure.order-ba.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","б"},
+{"N",2}
+},
+{
+{"S","А"},
+{"N",1}
+}
+}
+}]
+internal.structure.order-ba.roundtrip.type: [true]
+internal.structure.order-ba.roundtrip.count: [true]
+internal.structure.order-ba.roundtrip.payload: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","б"},
+{"N",2}
+},
+{
+{"S","А"},
+{"N",1}
+}
+}
+}]
+internal.array.nested.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{3,
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Массив"},
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+},
+{
+{"S","Словарь"},
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}
+},
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{5,
+{
+{"U"},
+{"S","undefined"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+}
+}
+}
+}
+}]
+internal.array.nested.roundtrip.type: [true]
+internal.array.nested.roundtrip.count: [true]
+internal.array.nested.roundtrip.payload: [{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{3,
+{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Код"},
+{"N",7}
+},
+{
+{"S","Пустое"},
+{"U"}
+}
+}
+},
+{"#",3ee983d7-ace7-40f9-bb7e-2e916fcddd56,
+{2,
+{
+{"S","Массив"},
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{5,
+{"U"},
+{"B",0},
+{"B",1},
+{"N",12.5},
+{"S","а,""б"""}
+}
+}
+},
+{
+{"S","Словарь"},
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{1,
+{
+{"S","ключ"},
+{"N",7}
+}
+}
+}
+}
+}
+},
+{"#",220455ea-6c85-4513-996f-bbe79ed07774,
+{5,
+{
+{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec},
+{"S","type"}
+},
+{
+{"S","0"},
+{"S","string"}
+},
+{
+{"N",0},
+{"S","number"}
+},
+{
+{"B",0},
+{"S","boolean"}
+},
+{
+{"U"},
+{"S","undefined"}
+}
+}
+}
+}
+}]
+internal.nested.structure-type: [true]
+internal.nested.fixed-structure-type: [true]
+internal.nested.fixed-map-type: [true]
+internal.nested.record-value: [true]
+internal.nested.string-value: [true]
+internal.nested.map-value: [true]
+internal.nested.typed-keys: [true]
+internal.type.Undefined.payload: [{"T",ee8d3e7c-f930-4a76-8aad-4ff9083a6ea6}]
+internal.type.Undefined.roundtrip.type: [true]
+internal.type.Undefined.roundtrip.value: [true]
+internal.type.Undefined.roundtrip.payload: [{"T",ee8d3e7c-f930-4a76-8aad-4ff9083a6ea6}]
+internal.type.Boolean.payload: [{"T",5d4125ad-f6e7-4313-be32-f71d0ab60915}]
+internal.type.Boolean.roundtrip.type: [true]
+internal.type.Boolean.roundtrip.value: [true]
+internal.type.Boolean.roundtrip.payload: [{"T",5d4125ad-f6e7-4313-be32-f71d0ab60915}]
+internal.type.Number.payload: [{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec}]
+internal.type.Number.roundtrip.type: [true]
+internal.type.Number.roundtrip.value: [true]
+internal.type.Number.roundtrip.payload: [{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec}]
+internal.type.String.payload: [{"T",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5}]
+internal.type.String.roundtrip.type: [true]
+internal.type.String.roundtrip.value: [true]
+internal.type.String.roundtrip.payload: [{"T",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5}]
+internal.type.Array.payload: [{"T",51e7a0d2-530b-11d4-b98a-008048da3034}]
+internal.type.Array.roundtrip.type: [true]
+internal.type.Array.roundtrip.value: [true]
+internal.type.Array.roundtrip.payload: [{"T",51e7a0d2-530b-11d4-b98a-008048da3034}]
+internal.type.Structure.payload: [{"T",4238019d-7e49-4fc9-91db-b6b951d5cf8e}]
+internal.type.Structure.roundtrip.type: [true]
+internal.type.Structure.roundtrip.value: [true]
+internal.type.Structure.roundtrip.payload: [{"T",4238019d-7e49-4fc9-91db-b6b951d5cf8e}]
+internal.type.Map.payload: [{"T",3d48feae-a9c6-4c5a-a099-9eb6477630c6}]
+internal.type.Map.roundtrip.type: [true]
+internal.type.Map.roundtrip.value: [true]
+internal.type.Map.roundtrip.payload: [{"T",3d48feae-a9c6-4c5a-a099-9eb6477630c6}]
+internal.type.FixedArray.payload: [{"T",4500381b-db30-4a10-9db4-990038032acf}]
+internal.type.FixedArray.roundtrip.type: [true]
+internal.type.FixedArray.roundtrip.value: [true]
+internal.type.FixedArray.roundtrip.payload: [{"T",4500381b-db30-4a10-9db4-990038032acf}]
+internal.type.FixedStructure.payload: [{"T",3ee983d7-ace7-40f9-bb7e-2e916fcddd56}]
+internal.type.FixedStructure.roundtrip.type: [true]
+internal.type.FixedStructure.roundtrip.value: [true]
+internal.type.FixedStructure.roundtrip.payload: [{"T",3ee983d7-ace7-40f9-bb7e-2e916fcddd56}]
+internal.type.FixedMap.payload: [{"T",220455ea-6c85-4513-996f-bbe79ed07774}]
+internal.type.FixedMap.roundtrip.type: [true]
+internal.type.FixedMap.roundtrip.value: [true]
+internal.type.FixedMap.roundtrip.payload: [{"T",220455ea-6c85-4513-996f-bbe79ed07774}]
+internal.type.KeyAndValue.payload: [{"T",850afa6f-5244-482f-9729-d78ec65ff607}]
+internal.type.KeyAndValue.roundtrip.type: [true]
+internal.type.KeyAndValue.roundtrip.value: [true]
+internal.type.KeyAndValue.roundtrip.payload: [{"T",850afa6f-5244-482f-9729-d78ec65ff607}]
+internal.type.Type.payload: [{"T",d47d59f8-73f0-481c-8b5e-f6384c0a4804}]
+internal.type.Type.roundtrip.type: [true]
+internal.type.Type.roundtrip.value: [true]
+internal.type.Type.roundtrip.payload: [{"T",d47d59f8-73f0-481c-8b5e-f6384c0a4804}]
+present.type.string: [Число]
+internal.key-and-value.structure.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","Ключ"},
+{"N",7}
+}
+}]
+internal.key-and-value.structure.roundtrip.type: [true]
+internal.key-and-value.structure.roundtrip.key: [true]
+internal.key-and-value.structure.roundtrip.value: [true]
+internal.key-and-value.structure.roundtrip.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","Ключ"},
+{"N",7}
+}
+}]
+present.key-and-value.structure: [КлючИЗначение]
+internal.key-and-value.fixed-structure.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","Ключ"},
+{"N",7}
+}
+}]
+internal.key-and-value.fixed-structure.roundtrip.type: [true]
+internal.key-and-value.fixed-structure.roundtrip.key: [true]
+internal.key-and-value.fixed-structure.roundtrip.value: [true]
+internal.key-and-value.fixed-structure.roundtrip.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","Ключ"},
+{"N",7}
+}
+}]
+present.key-and-value.fixed-structure: [КлючИЗначение]
+internal.key-and-value.map.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","ключ"},
+{"N",7}
+}
+}]
+internal.key-and-value.map.roundtrip.type: [true]
+internal.key-and-value.map.roundtrip.key: [true]
+internal.key-and-value.map.roundtrip.value: [true]
+internal.key-and-value.map.roundtrip.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","ключ"},
+{"N",7}
+}
+}]
+present.key-and-value.map: [КлючИЗначение]
+internal.key-and-value.fixed-map.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","ключ"},
+{"N",7}
+}
+}]
+internal.key-and-value.fixed-map.roundtrip.type: [true]
+internal.key-and-value.fixed-map.roundtrip.key: [true]
+internal.key-and-value.fixed-map.roundtrip.value: [true]
+internal.key-and-value.fixed-map.roundtrip.payload: [{"#",850afa6f-5244-482f-9729-d78ec65ff607,
+{
+{"S","ключ"},
+{"N",7}
+}
+}]
+present.key-and-value.fixed-map: [КлючИЗначение]
+collections.internal.complete: [ok]
