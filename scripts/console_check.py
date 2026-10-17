@@ -310,6 +310,16 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'rendered = StrTemplate("%1", 1, 2);\n')
         send(">>> ", 'Message("template-preserved=" + rendered);\n')
         send(">>> ", 'Message("template-recovered=" + StrTemplate("%1", "😀"));\n')
+        send(">>> ", 'line = СтрПолучитьСтроку("A" + Char(13) + "Я😀", 2);\n')
+        send(">>> ", 'Message("lines-result=" + line);\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'StrGetLine("A", Undefined);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("lines-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'line = StrGetLine("A", Undefined);\n')
+        send(">>> ", 'Message("lines-preserved=" + line);\n')
+        send(">>> ", 'Message("lines-count=" + StrLineCount("A" + Char(13) + Char(10) + "B" + Char(10)));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -318,12 +328,12 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 21
+        if (output.count('<консоль>:1:') != 22
                 or output.count('СтрШаблон: очень много параметров') != 1
                 or output.count('строка поиска не должна быть пустой') != 1
                 or output.count('Метка не определена') != 1
                 or output.count('Значения несовместимы для сравнения') != 2
-                or output.count('Невозможно преобразовать значение в число') != 4
+                or output.count('Невозможно преобразовать значение в число') != 5
                 or output.count('Окр: ожидается число или значение РежимОкругления') != 1
                 or output.count('Тип не поддерживается: Date') != 1
                 or output.count('недоступны для записи') != 2
@@ -337,6 +347,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("goto-count=3", 1), ("goto-recovered=3", 1),
+                               ('lines-result=Я😀', 1), ('lines-caught', 1),
+                               ('lines-preserved=Я😀', 1), ('lines-count=2', 1),
                                ('template-result=x0/%x', 1), ('template-caught', 1),
                                ('template-preserved=x0/%x', 1), ('template-recovered=😀', 1),
                                ('boundary-prefix={"B",1}', 1), ('boundary-caught', 1),

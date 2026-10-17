@@ -6,6 +6,7 @@ on the host platform's wchar_t width. See features.md for compatibility limits.
 """
 
 from decimal import Decimal, ROUND_DOWN
+import re
 
 from .values import BSLArray, BSLFixedArray, boolean, number, to_string
 
@@ -62,6 +63,31 @@ def _index(value: object, minimum: int, maximum: int) -> int:
 
 def string_length(value: object) -> Decimal:
     return Decimal(len(to_string(value).encode("utf-16-le", errors="surrogatepass")) // 2)
+
+
+# Unlike Python splitlines(), 1C's observed separators are CRLF, CR and LF.
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+def line_count(value: object) -> Decimal:
+    text = to_string(value)
+    count = sum(1 for _ in _LINE_BREAK.finditer(text))
+    return Decimal(count if text.endswith(("\r", "\n")) else count + 1)
+
+
+def get_line(value: object, position: object) -> str:
+    text = to_string(value)
+    # Bound before integer conversion: enormous Decimals cannot allocate huge ints.
+    index = _index(position, 0, len(text) + 1)
+    if index < 1:
+        return ""
+    start = 0
+    for boundary in _LINE_BREAK.finditer(text):
+        if index == 1:
+            return _text(text[start:boundary.start()])
+        start = boundary.end()
+        index -= 1
+    return _text(text[start:]) if index == 1 else ""
 
 
 def character(value: object) -> str:
@@ -234,6 +260,8 @@ def template(value: object, *values: object) -> str:
 
 
 BUILTINS = (
+    ("СтрЧислоСтрок", line_count, "StrLineCount"),
+    ("СтрПолучитьСтроку", get_line, "StrGetLine"),
     ("СтрШаблон", template, "StrTemplate"),
     ("СтрДлина", string_length, "StrLen"),
     ("Символ", character, "Char"),
