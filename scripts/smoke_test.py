@@ -170,6 +170,89 @@ NUMERIC_HELPERS_PROGRAM = 'Сообщить(ЗначениеВСтрокуВну
 NUMERIC_HELPERS_OUTPUT = '{"N",-12}\n{"N",0}\n{"N",12345678901234567890123456789012345678901234567890}\ninteger-caught\nЧисло\n{"N",1}\n{"N",12}\n{"B",1}\n{"B",0}\n{"N",-2}\n{"N",2}\nmixed-caught\n{"S","A"}\n{"S","Aa"}\n{"S","е"}\nДа\n'
 
 
+CHARACTER_PROGRAM = '''
+Message(cHaR("65")); Сообщить(сИмВоЛ(1046));
+Message(ValueToStringInternal(CharCode(Char(65535))));
+Message(ValueToStringInternal(КодСимвола(Символ(65.9))));
+Message(ValueToStringInternal(CharCode(Char(0.0001))));
+Message(ValueToStringInternal(CharCode(Char(True))));
+Message(StrLen(Char(-1))); Message(StrLen(Символ(65536)));
+Message(StrLen(Char(Number("1e1000000"))));
+Message(StrLen(Символ(Number("-1e1000000"))));
+text = Char(0) + Символ(55357) + Char(56898) + Символ(55296);
+restored = ЗначениеИзСтрокиВнутр(ValueToStringInternal(text));
+Message(restored = text); Message(StrLen(restored)); Message(TypeOf(restored));
+For position = 1 To 4 Do
+    Message(ValueToStringInternal(кОдСиМвОлА(restored, position)));
+EndDo;
+Message(ValueToStringInternal(CharCode(Left(restored, 2), 2)));
+Message(ValueToStringInternal(CharCode("🙂", 2)));
+Message(ValueToStringInternal(cHaRcOdE("AB")));
+Message(ValueToStringInternal(CharCode("AB", 1.9)));
+Message(ValueToStringInternal(КодСимвола("AB", "2")));
+Message(ValueToStringInternal(CharCode(123)));
+Message(ValueToStringInternal(CharCode("")));
+Message(ValueToStringInternal(КодСимвола("AB", 0)));
+Message(ValueToStringInternal(CharCode("AB", -1)));
+Message(ValueToStringInternal(CharCode("AB", 3)));
+Message(ValueToStringInternal(CharCode("AB", Number("1e1000000"))));
+Message(TypeOf(CharCode("A")));
+saved = Символ(65);
+'''
+CHARACTER_OUTPUT = ('A\nЖ\n{"N",65535}\n{"N",65}\n{"N",0}\n{"N",1}\n'
+                    '0\n0\n0\n0\nДа\n4\nСтрока\n'
+                    '{"N",0}\n{"N",55357}\n{"N",56898}\n{"N",55296}\n'
+                    '{"N",55357}\n{"N",56898}\n{"N",65}\n{"N",65}\n'
+                    '{"N",66}\n{"N",49}\n{"N",-1}\n{"N",-1}\n'
+                    '{"N",-1}\n{"N",-1}\n{"N",-1}\nЧисло\n')
+CHARACTER_FAILURES = (
+    ('Char(Undefined)', 'Невозможно преобразовать значение в число'),
+    ('Символ(Undefined)', 'Невозможно преобразовать значение в число'),
+    ('CharCode("A", Undefined)', 'Невозможно преобразовать значение в число'),
+    ('КодСимвола("A", Undefined)', 'Невозможно преобразовать значение в число'),
+)
+for _expression, _message in CHARACTER_FAILURES:
+    CHARACTER_PROGRAM += (f'Try saved = {_expression}; Except\n'
+                          f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                          'EndTry;\nMessage(saved);\n')
+    CHARACTER_OUTPUT += 'Да\nA\n'
+CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
+CHARACTER_OUTPUT += 'Ж\n'
+
+
+def check_characters(executable: str, *, directory: Path, env: dict) -> None:
+    """UTF-16 character construction, lookup and serialization in the binary."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'Символы.bsl'
+    source.write_text(CHARACTER_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, CHARACTER_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], CHARACTER_PROGRAM),
+              ([], CHARACTER_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, CHARACTER_OUTPUT, ''):
+            raise AssertionError(f'Failed character functions {arguments!r}: {result!r}')
+    for expression, message in CHARACTER_FAILURES:
+        code = f'saved = Символ(65);\nsaved = {expression};\n'
+        source.write_text(code, encoding='utf-8-sig')
+        cases = [([flag, code], None, '', '<команда>:2:')
+                 for flag in ('-c', '-с', '--command')]
+        cases += [([str(source)], None, '', str(source) + ':2:'),
+                  (['-'], code, '', '<stdin>:2:'),
+                  ([], code + 'saved\nКодСимвола(saved)\n/exit\n',
+                   'A\n65\n', '<консоль>:1:')]
+        for arguments, stdin, stdout, location in cases:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed character recovery {arguments!r}: {result!r}')
+    print('Binary character functions passed: aliases, coercion, UTF-16 units, NUL/surrogate '
+          'serialization, ranges, BOM file, command flags, stdin and console recovery')
+
+
 def check_numeric_helpers(executable: str, *, directory: Path, env: dict) -> None:
     """Owner-derived numeric helpers and shared string collation."""
     directory.mkdir()
@@ -551,6 +634,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_characters(executable, directory=Path(temporary) / "characters", env=env)
         check_rounding(executable, directory=Path(temporary) / "rounding", env=env)
         check_numeric_boolean_comparisons(executable, directory=Path(temporary) / "comparisons", env=env)
         check_goto(executable, directory=Path(temporary) / "goto", env=env)

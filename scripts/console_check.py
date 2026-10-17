@@ -102,6 +102,22 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         expect('int-recovered={"N",-12}')
         send(">>> ", 'Message("int-zero=" + ValueToStringInternal(Int(-0.99)));\n')
         expect('int-zero={"N",0}')
+        send(">>> ", 'characterText = сИмВоЛ(0) + Char(55357) + Символ(56898);\n')
+        send(">>> ", 'characterText = ValueFromStringInternal(\n')
+        send("... ", 'ЗначениеВСтрокуВнутр(characterText));\n')
+        send(">>> ", 'Message("char-length=" + StrLen(characterText)); '
+             'Message("char-nul=" + ValueToStringInternal(CharCode(characterText))); '
+             'Message("char-low=" + ValueToStringInternal(КодСимвола(characterText, 3)));\n')
+        expect('char-length=3')
+        expect('char-nul={"N",0}')
+        expect('char-low={"N",56898}')
+        send(">>> ", 'Try CharCode("A", Undefined); Except Message("char-caught"); EndTry;\n')
+        expect('char-caught')
+        send(">>> ", 'characterText = Символ(Undefined);\n')
+        send(">>> ", 'Message("char-recovered=" + ValueToStringInternal('
+             'CharCode(characterText, 2))); Message("char-alias=" + cHaR(65));\n')
+        expect('char-recovered={"N",55357}')
+        expect('char-alias=A')
         send(">>> ", 'rounded = оКр(-1.5); Message("round-default=" + ValueToStringInternal(rounded));\n')
         expect('round-default={"N",-2}')
         send(">>> ", 'rounded = Round(1250,\n')
@@ -282,10 +298,10 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 18
+        if (output.count('<консоль>:1:') != 19
                 or output.count('Метка не определена') != 1
                 or output.count('Значения несовместимы для сравнения') != 2
-                or output.count('Невозможно преобразовать значение в число') != 3
+                or output.count('Невозможно преобразовать значение в число') != 4
                 or output.count('Окр: ожидается число или значение РежимОкругления') != 1
                 or output.count('Тип не поддерживается: Date') != 1
                 or output.count('недоступны для записи') != 2
@@ -299,6 +315,9 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("goto-count=3", 1), ("goto-recovered=3", 1),
+                               ('char-length=3', 1), ('char-nul={"N",0}', 1),
+                               ('char-low={"N",56898}', 1), ('char-caught', 1),
+                               ('char-recovered={"N",55357}', 1), ('char-alias=A', 1),
                                ("Курсор", 2), ("Вниз", 1), ("Блок", 1),
                                ("Область", 1), ("Вложенная", 1), ("Число", 2),
                                ("типовой ключ", 1), ("Тип", 1), ("Перехвачено", 1),
