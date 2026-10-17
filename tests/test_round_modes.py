@@ -103,7 +103,6 @@ class RoundModeValueTests(unittest.TestCase):
             with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(expression)
         for code in ['For Each value In mode Do EndDo;',
-                     'For Each value In modes Do EndDo;',
                      'If mode Then Message(1); EndIf;',
                      'If modes Then Message(1); EndIf;']:
             with self.subTest(code=code), self.assertRaises(BSLRuntimeError):

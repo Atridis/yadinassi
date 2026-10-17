@@ -243,6 +243,34 @@ ROUNDING_PROGRAM += 'Message(ValueToStringInternal(Окр(-1.5)));\n'
 ROUNDING_OUTPUT += '{"N",-2}\n'
 
 
+# Assert membership and behavior without assuming the native enumeration order.
+ROUNDING_PROGRAM += '''
+seen = New Map;
+For Each mode In RoundMode Do
+    seen.Insert(mode, Round(1.5, 0, mode));
+    Message(ValueFromStringInternal(ValueToStringInternal(mode)) = mode);
+EndDo;
+Message(seen.Count());
+Message(seen[РежимОкругления.Окр15как10]);
+Message(seen[РежимОкругления.Окр15как20]);
+count = 0;
+Для Каждого outer Из РежимОкругления Цикл
+    Для Каждого inner Из RoundMode Цикл count = count + 1; Прервать; КонецЦикла;
+    Продолжить; count = 100;
+КонецЦикла;
+Сообщить(count);
+Try
+    For Each value In RoundMode.Round15as10 Do EndDo;
+Except
+    Message("individual-mode-not-iterable");
+EndTry;
+count = 0;
+For Each mode In RoundMode Do count = count + 1; EndDo;
+Message(count);
+'''
+ROUNDING_OUTPUT += 'Да\nДа\n2\n1\n2\n2\nindividual-mode-not-iterable\n2\n'
+
+
 def check_rounding(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed Round values, enum codecs and failed-assignment recovery."""
     directory.mkdir()

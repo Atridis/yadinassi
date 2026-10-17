@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Iterator
 
 from .values import BSLObject
 
@@ -30,6 +31,10 @@ class BSLRoundModes(BSLObject):
 
     def __str__(self) -> str:
         return "ПеречислениеРежимОкругления"
+
+    def __iter__(self) -> Iterator[BSLRoundMode]:
+        # Explicit unique values, never the bilingual property dictionary.
+        return iter((BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20))
 
     def get_member(self, name: str) -> object:
         member = _MEMBERS.get(name.casefold())
