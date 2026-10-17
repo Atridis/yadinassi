@@ -722,12 +722,20 @@ class GotoImportTests(unittest.TestCase):
         self.assertEqual(self.vm.imports, {})
 
     def test_imported_module_cannot_jump_to_importing_module_label(self):
-        side = self.write('Side.bsl', 'Message("bad init");\nGoto ~OnlyMain;')
-        with self.assertRaisesRegex(BSLError, 'Метка не определена') as caught:
-            self.execute('// #Import Side.bsl\n~OnlyMain: Message("bad main");')
-        self.assertEqual((caught.exception.source, caught.exception.line), (str(side), 2))
-        self.assertEqual(self.output, [])
-        self.assertNotIn('side', self.vm.imports)
+        canonical = self.directory.resolve()
+        # Imported diagnostics use resolved paths, including macOS /var aliases,
+        # Windows short names, and syntactically noncanonical parent segments.
+        for directory in (self.directory, canonical / '..' / canonical.name):
+            with self.subTest(directory=directory):
+                self.directory = directory
+                self.main = directory / 'Main.bsl'
+                side = self.write('Side.bsl', 'Message("bad init");\nGoto ~OnlyMain;')
+                with self.assertRaisesRegex(BSLError, 'Метка не определена') as caught:
+                    self.execute('// #Import Side.bsl\n~OnlyMain: Message("bad main");')
+                self.assertEqual((caught.exception.source, caught.exception.line),
+                                 (str(side.resolve()), 2))
+                self.assertEqual(self.output, [])
+                self.assertNotIn('side', self.vm.imports)
 
     def test_imported_routine_cannot_jump_into_module_or_caller_routine(self):
         cases = [
