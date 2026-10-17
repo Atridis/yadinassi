@@ -23,7 +23,7 @@ _VALUE_TYPES = (
 )
 _BY_NAME = {name.casefold(): value_type
             for _, value_type, alias in _VALUE_TYPES
-            for name in (str(value_type), alias)}
+            for name in (value_type.value, alias)}
 
 
 def type_by_name(name: object) -> BSLType:

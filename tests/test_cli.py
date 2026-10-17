@@ -255,8 +255,9 @@ Message(String("1234.5000"));
                      f'Сообщить(тИп("{russian.swapcase()}") = Type("{english}"));\n'
                      f'Message(tYpEoF({expression}) = Тип("{russian}"));\n'
                      f'Сообщить(тИпЗнЧ({expression}));\n')
-        expected = ''.join(f'{russian}\nДа\nДа\n{russian}\n'
-                           for _, russian, _ in types)
+        expected = ''.join(f'{presentation}\nДа\nДа\n{presentation}\n'
+                           for english, russian, _ in types
+                           for presentation in ['Не определено' if english == 'Undefined' else russian])
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'Типы.bsl'
             path.write_text(code, encoding='utf-8-sig')
