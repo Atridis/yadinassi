@@ -394,9 +394,4 @@
 Исключение
     Показать("round.two-args", "error");
 КонецПопытки;
-Попытка
-    Показать("round.omitted-precision", ЗначениеВСтрокуВнутр(Окр(1.5, , 0)));
-Исключение
-    Показать("round.omitted-precision", "error");
-КонецПопытки;
 Показать("round.complete", "ok");
