@@ -77,7 +77,9 @@ def equal(left: object, right: object) -> bool:
     if type(left) is not type(right):
         return False
     if issubclass(type(left), BSLFixedCollection):
-        raise TypeError("Сравнение фиксированных коллекций пока не поддерживается")
+        # Native collections compare by identity, even for equal contents.
+        # Do not let a host subclass replace this with Python value equality.
+        return left is right
     return left == right
 
 
@@ -97,7 +99,7 @@ class BSLObject:
 
 
 class BSLFixedCollection:
-    """Marker for the explicitly unverified fixed-value comparison boundary."""
+    """Marker for fixed collections with identity comparison semantics."""
 
 
 class _ArrayBase(BSLObject):
@@ -182,12 +184,31 @@ class BSLFixedArray(_ArrayBase, BSLFixedCollection):
     def __init__(self, source: object):
         if not isinstance(source, BSLArray):
             raise TypeError("ФиксированныйМассив ожидает массив")
-        # Do not guess whether native freezing recursively converts array items.
-        # Direct fixed-array items are already read-only and can be thawed below.
-        if any(isinstance(item, BSLArray) for item in source.items):
-            raise TypeError("ФиксированныйМассив с вложенным изменяемым массивом "
-                            "пока не поддерживается; зафиксируйте вложенный массив отдельно")
-        self.items = tuple(source.items)
+        self.items = self._freeze_items(source, set())
+
+    @staticmethod
+    def _freeze_items(source: BSLArray, active: set[int]) -> tuple[object, ...]:
+        # Follow direct mutable-array elements only. Records, maps and already
+        # fixed arrays retain their references; their contents are not traversed.
+        # Native cycle behavior is unverified: reject a cycle explicitly rather
+        # than recurse until the host stack overflows. Repeated acyclic branches
+        # are copied independently, without treating sharing as a cycle.
+        identity = id(source)
+        if identity in active:
+            raise ValueError("ФиксированныйМассив с циклическими вложенными массивами "
+                             "пока не поддерживается")
+        active.add(identity)
+        try:
+            items = []
+            for item in source.items:
+                if isinstance(item, BSLArray):
+                    snapshot = object.__new__(BSLFixedArray)
+                    snapshot.items = BSLFixedArray._freeze_items(item, active)
+                    item = snapshot
+                items.append(item)
+            return tuple(items)
+        finally:
+            active.remove(identity)
 
     def __str__(self) -> str:
         return "ФиксированныйМассив"

@@ -22,6 +22,10 @@ def main() -> None:
     # The bundled interpreter must work without finding Python on PATH.
     env["PATH"] = os.environ.get("SystemRoot", r"C:\Windows") + r"\System32" if os.name == "nt" else "/usr/bin:/bin"
     with tempfile.TemporaryDirectory(prefix="yadinassi-smoke-") as temporary:
+        # Imports use resolved paths in diagnostics. Keep direct-file paths and
+        # the subprocess cwd canonical too (e.g. macOS /var, Windows aliases,
+        # and a symlink or a noncanonical path supplied through TMPDIR).
+        temporary = str(Path(temporary).resolve())
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
@@ -237,7 +241,7 @@ sourceMap[True] = "булево"; sourceMap[1] = "число";
 m = Новый ФиксированноеСоответствие(sourceMap);
 sourceMap[1] = "изменено"; sourceMap.Insert(2, 3);
 Message(m.Количество()); Message(m.Get(True)); Message(m.Получить(1));
-Message(m["missing"] = Undefined);
+Message(m.Get("missing") = Undefined);
 visited = 0;
 For Each pair In m Do visited = visited + 1; EndDo;
 Message(visited);
@@ -266,19 +270,49 @@ Message(TypeOf(copyArray)); Message(TypeOf(copyRecord)); Message(TypeOf(copyMap)
                            's.Вставить("Extra", 1)', 's.Delete("Name")', 's.Удалить("Name")',
                            's.Clear()', 's.Очистить()', 'm.Insert(1, 1)', 'm.Вставить(1, 1)',
                            'm.Delete(1)', 'm.Удалить(1)', 'm.Clear()', 'm.Очистить()']
-        fixed_code += 'boundaryMap = New Map; nested = New Array; nested.Add(New Array);\n'
-        fixed_mutations += [f'Message({name} {operator} {other})'
-                            for name, constructor in [('a', 'New FixedArray(New Array)'),
-                                                      ('s', 'New FixedStructure'),
-                                                      ('m', 'New FixedMap(New Map)')]
-                            for operator in ('=', '<>') for other in (name, constructor)]
-        fixed_mutations += [f'boundaryMap[{name}] = 1' for name in ('a', 's', 'm')]
-        fixed_mutations += ['New FixedArray(nested)', 'New FixedArray(a)',
-                            'New FixedStructure(s)', 'New FixedMap(m)']
+        # Native collections.out observes reference identity for equality,
+        # mutable-array Find and map keys, even with equal snapshot contents.
+        for name, constructor in [('a', 'New FixedArray(New Array(a))'),
+                                  ('s', 'New FixedStructure(New Structure(s))'),
+                                  ('m', 'New FixedMap(New Map(m))')]:
+            fixed_code += f'''alias = {name}; other = {constructor};
+Message({name} = alias); Message({name} <> alias);
+Message({name} = other); Message({name} <> other);
+values = New Array; values.Add({name});
+Message(values.Find(alias)); Message(values.Find(other) = Undefined);
+keys = New Map; keys.Insert({name}, 1);
+Message(keys.Get(alias)); Message(keys.Get(other) = Undefined);
+keys.Insert(other, 2); Message(keys.Count()); Message(keys.Get({name}));
+fixedKeys = New FixedMap(keys); keys.Delete(alias);
+Message(keys.Count()); Message(fixedKeys.Get({name})); Message(fixedKeys.Get(other));
+'''
+            fixed_output += 'Да\nНет\nНет\nДа\n0\nДа\n1\nДа\n2\n1\n1\n1\n2\n'
+        fixed_code += '''leaf = New Array(1); leaf[0] = 5;
+branch = New Array; branch.Add(leaf);
+nested = New Array; nested.Add(branch);
+frozenNested = New FixedArray(nested);
+Message(TypeOf(frozenNested[0]) = Type("FixedArray"));
+Message(TypeOf(frozenNested[0][0]) = Type("FixedArray"));
+leaf[0] = 6; Message(frozenNested[0][0][0]); Message(leaf[0]);
+repeatedLeaf = New Array(1); repeatedLeaf[0] = 11;
+fixedLeaf = New FixedArray(repeatedLeaf);
+repeated = New Array; repeated.Add(fixedLeaf); repeated.Add(fixedLeaf);
+copyRepeated = New Array(New FixedArray(repeated));
+Message(TypeOf(copyRepeated[0]) = Type("Array"));
+copyRepeated[0][0] = 12;
+Message(copyRepeated[0][0]); Message(copyRepeated[1][0]); Message(fixedLeaf[0]);
+words = New Array; words.Add("а"); words.Add("б");
+fixedWords = New FixedArray(words);
+Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords, ";"));
+'''
+        fixed_output += 'Да\nДа\n5\n6\nДа\n12\n11\n11\nа;б\nа;б\n'
+        fixed_mutations += ['New FixedArray(a)', 'New FixedStructure(s)', 'New FixedMap(m)',
+                            'frozenNested[0][0][0] = 7', 'Message(m["missing"])']
         for action in fixed_mutations:
             fixed_code += f'Try\n{action};\nExcept\nMessage("blocked");\nEndTry;\n'
-        fixed_code += 'Message(a[0]); Message(s.Name); Message(m[1]); Message(boundaryMap.Count());\n'
-        fixed_output += 'blocked\n' * len(fixed_mutations) + '4\nснимок\nчисло\n0\n'
+        fixed_code += ('Message(a[0]); Message(s.Name); Message(m[1]); '
+                       'Message(frozenNested[0][0][0]); Message(leaf[0]);\n')
+        fixed_output += 'blocked\n' * len(fixed_mutations) + '4\nснимок\nчисло\n5\n6\n'
         fixed_file = Path(temporary) / 'Фиксированные.bsl'
         fixed_file.write_text(fixed_code, encoding='utf-8-sig')
         fixed_module = project / 'Снимки.bsl'
@@ -364,14 +398,14 @@ Message(TypeOf(copyArray)); Message(TypeOf(copyRecord)); Message(TypeOf(copyMap)
             if code and ("Деление на ноль" not in result.stderr or "Traceback" in result.stderr):
                 raise AssertionError(result.stderr)
         fixed_errors = [
-            (['-c', 'a = New FixedArray(New Array);\nMessage(a = a);'], None, '',
-             '<команда>:2:11:', 'Сравнение фиксированных коллекций пока не поддерживается'),
-            (['-'], 'a = New FixedArray(New Array); keys = New Map;\nkeys[a] = 1;\n', '',
-             '<stdin>:2:1:', 'Фиксированные коллекции в качестве ключей соответствия пока не поддерживаются'),
-            (['-c', 'a = New Array; a.Add(New Array);\nNew FixedArray(a);'], None, '',
-             '<команда>:2:1:', 'ФиксированныйМассив с вложенным изменяемым массивом пока не поддерживается'),
+            (['-c', 'a = New FixedArray(New Array);\nNew FixedArray(a);'], None, '',
+             '<команда>:2:1:', 'ФиксированныйМассив ожидает массив'),
             (['-c', 's = New FixedStructure;\nNew FixedStructure(s);'], None, '',
              '<команда>:2:1:', 'ФиксированнаяСтруктура ожидает строку свойств или структуру'),
+            (['-'], 'm = New FixedMap(New Map);\nNew FixedMap(m);\n', '',
+             '<stdin>:2:1:', 'ФиксированноеСоответствие ожидает соответствие'),
+            (['-c', 'm = New FixedMap(New Map);\nMessage(m["missing"]);'], None, '',
+             '<команда>:2:', 'Ключ фиксированного соответствия не найден'),
             (['-c', 'a = New FixedArray(New Array(1));\na[0] = 2;'], None, '',
              '<команда>:2:', 'недоступны для записи'),
             (['-'], 'm = New FixedMap(New Map);\nm[1] = 2;\n', '',

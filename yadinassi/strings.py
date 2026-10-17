@@ -7,7 +7,7 @@ on the host platform's wchar_t width. See features.md for compatibility limits.
 
 from decimal import Decimal
 
-from .values import BSLArray, boolean, number, to_string
+from .values import BSLArray, BSLFixedArray, boolean, number, to_string
 
 
 # Unicode White_Space, explicitly listed instead of Python's wider isspace()
@@ -147,8 +147,8 @@ def split(value: object, separators: object, include_empty: object = True) -> BS
 
 
 def join(values: object, separator: object = "") -> str:
-    if not isinstance(values, BSLArray):
-        raise TypeError("СтрСоединить ожидает массив")
+    if not isinstance(values, (BSLArray, BSLFixedArray)):
+        raise TypeError("СтрСоединить ожидает массив или фиксированный массив")
     delimiter = to_string(separator)
     return _text(delimiter.join(to_string(value) for value in values))
 

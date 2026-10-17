@@ -1,4 +1,4 @@
-"""BSL maps: typed scalar keys and identity keys for mutable objects."""
+"""BSL maps: typed scalar keys and identity keys for collection/host objects."""
 
 from decimal import Decimal
 
@@ -11,9 +11,6 @@ def _key(value: object) -> tuple[type, object]:
     # Objects use identity, never Python's potentially mutable/unhashable value
     # semantics. Each entry retains the original object, so its id cannot be
     # reused while the entry exists.
-    if issubclass(type(value), BSLFixedCollection):
-        raise TypeError("Фиксированные коллекции в качестве ключей соответствия "
-                        "пока не поддерживаются")
     kind = type(value)
     if (kind is str or kind is bool or kind is Decimal or kind is type(None)
             or kind is BSLType):
@@ -111,6 +108,14 @@ class BSLFixedMap(_MapBase, BSLFixedCollection):
             raise TypeError("ФиксированноеСоответствие ожидает соответствие")
         self._items = source._items.copy()
         self._version = 0
+
+    def get_index(self, key: object) -> object:
+        # Unlike Get(), the native fixed-map indexer rejects an absent key.
+        # Inspect entry presence, not its value: an existing Undefined is valid.
+        item = self._items.get(_key(key))
+        if item is None:
+            raise ValueError("Ключ фиксированного соответствия не найден")
+        return item[1]
 
     def __str__(self) -> str:
         return "ФиксированноеСоответствие"

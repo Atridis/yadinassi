@@ -262,6 +262,36 @@ class StringTests(unittest.TestCase):
         self.assertEqual(self.evaluate('StrConcat(a, "|")'), '12.5|Да||x|Массив')
         self.assertEqual(self.vm.variables['a'].items, items)
 
+    def test_join_accepts_fixed_arrays_with_bilingual_names_and_default_separator(self):
+        # collections.bsl/out at 1c4e20f: fixed-array.join is [а;б].
+        self.vm.execute('''
+            source = StrSplit("а,б", ","); fixed = New FixedArray(source);
+            source[0] = "changed"; source.Clear();
+        ''')
+        self.assert_cases([
+            ('StrConcat(fixed, ";")', 'а;б'), ('СтрСоединить(fixed, ";")', 'а;б'),
+            ('sTrCoNcAt(fixed)', 'аб'), ('сТрСоЕдИнИтЬ(fixed)', 'аб'),
+            ('StrConcat(New FixedArray(New Array), ";")', ''),
+            ('СтрСоединить(New FixedArray(New Array))', ''),
+        ])
+        self.assertEqual(self.evaluate('fixed.Count()'), Decimal(2))
+        self.assertEqual(self.evaluate('fixed[0]'), 'а')
+
+    def test_join_fixed_arrays_preserves_element_conversion_and_utf16_reassembly(self):
+        self.vm.execute('''
+            source = New Array; source.Add(12.50); source.Add(True);
+            source.Add(Undefined); source.Add("x"); source.Add(New Array);
+            fixed = New FixedArray(source);
+            halves = New Array; halves.Add(Left("🙂", 1)); halves.Add(Right("🙂", 1));
+            fixedHalves = New FixedArray(halves);
+        ''')
+        items = self.vm.variables['fixed'].items
+        self.assertEqual(self.evaluate('StrConcat(fixed, "|")'),
+                         '12.5|Да||x|ФиксированныйМассив')
+        self.assertEqual(self.evaluate('СтрСоединить(fixedHalves)'), '🙂')
+        self.assertIs(self.vm.variables['fixed'].items, items)
+        self.assertEqual(self.evaluate('source.Count()'), Decimal(5))
+
     def test_utf16_length_slices_find_and_reassembly(self):
         self.assert_cases([
             ('StrLen("A🙂B")', Decimal(4)), ('Left("A🙂B", 3)', 'A🙂'),
@@ -302,7 +332,9 @@ class StringTests(unittest.TestCase):
         for expression in ['Left("x", Undefined)', 'Right("x", New Array)',
                            'Mid("x", "bad")', 'Mid("x", 1, Undefined)',
                            'StrSplit("x", ",", "yes")',
-                           'StrConcat("x")', 'StrConcat(Undefined)']:
+                           'StrConcat("x")', 'StrConcat(Undefined)',
+                           'StrConcat(New FixedStructure)',
+                           'СтрСоединить(New FixedMap(New Map))']:
             with self.subTest(expression=expression):
                 with self.assertRaises(BSLError) as caught:
                     self.evaluate('\n  ' + expression)
