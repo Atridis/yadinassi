@@ -1,1 +1,8 @@
 5
+goto.forward-backward: 123
+goto.nested-loops: 1121
+goto.try-outward: 1
+goto.handler.empty: {"B",1}
+goto.handler.fresh: {"B",1}
+goto.handler.after: {"B",1}
+goto.complete: ok
