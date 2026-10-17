@@ -12,7 +12,7 @@ from .maps import BSLFixedMap, BSLMap
 from .structures import BSLFixedStructure, BSLStructure
 from .values import (
     BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference as _Reference,
-    boolean, equal, number, require_number, to_string,
+    boolean, divide, equal, number, require_number, to_string,
 )
 
 
@@ -198,7 +198,7 @@ class Interpreter:
         if node.operator == "NOT":
             return not boolean(value)
         value = require_number(value)
-        return value if node.operator == "+" else -value
+        return value if node.operator == "+" else value.copy_negate()
 
     def visit_Binary(self, node: ast.Binary) -> object:
         left = self.visit(node.left)
@@ -232,9 +232,7 @@ class Interpreter:
         if operator == "*":
             return left * right
         if operator == "/":
-            if right == 0:
-                raise ZeroDivisionError
-            return left / right
+            return divide(left, right)
         if operator == "%":
             if right == 0:
                 raise ZeroDivisionError

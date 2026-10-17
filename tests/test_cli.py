@@ -31,6 +31,99 @@ class CLITests(unittest.TestCase):
             result = self.run_cli(str(path))
             self.assertEqual((result.returncode, result.stdout), (0, "файл\n"))
 
+    def test_division_and_bounded_presentation_all_flags_bom_file_stdin_and_console(self):
+        from scripts.smoke_test import DIVISION_PROGRAM, DIVISION_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            path = temporary / 'Деление.bsl'
+            path.write_text(DIVISION_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, DIVISION_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None), (('-',), DIVISION_PROGRAM),
+                      ((), DIVISION_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, DIVISION_OUTPUT, ''))
+
+    def test_bounded_presentation_bare_console_diagnostics_and_recovery(self):
+        from scripts.smoke_test import PRESENTATION_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            for expression, message in PRESENTATION_FAILURES:
+                code = ('value = 1 / 7;\n' + expression + '\n'
+                        'value\nTypeOf(value)\n1 / 8\n/exit\n')
+                with self.subTest(expression=expression):
+                    result = self.run_cli(stdin=code, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout),
+                                     (1, '0,142857142857142857142857143\nЧисло\n0,125\n'))
+                    self.assertIn('<консоль>:1:', result.stderr)
+                    self.assertIn(message, result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
+    def test_division_diagnostics_and_console_state_recovery(self):
+        from scripts.smoke_test import DIVISION_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            path = temporary / 'ОшибкаДеления.bsl'
+            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+                code = f'value = 1 / 7;\nvalue = {expression};\n'
+                path.write_text(code, encoding='utf-8-sig')
+                cases = [((flag, code), None, '', '<команда>:2:')
+                         for flag in ('-c', '-с', '--command')]
+                cases += [((str(path),), None, '', str(path) + ':2:'),
+                          (('-',), code, '', '<stdin>:2:'),
+                          ((), code + 'value\nTypeOf(value)\n1 / 8\n/exit\n',
+                           '0,142857142857142857142857143\nЧисло\n0,125\n', '<консоль>:1:')]
+                for arguments, stdin, stdout, location in cases:
+                    with self.subTest(expression=expression, arguments=arguments):
+                        result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                        self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                        self.assertIn(location, result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
+    def test_division_crosses_bom_exported_imports_from_unrelated_cwd(self):
+        from scripts.smoke_test import DIVISION_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            project = temporary / 'project'
+            project.mkdir()
+            module = project / 'Доли.bsl'
+            module.write_text(
+                'Function Divide(a, b) Export\nReturn a / b;\nEndFunction\n'
+                'Function Seventh() Export Return 1 / 7; EndFunction\n', encoding='utf-8-sig')
+            main = project / 'Основное.bsl'
+            main.write_text(
+                '// #Импорт Доли.bsl\nvalue = Доли.Seventh();\n'
+                'Message(value); Message(Доли.Divide(value, 3));\n'
+                'Message(Доли.Divide(1, 0.3)); Message(TypeOf(value));\n'
+                'Message(value = Number("0.142857142857142857142857143"));\n'
+                'Try value = Доли.Divide(1, 268435456); Except Message("caught"); EndTry;\n'
+                'Message(value); Message(Доли.Divide(1, 8));\n', encoding='utf-8-sig')
+            expected = ('0,142857142857142857142857143\n'
+                        '0,047619047619047619047619047666666666666666666666666667\n'
+                        '3,333333333333333333\nЧисло\nДа\ncaught\n'
+                        '0,142857142857142857142857143\n0,125\n')
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+                main.write_text('// #Импорт Доли.bsl\nДоли.Divide(' +
+                                expression.replace(' / ', ', ') + ');\n', encoding='utf-8-sig')
+                for path in (main, main.relative_to(temporary)):
+                    with self.subTest(expression=expression, path=path):
+                        result = self.run_cli(str(path), cwd=temporary)
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
+                        self.assertIn(str(module.resolve()) + ':2:', result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
     def test_numeric_presentation_all_flags_bom_file_stdin_and_console(self):
         code = '''value = nUmBeR("-1234.5000");
 mEsSaGe(value); сОоБщИтЬ(сТрОкА(value));
