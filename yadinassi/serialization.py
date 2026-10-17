@@ -1,7 +1,7 @@
 """Bounded implementation of the owner's observed 1C internal stream format.
 
 Not JSON or a promised stable interchange format. GUIDs and layouts come from
-PR23's native output; cycles and undocumented tags are not guessed. New runtime
+PR23/PR25 native output; cycles and undocumented tags are not guessed. New runtime
 types must be added explicitly to the codec policy and its completeness test.
 """
 
@@ -10,6 +10,7 @@ from decimal import Decimal
 import re
 
 from .maps import BSLFixedMap, BSLMap
+from .round_modes import BSLRoundMode
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from .type_values import type_of
 from .values import BSLArray, BSLFixedArray, BSLType
@@ -34,13 +35,16 @@ _TYPE_IDS = {
     BSLType.FIXED_MAP: "220455ea-6c85-4513-996f-bbe79ed07774",
     BSLType.KEY_AND_VALUE: "850afa6f-5244-482f-9729-d78ec65ff607",
     BSLType.TYPE: "d47d59f8-73f0-481c-8b5e-f6384c0a4804",
+    BSLType.ROUND_MODE: "32c82ccd-fef3-4070-beb5-b9c52afc781d",
+    BSLType.ROUND_MODES: "a47c4665-311c-405a-828e-0c5a3ca3bdda",
 }
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
 _MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
 _CODECS = frozenset({BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
-                    BSLType.STRING, BSLType.TYPE, BSLType.KEY_AND_VALUE}) | _ARRAYS | _STRUCTURES | _MAPS
+                    BSLType.STRING, BSLType.TYPE, BSLType.KEY_AND_VALUE,
+                    BSLType.ROUND_MODE, BSLType.ROUND_MODES}) | _ARRAYS | _STRUCTURES | _MAPS
 _NUMBER = re.compile(r'[+-]?[0-9]+(?:\.[0-9]+)?')
 _COUNT = re.compile(r'0|[1-9][0-9]*')
 _HEX = frozenset('0123456789abcdef')
@@ -119,6 +123,10 @@ class _Writer:
             self.emit('}')
         elif kind is BSLType.TYPE:
             self.emit('{"T",' + _TYPE_IDS[value] + '}')
+        elif kind is BSLType.ROUND_MODE:
+            self.emit('{"#",' + _TYPE_IDS[kind] + ',' + str(value.value) + '}')
+        elif kind is BSLType.ROUND_MODES:
+            self.emit('{"#",' + _TYPE_IDS[kind] + '}')
         else:
             identity = id(value)
             if identity in self.active:
@@ -281,6 +289,11 @@ class _Reader:
         if tag == 'n' and len(group) == 2:
             self.number(group[1])
             return None  # Observed lowercase numeric tag; not arbitrary unknown tags.
+        if (tag == '#' and len(group) == 2 and type(group[1]) is _Atom
+                and group[1].text == _TYPE_IDS[BSLType.ROUND_MODES]):
+            # PR25's follow-up probe establishes Undefined on namespace
+            # readback. Its Type record still restores the namespace type.
+            return None
         if tag not in ('T', '#') or len(group) != (2 if tag == 'T' else 3):
             self.fail()
         if type(group[1]) is not _Atom or group[1].text not in _TYPES_BY_ID:
@@ -289,6 +302,10 @@ class _Reader:
         if tag == 'T':
             return kind
         body = group[2]
+        if kind is BSLType.ROUND_MODE:
+            if type(body) is not _Atom or body.text not in ('0', '1'):
+                self.fail()
+            return BSLRoundMode.ROUND15_AS10 if body.text == '0' else BSLRoundMode.ROUND15_AS20
         if type(body) is not list:
             self.fail()
         if kind is BSLType.KEY_AND_VALUE and len(body) == 2:

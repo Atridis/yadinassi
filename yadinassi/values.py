@@ -22,6 +22,8 @@ class BSLType(Enum):
     FIXED_MAP = "ФиксированноеСоответствие"
     KEY_AND_VALUE = "КлючИЗначение"
     TYPE = "Тип"
+    ROUND_MODE = "РежимОкругления"
+    ROUND_MODES = "ПеречислениеРежимОкругления"
 
     def __str__(self) -> str:
         return "Не определено" if self is BSLType.UNDEFINED else self.value

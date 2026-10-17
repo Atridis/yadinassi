@@ -11,6 +11,7 @@ import re
 import unittest
 
 from yadinassi import Interpreter
+from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.maps import BSLFixedMap, BSLMap
 from yadinassi.serialization import value_from_string_internal as read
 from yadinassi.serialization import value_to_string_internal as write
@@ -36,6 +37,8 @@ TYPE_GUIDS = {
     "FixedMap": "220455ea-6c85-4513-996f-bbe79ed07774",
     "KeyAndValue": "850afa6f-5244-482f-9729-d78ec65ff607",
     "Type": "d47d59f8-73f0-481c-8b5e-f6384c0a4804",
+    "RoundMode": "32c82ccd-fef3-4070-beb5-b9c52afc781d",
+    "EnumRoundMode": "a47c4665-311c-405a-828e-0c5a3ca3bdda",
 }
 
 
@@ -160,16 +163,23 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(write(Decimal("1234.5")), '{"N",1234.5}')
         self.assertEqual(to_string(Decimal("1234.5")), "1\u00a0234,5")
 
-    def test_all_twelve_native_type_guids(self):
+    def test_all_native_type_guids(self):
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS}, set(BSLType))
         for name, guid in TYPE_GUIDS.items():
             with self.subTest(name=name):
                 value = type_by_name(name)
                 payload = '{"T",' + guid + '}'
-                self.assertEqual(self.native("collections", "internal.type." + name + ".payload"), payload)
+                if name in ("RoundMode", "EnumRoundMode"):
+                    case = "numbers"
+                    label = "round.enum-type" if name == "RoundMode" else "round.namespace-type"
+                    result_label = label + ".roundtrip"
+                else:
+                    case, label = "collections", "internal.type." + name
+                    result_label = label + ".roundtrip.value"
+                self.assertEqual(self.native(case, label + ".payload"), payload)
                 self.assertEqual(write(value), payload)
                 self.assertIs(read(payload), value)
-                self.assertEqual(self.native("collections", "internal.type." + name + ".roundtrip.value"), "true")
+                self.assertEqual(self.native(case, result_label), "true")
 
     def test_empty_collection_guids_and_layout(self):
         samples = {
@@ -197,16 +207,22 @@ class NativeEvidenceTests(unittest.TestCase):
                 self.assertEqual(len(list(restored)), len(list(value)))
                 self.assertEqual(normalize_transport(write(restored)), self.native("collections", label + ".roundtrip.payload"))
 
-    def test_all_twelve_runtime_value_types_roundtrip(self):
+    def test_all_runtime_value_types_preserve_native_readback_behavior(self):
         samples = [None, False, Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
-                   BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values()]
+                   BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
+                   BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES]
         self.assertEqual({type_of(value) for value in samples}, set(BSLType))
         for value in samples:
             with self.subTest(kind=type_of(value)):
                 payload = write(value)
                 restored = read(payload)
-                self.assertIs(type(restored), type(value))
-                self.assertEqual(write(restored), payload)  # These maps have only one entry.
+                if value is ROUND_MODES:
+                    self.assertIsNone(restored)
+                    self.assertEqual(payload, self.native("numbers", "round.namespace.payload"))
+                    self.assertEqual(write(restored), self.native("numbers", "round.namespace.read.payload"))
+                else:
+                    self.assertIs(type(restored), type(value))
+                    self.assertEqual(write(restored), payload)  # These maps have only one entry.
 
     def test_key_and_value_from_all_four_native_container_kinds(self):
         samples = {

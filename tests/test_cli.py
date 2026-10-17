@@ -40,6 +40,45 @@ class CLITests(unittest.TestCase):
         self.assertIn('<консоль>:1:', result.stderr)
         self.assertNotIn('Traceback', result.stderr)
 
+    def test_rounding_all_cli_inputs(self):
+        from scripts.smoke_test import ROUNDING_PROGRAM, ROUNDING_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'Округление.bsl'
+            source.write_text(ROUNDING_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, ROUNDING_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), ROUNDING_PROGRAM),
+                      ((), ROUNDING_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, ROUNDING_OUTPUT, ''))
+
+    def test_rounding_diagnostics_and_console_recovery(self):
+        from scripts.smoke_test import ROUNDING_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ОшибкаОкругления.bsl'
+            for expression, message in ROUNDING_FAILURES:
+                code = f'value = Round(12.345, 2);\nvalue = {expression};\n'
+                source.write_text(code, encoding='utf-8-sig')
+                cases = [((flag, code), None, '', '<команда>:2:')
+                         for flag in ('-c', '-с', '--command')]
+                cases += [((str(source),), None, '', str(source) + ':2:'),
+                          (('-',), code, '', '<stdin>:2:'),
+                          ((), code + 'value\nОкр(-1.5)\n/exit\n',
+                           '12,35\n-2\n', '<консоль>:1:')]
+                for arguments, stdin, stdout, location in cases:
+                    with self.subTest(expression=expression, arguments=arguments):
+                        result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                        self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                        self.assertIn(location, result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
     def test_command_flags(self):
         for flag in ("-c", "-с", "--command"):
             with self.subTest(flag=flag):
