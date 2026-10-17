@@ -4,4 +4,4 @@ from .errors import BSLError, BSLRuntimeError
 from .runtime import Interpreter
 
 __all__ = ["BSLError", "BSLRuntimeError", "Interpreter"]
-__version__ = "0.2.0"
+__version__ = "0.3.0"
