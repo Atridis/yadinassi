@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+import re
 from typing import Callable
 
 
@@ -35,7 +36,11 @@ def to_string(value: object) -> str:
         if value == 0:
             return "0"
         text = format(value, "f")
-        return text.rstrip("0").rstrip(".") if "." in text else text
+        text = text.rstrip("0").rstrip(".") if "." in text else text
+        # Standalone presentation uses a decimal comma consistently with the
+        # Russian Boolean labels above and the owner's native basic.out.
+        # Literal syntax and canonical Number("1.5") input remain dot-based.
+        return text.replace(".", ",")
     if isinstance(value, BSLArray):
         return "Массив"
     return str(value)
@@ -44,6 +49,13 @@ def to_string(value: object) -> str:
 def number(value: object) -> Decimal:
     if isinstance(value, bool):
         return Decimal(int(value))
+    if isinstance(value, str) and "," in value:
+        # Accept the standalone decimal-comma presentation as well as canonical
+        # input, without guessing grouping or other regional input syntax.
+        value = value.strip()
+        if re.fullmatch(r"[+-]?[0-9]+,[0-9]+", value) is None:
+            raise ValueError("Невозможно преобразовать значение в число")
+        value = value.replace(",", ".")
     if isinstance(value, (str, Decimal, int)):
         result = Decimal(value)
         if result.is_finite():

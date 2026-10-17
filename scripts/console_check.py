@@ -131,6 +131,24 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'copy = New Array(frozen); copy[0] = 5;\n')
         send(">>> ", 'Message("Копия: " + String(copy[0]));\n')
         send(">>> ", '(frozen[0] = Undefined)\n')
+        send(">>> ", 'numberValue = nUmBeR("12.5000");\n')
+        send(">>> ", 'numberValue\n')
+        send(">>> ", 'сТрОкА(numberValue)\n')
+        send(">>> ", '"Тип числа: " + TypeOf(numberValue)\n')
+        send(">>> ", '"Число: " + numberValue\n')
+        send(">>> ", 'Число(\n')
+        send("... ", '"-0,12500")\n')
+        send(">>> ", 'StrReplace(numberValue, ",", ".")\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'Number("1,,2");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("Число перехвачено");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'numberValue = Number("1,2.3");\n')
+        send(">>> ", 'numberValue\n')
+        send(">>> ", 'Number(String(numberValue))\n')
+        send(">>> ", 'Message(Number("0.125"));\n')
+        send(">>> ", 'StrConcat(StrSplit(numberValue, ","), "|")\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -139,11 +157,12 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 5
+        if (output.count('<консоль>:1:') != 6
                 or output.count('Тип не поддерживается: Date') != 1
                 or output.count('недоступны для записи') != 2
                 or output.count('недоступно для записи') != 1
-                or output.count('не найдено: Add') != 1):
+                or output.count('не найдено: Add') != 1
+                or output.count('Невозможно преобразовать значение в число') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("Курсор", 2), ("Вниз", 1), ("Блок", 1),
                                ("Область", 1), ("Вложенная", 1), ("Число", 2),
@@ -153,7 +172,9 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                ("ФиксированнаяСтруктура", 1), ("фиксированный ключ", 1),
                                ("ФиксированноеСоответствие", 1),
                                ("Фиксированное перехвачено", 1), ("Обход: 2", 1),
-                               ("Копия: 5", 1)):
+                               ("Копия: 5", 1), ("12,5", 4), ("Тип числа: Число", 1),
+                               ("Число: 12,5", 1), ("-0,125", 1), ("12.5", 1),
+                               ("Число перехвачено", 1), ("0,125", 1), ("12|5", 1)):
             if output.count(f"\r\n{message}\r\n") != count:
                 raise AssertionError(f"Unexpected console output for {message!r}: {output}")
         return output

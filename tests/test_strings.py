@@ -195,7 +195,7 @@ class StringTests(unittest.TestCase):
             ('StrLen(123)', Decimal(3)), ('StrLen(Undefined)', Decimal(0)),
             ('Left(1234, 2)', '12'), ('Right(True, 1)', 'а'),
             ('Mid(1234, 2, 2)', '23'), ('Find(1234, 23)', Decimal(2)),
-            ('StrReplace(1212, 12, False)', 'НетНет'), ('TrimAll(12.50)', '12.5'),
+            ('StrReplace(1212, 12, False)', 'НетНет'), ('TrimAll(12.50)', '12,5'),
             ('TrimL(True)', 'Да'), ('TrimR(False)', 'Нет'),
             ('IsBlankString(Undefined)', True), ('Upper(Undefined)', ''),
             ('Lower(True)', 'да'), ('StrConcat(StrSplit(1203, 0), 9)', '1293'),
@@ -259,7 +259,7 @@ class StringTests(unittest.TestCase):
         self.vm.execute('a = New Array; a.Add(12.50); a.Add(True); '
                         'a.Add(Undefined); a.Add("x"); a.Add(New Array);')
         items = list(self.vm.variables['a'].items)
-        self.assertEqual(self.evaluate('StrConcat(a, "|")'), '12.5|Да||x|Массив')
+        self.assertEqual(self.evaluate('StrConcat(a, "|")'), '12,5|Да||x|Массив')
         self.assertEqual(self.vm.variables['a'].items, items)
 
     def test_join_accepts_fixed_arrays_with_bilingual_names_and_default_separator(self):
@@ -287,7 +287,7 @@ class StringTests(unittest.TestCase):
         ''')
         items = self.vm.variables['fixed'].items
         self.assertEqual(self.evaluate('StrConcat(fixed, "|")'),
-                         '12.5|Да||x|ФиксированныйМассив')
+                         '12,5|Да||x|ФиксированныйМассив')
         self.assertEqual(self.evaluate('СтрСоединить(fixedHalves)'), '🙂')
         self.assertIs(self.vm.variables['fixed'].items, items)
         self.assertEqual(self.evaluate('source.Count()'), Decimal(5))

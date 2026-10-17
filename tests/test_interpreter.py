@@ -30,7 +30,7 @@ class InterpreterTests(unittest.TestCase):
             Сообщить(2 + 3 * 4); Сообщить((2 + 3) * 4);
             Сообщить(-2 * -3 + 7 % 4); Сообщить(0.1 + 0.2);
             Сообщить(1 / 4); Сообщить(10.000);
-        '''), ["14", "20", "9", "0.3", "0.25", "10"])
+        '''), ["14", "20", "9", "0,3", "0,25", "10"])
 
     def test_unicode_case_insensitivity_and_english_aliases(self):
         self.assertEqual(self.run_bsl('''

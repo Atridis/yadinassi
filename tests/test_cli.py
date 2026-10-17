@@ -31,6 +31,105 @@ class CLITests(unittest.TestCase):
             result = self.run_cli(str(path))
             self.assertEqual((result.returncode, result.stdout), (0, "файл\n"))
 
+    def test_numeric_presentation_all_flags_bom_file_stdin_and_console(self):
+        code = '''value = nUmBeR("-12.5000");
+mEsSaGe(value); сОоБщИтЬ(сТрОкА(value));
+Message("value=" + value); Message(чИсЛо("1,2500"));
+Message(String(-0.000)); Message(String(1000.000));
+Message(TypeOf(value) = Тип("Число"));
+Message(Number(String(value)) = value);
+Message(Найти(value, ",")); Message(StrReplace(value, ",", "."));
+Message(StrConcat(StrSplit(value, ","), "|"));
+Message(СтрДлина(value));
+Message(Number("123456789012345678901234567890.123456789"));
+'''
+        expected = ('-12,5\n-12,5\nvalue=-12,5\n1,25\n0\n1000\nДа\nДа\n4\n'
+                    '-12.5\n-12|5\n5\n123456789012345678901234567890,123456789\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Числа.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [((flag, code), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None), (('-',), code), ((), code + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+
+    def test_invalid_numeric_conversion_is_catchable_across_cli_entries(self):
+        invalid = ['1,2.3', '1.2,3', '1,,2', '1,2,3', '1 234,5',
+                   'NaN', 'Infinity', 'not a number', '1,', ',5', '1,2e3',
+                   '1_000,25', '1,2_5', '١,٢']
+        code = 'value = Number("12.5");\n'
+        for text in invalid:
+            code += (f'Try\nvalue = Число("{text}");\nExcept\n'
+                     'Message("caught");\nEndTry;\n')
+        code += 'Message(value); Message(TypeOf(value)); Message(Number("0,125"));\n'
+        expected = 'caught\n' * len(invalid) + '12,5\nЧисло\n0,125\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'ОшибкиЧисел.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [((flag, code), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None), (('-',), code), ((), code + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+
+    def test_numeric_conversion_cli_diagnostics_and_console_recovery(self):
+        code = 'value = Number("12,5");\nvalue = Number("1,2.3");\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'ОшибкаЧисла.bsl'
+            path.write_text(code, encoding='utf-8-sig')
+            cases = [((flag, code), None, '', '<команда>:2:')
+                     for flag in ('-c', '-с', '--command')]
+            cases += [((str(path),), None, '', str(path) + ':2:'),
+                      (('-',), code, '', '<stdin>:2:'),
+                      ((), code + 'value\nTypeOf(value)\nNumber("0,125")\n/exit\n',
+                       '12,5\nЧисло\n0,125\n', '<консоль>:1:')]
+            for arguments, stdin, stdout, location in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                    self.assertIn(location, result.stderr)
+                    self.assertIn('Невозможно преобразовать значение в число', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
+    def test_numeric_presentation_crosses_bom_imports_from_unrelated_cwd(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / 'project'
+            project.mkdir()
+            module = project / 'Числа.bsl'
+            module.write_text(
+                'Function Parse(text) Export Return чИсЛо(text); EndFunction\n'
+                'Function Present(value) Export Return сТрОкА(value); EndFunction\n'
+                'Procedure Show(value) Export Сообщить(value); EndProcedure\n'
+                'Function Fail() Export\nReturn Number("1,2.3");\nEndFunction\n',
+                encoding='utf-8-sig')
+            main = project / 'Основное.bsl'
+            code = ('// #Импорт Числа.bsl\nvalue = числа.Parse("-12,5000");\n'
+                    'Message(TypeOf(value)); Message(value); Числа.Show(value);\n'
+                    'Message(Числа.Present(value)); Message("value=" + value);\n'
+                    'Message(Number(Числа.Present(value)) = value);\n'
+                    'Try Числа.Fail(); Except Message("caught"); EndTry;\n'
+                    'Message(Числа.Parse("0.125"));\n')
+            main.write_text(code, encoding='utf-8-sig')
+            expected = 'Число\n-12,5\n-12,5\n-12,5\nvalue=-12,5\nДа\ncaught\n0,125\n'
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, expected, ''))
+            main.write_text('// #Импорт Числа.bsl\nЧисла.Fail();\n', encoding='utf-8-sig')
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(error_path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout), (1, ''))
+                    self.assertIn(str(module.resolve()) + ':5:', result.stderr)
+                    self.assertIn('Невозможно преобразовать значение в число', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
     def test_type_values_command_file_stdin_and_console(self):
         types = [('Undefined', 'Неопределено', 'Undefined'),
                  ('Boolean', 'Булево', 'True'),

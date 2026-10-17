@@ -10,6 +10,85 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def check_numeric_presentation(executable: str, *, directory: Path, env: dict) -> None:
+    """Check the bounded decimal-comma contract before the native sample gate.
+
+    This is not a substitute for native comparison: main() still requires the
+    untouched owner-provided basic output, including its arithmetic precision.
+    """
+    directory.mkdir()
+    code = '''value = nUmBeR("-12.5000");
+mEsSaGe(value); сОоБщИтЬ(сТрОкА(value));
+Message("value=" + value); Message(чИсЛо("1,2500"));
+Message(String(-0.000)); Message(String(1000.000));
+Message(TypeOf(value) = Тип("Число"));
+Message(Number(String(value)) = value);
+Message(Найти(value, ",")); Message(StrReplace(value, ",", "."));
+Message(StrConcat(StrSplit(value, ","), "|")); Message(СтрДлина(value));
+exact = Number("123456789012345678901234567890.123456789");
+Message(exact); Message(Number(String(exact)) = exact);
+'''
+    expected = ('-12,5\n-12,5\nvalue=-12,5\n1,25\n0\n1000\nДа\nДа\n4\n'
+                '-12.5\n-12|5\n5\n123456789012345678901234567890,123456789\nДа\n')
+    invalid = ['1,2.3', '1.2,3', '1,,2', '1,2,3', '1 234,5', 'NaN', 'Infinity',
+               '1,', ',5', '1,2e3', '1_000,25', '1,2_5', '١,٢']
+    for value in invalid:
+        code += (f'Try\nvalue = Number("{value}");\nExcept\n'
+                 'Message("caught");\nEndTry;\n')
+    code += 'Message(value); Message(TypeOf(value));\n'
+    expected += 'caught\n' * len(invalid) + '-12,5\nЧисло\n'
+    source = directory / 'ПредставлениеЧисел.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    module = directory / 'Числа.bsl'
+    module.write_text(
+        'Function Parse(text) Export Return Число(text); EndFunction\n'
+        'Function Present(value) Export Return Строка(value); EndFunction\n'
+        'Procedure Show(value) Export Message(value); EndProcedure\n'
+        'Function Fail() Export\nReturn Number("1,2.3");\nEndFunction\n',
+        encoding='utf-8-sig')
+    importer = directory / 'ИмпортЧисел.bsl'
+    importer.write_text(
+        '// #Импорт Числа.bsl\nvalue = Числа.Parse("-12,5000");\n'
+        'Message(TypeOf(value)); Message(value); Числа.Show(value);\n'
+        'Message(Числа.Present(value)); Message("value=" + value);\n'
+        'Message(Number(Числа.Present(value)) = value);\n'
+        'Try Числа.Fail(); Except Message("caught"); EndTry;\n'
+        'Message(Числа.Parse("0.125"));\n', encoding='utf-8-sig')
+    import_expected = 'Число\n-12,5\n-12,5\n-12,5\nvalue=-12,5\nДа\ncaught\n0,125\n'
+    cases = [([flag, code], None, expected) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None, expected), (['-'], code, expected),
+              ([], code + '/exit\n', expected)]
+    for path in (importer, importer.relative_to(directory.parent)):
+        cases.append(([str(path)], None, import_expected))
+    for arguments, stdin, stdout in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, stdout, ''):
+            raise AssertionError(f'Failed numeric presentation {arguments!r}: {result!r}')
+    error_code = 'value = Number("12,5");\nvalue = Number("1,2.3");\n'
+    error_file = directory / 'ОшибкаЧисла.bsl'
+    error_file.write_text(error_code, encoding='utf-8-sig')
+    error_import = directory / 'ОшибкаИмпортаЧисла.bsl'
+    error_import.write_text('// #Импорт Числа.bsl\nЧисла.Fail();\n', encoding='utf-8-sig')
+    errors = [([flag, error_code], None, '', '<команда>:2:')
+              for flag in ('-c', '-с', '--command')]
+    errors += [([str(error_file)], None, '', str(error_file) + ':2:'),
+               (['-'], error_code, '', '<stdin>:2:'),
+               ([], error_code + 'value\nTypeOf(value)\nNumber("0,125")\n/exit\n',
+                '12,5\nЧисло\n0,125\n', '<консоль>:1:')]
+    for path in (error_import, error_import.relative_to(directory.parent)):
+        errors.append(([str(path)], None, '', str(module.resolve()) + ':5:'))
+    for arguments, stdin, stdout, location in errors:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                or 'Невозможно преобразовать значение в число' not in result.stderr
+                or 'Traceback' in result.stderr):
+            raise AssertionError(f'Failed numeric diagnostics {arguments!r}: {result!r}')
+    print('Binary numeric presentation passed: decimal comma, exact conversion, aliases, '
+          'BOM files, imports, all command flags, stdin, console, and error recovery')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -26,6 +105,7 @@ def main() -> None:
         # the subprocess cwd canonical too (e.g. macOS /var, Windows aliases,
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
+        check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
@@ -476,8 +556,8 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             from console_check import check_console
 
             check_console([executable], cwd=temporary, env=env)
-            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values, fixed collections and error recovery")
-    print("Binary smoke tests passed: fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
+            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values, fixed collections, numeric presentation and error recovery")
+    print("Binary smoke tests passed: numeric presentation, fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":
