@@ -24,7 +24,7 @@ class BSLType(Enum):
     TYPE = "Тип"
 
     def __str__(self) -> str:
-        return self.value
+        return "Не определено" if self is BSLType.UNDEFINED else self.value
 
 
 def _presented_number(value: Decimal) -> Decimal:

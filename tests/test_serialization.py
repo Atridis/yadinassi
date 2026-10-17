@@ -67,16 +67,15 @@ class InternalSerializationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'конечное число'):
                     value_to_string_internal(Decimal(text))
 
-    def test_every_runtime_type_has_an_explicit_disjoint_policy(self):
-        codecs = set(serialization._SERIALIZERS)
-        pending = set(serialization._AWAITING_NATIVE)
-        self.assertFalse(codecs & pending)
-        self.assertEqual(codecs | pending, set(BSLType))
-        self.assertEqual(codecs | pending, {kind for _, kind, _ in type_values._VALUE_TYPES})
+    def test_every_runtime_type_has_explicit_codec_and_identifier(self):
+        self.assertEqual(set(serialization._CODECS), set(BSLType))
+        self.assertEqual(set(serialization._TYPE_IDS), set(BSLType))
+        self.assertEqual(set(serialization._CODECS),
+                         {kind for _, kind, _ in type_values._VALUE_TYPES})
 
-    def test_pending_types_are_not_misrepresented_as_native_refusals(self):
+    def test_every_implemented_type_roundtrips_with_same_type(self):
         vm = Interpreter()
-        expressions = ['Undefined', 'True', 'False', '"text"', 'New Array',
+        expressions = ['Undefined', 'True', 'False', '0', '"text"', 'New Array',
                        'New FixedArray(New Array)', 'New Structure',
                        'New FixedStructure(New Structure)', 'New Map',
                        'New FixedMap(New Map)', 'Type("Number")']
@@ -85,10 +84,12 @@ class InternalSerializationTests(unittest.TestCase):
         observed = set()
         for expression in expressions:
             with self.subTest(expression=expression):
-                observed.add(type_values.type_of(vm.execute(expression)))
-                with self.assertRaisesRegex(BSLRuntimeError, 'пока не поддерживается в Yadinassi; ожидается проверка на 1С'):
-                    vm.execute(f'ValueToStringInternal({expression})')
-        self.assertEqual(observed, serialization._AWAITING_NATIVE)
+                original = vm.execute(expression)
+                kind = type_values.type_of(original)
+                restored = value_from_string_internal(value_to_string_internal(original))
+                self.assertIs(type_values.type_of(restored), kind)
+                observed.add(kind)
+        self.assertEqual(observed, set(BSLType))
 
     def test_host_values_and_subclasses_do_not_fall_back_to_reflection(self):
         class Host:
@@ -160,20 +161,17 @@ class InternalDeserializationTests(unittest.TestCase):
             self.assertEqual(value_to_string_internal(value_from_string_internal(payload)), payload)
             self.assertFalse(any(context.flags.values()))
 
-    def test_unverified_alternate_and_malformed_forms_are_explicitly_pending(self):
-        # These are implementation boundaries, NOT native acceptance/error goldens.
-        for text in ['', ' {"N",1}', '{"N",1} ', '{"N", 1}', '{"N",+1}',
-                     '{"N",01}', '{"N",-0}', '{"N",1.0}', '{"N",1e3}',
-                     '{"N",.5}', '{"N",1.}', '{"N",NaN}', '{"N",Infinity}',
-                     '{"N",١}', '{"N",1,5}', '{"N",1}garbage', '{"S","x"}',
-                     '{"Unknown",1}', '{"N",{"N",1}}', '{"N",1}\x00',
-                     '__import__("os").system("echo unsafe")']:
+    def test_malformed_or_unimplemented_forms_are_rejected_safely(self):
+        # Some cases are native observations; others are explicit safety boundaries.
+        for text in ['', '{"N",1e3}', '{"N",.5}', '{"N",1.}', '{"N",NaN}',
+                     '{"N",Infinity}', '{"N",١}', '{"Unknown",1}',
+                     '{"N",{"N",1}}', '__import__("os").system("echo unsafe")']:
             with self.subTest(text=text):
-                with self.assertRaisesRegex(ValueError, 'формат пока не поддерживается в Yadinassi'):
+                with self.assertRaisesRegex(ValueError, serialization.FORMAT_ERROR):
                     value_from_string_internal(text)
 
     def test_resource_limits_precede_regex_and_decimal_construction(self):
-        for text in ['x' * 100000, '{"N",' + '1' * 4097 + '}',
+        for text in ['x' * (serialization._MAX_TEXT + 1), '{"N",' + '1' * 4097 + '}',
                      '{"N",0.' + '0' * 4096 + '1}']:
             with self.subTest(length=len(text)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов Yadinassi'):

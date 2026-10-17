@@ -161,6 +161,7 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'EndTry;\n')
         send(">>> ", '"Восстановлено: " + ValueFromStringInternal(ValueToStringInternal(1234.5))\n')
         send(">>> ", '"Тип восстановленного: " + TypeOf(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(1234.5)))\n')
+        send(">>> ", '"Восстановленная структура: " + ValueFromStringInternal(ValueToStringInternal(New Structure("Код", 7))).Код\n')
         send(">>> ", 'ValueToStringInternal(1234.500)\n')
         send(">>> ", 'ЗначениеВСтрокуВнутр(1 / 3)\n')
         send(">>> ", 'quotient = 1 / 7;\n')
@@ -242,6 +243,7 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                 "\u00a0901\u00a0234\u00a0567\u00a0890,123456789", 1),
                                ("1234.5000", 1), ("Группировка перехвачена", 1),
                                ("Доля: 0,142857142857142857142857143", 1),
+                               ('Восстановленная структура: 7', 1),
                                ('Восстановлено: 1\u00a0234,5', 1),
                                ('Тип восстановленного: Число', 1),
                                ('{"N",1234.5}', 1),

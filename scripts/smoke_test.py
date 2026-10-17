@@ -167,21 +167,39 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
 
 
 def check_internal_serialization(executable: str, *, directory: Path, env: dict) -> None:
-    """Numeric codec and external presentation remain separate in the binary."""
+    """All runtime codecs, graph copying and presentation in the frozen binary."""
     directory.mkdir()
     code = ('value = 1234.500;\n'
             'Message(ЗначениеВСтрокуВнутр(value));\n'
             'Message(value);\n'
             'Message(ValueToStringInternal(1 / 3));\n'
-            'Try ValueToStringInternal(True); Except Message("pending"); EndTry;\n'
+            'Message(ValueToStringInternal(True));\n'
             'Message(ValueToStringInternal(0));\n'
             'Message(ValueFromStringInternal(ValueToStringInternal(value)));\n'
             'Message(ТипЗнч(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(value))));\n'
-            'Try ValueFromStringInternal("unknown"); Except Message("pending-input"); EndTry;\n'
+            'Try ValueFromStringInternal("unknown"); Except Message("caught-input"); EndTry;\n'
             'Message(ValueFromStringInternal(ValueToStringInternal(7)));\n')
     expected = ('{"N",1234.5}\n1\u00a0234,5\n'
-                '{"N",0.333333333333333333333333333}\npending\n{"N",0}\n'
-                '1\u00a0234,5\nЧисло\npending-input\n7\n')
+                '{"N",0.333333333333333333333333333}\n{"B",1}\n{"N",0}\n'
+                '1\u00a0234,5\nЧисло\ncaught-input\n7\n')
+    code += ('record = New Structure("Code", 7); values = New Array;\n'
+             'values.Add(Undefined); values.Add(True); values.Add(1); values.Add("Ёж🙂");\n'
+             'values.Add(New Array); values.Add(New FixedArray(New Array));\n'
+             'values.Add(record); values.Add(New FixedStructure(record));\n'
+             'values.Add(New Map); values.Add(New FixedMap(New Map));\n'
+             'values.Add(Type("Number")); For Each pair In record Do values.Add(pair); EndDo;\n'
+             'For Each item In values Do\n'
+             ' restored = ValueFromStringInternal(ValueToStringInternal(item));\n'
+             ' Message(TypeOf(restored) = TypeOf(item));\n'
+             'EndDo;\n'
+             'Message(ValueToStringInternal("Ёж🙂"));\n'
+             'references = New Array; references.Add(record); references.Add(record);\n'
+             'copies = ValueFromStringInternal(ValueToStringInternal(references));\n'
+             'copies[0].Code = 9; Message(copies[1].Code); Message(record.Code);\n'
+             'references.Add(references);\n'
+             'Try ValueToStringInternal(references); Except Message("cycle-caught"); EndTry;\n'
+             'Message(TypeOf(ValueFromStringInternal(ValueToStringInternal(Undefined))));\n')
+    expected += 'Да\n' * 12 + '{"S","Ёж"\\d83d"\\de42"}\n7\n7\ncycle-caught\nНе определено\n'
     source = directory / 'Сериализация.bsl'
     source.write_text(code, encoding='utf-8-sig')
     cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
@@ -191,7 +209,7 @@ def check_internal_serialization(executable: str, *, directory: Path, env: dict)
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed internal serialization {arguments!r}: {result!r}')
-    print('Binary internal serialization passed: numeric payloads, external presentation, '
+    print('Binary internal serialization passed: all12types, UTF16, graph copying, cycles, external presentation, '
           'inverse roundtrip, aliases, BOM file, command flags, stdin, console and error recovery')
 
 
@@ -464,7 +482,7 @@ Except
 EndTry;
 Message(TypeOf(kind) = Тип("Тип"));
 '''
-        type_output = ('Неопределено\nБулево\nЧисло\nСтрока\nМассив\nСтруктура\n'
+        type_output = ('Не определено\nБулево\nЧисло\nСтрока\nМассив\nСтруктура\n'
                        'Соответствие\nТип\nДа\nНет\nНет\nСтрока\nстроковый ключ\n'
                        '2\n0\nКлючИЗначение\nДа\nДа\nнеизвестный тип\nвнешнее значение\nДа\n')
         type_file = Path(temporary) / 'Типы.bsl'

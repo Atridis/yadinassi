@@ -33,7 +33,8 @@ class TypeValueTests(unittest.TestCase):
                 self.assertIs(type(value), BSLType)
                 self.assertEqual(self.vm.execute(f'tYpE("{english.upper()}")'), value)
                 self.assertEqual(self.vm.execute(f'тИп("{russian.lower()}")'), value)
-                self.assertEqual(self.vm.execute(f'String(Type("{english}"))'), russian)
+                self.assertEqual(self.vm.execute(f'String(Type("{english}"))'),
+                                 'Не определено' if english == 'Undefined' else russian)
                 self.assertIs(self.evaluate(f'TypeOf(Type("{english}")) = Тип("Тип")'), True)
                 values.append(value)
         self.assertEqual(len(set(values)), 12)
