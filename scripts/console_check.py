@@ -120,6 +120,14 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         expect('enum-count=2')
         expect('enum-ten=1')
         expect('enum-twenty=2')
+        send(">>> ", 'Message("comparison-equal=" + (True = 1)); '
+             'Message("comparison-less=" + (0.5 < True));\n')
+        expect('comparison-equal=Да')
+        expect('comparison-less=Да')
+        send(">>> ", 'invalidComparison = True < "1";\n')
+        expect('Значения несовместимы для сравнения')
+        send(">>> ", 'Message("comparison-recovered=" + (False = 0));\n')
+        expect('comparison-recovered=Да')
         send(">>> ", 'extreme = Min(2, True); Message("min-type=" + ValueToStringInternal(extreme));\n')
         expect('min-type={"B",1}')
         send(">>> ", 'extreme = Max(2, "10");\n')
@@ -263,8 +271,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 16
-                or output.count('Значения несовместимы для сравнения') != 1
+        if (output.count('<консоль>:1:') != 17
+                or output.count('Значения несовместимы для сравнения') != 2
                 or output.count('Невозможно преобразовать значение в число') != 3
                 or output.count('Окр: ожидается число или значение РежимОкругления') != 1
                 or output.count('Тип не поддерживается: Date') != 1

@@ -187,6 +187,40 @@ def check_numeric_helpers(executable: str, *, directory: Path, env: dict) -> Non
           'BOM file, command flags, stdin, console and catchable error')
 
 
+COMPARISON_PROGRAM = r'''
+Message(True = 1); Message(0 = False); Message(True <> 1);
+Message(0.5 < True); Message(False <= 0); Message(1 >= True);
+Message(True > 0.999999999999999999999999999999999);
+Message(1.000000000000000000000000000000001 > True);
+Message(-1 < False); Message(False > -1);
+m = New Map; m[True] = "boolean"; m[1] = "number";
+Message(m.Count()); Message(m[True]); Message(m[1]);
+Try
+    invalid = True < "1";
+Except
+    Message("comparison-error");
+EndTry;
+Message(Истина = 1); Message(Ложь = 0);
+'''
+COMPARISON_OUTPUT = ('Да\nДа\nНет\nДа\nДа\nДа\nДа\nДа\nДа\nДа\n'
+                     '2\nboolean\nnumber\ncomparison-error\nДа\nДа\n')
+
+
+def check_numeric_boolean_comparisons(executable: str, *, directory: Path, env: dict) -> None:
+    directory.mkdir()
+    source = directory / 'Сравнения.bsl'
+    source.write_text(COMPARISON_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, COMPARISON_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], COMPARISON_PROGRAM),
+              ([], COMPARISON_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, COMPARISON_OUTPUT, ''):
+            raise AssertionError(f'Failed Number/Boolean comparison {arguments!r}: {result!r}')
+    print('Binary Number/Boolean comparisons passed: six operators, exact values, typed keys, CLI and recovery')
+
+
 # Owner-observed Round results, shared with the source entrypoint tests. Internal
 # number payloads preserve exact coefficients without presentation grouping.
 ROUNDING_EXAMPLES = [
@@ -454,6 +488,7 @@ def main() -> None:
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
         check_rounding(executable, directory=Path(temporary) / "rounding", env=env)
+        check_numeric_boolean_comparisons(executable, directory=Path(temporary) / "comparisons", env=env)
         check_internal_serialization(executable, directory=Path(temporary) / "serialization", env=env)
         sample = Path(temporary) / "пример.bsl"
         sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())

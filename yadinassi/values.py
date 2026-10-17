@@ -189,7 +189,7 @@ def integer(value: object) -> int:
 
 
 def equal(left: object, right: object) -> bool:
-    # Python equates True and 1; BSL values keep their types.
+    # Typed lookup equality; operator-only Number/Boolean conversion lives in runtime.
     if type(left) is not type(right):
         return False
     if issubclass(type(left), BSLFixedCollection):

@@ -216,6 +216,12 @@ class Interpreter:
         if operator == "OR":
             return boolean(left) or boolean(self.visit(node.right))
         right = self.visit(node.right)
+        if (operator in ("=", "<>", "<", "<=", ">", ">=")
+                and {type(left), type(right)} == {Decimal, bool}):
+            # BSL operator comparisons convert Boolean to Number (0 or 1).
+            # Keep this separate from typed collection lookup equality.
+            left = Decimal(1 if left else 0) if type(left) is bool else left
+            right = Decimal(1 if right else 0) if type(right) is bool else right
         if operator == "=":
             return equal(left, right)
         if operator == "<>":
