@@ -4,8 +4,9 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
 
-from . import ast, serialization, strings, type_values
+from . import ast, numbers, serialization, strings, type_values
 from .errors import BSLError, BSLRuntimeError
+from .collation import string_key
 from .parser import parse
 from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
@@ -80,7 +81,7 @@ class Interpreter:
                                "ValueToStringInternal")
         self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
-        for name, function, alias in strings.BUILTINS:
+        for name, function, alias in (*strings.BUILTINS, *numbers.BUILTINS):
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")
@@ -219,6 +220,8 @@ class Interpreter:
         if operator in ("<", "<=", ">", ">="):
             if type(left) is not type(right) or not isinstance(left, (Decimal, str, bool)):
                 raise TypeError("Значения несовместимы для сравнения")
+            if isinstance(left, str):
+                left, right = string_key(left), string_key(right)
             if operator == "<":
                 return left < right
             if operator == "<=":

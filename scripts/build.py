@@ -11,6 +11,8 @@ import tarfile
 import zipfile
 
 from yadinassi import __version__
+from yadinassi.collation import TABLE_NAME
+import pyuca
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +55,7 @@ def main() -> int:
         "--distpath", str(ROOT / "dist" / host),
         "--workpath", str(ROOT / "build" / host),
         "--specpath", str(ROOT / "build"),
+        "--add-data", str(Path(pyuca.__file__).with_name(TABLE_NAME)) + os.pathsep + "pyuca",
     ]
     if platform.system() == "Darwin":
         command += ["--target-architecture", platform.machine()]
@@ -62,6 +65,7 @@ def main() -> int:
     subprocess.run([sys.executable, str(ROOT / "scripts" / "smoke_test.py"), str(executable)],
                    cwd=ROOT, env=env, check=True)
     files = [(executable, executable.name), (ROOT / "README.md", "README.md"),
+             (ROOT / "THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt"),
              (ROOT / "LICENSE", "LICENSE"),
              (ROOT / "integrational_tests" / "tests" / "basic.bsl", "basic.bsl")]
     if host == "windows":

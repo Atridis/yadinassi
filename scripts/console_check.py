@@ -84,6 +84,26 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Сообщить("Вложенная");\n', forbidden_lines=region_output)
         send("... ", "#EndRegion\n", forbidden_lines=region_output)
         send("... ", "#КонецОбласти\n", forbidden_lines=region_output)
+        send(">>> ", 'целая = цЕл(-12.99); Message("int-value=" + ValueToStringInternal(целая));\n')
+        expect('int-value={"N",-12}')
+        send(">>> ", 'целая = Int(Undefined);\n')
+        send(">>> ", 'Message("int-recovered=" + ValueToStringInternal(целая));\n')
+        expect('int-recovered={"N",-12}')
+        send(">>> ", 'Message("int-zero=" + ValueToStringInternal(Int(-0.99)));\n')
+        expect('int-zero={"N",0}')
+        send(">>> ", 'extreme = Min(2, True); Message("min-type=" + ValueToStringInternal(extreme));\n')
+        expect('min-type={"B",1}')
+        send(">>> ", 'extreme = Max(2, "10");\n')
+        send(">>> ", 'Message("min-recovered=" + ValueToStringInternal(extreme));\n')
+        expect('min-recovered={"B",1}')
+        send(">>> ", 'Message("max-tie=" + ValueToStringInternal(Макс(False, 0)));\n')
+        expect('max-tie={"B",0}')
+        send(">>> ", 'Message("string-max=" + Max("a", "A"));\n')
+        expect('string-max=A')
+        send(">>> ", 'Message("string-min=" + Min("ё", "е"));\n')
+        expect('string-min=е')
+        send(">>> ", 'Message("string-order=" + ValueToStringInternal("a" < "A"));\n')
+        expect('string-order={"B",1}')
         send(">>> ", 'kind = Тип("ЧиСлО");\n')
         send(">>> ", 'kind\n')
         send(">>> ", 'm = New Map; m[kind] = "типовой ключ";\n')
@@ -214,12 +234,13 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 12
+        if (output.count('<консоль>:1:') != 14
+                or output.count('Значения несовместимы для сравнения') != 1
+                or output.count('Невозможно преобразовать значение в число') != 2
                 or output.count('Тип не поддерживается: Date') != 1
                 or output.count('недоступны для записи') != 2
                 or output.count('недоступно для записи') != 1
                 or output.count('не найдено: Add') != 1
-                or output.count('Невозможно преобразовать значение в число') != 1
                 or output.count('Деление на ноль') != 1
                 or output.count('Представление числа: ') != 3
                 or output.count('Деление: точная половина на границе округления '
