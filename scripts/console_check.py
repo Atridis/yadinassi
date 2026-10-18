@@ -95,6 +95,42 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         expect("Метка не определена")
         send(">>> ", '~recovered: Message("goto-recovered=" + String(jump_count));\n')
         expect("goto-recovered=3")
+        # Edit the final seconds digit inside a quoted Date literal in the PTY.
+        date_line = "dateValue = '20240229123455';"
+        send(">>> ", date_line + '\x1b[D\x1b[D\x7f6\x1b[F\n')
+        send(">>> ", 'Message("date-edited=" + ValueToStringInternal(dateValue));\n')
+        expect('date-edited={"D",20240229123456}')
+        send(">>> ", 'dateBase = dateValue; dateValue = dateValue +\n')
+        send("... ", '0.00015;\n')
+        send(">>> ", 'Message("date-ticks=" + ValueToStringInternal(dateValue - dateBase));\n')
+        expect('date-ticks={"N",0.0002}')
+        send(">>> ", 'Message("date-codec=" + ValueToStringInternal('
+             'ValueFromStringInternal(ValueToStringInternal(dateValue)) - dateBase));\n')
+        expect('date-codec={"N",0}')
+        send(">>> ", 'Function DefaultDate(value = \'20240229123456\')\n')
+        send("... ", 'Return value;\n')
+        send("... ", 'EndFunction\n')
+        send(">>> ", 'Message("date-default=" + ValueToStringInternal(DefaultDate()));\n')
+        expect('date-default={"D",20240229123456}')
+        send(">>> ", 'Try dateValue = Date(2023, 2, 29); '
+             'Except Message("date-caught"); EndTry;\n')
+        expect('date-caught')
+        send(">>> ", 'dateValue = Date(2024, 2, 29, 12);\n')
+        expect('Дата: ожидается строка или 3 либо 6 числовых компонентов')
+        # Date literals do not span lines: reject an unfinished quote cleanly,
+        # retain state, then accept a multiline call at the restored main prompt.
+        send(">>> ", "dateValue = '20240229\n")
+        expect('Перенос строки в литерале даты не поддерживается')
+        send(">>> ", 'dateValue = String(Date(1, 1, 1) - 1);\n')
+        expect('после выхода за диапазон известно только скалярное')
+        send(">>> ", 'Message("date-recovered=" + ValueToStringInternal(dateValue - dateBase));\n')
+        expect('date-recovered={"N",0.0002}')
+        send(">>> ", 'dateValue = Дата(\n')
+        send("... ", '2024, 2, 29, 12, 34, 56);\n')
+        send(">>> ", 'Message("date-alias=" + ValueToStringInternal(dateValue)); '
+             'Message("date-type=" + (TypeOf(dateValue) = Тип("Дата")));\n')
+        expect('date-alias={"D",20240229123456}')
+        expect('date-type=Да')
         send(">>> ", 'целая = цЕл(-12.99); Message("int-value=" + ValueToStringInternal(целая));\n')
         expect('int-value={"N",-12}')
         send(">>> ", 'целая = Int(Undefined);\n')
@@ -180,7 +216,7 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("Перехвачено");\n')
         send("... ", 'EndTry;\n')
         # An uncaught failure must preserve the value and restore the main prompt.
-        send(">>> ", 'kind = Type("Date");\n')
+        send(">>> ", 'kind = Type("ValueTable");\n')
         send(">>> ", 'kind\n')
         send(">>> ", '(TypeOf(True) = Type("bOoLeAn"))\n')
         send(">>> ", '(kind = "Число")\n')
@@ -507,7 +543,10 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 23
+        if (output.count('<консоль>:1:') != 26
+                or output.count('Дата: ожидается строка или 3 либо 6 числовых компонентов') != 1
+                or output.count('Перенос строки в литерале даты не поддерживается') != 1
+                or output.count('после выхода за диапазон известно только скалярное') != 1
                 or output.count('ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi') != 1
                 or output.count('СтрШаблон: очень много параметров') != 1
                 or output.count('строка поиска не должна быть пустой') != 1
@@ -515,7 +554,7 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Значения несовместимы для сравнения') != 2
                 or output.count('Невозможно преобразовать значение в число') != 5
                 or output.count('Окр: ожидается число или значение РежимОкругления') != 1
-                or output.count('Тип не поддерживается: Date') != 1
+                or output.count('Тип не поддерживается: ValueTable') != 1
                 or output.count('недоступны для записи') != 2
                 or output.count('недоступно для записи') != 1
                 or output.count('не найдено: Add') != 1
@@ -526,7 +565,12 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("search-empty-first=1", 1), ("search-empty-next=3", 1), ("search-empty-both=1", 1), ("search-back=5", 1), ("search-overlap=1", 1), ("search-hole=5", 1),
+        for message, count in (('date-edited={"D",20240229123456}', 1),
+                               ('date-ticks={"N",0.0002}', 1), ('date-codec={"N",0}', 1),
+                               ('date-default={"D",20240229123456}', 1), ('date-caught', 1),
+                               ('date-recovered={"N",0.0002}', 1),
+                               ('date-alias={"D",20240229123456}', 1), ('date-type=Да', 1),
+                               ("search-empty-first=1", 1), ("search-empty-next=3", 1), ("search-empty-both=1", 1), ("search-back=5", 1), ("search-overlap=1", 1), ("search-hole=5", 1),
                                ('search-codec={"#",bee8fa9f-59d0-4e71-9f6e-599d83cb1960,1}', 1),
                                ("search-read=Да", 1), ('search-namespace={"U"}', 1),
                                ("search-range-caught", 1), ("search-kept=7", 1), ("search-recovered=2", 1),

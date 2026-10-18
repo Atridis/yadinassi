@@ -6,6 +6,8 @@ New runtime types must be added explicitly to the codec policy and its completen
 """
 
 from dataclasses import dataclass
+
+from .dates import codec_text, read_codec
 from decimal import Decimal
 import re
 
@@ -28,6 +30,7 @@ _TYPE_IDS = {
     BSLType.BOOLEAN: "5d4125ad-f6e7-4313-be32-f71d0ab60915",
     BSLType.NUMBER: "b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec",
     BSLType.STRING: "9b6abf8b-0173-48e5-b0a0-83b21fcf63c5",
+    BSLType.DATE: "aae38c48-a877-411c-a6d3-fbaa1f83c4bd",
     BSLType.ARRAY: "51e7a0d2-530b-11d4-b98a-008048da3034",
     BSLType.STRUCTURE: "4238019d-7e49-4fc9-91db-b6b951d5cf8e",
     BSLType.MAP: "3d48feae-a9c6-4c5a-a099-9eb6477630c6",
@@ -46,7 +49,7 @@ _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
 _MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
 _CODECS = frozenset({BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
-                    BSLType.STRING, BSLType.TYPE, BSLType.KEY_AND_VALUE,
+                    BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
                     BSLType.ROUND_MODE, BSLType.ROUND_MODES,
                     BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS}) | _ARRAYS | _STRUCTURES | _MAPS
 _NUMBER = re.compile(r'[+-]?[0-9]+(?:\.[0-9]+)?')
@@ -125,6 +128,8 @@ class _Writer:
             self.emit('{"S",')
             self.string(value)
             self.emit('}')
+        elif kind is BSLType.DATE:
+            self.emit('{"D",' + codec_text(value, nested=depth > 0) + '}')
         elif kind is BSLType.TYPE:
             self.emit('{"T",' + _TYPE_IDS[value] + '}')
         elif kind in (BSLType.ROUND_MODE, BSLType.SEARCH_DIRECTION):
@@ -290,6 +295,13 @@ class _Reader:
             if len(group) == 3:
                 self.number(group[2])  # Observed {"N",1,5} reads the first number.
             return value
+        if tag == 'D' and len(group) == 2:
+            if type(group[1]) is not _Atom:
+                self.fail()
+            try:
+                return read_codec(group[1].text)
+            except (ValueError, TypeError, OverflowError):
+                self.fail()
         if tag == 'n' and len(group) == 2:
             self.number(group[1])
             return None  # Observed lowercase numeric tag; not arbitrary unknown tags.

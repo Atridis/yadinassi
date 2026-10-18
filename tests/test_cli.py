@@ -18,6 +18,107 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_dates_all_flags_bom_file_stdin_and_console(self):
+        from scripts.smoke_test import DATE_PROGRAM, DATE_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'КалендарныеДаты.bsl'
+            source.write_text(DATE_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, DATE_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), DATE_PROGRAM),
+                      ((), DATE_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, DATE_OUTPUT, ''))
+
+    def test_date_diagnostics_and_console_state_recovery(self):
+        from scripts.smoke_test import DATE_FAILURES
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ОшибкаДаты.bsl'
+            for expression, message in DATE_FAILURES:
+                code = f'savedDate = Date(2024, 2, 29);\nsavedDate = {expression};\n'
+                source.write_text(code, encoding='utf-8-sig')
+                cases = [((flag, code), None, '', '<команда>:2:')
+                         for flag in ('-c', '-с', '--command')]
+                cases += [((str(source),), None, '', str(source.resolve()) + ':2:'),
+                          (('-',), code, '', '<stdin>:2:'),
+                          ((), code + 'ValueToStringInternal(savedDate)\n/exit\n',
+                           '{"D",20240229000000}\n', '<консоль>:1:')]
+                for arguments, stdin, stdout, location in cases:
+                    with self.subTest(expression=expression, arguments=arguments):
+                        result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                        self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                        self.assertIn(location, result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+
+    def test_dates_cross_bom_imported_routines_and_literal_defaults(self):
+        from scripts.smoke_test import DATE_MODULE, DATE_IMPORT_PROGRAM, DATE_IMPORT_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            project = temporary / 'project'
+            project.mkdir()
+            module = project / 'Даты.bsl'
+            module.write_text(DATE_MODULE, encoding='utf-8-sig')
+            main = project / 'Основное.bsl'
+            main.write_text(DATE_IMPORT_PROGRAM, encoding='utf-8-sig')
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, DATE_IMPORT_OUTPUT, ''))
+            main.write_text('// #Импорт Даты.bsl\nДаты.Failure();\n', encoding='utf-8-sig')
+            for path in (main, main.relative_to(temporary)):
+                with self.subTest(error_path=path):
+                    result = self.run_cli(str(path), cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout), (1, ''))
+                    self.assertIn(str(module.resolve()) + ':8:', result.stderr)
+                    self.assertIn('Ожидается дата', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+            main.write_text('// #Импорт Даты.bsl\nTry Даты.Failure(); Except\n'
+                            'Message(ErrorDescription()); EndTry;\n'
+                            'Message(Даты.DefaultDate() = \'20240229123456\');\n',
+                            encoding='utf-8-sig')
+            result = self.run_cli(str(main.relative_to(temporary)), cwd=temporary)
+            self.assertEqual((result.returncode, result.stderr), (0, ''))
+            self.assertTrue(result.stdout.startswith(str(module.resolve()) + ':8:'))
+            self.assertTrue(result.stdout.endswith('Ожидается дата\nДа\n'))
+
+    def test_date_literal_errors_and_unfinished_console_input_recover(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ЛитералДаты.bsl'
+            for literal, message in [("'2024022912'", 'Дата: ожидается каноническая запись даты'),
+                                     ("'20240229", 'Незавершенный литерал даты')]:
+                code = '// строка перед ошибкой\nsavedDate = ' + literal
+                source.write_text(code, encoding='utf-8-sig')
+                cases = [((flag, code), None, '<команда>:2:')
+                         for flag in ('-c', '-с', '--command')]
+                cases += [((str(source),), None, str(source.resolve()) + ':2:'),
+                          (('-',), code, '<stdin>:2:')]
+                for arguments, stdin, location in cases:
+                    with self.subTest(literal=literal, arguments=arguments):
+                        result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
+                        self.assertIn(location, result.stderr)
+                        self.assertIn(message, result.stderr)
+                        self.assertNotIn('Traceback', result.stderr)
+        result = self.run_cli(stdin="savedDate = '20240229';\nsavedDate = '20240229\n"
+                              'ValueToStringInternal(savedDate)\n'
+                              'savedDate = Date(\n2024, 2, 29, 12, 34, 56);\n'
+                              'ValueToStringInternal(savedDate)\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout),
+                         (1, '{"D",20240229000000}\n{"D",20240229123456}\n'))
+        self.assertEqual(result.stderr.count('<консоль>:1:'), 1)
+        self.assertIn('Перенос строки в литерале даты не поддерживается', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
     def test_eval_all_cli_inputs(self):
         from scripts.smoke_test import EVAL_PROGRAM, EVAL_OUTPUT
         with tempfile.TemporaryDirectory() as temporary:
@@ -981,7 +1082,7 @@ EndDo;
 
     def test_type_errors_are_catchable_in_command_stdin_and_console(self):
         code = '''Попытка
-    Тип("Дата");
+    Тип("ТаблицаЗначений");
 Исключение
     Сообщить("неизвестный тип");
 КонецПопытки;
@@ -1011,7 +1112,7 @@ EndTry;
                                   'непрозрачный тип\nТип\n', ''))
 
     def test_type_errors_have_clean_command_file_and_stdin_diagnostics(self):
-        failures = [('Тип("Дата")', 'Тип не поддерживается: Дата'),
+        failures = [('Тип("ТаблицаЗначений")', 'Тип не поддерживается: ТаблицаЗначений'),
                     ('Type(1)', 'Имя типа должно быть строкой'),
                     ('TypeOf(Message)', 'ТипЗнч для этого значения пока не поддерживается')]
         with tempfile.TemporaryDirectory() as temporary:
@@ -1032,12 +1133,12 @@ EndTry;
 
     def test_type_console_recovers_without_overwriting_existing_value(self):
         result = self.run_cli(stdin='kind = Type("Array");\n'
-                                   'kind = Type("Date");\nkind\n'
+                                   'kind = Type("ValueTable");\nkind\n'
                                    'TypeOf(Message)\nTypeOf(kind)\n'
                                    'Message(TypeOf(New Array) = kind);\n/exit\n')
         self.assertEqual((result.returncode, result.stdout), (1, 'Массив\nТип\nДа\n'))
         self.assertEqual(result.stderr.count('<консоль>:1:'), 2)
-        self.assertIn('Тип не поддерживается: Date', result.stderr)
+        self.assertIn('Тип не поддерживается: ValueTable', result.stderr)
         self.assertIn('ТипЗнч для этого значения пока не поддерживается', result.stderr)
         self.assertNotIn('Traceback', result.stderr)
 
@@ -1066,7 +1167,7 @@ EndTry;
                                      (0, 'Массив\nТип\nСтрока\nДа\n', ''))
 
     def test_imported_type_errors_preserve_canonical_path_and_are_catchable(self):
-        failures = [('Type("Date")', 12, 'Тип не поддерживается: Date'),
+        failures = [('Type("ValueTable")', 12, 'Тип не поддерживается: ValueTable'),
                     ('TypeOf(Message)', 14, 'ТипЗнч для этого значения пока не поддерживается')]
         for expression, column, message in failures:
             with self.subTest(expression=expression), tempfile.TemporaryDirectory() as temporary:

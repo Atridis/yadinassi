@@ -6,6 +6,8 @@ from enum import Enum
 import re
 from typing import Callable
 
+from .dates import BSLDate
+
 
 class BSLType(Enum):
     """Opaque, immutable type identities; presentations are not their identity."""
@@ -14,6 +16,7 @@ class BSLType(Enum):
     BOOLEAN = "Булево"
     NUMBER = "Число"
     STRING = "Строка"
+    DATE = "Дата"
     ARRAY = "Массив"
     STRUCTURE = "Структура"
     MAP = "Соответствие"
@@ -191,6 +194,10 @@ def integer(value: object) -> int:
 
 
 def equal(left: object, right: object) -> bool:
+    if type(left) is BSLDate:
+        left.require_known()
+    if type(right) is BSLDate:
+        right.require_known()
     # Typed lookup equality; operator-only Number/Boolean conversion lives in runtime.
     if type(left) is not type(right):
         return False
@@ -240,6 +247,8 @@ class _ArrayBase(BSLObject):
         raise ValueError("Элементы фиксированного массива недоступны для записи")
 
     def find(self, value: object) -> object:
+        if type(value) is BSLDate:
+            value.require_known()
         for index, item in enumerate(self.items):
             if equal(item, value):
                 return Decimal(index)

@@ -5,6 +5,7 @@ from decimal import Decimal
 import re
 
 from .errors import BSLError, IncompleteInput
+from .dates import literal_date
 from .preprocessor import ConditionalCompilation, SourceRegions
 
 
@@ -175,6 +176,22 @@ class Lexer:
                         self.advance()
                 value = Decimal(self.text[start:self.pos])
                 kind = "NUMBER"
+            elif char == "'":
+                self.advance()
+                start = self.pos
+                while self.peek() and self.peek() not in "'\r\n":
+                    self.advance()
+                if not self.peek():
+                    raise IncompleteInput("Незавершенный литерал даты", self.source, line, column)
+                if self.peek() != "'":
+                    raise BSLError("Перенос строки в литерале даты не поддерживается", self.source, line, column)
+                text = self.text[start:self.pos]
+                self.advance()
+                try:
+                    value = literal_date(text)
+                except (ValueError, TypeError, OverflowError) as error:
+                    raise BSLError(str(error), self.source, line, column) from None
+                kind = "DATE"
             elif char == '"':
                 value = self.string(line, column)
                 kind = "STRING"

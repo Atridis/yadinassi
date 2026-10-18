@@ -11,6 +11,7 @@ import re
 import unittest
 
 from yadinassi import Interpreter
+from yadinassi.dates import BSLDate
 from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
 from yadinassi.maps import BSLFixedMap, BSLMap
@@ -90,7 +91,7 @@ class NativeEvidenceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.outputs = {
             name: normalize_transport((OUTPUT / (name + ".out")).read_bytes().decode("utf-8"))
-            for name in ("numbers", "strings", "collections")
+            for name in ("numbers", "strings", "collections", "dates")
         }
 
     def native(self, suite, label):
@@ -165,7 +166,7 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(to_string(Decimal("1234.5")), "1\u00a0234,5")
 
     def test_all_native_type_guids(self):
-        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS}
+        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types, set(BSLType))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
         # fail natively. Check its observed record directly, without an alias.
@@ -174,6 +175,9 @@ class NativeEvidenceTests(unittest.TestCase):
             payload = self.native('strings', label)
             self.assertEqual(write(value), payload)
             self.assertIs(read(payload), value)
+        payload = self.native('dates', 'date.codec.type-ru')
+        self.assertEqual(write(BSLType.DATE), payload)
+        self.assertIs(read(payload), BSLType.DATE)
         for name, guid in TYPE_GUIDS.items():
             with self.subTest(name=name):
                 value = type_by_name(name)
@@ -217,7 +221,7 @@ class NativeEvidenceTests(unittest.TestCase):
                 self.assertEqual(normalize_transport(write(restored)), self.native("collections", label + ".roundtrip.payload"))
 
     def test_all_runtime_value_types_preserve_native_readback_behavior(self):
-        samples = [None, False, Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
+        samples = [None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS]

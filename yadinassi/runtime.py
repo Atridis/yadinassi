@@ -4,7 +4,7 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
 
-from . import ast, bits, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
+from . import ast, bits, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .errors import BSLError, BSLRuntimeError
@@ -108,7 +108,7 @@ class Interpreter:
         self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
         for name, function, alias in (*strings.BUILTINS, *numbers.BUILTINS,
-                                      *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS):
+                                      *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS, *dates.BUILTINS):
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")
@@ -322,8 +322,14 @@ class Interpreter:
         if operator == "OR":
             return boolean(left) or boolean(self.visit(node.right))
         right = self.visit(node.right)
+        if operator in ("=", "<>", "<", "<=", ">", ">="):
+            if type(left) is dates.BSLDate:
+                left.require_known()
+            if type(right) is dates.BSLDate:
+                right.require_known()
         if (operator in ("=", "<>", "<", "<=", ">", ">=")
-                and {type(left), type(right)} == {Decimal, bool}):
+                and ((type(left) is Decimal and type(right) is bool)
+                     or (type(left) is bool and type(right) is Decimal))):
             # BSL operator comparisons convert Boolean to Number (0 or 1).
             # Keep this separate from typed collection lookup equality.
             left = Decimal(1 if left else 0) if type(left) is bool else left
@@ -333,6 +339,8 @@ class Interpreter:
         if operator == "<>":
             return not equal(left, right)
         if operator in ("<", "<=", ">", ">="):
+            if type(left) is dates.BSLDate and type(right) is dates.BSLDate:
+                left, right = Decimal(left.ticks), Decimal(right.ticks)
             if type(left) is not type(right) or not isinstance(left, (Decimal, str, bool)):
                 raise TypeError("Значения несовместимы для сравнения")
             if isinstance(left, str):
@@ -346,6 +354,12 @@ class Interpreter:
             return left >= right
         if operator == "+" and isinstance(left, str):
             return strings.concatenate(left, to_string(right))
+        if type(left) is dates.BSLDate and operator in ("+", "-"):
+            if operator == "-" and type(right) is dates.BSLDate:
+                return dates.date_difference(left, right)
+            if type(right) is not Decimal:
+                raise TypeError("Арифметика даты: ожидается число секунд")
+            return dates.shift_date(left, right if operator == "+" else right.copy_negate())
         left, right = require_number(left), require_number(right)
         if operator == "+":
             return left + right

@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+from .dates import BSLDate
+
 from .structures import BSLKeyAndValue
 from .values import BSLFixedCollection, BSLObject, BSLType, HostFunction
 
@@ -12,6 +14,9 @@ def _key(value: object) -> tuple[type, object]:
     # semantics. Each entry retains the original object, so its id cannot be
     # reused while the entry exists.
     kind = type(value)
+    if kind is BSLDate:
+        value.require_known()
+        return kind, value.ticks
     if (kind is str or kind is bool or kind is Decimal or kind is type(None)
             or kind is BSLType):
         return kind, value
