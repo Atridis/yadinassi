@@ -8,6 +8,7 @@ on the host platform's wchar_t width. See features.md for compatibility limits.
 from decimal import Decimal, ROUND_DOWN
 import re
 
+from .collation import caseless_string_key
 from .values import BSLArray, BSLFixedArray, boolean, number, to_string
 
 
@@ -263,7 +264,16 @@ def template(value: object, *values: object) -> str:
                          for part in parts))
 
 
+def compare(first: object, second: object) -> Decimal:
+    # Do not invent coercion rules for unprobed non-string arguments.
+    if type(first) is not str or type(second) is not str:
+        raise TypeError("СтрСравнить: аргументы должны иметь тип Строка")
+    left, right = caseless_string_key(first), caseless_string_key(second)
+    return Decimal((left > right) - (left < right))
+
+
 BUILTINS = (
+    ("СтрСравнить", compare, "StrCompare"),
     ("СтрЧислоВхождений", occurrence_count, "StrOccurrenceCount"),
     ("СтрЧислоСтрок", line_count, "StrLineCount"),
     ("СтрПолучитьСтроку", get_line, "StrGetLine"),

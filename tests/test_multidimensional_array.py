@@ -32,16 +32,15 @@ class MultidimensionalArrayTests(unittest.TestCase):
 
     def test_zero_dimensions_and_existing_default(self):
         vm = Interpreter()
-        for expression in ('New Array', 'New Array()', 'New Array(0)', 'New Array(0, 4)'):
+        for expression in ('New Array', 'New Array()', 'New Array(0)'):
             self.assertEqual(vm.execute(expression).items, [])
-        vm.execute('a = New Array(2, 0, 4);')
-        self.assertEqual(vm.execute('a.Count()'), Decimal(2))
-        self.assertEqual(vm.execute('a[0].Count()'), Decimal(0))
-        self.assertIsNot(vm.execute('a[0]'), vm.execute('a[1]'))
-        vm.execute('a[0].Add(7);')
-        self.assertEqual(vm.execute('a[1].Count()'), Decimal(0))
-        self.assertEqual(BSLArray(Decimal(0), Decimal('1e1000000')).items, [])
-        self.assertEqual(BSLArray(Decimal(2), Decimal(0), Decimal('1e1000000')).items[0].items, [])
+        for arguments in ('0, 3', '2, 0, 4', '2, 0', '0, 0', '1, 2, 0'):
+            with self.subTest(arguments=arguments), self.assertRaises(BSLError):
+                vm.execute(f'New Array({arguments})')
+        for values in ((Decimal(0), Decimal('1e1000000')),
+                       (Decimal(2), Decimal(0), Decimal('1e1000000'))):
+            with self.assertRaisesRegex(ValueError, 'положительными'):
+                BSLArray(*values)
 
     def test_fixed_constructor_and_snapshot_preserved(self):
         vm = Interpreter()
@@ -84,13 +83,13 @@ class MultidimensionalArrayTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 BSLArray(Decimal(0), Decimal(value))
 
-    def test_cumulative_budget_counts_nested_empty_arrays(self):
+    def test_cumulative_budget_counts_nested_arrays(self):
         # Small patched limit tests exact accounting without large allocations.
         with patch('yadinassi.values._MAX_ARRAY_CONSTRUCTION', 10):
             self.assertEqual(len(BSLArray(Decimal(10)).items), 10)
             self.assertEqual(len(BSLArray(Decimal(2), Decimal(3)).items), 2)  # 2+2+6
-            self.assertEqual(len(BSLArray(Decimal(5), Decimal(0)).items), 5)  # 5+5
-            for sizes in ((11,), (2, 4), (6, 0), (2, 3, 0)):
+            self.assertEqual(len(BSLArray(Decimal(3), Decimal(1)).items), 3)  # 3+3+3
+            for sizes in ((11,), (2, 4), (4, 1), (2, 3, 1)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                     BSLArray(*(Decimal(size) for size in sizes))
         self.assertEqual(len(BSLArray(Decimal(1000000)).items), 1000000)

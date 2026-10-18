@@ -321,11 +321,11 @@ f = New FixedArray(m); copy = New Array(f);
 m[0][1][2] = "changed"; Message(copy[0][1][2]);
 copy = ValueFromStringInternal(ValueToStringInternal(copy));
 Message(copy[0][1][2]); Message(copy[1][1][2] = Undefined);
-z = New Array(2, 0, 9); Message(z[1].Count());
+Try New Array(2, 0, 9); Except Message("array-zero-caught"); EndTry;
 Try m = New Array(1000, 1000); Except Message("array-shape-caught"); EndTry;
 Message(m[0][1][2]);
 """
-ARRAY_GAP_OUTPUT += '2\n3\n4\nЯ😀\nДа\nЯ😀\nЯ😀\nДа\n0\narray-shape-caught\nchanged\n'
+ARRAY_GAP_OUTPUT += '2\n3\n4\nЯ😀\nДа\nЯ😀\nЯ😀\nДа\narray-zero-caught\narray-shape-caught\nchanged\n'
 
 
 ARRAY_DEFAULT_PROGRAM = """
@@ -483,14 +483,27 @@ Message(XMLString("Я😀<&amp;"));
 Message(XMLValue(Type("String"), " <x>&amp;</x> "));
 Message(XMLЗначение(Тип("Булево"), "1"));
 Message(XMLValue(Type("Boolean"), "0"));
-Message(XMLValue(Type("Boolean"), " true "));
+Message(XMLValue(Type("Boolean"), "TRUE"));
 Message(ValueToStringInternal(XMLValue(TypeOf(True), "false")));
 Message(ValueFromStringInternal(ValueToStringInternal(XMLString(True))));
 xmlSaved = "old";
-Try xmlSaved = XMLValue(Type("Boolean"), "TRUE"); Except Message("xml-caught"); EndTry;
+Try xmlSaved = XMLValue(Type("Boolean"), " true "); Except Message("xml-caught"); EndTry;
 Message(xmlSaved); Message(XMLValue(Type("Boolean"), XMLString(True)));
 '''
 STRING_PARITY_OUTPUT += 'true\nfalse\nЯ😀<&amp;\n <x>&amp;</x> \nДа\nНет\nДа\n{"B",0}\ntrue\nxml-caught\nold\nДа\n'
+
+
+# Native-backed secondary-strength comparison, including recovery on strict types.
+STRING_PARITY_PROGRAM += '''
+Message(СтрСравнить("ЁЖ", "ёж")); Message(StrCompare("ß", "SS"));
+Message(StrCompare("İ", "i")); Message(StrCompare("é", "é"));
+Message(StrCompare("a-b", "ab")); Message(StrCompare("a", "а"));
+Message(ValueFromStringInternal(ValueToStringInternal(StrCompare("b", "a"))));
+compareSaved = "old";
+Try compareSaved = StrCompare("a", 1); Except Message("compare-caught"); EndTry;
+Message(compareSaved); Message(StrCompare("A", "a"));
+'''
+STRING_PARITY_OUTPUT += '0\n1\n1\n0\n-1\n-1\n1\ncompare-caught\nold\n0\n'
 
 
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:

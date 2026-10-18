@@ -380,12 +380,20 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'Message("array-shape-independent=" + (matrix[1][1] = Undefined));\n')
         send(">>> ", 'xmlSaved = "old";\n')
         send(">>> ", 'Try\n')
-        send("... ", 'xmlSaved = XMLValue(Type("Boolean"), "TRUE");\n')
+        send("... ", 'xmlSaved = XMLValue(Type("Boolean"), " true ");\n')
         send("... ", 'Except\n')
         send("... ", 'Message("xml-caught");\n')
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("xml-kept=" + xmlSaved);\n')
         send(">>> ", 'Message("xml-recovered=" + XMLСтрока(XMLValue(Type("Boolean"), "1")));\n')
+        send(">>> ", 'compareSaved = "old";\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'compareSaved = StrCompare("a", 1);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("compare-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("compare-kept=" + compareSaved);\n')
+        send(">>> ", 'Message("compare-recovered=" + StrCompare("ЁЖ", "ёж"));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -413,7 +421,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("xml-caught", 1), ("xml-kept=old", 1),
+        for message, count in (("compare-caught", 1), ("compare-kept=old", 1),
+                               ("compare-recovered=0", 1), ("xml-caught", 1), ("xml-kept=old", 1),
                                ("xml-recovered=true", 1), ("array-shape-caught", 1), ("array-shape-kept=Я", 1),
                                ("array-shape-independent=Да", 1), ("strfind-caught", 1), ("strfind-recovered=4", 1),
                                ("eval-local=14", 1), ("eval-caught", 1),

@@ -1,4 +1,4 @@
-"""EDT output contract and XSD-based reader; no native parity claim."""
+"""Native-backed scalar XML subset; additional case variants are local policy."""
 from decimal import Decimal
 import unittest
 
@@ -22,7 +22,7 @@ class XMLValueTests(unittest.TestCase):
         for name in ('XMLЗначение', 'XMLValue', 'xMlЗнАчЕнИе', 'xMlVaLuE'):
             for type_name in ('Булево', 'Boolean', 'бУлЕвО', 'bOoLeAn'):
                 for text, expected in [('true', True), ('false', False), ('1', True), ('0', False),
-                                       (' \t\r\ntrue\n\r\t ', True), ('\r0\n', False)]:
+                                       ('TRUE', True), ('FALSE', False), ('TrUe', True), ('FaLsE', False)]:
                     vm.variables['text'] = text
                     actual = vm.execute(f'{name}(Type("{type_name}"), text)')
                     self.assertIs(actual, expected)
@@ -36,8 +36,8 @@ class XMLValueTests(unittest.TestCase):
             self.assertIs(xml_string(text), text)
             self.assertIs(xml_value(BSLType.STRING, text), text)
 
-    def test_boolean_reader_rejects_non_xsd_tokens(self):
-        for text in ('', 'True', 'FALSE', 'Да', 'Нет', '2', '-0', '01', '1.0',
+    def test_boolean_reader_rejects_whitespace_and_invalid_tokens(self):
+        for text in ('', ' true ', '\ttrue', 'false\n', '\r0\n', 'falſe', 'ＴＲＵＥ', 'Да', 'Нет', '2', '-0', '01', '1.0',
                      ' true false ', 'tr ue', '\vtrue', '\ftrue', '\u00a0true',
                      '\u0085false', 'true\x00', '&true;', '<x>true</x>'):
             with self.subTest(text=text), self.assertRaises(ValueError):
@@ -82,7 +82,7 @@ class XMLValueTests(unittest.TestCase):
                        'XMLValue(, "x")', 'XMLString(1)', 'XMLString(Undefined)',
                        'XMLString(New Array)', 'XMLValue("String", "x")',
                        'XMLValue(Type("String"), 1)', 'XMLValue(Type("Number"), "1")',
-                       'XMLValue(Type("Boolean"), "TRUE")')
+                       'XMLValue(Type("Boolean"), " true ")')
         for expression in expressions:
             with self.subTest(expression=expression):
                 vm.execute('saved = "old";')
