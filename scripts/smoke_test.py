@@ -220,6 +220,23 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+STRING_PARITY_PROGRAM = """
+Message(СтрЧислоВхождений("aaaa", "aa"));
+Message(StrOccurrenceCount("abc", ""));
+Message(StrOccurrenceCount("", ""));
+Message(StrOccurrenceCount("AaA", "a"));
+Message(сТрЧиСлОвХоЖдЕнИй("Я😀Я😀", "😀"));
+Message(StrOccurrenceCount(12121, "1"));
+Message(ValueToStringInternal(StrTemplate("%2", "x")));
+Message(StrTemplate("[%1]|[%2]", "Я"));
+Message(StrTemplate("%%"));
+Message(ValueFromStringInternal(ValueToStringInternal(StrOccurrenceCount("aaaa", "aa"))));
+Try StrOccurrenceCount("a"); Except Message("occurrence-caught"); EndTry;
+Message(StrOccurrenceCount("ababa", "aba"));
+"""
+STRING_PARITY_OUTPUT = '2\n0\n0\n1\n2\n3\n{"S",""}\n[Я]|[]\n%\n2\noccurrence-caught\n1\n'
+
+
 ARRAY_GAP_PROGRAM = """
 a = New Array; alias = a; a.Вставить(3, "Я😀");
 Message(a.Count()); Message(a.UBound()); Message(a[0] = Undefined);
@@ -338,7 +355,7 @@ saved = "old";
 STRING_TEMPLATE_OUTPUT = ('Привет, мир!\nдва/один/два\n10/10\n%1/%%2\n[]\n'
                           'Да/1\u00a0234,5\n😀\nСтрока\n[😀]\n')
 STRING_TEMPLATE_FAILURES = (
-    ('StrTemplate("%1")', 'недостаточно фактических параметров'),
+    ('StrTemplate("%0")', 'недопустимый формат маркера подстановки'),
     ('СтрШаблон("%1", 1, 2)', 'очень много параметров'),
     ('StrTemplate("%11", 1)', 'недопустимый формат маркера подстановки'),
     ('СтрШаблон("%(1", 1)', 'недопустимый формат маркера подстановки'),
@@ -380,6 +397,24 @@ for _expression, _message in STRING_BOUNDARY_FAILURES:
     STRING_BOUNDARY_OUTPUT += 'Да\nДа\n'
 STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
 STRING_BOUNDARY_OUTPUT += 'Да\n'
+
+
+def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
+    """Native-backed occurrence count and missing template value across inputs."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ВхожденияШаблона.bsl'
+    source.write_text(STRING_PARITY_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, STRING_PARITY_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], STRING_PARITY_PROGRAM),
+              ([], STRING_PARITY_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, STRING_PARITY_OUTPUT, ''):
+            raise AssertionError(f'Failed native string parity {arguments!r}: {result!r}')
+    print('Binary native string parity passed: occurrence count, template defaults, '
+          'BOM file, command flags, stdin and console recovery')
 
 
 def check_array_gap(executable: str, *, directory: Path, env: dict) -> None:
@@ -976,6 +1011,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_string_parity(executable, directory=Path(temporary) / "string-parity", env=env)
         check_array_gap(executable, directory=Path(temporary) / "array-gap", env=env)
         check_array_defaults(executable, directory=Path(temporary) / "array-defaults", env=env)
         check_value_filled(executable, directory=Path(temporary) / "filled", env=env)

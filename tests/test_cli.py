@@ -93,6 +93,21 @@ class CLITests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
                                      (0, NUMERIC_HELPERS_OUTPUT, ''))
 
+    def test_native_string_parity_all_cli_inputs(self):
+        from scripts.smoke_test import STRING_PARITY_PROGRAM, STRING_PARITY_OUTPUT
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ВхожденияШаблона.bsl'
+            source.write_text(STRING_PARITY_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, STRING_PARITY_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), STRING_PARITY_PROGRAM),
+                      ((), STRING_PARITY_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, STRING_PARITY_OUTPUT, ''))
+
     def test_array_gap_all_cli_inputs(self):
         from scripts.smoke_test import ARRAY_GAP_PROGRAM, ARRAY_GAP_OUTPUT
 
