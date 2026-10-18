@@ -8,7 +8,7 @@ from . import ast, numbers, serialization, strings, type_values, value_checks
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
-from .parser import parse, validate_labels
+from .parser import parse, parse_expression, validate_labels
 from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
 from .structures import BSLFixedStructure, BSLStructure
@@ -20,6 +20,16 @@ from .values import (
 
 _COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap)
+
+
+# Explicit Yadinassi resource limits, not asserted native language limits.
+EVAL_MAX_SOURCE = 65536
+EVAL_MAX_DEPTH = 16
+
+
+def _eval_marker(value: object) -> object:
+    # The interpreter supplies the current module/frame at the call site.
+    raise TypeError("Вычислить требует контекст интерпретатора")
 
 
 class _Goto(Exception):
@@ -78,6 +88,8 @@ class Interpreter:
         self._loading: list[Path] = []
         # Imports share this dynamic handler stack, independent of variable frames.
         self._handled_errors: list[BSLRuntimeError | None] = []
+        self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
+        self.register_function("Вычислить", _eval_marker, "Eval")
         self.register_function("Сообщить", self._message, "Message")
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
@@ -120,6 +132,33 @@ class Interpreter:
     def _error_description(self) -> str:
         return (str(self._handled_errors[-1])
                 if self._handled_errors and self._handled_errors[-1] is not None else "")
+
+    def _evaluate(self, argument: ast.Node) -> object:
+        value = self.visit(argument)
+        # Native evidence covers a Number argument 12. Other non-string values
+        # are deliberately rejected; do not call arbitrary Python __str__ hooks.
+        if type(value) is str:
+            text = value
+        elif type(value) is Decimal and value.is_finite():
+            text = to_string(value)
+        else:
+            raise TypeError("Вычислить: ожидается строка или конечное число")
+        if len(text) > EVAL_MAX_SOURCE:
+            raise ValueError("Вычислить: превышен предел текста Yadinassi (65536 символов)")
+        if self._eval_depth[0] >= EVAL_MAX_DEPTH:
+            raise ValueError("Вычислить: превышен предел вложенности Yadinassi (16)")
+        self._eval_depth[0] += 1
+        try:
+            # Parse and consume the entire input before executing even its first call.
+            try:
+                expression = parse_expression(text)
+            except BSLError as error:
+                raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
+            return self.visit(expression)
+        except RecursionError:
+            raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
+        finally:
+            self._eval_depth[0] -= 1
 
     def execute(self, text: str, source: str = "<строка>") -> object:
         return self.execute_program(parse(text, source))
@@ -193,6 +232,8 @@ class Interpreter:
             raise
         except (ArithmeticError, ValueError, TypeError, IndexError, RecursionError) as error:
             message = str(error) or type(error).__name__
+            if isinstance(error, RecursionError) and self._eval_depth[0]:
+                message = "Вычислить: превышен предел глубины выражения Yadinassi"
             if isinstance(error, ZeroDivisionError):
                 message = "Деление на ноль"
             token = node.token
@@ -321,6 +362,10 @@ class Interpreter:
             function = self.visit(node.callee)
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        if function.function is _eval_marker:
+            if len(node.arguments) != 1:
+                raise TypeError("Вычислить ожидает 1 аргумент")
+            return self._evaluate(node.arguments[0])
         return function(*(self.argument(argument) if index in function.reference_parameters
                           else self.visit(argument)
                           for index, argument in enumerate(node.arguments)))
@@ -524,6 +569,7 @@ class Interpreter:
             child._module_cache = self._module_cache
             child._loading = self._loading
             child._handled_errors = self._handled_errors
+            child._eval_depth = self._eval_depth
             child.execute(text, str(path))
             module = _Module(child, path)
             self._module_cache[path] = module

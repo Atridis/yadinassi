@@ -382,3 +382,11 @@ def validate_labels(statements: list[ast.Node]) -> None:
 
 def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
     return Parser(Lexer(text, source).tokens()).parse()
+
+
+def parse_expression(text: str, source: str = "<Вычислить>") -> ast.Node:
+    """Parse exactly one BSL expression, without module preprocessing/effects."""
+    parser = Parser(Lexer(text, source, allow_directives=False).tokens())
+    expression = parser.expression()
+    parser.expect("EOF")
+    return expression

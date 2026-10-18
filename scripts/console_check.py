@@ -357,6 +357,13 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("occurrence-caught");\n')
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("occurrence-recovered=" + StrOccurrenceCount("Я😀Я😀", "😀"));\n')
+        send(">>> ", 'eval_local = 14; Message("eval-local=" + Eval("eval_local"));\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'Eval("1 +");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("eval-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("eval-recovered=" + Eval("eval_local + 1"));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -384,7 +391,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("occurrence-count=2", 1), ("occurrence-caught", 1),
+        for message, count in (("eval-local=14", 1), ("eval-caught", 1),
+                               ("eval-recovered=15", 1), ("occurrence-count=2", 1), ("occurrence-caught", 1),
                                ("occurrence-recovered=2", 1), ('template-missing={"S",""}', 1),
                                ("array-gap-count=4", 1), ("array-gap-caught", 1),
                                ("array-gap-recovered=6", 1), ('array-gap-undefined={"U"}', 1),
