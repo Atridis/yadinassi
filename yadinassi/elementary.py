@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from .values import number
 from .powers import integral_power
+from .binary_exp import binary_exp
 from .math_conversion import UnsupportedConversionRange, decimal_to_binary64
 
 
@@ -33,7 +34,8 @@ def _unary(value: object, operation: str) -> Decimal:
         raise UnsupportedConversionRange(
             "Математика: блочное округление вышло за область функции; "
             "нативное поведение на этой границе пока не установлено")
-    return _result(getattr(math, operation)(binary))
+    result = binary_exp(binary) if operation == 'exp' else getattr(math, operation)(binary)
+    return _result(result)
 
 
 def sqrt(value: object) -> Decimal:
