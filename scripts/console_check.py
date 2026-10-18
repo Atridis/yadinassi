@@ -421,6 +421,17 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'Message("new-kept=" + newSaved);\n')
         send(">>> ", 'newSaved = Новый(Тип("Массив")); newSaved.Add("Я😀");\n')
         send(">>> ", 'Message("new-recovered=" + newSaved[0]);\n')
+        send(">>> ", 'Procedure ConsoleReference(slot) slot = "Я😀"; EndProcedure\n')
+        send(">>> ", 'referenceArray = New Array(1); referenceArray[0] = "old";\n')
+        send(">>> ", 'ConsoleReference((referenceArray[0]));\n')
+        send(">>> ", 'Message("reference-value=" + referenceArray[0]);\n')
+        send(">>> ", 'referenceFixed = New FixedArray(referenceArray);\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'ConsoleReference(referenceFixed[0]);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("reference-readonly");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("reference-kept=" + referenceFixed[0]);\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -448,7 +459,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("new-caught", 1), ("new-kept=old", 1),
+        for message, count in (("reference-value=Я😀", 1), ("reference-readonly", 1),
+                               ("reference-kept=Я😀", 1), ("new-caught", 1), ("new-kept=old", 1),
                                ("new-recovered=Я😀", 1), ("execute-caught", 1), ("execute-kept=old", 1),
                                ("execute-recovered=Я", 1), ("fill-caught", 1), ("fill-kept=old", 1),
                                ("fill-recovered=Я", 1), ("compare-caught", 1), ("compare-kept=old", 1),

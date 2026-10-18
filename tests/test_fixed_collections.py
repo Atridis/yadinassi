@@ -265,8 +265,8 @@ class FixedCollectionTests(unittest.TestCase):
         self.make_collections()
         self.vm.execute('result = 99; a = New Array(1); holder = New Structure("Value", 99);')
         for expression in ['fs.Property(1, result)', 'fs.Property("bad-key", result)',
-                           'fs.Property("Known", (result))', 'fs.Property("Known", a[0])',
-                           'fs.Property("Known", holder.Value)',
+                           'fs.Property("Known", fs.Known)', 'fs.Property("Known", a[1])',
+                           'fs.Property("Known", holder.Missing)',
                            'fs.Property("Known", result, 1)', 'fs.Property()']:
             with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(expression)

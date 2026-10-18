@@ -336,30 +336,28 @@ class StructureTests(unittest.TestCase):
         ''')
         self.assertEqual(self.output, ['Да', 'Да', 'Нет', '1'])
 
-    def test_property_rejects_grouped_indexed_and_named_property_outputs(self):
+    def test_property_accepts_grouped_indexed_and_named_property_outputs(self):
         self.vm.execute('''
             s = New Structure("Value", 42); x = 7;
             a = New Array; a.Add(7); holder = New Structure("Value", 7);
         ''')
         for argument in ['(x)', '((x))', 'a[0]', '(a[0])',
                          'holder.Value', 'holder["Value"]', '(holder.Value)']:
-            with self.subTest(argument=argument), self.assertRaisesRegex(BSLError, 'по ссылке пока'):
-                self.vm.execute(f's.Property("Value", {argument})')
-            self.assertEqual(self.vm.variables['x'], Decimal(7))
-            self.assertEqual(self.vm.execute('a[0]'), Decimal(7))
-            self.assertEqual(self.vm.execute('holder.Value'), Decimal(7))
+            self.vm.execute('x = 7; a[0] = 7; holder.Value = 7;')
+            with self.subTest(argument=argument):
+                self.assertTrue(self.vm.execute(f's.Property("Value", {argument})'))
+                self.assertEqual(self.vm.execute(argument), Decimal(42))
 
-    def test_routine_property_reference_limit_remains_and_val_reads_work(self):
-        self.vm.execute('''
-            s = New Structure("Value", 7);
+    def test_routine_property_references_and_val_reads_work(self):
+        self.vm.execute('''s = New Structure("Value", 7);
             Procedure Change(x) x = 8; EndProcedure
-            Function Read(Val x) Return x; EndFunction
-        ''')
+            Function Read(Val x) Return x; EndFunction''')
         for argument in ['s.Value', 's["Value"]', '(s.Value)', '(s["Value"])']:
-            with self.subTest(argument=argument), self.assertRaisesRegex(BSLError, 'по ссылке пока'):
-                self.vm.execute(f'Change({argument})')
+            self.vm.execute('s.Value = 7;')
             self.assertEqual(self.vm.execute(f'Read({argument})'), Decimal(7))
-        self.assertEqual(self.vm.execute('s.Value'), Decimal(7))
+            self.vm.execute(f'Change({argument})')
+            self.assertEqual(self.vm.execute(f'Read({argument})'), Decimal(8))
+        self.assertEqual(self.vm.execute('s.Value'), Decimal(8))
 
     def test_grouped_direct_calls_keep_property_output_metadata(self):
         self.vm.execute('''
@@ -441,7 +439,7 @@ class StructureTests(unittest.TestCase):
     def test_invalid_output_has_source_location_and_restores_caller_frame(self):
         self.vm.execute('s = New Structure("Value", 42); result = 99;')
         with self.assertRaises(BSLRuntimeError) as caught:
-            self.vm.execute('\ns.Property("Value", (result));', 'output.bsl')
+            self.vm.execute('\ns.Property("Value", result[0]);', 'output.bsl')
         self.assertEqual((caught.exception.source, caught.exception.line), ('output.bsl', 2))
         self.assertEqual(self.vm.variables['result'], Decimal(99))
         self.assertIsNone(self.vm.locals)
@@ -633,7 +631,7 @@ class StructureImportTests(unittest.TestCase):
         self.load('''
             Procedure Fill(Val s, output) Export
                 s.Property("Value", output);
-                s.Property("Value", (output));
+                s.Property("Value", s.Missing);
             EndProcedure
         ''', 's = New Structure("Value", 42); result = 7;')
         with self.assertRaises(BSLRuntimeError) as caught:

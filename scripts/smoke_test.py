@@ -551,6 +551,26 @@ Message(dynamicValue.Имя); Message(Eval("New(""Array"").Count()"));
 STRING_PARITY_OUTPUT += 'Я😀\nЯ😀\nДа\n0\nnew-caught\nЯ😀\n0\n'
 
 
+STRING_PARITY_PROGRAM += r'''
+Procedure ChangeReference(slot) slot = "Я😀"; EndProcedure
+Procedure ObserveReference(slot, Val owner)
+    slot = 11; Message(owner[0]); owner[0] = 12; Message(slot);
+EndProcedure
+referenceArray = New Array(1); referenceArray[0] = 10;
+ObserveReference(referenceArray[0], referenceArray);
+ChangeReference((referenceArray[0])); Message(referenceArray[0]);
+referenceHolder = New Structure("Value", 10);
+ChangeReference(referenceHolder.Value); Message(referenceHolder.Value);
+referenceMap = New Map; ChangeReference(referenceMap["missing"]); Message(referenceMap["missing"]);
+referenceFixed = New FixedArray(referenceArray);
+Try ChangeReference(referenceFixed[0]); Except Message("reference-readonly"); EndTry;
+Message(referenceFixed[0]);
+referenceHolder.Property("Value", referenceArray[0]); Message(referenceArray[0]);
+Execute("ChangeReference(referenceArray[0]);"); Message(Eval("referenceArray[0]"));
+'''
+STRING_PARITY_OUTPUT += '11\n12\nЯ😀\nЯ😀\nЯ😀\nreference-readonly\nЯ😀\nЯ😀\nЯ😀\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()
