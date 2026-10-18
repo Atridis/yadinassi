@@ -340,6 +340,15 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'optional[0] = "changed"; optional.Add();\n')
         send(">>> ", 'Message("array-default-write=" + optional[0]);\n')
         send(">>> ", 'Message("array-default-recovered=" + optional.Count());\n')
+        send(">>> ", 'gap = New Array; gap.Вставить(3, "tail");\n')
+        send(">>> ", 'Message("array-gap-count=" + gap.Count());\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'gap.Insert(100000000000000000000);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("array-gap-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'gap.Insert(5); Message("array-gap-recovered=" + gap.Count());\n')
+        send(">>> ", 'Message("array-gap-undefined=" + ValueToStringInternal(gap[4]));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -367,7 +376,9 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("array-default-count=2", 1), ("array-default-caught", 1),
+        for message, count in (("array-gap-count=4", 1), ("array-gap-caught", 1),
+                               ("array-gap-recovered=6", 1), ('array-gap-undefined={"U"}', 1),
+                               ("array-default-count=2", 1), ("array-default-caught", 1),
                                ("array-default-write=changed", 1), ("array-default-recovered=3", 1),
                                ("goto-count=3", 1), ("goto-recovered=3", 1),
                                ('filled-result={"B",1}', 1), ('filled-caught', 1),

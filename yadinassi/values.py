@@ -258,6 +258,9 @@ class _ArrayBase(BSLObject):
         return HostFunction(name, method)
 
 
+_MAX_INSERT_GROWTH = 1_000_000  # Yadinassi allocation budget, not a native limit.
+
+
 class BSLArray(_ArrayBase):
     def __init__(self, size: object = Decimal(0)):
         if isinstance(size, BSLFixedArray):
@@ -277,7 +280,25 @@ class BSLArray(_ArrayBase):
         self.items.append(value)
 
     def insert(self, index: object, value: object = None) -> None:
-        self.items.insert(self.checked_index(index, inserting=True), value)
+        position = require_number(index)
+        if not position.is_finite() or position != position.to_integral_value():
+            raise ValueError("Ожидается целое число")
+        if position < 0:
+            raise IndexError("Индекс массива вне границ")
+        # Compare Decimals before int(): a huge exponent must not expand into
+        # an enormous Python integer or allocation. Existing in-range inserts
+        # need only one new element and retain their shifting behavior.
+        if position >= len(self.items) + _MAX_INSERT_GROWTH:
+            raise ValueError("Вставить: превышен предел роста массива Yadinassi (1000000 элементов)")
+        offset = int(position)
+        if offset < len(self.items):
+            self.items.insert(offset, value)
+        else:
+            # Prepare the complete tail before mutating the live list, so
+            # validation/allocation failure cannot leave a partly padded array.
+            tail = [None] * (offset - len(self.items))
+            tail.append(value)
+            self.items.extend(tail)
 
     def delete(self, index: object) -> None:
         del self.items[self.checked_index(index)]
