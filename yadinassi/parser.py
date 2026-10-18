@@ -303,6 +303,11 @@ class Parser:
             self.expect(")")
             return ast.Group(token, value)
         if self.accept("NEW"):
+            if self.accept("("):
+                type_expression = self.expression()
+                parameters = self.expression() if self.accept(",") else None
+                self.expect(")")
+                return ast.DynamicNew(token, type_expression, parameters)
             name = self.expect("IDENT").value
             arguments = self.arguments() if self.accept("(") else []
             return ast.New(token, name, arguments)

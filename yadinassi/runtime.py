@@ -13,7 +13,7 @@ from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
 from .structures import BSLFixedStructure, BSLStructure, fill_property_values
 from .values import (
-    BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference as _Reference,
+    BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, Reference as _Reference,
     boolean, divide, equal, number, require_number, to_string,
 )
 
@@ -518,6 +518,24 @@ class Interpreter:
         if factory is None:
             raise ValueError(f"Тип не определен: {node.name}")
         return factory(*(self.visit(argument) for argument in node.arguments))
+
+    def visit_DynamicNew(self, node: ast.DynamicNew) -> object:
+        # Expressions follow the same left-to-right evaluation as host calls.
+        # EDT root_New explicitly says to ignore a non-array second value.
+        value_type = self.visit(node.type_expression)
+        parameters = self.visit(node.parameters) if node.parameters is not None else None
+        if type(value_type) is BSLType:
+            name = value_type.value
+        elif type(value_type) is str:
+            name = value_type
+        else:
+            raise TypeError("Новый: ожидается имя типа или значение Тип")
+        factory = self.types.get(name.casefold())
+        if factory is None:
+            raise ValueError(f"Тип не определен или не имеет конструктора: {name}")
+        # No reflection, conversion, or arbitrary host iterable expansion.
+        arguments = tuple(parameters.items) if type(parameters) is BSLArray else ()
+        return factory(*arguments)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         if isinstance(node.target, ast.Name):
