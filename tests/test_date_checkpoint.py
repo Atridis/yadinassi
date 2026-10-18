@@ -1,4 +1,5 @@
 """Date probe packaging, not an oracle for native Date behavior."""
+import hashlib
 from pathlib import Path
 import unittest
 
@@ -12,7 +13,11 @@ FINAL = 'date.checkpoint.complete: [ok]'
 
 
 def source():
-    return SOURCE.read_text(encoding='utf-8-sig')
+    # This checkpoint owns its prefix through its required marker. Later date
+    # families can append observations without weakening any foundation checks.
+    text = SOURCE.read_text(encoding='utf-8-sig')
+    end = 'Сообщить("' + FINAL + '");'
+    return text[:text.index(end) + len(end)] + '\n'
 
 
 def calls():
@@ -142,6 +147,114 @@ class DateCheckpointTests(unittest.TestCase):
         after_paths = [path for path in (ROOT / 'integrational_tests/output').rglob('*') if path.is_file()]
         after_paths.append(ROOT / 'integrational_tests/meta.md')
         self.assertEqual(before, {path: path.read_bytes() for path in after_paths})
+
+
+class DateCalendarCheckpointTests(unittest.TestCase):
+    FINAL = 'date.calendar.checkpoint.complete: [ok]'
+
+    def full_source(self):
+        return SOURCE.read_text(encoding='utf-8-sig')
+
+    def calendar_expressions(self):
+        return {node.expression.arguments[0].value: node.expression.arguments[1].value
+                for node in parse(self.full_source())
+                if isinstance(node, ast.ExpressionStatement)
+                and isinstance(node.expression, ast.Call)
+                and isinstance(node.expression.callee, ast.Name)
+                and node.expression.callee.name == 'НаблюдатьДату'
+                and node.expression.arguments[0].value.startswith('calendar.')}
+
+    def test_foundation_source_prefix_is_byte_exact(self):
+        raw = SOURCE.read_bytes()
+        self.assertEqual(hashlib.sha256(raw[:7119]).hexdigest(),
+                         '5fbe934ac9d0ca1829a7f87e5f770fac797c9f9d9b52105110ddf24731f0fa6e')
+        self.assertEqual(raw[:7119].decode('utf-8-sig'), source())
+
+    def test_exact_bounded_calendar_observations_and_labels(self):
+        values = self.calendar_expressions()
+        self.assertEqual(len(values), 48)
+        self.assertEqual(sum(k.startswith('calendar.period.') for k in values), 14)
+        self.assertEqual(sum(k.startswith('calendar.month.') for k in values), 14)
+        self.assertEqual(sum(k.startswith('calendar.number.') for k in values), 12)
+        self.assertEqual(sum(k.startswith('calendar.edge.') for k in values), 8)
+        for label, expression in values.items():
+            self.assertRegex(label, r'^calendar\.[a-z0-9.-]+$')
+            self.assertLessEqual(len(expression), 300, label)
+            self.assertNotRegex(expression, r'[;\r\n]')
+            # Parse expressions without evaluating unsupported calendar behavior.
+            self.assertTrue(parse('x = ' + expression + ';'), label)
+        calls = [node.expression for node in parse(self.full_source())
+                 if isinstance(node, ast.ExpressionStatement)
+                 and isinstance(node.expression, ast.Call)
+                 and isinstance(node.expression.callee, ast.Name)
+                 and node.expression.callee.name == 'НаблюдатьДату']
+        self.assertEqual(len(calls), 98)
+        self.assertEqual(len({call.arguments[0].value for call in calls}), 98)
+        self.assertTrue(all(len(call.arguments) == 2 for call in calls))
+
+    def test_period_precision_is_numeric_against_explicit_whole_date(self):
+        values = self.calendar_expressions()
+        for unit, russian in (('Minute', 'Минуты'), ('Hour', 'Часа'), ('Day', 'Дня'),
+                              ('Week', 'Недели'), ('Month', 'Месяца'),
+                              ('Quarter', 'Квартала'), ('Year', 'Года')):
+            for prefix, function in (('begin-', 'BegOf' + unit), ('end-', 'Конец' + russian)):
+                expression = values['calendar.period.' + prefix + unit.lower()]
+                self.assertIn('New Structure("Value,Delta",', expression)
+                self.assertEqual(expression.count(function + '('), 2)
+                self.assertEqual(expression.count('+ 0.1234'), 2)
+                self.assertRegex(expression, r'\) - Date\([0-9,]+\)\)$')
+                self.assertNotIn('ValueFromStringInternal', expression)
+
+    def test_month_precision_fractional_counts_and_clipping_are_observed(self):
+        values = self.calendar_expressions()
+        for key in ('forward-year', 'backward-year', 'zero-fraction', 'leap-january'):
+            self.assertIn('0.1234', values['calendar.month.' + key])
+            self.assertIn(' - Date(', values['calendar.month.' + key])
+        for key, count in (('pos-half', '0.5'), ('neg-half', '-0.5'),
+                           ('pos-one-half', '1.5'), ('neg-one-half', '-1.5')):
+            self.assertTrue(values['calendar.month.count-' + key].endswith(',' + count + ')'))
+        for key in ('leap-january', 'common-january', 'leap-year', 'reverse-end',
+                    'chain', 'min-underflow', 'max-overflow'):
+            self.assertIn('calendar.month.' + key, values)
+
+    def test_numbering_distinguishes_week_conventions_and_leap_ordinals(self):
+        values = self.calendar_expressions()
+        for year in (2015, 2018, 2019, 2020, 2021, 2022, 2023):
+            expression = values[f'calendar.number.january-{year}']
+            for function in ('WeekOfYear', 'WeekDay', 'DayOfYear'):
+                self.assertIn(f'{function}(Date({year},1,1))', expression)
+        for key in ('year-end', 'first-monday', 'february'):
+            self.assertIn('НеделяГода(Date(', values['calendar.number.' + key])
+        self.assertIn('Date(2024,2,29)', values['calendar.number.leap-ordinals'])
+        self.assertIn('Date(2024,3,3)', values['calendar.number.common-and-weekdays'])
+        self.assertIn('Date(2024,3,4)', values['calendar.number.common-and-weekdays'])
+        for day in (3, 4):
+            self.assertIn(f'WeekOfYear(Date(2024,3,{day}))',
+                          values['calendar.number.common-and-weekdays'])
+
+    def test_both_sentinels_and_all_labels_reached_without_guessing_results(self):
+        output = []
+        Interpreter(output=output.append).execute(self.full_source())
+        self.assertEqual(len(output), 100)
+        self.assertEqual(output[50], FINAL)
+        self.assertEqual(output[-1], self.FINAL)
+        expected = ['date.' + label for label in self.calendar_expressions()]
+        self.assertEqual([line.split(': [', 1)[0] for line in output[51:-1]], expected)
+        for message in output[51:-1]:
+            self.assertRegex(message, r'(?s)^date\.calendar\.[a-z0-9.-]+: \[(?:error|serialize-error|\{.*\})\]$')
+
+    def test_readonly_bounded_append_reuses_protected_observer(self):
+        text = self.full_source()
+        self.assertEqual(text.count('Вычислить('), 1)
+        self.assertEqual(text.count(FINAL), 1)
+        self.assertEqual(text.count(self.FINAL), 1)
+        self.assertTrue(text.rstrip().endswith('Сообщить("' + self.FINAL + '");'))
+        self.assertNotRegex(text, r'\b(?:Пока|Для|Перейти|Выполнить|ОписаниеОшибки|ТекущаяДата|CurrentDate)\b')
+        self.assertNotRegex(text[len(source()):], r'\b(?:Процедура|Функция)\b')
+        raw = (ROOT / 'integrational_tests/output/dates.out').read_bytes()
+        before = hashlib.sha256(raw).hexdigest()
+        Interpreter(output=lambda message: None).execute(text)
+        self.assertEqual(hashlib.sha256((ROOT / 'integrational_tests/output/dates.out').read_bytes()).hexdigest(), before)
 
 
 if __name__ == '__main__':

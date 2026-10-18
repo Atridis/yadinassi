@@ -71,7 +71,11 @@ class NativeDateEvidenceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.native = normalize_transport(NATIVE.read_text(encoding='utf-8-sig'))
+        native = normalize_transport(NATIVE.read_text(encoding='utf-8-sig'))
+        # These assertions own the complete foundation through its required marker;
+        # the unchanged strict native comparator owns the entire expanded file.
+        marker = 'date.checkpoint.complete: [ok]\n'
+        cls.native = native[:native.index(marker) + len(marker)]
 
     def record(self, label):
         matches = re.findall(
@@ -85,9 +89,10 @@ class NativeDateEvidenceTests(unittest.TestCase):
         before = {path: path.read_bytes() for path in
                   (SOURCE, NATIVE, ROOT / 'integrational_tests/meta.md')}
         output = []
-        Interpreter(output=output.append).execute(
-            SOURCE.read_text(encoding='utf-8-sig'), str(SOURCE),
-        )
+        text = SOURCE.read_text(encoding='utf-8-sig')
+        marker = 'Сообщить("date.checkpoint.complete: [ok]");'
+        foundation = text[:text.index(marker) + len(marker)]
+        Interpreter(output=output.append).execute(foundation, str(SOURCE))
         actual = ''.join(normalize_transport(message) + '\n' for message in output)
         self.assertEqual(len(output), 51)  # 50 observations plus the completion marker.
         self.assertEqual(len(self.native.splitlines()), 127)
