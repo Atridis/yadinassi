@@ -1,3 +1,35 @@
+// Полный СтрНайти и НаправлениеПоиска: наблюдения собирает только реальная 1С.
+// Выражения и потенциально недопустимые конструкции выполняются под Попытка,
+// чтобы отсутствие API или отказ одного случая не оборвали следующие пробы.
+Процедура ПроверитьВыражениеПоиска(Знач Метка, Знач Выражение)
+    Попытка
+        Результат = Вычислить(Выражение);
+        Показать(Метка, ЗначениеВСтрокуВнутр(Результат));
+    Исключение
+        Показать(Метка, "error");
+    КонецПопытки;
+КонецПроцедуры
+
+Процедура ПроверитьОбъектПоиска(Знач Метка, Знач Выражение)
+    ПроверитьВыражениеПоиска(Метка + ".payload", Выражение);
+    ПроверитьВыражениеПоиска(Метка + ".type", "ТипЗнч(" + Выражение + ")");
+    ПроверитьВыражениеПоиска(Метка + ".string", "Строка(" + Выражение + ")");
+    // Пространство перечисления может читаться иначе, чем его значения.
+    Чтение = "ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(" + Выражение + "))";
+    ПроверитьВыражениеПоиска(Метка + ".readback", Чтение);
+    ПроверитьВыражениеПоиска(Метка + ".readback-type", "ТипЗнч(" + Чтение + ")");
+КонецПроцедуры
+
+Процедура ПроверитьБлокПоиска(Знач Метка, Знач Код)
+    Результат = Неопределено;
+    Попытка
+        Выполнить(Код);
+        Показать(Метка, ЗначениеВСтрокуВнутр(Результат));
+    Исключение
+        Показать(Метка, "error");
+    КонецПопытки;
+КонецПроцедуры
+
 // Строковый конвейер и границы встроенных функций. Эталон получает только 1С.
 // Скобки сохраняют видимость пустых строк и краевых пробелов в сообщениях.
 Процедура Показать(Знач Метка, Знач Значение)
@@ -440,3 +472,67 @@
 ПроверитьXML("xml.string", Тип("Строка"), " <x>&amp;Я😀</x> ");
 ПроверитьXML("xml.empty-string", Тип("Строка"), "");
 Показать("strings.compare-xml.complete", "ok");
+
+// Нативный checkpoint полного поиска; прежний эталон выше сохранен целиком.
+ПроверитьОбъектПоиска("search.enum.begin", "SearchDirection.FromBegin");
+ПроверитьОбъектПоиска("search.enum.end", "НаправлениеПоиска.СКонца");
+ПроверитьОбъектПоиска("search.enum.namespace", "SearchDirection");
+ПроверитьВыражениеПоиска("search.enum.aliases", "НаправлениеПоиска.СНачала = SearchDirection.FromBegin И НаправлениеПоиска.СКонца = SearchDirection.FromEnd");
+ПроверитьВыражениеПоиска("search.enum.type-ru", "Type(""НаправлениеПоиска"") = TypeOf(SearchDirection.FromBegin)");
+ПроверитьВыражениеПоиска("search.enum.type-en", "Type(""SearchDirection"") = TypeOf(SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.enum.namespace-type-ru", "Type(""ПеречислениеНаправлениеПоиска"") = TypeOf(SearchDirection)");
+ПроверитьВыражениеПоиска("search.enum.namespace-type-en", "Type(""EnumSearchDirection"") = TypeOf(SearchDirection)");
+ПроверитьВыражениеПоиска("search.enum.distinct", "SearchDirection.FromBegin = SearchDirection.FromEnd");
+ПроверитьВыражениеПоиска("search.enum.not-number", "SearchDirection.FromBegin = 0");
+ПроверитьВыражениеПоиска("search.forward", "СтрНайти(""abcabc"", ""bc"", НаправлениеПоиска.СНачала)");
+ПроверитьВыражениеПоиска("search.backward", "StrFind(""abcabc"", ""bc"", SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.forward-start", "StrFind(""abcabc"", ""bc"", SearchDirection.FromBegin, 3)");
+ПроверитьВыражениеПоиска("search.backward-start-inside", "StrFind(""abcabc"", ""bc"", SearchDirection.FromEnd, 5)");
+ПроверитьВыражениеПоиска("search.backward-start-before", "StrFind(""abcabc"", ""bc"", SearchDirection.FromEnd, 4)");
+ПроверитьВыражениеПоиска("search.forward-occurrence", "StrFind(""abcabcabc"", ""bc"", SearchDirection.FromBegin, 3, 2)");
+ПроверитьВыражениеПоиска("search.backward-occurrence", "StrFind(""abcabcabc"", ""bc"", SearchDirection.FromEnd, 6, 2)");
+ПроверитьВыражениеПоиска("search.forward-overlap", "StrFind(""aaaa"", ""aa"", SearchDirection.FromBegin, 1, 2)");
+ПроверитьВыражениеПоиска("search.backward-overlap", "StrFind(""aaaa"", ""aa"", SearchDirection.FromEnd, 4, 2)");
+ПроверитьВыражениеПоиска("search.occurrence-missing", "StrFind(""abcabc"", ""bc"", SearchDirection.FromBegin, 1, 3)");
+ПроверитьВыражениеПоиска("search.utf16-backward", "StrFind(""Я😀Я😀"", ""😀"", SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.empty-needle-forward", "StrFind(""abc"", """", SearchDirection.FromBegin, 2, 2)");
+ПроверитьВыражениеПоиска("search.empty-needle-backward", "StrFind(""abc"", """", SearchDirection.FromEnd, 2, 2)");
+ПроверитьВыражениеПоиска("search.empty-haystack-backward", "StrFind("""", ""a"", SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.empty-needle-invalid-start", "StrFind(""abc"", """", SearchDirection.FromBegin, 0)");
+ПроверитьВыражениеПоиска("search.position-zero", "StrFind(""abc"", ""b"", SearchDirection.FromBegin, 0)");
+ПроверитьВыражениеПоиска("search.position-high", "StrFind(""abc"", ""b"", SearchDirection.FromEnd, 4)");
+ПроверитьВыражениеПоиска("search.position-fraction", "StrFind(""abc"", ""a"", SearchDirection.FromBegin, 1.9)");
+ПроверитьВыражениеПоиска("search.occurrence-zero", "StrFind(""abc"", ""b"", SearchDirection.FromBegin, 1, 0)");
+ПроверитьВыражениеПоиска("search.occurrence-negative", "StrFind(""abc"", ""b"", SearchDirection.FromBegin, 1, -1)");
+ПроверитьВыражениеПоиска("search.occurrence-fraction", "StrFind(""abcabc"", ""b"", SearchDirection.FromBegin, 1, 1.9)");
+ПроверитьВыражениеПоиска("search.omitted-direction", "StrFind(""abcabc"", ""b"", , 3)");
+ПроверитьВыражениеПоиска("search.omitted-reverse-position", "StrFind(""abcabc"", ""b"", SearchDirection.FromEnd, , 2)");
+ПроверитьВыражениеПоиска("search.undefined-direction", "StrFind(""abc"", ""b"", Undefined)");
+ПроверитьВыражениеПоиска("search.undefined-position", "StrFind(""abc"", ""b"", SearchDirection.FromEnd, Undefined)");
+ПроверитьВыражениеПоиска("search.undefined-occurrence", "StrFind(""abc"", ""b"", SearchDirection.FromBegin, 1, Undefined)");
+ПроверитьВыражениеПоиска("search.direction-number", "StrFind(""abc"", ""b"", 0)");
+ПроверитьВыражениеПоиска("search.direction-other-enum", "StrFind(""abc"", ""b"", RoundMode.Round15as10)");
+ПроверитьВыражениеПоиска("search.number-input", "StrFind(121, ""1"", SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.position-string", "StrFind(""abc"", ""b"", SearchDirection.FromBegin, ""2"")");
+ПроверитьВыражениеПоиска("search.occurrence-string", "StrFind(""abcabc"", ""b"", SearchDirection.FromBegin, 1, ""2"")");
+ПроверитьВыражениеПоиска("search.both-empty-backward", "StrFind("""", """", SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.empty-needle-zero-occurrence", "StrFind(""abc"", """", SearchDirection.FromBegin, 1, 0)");
+ПроверитьБлокПоиска("search.enum.iteration", "Результат = """"; Количество = 0; Для Каждого Элемент Из SearchDirection Цикл Количество = Количество + 1; Если Количество > 2 Тогда ВызватьИсключение ""limit""; КонецЕсли; Результат = Результат + ValueToStringInternal(Элемент) + "";""; КонецЦикла;");
+ПроверитьБлокПоиска("search.enum.array-readback", "Данные = Новый Массив; Данные.Добавить(SearchDirection.FromBegin); Данные.Добавить(SearchDirection.FromEnd); Чтение = ValueFromStringInternal(ValueToStringInternal(Данные)); Результат = Чтение.Количество() = 2 И Чтение[0] = SearchDirection.FromBegin И Чтение[1] = SearchDirection.FromEnd И TypeOf(Чтение[0]) = TypeOf(SearchDirection.FromBegin);");
+ПроверитьБлокПоиска("search.enum.map-readback", "Данные = Новый Соответствие; Данные.Вставить(SearchDirection.FromBegin, ""begin""); Данные.Вставить(SearchDirection.FromEnd, ""end""); Чтение = ValueFromStringInternal(ValueToStringInternal(Данные)); Результат = Чтение.Количество() = 2 И Чтение[SearchDirection.FromBegin] = ""begin"" И Чтение[SearchDirection.FromEnd] = ""end"";");
+ПроверитьБлокПоиска("search.enum.readonly", "SearchDirection.FromBegin = SearchDirection.FromEnd; Результат = Истина;");
+ПроверитьБлокПоиска("search.enum.constructor", "Результат = Новый SearchDirection;");
+Показать("search.checkpoint.complete", "ok");
+
+// Дополнение: независимые старт и номер вхождения для пустой подстроки.
+ПроверитьВыражениеПоиска("search.empty.forward.start3-occurrence1", "StrFind(""abc"", """", SearchDirection.FromBegin, 3, 1)");
+ПроверитьВыражениеПоиска("search.empty.forward.start1-occurrence3", "StrFind(""abc"", """", SearchDirection.FromBegin, 1, 3)");
+ПроверитьВыражениеПоиска("search.empty.forward.start3-occurrence2", "StrFind(""abc"", """", SearchDirection.FromBegin, 3, 2)");
+ПроверитьВыражениеПоиска("search.empty.forward.defaults", "StrFind(""abc"", """", SearchDirection.FromBegin)");
+ПроверитьВыражениеПоиска("search.empty.backward.start3-occurrence1", "StrFind(""abc"", """", SearchDirection.FromEnd, 3, 1)");
+ПроверитьВыражениеПоиска("search.empty.backward.start1-occurrence3", "StrFind(""abc"", """", SearchDirection.FromEnd, 1, 3)");
+ПроверитьВыражениеПоиска("search.empty.backward.start3-occurrence2", "StrFind(""abc"", """", SearchDirection.FromEnd, 3, 2)");
+ПроверитьВыражениеПоиска("search.empty.backward.defaults", "StrFind(""abc"", """", SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.empty.both-empty.forward.occurrence2", "StrFind("""", """", SearchDirection.FromBegin, 1, 2)");
+ПроверитьВыражениеПоиска("search.empty.both-empty.backward.occurrence2", "StrFind("""", """", SearchDirection.FromEnd, 1, 2)");
+Показать("search.empty-checkpoint.complete", "ok");

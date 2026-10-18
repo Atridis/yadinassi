@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode, BSLRoundModes
+from .search_directions import BSLSearchDirection, BSLSearchDirections
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from .values import BSLArray, BSLFixedArray, BSLType
 
@@ -25,9 +26,14 @@ _VALUE_TYPES = (
     # EnumRoundMode is the official EDT type-name metadata, rather than a
     # separately observed native Type("EnumRoundMode") call.
     (BSLRoundModes, BSLType.ROUND_MODES, "EnumRoundMode"),
+    (BSLSearchDirection, BSLType.SEARCH_DIRECTION, "SearchDirection"),
+    # Native search.enum.namespace-type-{ru,en} both fail. TypeOf still has
+    # this identity, but neither presentation nor English name resolves it.
+    (BSLSearchDirections, BSLType.SEARCH_DIRECTIONS, None),
 )
 _BY_NAME = {name.casefold(): value_type
             for _, value_type, alias in _VALUE_TYPES
+            if alias is not None
             for name in (value_type.value, alias)}
 
 

@@ -6,6 +6,7 @@ from typing import Callable
 
 from . import ast, bits, numbers, serialization, strings, type_values, value_checks, xml_values
 from .round_modes import BSLRoundModes, ROUND_MODES
+from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
 from .parser import parse, parse_expression, parse_fragment, validate_labels
@@ -299,6 +300,8 @@ class Interpreter:
             return self.functions[name]
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
+        if name in ("направлениепоиска", "searchdirection"):
+            return SEARCH_DIRECTIONS
         raise ValueError(f"Переменная или функция не определена: {node.name}")
 
     def visit_Group(self, node: ast.Group) -> object:
@@ -395,11 +398,12 @@ class Interpreter:
         if routine is not None:
             return self.call_routine(routine, node.arguments, owner, require_value=require_value)
         # Preserve early omission rejection before evaluating method receivers.
-        # Only a named registration of this exact builtin can admit optional gaps;
+        # Only named registrations of these exact builtins admit optional gaps;
         # final dispatch still verifies identity after resolving possible shadows.
         registered = (self.functions.get(callee.name.casefold())
                       if isinstance(callee, ast.Name) else None)
-        if registered is None or registered.function is not fill_property_values:
+        if registered is None or (registered.function is not fill_property_values
+                                  and registered.function is not strings.str_find):
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
             receiver = self.visit(callee.object)
@@ -414,6 +418,10 @@ class Interpreter:
             if not 2 <= len(node.arguments) <= 4:
                 raise TypeError("ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов")
             self.reject_host_omissions(node.arguments[:2])
+        elif function.function is strings.str_find:
+            if not 2 <= len(node.arguments) <= 5:
+                raise TypeError("СтрНайти ожидает от 2 до 5 аргументов")
+            self.reject_host_omissions(node.arguments[:2])
         else:
             self.reject_host_omissions(node.arguments)
         if require_value and not function.returns_value:
@@ -422,6 +430,9 @@ class Interpreter:
             if len(node.arguments) != 1:
                 raise TypeError("Вычислить ожидает 1 аргумент")
             return self._evaluate(node.arguments[0])
+        if function.function is strings.str_find:
+            return function(*(strings._OMITTED if isinstance(argument, ast.OmittedArgument)
+                              else self.visit(argument) for argument in node.arguments))
         if function.function is fill_property_values:
             return function(*(None if isinstance(argument, ast.OmittedArgument)
                               else self.visit(argument) for argument in node.arguments))
@@ -751,8 +762,10 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = self.visit(node.collection)
-        if not isinstance(collection, _COLLECTIONS) and type(collection) is not BSLRoundModes:
-            raise TypeError("Для Каждого ожидает массив, структуру, соответствие или пространство РежимОкругления")
+        if (not isinstance(collection, _COLLECTIONS)
+                and type(collection) is not BSLRoundModes
+                and type(collection) is not BSLSearchDirections):
+            raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         for item in collection:
             self.set_variable(node.name, item)
             if not self.iteration(node.body):

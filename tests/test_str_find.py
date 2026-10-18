@@ -1,4 +1,4 @@
-"""Documented default StrFind, not a claim of optional-direction parity."""
+"""Default StrFind regressions alongside the extended optional-argument API."""
 from decimal import Decimal
 import unittest
 
@@ -35,12 +35,12 @@ class StrFindTests(unittest.TestCase):
         self.assertEqual(vm.execute('ValueToStringInternal(StrFind("abc", "b"))'), '{"N",2}')
         self.assertEqual(vm.execute('ValueFromStringInternal(ValueToStringInternal(StrFind("abc", "b")))'), Decimal(2))
 
-    def test_arity_unsupported_options_and_recovery(self):
+    def test_invalid_arity_direction_and_recovery(self):
         vm = Interpreter()
         for expression in ('StrFind()', 'StrFind("a")',
                            'СтрНайти("abc", "b", Undefined)',
                            'StrFind("abc", "b", Undefined, 1, 1)',
-                           'StrFind("abc", "b", , 1)'):
+                           'StrFind("abc", "b", , 1, 1, 1)'):
             with self.subTest(expression=expression):
                 vm.execute('saved = 7;')
                 with self.assertRaises(BSLError):

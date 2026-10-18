@@ -9,6 +9,7 @@ from decimal import Decimal, ROUND_DOWN
 import re
 
 from .collation import caseless_string_key
+from .search_directions import BSLSearchDirection
 from .values import BSLArray, BSLFixedArray, boolean, number, to_string
 
 
@@ -129,6 +130,66 @@ def mid(value: object, start: object, count: object = _OMITTED) -> str:
 
 def find(value: object, needle: object) -> Decimal:
     return Decimal(_units(value).find(_units(needle)) + 1)
+
+
+
+def str_find(value: object, needle: object, direction: object = _OMITTED,
+             start: object = _OMITTED, occurrence: object = _OMITTED) -> Decimal:
+    """Native PR53 search with UTF-16 positions and nonoverlapping matches.
+
+    Empty matches use the owner-observed initial result of one. Subsequent
+    zero-width matches retain the normalized start; this closed form avoids
+    iterating an arbitrarily large occurrence count.
+    """
+    if direction is _OMITTED:
+        direction = BSLSearchDirection.FROM_BEGIN
+    if type(direction) is not BSLSearchDirection:
+        raise TypeError("СтрНайти: ожидается НаправлениеПоиска")
+    text, search = _units(value), _units(needle)
+    backward = direction is BSLSearchDirection.FROM_END
+    default_start = start is _OMITTED or start is None
+    if default_start:
+        position = max(1, len(text)) if backward else 1
+    else:
+        raw = number(start).to_integral_value(rounding=ROUND_DOWN)
+        # Compare before integer conversion; enormous decimal exponents cannot
+        # allocate integers whose position is already known to be out of range.
+        if raw < 1 or raw > max(1, len(text)):
+            raise ValueError("СтрНайти: неверная начальная позиция")
+        position = int(raw)
+    count = (Decimal(1) if occurrence is _OMITTED else
+             number(occurrence).to_integral_value(rounding=ROUND_DOWN))
+    if count.is_zero():
+        raise ValueError("СтрНайти: номер вхождения не может быть равен нулю")
+    if count < 0:
+        return Decimal(0)
+    if not search:
+        # Native probes distinguish occurrence 1 from 2 and confirm that a
+        # zero-width match does not advance at occurrence 3. The closed form
+        # generalizes that recurrence; higher combinations are not new goldens.
+        return Decimal(1 if count == 1 else position)
+    # At most this many disjoint matches exist in the entire input. Comparing
+    # as Decimal bounds both the conversion and loop independently of the
+    # requested occurrence (including enormous positive exponents).
+    width = len(search)
+    if count > len(text) // width:
+        return Decimal(0)
+    if backward:
+        # Native start is the latest allowed match START, not its final unit.
+        stop = min(len(text), position + width - 1)
+        for _ in range(int(count)):
+            found = text.rfind(search, 0, stop)
+            if found < 0:
+                return Decimal(0)
+            stop = found
+    else:
+        offset = position - 1
+        for _ in range(int(count)):
+            found = text.find(search, offset)
+            if found < 0:
+                return Decimal(0)
+            offset = found + width
+    return Decimal(found + 1)
 
 
 def starts_with(value: object, needle: object) -> bool:
@@ -285,8 +346,7 @@ BUILTINS = (
     ("Прав", right, "Right"),
     ("Сред", mid, "Mid"),
     ("Найти", find, "Find"),
-    # Documented default forward search only; optional arguments remain unsupported.
-    ("СтрНайти", find, "StrFind"),
+    ("СтрНайти", str_find, "StrFind"),
     ("СтрЗаменить", replace, "StrReplace"),
     ("СтрНачинаетсяС", starts_with, "StrStartsWith"),
     ("СтрЗаканчиваетсяНа", ends_with, "StrEndsWith"),

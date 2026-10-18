@@ -24,6 +24,8 @@ class BSLType(Enum):
     TYPE = "Тип"
     ROUND_MODE = "РежимОкругления"
     ROUND_MODES = "ПеречислениеРежимОкругления"
+    SEARCH_DIRECTION = "НаправлениеПоиска"
+    SEARCH_DIRECTIONS = "ПеречислениеНаправлениеПоиска"
 
     def __str__(self) -> str:
         return "Не определено" if self is BSLType.UNDEFINED else self.value

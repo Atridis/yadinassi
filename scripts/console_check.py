@@ -482,6 +482,23 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("left-caught");\n')
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("left-recovered=" + (ПобитовыйСдвигВлево(4294967295, 1) = 4294967294));\n')
+        send(">>> ", 'Message("search-back=" + СтрНайти("Я😀Я😀", "😀", НаправлениеПоиска.СКонца));\n')
+        send(">>> ", 'Message("search-overlap=" + StrFind("aaaa", "aa", SearchDirection.FromEnd, , 2));\n')
+        send(">>> ", 'Message("search-hole=" + StrFind("abcabc", "b", , 3));\n')
+        send(">>> ", 'Message("search-empty-first=" + StrFind("abc", "", SearchDirection.FromEnd, 3, 1));\n')
+        send(">>> ", 'Message("search-empty-next=" + StrFind("abc", "", SearchDirection.FromBegin, 3, 2));\n')
+        send(">>> ", 'Message("search-empty-both=" + StrFind("", "", SearchDirection.FromEnd, 1, 2));\n')
+        send(">>> ", 'Message("search-codec=" + ValueToStringInternal(SearchDirection.FromEnd));\n')
+        send(">>> ", 'Message("search-read=" + (ValueFromStringInternal(ValueToStringInternal(SearchDirection.FromBegin)) = SearchDirection.FromBegin));\n')
+        send(">>> ", 'Message("search-namespace=" + ValueToStringInternal(ValueFromStringInternal(ValueToStringInternal(SearchDirection))));\n')
+        send(">>> ", 'searchSaved = 7;\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'searchSaved = StrFind("abc", "b", SearchDirection.FromEnd, 4);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("search-range-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("search-kept=" + searchSaved);\n')
+        send(">>> ", 'Message("search-recovered=" + StrFind("abcabc", "b", SearchDirection.FromEnd, , 2));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -509,7 +526,11 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (('radix-exact={"N",340282366920938463463374607431768211455}', 1),
+        for message, count in (("search-empty-first=1", 1), ("search-empty-next=3", 1), ("search-empty-both=1", 1), ("search-back=5", 1), ("search-overlap=1", 1), ("search-hole=5", 1),
+                               ('search-codec={"#",bee8fa9f-59d0-4e71-9f6e-599d83cb1960,1}', 1),
+                               ("search-read=Да", 1), ('search-namespace={"U"}', 1),
+                               ("search-range-caught", 1), ("search-kept=7", 1), ("search-recovered=2", 1),
+                               ('radix-exact={"N",340282366920938463463374607431768211455}', 1),
                                ("radix-binary=25", 1), ("radix-caught", 1), ("radix-recovered=26", 1),
                                ("left-wrap=0", 1), ("left-caught", 1), ("left-recovered=Да", 1),
                                ("delete-empty-caught", 1), ("delete-bound-caught", 1),
