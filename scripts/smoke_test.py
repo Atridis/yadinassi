@@ -630,6 +630,31 @@ STRING_PARITY_OUTPUT += ('{"N",340282366920938463463374607431768211455}\n'
                          '25\nДа\n0\nradix-caught\n17\n26\nДа\nleft-caught\nДа\n')
 
 
+
+# Native PR53: optional search, enum/namespace codec and error recovery.
+STRING_PARITY_PROGRAM += '''
+Message(СтрНайти("Я😀Я😀", "😀", НаправлениеПоиска.СКонца));
+Message(StrFind("abcabcabc", "bc", SearchDirection.FromBegin, 3, 2));
+Message(StrFind("aaaa", "aa", SearchDirection.FromEnd, , 2));
+Message(StrFind("abcabc", "bc", , 3));
+Message(ValueToStringInternal(SearchDirection.FromEnd));
+Message(ValueFromStringInternal(ValueToStringInternal(SearchDirection.FromBegin)) = SearchDirection.FromBegin);
+Message(ValueToStringInternal(ValueFromStringInternal(ValueToStringInternal(SearchDirection))));
+Try Type("EnumSearchDirection"); Except Message("search-type-caught"); EndTry;
+For Each direction In SearchDirection Do Message(direction); EndDo;
+searchSaved = 7;
+Try searchSaved = StrFind("abc", "b", SearchDirection.FromEnd, 4); Except Message("search-range-caught"); EndTry;
+Message(searchSaved); Message(StrFind("abcabc", "b", SearchDirection.FromEnd, , 2));
+Message(StrFind("abc", "", SearchDirection.FromEnd, 3, 1));
+Message(StrFind("abc", "", SearchDirection.FromBegin, 3, 2));
+Message(StrFind("", "", SearchDirection.FromEnd, 1, 2));
+'''
+STRING_PARITY_OUTPUT += ('5\n8\n1\n5\n'
+                         '{"#",bee8fa9f-59d0-4e71-9f6e-599d83cb1960,1}\n'
+                         'Да\n{"U"}\nsearch-type-caught\nС начала\nС конца\n'
+                         'search-range-caught\n7\n2\n1\n3\n1\n')
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()
@@ -644,7 +669,7 @@ def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_PARITY_OUTPUT, ''):
             raise AssertionError(f'Failed native string parity {arguments!r}: {result!r}')
-    print('Binary string checks passed: native parity, default StrFind, lexical XML conversion, '
+    print('Binary string checks passed: native parity, extended StrFind/SearchDirection, lexical XML conversion, '
           'BOM file, command flags, stdin and console recovery')
 
 

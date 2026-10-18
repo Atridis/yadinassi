@@ -1,8 +1,8 @@
 """Bounded implementation of the owner's observed 1C internal stream format.
 
 Not JSON or a promised stable interchange format. GUIDs and layouts come from
-PR23/PR25 native output; cycles and undocumented tags are not guessed. New runtime
-types must be added explicitly to the codec policy and its completeness test.
+the owner's committed native output; cycles and undocumented tags are not guessed.
+New runtime types must be added explicitly to the codec policy and its completeness test.
 """
 
 from dataclasses import dataclass
@@ -11,6 +11,7 @@ import re
 
 from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode
+from .search_directions import BSLSearchDirection
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from .type_values import type_of
 from .values import BSLArray, BSLFixedArray, BSLType
@@ -37,6 +38,8 @@ _TYPE_IDS = {
     BSLType.TYPE: "d47d59f8-73f0-481c-8b5e-f6384c0a4804",
     BSLType.ROUND_MODE: "32c82ccd-fef3-4070-beb5-b9c52afc781d",
     BSLType.ROUND_MODES: "a47c4665-311c-405a-828e-0c5a3ca3bdda",
+    BSLType.SEARCH_DIRECTION: "bee8fa9f-59d0-4e71-9f6e-599d83cb1960",
+    BSLType.SEARCH_DIRECTIONS: "ca8683c7-a41c-4c82-b912-6afb606e8b01",
 }
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
@@ -44,7 +47,8 @@ _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
 _MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
 _CODECS = frozenset({BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
                     BSLType.STRING, BSLType.TYPE, BSLType.KEY_AND_VALUE,
-                    BSLType.ROUND_MODE, BSLType.ROUND_MODES}) | _ARRAYS | _STRUCTURES | _MAPS
+                    BSLType.ROUND_MODE, BSLType.ROUND_MODES,
+                    BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS}) | _ARRAYS | _STRUCTURES | _MAPS
 _NUMBER = re.compile(r'[+-]?[0-9]+(?:\.[0-9]+)?')
 _COUNT = re.compile(r'0|[1-9][0-9]*')
 _HEX = frozenset('0123456789abcdef')
@@ -123,9 +127,9 @@ class _Writer:
             self.emit('}')
         elif kind is BSLType.TYPE:
             self.emit('{"T",' + _TYPE_IDS[value] + '}')
-        elif kind is BSLType.ROUND_MODE:
+        elif kind in (BSLType.ROUND_MODE, BSLType.SEARCH_DIRECTION):
             self.emit('{"#",' + _TYPE_IDS[kind] + ',' + str(value.value) + '}')
-        elif kind is BSLType.ROUND_MODES:
+        elif kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS):
             self.emit('{"#",' + _TYPE_IDS[kind] + '}')
         else:
             identity = id(value)
@@ -290,9 +294,10 @@ class _Reader:
             self.number(group[1])
             return None  # Observed lowercase numeric tag; not arbitrary unknown tags.
         if (tag == '#' and len(group) == 2 and type(group[1]) is _Atom
-                and group[1].text == _TYPE_IDS[BSLType.ROUND_MODES]):
-            # PR25's follow-up probe establishes Undefined on namespace
-            # readback. Its Type record still restores the namespace type.
+                and group[1].text in (_TYPE_IDS[BSLType.ROUND_MODES],
+                                      _TYPE_IDS[BSLType.SEARCH_DIRECTIONS])):
+            # Native round/search namespace probes establish Undefined on
+            # readback. Type records still restore the namespace identities.
             return None
         if tag not in ('T', '#') or len(group) != (2 if tag == 'T' else 3):
             self.fail()
@@ -306,6 +311,10 @@ class _Reader:
             if type(body) is not _Atom or body.text not in ('0', '1'):
                 self.fail()
             return BSLRoundMode.ROUND15_AS10 if body.text == '0' else BSLRoundMode.ROUND15_AS20
+        if kind is BSLType.SEARCH_DIRECTION:
+            if type(body) is not _Atom or body.text not in ('0', '1'):
+                self.fail()
+            return BSLSearchDirection.FROM_BEGIN if body.text == '0' else BSLSearchDirection.FROM_END
         if type(body) is not list:
             self.fail()
         if kind is BSLType.KEY_AND_VALUE and len(body) == 2:

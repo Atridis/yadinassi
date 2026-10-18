@@ -79,7 +79,8 @@ class InternalSerializationTests(unittest.TestCase):
                        'New FixedArray(New Array)', 'New Structure',
                        'New FixedStructure(New Structure)', 'New Map',
                        'New FixedMap(New Map)', 'Type("Number")',
-                       'RoundMode.Round15as10', 'RoundMode.Round15as20', 'RoundMode']
+                       'RoundMode.Round15as10', 'RoundMode.Round15as20', 'RoundMode',
+                       'SearchDirection.FromBegin', 'SearchDirection.FromEnd', 'SearchDirection']
         vm.execute('s = New Structure("Key", 1); For Each pair In s Do EndDo;')
         expressions.append('pair')
         observed = set()
@@ -88,8 +89,8 @@ class InternalSerializationTests(unittest.TestCase):
                 original = vm.execute(expression)
                 kind = type_values.type_of(original)
                 restored = value_from_string_internal(value_to_string_internal(original))
-                if kind is BSLType.ROUND_MODES:
-                    # Owner aeb904f: namespace reads as Undefined, unlike its Type.
+                if kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS):
+                    # Native namespace records read as Undefined, unlike their Types.
                     self.assertIsNone(restored)
                     self.assertIs(type_values.type_of(restored), BSLType.UNDEFINED)
                 else:
