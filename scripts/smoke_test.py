@@ -586,6 +586,17 @@ Message(bitSaved); Message(Eval("BitwiseOr(1, 2)"));
 STRING_PARITY_OUTPUT += '8\n14\n6\nДа\n2\nДа\nДа\nДа\nДа\nbits-caught\n42\n3\n'
 
 
+# Documented unsigned right shift, independent of native saved outputs.
+STRING_PARITY_PROGRAM += '''
+Message(ПобитовыйСдвигВправо(4294967295, 31));
+Message(BitwiseShiftRight(2147483648, 1) = 1073741824);
+shiftSaved = 17;
+Try shiftSaved = BitwiseShiftRight(1, 32); Except Message("shift-caught"); EndTry;
+Message(shiftSaved); Message(Eval("BitwiseShiftRight(26, 3)"));
+'''
+STRING_PARITY_OUTPUT += '1\nДа\nshift-caught\n17\n3\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()

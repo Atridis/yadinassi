@@ -439,6 +439,13 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("bits-caught");\n')
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("bits-recovered=" + SetBit(0, 3, True));\n')
+        send(">>> ", 'Message("shift-high=" + BitwiseShiftRight(2147483648, 31));\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'BitwiseShiftRight(1, 32);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("shift-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("shift-recovered=" + ПобитовыйСдвигВправо(26, 3));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -466,7 +473,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("bits-max=Да", 1), ("bits-caught", 1),
+        for message, count in (("shift-high=1", 1), ("shift-caught", 1),
+                               ("shift-recovered=3", 1), ("bits-max=Да", 1), ("bits-caught", 1),
                                ("bits-recovered=8", 1), ("reference-value=Я😀", 1), ("reference-readonly", 1),
                                ("reference-kept=Я😀", 1), ("new-caught", 1), ("new-kept=old", 1),
                                ("new-recovered=Я😀", 1), ("execute-caught", 1), ("execute-kept=old", 1),
