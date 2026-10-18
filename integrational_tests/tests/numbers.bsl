@@ -636,3 +636,24 @@
 ПроверитьМатематику("string.exp.one", "Строка(Exp(1))");
 ПроверитьМатематику("string.tan.pi-half-lower", "Строка(Tan(3.1415926535897932 / 2))");
 Показать("math.checkpoint.complete", "ok");
+
+// Уточнение математической точности: 18 независимых выражений, без новых помощников.
+ПроверитьМатематику("precision.argument.half-low", "3.1415926535897932 / 2");
+ПроверитьМатематику("precision.argument.half-high", "3.1415926535897936 / 2");
+ПроверитьМатематику("precision.tan.literal-low", "Tan(1.5707963267948966)");
+ПроверитьМатематику("precision.tan.literal-high", "Tan(1.5707963267948968)");
+ПроверитьМатематику("precision.tan.number-high", "Tan(Number(""1.5707963267948968""))");
+ПроверитьМатематику("precision.tan.literal-middle", "Tan(1.5707963267948967)");
+ПроверитьМатематику("precision.cos.literal-low", "Cos(1.5707963267948966)");
+ПроверитьМатематику("precision.cos.literal-high", "Cos(1.5707963267948968)");
+ПроверитьМатематику("precision.exp.lower", "Exp(709.7827128933839)");
+ПроверитьМатематику("precision.exp.neighbor", "Exp(709.78271289338396)");
+ПроверитьМатематику("precision.exp.beyond-limit", "Exp(709.782712893383970000000001)");
+ПроверитьМатематику("precision.exp.number-limit", "Exp(Number(""709.78271289338397""))");
+ПроверитьМатематику("precision.exp.number-overflow", "Exp(Number(""709.78271289338398""))");
+ПроверитьМатематику("precision.pow.reciprocal", "Pow(3, -1)");
+ПроверитьМатематику("precision.pow.decimal-integer", "Pow(1.1, 20)");
+ПроверитьМатематику("precision.pow.large-integer", "Pow(2, 100)");
+ПроверитьМатематику("precision.pow.fraction-overflow", "Pow(10, 309.5)");
+ПроверитьМатематику("precision.pow.long-base", "Pow(1.234567890123456789012, 2)");
+Показать("math.precision-checkpoint.complete", "ok");

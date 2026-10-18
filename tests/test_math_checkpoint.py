@@ -23,7 +23,8 @@ def normalize(text):
 
 
 def calls():
-    return [node.expression for node in parse(source())
+    return [node.expression for node in parse(source().split(
+                'Показать("math.checkpoint.complete", "ok");', 1)[0])
             if isinstance(node, ast.ExpressionStatement)
             and isinstance(node.expression, ast.Call)
             and isinstance(node.expression.callee, ast.Name)
@@ -36,7 +37,8 @@ class MathCheckpointTests(unittest.TestCase):
         Interpreter(output=result.append).execute(source())
         lines = normalize('\n'.join(result) + '\n').splitlines()
         boundary = lines.index(PREVIOUS) + 1
-        return lines[:boundary], lines[boundary:]
+        end = lines.index(FINAL, boundary) + 1
+        return lines[:boundary], lines[boundary:end]
 
     def test_declarations_precede_body(self):
         started = False
