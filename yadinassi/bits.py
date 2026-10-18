@@ -58,6 +58,10 @@ def set_bit(value: object, position: object, enabled: object) -> Decimal:
     return Decimal(number | bit if enabled else number & (_MAX ^ bit))
 
 
+def bitwise_shift_right(value: object, offset: object) -> Decimal:
+    return Decimal(_integer(value) >> _integer(offset, 31))
+
+
 BUILTINS = (
     ("ПобитовоеИ", bitwise_and, "BitwiseAnd"),
     ("ПобитовоеИли", bitwise_or, "BitwiseOr"),
@@ -67,4 +71,5 @@ BUILTINS = (
     ("ПроверитьБит", check_bit, "CheckBit"),
     ("ПроверитьПоБитовойМаске", check_by_bit_mask, "CheckByBitMask"),
     ("УстановитьБит", set_bit, "SetBit"),
+    ("ПобитовыйСдвигВправо", bitwise_shift_right, "BitwiseShiftRight"),
 )

@@ -16,8 +16,8 @@ class BitOperationTests(unittest.TestCase):
 
     def test_bilingual_case_insensitive_names(self):
         arguments = ('10, 12', '10, 12', '10, 12', '0', '10, 12',
-                     '2147483648, 31', '26, 24', '0, 31, True')
-        expected = (8, 14, 6, 4294967295, 2, True, True, 2147483648)
+                     '2147483648, 31', '26, 24', '0, 31, True', '26, 3')
+        expected = (8, 14, 6, 4294967295, 2, True, True, 2147483648, 3)
         for (ru, function, en), args, value in zip(bits.BUILTINS, arguments, expected):
             for name in (ru, en, ru.upper(), en.lower()):
                 with self.subTest(name=name):
