@@ -406,10 +406,12 @@ class HostFunction:
     """Only explicitly registered callables may be invoked from BSL."""
 
     def __init__(self, name: str, function: Callable, *,
-                 reference_parameters: frozenset[int] = frozenset()):
+                 reference_parameters: frozenset[int] = frozenset(),
+                 returns_value: bool = True):
         self.name = name
         self.function = function
         self.reference_parameters = reference_parameters
+        self.returns_value = returns_value
 
     def __call__(self, *arguments: object) -> object:
         return self.function(*arguments)

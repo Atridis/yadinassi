@@ -394,6 +394,15 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("compare-kept=" + compareSaved);\n')
         send(">>> ", 'Message("compare-recovered=" + StrCompare("ЁЖ", "ёж"));\n')
+        send(">>> ", 'fillTarget = New Structure("Имя", "old");\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'FillPropertyValues(fillTarget, 1);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("fill-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("fill-kept=" + fillTarget.Имя);\n')
+        send(">>> ", 'ЗаполнитьЗначенияСвойств(fillTarget, New Structure("имя", "Я"));\n')
+        send(">>> ", 'Message("fill-recovered=" + fillTarget.Имя);\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -421,7 +430,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("compare-caught", 1), ("compare-kept=old", 1),
+        for message, count in (("fill-caught", 1), ("fill-kept=old", 1),
+                               ("fill-recovered=Я", 1), ("compare-caught", 1), ("compare-kept=old", 1),
                                ("compare-recovered=0", 1), ("xml-caught", 1), ("xml-kept=old", 1),
                                ("xml-recovered=true", 1), ("array-shape-caught", 1), ("array-shape-kept=Я", 1),
                                ("array-shape-independent=Да", 1), ("strfind-caught", 1), ("strfind-recovered=4", 1),
