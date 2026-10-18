@@ -444,17 +444,18 @@ class MapTests(unittest.TestCase):
         self.assertEqual(self.output, ['7', '7', '8', 'Нет', 'Да'])
         self.assertIsNone(self.vm.locals)
 
-    def test_indexed_routine_arguments_keep_reference_limit_and_val_reads_work(self):
+    def test_indexed_routine_references_and_val_reads_work(self):
         self.vm.execute('''
             m = New Map; m["value"] = 7;
             Procedure Change(value) value = 8; EndProcedure
             Function Read(Val value) Return value; EndFunction
         ''')
         for argument in ['m["value"]', '(m["value"])']:
-            with self.subTest(argument=argument), self.assertRaisesRegex(BSLRuntimeError, 'по ссылке пока'):
-                self.vm.execute(f'Change({argument})')
+            self.vm.execute('m["value"] = 7;')
             self.assertEqual(self.vm.execute(f'Read({argument})'), Decimal(7))
-        self.assertEqual(self.vm.execute('m["value"]'), Decimal(7))
+            self.vm.execute(f'Change({argument})')
+            self.assertEqual(self.vm.execute(f'Read({argument})'), Decimal(8))
+        self.assertEqual(self.vm.execute('m["value"]'), Decimal(8))
 
     def test_foreach_yields_readonly_bilingual_pairs_without_promising_order(self):
         self.vm.execute('''

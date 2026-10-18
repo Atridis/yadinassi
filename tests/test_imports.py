@@ -229,7 +229,7 @@ Message(Side.F());
                      'Outer.Forward(x, y); Message(x); Message(y);')
         self.assertEqual(self.output, ['5', '2', '4'])
 
-    def test_complex_reference_restrictions_and_value_mutable_object_semantics(self):
+    def test_complex_references_and_value_mutable_object_semantics(self):
         self.write('Side.bsl', '''
             Procedure Ref(x) Export x = 99; EndProcedure
             Function Value(Val x) Export Return x + 1; EndFunction
@@ -237,11 +237,11 @@ Message(Side.F());
         ''')
         self.execute('// #Импорт Side.bsl\nx = 1; a = New Array; a.Add(3);')
         for code in ['Side.Ref((x))', 'Side.Ref(a[0])']:
-            with self.subTest(code=code), self.assertRaisesRegex(BSLError, 'по ссылке пока'):
+            with self.subTest(code=code):
                 self.vm.execute(code)
         self.vm.execute('Message(Side.Value((x))); Message(Side.Value(a[0])); '
                         'Side.Mutate(a); Message(a.Count()); Message(a[1]); Message(x);')
-        self.assertEqual(self.output, ['2', '4', '2', '7', '1'])
+        self.assertEqual(self.output, ['100', '100', '2', '7', '99'])
 
     def test_imported_recursion_restores_module_frames(self):
         self.write('Side.bsl', '''

@@ -120,13 +120,13 @@ class ParameterTests(unittest.TestCase):
         ''')
         self.assertEqual(self.output, ['1', '9'])
 
-    def test_complex_reference_arguments_are_explicitly_unsupported(self):
-        self.vm.execute('Procedure P(x) Message("bad"); EndProcedure x = 1; '
+    def test_grouped_and_indexed_reference_arguments_update_caller(self):
+        self.vm.execute('Procedure P(x) x = x + 1; EndProcedure x = 1; '
                         'a = New Array; a.Add(1);')
         for code in ['P((x))', 'P(((x)))', 'P(a[0])', 'P((a[0]))']:
-            with self.subTest(code=code), self.assertRaisesRegex(BSLError, 'по ссылке пока'):
-                self.vm.execute(code)
-        self.assertEqual(self.output, [])
+            self.vm.execute(code)
+        self.assertEqual(self.vm.execute('x'), Decimal(3))
+        self.assertEqual(self.vm.execute('a[0]'), Decimal(3))
 
     def test_value_parameters_accept_grouped_and_indexed_expressions(self):
         self.vm.execute('''

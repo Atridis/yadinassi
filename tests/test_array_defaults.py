@@ -68,9 +68,8 @@ class ArrayDefaultTests(unittest.TestCase):
             a = New Array; Append(a);
         ''')
         self.assertEqual(self.vm.execute('a').items, [None, None])
-        with self.assertRaisesRegex(BSLError, 'по ссылке пока не поддерживается'):
-            self.vm.execute('SetValue(a[1]);')
-        self.assertEqual(self.vm.execute('a').items, [None, None])
+        self.vm.execute('SetValue(a[1]);')
+        self.assertEqual(self.vm.execute('a').items, [None, 'changed'])
 
     def test_fixed_snapshot_and_fixed_methods_unchanged(self):
         self.vm.execute('a = New Array; a.Add(); f = New FixedArray(a); a.Insert(0); a[1] = 7;')

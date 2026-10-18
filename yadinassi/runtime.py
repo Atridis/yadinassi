@@ -487,6 +487,7 @@ class Interpreter:
                             "пока не поддерживается")
 
     def argument(self, node: ast.Node) -> object:
+        node = self.ungroup(node)
         if isinstance(node, ast.Name):
             name = node.name.casefold()
             if self.locals is not None and name in self.locals:
@@ -498,11 +499,26 @@ class Interpreter:
             if isinstance(scope[name], _Reference):
                 return scope[name]
             return _Reference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
-        target = self.ungroup(node)
-        if isinstance(target, (ast.Name, ast.Index, ast.Attribute)):
-            raise TypeError("Передача свойства, элемента массива или переменной в скобках "
-                            "по ссылке пока не поддерживается; используйте Знач/Val "
-                            "или отдельную переменную")
+        if isinstance(node, ast.Attribute):
+            owner = self.visit(node.object)
+            if not isinstance(owner, (BSLStructure, BSLFixedStructure)):
+                raise TypeError("Передача свойства по ссылке поддерживается только для структуры")
+            # Bind the receiver once and validate existence before entering the
+            # callee. Fixed properties remain readable; their setter rejects an
+            # actual assignment inside the callee, not the argument itself.
+            owner.get_member(node.name)
+            return _Reference(lambda: owner.get_member(node.name),
+                              lambda value: owner.set_member(node.name, value))
+        if isinstance(node, ast.Index):
+            owner = self.visit(node.object)
+            if not isinstance(owner, _COLLECTIONS):
+                raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
+            index = self.visit(node.index)
+            getter = owner.get_index if isinstance(owner, BSLFixedMap) else owner.get
+            # Native PR47: bad array indices / absent structure properties fail
+            # before entry; a mutable map's missing key is a valid output slot.
+            getter(index)
+            return _Reference(lambda: getter(index), lambda value: owner.set(index, value))
         # Literals and computed expressions have no caller storage to rebind.
         return self.visit(node)
 
