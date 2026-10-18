@@ -275,6 +275,8 @@ BUILTINS = (
     ("Прав", right, "Right"),
     ("Сред", mid, "Mid"),
     ("Найти", find, "Find"),
+    # Documented default forward search only; optional arguments remain unsupported.
+    ("СтрНайти", find, "StrFind"),
     ("СтрЗаменить", replace, "StrReplace"),
     ("СтрНачинаетсяС", starts_with, "StrStartsWith"),
     ("СтрЗаканчиваетсяНа", ends_with, "StrEndsWith"),
