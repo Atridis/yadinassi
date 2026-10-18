@@ -349,10 +349,11 @@ class BSLArray(_ArrayBase):
             raise ValueError("Ожидается целое число")
         if position < 0:
             raise IndexError("Индекс массива вне границ")
-        # EDT Delete773: indices above UBound are a no-op, including an empty
-        # array. Compare before int(): huge positive exponents need no expansion.
-        if position < len(self.items):
-            del self.items[int(position)]
+        # Native controls reject empty and above-bound deletion atomically.
+        # Compare before int(): huge positive exponents must not expand.
+        if position >= len(self.items):
+            raise IndexError("Индекс массива вне границ")
+        del self.items[int(position)]
 
     def get_member(self, name: str) -> object:
         methods = {

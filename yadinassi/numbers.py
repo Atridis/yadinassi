@@ -89,5 +89,42 @@ def maximum(first: object, *rest: object) -> object:
     return _extreme(first, rest, maximum=True)
 
 
+# A local allocation bound, not an inferred maximum width of a native Number.
+# At most 4096 bits also fit the existing 4096-decimal-digit internal codec.
+_MAX_RADIX_BITS = 4096
+
+
+def _number_from_radix(value: object, *, base: int, prefix: str,
+                       digits: str, name: str) -> Decimal:
+    if type(value) is not str:
+        raise TypeError(f"{name}: ожидается строка")
+    maximum = _MAX_RADIX_BITS if base == 2 else _MAX_RADIX_BITS // 4
+    if len(value) > maximum + 2:
+        raise ValueError(f"{name}: превышен предел Yadinassi ({maximum} цифр)")
+    if not value.startswith(prefix) or len(value) == 2:
+        raise ValueError(f"{name}: недопустимое представление числа")
+    # Do not use Python's permissive int grammar: reject signs, whitespace,
+    # underscores, Unicode digits and uppercase prefixes before conversion.
+    payload = value[2:]
+    if any(character not in digits for character in payload):
+        raise ValueError(f"{name}: недопустимое представление числа")
+    # Both conversions are exact and ignore Decimal precision/traps/flags.
+    # In particular, the owner-confirmed 39-digit uint128 must not be rounded.
+    return Decimal(int(payload, base))
+
+
+def number_from_binary_string(value: object) -> Decimal:
+    return _number_from_radix(value, base=2, prefix="0b", digits="01",
+                              name="ЧислоИзДвоичнойСтроки")
+
+
+def number_from_hex_string(value: object) -> Decimal:
+    return _number_from_radix(value, base=16, prefix="0x",
+                              digits="0123456789abcdefABCDEF",
+                              name="ЧислоИзШестнадцатеричнойСтроки")
+
+
 BUILTINS = (("Цел", integer_part, "Int"), ("Мин", minimum, "Min"),
-            ("Макс", maximum, "Max"), ("Окр", round_number, "Round"))
+            ("Макс", maximum, "Max"), ("Окр", round_number, "Round"),
+            ("ЧислоИзДвоичнойСтроки", number_from_binary_string, "NumberFromBinaryString"),
+            ("ЧислоИзШестнадцатеричнойСтроки", number_from_hex_string, "NumberFromHexString"))
