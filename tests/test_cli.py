@@ -18,6 +18,21 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_eval_all_cli_inputs(self):
+        from scripts.smoke_test import EVAL_PROGRAM, EVAL_OUTPUT
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ВычислениеВыражения.bsl'
+            source.write_text(EVAL_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, EVAL_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), EVAL_PROGRAM),
+                      ((), EVAL_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, EVAL_OUTPUT, ''))
+
     def test_goto_all_cli_inputs(self):
         from scripts.smoke_test import GOTO_PROGRAM, GOTO_OUTPUT
 

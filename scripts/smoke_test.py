@@ -220,6 +220,55 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+EVAL_PROGRAM = '''
+Var shared;
+Function EvalBump(value)
+    value = value + 1;
+    Return value;
+EndFunction
+Function EvalRead(parameter)
+    local = 14;
+    Return Eval("local + shared + parameter");
+EndFunction
+shared = 23;
+Message(Вычислить("500 + 500*20/100"));
+Message(EvalRead(3));
+x = 10; Message(eVaL("EvalBump(x)")); Message(x);
+Message(Eval("1 + 2 // комментарий"));
+Message(Eval(12));
+Message(Eval("СтрДлина(""Я😀"")"));
+Message(ValueFromStringInternal(ValueToStringInternal(Eval("True"))));
+saved = 42;
+Try saved = Eval("1 +"); Except Message("eval-syntax-caught"); EndTry;
+Message(saved);
+Try Eval("1", EvalBump(x)); Except Message("eval-arity-caught"); EndTry;
+Message(x);
+loop = "Eval(loop)";
+Try Eval(loop); Except Message("eval-depth-caught"); EndTry;
+Message(Eval("?(True, 7, 1/0)"));
+'''
+EVAL_OUTPUT = ('600\n40\n11\n11\n3\n12\n3\nДа\neval-syntax-caught\n42\n'
+               'eval-arity-caught\n11\neval-depth-caught\n7\n')
+
+
+def check_eval(executable: str, *, directory: Path, env: dict) -> None:
+    """Dynamic BSL expressions across every binary input mode."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ВычислениеВыражения.bsl'
+    source.write_text(EVAL_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, EVAL_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], EVAL_PROGRAM),
+              ([], EVAL_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, EVAL_OUTPUT, ''):
+            raise AssertionError(f'Failed Eval {arguments!r}: {result!r}')
+    print('Binary Eval passed: context, reference, parse/arity/depth errors, '
+          'BOM file, command flags, stdin and console recovery')
+
+
 STRING_PARITY_PROGRAM = """
 Message(СтрЧислоВхождений("aaaa", "aa"));
 Message(StrOccurrenceCount("abc", ""));
@@ -1011,6 +1060,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_eval(executable, directory=Path(temporary) / "eval", env=env)
         check_string_parity(executable, directory=Path(temporary) / "string-parity", env=env)
         check_array_gap(executable, directory=Path(temporary) / "array-gap", env=env)
         check_array_defaults(executable, directory=Path(temporary) / "array-defaults", env=env)

@@ -58,9 +58,10 @@ class Token:
 
 
 class Lexer:
-    def __init__(self, text: str, source: str = "<строка>"):
+    def __init__(self, text: str, source: str = "<строка>", *, allow_directives: bool = True):
         self.text = text.removeprefix("\ufeff")
         self.source = source
+        self.allow_directives = allow_directives
         self.pos = 0
         self.line = 1
         self.column = 1
@@ -101,10 +102,16 @@ class Lexer:
                     self.advance()
                 directive = self.text[start + 2:self.pos].split("//", 1)[0].strip()
                 if standalone and re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE):
+                    if not self.allow_directives:
+                        raise BSLError("Директивы недопустимы в вычисляемом выражении",
+                                       self.source, line, column)
                     value = self.import_name(directive, line, column)
                     result.append(Token("IMPORT", value, line, column, self.source))
                 continue
             if char == "#":
+                if not self.allow_directives:
+                    raise BSLError("Директивы недопустимы в вычисляемом выражении",
+                                   self.source, line, column)
                 # A directive owns its line; comments and strings are lexed separately.
                 if self.text[self.text.rfind("\n", 0, self.pos) + 1:self.pos].strip():
                     raise BSLError("Директива должна начинать строку",
@@ -131,6 +138,9 @@ class Lexer:
                 raise BSLError(f"Директива препроцессора не поддерживается: {directive}",
                                self.source, line, column)
             elif char == "&":
+                if not self.allow_directives:
+                    raise BSLError("Директивы недопустимы в вычисляемом выражении",
+                                   self.source, line, column)
                 if self.text[self.text.rfind("\n", 0, self.pos) + 1:self.pos].strip():
                     raise BSLError("Директива исполнения должна начинать строку",
                                    self.source, line, column)
