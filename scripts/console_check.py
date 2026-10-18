@@ -446,14 +446,42 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("shift-caught");\n')
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("shift-recovered=" + ПобитовыйСдвигВправо(26, 3));\n')
-        send(">>> ", 'deleteArray = New Array; deleteArray.Delete(0); deleteArray.Add("Я😀");\n')
-        send(">>> ", 'deleteArray.Удалить(1); Message("delete-kept=" + deleteArray[0]);\n')
+        send(">>> ", 'deleteArray = New Array;\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'deleteArray.Delete(0);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("delete-empty-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'deleteArray.Add("Я😀");\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'deleteArray.Удалить(1);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("delete-bound-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("delete-kept=" + deleteArray[0]);\n')
         send(">>> ", 'Try\n')
         send("... ", 'deleteArray.Delete(-1);\n')
         send("... ", 'Except\n')
         send("... ", 'Message("delete-caught");\n')
         send("... ", 'EndTry;\n')
-        send(">>> ", 'deleteArray.Delete(0); deleteArray.Delete(0); Message("delete-empty=" + deleteArray.Count());\n')
+        send(">>> ", 'deleteArray.Delete(0); Message("delete-empty=" + deleteArray.Count());\n')
+        send(">>> ", 'deleteArray.Add("recovered"); Message("delete-" + deleteArray[0]);\n')
+        send(">>> ", 'radixN = NumberFromHexString("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");\n')
+        send(">>> ", 'Message("radix-exact=" + ValueToStringInternal(radixN));\n')
+        send(">>> ", 'Message("radix-binary=" + ЧислоИзДвоичнойСтроки("0b0011001"));\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'NumberFromHexString("0X1");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("radix-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("radix-recovered=" + ЧислоИзШестнадцатеричнойСтроки("0x1a"));\n')
+        send(">>> ", 'Message("left-wrap=" + BitwiseShiftLeft(2, 31));\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'BitwiseShiftLeft(1, 32);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("left-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("left-recovered=" + (ПобитовыйСдвигВлево(4294967295, 1) = 4294967294));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -481,7 +509,11 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("delete-kept=Я😀", 1), ("delete-caught", 1),
+        for message, count in (('radix-exact={"N",340282366920938463463374607431768211455}', 1),
+                               ("radix-binary=25", 1), ("radix-caught", 1), ("radix-recovered=26", 1),
+                               ("left-wrap=0", 1), ("left-caught", 1), ("left-recovered=Да", 1),
+                               ("delete-empty-caught", 1), ("delete-bound-caught", 1),
+                               ("delete-recovered", 1), ("delete-kept=Я😀", 1), ("delete-caught", 1),
                                ("delete-empty=0", 1), ("shift-high=1", 1), ("shift-caught", 1),
                                ("shift-recovered=3", 1), ("bits-max=Да", 1), ("bits-caught", 1),
                                ("bits-recovered=8", 1), ("reference-value=Я😀", 1), ("reference-readonly", 1),

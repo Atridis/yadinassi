@@ -1,4 +1,4 @@
-"""Safety/packaging of pending native probes, never an interpreter-generated oracle."""
+"""Safety/packaging of owner-confirmed probes, never an interpreter-generated oracle."""
 from pathlib import Path
 import re
 import unittest
@@ -86,7 +86,7 @@ class NumericBitsCheckpointTests(unittest.TestCase):
             self.assertEqual(len(set(labels)), count)
             for line in added[:-1]:
                 self.assertTrue(line.startswith(prefix + '.'))
-                self.assertRegex(line, r': \[(?:error|\{"N",[^\n]+\}|ok;[^\n]+)\]$')
+                self.assertRegex(line, r': \[(?:error(?:;[^\n]+)?|\{"N",[^\n]+\}|ok;[^\n]+)\]$')
 
     def test_local_controls_preserve_numeric_payloads_and_array_state(self):
         # These are local regressions for already implemented operations, not new goldens.
@@ -95,10 +95,12 @@ class NumericBitsCheckpointTests(unittest.TestCase):
         self.assertIn('numeric-bits.control.not-zero: [{"N",4294967295}]', numeric)
         self.assertIn('numeric-bits.control.right-shift: [{"N",1}]', numeric)
         _, arrays = self.output_parts('collections')
-        self.assertEqual(arrays[0], 'array-delete.control.empty: [ok;{"N",0};{"N",-1}]')
-        self.assertTrue(arrays[1].startswith('array-delete.control.above-bound: [ok;{"N",2};{"N",1};{"S",'))
+        self.assertEqual(arrays[0], 'array-delete.control.empty: [error;{"N",0};{"N",-1}]')
+        self.assertTrue(arrays[1].startswith('array-delete.control.above-bound: [error;{"N",2};{"N",1};{"S",'))
         self.assertTrue(arrays[1].endswith(';{"N",7}]'))
-        self.assertEqual(arrays[2], 'array-delete.control.valid-after-noop: [ok;{"N",1};{"N",0};{"N",7}]')
+        # Historical probe label retained byte-for-byte; the first deletion errors,
+        # so its following valid deletion is never executed.
+        self.assertEqual(arrays[2], arrays[1].replace('above-bound', 'valid-after-noop'))
 
 
 if __name__ == '__main__':

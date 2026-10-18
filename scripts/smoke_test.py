@@ -597,15 +597,37 @@ Message(shiftSaved); Message(Eval("BitwiseShiftRight(26, 3)"));
 STRING_PARITY_OUTPUT += '1\nДа\nshift-caught\n17\n3\n'
 
 
-# Delete773 documents no-op beyond the array upper bound, including empty arrays.
+# Native controls reject empty/above-bound deletion and preserve state.
 STRING_PARITY_PROGRAM += '''
-deleteArray = New Array; deleteArray.Удалить(0); deleteArray.Add("Я😀");
-deleteArray.Delete(1); deleteArray.Delete(Number("1e1000000"));
+deleteArray = New Array;
+Try deleteArray.Удалить(0); Except Message("delete-empty-caught"); EndTry;
+deleteArray.Add("Я😀");
+Try deleteArray.Delete(1); Except Message("delete-bound-caught"); EndTry;
+Try deleteArray.Delete(Number("1e1000000")); Except Message("delete-huge-caught"); EndTry;
 Message(deleteArray[0]); Message(deleteArray.Count());
 Try deleteArray.Delete(-1); Except Message("delete-caught"); EndTry;
-deleteArray.Delete(0); deleteArray.Delete(0); Message(deleteArray.Count());
+deleteArray.Delete(0); Message(deleteArray.Count());
+deleteArray.Add("recovered"); Message(deleteArray[0]);
 '''
-STRING_PARITY_OUTPUT += 'Я😀\n1\ndelete-caught\n0\n'
+STRING_PARITY_OUTPUT += 'delete-empty-caught\ndelete-bound-caught\ndelete-huge-caught\nЯ😀\n1\ndelete-caught\n0\nrecovered\n'
+
+
+# Owner PR52 numeric grammar, exact uint128, wrapping left shift and recovery.
+STRING_PARITY_PROGRAM += '''
+radixN = NumberFromHexString("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+Message(ValueToStringInternal(radixN));
+Message(ЧислоИзДвоичнойСтроки("0b0011001"));
+Message(BitwiseShiftLeft(4294967295, 1) = 4294967294);
+Message(ПобитовыйСдвигВлево(2, 31));
+radixSaved = 17;
+Try radixSaved = NumberFromBinaryString("0B1"); Except Message("radix-caught"); EndTry;
+Message(radixSaved); Message(ЧислоИзШестнадцатеричнойСтроки("0x1a"));
+Message(ValueFromStringInternal(ValueToStringInternal(radixN)) = radixN);
+Try BitwiseShiftLeft(1, 32); Except Message("left-caught"); EndTry;
+Message(BitwiseShiftLeft(1, 31) = 2147483648);
+'''
+STRING_PARITY_OUTPUT += ('{"N",340282366920938463463374607431768211455}\n'
+                         '25\nДа\n0\nradix-caught\n17\n26\nДа\nleft-caught\nДа\n')
 
 
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:

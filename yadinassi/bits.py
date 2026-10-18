@@ -62,6 +62,11 @@ def bitwise_shift_right(value: object, offset: object) -> Decimal:
     return Decimal(_integer(value) >> _integer(offset, 31))
 
 
+def bitwise_shift_left(value: object, offset: object) -> Decimal:
+    # Owner 8.3.27.2342 evidence: overflowing high bits are discarded.
+    return Decimal((_integer(value) << _integer(offset, 31)) & _MAX)
+
+
 BUILTINS = (
     ("ПобитовоеИ", bitwise_and, "BitwiseAnd"),
     ("ПобитовоеИли", bitwise_or, "BitwiseOr"),
@@ -72,4 +77,5 @@ BUILTINS = (
     ("ПроверитьПоБитовойМаске", check_by_bit_mask, "CheckByBitMask"),
     ("УстановитьБит", set_bit, "SetBit"),
     ("ПобитовыйСдвигВправо", bitwise_shift_right, "BitwiseShiftRight"),
+    ("ПобитовыйСдвигВлево", bitwise_shift_left, "BitwiseShiftLeft"),
 )
