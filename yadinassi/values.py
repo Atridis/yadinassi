@@ -344,7 +344,15 @@ class BSLArray(_ArrayBase):
             self.items.extend(tail)
 
     def delete(self, index: object) -> None:
-        del self.items[self.checked_index(index)]
+        position = require_number(index)
+        if not position.is_finite() or position != position.to_integral_value():
+            raise ValueError("Ожидается целое число")
+        if position < 0:
+            raise IndexError("Индекс массива вне границ")
+        # EDT Delete773: indices above UBound are a no-op, including an empty
+        # array. Compare before int(): huge positive exponents need no expansion.
+        if position < len(self.items):
+            del self.items[int(position)]
 
     def get_member(self, name: str) -> object:
         methods = {

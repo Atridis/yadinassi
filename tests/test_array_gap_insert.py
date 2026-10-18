@@ -96,8 +96,8 @@ class ArrayGapInsertTests(unittest.TestCase):
             a.insert(Decimal(12), 'tail')
         self.assertEqual(a.items, ['old'] + [None]*11 + ['tail'])
 
-    def test_read_set_delete_do_not_extend(self):
-        for call in ('a.Get(3)', 'a[3]', 'a.Set(3, 7)', 'a[3] = 7', 'a.Delete(3)'):
+    def test_read_and_set_do_not_extend(self):
+        for call in ('a.Get(3)', 'a[3]', 'a.Set(3, 7)', 'a[3] = 7'):
             self.vm.execute('a = New Array; a.Add("old");')
             with self.subTest(call=call), self.assertRaises(BSLError):
                 self.vm.execute(call)

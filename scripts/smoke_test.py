@@ -597,6 +597,17 @@ Message(shiftSaved); Message(Eval("BitwiseShiftRight(26, 3)"));
 STRING_PARITY_OUTPUT += '1\nДа\nshift-caught\n17\n3\n'
 
 
+# Delete773 documents no-op beyond the array upper bound, including empty arrays.
+STRING_PARITY_PROGRAM += '''
+deleteArray = New Array; deleteArray.Удалить(0); deleteArray.Add("Я😀");
+deleteArray.Delete(1); deleteArray.Delete(Number("1e1000000"));
+Message(deleteArray[0]); Message(deleteArray.Count());
+Try deleteArray.Delete(-1); Except Message("delete-caught"); EndTry;
+deleteArray.Delete(0); deleteArray.Delete(0); Message(deleteArray.Count());
+'''
+STRING_PARITY_OUTPUT += 'Я😀\n1\ndelete-caught\n0\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()
