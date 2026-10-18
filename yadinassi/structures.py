@@ -159,16 +159,50 @@ class BSLFixedStructure(_StructureBase, BSLFixedCollection):
         return "ФиксированнаяСтруктура"
 
 
-def fill_property_values(target: object, source: object) -> None:
-    """Documented two-argument intersection copy for existing BSL structures."""
-    # Exact built-in types keep extension hooks out of this deliberately bounded
-    # implementation. Validate both sides before changing any target property.
-    if type(target) is not BSLStructure:
-        raise TypeError("ЗаполнитьЗначенияСвойств: приемник должен быть изменяемой структурой")
+def fill_property_values(target: object, source: object,
+                         properties: object = None, exclude: object = None) -> None:
+    """Bounded structure copy, including native-probed ordered selection lists."""
+    # Exact built-in types keep extension hooks out of this bounded helper.
+    if type(target) not in (BSLStructure, BSLFixedStructure):
+        raise TypeError("ЗаполнитьЗначенияСвойств: приемник должен быть структурой")
     if type(source) not in (BSLStructure, BSLFixedStructure):
         raise TypeError("ЗаполнитьЗначенияСвойств: источник должен быть структурой")
+    for value in (properties, exclude):
+        if value is not None and type(value) is not str:
+            raise TypeError("ЗаполнитьЗначенияСвойств: список свойств должен быть строкой")
+    if properties is not None and exclude is not None:
+        raise ValueError("Одновременные списки заполнения и исключения пока не поддерживаются")
+    if type(target) is BSLFixedStructure:
+        if properties is not None or exclude is not None:
+            raise ValueError("Списки свойств для фиксированного приемника пока не поддерживаются")
+        # Native 1C accepts this target without changing its immutable values.
+        return
+
+    def selected_names(value: str):
+        for name in value.split(","):
+            # Empty tokens and whitespace normalization need native evidence.
+            if not name or name != trim_all(name):
+                raise ValueError("Пустые имена или пробелы в списках свойств пока не поддерживаются")
+            yield name, _key(name)
+
+    if properties is not None:
+        # Resolve and copy each name in sequence, not in a validation pass:
+        # native 1C keeps earlier assignments when a later property is missing.
+        for name, key in selected_names(properties):
+            if key not in target._items or key not in source._items:
+                raise ValueError(f"Свойство структуры не найдено: {name}")
+            target._items[key] = target._items[key][0], source._items[key][1]
+        return
+
+    excluded = set()
+    if exclude is not None:
+        for name, key in selected_names(exclude):
+            if key not in target._items or key not in source._items:
+                # EDT parameter/description disagree about source-only absence.
+                # Do not invent mutation timing for this unprobed error path.
+                raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+            excluded.add(key)
     for key, (name, _) in target._items.items():
-        if key in source._items:
-            # Preserve the target spelling and composition; copy object references
-            # rather than recursively cloning values, like property assignment.
+        if key in source._items and key not in excluded:
+            # Preserve target spelling and composition, and share value references.
             target._items[key] = name, source._items[key][1]

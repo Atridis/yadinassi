@@ -10,6 +10,7 @@ from .preprocessor import ConditionalCompilation, SourceRegions
 
 KEYWORDS: dict[str, str] = {}
 for kind, aliases in {
+    "EXECUTE": ("Выполнить", "Execute"),
     "GOTO": ("Перейти", "Goto"),
     "TRY": ("Попытка", "Try"),
     "EXCEPT": ("Исключение", "Except"),
