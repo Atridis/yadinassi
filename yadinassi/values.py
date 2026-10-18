@@ -273,10 +273,10 @@ class BSLArray(_ArrayBase):
     def set(self, index: object, value: object) -> None:
         self.items[self.checked_index(index)] = value
 
-    def add(self, value: object) -> None:
+    def add(self, value: object = None) -> None:
         self.items.append(value)
 
-    def insert(self, index: object, value: object) -> None:
+    def insert(self, index: object, value: object = None) -> None:
         self.items.insert(self.checked_index(index, inserting=True), value)
 
     def delete(self, index: object) -> None:
