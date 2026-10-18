@@ -19,14 +19,17 @@ def normalize(text):
 
 class NumericBitsCheckpointTests(unittest.TestCase):
     def source(self, name):
-        return (ROOT / 'integrational_tests/tests' / (name + '.bsl')).read_text(encoding='utf-8')
+        return (ROOT / 'integrational_tests/tests' / (name + '.bsl')).read_text(encoding='utf-8-sig')
 
     def output_parts(self, name):
         output = []
         Interpreter(output=output.append).execute(self.source(name))
         lines = normalize('\n'.join(output) + '\n').splitlines()
         boundary = lines.index(SCENARIOS[name][0]) + 1
-        return lines[:boundary], lines[boundary:]
+        # This historical checkpoint ends at its own sentinel. Later independent
+        # checkpoints must not change its exact count or per-line assertions.
+        end = lines.index(SCENARIOS[name][1] + '.checkpoint.complete: [ok]', boundary) + 1
+        return lines[:boundary], lines[boundary:end]
 
     def test_declarations_precede_executable_body(self):
         for name in SCENARIOS:
