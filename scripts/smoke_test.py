@@ -476,8 +476,25 @@ STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
 STRING_BOUNDARY_OUTPUT += 'Да\n'
 
 
+# Lexical String/Boolean XML conversion; no document parsing is involved.
+STRING_PARITY_PROGRAM += '''
+Message(XMLСтрока(True)); Message(XMLString(False));
+Message(XMLString("Я😀<&amp;"));
+Message(XMLValue(Type("String"), " <x>&amp;</x> "));
+Message(XMLЗначение(Тип("Булево"), "1"));
+Message(XMLValue(Type("Boolean"), "0"));
+Message(XMLValue(Type("Boolean"), " true "));
+Message(ValueToStringInternal(XMLValue(TypeOf(True), "false")));
+Message(ValueFromStringInternal(ValueToStringInternal(XMLString(True))));
+xmlSaved = "old";
+Try xmlSaved = XMLValue(Type("Boolean"), "TRUE"); Except Message("xml-caught"); EndTry;
+Message(xmlSaved); Message(XMLValue(Type("Boolean"), XMLString(True)));
+'''
+STRING_PARITY_OUTPUT += 'true\nfalse\nЯ😀<&amp;\n <x>&amp;</x> \nДа\nНет\nДа\n{"B",0}\ntrue\nxml-caught\nold\nДа\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
-    """Native-backed string parity and documented default StrFind across inputs."""
+    """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()
     directory.mkdir()
     source = directory / 'ВхожденияШаблона.bsl'
@@ -490,7 +507,7 @@ def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_PARITY_OUTPUT, ''):
             raise AssertionError(f'Failed native string parity {arguments!r}: {result!r}')
-    print('Binary string checks passed: native parity, documented default StrFind, '
+    print('Binary string checks passed: native parity, default StrFind, lexical XML conversion, '
           'BOM file, command flags, stdin and console recovery')
 
 
