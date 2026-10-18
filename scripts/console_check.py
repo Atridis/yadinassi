@@ -378,6 +378,14 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("array-shape-kept=" + matrix[0][1]);\n')
         send(">>> ", 'Message("array-shape-independent=" + (matrix[1][1] = Undefined));\n')
+        send(">>> ", 'xmlSaved = "old";\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'xmlSaved = XMLValue(Type("Boolean"), "TRUE");\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("xml-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("xml-kept=" + xmlSaved);\n')
+        send(">>> ", 'Message("xml-recovered=" + XMLСтрока(XMLValue(Type("Boolean"), "1")));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -405,7 +413,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("array-shape-caught", 1), ("array-shape-kept=Я", 1),
+        for message, count in (("xml-caught", 1), ("xml-kept=old", 1),
+                               ("xml-recovered=true", 1), ("array-shape-caught", 1), ("array-shape-kept=Я", 1),
                                ("array-shape-independent=Да", 1), ("strfind-caught", 1), ("strfind-recovered=4", 1),
                                ("eval-local=14", 1), ("eval-caught", 1),
                                ("eval-recovered=15", 1), ("occurrence-count=2", 1), ("occurrence-caught", 1),
