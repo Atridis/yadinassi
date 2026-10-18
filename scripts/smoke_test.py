@@ -571,6 +571,21 @@ Execute("ChangeReference(referenceArray[0]);"); Message(Eval("referenceArray[0]"
 STRING_PARITY_OUTPUT += '11\n12\nЯ😀\nЯ😀\nЯ😀\nreference-readonly\nЯ😀\nЯ😀\nЯ😀\n'
 
 
+# Documented bit operations; these explicit expectations are not native goldens.
+STRING_PARITY_PROGRAM += '''
+Message(ПобитовоеИ(10, 12)); Message(BitwiseOr(10, 12));
+Message(BitwiseXor(10, 12)); Message(BitwiseNot(0) = 4294967295);
+Message(ПобитовоеИНе(10, 12)); Message(CheckBit(2147483648, 31));
+Message(ПроверитьПоБитовойМаске(26, 24));
+Message(SetBit(0, 31, True) = 2147483648);
+Message(SetBit(4294967295, 31, False) = 2147483647);
+bitSaved = 42;
+Try bitSaved = BitwiseAnd(1.5, 2); Except Message("bits-caught"); EndTry;
+Message(bitSaved); Message(Eval("BitwiseOr(1, 2)"));
+'''
+STRING_PARITY_OUTPUT += '8\n14\n6\nДа\n2\nДа\nДа\nДа\nДа\nbits-caught\n42\n3\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()
