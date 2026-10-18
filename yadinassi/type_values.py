@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+from .dates import BSLDate
+
 from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode, BSLRoundModes
 from .search_directions import BSLSearchDirection, BSLSearchDirections
@@ -14,6 +16,7 @@ _VALUE_TYPES = (
     (bool, BSLType.BOOLEAN, "Boolean"),
     (Decimal, BSLType.NUMBER, "Number"),
     (str, BSLType.STRING, "String"),
+    (BSLDate, BSLType.DATE, "Date"),
     (BSLArray, BSLType.ARRAY, "Array"),
     (BSLStructure, BSLType.STRUCTURE, "Structure"),
     (BSLMap, BSLType.MAP, "Map"),

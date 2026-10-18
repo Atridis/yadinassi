@@ -1,0 +1,127 @@
+date.construct.parts: [{"D",20240229123456}]
+date.construct.ymd: [{"D",20240229000000}]
+date.construct.ymdh: [error]
+date.construct.ymdhm: [error]
+date.construct.omitted: [error]
+date.construct.canonical: [{"D",20240229123456}]
+date.construct.short: [{"D",20240229000000}]
+date.construct.fraction: [{"N",0}]
+date.construct.nonleap: [error]
+date.construct.min: [{"D",00010101000000}]
+date.construct.max: [{"D",99991231235959}]
+date.construct.zero-year: [error]
+date.construct.excess-year: [error]
+date.literal.full: [{"D",20240229123456}]
+date.literal.short: [{"D",20240229000000}]
+date.literal.partial-time: [{"D",20240229123400}]
+date.literal.short-time: [error]
+date.literal.punctuation: [{"D",20240229123456}]
+date.literal.invalid: [error]
+date.codec.type-ru: [{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}]
+date.codec.type-en: [{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}]
+date.codec.typeof: [{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}]
+date.codec.roundtrip: [{"D",20240229123456}]
+date.codec.type-roundtrip: [{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}]
+date.codec.map-value-keys: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{4,
+{
+{"S","Count"},
+{"N",1}
+},
+{
+{"S","Value"},
+{"S","second"}
+},
+{
+{"S","RestoredCount"},
+{"N",1}
+},
+{
+{"S","RestoredValue"},
+{"S","second"}
+}
+}
+}]
+date.string.full: [{"S","29.02.2024 12:34:56"}]
+date.string.empty: [{"S","01.01.0001 0:00:00"}]
+date.filled.empty: [{"B",0}]
+date.filled.time: [{"B",1}]
+date.arithmetic.add: [{"D",20240301000000}]
+date.arithmetic.reversed: [error]
+date.arithmetic.subtract: [{"D",20240229235959}]
+date.arithmetic.difference: [{"N",172800}]
+date.arithmetic.min-underflow: [{"D",00010101000000}]
+date.arithmetic.max-overflow: [{"D",99991231235959}]
+date.compare.equal: [{"B",1}]
+date.compare.order: [{"B",1}]
+date.compare.number-equal: [{"B",0}]
+date.precision.delta-0-0001: [{"N",0.0001}]
+date.precision.delta-0-00005: [{"N",0.0001}]
+date.precision.delta-0-00015: [{"N",0.0002}]
+date.precision.delta-neg0-0001: [{"N",-0.0001}]
+date.precision.delta-neg0-00005: [{"N",-0.0001}]
+date.precision.delta-neg0-00015: [{"N",-0.0002}]
+date.precision.roundtrip: [{"N",0}]
+date.precision.codec: [{"D",20240229123456}]
+date.precision.half-second: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Low"},
+{"N",0.4}
+},
+{
+{"S","Tie"},
+{"N",0.5}
+},
+{
+{"S","High"},
+{"N",0.6}
+}
+}
+}]
+date.precision.second-component: [{"N",56}]
+date.components.all: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{6,
+{
+{"S","Y"},
+{"N",2024}
+},
+{
+{"S","M"},
+{"N",2}
+},
+{
+{"S","D"},
+{"N",29}
+},
+{
+{"S","H"},
+{"N",12}
+},
+{
+{"S","N"},
+{"N",34}
+},
+{
+{"S","S"},
+{"N",56}
+}
+}
+}]
+date.precision.negative-half-second: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Low"},
+{"N",-0.4}
+},
+{
+{"S","Tie"},
+{"N",-0.5}
+},
+{
+{"S","High"},
+{"N",-0.6}
+}
+}
+}]
+date.checkpoint.complete: [ok]

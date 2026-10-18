@@ -114,7 +114,7 @@ class Parser:
             self.pos += 1
             value = self.expect("NUMBER")
             default = ast.Unary(token, token.kind, ast.Literal(value, value.value))
-        elif token.kind in ("NUMBER", "STRING", "TRUE", "FALSE", "UNDEFINED"):
+        elif token.kind in ("NUMBER", "STRING", "DATE", "TRUE", "FALSE", "UNDEFINED"):
             default = self.primary()
         else:
             self.fail("Ожидается литерал значения параметра по умолчанию")
@@ -276,7 +276,7 @@ class Parser:
 
     def primary(self) -> ast.Node:
         token = self.current
-        if token.kind in ("NUMBER", "STRING", "TRUE", "FALSE", "UNDEFINED"):
+        if token.kind in ("NUMBER", "STRING", "DATE", "TRUE", "FALSE", "UNDEFINED"):
             self.pos += 1
             value = {"TRUE": True, "FALSE": False, "UNDEFINED": None}.get(token.kind, token.value)
             return ast.Literal(token, value)

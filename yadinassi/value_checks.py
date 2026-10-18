@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+from .dates import BSLDate
+
 from .maps import BSLFixedMap, BSLMap
 from .strings import is_blank
 from .structures import BSLFixedStructure, BSLStructure
@@ -19,6 +21,8 @@ def value_is_filled(value: object) -> bool:
         if not value.is_finite():
             raise ValueError("Ожидается конечное число")
         return not value.is_zero()
+    if kind is BSLDate:
+        return value.require_known().ticks != 0
     if kind is str:
         return not is_blank(value)
     if kind is BSLArray or kind is BSLFixedArray:

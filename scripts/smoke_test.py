@@ -10,6 +10,201 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Date values below come from the owner's native dates.out checkpoint. In
+# particular, arithmetic retains ticks while the internal Date stream loses them.
+DATE_EXAMPLES = [
+    ('dAtE(2024, 2, 29, 12, 34, 56)', '{"D",20240229123456}'),
+    ('дАтА(2024, 2, 29)', '{"D",20240229000000}'),
+    ('Date("20240229123456")', '{"D",20240229123456}'),
+    ('Дата("20240229")', '{"D",20240229000000}'),
+    ("'20240229'", '{"D",20240229000000}'),
+    ("'202402291234'", '{"D",20240229123400}'),
+    ("'20240229123456'", '{"D",20240229123456}'),
+    ("'2024-02-29 12:34:56'", '{"D",20240229123456}'),
+    ('Date(2024, 2, 29, 12, 34, 56.9) - baseDate', '{"N",0}'),
+    ('Date(1, 1, 1)', '{"D",00010101000000}'),
+    ('Date(9999, 12, 31, 23, 59, 59)', '{"D",99991231235959}'),
+    ('Type("Date")', '{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}'),
+    ('Тип("Дата")', '{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}'),
+    ('TypeOf(baseDate)', '{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}'),
+    ('ValueFromStringInternal(ValueToStringInternal(baseDate))', '{"D",20240229123456}'),
+    ('ValueFromStringInternal(ValueToStringInternal(Type("Date")))',
+     '{"T",aae38c48-a877-411c-a6d3-fbaa1f83c4bd}'),
+    ('String(baseDate)', '{"S","29.02.2024 12:34:56"}'),
+    ('Строка(Date(1, 1, 1))', '{"S","01.01.0001 0:00:00"}'),
+    ('ValueIsFilled(Date(1, 1, 1))', '{"B",0}'),
+    ('ЗначениеЗаполнено(Date(1, 1, 1, 0, 0, 1))', '{"B",1}'),
+    ('Date(2024, 2, 29, 23, 59, 59) + 1', '{"D",20240301000000}'),
+    ('Date(2024, 3, 1) - 1', '{"D",20240229235959}'),
+    ('Date(2024, 3, 1) - Date(2024, 2, 28)', '{"N",172800}'),
+    ('Date(1, 1, 1) - 1', '{"D",00010101000000}'),
+    ('Date(9999, 12, 31, 23, 59, 59) + 1', '{"D",99991231235959}'),
+    ('Date(2024, 2, 29) = Date("20240229")', '{"B",1}'),
+    ('Date(2024, 2, 29) < Date(2024, 3, 1)', '{"B",1}'),
+    ('Date(1, 1, 1) = 0', '{"B",0}'),
+    ('(baseDate + 0.0001) - baseDate', '{"N",0.0001}'),
+    ('(baseDate + 0.00005) - baseDate', '{"N",0.0001}'),
+    ('(baseDate + 0.00015) - baseDate', '{"N",0.0002}'),
+    ('(baseDate + -0.0001) - baseDate', '{"N",-0.0001}'),
+    ('(baseDate + -0.00005) - baseDate', '{"N",-0.0001}'),
+    ('(baseDate + -0.00015) - baseDate', '{"N",-0.0002}'),
+    ('baseDate + 0.1234', '{"D",20240229123456}'),
+    ('ValueFromStringInternal(ValueToStringInternal(baseDate + 0.1234)) - baseDate', '{"N",0}'),
+    ('(baseDate + 0.4) - baseDate', '{"N",0.4}'),
+    ('(baseDate + 0.5) - baseDate', '{"N",0.5}'),
+    ('(baseDate + 0.6) - baseDate', '{"N",0.6}'),
+    ('(baseDate - 0.4) - baseDate', '{"N",-0.4}'),
+    ('(baseDate - 0.5) - baseDate', '{"N",-0.5}'),
+    ('(baseDate - 0.6) - baseDate', '{"N",-0.6}'),
+    ('Second(baseDate + 0.5)', '{"N",56}'),
+]
+for _english, _russian, _value in [('Year', 'Год', 2024), ('Month', 'Месяц', 2),
+                                  ('Day', 'День', 29), ('Hour', 'Час', 12),
+                                  ('Minute', 'Минута', 34), ('Second', 'Секунда', 56)]:
+    DATE_EXAMPLES += [(f'{name}(baseDate)', '{"N",' + str(_value) + '}')
+                     for name in (_english, _russian)]
+
+DATE_FAILURES = [
+    ('Date(2024, 2, 29, 12)', 'Дата: ожидается строка или 3 либо 6 числовых компонентов'),
+    ('Date(2024, 2, 29, 12, 34)', 'Дата: ожидается строка или 3 либо 6 числовых компонентов'),
+    ('Date(2024, 2, 29, , , 56)', 'Пропуск аргументов встроенных функций, методов и конструкторов'),
+    ('Date(True, 2, 29)', 'Дата: компоненты должны быть конечными числами'),
+    ('Date("202402291234")', 'Дата: ожидается каноническая запись даты'),
+    ('Date(0, 1, 1)', 'Дата: компонент вне диапазона'),
+    ('Date(10000, 1, 1)', 'Дата: компонент вне диапазона'),
+    ('1 + Date(2024, 2, 29)', 'Ожидается число'),
+    ('Date(2024, 2, 29) + True', 'Арифметика даты: ожидается число секунд'),
+    ('Year(1)', 'Ожидается дата'),
+    ('New Date', 'Тип не определен: Date'),
+    ('String(Date(1, 1, 1) - 1)', 'после выхода за диапазон известно только скалярное'),
+    ('Year(Date(9999, 12, 31, 23, 59, 59) + 1)',
+     'после выхода за диапазон известно только скалярное'),
+    ('(Date(1, 1, 1) - 1) + 0', 'после выхода за диапазон известно только скалярное'),
+    ('(Date(1, 1, 1) - 1) = Date(1, 1, 1)',
+     'после выхода за диапазон известно только скалярное'),
+]
+DATE_PROGRAM = 'baseDate = Date(2024, 2, 29, 12, 34, 56);\n'
+DATE_OUTPUT = ''
+for _expression, _stream in DATE_EXAMPLES:
+    DATE_PROGRAM += f'Message(ValueToStringInternal({_expression}));\n'
+    DATE_OUTPUT += _stream + '\n'
+DATE_PROGRAM += '''mapping = New Map;
+mapping.Insert(baseDate, "first");
+mapping.Insert(Date(2024, 2, 29, 12, 34, 56), "second");
+restored = ValueFromStringInternal(ValueToStringInternal(mapping));
+Message(mapping.Count()); Message(mapping.Get(baseDate));
+Message(restored.Count()); Message(restored.Get(baseDate));
+Function DefaultDate(value = '20240229123456')
+Return value;
+EndFunction
+Message(ValueToStringInternal(DefaultDate()));
+Message(ValueToStringInternal(DefaultDate('20240229')));
+savedDate = baseDate;
+'''
+DATE_OUTPUT += '1\nsecond\n1\nsecond\n{"D",20240229123456}\n{"D",20240229000000}\n'
+for _expression, _message in DATE_FAILURES:
+    DATE_PROGRAM += (f'Try savedDate = {_expression}; Except\n'
+                     f'Message(Find(ErrorDescription(), "{_message}") > 0);\n'
+                     'EndTry; Message(savedDate = baseDate);\n')
+    DATE_OUTPUT += 'Да\nДа\n'
+DATE_PROGRAM += '''Try savedDate = Date(2023, 2, 29); Except Message("nonleap-caught"); EndTry;
+Message(savedDate = baseDate); Message(ValueToStringInternal(savedDate));
+'''
+DATE_OUTPUT += 'nonleap-caught\nДа\n{"D",20240229123456}\n'
+
+DATE_MODULE = '''Function DefaultDate(value = '20240229123456') Export
+Return value;
+EndFunction
+Function Shift(value, seconds) Export
+Return value + seconds;
+EndFunction
+Function Failure() Export
+Return Year(1);
+EndFunction
+'''
+DATE_IMPORT_PROGRAM = '''// #Импорт Даты.bsl
+value = Даты.DefaultDate(); Message(TypeOf(value));
+Message(ValueToStringInternal(value));
+Message(ValueToStringInternal(Даты.DefaultDate('20240229')));
+shifted = Даты.Shift(value, 0.00015);
+Message(ValueToStringInternal(shifted - value));
+Message(ValueToStringInternal(ValueFromStringInternal(ValueToStringInternal(shifted)) - value));
+Try value = Даты.Failure(); Except Message("date-import-caught"); EndTry;
+Message(ValueToStringInternal(value));
+Message(ValueToStringInternal(Даты.Shift(value, 1)));
+'''
+DATE_IMPORT_OUTPUT = ('Дата\n{"D",20240229123456}\n{"D",20240229000000}\n'
+                      '{"N",0.0002}\n{"N",0}\ndate-import-caught\n'
+                      '{"D",20240229123456}\n{"D",20240229123457}\n')
+
+
+def check_dates(executable: str, *, directory: Path, env: dict) -> None:
+    """Date checkpoint across frozen inputs, imports and recoverable failures."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'КалендарныеДаты.bsl'
+    source.write_text(DATE_PROGRAM, encoding='utf-8-sig')
+    module = directory / 'Даты.bsl'
+    module.write_text(DATE_MODULE, encoding='utf-8-sig')
+    importer = directory / 'ИмпортДат.bsl'
+    importer.write_text(DATE_IMPORT_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, DATE_PROGRAM], None, DATE_OUTPUT) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None, DATE_OUTPUT), (['-'], DATE_PROGRAM, DATE_OUTPUT),
+              ([], DATE_PROGRAM + '/exit\n', DATE_OUTPUT)]
+    cases += [([str(path)], None, DATE_IMPORT_OUTPUT)
+              for path in (importer, importer.relative_to(directory.parent))]
+    for arguments, stdin, expected in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed Date checkpoint {arguments!r}: {result!r}')
+    for expression, message in DATE_FAILURES:
+        code = f'savedDate = Date(2024, 2, 29);\nsavedDate = {expression};\n'
+        source.write_text(code, encoding='utf-8-sig')
+        errors = [([flag, code], None, '', '<команда>:2:') for flag in ('-c', '-с', '--command')]
+        errors += [([str(source)], None, '', str(source.resolve()) + ':2:'),
+                   (['-'], code, '', '<stdin>:2:'),
+                   ([], code + 'ValueToStringInternal(savedDate)\n/exit\n',
+                    '{"D",20240229000000}\n', '<консоль>:1:')]
+        for arguments, stdin, stdout, location in errors:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed Date diagnostic {arguments!r}: {result!r}')
+    importer.write_text('// #Импорт Даты.bsl\nДаты.Failure();\n', encoding='utf-8-sig')
+    for path in (importer, importer.relative_to(directory.parent)):
+        result = subprocess.run([executable, str(path)], capture_output=True, encoding='utf-8',
+                                cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode != 1 or result.stdout or str(module.resolve()) + ':8:' not in result.stderr
+                or 'Ожидается дата' not in result.stderr or 'Traceback' in result.stderr):
+            raise AssertionError(f'Failed imported Date diagnostic {path!r}: {result!r}')
+    for literal, message in [("'2024022912'", 'Дата: ожидается каноническая запись даты'),
+                             ("'20240229", 'Незавершенный литерал даты')]:
+        code = '// строка перед ошибкой\nsavedDate = ' + literal
+        source.write_text(code, encoding='utf-8-sig')
+        errors = [([flag, code], None, '<команда>:2:') for flag in ('-c', '-с', '--command')]
+        errors += [([str(source)], None, str(source.resolve()) + ':2:'),
+                   (['-'], code, '<stdin>:2:')]
+        for arguments, stdin, location in errors:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if (result.returncode != 1 or result.stdout or location not in result.stderr
+                    or message not in result.stderr or 'Traceback' in result.stderr):
+                raise AssertionError(f'Failed Date literal diagnostic {arguments!r}: {result!r}')
+    code = ("savedDate = Date(2024, 2, 29);\nsavedDate = '20240229\n"
+            'ValueToStringInternal(savedDate)\nsavedDate = Date(\n2024, 2, 29, 12, 34, 56);\n'
+            'ValueToStringInternal(savedDate)\n/exit\n')
+    result = subprocess.run([executable], input=code, capture_output=True,
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+    if (result.returncode != 1 or result.stdout != '{"D",20240229000000}\n{"D",20240229123456}\n'
+            or '<консоль>:1:' not in result.stderr or 'Traceback' in result.stderr
+            or 'Перенос строки в литерале даты не поддерживается' not in result.stderr):
+        raise AssertionError(f'Failed incomplete Date literal recovery: {result!r}')
+    print('Binary Date checks passed: native literals, constructors, ticks, lossy codec, components, '
+          'BOM files, imports/defaults, command flags, stdin, console and guarded errors')
+
+
 # Explicit goldens are shared by the source CLI tests and the frozen checks.
 # They are not calculated with the implementation under test or a float oracle.
 DIVISION_EXAMPLES = [
@@ -1264,6 +1459,7 @@ def main() -> None:
         # the subprocess cwd canonical too (e.g. macOS /var, Windows aliases,
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
+        check_dates(executable, directory=Path(temporary) / "dates", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
@@ -1429,7 +1625,7 @@ For Each pair In m Do
     Message(ТипЗнч(pair) = Type("kEyAnDvAlUe"));
 EndDo;
 Try
-    Type("Date");
+    Type("ValueTable");
 Except
     Message("неизвестный тип");
 EndTry;
@@ -1447,7 +1643,7 @@ Message(TypeOf(kind) = Тип("Тип"));
         type_file.write_text(type_code, encoding='utf-8-sig')
         type_module = Path(temporary) / 'ТипыМодуля.bsl'
         type_module.write_text(
-            'Function Failure() Export\nReturn Type("Date");\nEndFunction\n'
+            'Function Failure() Export\nReturn Type("ValueTable");\nEndFunction\n'
             'Function Kind(Val value) Export Return TypeOf(value); EndFunction\n'
             'Function Mapping() Export\n'
             'm = New Map; m[Тип("Число")] = Тип("Строка"); Return m;\nEndFunction\n',
@@ -1604,7 +1800,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             (['-'], type_code, type_output, 0),
             ([], type_code + '/exit\n', type_output, 0),
             ([str(type_importer)], None,
-             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: Date\nДа\n', 0),
+             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: ValueTable\nДа\n', 0),
             ([str(region_file)], None, '42\n', 0),
             (['-c', region_code], None, '42\n', 0),
             (['-'], region_code, '42\n', 0),
@@ -1688,18 +1884,18 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed fixed-collection diagnostics {arguments!r}: {result!r}')
         type_errors = [
-            (['-c', 'Type("Date");'], None, '', '<команда>:1:', 'Тип не поддерживается: Date'),
+            (['-c', 'Type("ValueTable");'], None, '', '<команда>:1:', 'Тип не поддерживается: ValueTable'),
             (['-c', 'Тип(1);'], None, '', '<команда>:1:', 'Имя типа должно быть строкой'),
             (['-c', 'TypeOf(Message);'], None, '', '<команда>:1:',
              'ТипЗнч для этого значения пока не поддерживается'),
-            (['-'], 'Тип("Дата");\n', '', '<stdin>:1:', 'Тип не поддерживается: Дата'),
+            (['-'], 'Тип("ТаблицаЗначений");\n', '', '<stdin>:1:', 'Тип не поддерживается: ТаблицаЗначений'),
             ([str(type_error_file)], None, '', str(type_error_file) + ':2:',
              'ТипЗнч для этого значения пока не поддерживается'),
             ([str(type_error_importer)], None, '', str(type_module.resolve()) + ':2:',
-             'Тип не поддерживается: Date'),
-            ([], 'kind = Type("Number");\nkind = Type("Date");\n'
+             'Тип не поддерживается: ValueTable'),
+            ([], 'kind = Type("Number");\nkind = Type("ValueTable");\n'
              'kind\nTypeOf(kind)\n/exit\n', 'Число\nТип\n', '<консоль>:1:',
-             'Тип не поддерживается: Date'),
+             'Тип не поддерживается: ValueTable'),
         ]
         for arguments, stdin, stdout, location, message in type_errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
@@ -1730,8 +1926,8 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             from console_check import check_console
 
             check_console([executable], cwd=temporary, env=env)
-            print("Binary terminal tests passed: cursor editing, history, multiline input, region continuation, type values, fixed collections, numeric presentation, rounding, division and error recovery")
-    print("Binary smoke tests passed: rounding, division, numeric presentation, fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
+            print("Binary terminal tests passed: cursor editing, history, multiline input, Date literals/ticks, region continuation, type values, fixed collections, numeric presentation, rounding, division and error recovery")
+    print("Binary smoke tests passed: dates, rounding, division, numeric presentation, fixed collections, type values, maps, structures, strings/UTF-16, file, sibling/nested/directory imports, exceptions, client compilation, regions, -c, -с, console, stdin, errors")
 
 
 if __name__ == "__main__":
