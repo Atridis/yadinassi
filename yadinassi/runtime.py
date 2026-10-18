@@ -4,7 +4,7 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
 
-from . import ast, bits, numbers, serialization, strings, type_values, value_checks, xml_values
+from . import ast, bits, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .errors import BSLError, BSLRuntimeError
@@ -108,7 +108,7 @@ class Interpreter:
         self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
         for name, function, alias in (*strings.BUILTINS, *numbers.BUILTINS,
-                                      *xml_values.BUILTINS, *bits.BUILTINS):
+                                      *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS):
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")
