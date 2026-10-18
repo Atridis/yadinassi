@@ -523,3 +523,16 @@
 ПроверитьБлокПоиска("search.enum.readonly", "SearchDirection.FromBegin = SearchDirection.FromEnd; Результат = Истина;");
 ПроверитьБлокПоиска("search.enum.constructor", "Результат = Новый SearchDirection;");
 Показать("search.checkpoint.complete", "ok");
+
+// Дополнение: независимые старт и номер вхождения для пустой подстроки.
+ПроверитьВыражениеПоиска("search.empty.forward.start3-occurrence1", "StrFind(""abc"", """", SearchDirection.FromBegin, 3, 1)");
+ПроверитьВыражениеПоиска("search.empty.forward.start1-occurrence3", "StrFind(""abc"", """", SearchDirection.FromBegin, 1, 3)");
+ПроверитьВыражениеПоиска("search.empty.forward.start3-occurrence2", "StrFind(""abc"", """", SearchDirection.FromBegin, 3, 2)");
+ПроверитьВыражениеПоиска("search.empty.forward.defaults", "StrFind(""abc"", """", SearchDirection.FromBegin)");
+ПроверитьВыражениеПоиска("search.empty.backward.start3-occurrence1", "StrFind(""abc"", """", SearchDirection.FromEnd, 3, 1)");
+ПроверитьВыражениеПоиска("search.empty.backward.start1-occurrence3", "StrFind(""abc"", """", SearchDirection.FromEnd, 1, 3)");
+ПроверитьВыражениеПоиска("search.empty.backward.start3-occurrence2", "StrFind(""abc"", """", SearchDirection.FromEnd, 3, 2)");
+ПроверитьВыражениеПоиска("search.empty.backward.defaults", "StrFind(""abc"", """", SearchDirection.FromEnd)");
+ПроверитьВыражениеПоиска("search.empty.both-empty.forward.occurrence2", "StrFind("""", """", SearchDirection.FromBegin, 1, 2)");
+ПроверитьВыражениеПоиска("search.empty.both-empty.backward.occurrence2", "StrFind("""", """", SearchDirection.FromEnd, 1, 2)");
+Показать("search.empty-checkpoint.complete", "ok");
