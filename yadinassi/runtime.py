@@ -11,7 +11,7 @@ from .collation import string_key
 from .parser import parse, parse_expression, validate_labels
 from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
-from .structures import BSLFixedStructure, BSLStructure
+from .structures import BSLFixedStructure, BSLStructure, fill_property_values
 from .values import (
     BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference as _Reference,
     boolean, divide, equal, number, require_number, to_string,
@@ -94,6 +94,8 @@ class Interpreter:
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
         self.register_function("Булево", boolean, "Boolean")
+        self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
+                               "FillPropertyValues", returns_value=False)
         self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
         self.register_function("Тип", type_values.type_by_name, "Type")
         self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
@@ -116,8 +118,9 @@ class Interpreter:
         """Standalone root code, routines and imports run in the client context only."""
         return "client"
 
-    def register_function(self, name: str, function: Callable, *aliases: str) -> None:
-        wrapper = HostFunction(name, function)
+    def register_function(self, name: str, function: Callable, *aliases: str,
+                          returns_value: bool = True) -> None:
+        wrapper = HostFunction(name, function, returns_value=returns_value)
         for alias in (name, *aliases):
             self.functions[alias.casefold()] = wrapper
 
@@ -362,6 +365,8 @@ class Interpreter:
             function = self.visit(node.callee)
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        if require_value and not function.returns_value:
+            raise TypeError(f"Процедура не возвращает значение: {function.name}")
         if function.function is _eval_marker:
             if len(node.arguments) != 1:
                 raise TypeError("Вычислить ожидает 1 аргумент")

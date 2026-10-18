@@ -506,6 +506,21 @@ Message(compareSaved); Message(StrCompare("A", "a"));
 STRING_PARITY_OUTPUT += '0\n1\n1\n0\n-1\n-1\n1\ncompare-caught\nold\n0\n'
 
 
+STRING_PARITY_PROGRAM += r'''
+fillTarget = New Structure("Имя,Оставить", "old", 9);
+fillSource = New Structure("иМя,Лишнее", "Я😀", 42);
+ЗаполнитьЗначенияСвойств(fillTarget, New FixedStructure(fillSource));
+Message(fillTarget.Имя); Message(fillTarget.Оставить); Message(fillTarget.Count());
+Message(fillTarget.Property("Лишнее"));
+fillCopy = ValueFromStringInternal(ValueToStringInternal(fillTarget));
+fillSource.Имя = Undefined; FillPropertyValues(fillTarget, fillSource);
+Message(fillTarget.Имя = Undefined); Message(fillCopy.Имя);
+Try FillPropertyValues(fillTarget, 1); Except Message("fill-caught"); EndTry;
+FillPropertyValues(fillTarget, fillCopy); Message(fillTarget.Имя);
+'''
+STRING_PARITY_OUTPUT += 'Я😀\n9\n2\nНет\nДа\nЯ😀\nfill-caught\nЯ😀\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()

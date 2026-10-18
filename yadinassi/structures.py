@@ -157,3 +157,18 @@ class BSLFixedStructure(_StructureBase, BSLFixedCollection):
 
     def __str__(self) -> str:
         return "ФиксированнаяСтруктура"
+
+
+def fill_property_values(target: object, source: object) -> None:
+    """Documented two-argument intersection copy for existing BSL structures."""
+    # Exact built-in types keep extension hooks out of this deliberately bounded
+    # implementation. Validate both sides before changing any target property.
+    if type(target) is not BSLStructure:
+        raise TypeError("ЗаполнитьЗначенияСвойств: приемник должен быть изменяемой структурой")
+    if type(source) not in (BSLStructure, BSLFixedStructure):
+        raise TypeError("ЗаполнитьЗначенияСвойств: источник должен быть структурой")
+    for key, (name, _) in target._items.items():
+        if key in source._items:
+            # Preserve the target spelling and composition; copy object references
+            # rather than recursively cloning values, like property assignment.
+            target._items[key] = name, source._items[key][1]
