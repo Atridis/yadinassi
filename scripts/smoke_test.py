@@ -220,6 +220,31 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+ARRAY_DEFAULT_PROGRAM = """
+a = New Array;
+a.дОбАвИтЬ();
+a.iNsErT(0);
+Message(a.Count());
+Message(a[0] = Undefined);
+Message(a.Get(1) = Undefined);
+a[0] = "Я😀";
+a.Set(1, "B");
+Message(a.Get(0));
+Message(a[1]);
+f = New FixedArray(a);
+a.Add();
+Message(f.Count());
+Message(a.Count());
+b = ValueFromStringInternal(ValueToStringInternal(a));
+Message(b.Get(2) = Undefined);
+Try a.Insert(); Except Message("array-default-caught"); EndTry;
+Message(a.Count());
+a.Insert(a.Count());
+Message(a.Get(3) = Undefined);
+"""
+ARRAY_DEFAULT_OUTPUT = '2\nДа\nДа\nЯ😀\nB\n2\n3\nДа\narray-default-caught\n3\nДа\n'
+
+
 VALUE_FILLED_PROGRAM = """
 Message(зНаЧеНиЕзАпОлНеНо(False));
 Message(vAlUeIsFiLlEd(Undefined));
@@ -341,6 +366,24 @@ for _expression, _message in STRING_BOUNDARY_FAILURES:
     STRING_BOUNDARY_OUTPUT += 'Да\nДа\n'
 STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
 STRING_BOUNDARY_OUTPUT += 'Да\n'
+
+
+def check_array_defaults(executable: str, *, directory: Path, env: dict) -> None:
+    """Optional array values across all binary input modes."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ПустыеЭлементы.bsl'
+    source.write_text(ARRAY_DEFAULT_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, ARRAY_DEFAULT_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], ARRAY_DEFAULT_PROGRAM),
+              ([], ARRAY_DEFAULT_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, ARRAY_DEFAULT_OUTPUT, ''):
+            raise AssertionError(f'Failed array defaults {arguments!r}: {result!r}')
+    print('Binary array defaults passed: aliases, mutation, fixed snapshot, serialization, '
+          'BOM file, command flags, stdin and console recovery')
 
 
 def check_value_filled(executable: str, *, directory: Path, env: dict) -> None:
@@ -889,6 +932,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_array_defaults(executable, directory=Path(temporary) / "array-defaults", env=env)
         check_value_filled(executable, directory=Path(temporary) / "filled", env=env)
         check_string_lines(executable, directory=Path(temporary) / "lines", env=env)
         check_string_template(executable, directory=Path(temporary) / "templates", env=env)
