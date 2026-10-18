@@ -446,6 +446,14 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("shift-caught");\n')
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("shift-recovered=" + ПобитовыйСдвигВправо(26, 3));\n')
+        send(">>> ", 'deleteArray = New Array; deleteArray.Delete(0); deleteArray.Add("Я😀");\n')
+        send(">>> ", 'deleteArray.Удалить(1); Message("delete-kept=" + deleteArray[0]);\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'deleteArray.Delete(-1);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("delete-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'deleteArray.Delete(0); deleteArray.Delete(0); Message("delete-empty=" + deleteArray.Count());\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -473,7 +481,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("shift-high=1", 1), ("shift-caught", 1),
+        for message, count in (("delete-kept=Я😀", 1), ("delete-caught", 1),
+                               ("delete-empty=0", 1), ("shift-high=1", 1), ("shift-caught", 1),
                                ("shift-recovered=3", 1), ("bits-max=Да", 1), ("bits-caught", 1),
                                ("bits-recovered=8", 1), ("reference-value=Я😀", 1), ("reference-readonly", 1),
                                ("reference-kept=Я😀", 1), ("new-caught", 1), ("new-kept=old", 1),
