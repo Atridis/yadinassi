@@ -93,6 +93,41 @@ class CLITests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
                                      (0, NUMERIC_HELPERS_OUTPUT, ''))
 
+    def test_array_gap_all_cli_inputs(self):
+        from scripts.smoke_test import ARRAY_GAP_PROGRAM, ARRAY_GAP_OUTPUT
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ПромежуткиМассива.bsl'
+            source.write_text(ARRAY_GAP_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, ARRAY_GAP_PROGRAM), None) for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), ARRAY_GAP_PROGRAM),
+                      ((), ARRAY_GAP_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, ARRAY_GAP_OUTPUT, ''))
+
+    def test_array_gap_diagnostics_and_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary).resolve()
+            source = temporary / 'ОшибкаПромежутка.bsl'
+            code = 'a = New Array; a.Add("old");\na.Insert(100000000000000000000);\n'
+            source.write_text(code, encoding='utf-8-sig')
+            cases = [((flag, code), None, '', '<команда>:2:') for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None, '', str(source) + ':2:'),
+                      (('-',), code, '', '<stdin>:2:'),
+                      ((), code + 'a.Count()\na[0]\n/exit\n', '1\nold\n', '<консоль>:1:')]
+            for arguments, stdin, stdout, location in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stdout, stdout)
+                    self.assertIn(location, result.stderr)
+                    self.assertIn('предел роста массива Yadinassi', result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+
     def test_array_defaults_all_cli_inputs(self):
         from scripts.smoke_test import ARRAY_DEFAULT_PROGRAM, ARRAY_DEFAULT_OUTPUT
 

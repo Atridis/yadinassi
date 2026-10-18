@@ -220,6 +220,20 @@ CHARACTER_PROGRAM += 'Message(Char(КодСимвола("Ж")));\n'
 CHARACTER_OUTPUT += 'Ж\n'
 
 
+ARRAY_GAP_PROGRAM = """
+a = New Array; alias = a; a.Вставить(3, "Я😀");
+Message(a.Count()); Message(a.UBound()); Message(a[0] = Undefined);
+Message(a.Find(Undefined)); Message(alias[3]);
+f = New FixedArray(a); a.Insert(6); a[1] = "changed";
+Message(f.Count()); Message(f[1] = Undefined); Message(a.Count());
+b = ValueFromStringInternal(ValueToStringInternal(a));
+Message(b[5] = Undefined); Message(b[1]);
+Try a.Insert(100000000000000000000); Except Message("array-gap-caught"); EndTry;
+Message(a.Count()); a.Insert(0, "head"); Message(a[0]); Message(a[4]);
+"""
+ARRAY_GAP_OUTPUT = '4\n3\nДа\n0\nЯ😀\n4\nДа\n7\nДа\nchanged\narray-gap-caught\n7\nhead\nЯ😀\n'
+
+
 ARRAY_DEFAULT_PROGRAM = """
 a = New Array;
 a.дОбАвИтЬ();
@@ -366,6 +380,36 @@ for _expression, _message in STRING_BOUNDARY_FAILURES:
     STRING_BOUNDARY_OUTPUT += 'Да\nДа\n'
 STRING_BOUNDARY_PROGRAM += 'Message(StrEndsWith("recovered", "covered"));\n'
 STRING_BOUNDARY_OUTPUT += 'Да\n'
+
+
+def check_array_gap(executable: str, *, directory: Path, env: dict) -> None:
+    """Array gap insertion across all binary input modes."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ПромежуткиМассива.bsl'
+    source.write_text(ARRAY_GAP_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, ARRAY_GAP_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], ARRAY_GAP_PROGRAM),
+              ([], ARRAY_GAP_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, ARRAY_GAP_OUTPUT, ''):
+            raise AssertionError(f'Failed array gap insertion {arguments!r}: {result!r}')
+    code = 'a = New Array; a.Add("old");\na.Insert(100000000000000000000);\n'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None, '', '<команда>:2:') for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None, '', str(source) + ':2:'),
+              (['-'], code, '', '<stdin>:2:'),
+              ([], code + 'a.Count()\na[0]\n/exit\n', '1\nold\n', '<консоль>:1:')]
+    for arguments, stdin, stdout, location in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
+                or 'предел роста массива Yadinassi' not in result.stderr or 'Traceback' in result.stderr):
+            raise AssertionError(f'Failed array gap diagnostic {arguments!r}: {result!r}')
+    print('Binary array gap insertion passed: aliases, mutation, fixed snapshot, serialization, '
+          'BOM file, command flags, stdin and console recovery')
 
 
 def check_array_defaults(executable: str, *, directory: Path, env: dict) -> None:
@@ -932,6 +976,7 @@ def main() -> None:
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
+        check_array_gap(executable, directory=Path(temporary) / "array-gap", env=env)
         check_array_defaults(executable, directory=Path(temporary) / "array-defaults", env=env)
         check_value_filled(executable, directory=Path(temporary) / "filled", env=env)
         check_string_lines(executable, directory=Path(temporary) / "lines", env=env)

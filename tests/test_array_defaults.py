@@ -81,9 +81,9 @@ class ArrayDefaultTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('f').items, (None,))
 
     def test_invalid_calls_preserve_contents_and_recover(self):
-        # Index coercions and sparse insertion are not expanded in this change.
+        # Index coercions are not expanded in this change.
         for call in ('a.Insert()', 'a.Add(1, 2)', 'a.Insert(0, 1, 2)',
-                     'a.Insert(-1)', 'a.Insert(3)', 'a.Insert(0.5)',
+                     'a.Insert(-1)', 'a.Insert(0.5)',
                      'a.Insert(Undefined)', 'a.Insert("0")', 'a.Set(0)'):
             with self.subTest(call=call):
                 self.vm.execute('a = New Array; a.Add("old");')
