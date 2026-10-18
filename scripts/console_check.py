@@ -320,6 +320,16 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'line = StrGetLine("A", Undefined);\n')
         send(">>> ", 'Message("lines-preserved=" + line);\n')
         send(">>> ", 'Message("lines-count=" + StrLineCount("A" + Char(13) + Char(10) + "B" + Char(10)));\n')
+        send(">>> ", 'filled = ЗначениеЗаполнено(False);\n')
+        send(">>> ", 'Message("filled-result=" + ValueToStringInternal(filled));\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'ValueIsFilled(Type("Number"));\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("filled-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'filled = ValueIsFilled(Type("Number"));\n')
+        send(">>> ", 'Message("filled-preserved=" + ValueToStringInternal(filled));\n')
+        send(">>> ", 'Message("filled-empty=" + ValueToStringInternal(ValueIsFilled(New Array)));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -328,7 +338,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 22
+        if (output.count('<консоль>:1:') != 23
+                or output.count('ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi') != 1
                 or output.count('СтрШаблон: очень много параметров') != 1
                 or output.count('строка поиска не должна быть пустой') != 1
                 or output.count('Метка не определена') != 1
@@ -347,6 +358,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
         for message, count in (("goto-count=3", 1), ("goto-recovered=3", 1),
+                               ('filled-result={"B",1}', 1), ('filled-caught', 1),
+                               ('filled-preserved={"B",1}', 1), ('filled-empty={"B",0}', 1),
                                ('lines-result=Я😀', 1), ('lines-caught', 1),
                                ('lines-preserved=Я😀', 1), ('lines-count=2', 1),
                                ('template-result=x0/%x', 1), ('template-caught', 1),
