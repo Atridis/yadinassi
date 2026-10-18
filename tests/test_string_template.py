@@ -64,10 +64,11 @@ class StringTemplateTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('ValueFromStringInternal(ValueToStringInternal('
                                          'StrTemplate("[%1]", "😀")))'), '[😀]')
 
-    def test_insufficient_and_excess_arguments(self):
+    def test_missing_values_are_empty_and_excess_arguments_fail(self):
         for text, values in [('%1', ()), ('%2', ('x',)), ('%10', tuple('123456789'))]:
-            with self.subTest(text=text), self.assertRaisesRegex(ValueError, 'недостаточно фактических'):
-                template(text, *values)
+            with self.subTest(text=text):
+                self.assertEqual(template(text, *values), '')
+        self.assertEqual(template('[%1]|[%2]|%(3)', 'x'), '[x]|[]|')
         for text, values in [('', ('x',)), ('%%1', ('x',)), ('%1', ('x', 'y')),
                               ('%10', tuple(range(11)))]:
             with self.subTest(text=text), self.assertRaisesRegex(ValueError, 'очень много'):
@@ -80,8 +81,8 @@ class StringTemplateTests(unittest.TestCase):
                 template(text, 'x')
 
     def test_errors_preserve_assignment_and_recover_in_try(self):
-        for expression in ('StrTemplate()', 'СтрШаблон("%1")', 'StrTemplate("", 1)',
-                           'СтрШаблон("%0", 1)', 'StrTemplate("%10", 1)'):
+        for expression in ('StrTemplate()', 'StrTemplate("", 1)',
+                           'СтрШаблон("%0", 1)', 'StrTemplate("%11", 1)'):
             self.vm.execute('saved = "old"')
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute('saved = ' + expression, 'template.bsl')

@@ -210,6 +210,12 @@ def join(values: object, separator: object = "") -> str:
     return _text(delimiter.join(to_string(value) for value in values))
 
 
+def occurrence_count(value: object, substring: object) -> Decimal:
+    """Count non-overlapping UTF-16 matches; an empty needle has no matches."""
+    text, needle = _units(value), _units(substring)
+    return Decimal(text.count(needle) if needle else 0)
+
+
 def template(value: object, *values: object) -> str:
     """Numbered substitution; inserted presentations are never parsed again."""
     if len(values) > 10:
@@ -247,19 +253,18 @@ def template(value: object, *values: object) -> str:
         index = int(digits)
         required = max(required, index)
         parts.append(index)
-    if len(values) < required:
-        raise ValueError("СтрШаблон: недостаточно фактических параметров")
     if len(values) > required:
         raise ValueError("СтрШаблон: очень много параметров")
     presentations: dict[int, str] = {}
     for part in parts:
         if isinstance(part, int) and part not in presentations:
-            presentations[part] = to_string(values[part - 1])
+            presentations[part] = to_string(values[part - 1]) if part <= len(values) else ""
     return _text("".join(presentations[part] if isinstance(part, int) else part
                          for part in parts))
 
 
 BUILTINS = (
+    ("СтрЧислоВхождений", occurrence_count, "StrOccurrenceCount"),
     ("СтрЧислоСтрок", line_count, "StrLineCount"),
     ("СтрПолучитьСтроку", get_line, "StrGetLine"),
     ("СтрШаблон", template, "StrTemplate"),
