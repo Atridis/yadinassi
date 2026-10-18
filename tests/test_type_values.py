@@ -198,13 +198,14 @@ class TypeValueTests(unittest.TestCase):
             with self.subTest(code=code), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(code)
 
-    def test_type_values_do_not_add_constructors_or_dynamic_new(self):
+    def test_type_values_do_not_add_scalar_constructors(self):
         for code in ['New Type("Number")', 'New Тип("Число")',
                      'New Number', 'New Undefined', 'New KeyAndValue',
-                     'New (Type("Array"))']:
+                     'New (Type("Number"))']:
             with self.subTest(code=code), self.assertRaises(BSLError):
                 self.vm.execute(code)
         self.assertIs(self.evaluate('TypeOf(New Array) = Type("Array")'), True)
+        self.assertIs(self.evaluate('TypeOf(New (Type("Array"))) = Type("Array")'), True)
 
     def test_error_location_and_recovery_preserve_existing_type_value(self):
         self.vm.execute('t = Type("Number");')

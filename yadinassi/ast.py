@@ -75,6 +75,12 @@ class New(Node):
 
 
 @dataclass
+class DynamicNew(Node):
+    type_expression: Node
+    parameters: Node | None
+
+
+@dataclass
 class Assign(Node):
     target: Node
     value: Node

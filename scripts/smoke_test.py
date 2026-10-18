@@ -538,6 +538,19 @@ FillPropertyValues(New FixedStructure(fillTarget), fillSource);
 STRING_PARITY_OUTPUT += 'Я😀\nexecute-caught\nЯ😀\nexecute-local-gone\nok\nЯ\n5\n9\n'
 
 
+STRING_PARITY_PROGRAM += r'''
+constructorArgs = New("Array"); constructorArgs.Add("Имя"); constructorArgs.Add("Я😀");
+dynamicValue = Новый(Тип("Структура"), constructorArgs); Message(dynamicValue.Имя);
+fixedArgs = New Array; fixedArgs.Add(dynamicValue);
+dynamicCopy = ValueFromStringInternal(ValueToStringInternal(New("FixedStructure", fixedArgs)));
+Message(dynamicCopy.Имя); Message(TypeOf(dynamicCopy) = Type("FixedStructure"));
+Message(New("Array", False).Count());
+Try dynamicValue = New("Missing"); Except Message("new-caught"); EndTry;
+Message(dynamicValue.Имя); Message(Eval("New(""Array"").Count()"));
+'''
+STRING_PARITY_OUTPUT += 'Я😀\nЯ😀\nДа\n0\nnew-caught\nЯ😀\n0\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()
