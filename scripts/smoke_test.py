@@ -284,6 +284,18 @@ Try StrOccurrenceCount("a"); Except Message("occurrence-caught"); EndTry;
 Message(StrOccurrenceCount("ababa", "aba"));
 """
 STRING_PARITY_OUTPUT = '2\n0\n0\n1\n2\n3\n{"S",""}\n[Я]|[]\n%\n2\noccurrence-caught\n1\n'
+# StrFind's documented two-argument form shares the UTF-16 Find primitive.
+STRING_PARITY_PROGRAM += '''
+Message(СтрНайти("Я😀ёж", "ёж"));
+Message(sTrFiNd("abc", ""));
+Message(StrFind("", ""));
+Message(StrFind("ABC", "b"));
+Message(ValueFromStringInternal(ValueToStringInternal(StrFind("ababa", "ba"))));
+Try StrFind("abc", "b", Undefined); Except Message("strfind-caught"); EndTry;
+Message(StrFind("abc", "c"));
+'''
+STRING_PARITY_OUTPUT += '4\n1\n1\n0\n2\nstrfind-caught\n3\n'
+
 
 
 ARRAY_GAP_PROGRAM = """
@@ -449,7 +461,7 @@ STRING_BOUNDARY_OUTPUT += 'Да\n'
 
 
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
-    """Native-backed occurrence count and missing template value across inputs."""
+    """Native-backed string parity and documented default StrFind across inputs."""
     directory = directory.resolve()
     directory.mkdir()
     source = directory / 'ВхожденияШаблона.bsl'
@@ -462,7 +474,7 @@ def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_PARITY_OUTPUT, ''):
             raise AssertionError(f'Failed native string parity {arguments!r}: {result!r}')
-    print('Binary native string parity passed: occurrence count, template defaults, '
+    print('Binary string checks passed: native parity, documented default StrFind, '
           'BOM file, command flags, stdin and console recovery')
 
 
