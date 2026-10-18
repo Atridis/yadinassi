@@ -1,4 +1,4 @@
-"""Documented intersection copy; optional selection lists are not implemented."""
+"""Native-backed intersection, fixed targets, and bounded selection lists."""
 from decimal import Decimal
 import unittest
 
@@ -65,7 +65,7 @@ class PropertyValuesTests(unittest.TestCase):
 
     def test_validation_before_mutation_and_recovery(self):
         for args in ('target, 1', 'target, Undefined', 'target, New Map()',
-                     'target, New Array()', 'New FixedStructure(target), source',
+                     'target, New Array()',
                      '1, source', 'Undefined, source', 'New Map(), source'):
             self.setUp()
             before = self.vm.execute('ValueToStringInternal(target)')
@@ -77,11 +77,91 @@ class PropertyValuesTests(unittest.TestCase):
             self.assertTrue(self.vm.execute('caught'))
             self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
 
-    def test_arity_and_unsupported_optional_arguments(self):
-        for args in ('', 'target', 'target, source, "Имя"',
-                     'target, source, Undefined', 'target, source, , "Имя"',
-                     'target, source, Undefined, "Имя"'):
+    def test_fixed_target_is_accepted_without_mutation(self):
+        self.vm.execute('fixed = New FixedStructure(target); alias = fixed; '
+                        'FillPropertyValues(fixed, source); '
+                        'FillPropertyValues(fixed, New FixedStructure(source));')
+        self.assertEqual(self.vm.execute('fixed.Имя'), 'старое')
+        self.assertEqual(self.vm.execute('fixed.Количество'), Decimal(0))
+        self.assertTrue(self.vm.execute('(fixed = alias)'))
+        self.assertEqual(self.vm.execute('fixed.Count()'), Decimal(3))
+
+    def test_explicit_undefined_and_omitted_optional_arguments(self):
+        for suffix in (', Undefined', ', Undefined, Undefined', ', , Undefined'):
+            self.setUp()
+            self.vm.execute('FillPropertyValues(target, source' + suffix + ');')
+            self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
+            self.assertEqual(self.vm.execute('target.Количество'), Decimal(3))
+
+    def test_selected_copy_preserves_other_properties(self):
+        for source in ('source', 'New FixedStructure(source)'):
+            self.setUp()
+            self.vm.execute(f'FillPropertyValues(target, {source}, "иМя");')
+            self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
+            self.assertEqual(self.vm.execute('target.Количество'), Decimal(0))
+            self.assertEqual([p.key for p in self.vm.variables['target']],
+                             ['Имя', 'Количество', 'Оставить'])
+
+    def test_multiple_selected_properties_and_duplicates(self):
+        self.vm.execute('FillPropertyValues(target, source, "Количество,Имя,иМя");')
+        self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
+        self.assertEqual(self.vm.execute('target.Количество'), Decimal(3))
+        self.assertEqual(self.vm.execute('target.Оставить'), Decimal(9))
+
+    def test_missing_selected_property_keeps_prior_assignments(self):
+        for missing in ('НетТакогоСвойства', 'Лишнее', 'Оставить'):
+            self.setUp()
             with self.assertRaises(BSLError):
+                self.vm.execute(f'FillPropertyValues(target, source, "Имя,{missing},Количество");')
+            self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
+            self.assertEqual(self.vm.execute('target.Количество'), Decimal(0))
+            self.assertEqual(self.vm.execute('target.Count()'), Decimal(3))
+            self.assertEqual(self.vm.execute('source.Количество'), Decimal(3))
+
+    def test_missing_first_selected_property_changes_nothing(self):
+        with self.assertRaises(BSLError):
+            self.vm.execute('FillPropertyValues(target, source, "НетТакогоСвойства,Имя");')
+        self.assertEqual(self.vm.execute('target.Имя'), 'старое')
+
+    def test_exclusion_with_omitted_or_undefined_selection(self):
+        for selection in ('', 'Undefined'):
+            self.setUp()
+            self.vm.execute(f'FillPropertyValues(target, source, {selection}, "иМя");')
+            self.assertEqual(self.vm.execute('target.Имя'), 'старое')
+            self.assertEqual(self.vm.execute('target.Количество'), Decimal(3))
+            self.assertEqual(self.vm.execute('target.Оставить'), Decimal(9))
+
+    def test_multiple_exclusions(self):
+        self.vm.execute('FillPropertyValues(target, source, Undefined, "Имя,Количество");')
+        self.assertEqual(self.vm.execute('target.Имя'), 'старое')
+        self.assertEqual(self.vm.execute('target.Количество'), Decimal(0))
+
+    def test_selection_keeps_undefined_and_shallow_references(self):
+        self.vm.execute('items = New Array(); source = New Structure("a,b", items, Undefined); '
+                        'target = New Structure("a,b", 1, 2); '
+                        'FillPropertyValues(target, source, "a,b"); target.a.Add(7);')
+        self.assertTrue(self.vm.execute('(source.a = target.a)'))
+        self.assertEqual(self.vm.execute('source.a[0]'), Decimal(7))
+        self.assertIsNone(self.vm.execute('target.b'))
+
+    def test_arity_and_invalid_list_types(self):
+        for args in ('', 'target', 'target, source, 1', 'target, source, True',
+                     'target, source, Undefined, New Array()',
+                     'target, source, Undefined, Undefined, Undefined',
+                     'target, source, ', 'target, source, , ',
+                     ', source', 'target, , "Имя"'):
+            with self.assertRaises(BSLError):
+                self.vm.execute('FillPropertyValues(' + args + ');')
+            self.assertEqual(self.vm.execute('target.Имя'), 'старое')
+
+    def test_unverified_list_boundaries_fail_explicitly(self):
+        for args in ('target, source, "Имя", "Количество"',
+                     'New FixedStructure(target), source, "Имя"',
+                     'target, source, ""', 'target, source, " Имя"',
+                     'target, source, Undefined, "Лишнее"',
+                     'target, source, Undefined, "Оставить"',
+                     'target, source, Undefined, "НетТакогоСвойства"'):
+            with self.assertRaisesRegex(BSLError, 'пока не поддержива'):
                 self.vm.execute('FillPropertyValues(' + args + ');')
             self.assertEqual(self.vm.execute('target.Имя'), 'старое')
 
@@ -100,8 +180,9 @@ class PropertyValuesTests(unittest.TestCase):
     def test_arguments_once_left_to_right(self):
         self.vm.execute('Var order; order = ""; '
                         'Function Arg(Val tag, Val item) order = order + tag; Return item; EndFunction; '
-                        'FillPropertyValues(Arg("a", target), Arg("b", source));')
-        self.assertEqual(self.vm.execute('order'), 'ab')
+                        'FillPropertyValues(Arg("a", target), Arg("b", source), '
+                        'Arg("c", Undefined), Arg("d", "Количество"));')
+        self.assertEqual(self.vm.execute('order'), 'abcd')
         self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
 
     def test_existing_serialization_both_directions_and_aliases(self):
@@ -122,12 +203,38 @@ class PropertyValuesTests(unittest.TestCase):
         class Hostile(BSLStructure):
             def __getattribute__(self, name):
                 raise AssertionError('unexpected host hook')
-        for target, source in ((Hostile(), BSLStructure()), (BSLStructure(), Hostile())):
+        class HostileFixed(BSLFixedStructure):
+            def __getattribute__(self, name):
+                raise AssertionError('unexpected host hook')
+        for hostile in (Hostile(), HostileFixed()):
+            for target, source in ((hostile, BSLStructure()), (BSLStructure(), hostile)):
+                with self.assertRaises(TypeError):
+                    fill_property_values(target, source)
+
+    def test_host_list_subclasses_do_not_invoke_hooks(self):
+        class HostileString(str):
+            def split(self, *args):
+                raise AssertionError('unexpected host hook')
+        target = BSLStructure('a', 1)
+        source = BSLStructure('a', 2)
+        for properties, exclude in ((HostileString('a'), None),
+                                    (None, HostileString('a'))):
             with self.assertRaises(TypeError):
-                fill_property_values(target, source)
+                fill_property_values(target, source, properties, exclude)
+            self.assertEqual(target.get('a'), 1)
 
     def test_user_routine_can_shadow_one_alias(self):
         self.vm.execute('Function FillPropertyValues() Return 7; EndFunction; '
                         'value = FillPropertyValues(); ЗаполнитьЗначенияСвойств(target, source);')
         self.assertEqual(self.vm.execute('value'), Decimal(7))
         self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
+
+
+class OmissionDispatchRegressionTests(unittest.TestCase):
+    def test_unrelated_method_receiver_not_evaluated_for_omitted_arguments(self):
+        vm = Interpreter()
+        vm.execute('Var count; count = 0; Function Get() count = count + 1; '
+                   'Return New Array(); EndFunction;')
+        with self.assertRaises(BSLError):
+            vm.execute('Get().Add(, 1);')
+        self.assertEqual(vm.execute('count'), Decimal(0))

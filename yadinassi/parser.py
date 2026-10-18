@@ -156,6 +156,11 @@ class Parser:
 
     def statement(self) -> ast.Node:
         token = self.current
+        if self.accept("EXECUTE"):
+            self.expect("(")
+            expression = self.expression()
+            self.expect(")")
+            return ast.Execute(token, expression)
         if self.accept("~"):
             name = self.expect("IDENT").value
             self.expect(":")
@@ -308,7 +313,10 @@ class Parser:
             if token := self.accept("("):
                 value = ast.Call(token, value, self.arguments())
             elif token := self.accept("."):
-                value = ast.Attribute(token, value, self.expect("IDENT").value)
+                # Execute is a statement keyword, but existing object members
+                # with this spelling remain member names after a dot.
+                member = self.accept("EXECUTE") or self.expect("IDENT")
+                value = ast.Attribute(token, value, member.value)
             elif token := self.accept("["):
                 index = self.expression()
                 self.expect("]")
@@ -390,3 +398,16 @@ def parse_expression(text: str, source: str = "<Вычислить>") -> ast.Nod
     expression = parser.expression()
     parser.expect("EOF")
     return expression
+
+
+def parse_fragment(text: str, source: str = "<Выполнить>") -> list[ast.Node]:
+    """Parse a complete dynamic statement fragment, without module declarations."""
+    tokens = Lexer(text, source, allow_directives=False).tokens()
+    # Reject declarations anywhere, including unreachable branches, before effects.
+    for token in tokens:
+        if token.kind in {"VAR", "FUNCTION", "PROCEDURE", "ATCLIENT", "IMPORT"}:
+            raise BSLError("Выполнить: объявления и импорт недопустимы",
+                           token.source, token.line, token.column)
+    # A fresh parser intentionally has no surrounding routine/loop/handler/labels.
+    # Return and external Break/Continue/Goto/Raise therefore cannot escape it.
+    return Parser(tokens).parse()

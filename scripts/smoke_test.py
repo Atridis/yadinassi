@@ -521,6 +521,23 @@ FillPropertyValues(fillTarget, fillCopy); Message(fillTarget.Имя);
 STRING_PARITY_OUTPUT += 'Я😀\n9\n2\nНет\nДа\nЯ😀\nfill-caught\nЯ😀\n'
 
 
+STRING_PARITY_PROGRAM += r'''
+executeValue = "old";
+Выполнить("executeValue = ""Я😀""; localOnly = 7;");
+Message(executeValue);
+Try Execute("executeValue = ""bad""; executeValue = ;"); Except Message("execute-caught"); EndTry;
+Message(executeValue);
+Try Eval("localOnly"); Except Message("execute-local-gone"); EndTry;
+Execute(Undefined); Execute("executeValue = ""ok"";"); Message(executeValue);
+fillTarget = New Structure("Имя,Оставить", "old", 5);
+fillSource = New Structure("имя,Оставить", "Я", 9);
+FillPropertyValues(fillTarget, fillSource, "Имя"); Message(fillTarget.Имя); Message(fillTarget.Оставить);
+FillPropertyValues(fillTarget, fillSource, , "Имя"); Message(fillTarget.Оставить);
+FillPropertyValues(New FixedStructure(fillTarget), fillSource);
+'''
+STRING_PARITY_OUTPUT += 'Я😀\nexecute-caught\nЯ😀\nexecute-local-gone\nok\nЯ\n5\n9\n'
+
+
 def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     """Native-backed strings and documented string/XML conversions across inputs."""
     directory = directory.resolve()
@@ -1196,13 +1213,13 @@ def main() -> None:
             encoding='utf-8')
         exception_module = Path(temporary) / "Ошибки.bsl"
         exception_module.write_text(
-            'Процедура Выполнить() Экспорт\n'
+            'Процедура ВыдатьОшибку() Экспорт\n'
             'Попытка\nВызватьИсключение "из модуля";\n'
             'Исключение\nВызватьИсключение;\nКонецПопытки;\nКонецПроцедуры',
             encoding="utf-8-sig")
         exception_main = Path(temporary) / "Обработка.bsl"
         exception_main.write_text(
-            '// #Импорт Ошибки.bsl\nПопытка\nОшибки.Выполнить();\n'
+            '// #Импорт Ошибки.bsl\nПопытка\nОшибки.ВыдатьОшибку();\n'
             'Исключение\nСообщить(ОписаниеОшибки());\nКонецПопытки;\n',
             encoding="utf-8")
         exception_code = ('Попытка\nСообщить(1 / 0);\nИсключение\n'

@@ -173,3 +173,8 @@ class Label(Node):
 @dataclass
 class Goto(Node):
     name: str
+
+
+@dataclass
+class Execute(Node):
+    expression: Node
