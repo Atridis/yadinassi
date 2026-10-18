@@ -40,3 +40,15 @@ def string_key(value: str) -> tuple[int, ...]:
     if len(normalized) > MAX_NORMALIZED_LENGTH:
         raise ValueError("Сравнение строк: превышен ресурсный предел нормализации")
     return _collator().sort_key(normalized)
+
+
+def caseless_string_key(value: str) -> tuple[int, ...]:
+    """Primary and secondary UCA weights; native-backed subset, not locale ICU.
+
+    Tertiary weights distinguish case (and other variants). Keep secondary
+    weights: sharp-s/SS and dotted-I/i are unequal in the owner's native probes.
+    Reuse the pinned table, NFD and both resource limits without case expansion.
+    """
+    key = string_key(value)
+    second_separator = key.index(0, key.index(0) + 1)
+    return key[:second_separator]

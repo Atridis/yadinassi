@@ -20,9 +20,9 @@ def xml_value(value_type: object, text: object) -> object:
     if value_type is BSLType.STRING:
         return text
     if value_type is BSLType.BOOLEAN:
-        # XSD Boolean lexical space; collapse only XML whitespace. Internal
-        # whitespace cannot occur in any of the four valid tokens.
-        token = text.strip(" \t\r\n")
+        # Native TRUE is accepted but the whitespace probe is rejected.
+        # Generalize only ASCII letter case; never trim or Unicode-casefold.
+        token = text.translate(str.maketrans("TRUEFALS", "truefals"))
         if token in ("true", "1"):
             return True
         if token in ("false", "0"):
