@@ -311,6 +311,22 @@ Message(a.Count()); a.Insert(0, "head"); Message(a[0]); Message(a[4]);
 """
 ARRAY_GAP_OUTPUT = '4\n3\nДа\n0\nЯ😀\n4\nДа\n7\nДа\nchanged\narray-gap-caught\n7\nhead\nЯ😀\n'
 
+# Documented nested-array construction, exercised by the existing array routes.
+ARRAY_GAP_PROGRAM += """
+m = Новый мАсСиВ(2, 3, 4);
+Message(m.Count()); Message(m[1].Count()); Message(m[1][2].Count());
+m[0][1][2] = "Я😀";
+Message(m[0][1][2]); Message(m[1][1][2] = Undefined);
+f = New FixedArray(m); copy = New Array(f);
+m[0][1][2] = "changed"; Message(copy[0][1][2]);
+copy = ValueFromStringInternal(ValueToStringInternal(copy));
+Message(copy[0][1][2]); Message(copy[1][1][2] = Undefined);
+z = New Array(2, 0, 9); Message(z[1].Count());
+Try m = New Array(1000, 1000); Except Message("array-shape-caught"); EndTry;
+Message(m[0][1][2]);
+"""
+ARRAY_GAP_OUTPUT += '2\n3\n4\nЯ😀\nДа\nЯ😀\nЯ😀\nДа\n0\narray-shape-caught\nchanged\n'
+
 
 ARRAY_DEFAULT_PROGRAM = """
 a = New Array;
@@ -504,7 +520,7 @@ def check_array_gap(executable: str, *, directory: Path, env: dict) -> None:
         if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                 or 'предел роста массива Yadinassi' not in result.stderr or 'Traceback' in result.stderr):
             raise AssertionError(f'Failed array gap diagnostic {arguments!r}: {result!r}')
-    print('Binary array gap insertion passed: aliases, mutation, fixed snapshot, serialization, '
+    print('Binary array constructors and gap insertion passed: dimensions, aliases, fixed snapshot, serialization, '
           'BOM file, command flags, stdin and console recovery')
 
 

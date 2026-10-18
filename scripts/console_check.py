@@ -370,6 +370,14 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("strfind-caught");\n')
         send("... ", 'EndTry;\n')
         send(">>> ", 'Message("strfind-recovered=" + СтрНайти("Я😀ёж", "ёж"));\n')
+        send(">>> ", 'matrix = New Array(2, 3); matrix[0][1] = "Я";\n')
+        send(">>> ", 'Try\n')
+        send("... ", 'matrix = New Array(1000, 1000);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("array-shape-caught");\n')
+        send("... ", 'EndTry;\n')
+        send(">>> ", 'Message("array-shape-kept=" + matrix[0][1]);\n')
+        send(">>> ", 'Message("array-shape-independent=" + (matrix[1][1] = Undefined));\n')
         send(">>> ", "/exit\n")
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and read_output():
@@ -397,7 +405,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (("strfind-caught", 1), ("strfind-recovered=4", 1),
+        for message, count in (("array-shape-caught", 1), ("array-shape-kept=Я", 1),
+                               ("array-shape-independent=Да", 1), ("strfind-caught", 1), ("strfind-recovered=4", 1),
                                ("eval-local=14", 1), ("eval-caught", 1),
                                ("eval-recovered=15", 1), ("occurrence-count=2", 1), ("occurrence-caught", 1),
                                ("occurrence-recovered=2", 1), ('template-missing={"S",""}', 1),

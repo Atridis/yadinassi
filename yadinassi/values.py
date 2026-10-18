@@ -261,17 +261,58 @@ class _ArrayBase(BSLObject):
 _MAX_INSERT_GROWTH = 1_000_000  # Yadinassi allocation budget, not a native limit.
 
 
+# Constructor budgets count slots plus nested array objects (not the root).
+# These are Yadinassi limits, not inferred limits of the native platform.
+_MAX_ARRAY_CONSTRUCTION = 1_000_000
+_MAX_ARRAY_DIMENSIONS = 64
+
+
 class BSLArray(_ArrayBase):
-    def __init__(self, size: object = Decimal(0)):
+    def __init__(self, size: object = Decimal(0), *dimensions: object):
         if isinstance(size, BSLFixedArray):
+            if dimensions:
+                raise TypeError("Копирование массива ожидает один аргумент")
             # The platform recursively converts direct fixed-array elements.
             self.items = [BSLArray(item) if isinstance(item, BSLFixedArray) else item
                           for item in size.items]
             return
-        length = integer(size)
-        if length < 0:
-            raise ValueError("Размер массива не может быть отрицательным")
-        self.items: list[object] = [None] * length
+        sizes = (size, *dimensions)
+        if len(sizes) > _MAX_ARRAY_DIMENSIONS:
+            raise ValueError("Массив: превышен предел измерений Yadinassi (64)")
+        # Validate all dimensions, even those after an empty outer dimension.
+        # Keep Decimals until each reachable allocation is proven affordable.
+        for value in sizes:
+            value = require_number(value)
+            if not value.is_finite() or value != value.to_integral_value():
+                raise ValueError("Ожидается целое число")
+            if value < 0:
+                raise ValueError("Размер массива не может быть отрицательным")
+        widths = []
+        parents, cost = 1, 0
+        for depth, value in enumerate(sizes):
+            if depth:
+                cost += parents  # Each parent slot becomes a distinct array.
+            remaining = _MAX_ARRAY_CONSTRUCTION - cost
+            if parents and (remaining < 0 or value > remaining // parents):
+                raise ValueError("Массив: превышен предел ресурсов Yadinassi "
+                                 "(1000000 элементов и вложенных массивов)")
+            width = int(value) if parents else 0
+            widths.append(width)
+            parents *= width
+            cost += parents
+
+        def create(depth):
+            if depth == len(widths) - 1:
+                return [None] * widths[depth]
+            items = []
+            for _ in range(widths[depth]):
+                child = object.__new__(BSLArray)
+                child.items = create(depth + 1)
+                items.append(child)
+            return items
+
+        # Publish only the complete shape; failed validation leaves self intact.
+        self.items: list[object] = create(0)
 
     def set(self, index: object, value: object) -> None:
         self.items[self.checked_index(index)] = value
