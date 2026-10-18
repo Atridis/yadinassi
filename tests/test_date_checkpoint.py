@@ -164,11 +164,24 @@ class DateCalendarCheckpointTests(unittest.TestCase):
                 and node.expression.callee.name == 'НаблюдатьДату'
                 and node.expression.arguments[0].value.startswith('calendar.')}
 
-    def test_foundation_source_prefix_is_byte_exact(self):
-        raw = SOURCE.read_bytes()
+    def assert_foundation_prefix(self, raw):
+        # Git checkout can expand LF to CRLF on Windows. Verify the exact stored
+        # source bytes after only this transport normalization, not whitespace.
+        raw = raw.replace(b'\r\n', b'\n')
         self.assertEqual(hashlib.sha256(raw[:7119]).hexdigest(),
                          '5fbe934ac9d0ca1829a7f87e5f770fac797c9f9d9b52105110ddf24731f0fa6e')
         self.assertEqual(raw[:7119].decode('utf-8-sig'), source())
+
+    def test_foundation_source_prefix_is_byte_exact(self):
+        self.assert_foundation_prefix(SOURCE.read_bytes())
+
+    def test_foundation_source_hash_accepts_checkout_crlf_only(self):
+        raw = SOURCE.read_bytes().replace(b'\r\n', b'\n')
+        self.assert_foundation_prefix(raw.replace(b'\n', b'\r\n'))
+        for changed in (b' ' + raw, raw.replace(b'\n', b' \n', 1), raw.replace(b'\n', b'\r', 1)):
+            with self.subTest(prefix=changed[:80]):
+                with self.assertRaises(AssertionError):
+                    self.assert_foundation_prefix(changed)
 
     def test_exact_bounded_calendar_observations_and_labels(self):
         values = self.calendar_expressions()
