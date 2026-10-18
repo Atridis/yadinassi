@@ -1,0 +1,33 @@
+name: Request native 1C run
+
+on:
+  pull_request_target:
+    types: [labeled]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: Notify owner in Telegram
+    if: >-
+      github.repository == 'Atridis/yadinassi' &&
+      github.event.label.name == 'needs-native-1c-run' &&
+      github.event.pull_request.state == 'open' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    steps:
+      # Never check out a PR head or merge ref in this privileged workflow.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/notify_native_1c.py
+          sparse-checkout-cone-mode: false
+      - name: Send native-run request
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 -I scripts/notify_native_1c.py
