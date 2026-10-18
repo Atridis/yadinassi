@@ -2,6 +2,7 @@
 from decimal import Decimal, Inexact, Rounded, localcontext
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.numbers import number_from_binary_string, number_from_hex_string
@@ -15,9 +16,22 @@ class NumericRadixTests(unittest.TestCase):
 
     def test_native_checkpoint_numeric_output_exact(self):
         output = []
-        Interpreter(output=output.append).execute((ROOT / 'integrational_tests/tests/numbers.bsl').read_text())
-        expected = (ROOT / 'integrational_tests/output/numbers.out').read_text().splitlines()
+        Interpreter(output=output.append).execute((ROOT / 'integrational_tests/tests/numbers.bsl').read_text(encoding='utf-8-sig'))
+        expected = (ROOT / 'integrational_tests/output/numbers.out').read_text(encoding='utf-8-sig').splitlines()
         self.assertEqual(output, expected)
+
+    def test_native_fixture_reads_do_not_depend_on_default_encoding(self):
+        original = Path.read_text
+        observed = []
+
+        def read_utf8(path, *args, **kwargs):
+            self.assertEqual(kwargs.get('encoding'), 'utf-8-sig')
+            observed.append(path.name)
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, 'read_text', read_utf8):
+            self.test_native_checkpoint_numeric_output_exact()
+        self.assertEqual(observed, ['numbers.bsl', 'numbers.out'])
 
     def test_bilingual_case_insensitive_function_names(self):
         for name in ('ЧислоИзДвоичнойСтроки', 'numberfrombinarystring', 'NUMBERFROMBINARYSTRING'):
