@@ -67,7 +67,7 @@ def main() -> int:
     files = [(executable, executable.name), (ROOT / "README.md", "README.md"),
              (ROOT / "THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt"),
              (ROOT / "LICENSE", "LICENSE"),
-             (ROOT / "integrational_tests" / "tests" / "basic.bsl", "basic.bsl")]
+             (ROOT / "basic.bsl", "basic.bsl")]
     if host == "windows":
         archive = ROOT / "dist" / f"yadinassi-{version}-{host}.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:

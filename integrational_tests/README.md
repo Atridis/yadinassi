@@ -49,7 +49,7 @@ python integrational_tests/test_launcher.py --bd "C:\Bases\TestBase" --path-1c "
 
 ```text
 integrational_tests/
-  tests/                  # исходные .bsl, сейчас basic.bsl
+  tests/                  # тематические исходные .bsl
   output/                 # <имя>.out и <имя>.err при ошибках
   launcher_1c/
     Launcher.xml          # обработка запуска с управляемой формой

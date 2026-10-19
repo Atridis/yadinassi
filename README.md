@@ -28,7 +28,7 @@ yadinassi                             # запуск интерактивног�
 
 ```console
 yadinassi --encoding cp1251 legacy.bsl
-yadinassi - < integrational_tests/tests/basic.bsl
+yadinassi - < basic.bsl
 yadinassi --version
 ```
 
@@ -56,7 +56,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[build]"
 python -m unittest discover -s tests -v
-python -m yadinassi integrational_tests/tests/basic.bsl
+python -m yadinassi basic.bsl
 ```
 
 На Windows создайте окружение через `py -3 -m venv .venv` и активируйте

@@ -164,7 +164,7 @@ class TypeValueTests(unittest.TestCase):
         self.assertEqual(self.output, ['Число', 'Тип', 'Тип: Соответствие'])
 
     def test_unknown_and_out_of_scope_type_names_are_catchable(self):
-        for name in ['', ' Number ', 'Число ', 'ValueTable', 'ТаблицаЗначений', 'Null',
+        for name in ['', ' Number ', 'Число ', 'ValueTable', 'ТаблицаЗначений', 'ValueTree',
                      'FixedList', 'ФиксированныйСписок', 'TypeDescription',
                      'СправочникСсылка.Товары', '__class__', 'Decimal', 'int']:
             with self.subTest(name=name):

@@ -9,9 +9,19 @@ from typing import Callable
 from .dates import BSLDate
 
 
+class BSLNull(Enum):
+    """The single Null value, distinct from Undefined and its type descriptor."""
+
+    VALUE = "Null"
+
+
+NULL = BSLNull.VALUE
+
+
 class BSLType(Enum):
     """Opaque, immutable type identities; presentations are not their identity."""
 
+    NULL = "Null"
     UNDEFINED = "Неопределено"
     BOOLEAN = "Булево"
     NUMBER = "Число"
@@ -68,7 +78,7 @@ def _presented_number(value: Decimal) -> Decimal:
 
 
 def to_string(value: object) -> str:
-    if value is None:
+    if value is None or value is NULL:
         return ""
     if isinstance(value, bool):
         return "Да" if value else "Нет"

@@ -5,7 +5,7 @@ from decimal import Decimal
 from .dates import BSLDate
 
 from .structures import BSLKeyAndValue
-from .values import BSLFixedCollection, BSLObject, BSLType, HostFunction
+from .values import BSLFixedCollection, BSLNull, BSLObject, BSLType, HostFunction
 
 
 def _key(value: object) -> tuple[type, object]:
@@ -18,7 +18,7 @@ def _key(value: object) -> tuple[type, object]:
         value.require_known()
         return kind, value.ticks
     if (kind is str or kind is bool or kind is Decimal or kind is type(None)
-            or kind is BSLType):
+            or kind is BSLType or kind is BSLNull):
         return kind, value
     # Even an extension's metaclass can override equality/hash, so do not put
     # arbitrary types into the token or compare them through tuple membership.

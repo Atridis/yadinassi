@@ -16,7 +16,7 @@ from .round_modes import BSLRoundMode
 from .search_directions import BSLSearchDirection
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from .type_values import type_of
-from .values import BSLArray, BSLFixedArray, BSLType
+from .values import BSLArray, BSLFixedArray, BSLType, NULL
 
 
 _MAX_NUMBER_DIGITS = 4096
@@ -26,6 +26,7 @@ _MAX_NODES = 10000
 FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
 # These are implementation resource budgets, not inferred native limits.
 _TYPE_IDS = {
+    BSLType.NULL: "af40a278-63bc-478e-91a8-19e0d16b10b5",
     BSLType.UNDEFINED: "ee8d3e7c-f930-4a76-8aad-4ff9083a6ea6",
     BSLType.BOOLEAN: "5d4125ad-f6e7-4313-be32-f71d0ab60915",
     BSLType.NUMBER: "b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec",
@@ -48,7 +49,7 @@ _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
 _MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
-_CODECS = frozenset({BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
+_CODECS = frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
                     BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
                     BSLType.ROUND_MODE, BSLType.ROUND_MODES,
                     BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS}) | _ARRAYS | _STRUCTURES | _MAPS
@@ -120,6 +121,8 @@ class _Writer:
             raise ValueError("ЗначениеВСтрокуВнутр: для типа не задана политика сериализации Yadinassi")
         if kind is BSLType.UNDEFINED:
             self.emit('{"U"}')
+        elif kind is BSLType.NULL:
+            self.emit('{"L"}')
         elif kind is BSLType.BOOLEAN:
             self.emit('{"B",1}' if value else '{"B",0}')
         elif kind is BSLType.NUMBER:
@@ -286,6 +289,8 @@ class _Reader:
         tag = group[0]
         if tag == 'U' and len(group) == 1:
             return None
+        if tag == 'L' and len(group) == 1:
+            return NULL
         if tag == 'B' and len(group) == 2 and type(group[1]) is _Atom and group[1].text in ('0', '1'):
             return group[1].text == '1'
         if tag == 'S' and len(group) == 2 and type(group[1]) is str:
