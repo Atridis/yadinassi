@@ -40,6 +40,17 @@ class BSLType(Enum):
     XML_STRING_PROCESSING_MANAGER = "МенеджерОбработкиСтрокиXML"
     SEARCH_DIRECTION = "НаправлениеПоиска"
     SEARCH_DIRECTIONS = "ПеречислениеНаправлениеПоиска"
+    NUMBER_QUALIFIERS = "КвалификаторыЧисла"
+    STRING_QUALIFIERS = "КвалификаторыСтроки"
+    DATE_QUALIFIERS = "КвалификаторыДаты"
+    BINARY_DATA_QUALIFIERS = "КвалификаторыДвоичныхДанных"
+    ALLOWED_SIGN = "ДопустимыйЗнак"
+    ALLOWED_SIGNS = "ПеречислениеДопустимыйЗнак"
+    ALLOWED_LENGTH = "ДопустимаяДлина"
+    ALLOWED_LENGTHS = "ПеречислениеДопустимаяДлина"
+    DATE_FRACTIONS = "ЧастиДаты"
+    DATE_FRACTIONS_NAMESPACE = "ПеречислениеЧастиДаты"
+    TYPE_DESCRIPTION = "ОписаниеТипов"
 
     def __str__(self) -> str:
         return "Не определено" if self is BSLType.UNDEFINED else self.value

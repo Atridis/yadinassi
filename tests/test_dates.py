@@ -651,9 +651,10 @@ class DateUnprovenRangeTests(unittest.TestCase):
     def test_runtime_boundary_errors_are_catchable_for_all_comparison_directions(self):
         vm = Interpreter()
         vm.variables['unknown'] = self.low
+        vm.execute('boundaryMap = New Map;')
         expressions = ['String(unknown)', 'ValueIsFilled(unknown)', 'Year(unknown)',
                        'unknown + 0', 'unknown - Date(1, 1, 1)', 'Date(1, 1, 1) - unknown',
-                       'New Map().Get(unknown)']
+                       'boundaryMap.Get(unknown)']
         for operator in ('=', '<>', '<', '<=', '>', '>='):
             for other in ('unknown', 'Date(1, 1, 1)', '0', 'Undefined', 'False', '"date"'):
                 expressions.extend((f'unknown {operator} {other}', f'{other} {operator} unknown'))

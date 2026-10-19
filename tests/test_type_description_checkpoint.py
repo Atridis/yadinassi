@@ -1,19 +1,21 @@
-"""Packaging tests only; owner TypeDescription answers exist, runtime parity is pending."""
+"""Immutable native TypeDescription probes and exact owner-output parity."""
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 import unittest
 import tempfile
 import hashlib
+import subprocess
+from unittest.mock import patch
+from scripts import smoke_test
 if __package__:
     from . import test_native_outputs as native_outputs
 else:
     import test_native_outputs as native_outputs
-from scripts.smoke_test import (pending_types_checkpoint, validate_pending_types_output,
-                                split_type_supplement, validate_type_supplement_output,
+from scripts.smoke_test import (pending_types_checkpoint, split_type_supplement,
                                 TYPES_SUPPLEMENT_HELPERS_START, TYPES_SUPPLEMENT_BODY_START)
 
 from yadinassi import Interpreter, ast
-from yadinassi.parser import parse, parse_expression
+from yadinassi.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
@@ -50,7 +52,7 @@ def walk(value):
 
 
 class TypeDescriptionCheckpointTests(unittest.TestCase):
-    def test_fixed_bounded_parseable_matrix(self):
+    def test_fixed_bounded_matrix(self):
         observations = calls()
         self.assertEqual(len(observations), 146)
         labels = set()
@@ -65,7 +67,8 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
             self.assertLess(len(expression), 250)
             self.assertNotRegex(expression, r'[\r\n]')
             self.assertNotRegex(expression, r'(?i)\b(?:Eval|Execute|Import|Goto|While|For)\b')
-            parse_expression(expression)
+            # Fixed Eval strings include native syntax-error controls. The
+            # outer source must parse; these strings need not be valid syntax.
         self.assertTrue(source().rstrip().endswith('Сообщить("' + FINAL + '");'))
 
     def test_declarations_precede_main_and_new_constructors_are_only_strings(self):
@@ -75,8 +78,8 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
                 self.assertFalse(started, node.name)
             else:
                 started = True
-        # The helper AST may instantiate only pre-existing containers; unresolved
-        # TypeDescription/qualifier constructors must remain inside protected Eval.
+        # Preserve the owner probe layout: helper AST constructors are containers;
+        # TypeDescription/qualifier constructors remain inside protected Eval.
         for node in walk(parse(helpers())):
             if isinstance(node, ast.New):
                 self.assertIn(node.name.casefold(), ('структура', 'массив'))
@@ -137,23 +140,24 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         for field in ('Type', 'Write', 'ReadType', 'Nested'):
             self.assertEqual(result.get(field), '[error]')
 
-    def test_complete_program_reaches_pending_marker_without_prediction(self):
+    def test_original_type_observations_match_owner_output_exactly(self):
+        # Run helpers and the original 146 probes independently; the full-file
+        # comparator additionally covers preceding XML and every other output byte.
         output = []
-        Interpreter(output=output.append).execute(source())
-        self.assertEqual(output[-1], FINAL)
-        pending = [line for line in output if line.startswith('types.')]
-        self.assertEqual(len(pending), 147)
-        self.assertEqual([line.split(': [', 1)[0] for line in pending[:-1]],
-                         ['types.' + c.arguments[0].value for c in calls()])
-        # Current interpreter errors are packaging observations, never a golden.
-        for line in pending[:-1]:
-            self.assertRegex(line, r'(?s)^types\.[a-z0-9.-]+: \[(?:error|serialize-error|\{.*\})\]$')
+        Interpreter(output=output.append).execute(helpers() + BODY + source().split(BODY, 1)[1])
+        expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        expected = expected.split('xml.checkpoint.complete: [ok]\n', 1)[1]
+        expected = expected.split('types.checkpoint.complete: [ok]\n', 1)[0] + FINAL + '\n'
+        actual = native_outputs.normalize_newlines('\n'.join(output) + '\n')
+        self.assertEqual(actual, expected)
 
 
-class PendingTypesGateTests(unittest.TestCase):
-    """Owner output exists; these checks cover packaging, never runtime parity."""
 
-    def test_source_gate_rejects_changes_to_confirmed_or_pending_blocks(self):
+
+class HistoricalTypesSourceTests(unittest.TestCase):
+    """Preserve historical source bytes independently of native semantic tests."""
+
+    def test_source_gate_rejects_changes_to_historical_blocks(self):
         program = (SOURCE).read_text(encoding='utf-8-sig')
         confirmed, labels = pending_types_checkpoint(program)
         self.assertTrue(confirmed.endswith('Сообщить("xml.checkpoint.complete: [ok]");\n'))
@@ -165,33 +169,6 @@ class PendingTypesGateTests(unittest.TestCase):
                         program.replace('// Описания типов:', '// Another:', 1)):
             with self.subTest(changed=changed[-100:]), self.assertRaises(AssertionError):
                 pending_types_checkpoint(changed)
-
-    def test_pending_framing_rejects_extra_missing_reordered_and_malformed_output(self):
-        expected = 'unchanged native prefix\n'
-        first = 'types.first: [{\n{"N",1}\n}]\n'
-        second = 'types.second: [serialize-error]\n'
-        final = 'types.checkpoint.complete: [ok]\n'
-        labels = ['types.first', 'types.second']
-        validate_pending_types_output(expected + first + second + final, expected, labels)
-        validate_pending_types_output(expected + first.replace('{\n{"N",1}\n}', 'error')
-                                      + second + final, expected, labels)
-        for body in (first + final, second + first + final,
-                     first + first + second + final,
-                     first + second + final + 'extra\n',
-                     'extra\n' + first + second + final,
-                     first + 'extra\n' + second + final,
-                     first + second + final + final,
-                     first + second, first.replace('}]\n', '}\n') + second + final,
-                     first + second.replace('serialize-error', 'guessed') + final):
-            with self.subTest(body=body), self.assertRaises(AssertionError):
-                validate_pending_types_output(expected + body, expected, labels)
-        with self.assertRaises(AssertionError):
-            validate_pending_types_output('changed native prefix\n' + first + second + final,
-                                          expected, labels)
-        with self.assertRaises(AssertionError):
-            validate_pending_types_output(expected + first + second + final, expected,
-                                          ['types.first', 'types.first'])
-
 
 class SupplementalTypesGateTests(unittest.TestCase):
     def test_split_recovers_exact_original_and_rejects_mutations(self):
@@ -211,39 +188,14 @@ class SupplementalTypesGateTests(unittest.TestCase):
             with self.subTest(changed=changed[-100:]), self.assertRaises(AssertionError):
                 split_type_supplement(changed)
 
-    def test_standalone_supplement_reaches_its_marker_without_predicting_answers(self):
+    def test_standalone_supplement_matches_owner_output_exactly(self):
         _, supplement = split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))
-        observations = [node.expression for node in parse(supplement)
-                        if isinstance(node, ast.ExpressionStatement)
-                        and isinstance(node.expression, ast.Call)
-                        and isinstance(node.expression.callee, ast.Name)
-                        and node.expression.callee.name == 'НаблюдатьДополнениеТипов']
-        self.assertEqual(len(observations), 23)
-        labels = ['types-extra.' + call.arguments[0].value for call in observations]
         output = []
         Interpreter(output=output.append).execute(supplement)
-        validate_type_supplement_output('\n'.join(output) + '\n', labels)
-
-    def test_supplement_framing_rejects_missing_reordered_extra_and_malformed(self):
-        first = 'types-extra.first: [{\n{"N",1}\n}]\n'
-        second = 'types-extra.second: [serialize-error]\n'
-        final = 'types-extra.checkpoint.complete: [ok]\n'
-        labels = ['types-extra.first', 'types-extra.second']
-        validate_type_supplement_output(first + second + final, labels)
-        validate_type_supplement_output('types-extra.first: [error]\n' + second + final, labels)
-        for output in (first + final, second + first + final,
-                       first + first + second + final, first + second,
-                       first + second + final + 'extra\n',
-                       'extra\n' + first + second + final,
-                       first + 'extra\n' + second + final,
-                       first + second + final + final,
-                       first.replace('}]\n', '}\n') + second + final,
-                       first + second.replace('serialize-error', 'guessed') + final):
-            with self.subTest(output=output), self.assertRaises(AssertionError):
-                validate_type_supplement_output(output, labels)
-        with self.assertRaises(AssertionError):
-            validate_type_supplement_output(first + second + final,
-                                            ['types-extra.first', 'types-extra.first'])
+        expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        expected = expected.split('types.checkpoint.complete: [ok]\n', 1)[1]
+        actual = native_outputs.normalize_newlines('\n'.join(output) + '\n')
+        self.assertEqual(actual, expected)
 
 
 class StrictNativeGateTests(unittest.TestCase):
@@ -259,9 +211,39 @@ class StrictNativeGateTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
                          "9f73caaec2334b4bcdf745819ae39d69fa3d8e8de065f7ace5ead14cc48914a8")
 
-    def test_strict_comparator_rejects_appended_or_altered_pending_tail(self):
+    def test_frozen_input_modes_compare_complete_owner_output(self):
+        expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        full_source = SOURCE.read_text(encoding='utf-8-sig')
+        result = subprocess.CompletedProcess([], 0, expected, '')
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(smoke_test.subprocess, 'run', return_value=result) as run, \
+                    patch.object(smoke_test, 'check_timezone_configuration'):
+                smoke_test.check_xml_checkpoint('frozen-binary',
+                                                directory=Path(temporary) / 'valid', env={})
+                self.assertEqual(run.call_count, 6)
+                arguments = [call.args[0] for call in run.call_args_list]
+                self.assertEqual([args[1] for args in arguments[1:5]],
+                                 ['-c', '-с', '--command', '-'])
+                self.assertEqual(Path(arguments[0][1]).read_text(encoding='utf-8-sig'),
+                                 full_source)
+                for args in arguments[1:4]:
+                    self.assertEqual(args[2], full_source)
+                self.assertEqual(run.call_args_list[4].kwargs['input'], full_source)
+                self.assertEqual(run.call_args_list[5].kwargs['input'], full_source + '/exit\n')
+            marker = 'types.checkpoint.complete: [ok]\n'
+            for index, changed in enumerate((expected.split(marker)[0] + marker,
+                                              expected.replace('types-extra.', 'altered.', 1),
+                                              expected.replace('types.', 'altered.', 1),
+                                              expected + 'extra\n')):
+                result = subprocess.CompletedProcess([], 0, changed, '')
+                with patch.object(smoke_test.subprocess, 'run', return_value=result), \
+                        self.assertRaises(AssertionError):
+                    smoke_test.check_xml_checkpoint('frozen-binary',
+                                                    directory=Path(temporary) / str(index), env={})
+
+    def test_strict_comparator_rejects_appended_or_altered_tail(self):
         # Synthetic fixtures only: the normal comparator must reject an extra
-        # tail even when that tail is valid pending-checkpoint framing.
+        # tail even when that tail resembles valid checkpoint framing.
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary).resolve()
             (base / 'tests').mkdir()

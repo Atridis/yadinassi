@@ -1,10 +1,11 @@
-"""Native-pending receiver supplement; no predicted platform results."""
+"""Owner-confirmed receiver supplement and immutable native output."""
 from pathlib import Path
 import hashlib
 import unittest
 
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse, parse_expression
+from yadinassi.errors import BSLError
 from yadinassi.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,12 +53,17 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
             self.assertLess(len(expression), 300)
             self.assertNotRegex(expression, r'[\r\n]')
             self.assertNotRegex(expression, r'(?i)\b(?:Eval|Execute|Import|Goto|While|For)\b')
-            parse_expression(expression)
+            if label in ('syntax.array-direct', 'syntax.array-parentheses',
+                         'syntax.description-parentheses'):
+                with self.assertRaises(BSLError):
+                    parse_expression(expression)
+            else:
+                parse_expression(expression)
             if not label.startswith('syntax.'):
                 self.assertNotIn(').', expression)
         self.assertTrue(source().rstrip().endswith('Сообщить("' + FINAL + '");'))
 
-    def test_helpers_before_main_and_unknown_types_only_inside_guarded_expressions(self):
+    def test_helpers_before_main_and_type_constructors_inside_guarded_expressions(self):
         started = False
         for node in parse(source()):
             if isinstance(node, ast.Routine):
@@ -74,11 +80,22 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
     def test_owner_output_is_byte_preserved(self):
         # Only transport CRLF is normalized, as in the strict native comparator.
         data = (ROOT / 'integrational_tests/output/values.out').read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(hashlib.sha256(data).hexdigest(),
+        marker = b'types.checkpoint.complete: [ok]\n'
+        self.assertEqual(data.count(marker), 1)
+        original = data.split(marker)[0] + marker
+        self.assertEqual(hashlib.sha256(original).hexdigest(),
                          '0b80e880cde1ba4a9e189e3ed1cd36e2560f27efa374b0853a839d245e3608b2')
-        self.assertEqual(len(data.splitlines()), 5182)
-        self.assertTrue(data.endswith(b'types.checkpoint.complete: [ok]\n'))
-        self.assertNotIn(b'types-extra.', data)
+        self.assertEqual(len(original.splitlines()), 5182)
+        self.assertEqual(hashlib.sha256(data).hexdigest(),
+                         'e87c380a2b83a4d411f41b48d006bf41d0dcc66dc3b19664cebaab9c22b821d4')
+        self.assertEqual(len(data), 81485)
+        self.assertEqual(len(data.splitlines()), 5736)
+        self.assertTrue(data.endswith((FINAL + '\n').encode()))
+        labels = [line.decode().split(': [', 1)[0] for line in data.splitlines()
+                  if line.startswith(b'types-extra.')]
+        self.assertEqual(labels, ['types-extra.' + label for label in expressions()]
+                         + ['types-extra.checkpoint.complete'])
+        self.assertFalse((ROOT / 'integrational_tests/output/values.err').exists())
 
     def test_observer_recovers_after_each_error(self):
         output = []
@@ -110,7 +127,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
         self.assertEqual(result.get('Russian'), 'synthetic')
         self.assertEqual(seen, ['AdjustValue', 'ПривестиЗначение'])
 
-    def test_full_program_reaches_new_marker_without_native_predictions(self):
+    def test_full_program_reaches_native_marker_with_all_labels(self):
         output = []
         Interpreter(output=output.append).execute(source())
         tail = [line for line in output if line.startswith('types-extra.')]

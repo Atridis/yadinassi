@@ -15,6 +15,11 @@ from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode
 from .search_directions import BSLSearchDirection
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from .type_descriptions import BSLTypeDescription
+from .type_qualifiers import (
+    BSLAllowedLength, BSLAllowedSign, BSLDateFractions, BSLDateQualifiers,
+    BSLNumberQualifiers, BSLStringQualifiers,
+)
 from .type_values import type_of
 from .values import BSLArray, BSLFixedArray, BSLType, NULL
 
@@ -45,16 +50,49 @@ _TYPE_IDS = {
     BSLType.ROUND_MODES: "a47c4665-311c-405a-828e-0c5a3ca3bdda",
     BSLType.SEARCH_DIRECTION: "bee8fa9f-59d0-4e71-9f6e-599d83cb1960",
     BSLType.SEARCH_DIRECTIONS: "ca8683c7-a41c-4c82-b912-6afb606e8b01",
+    BSLType.NUMBER_QUALIFIERS: "f6f6ce00-392c-49ed-8c6e-4e0295fd4051",
+    BSLType.STRING_QUALIFIERS: "a5e1773c-a947-455a-a2f7-c51736d3f2de",
+    BSLType.DATE_QUALIFIERS: "e73e1337-53df-4b30-a78c-ee1e8cf30fc0",
+    BSLType.BINARY_DATA_QUALIFIERS: "73315712-166d-400d-adaf-287bd8f41b8d",
+    BSLType.ALLOWED_SIGN: "9c4a8801-ff83-40d7-96d7-cc2b85430fbe",
+    BSLType.ALLOWED_SIGNS: "eb851bfe-cc2a-4d16-84a4-e480da76672d",
+    BSLType.ALLOWED_LENGTH: "3e4a7ff2-82a0-40ee-9000-3e83a3191b71",
+    BSLType.ALLOWED_LENGTHS: "2f7878c0-bc8a-4820-a3b9-6bf1111ae5b0",
+    BSLType.DATE_FRACTIONS: "8089abb5-ff39-4414-8252-c0dcef1c3d6b",
+    BSLType.DATE_FRACTIONS_NAMESPACE: "83f71799-efb3-4984-a19b-6ed4f3cbc691",
+    BSLType.TYPE_DESCRIPTION: "f5c65050-3bbb-11d5-b988-0050bae0a95d",
 }
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
 _MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
-_CODECS = frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
-                    BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
-                    BSLType.ROUND_MODE, BSLType.ROUND_MODES,
-                    BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS,
-                    BSLType.XML_STRING_PROCESSING_MANAGER}) | _ARRAYS | _STRUCTURES | _MAPS
+_ENUM_TYPES = {
+    BSLType.ROUND_MODE: BSLRoundMode,
+    BSLType.SEARCH_DIRECTION: BSLSearchDirection,
+    BSLType.ALLOWED_SIGN: BSLAllowedSign,
+    BSLType.ALLOWED_LENGTH: BSLAllowedLength,
+    BSLType.DATE_FRACTIONS: BSLDateFractions,
+}
+_ENUM_MEMBERS = {kind: {str(member.value): member for member in enum_type}
+                 for kind, enum_type in _ENUM_TYPES.items()}
+# Native snapshots write these objects without a body and read them as
+# Undefined, including configured qualifiers. Their Type records do roundtrip.
+_OPAQUE_TYPES = frozenset({
+    BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
+    BSLType.XML_STRING_PROCESSING_MANAGER,
+    BSLType.NUMBER_QUALIFIERS, BSLType.STRING_QUALIFIERS,
+    BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
+    BSLType.ALLOWED_SIGNS, BSLType.ALLOWED_LENGTHS,
+    BSLType.DATE_FRACTIONS_NAMESPACE,
+})
+_OPAQUE_IDS = frozenset(_TYPE_IDS[kind] for kind in _OPAQUE_TYPES)
+_CODECS = (frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
+                     BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
+                     BSLType.TYPE_DESCRIPTION})
+           | frozenset(_ENUM_TYPES) | _OPAQUE_TYPES | _ARRAYS | _STRUCTURES | _MAPS)
+_PATTERN_TYPES = {'B': BSLType.BOOLEAN, 'S': BSLType.STRING, 'D': BSLType.DATE,
+                 'N': BSLType.NUMBER, 'L': BSLType.NULL}
+_PATTERN_TAGS = {kind: tag for tag, kind in _PATTERN_TYPES.items()}
 _NUMBER = re.compile(r'[+-]?[0-9]+(?:\.[0-9]+)?')
 _COUNT = re.compile(r'0|[1-9][0-9]*')
 _HEX = frozenset('0123456789abcdef')
@@ -78,6 +116,38 @@ def _number(value: Decimal) -> str:
     if max(len(digits) + max(exponent, 0), -exponent) > _MAX_NUMBER_DIGITS:
         raise _resource("ЗначениеВСтрокуВнутр")
     return '{"N",' + format(Decimal((sign, digits, exponent)), "f") + '}'
+
+
+def _require_representable_description(value: BSLTypeDescription) -> None:
+    """Never silently erase settings for types absent from the Pattern."""
+    n, s, d, b = (value.number_qualifiers, value.string_qualifiers,
+                  value.date_qualifiers, value.binary_data_qualifiers)
+    if ((BSLType.NUMBER not in value.types and
+         (n.digits != 0 or n.fraction_digits != 0 or n.allowed_sign is not BSLAllowedSign.ANY))
+            or (BSLType.STRING not in value.types and
+                (s.length != 0 or s.allowed_length is not BSLAllowedLength.VARIABLE))
+            or (BSLType.DATE not in value.types and d.date_fractions is not BSLDateFractions.DATE_TIME)
+            or b.length != 0 or b.allowed_length is not BSLAllowedLength.VARIABLE):
+        raise ValueError("ЗначениеВСтрокуВнутр: квалификаторы отсутствующего типа "
+                         "пока не поддерживаются в Yadinassi до проверки на реальной 1С")
+
+
+def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
+    entry = '{"' + _PATTERN_TAGS[kind] + '"'
+    if kind is BSLType.NUMBER:
+        n = value.number_qualifiers
+        if n.digits != 0 or n.allowed_sign is not BSLAllowedSign.ANY:
+            entry += (',' + str(int(n.digits)) + ',' + str(int(n.fraction_digits))
+                      + ',' + str(n.allowed_sign.value))
+    elif kind is BSLType.STRING:
+        s = value.string_qualifiers
+        if s.length != 0:
+            entry += ',' + str(int(s.length)) + ',' + str(s.allowed_length.value)
+    elif kind is BSLType.DATE:
+        fraction = value.date_qualifiers.date_fractions
+        if fraction is not BSLDateFractions.DATE_TIME:
+            entry += ',"' + ('D' if fraction is BSLDateFractions.DATE else 'T') + '"'
+    return entry + '}'
 
 
 class _Writer:
@@ -137,11 +207,17 @@ class _Writer:
             self.emit('{"D",' + codec_text(value, nested=depth > 0) + '}')
         elif kind is BSLType.TYPE:
             self.emit('{"T",' + _TYPE_IDS[value] + '}')
-        elif kind in (BSLType.ROUND_MODE, BSLType.SEARCH_DIRECTION):
+        elif kind in _ENUM_TYPES:
             self.emit('{"#",' + _TYPE_IDS[kind] + ',' + str(value.value) + '}')
-        elif kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
-                      BSLType.XML_STRING_PROCESSING_MANAGER):
+        elif kind in _OPAQUE_TYPES:
             self.emit('{"#",' + _TYPE_IDS[kind] + '}')
+        elif kind is BSLType.TYPE_DESCRIPTION:
+            _require_representable_description(value)
+            self.emit('{"#",' + _TYPE_IDS[kind] + ',\n{"Pattern"')
+            for entry in value.types:
+                self.emit(',\n' + _pattern_entry(entry, value))
+            self.emit('\n}' if value.types else '}')
+            self.emit('\n}')
         else:
             identity = id(value)
             if identity in self.active:
@@ -168,6 +244,9 @@ class _Writer:
                         entries = (reversed(value._items.values()) if kind is BSLType.MAP
                                    else value._items.values())
                         for key, item in entries:
+                            if kind in _MAPS and type(key) is BSLTypeDescription:
+                                raise TypeError("ОписаниеТипов как ключ соответствия "
+                                                "пока не поддерживается в Yadinassi")
                             self.emit(',\n')
                             self.pair(key, item, depth)
                     self.emit('\n}' if count else '}')
@@ -283,6 +362,70 @@ class _Reader:
             raise _resource("ЗначениеИзСтрокиВнутр") from None
         return value
 
+    def qualifier_count(self, token):
+        if type(token) is not _Atom or _COUNT.fullmatch(token.text) is None:
+            self.fail()
+        # Supported qualifier constructors cap counts at one million; reject
+        # oversize spelling before integer/Decimal materialization.
+        if len(token.text) > 7:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        return Decimal(token.text)
+
+    def pattern(self, body):
+        # Qualified N/S/D shapes come from the owner's receiver supplement.
+        # Duplicate types, noncanonical order and binary entries are outside
+        # this defensive inverse subset; these are not native rejection claims.
+        if (not body or len(body) > 5 or type(body[0]) is not str
+                or body[0] != 'Pattern'):
+            self.fail()
+        kinds = []
+        n, s, d = BSLNumberQualifiers(), BSLStringQualifiers(), BSLDateQualifiers()
+        for entry in body[1:]:
+            if (type(entry) is not list or not entry or type(entry[0]) is not str
+                    or entry[0] not in _PATTERN_TYPES):
+                self.fail()
+            kind = _PATTERN_TYPES[entry[0]]
+            kinds.append(kind)
+            if len(entry) == 1:
+                continue
+            if kind is BSLType.NUMBER and len(entry) == 4:
+                digits, fraction = self.qualifier_count(entry[1]), self.qualifier_count(entry[2])
+                if type(entry[3]) is not _Atom or entry[3].text not in ('0', '1'):
+                    self.fail()
+                sign = _ENUM_MEMBERS[BSLType.ALLOWED_SIGN][entry[3].text]
+                try:
+                    n = BSLNumberQualifiers(digits, fraction, sign)
+                except (TypeError, ValueError):
+                    self.fail()
+                if (n.digits != digits or n.fraction_digits != fraction
+                        or (not digits and sign is BSLAllowedSign.ANY)):
+                    self.fail()
+            elif kind is BSLType.STRING and len(entry) == 3:
+                length = self.qualifier_count(entry[1])
+                if type(entry[2]) is not _Atom or entry[2].text not in ('0', '1') or not length:
+                    self.fail()
+                allowed = _ENUM_MEMBERS[BSLType.ALLOWED_LENGTH][entry[2].text]
+                try:
+                    s = BSLStringQualifiers(length, allowed)
+                except (TypeError, ValueError):
+                    self.fail()
+            elif kind is BSLType.DATE and len(entry) == 2:
+                if type(entry[1]) is not str or entry[1] not in ('D', 'T'):
+                    self.fail()
+                d = BSLDateQualifiers(BSLDateFractions.DATE if entry[1] == 'D'
+                                      else BSLDateFractions.TIME)
+            else:
+                self.fail()
+        source = BSLArray()
+        source.items = kinds
+        try:
+            result = BSLTypeDescription(source, n, s, d)
+        except (TypeError, ValueError):
+            self.fail()
+        if result.types != tuple(kinds):
+            self.fail()
+        return result
+
     def value(self, group, depth=0):
         self.nodes += 1
         if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
@@ -314,11 +457,7 @@ class _Reader:
             self.number(group[1])
             return None  # Observed lowercase numeric tag; not arbitrary unknown tags.
         if (tag == '#' and len(group) == 2 and type(group[1]) is _Atom
-                and group[1].text in (_TYPE_IDS[BSLType.ROUND_MODES],
-                                      _TYPE_IDS[BSLType.SEARCH_DIRECTIONS],
-                                      _TYPE_IDS[BSLType.XML_STRING_PROCESSING_MANAGER])):
-            # Native round/search/XML manager probes establish Undefined on
-            # readback. Type records still restore the namespace identities.
+                and group[1].text in _OPAQUE_IDS):
             return None
         if tag not in ('T', '#') or len(group) != (2 if tag == 'T' else 3):
             self.fail()
@@ -328,16 +467,14 @@ class _Reader:
         if tag == 'T':
             return kind
         body = group[2]
-        if kind is BSLType.ROUND_MODE:
-            if type(body) is not _Atom or body.text not in ('0', '1'):
+        if kind in _ENUM_MEMBERS:
+            if type(body) is not _Atom or body.text not in _ENUM_MEMBERS[kind]:
                 self.fail()
-            return BSLRoundMode.ROUND15_AS10 if body.text == '0' else BSLRoundMode.ROUND15_AS20
-        if kind is BSLType.SEARCH_DIRECTION:
-            if type(body) is not _Atom or body.text not in ('0', '1'):
-                self.fail()
-            return BSLSearchDirection.FROM_BEGIN if body.text == '0' else BSLSearchDirection.FROM_END
+            return _ENUM_MEMBERS[kind][body.text]
         if type(body) is not list:
             self.fail()
+        if kind is BSLType.TYPE_DESCRIPTION:
+            return self.pattern(body)
         if kind is BSLType.KEY_AND_VALUE and len(body) == 2:
             return BSLKeyAndValue(self.value(body[0], depth + 1), self.value(body[1], depth + 1))
         if kind not in _ARRAYS | _STRUCTURES | _MAPS or not body or type(body[0]) is not _Atom:

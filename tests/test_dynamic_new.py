@@ -28,7 +28,10 @@ class DynamicNewTests(unittest.TestCase):
     def test_each_concrete_type_identity_is_supported_or_rejected(self):
         for value_type in BSLType:
             self.vm.variables['kind'] = value_type
-            if value_type in (BSLType.ARRAY, BSLType.STRUCTURE, BSLType.MAP, BSLType.FIXED_STRUCTURE):
+            if value_type in (BSLType.ARRAY, BSLType.STRUCTURE, BSLType.MAP, BSLType.FIXED_STRUCTURE,
+                              BSLType.NUMBER_QUALIFIERS, BSLType.STRING_QUALIFIERS,
+                              BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
+                              BSLType.TYPE_DESCRIPTION):
                 self.assertEqual(self.vm.execute('TypeOf(New(kind))'), value_type)
             else:  # FixedArray/FixedMap need arguments; scalar types have no factory.
                 with self.assertRaises(BSLError):

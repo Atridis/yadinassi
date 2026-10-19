@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from .dates import BSLDate
+from .type_descriptions import BSLTypeDescription
 
 from .structures import BSLKeyAndValue
 from .values import BSLFixedCollection, BSLNull, BSLObject, BSLType, HostFunction
@@ -14,6 +15,8 @@ def _key(value: object) -> tuple[type, object]:
     # semantics. Each entry retains the original object, so its id cannot be
     # reused while the entry exists.
     kind = type(value)
+    if kind is BSLTypeDescription:
+        raise TypeError("ОписаниеТипов как ключ соответствия пока не поддерживается в Yadinassi")
     if kind is BSLDate:
         value.require_known()
         return kind, value.ticks

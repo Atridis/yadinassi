@@ -165,7 +165,7 @@ class TypeValueTests(unittest.TestCase):
 
     def test_unknown_and_out_of_scope_type_names_are_catchable(self):
         for name in ['', ' Number ', 'Число ', 'ValueTable', 'ТаблицаЗначений', 'ValueTree',
-                     'FixedList', 'ФиксированныйСписок', 'TypeDescription',
+                     'FixedList', 'ФиксированныйСписок', 'BinaryData',
                      'СправочникСсылка.Товары', '__class__', 'Decimal', 'int']:
             with self.subTest(name=name):
                 self.vm.execute(f'''Try Type("{name}");

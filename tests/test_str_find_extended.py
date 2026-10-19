@@ -169,8 +169,9 @@ class ExtendedStrFindRuntimeTests(unittest.TestCase):
             self.assertEqual(self.vm.variables['calls'], 0)
 
     def test_other_builtins_and_methods_still_reject_holes(self):
+        self.vm.execute('array = New Array;')
         for code in ('Find("abc", "b", , 1)', 'Mid("abc", , 1)',
-                     'Round(1, , 0)', 'New Array().Get(, 1)'):
+                     'Round(1, , 0)', 'array.Get(, 1)'):
             with self.assertRaises(BSLError):
                 self.vm.execute(code)
 

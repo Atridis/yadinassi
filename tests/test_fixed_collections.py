@@ -50,7 +50,8 @@ class FixedCollectionTests(unittest.TestCase):
                            'Новый ФиксированнаяСтруктура',
                            'New FixedStructure("")']:
             with self.subTest(expression=expression):
-                self.assertEqual(self.vm.execute(f'({expression}).Count()'), Decimal(0))
+                self.vm.execute(f'emptyFixed = {expression};')
+                self.assertEqual(self.vm.execute('emptyFixed.Count()'), Decimal(0))
         self.vm.execute('''
             fs = New FixedStructure("Name,Ёж,Empty", "value", 7);
             Message(fs.nAME); Message(fs["ёж"]); Message(fs.Empty = Undefined);
