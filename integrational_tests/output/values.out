@@ -659,4 +659,126 @@ xml.clean.literal-markup: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
 xml.clean.bad-version: [error]
 xml.clean.nonstring: [error]
 xml.clean.undefined-version: [error]
+xml.date.fraction.below-half: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123456}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+xml.date.fraction.half: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123457}
+},
+{
+{"S","Delta"},
+{"N",1}
+}
+}
+}]
+xml.date.fraction.above-half: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123457}
+},
+{
+{"S","Delta"},
+{"N",1}
+}
+}
+}]
+xml.date.fraction.below-millisecond-carry: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123457}
+},
+{
+{"S","Delta"},
+{"N",1}
+}
+}
+}]
+xml.date.fraction.millisecond-carry-tie: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123457}
+},
+{
+{"S","Delta"},
+{"N",1}
+}
+}
+}]
+xml.date.fraction.four-digit-carry: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123457}
+},
+{
+{"S","Delta"},
+{"N",1}
+}
+}
+}]
+xml.date.fraction.below-tick-carry: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123457}
+},
+{
+{"S","Delta"},
+{"N",1}
+}
+}
+}]
+xml.date.fraction.above-tick-carry: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123457}
+},
+{
+{"S","Delta"},
+{"N",1}
+}
+}
+}]
+xml.date.fraction.odd-second-half: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123458}
+},
+{
+{"S","Delta"},
+{"N",2}
+}
+}
+}]
+xml.date.fraction.day-carry: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240301000000}
+},
+{
+{"S","Delta"},
+{"N",41104}
+}
+}
+}]
+xml.date.write.half: [{"S","2024-02-29T12:34:56"}]
+xml.date.write.near-carry: [{"S","2024-02-29T12:34:56"}]
 xml.checkpoint.complete: [ok]
