@@ -47,9 +47,21 @@ def plain(value):
 
 
 def fixtures():
-    source = Path("integrational_tests/output/collections.out").read_text()
+    source = Path("integrational_tests/output/collections.out").read_text(encoding="utf-8-sig")
     return {m[1]: value_from_string_internal(m[2]) for m in re.finditer(
         r'^(table\.(?:mutate|typed)\.[^:]+): \[(.*?)\](?=\n(?:table\.|$))', source, re.M | re.S)}
+
+
+class ValueTableFixtureEncodingTests(unittest.TestCase):
+    def test_native_fixture_uses_explicit_utf8(self):
+        original = Path.read_text
+
+        def read(path, *args, **kwargs):
+            self.assertEqual(kwargs.get("encoding"), "utf-8-sig")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", autospec=True, side_effect=read):
+            self.assertIn("table.typed.fixed-string", fixtures())
 
 
 class ValueTableTests(unittest.TestCase):
