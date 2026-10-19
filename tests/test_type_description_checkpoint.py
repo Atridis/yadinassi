@@ -211,26 +211,39 @@ class StrictNativeGateTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
                          "9f73caaec2334b4bcdf745819ae39d69fa3d8e8de065f7ace5ead14cc48914a8")
 
-    def test_frozen_input_modes_compare_complete_owner_output(self):
+    def test_frozen_full_modes_and_bounded_command_aliases(self):
         expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
         full_source = SOURCE.read_text(encoding='utf-8-sig')
-        result = subprocess.CompletedProcess([], 0, expected, '')
+        _, command_source = split_type_supplement(full_source)
+        marker = 'types.checkpoint.complete: [ok]\n'
+        command_expected = expected.split(marker, 1)[1]
+        # Account for Windows quoting, escaped quotes, UTF-16 surrogate pairs,
+        # and the terminating NUL, even when this regression runs on Linux.
+        def windows_units(args):
+            return len(subprocess.list2cmdline(args).encode('utf-16-le')) // 2 + 1
+        executable = 'C:\\Program Files\\Yadinassi 🚀\\yadinassi.exe'
+        self.assertGreaterEqual(windows_units([executable, '-c', full_source]), 32767)
+        self.assertLess(windows_units([executable, '--command', command_source]), 16000)
+        def windows_run(args, **kwargs):
+            self.assertLess(windows_units(args), 32767)
+            is_command = len(args) > 1 and args[1] in ('-c', '-с', '--command')
+            return subprocess.CompletedProcess(args, 0, command_expected if is_command else expected, '')
         with tempfile.TemporaryDirectory() as temporary:
-            with patch.object(smoke_test.subprocess, 'run', return_value=result) as run, \
+            with patch.object(smoke_test.subprocess, 'run', side_effect=windows_run) as run, \
                     patch.object(smoke_test, 'check_timezone_configuration'):
-                smoke_test.check_xml_checkpoint('frozen-binary',
+                smoke_test.check_xml_checkpoint(executable,
                                                 directory=Path(temporary) / 'valid', env={})
                 self.assertEqual(run.call_count, 6)
                 arguments = [call.args[0] for call in run.call_args_list]
-                self.assertEqual([args[1] for args in arguments[1:5]],
-                                 ['-c', '-с', '--command', '-'])
                 self.assertEqual(Path(arguments[0][1]).read_text(encoding='utf-8-sig'),
                                  full_source)
-                for args in arguments[1:4]:
-                    self.assertEqual(args[2], full_source)
-                self.assertEqual(run.call_args_list[4].kwargs['input'], full_source)
-                self.assertEqual(run.call_args_list[5].kwargs['input'], full_source + '/exit\n')
-            marker = 'types.checkpoint.complete: [ok]\n'
+                self.assertEqual(arguments[1], [executable, '-'])
+                self.assertEqual(run.call_args_list[1].kwargs['input'], full_source)
+                self.assertEqual(arguments[2], [executable])
+                self.assertEqual(run.call_args_list[2].kwargs['input'], full_source + '/exit\n')
+                self.assertEqual([args[1] for args in arguments[3:]], ['-c', '-с', '--command'])
+                for args in arguments[3:]:
+                    self.assertEqual(args[2], command_source)
             for index, changed in enumerate((expected.split(marker)[0] + marker,
                                               expected.replace('types-extra.', 'altered.', 1),
                                               expected.replace('types.', 'altered.', 1),
@@ -238,8 +251,17 @@ class StrictNativeGateTests(unittest.TestCase):
                 result = subprocess.CompletedProcess([], 0, changed, '')
                 with patch.object(smoke_test.subprocess, 'run', return_value=result), \
                         self.assertRaises(AssertionError):
-                    smoke_test.check_xml_checkpoint('frozen-binary',
+                    smoke_test.check_xml_checkpoint(executable,
                                                     directory=Path(temporary) / str(index), env={})
+            # Correct full output cannot hide a changed or missing command sample.
+            for index, changed in enumerate(('', command_expected + 'extra\n',
+                                             command_expected.replace('types-extra.', 'altered.', 1))):
+                results = [subprocess.CompletedProcess([], 0, expected, '')] * 3
+                results += [subprocess.CompletedProcess([], 0, changed, '')]
+                with patch.object(smoke_test.subprocess, 'run', side_effect=results), \
+                        self.assertRaises(AssertionError):
+                    smoke_test.check_xml_checkpoint(executable,
+                                                    directory=Path(temporary) / ('command' + str(index)), env={})
 
     def test_strict_comparator_rejects_appended_or_altered_tail(self):
         # Synthetic fixtures only: the normal comparator must reject an extra

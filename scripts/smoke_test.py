@@ -1800,11 +1800,11 @@ def check_timezone_configuration(executable: str, *, directory: Path, env: dict)
 
 
 def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
-    """Replay the complete native values checkpoint through every input mode."""
+    """Full native values via file/stdin/console; bounded native command sample."""
     directory.mkdir()
     program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
     # Source preservation is separate from semantic parity; execute the full file.
-    split_type_supplement(program)
+    _, command_program = split_type_supplement(program)
     output = ROOT / 'integrational_tests/output/values.out'
     if output.with_suffix('.err').exists():
         raise AssertionError('Native error file exists: values')
@@ -1812,15 +1812,31 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     env = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
     source = directory / 'НативныеЗначения.bsl'
     source.write_text(program, encoding='utf-8-sig')
-    for arguments, stdin in [([str(source)], None), (['-c', program], None),
-                             (['-с', program], None), (['--command', program], None),
-                             (['-'], program), ([], program + '/exit\n')]:
+    for arguments, stdin in [([str(source)], None), (['-'], program),
+                             ([], program + '/exit\n')]:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Full native values checkpoint mismatch {arguments[0:1]!r}: {result!r}')
     print('Binary native values parity passed: all 5736 owner lines, including 146 original '
-          'and 23 supplemental type observations; BOM, command aliases, stdin and console')
+          'and 23 supplemental type observations; BOM file, stdin and console')
+    # Windows CreateProcess limits argv to 32767 UTF-16 code units. The full
+    # source exceeds that bound; exercise command aliases with the self-contained
+    # native supplement on every platform instead, never skip native file parity.
+    marker = TYPES_FINAL + '\n'
+    if not command_program or expected.count(marker) != 1:
+        raise AssertionError('Expected native type supplement source and owner-output boundary')
+    command_expected = expected.split(marker, 1)[1]
+    for flag in ('-c', '-с', '--command'):
+        arguments = [executable, flag, command_program]
+        if len(subprocess.list2cmdline(arguments).encode('utf-16-le')) // 2 + 1 >= 32767:
+            raise AssertionError('Native command sample exceeds Windows UTF-16 argv limit')
+        result = subprocess.run(arguments, capture_output=True, encoding='utf-8',
+                                cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
+            raise AssertionError(f'Native type command sample mismatch {flag}: {result!r}')
+    print('Binary command aliases passed: exact 23-probe owner TypeDescription/qualifier/codec '
+          'supplement; bounded sample for Windows argv limit, not full values command coverage')
     check_timezone_configuration(executable, directory=directory, env=env)
 
 
