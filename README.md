@@ -1,4 +1,7 @@
 # yadinassi
+
+![yadinassi logo](.github/large.png)
+
 **Yet Another oDIN ASS Interpreter**  
 Еще один интерпретатор 1С-ика, написанный на Python 3.
 
