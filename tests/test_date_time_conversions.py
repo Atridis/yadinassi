@@ -298,7 +298,8 @@ Message(ValueToStringInternal(ToUniversalTime(ToLocalTime(source,"GMT+23:59"),"G
 
     def test_command_aliases_bom_file_stdin_console(self):
         with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
+            # Imported diagnostics use canonical paths (Windows 8.3 names, macOS /var).
+            directory = Path(temporary).resolve()
             source = directory / 'Смещение.bsl'
             source.write_text(self.PROGRAM, encoding='utf-8-sig')
             cases = [((flag, self.PROGRAM), None) for flag in ('-c', '-с', '--command')]
@@ -323,7 +324,8 @@ Try Смещение.Failure(); Except Message("caught"); EndTry;
 Message(ValueToStringInternal(Смещение.Shift()));
 '''
         with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
+            # Imported diagnostics use canonical paths (Windows 8.3 names, macOS /var).
+            directory = Path(temporary).resolve()
             (directory / 'Смещение.bsl').write_text(module, encoding='utf-8-sig')
             source = directory / 'Основное.bsl'
             source.write_text(main, encoding='utf-8-sig')
@@ -333,7 +335,7 @@ Message(ValueToStringInternal(Смещение.Shift()));
             source.write_text('// #Импорт Смещение.bsl\nСмещение.Failure();\n', encoding='utf-8-sig')
             result = self.run_cli(str(source), cwd=directory)
             self.assertEqual((result.returncode, result.stdout), (1, ''))
-            self.assertIn(str(directory / 'Смещение.bsl') + ':5:', result.stderr)
+            self.assertIn(str((directory / 'Смещение.bsl').resolve()) + ':5:', result.stderr)
             self.assertNotIn('Traceback', result.stderr)
 
     def test_uncaught_error_diagnostics_and_console_recovery(self):
