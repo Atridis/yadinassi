@@ -101,10 +101,11 @@
 КонецФункции
 
 Функция ОчисткаXML(Знач Текст, Знач Версия)
-    Очищено = УдалитьНедопустимыеСимволыXML(Текст, Версия);
+    // Доступность API проверяется при исполнении, а не при компиляции модуля.
+    Очищено = Вычислить("ОбработкаСтрокиXML.УдалитьНедопустимыеСимволыXML(Текст, Версия)");
     Возврат Новый Структура("Input,Output,Alias,Codec",
         КодыXML(Текст), КодыXML(Очищено),
-        DeleteDisallowedXMLCharacters(Текст, Версия) = Очищено,
+        Вычислить("XMLStringProcessing.DeleteDisallowedXMLCharacters(Текст, Версия)") = Очищено,
         КодыXML(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(Очищено))));
 КонецФункции
 
@@ -207,16 +208,21 @@
 НаблюдатьXML("undefined.write", "XMLString(Undefined)");
 НаблюдатьXML("undefined.read-empty", "XMLValue(Type(""Undefined""), """")");
 
+// Менеджер: наблюдаем настоящий тип и кодек до возможной реализации.
+НаблюдатьXML("manager.types", "New Structure(""RU,EN"", TypeOf(ОбработкаСтрокиXML), TypeOf(XMLStringProcessing))");
+НаблюдатьXML("manager.write", "ValueToStringInternal(XMLStringProcessing)");
+НаблюдатьXML("manager.inverse", "ValueFromStringInternal(ValueToStringInternal(ОбработкаСтрокиXML))");
+
 // Очистка XML: контролы, границы Unicode, кодек и ошибки.
-НаблюдатьXML("clean.default", "КодыXML(DeleteDisallowedXMLCharacters(УправляющиеXML()))");
+НаблюдатьXML("clean.default", "КодыXML(XMLStringProcessing.DeleteDisallowedXMLCharacters(УправляющиеXML()))");
 НаблюдатьXML("clean.controls.1.0", "ОчисткаXML(УправляющиеXML(), ""1.0"")");
 НаблюдатьXML("clean.controls.1.1", "ОчисткаXML(УправляющиеXML(), ""1.1"")");
 НаблюдатьXML("clean.unicode.1.0", "ОчисткаXML(ГраницыXML(), ""1.0"")");
 НаблюдатьXML("clean.unicode.1.1", "ОчисткаXML(ГраницыXML(), ""1.1"")");
 НаблюдатьXML("clean.separated-surrogates", "ОчисткаXML(Символ(55296) + Символ(0) + Символ(56320), ""1.0"")");
 НаблюдатьXML("clean.literal-markup", "ОчисткаXML(""<x>&amp;&#0;</x>"", ""1.0"")");
-НаблюдатьXML("clean.bad-version", "DeleteDisallowedXMLCharacters(""text"", ""2.0"")");
-НаблюдатьXML("clean.nonstring", "DeleteDisallowedXMLCharacters(123, ""1.0"")");
-НаблюдатьXML("clean.undefined-version", "DeleteDisallowedXMLCharacters(""text"", Undefined)");
+НаблюдатьXML("clean.bad-version", "XMLStringProcessing.DeleteDisallowedXMLCharacters(""text"", ""2.0"")");
+НаблюдатьXML("clean.nonstring", "XMLStringProcessing.DeleteDisallowedXMLCharacters(123, ""1.0"")");
+НаблюдатьXML("clean.undefined-version", "XMLStringProcessing.DeleteDisallowedXMLCharacters(""text"", Undefined)");
 
 Сообщить("xml.checkpoint.complete: [ok]");

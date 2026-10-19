@@ -1,4 +1,5 @@
 """Packaging of native XML observations, never predictions of their 1C results."""
+from dataclasses import fields, is_dataclass
 from decimal import Decimal
 from pathlib import Path
 import unittest
@@ -6,6 +7,7 @@ import unittest
 from integrational_tests.test_launcher import collect_scripts
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse, parse_expression
+from yadinassi.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
@@ -41,8 +43,8 @@ class XMLCheckpointTests(unittest.TestCase):
                          {'functions', 'strings', 'collections', 'numbers', 'dates', 'values'})
 
     def test_unique_bounded_parseable_observations(self):
-        self.assertEqual(len(calls()), 47)
-        self.assertEqual(len(expressions()), 47)
+        self.assertEqual(len(calls()), 50)
+        self.assertEqual(len(expressions()), 50)
         for call in calls():
             self.assertEqual(len(call.arguments), 2)
             label, expression = [argument.value for argument in call.arguments]
@@ -79,7 +81,7 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual(expected.count(marker), 1)
         expected = expected.split(marker, 1)[0] + marker
         self.assertEqual('\n'.join(output[:41]) + '\n', expected)
-        self.assertEqual(len(output), 89)
+        self.assertEqual(len(output), 92)
         self.assertEqual(output[-1], FINAL)
         observed = output[41:-1]
         self.assertEqual([line.split(': [', 1)[0] for line in observed],
@@ -165,8 +167,20 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual(vm.execute('КодыXML("")').items, [])
         self.assertEqual(vm.execute('КодыXML("😀")').items, [Decimal(55357), Decimal(56832)])
         # A host stub tests safe packaging only, not native XML validity semantics.
-        vm.register_function('УдалитьНедопустимыеСимволыXML', lambda text, version: '\t😀',
-                             'DeleteDisallowedXMLCharacters')
+        calls_seen = []
+        class SyntheticManager(BSLObject):
+            def get_member(self, name):
+                if name.casefold() not in ('удалитьнедопустимыесимволыxml',
+                                          'deletedisallowedxmlcharacters'):
+                    return super().get_member(name)
+                def observe(text, version):
+                    calls_seen.append((name, text, version))
+                    return '\t😀'
+                return HostFunction(name, observe)
+        manager = SyntheticManager()
+        vm.execute("Перем ОбработкаСтрокиXML, XMLStringProcessing;")
+        vm.variables['обработкастрокиxml'] = manager
+        vm.variables['xmlstringprocessing'] = manager
         output = []
         vm.output = output.append
         vm.execute('НаблюдатьXML("synthetic", "ОчисткаXML(ГраницыXML(), ""1.1"")");')
@@ -175,6 +189,74 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertNotIn('😀', output[0])
         self.assertIn('55357', output[0])
         self.assertIn('56832', output[0])
+        self.assertEqual([entry[0] for entry in calls_seen],
+                         ['УдалитьНедопустимыеСимволыXML', 'DeleteDisallowedXMLCharacters'])
+        self.assertEqual([entry[2] for entry in calls_seen], ['1.1', '1.1'])
+        self.assertEqual(calls_seen[0][1], vm.execute('ГраницыXML()'))
+
+    def test_cleanup_api_is_deferred_before_native_module_compilation(self):
+        routine = next(node for node in parse(source())
+                       if isinstance(node, ast.Routine) and node.name == 'ОчисткаXML')
+        def walk(value):
+            if is_dataclass(value):
+                yield value
+                for field in fields(value):
+                    yield from walk(getattr(value, field.name))
+            elif isinstance(value, (tuple, list)):
+                for item in value:
+                    yield from walk(item)
+        calls_in_helper = [node for node in walk(routine) if isinstance(node, ast.Call)
+                           and isinstance(node.callee, ast.Name)]
+        unavailable = {'удалитьнедопустимыесимволыxml', 'deletedisallowedxmlcharacters'}
+        all_helper_calls = [node for node in walk(parse(helpers()))
+                            if isinstance(node, ast.Call) and isinstance(node.callee, ast.Name)]
+        self.assertFalse(any(node.callee.name.casefold() in unavailable
+                             for node in walk(parse(helpers()))
+                             if isinstance(node, ast.Call)
+                             and isinstance(node.callee, (ast.Name, ast.Attribute))))
+        # Every other direct call already exists in owner-confirmed scenarios,
+        # or names a helper declared in this same module.
+        declared = {node.name.casefold() for node in parse(helpers())
+                    if isinstance(node, ast.Routine)}
+        established = {'вычислить', 'сообщить', 'значениевстрокувнутр',
+                       'значениеизстрокивнутр', 'xmlзначение', 'xmlстрока',
+                       'тип', 'типзнч', 'дата', 'стрдлина', 'кодсимвола', 'символ'}
+        self.assertLessEqual({call.callee.name.casefold() for call in all_helper_calls},
+                             declared | established)
+        deferred = [call for call in calls_in_helper if call.callee.name == 'Вычислить']
+        self.assertEqual([call.arguments[0].value for call in deferred],
+                         ['ОбработкаСтрокиXML.УдалитьНедопустимыеСимволыXML(Текст, Версия)',
+                          'XMLStringProcessing.DeleteDisallowedXMLCharacters(Текст, Версия)'])
+        # A platform without this API must still reach subsequent observations.
+        output = []
+        vm = Interpreter(output=output.append)
+        vm.execute(helpers() + '''
+НаблюдатьXML("unavailable", "ОчисткаXML(ГраницыXML(), ""1.0"")");
+НаблюдатьXML("following", "XMLString(True)");
+''')
+        self.assertEqual(output, ['xml.unavailable: [error]', 'xml.following: [{"S","true"}]'])
+
+    def test_manager_metadata_probes_are_protected_and_do_not_assume_a_codec(self):
+        probes = expressions()
+        self.assertEqual(probes['manager.types'],
+                         'New Structure("RU,EN", TypeOf(ОбработкаСтрокиXML), TypeOf(XMLStringProcessing))')
+        self.assertEqual(probes['manager.write'], 'ValueToStringInternal(XMLStringProcessing)')
+        self.assertEqual(probes['manager.inverse'],
+                         'ValueFromStringInternal(ValueToStringInternal(ОбработкаСтрокиXML))')
+        output = []
+        vm = Interpreter(output=output.append)
+        vm.execute(helpers())
+        vm.execute("Перем ОбработкаСтрокиXML, XMLStringProcessing;")
+        # Host object intentionally has no supported internal codec. Both
+        # observation errors are isolated, not replaced by a guessed record.
+        vm.variables['xmlstringprocessing'] = BSLObject()
+        vm.variables['обработкастрокиxml'] = vm.variables['xmlstringprocessing']
+        for label in ('manager.write', 'manager.inverse'):
+            expression = probes[label].replace('"', '""')
+            vm.execute('НаблюдатьXML("' + label + '", "' + expression + '");')
+        vm.execute('НаблюдатьXML("after-manager", "1 + 1");')
+        self.assertEqual(output, ['xml.manager.write: [error]', 'xml.manager.inverse: [error]',
+                                 'xml.after-manager: [{"N",2}]'])
 
     def test_cleanup_covers_both_versions_defaults_and_invalid_inputs(self):
         probes = expressions()
@@ -184,13 +266,15 @@ class XMLCheckpointTests(unittest.TestCase):
         for label in ('default', 'separated-surrogates', 'literal-markup', 'bad-version',
                       'nonstring', 'undefined-version'):
             self.assertIn('clean.' + label, probes)
+        for label in ('default', 'bad-version', 'nonstring', 'undefined-version'):
+            self.assertIn('XMLStringProcessing.DeleteDisallowedXMLCharacters(', probes['clean.' + label])
         self.assertIn('Символ(55296) + Символ(0) + Символ(56320)',
                       probes['clean.separated-surrogates'])
 
     def test_no_external_state_unbounded_loops_or_locale_error_strings(self):
         text = source().split(HELPERS_START, 1)[1]
         self.assertNotRegex(text, r'\b(?:Пока|Перейти|Выполнить|ОписаниеОшибки|ТекущаяДата|CurrentDate)\b')
-        self.assertEqual(text.count('Вычислить('), 1)
+        self.assertEqual(text.count('Вычислить('), 3)
         self.assertEqual(text.count('Для Позиция = 1 По СтрДлина(Текст) Цикл'), 1)
         self.assertEqual(source().count('xml.checkpoint.complete'), 1)
         self.assertNotRegex(source(), r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}')

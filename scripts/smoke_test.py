@@ -1645,8 +1645,8 @@ def xml_checkpoint_labels(program: str) -> list[str]:
         raise AssertionError('Scalar XML completion marker must follow its body')
     labels = re.findall(r'^НаблюдатьXML\("([a-z0-9.-]+)", ',
                         body.partition(final)[0], re.MULTILINE)
-    if len(labels) != 47 or len(set(labels)) != 47:
-        raise AssertionError('Expected 47 unique scalar XML observation labels')
+    if len(labels) != 50 or len(set(labels)) != 50:
+        raise AssertionError('Expected 50 unique scalar XML observation labels')
     return ['xml.' + label for label in labels]
 
 
@@ -1684,7 +1684,7 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
         if result.returncode != 0 or result.stderr:
             raise AssertionError(f'Failed scalar XML checkpoint packaging {arguments!r}: {result!r}')
         validate_xml_checkpoint_output(result.stdout, expected_null, labels)
-    print('Binary scalar XML checkpoint packaging passed: 47 ordered observations, '
+    print('Binary scalar XML checkpoint packaging passed: 50 ordered observations, '
           'completion marker, BOM, command and stdin; native XML results remain pending')
 
 
