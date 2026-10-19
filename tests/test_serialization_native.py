@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.dates import BSLDate
@@ -124,8 +125,10 @@ class NativeEvidenceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # Checkout/launcher line endings are transport. Compact scalar CR/LF
+        # are escaped at this stage and must only be decoded afterward.
         cls.outputs = {
-            name: (OUTPUT / (name + ".out")).read_bytes().decode("utf-8")
+            name: normalize_transport((OUTPUT / (name + ".out")).read_bytes().decode("utf-8"))
             for name in ("numbers", "strings", "collections", "dates", "values")
         }
 
@@ -537,6 +540,43 @@ class SafeSubsetTests(unittest.TestCase):
             with self.subTest(kind=type(value).__name__):
                 with self.assertRaisesRegex(ValueError, "предел ресурсов Yadinassi"):
                     write(value)
+
+
+class NativeFixtureTransportTests(unittest.TestCase):
+    """Checkout simulation and synthetic escaping checks, not new native output."""
+
+    def test_legacy_fixture_loading_accepts_lf_crlf_and_lone_cr_checkouts(self):
+        original_read = Path.read_bytes
+        NativeEvidenceTests.setUpClass()
+        baseline = dict(NativeEvidenceTests.outputs)
+        self.addCleanup(NativeEvidenceTests.setUpClass)
+        for newline in (b"\r\n", b"\r"):
+            def checkout_bytes(path):
+                data = original_read(path)
+                if path.parent == OUTPUT and path.suffix == '.out':
+                    data = data.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+                    return data.replace(b'\n', newline)
+                return data
+            with self.subTest(newline=newline), patch.object(Path, 'read_bytes', checkout_bytes):
+                NativeEvidenceTests.setUpClass()
+                self.assertEqual(NativeEvidenceTests.outputs, baseline)
+                # Exercise actual legacy multiline stream comparisons too.
+                probe = NativeEvidenceTests('test_native_primitive_tags_and_values')
+                probe.test_native_primitive_tags_and_values()
+
+    def test_outer_transport_normalization_precedes_compact_escape_decoding(self):
+        intrinsic = '{"S","first\r\nsecond\rthird\nfourth\\n"}'
+        escaped = write(intrinsic).replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
+        logical = 'sample: [value=' + escaped + ']\nnext: [{"N",1}]\n'
+        for transported in (logical, logical.replace('\n', '\r\n'),
+                            logical.replace('\n', '\r'),
+                            logical.replace(']\nnext', ']\r\nnext').replace('1}]\n', '1}]\r')):
+            with self.subTest(transported=transported):
+                normalized = normalize_transport(transported)
+                self.assertEqual(normalized, logical)
+                decoded = read_observation(extract_payload(normalized, 'sample'))
+                self.assertEqual(decoded, intrinsic)
+                self.assertIn('first\r\nsecond\rthird\nfourth\\n', decoded)
 
 
 if __name__ == "__main__":
