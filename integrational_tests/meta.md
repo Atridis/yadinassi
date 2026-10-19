@@ -455,3 +455,22 @@ values and distinct single-/multi-/untyped GroupBy totaling rules. Stability,
 locale details, mutation order and retained-reference behavior still require the
 native run. Availability is server/thick client/external connection; the existing
 launcher remains unchanged.
+
+## Owner Sort/GroupBy observations and focused supplement (2026-10-19)
+
+Owner head `d933a9d73ca15f4da1413ddd4a05744f9d09a8c4` supplies all 55 ordered
+operation records and both completion markers. `collections.out`: 2,781 lines,
+81,094 bytes; Git blob `6645f7fa667dfe498cef9109fb7b42078dfb9c43`; SHA-256
+`105208223909d541b01b37427aaf5bf3b18386a86b1a6faea1fe1913ccfa01c6`.
+Removing only the operation block reproduces the original 2,394-line output
+exactly. The other five outputs are unchanged and there is no `.err` file.
+
+Seven further bounded records distinguish behavior left ambiguous by the first
+run: detached-row iteration identities and counts before/after adding and clearing
+rows (two/four groups plus explicit Delete control), three-addend qualifier
+clamping, noncanonical singleton String totals, and supplementary UTF-16 sort
+boundaries in both directions. Iteration reports actual type, identity, owner,
+index and cell fields rather than opaque row serialization, with a bound of eight
+items and independent error catches. These new expected results are still
+pending; the genuine first-run output is unchanged. Full comparisons remain
+strict, and no lookup table or guessed iterator behavior substitutes for evidence.

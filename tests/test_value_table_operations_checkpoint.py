@@ -48,7 +48,7 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'cf922dbeabcd77f5a0ea27fec7164d246d78e9eb')
         for name, expected in (
-            ('collections', 'e1303d51f29feaf475dc253cc20ff965d7ce3570'),
+            ('collections', '6645f7fa667dfe498cef9109fb7b42078dfb9c43'),
             ('values', '016f30d6f3bdb1a814e86a70e3bcf424383a0d27'),
         ):
             data = canonical_output_bytes((ROOT / f'integrational_tests/output/{name}.out').read_bytes())
@@ -68,19 +68,19 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
 
     def test_fixed_unique_bounded_expressions(self):
         calls = observations()
-        self.assertEqual(len(calls), 55)
+        self.assertEqual(len(calls), 62)
         labels = []
         for call in calls:
             self.assertEqual(len(call.arguments), 2)
             self.assertTrue(all(isinstance(a, ast.Literal) and type(a.value) is str for a in call.arguments))
             label, expression = (a.value for a in call.arguments)
-            self.assertRegex(label, r'^ops\.(sort|group)\.[a-z-]+$')
+            self.assertRegex(label, r'^ops\.(sort|group)\.[a-z0-9-]+$')
             self.assertLess(len(expression), 200)
             self.assertNotRegex(expression, r'[\r\n]')
             parse('Result = ' + expression + ';')
             labels.append(label)
         self.assertEqual(len(labels), len(set(labels)))
-        self.assertEqual(sum(label.startswith('ops.sort.') for label in labels), 22)
+        self.assertEqual(sum(label.startswith('ops.sort.') for label in labels), 24)
         self.assertIn('table.ops.checkpoint.complete: [ok]', section(BODY))
 
     def test_full_source_compiles_and_declarations_precede_statements(self):
@@ -105,6 +105,12 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
                 def record(*args):
                     invoked.append((name, args))
                 return HostFunction(name, record, returns_value=False)
+            if name.casefold() == 'delete' and [c.name for c in table.columns.items] == ['Key', 'Amount']:
+                real = original(table, name)
+                def record_delete(*args):
+                    invoked.append((name, args))
+                    return real(*args)
+                return HostFunction(name, record_delete, returns_value=False)
             return original(table, name)
 
         output = []
@@ -112,13 +118,13 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
             Interpreter(output=output.append).execute(source())
         records = [line for line in output if line.startswith('table.ops.')
                    and not line.startswith('table.ops.checkpoint.')]
-        self.assertEqual(len(invoked), 55)
-        self.assertEqual(len(records), 55)
+        self.assertEqual(len(invoked), 62)
+        self.assertEqual(len(records), 62)
         for record in records:
             self.assertIn('  Status={"S","ok"}', record)
             self.assertNotIn('[serialize-error]', record)
             self.assertNotIn('[snapshot-error]', record)
-        self.assertEqual(sum(name.casefold() in ('sort', 'сортировать') for name, _ in invoked), 22)
+        self.assertEqual(sum(name.casefold() in ('sort', 'сортировать') for name, _ in invoked), 24)
         self.assertIn(('Sort', ()), invoked)
         self.assertIn('Сортировать', [name for name, _ in invoked])
         self.assertIn('Свернуть', [name for name, _ in invoked])
@@ -156,7 +162,7 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
         Interpreter(output=output.append).execute(source())
         records = [line for line in output if line.startswith('table.ops.')
                    and not line.startswith('table.ops.checkpoint.')]
-        self.assertEqual(len(records), 55)
+        self.assertEqual(len(records), 62)
         # Do not assert native results. Before implementation, missing methods
         # must still leave useful state records instead of outer errors.
         for record in records:
