@@ -19,7 +19,7 @@ from yadinassi.serialization import value_from_string_internal as read
 from yadinassi.serialization import value_to_string_internal as write
 from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
+from yadinassi.values import BSLArray, BSLFixedArray, BSLType, NULL, equal, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,7 +91,7 @@ class NativeEvidenceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.outputs = {
             name: normalize_transport((OUTPUT / (name + ".out")).read_bytes().decode("utf-8"))
-            for name in ("numbers", "strings", "collections", "dates")
+            for name in ("numbers", "strings", "collections", "dates", "values")
         }
 
     def native(self, suite, label):
@@ -166,7 +166,7 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(to_string(Decimal("1234.5")), "1\u00a0234,5")
 
     def test_all_native_type_guids(self):
-        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE}
+        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types, set(BSLType))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
         # fail natively. Check its observed record directly, without an alias.
@@ -175,6 +175,10 @@ class NativeEvidenceTests(unittest.TestCase):
             payload = self.native('strings', label)
             self.assertEqual(write(value), payload)
             self.assertIs(read(payload), value)
+        payload = self.native('values', 'null.type.name')
+        self.assertEqual(payload, '{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}')
+        self.assertEqual(write(type_by_name('Null')), payload)
+        self.assertIs(read(payload), BSLType.NULL)
         payload = self.native('dates', 'date.codec.type-ru')
         self.assertEqual(write(BSLType.DATE), payload)
         self.assertIs(read(payload), BSLType.DATE)
@@ -221,7 +225,7 @@ class NativeEvidenceTests(unittest.TestCase):
                 self.assertEqual(normalize_transport(write(restored)), self.native("collections", label + ".roundtrip.payload"))
 
     def test_all_runtime_value_types_preserve_native_readback_behavior(self):
-        samples = [None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
+        samples = [NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS]

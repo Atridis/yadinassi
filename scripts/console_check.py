@@ -95,6 +95,20 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         expect("Метка не определена")
         send(">>> ", '~recovered: Message("goto-recovered=" + String(jump_count));\n')
         expect("goto-recovered=3")
+        send(">>> ", 'nullValue = nUlL;\n')
+        send(">>> ", 'Message("null-codec=" + ValueToStringInternal(nullValue));\n')
+        expect('null-codec={"L"}')
+        send(">>> ", 'Function NullDefault(value = Null)\n')
+        send("... ", 'Return value;\n')
+        send("... ", 'EndFunction\n')
+        send(">>> ", 'Message("null-default=" + ValueToStringInternal(NullDefault()));\n')
+        expect('null-default={"L"}')
+        send(">>> ", 'Try nullValue = Number(Null); Except Message("null-caught"); EndTry;\n')
+        expect('null-caught')
+        send(">>> ", 'Message("null-recovered=" + ValueToStringInternal(nullValue)); '
+             'Message("null-short=" + ValueToStringInternal(False And Null));\n')
+        expect('null-recovered={"L"}')
+        expect('null-short={"B",0}')
         # Edit the final seconds digit inside a quoted Date literal in the PTY.
         date_line = "dateValue = '20240229123455';"
         send(">>> ", date_line + '\x1b[D\x1b[D\x7f6\x1b[F\n')
@@ -577,7 +591,9 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (('calendar-month={"D",20240229123456}', 1),
+        for message, count in (('null-codec={"L"}', 1), ('null-default={"L"}', 1),
+                               ('null-caught', 1), ('null-recovered={"L"}', 1),
+                               ('null-short={"B",0}', 1), ('calendar-month={"D",20240229123456}', 1),
                                ('calendar-end={"D",20240229235959}', 1),
                                ('calendar-week={"N",2}', 1),
                                ('calendar-recovered={"D",20240229123456}', 1),

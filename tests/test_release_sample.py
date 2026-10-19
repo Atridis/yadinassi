@@ -9,16 +9,32 @@ from yadinassi import Interpreter
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def source_blob_id(data):
+    # Git's Windows checkout can expand LF to CRLF. Canonicalize only that
+    # transport change; other bytes (including lone CR) remain significant.
+    data = data.replace(b'\r\n', b'\n')
+    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+
 class ReleaseSampleTests(unittest.TestCase):
-    def test_source_and_owner_fixture_are_preserved_byte_for_byte(self):
+    def test_source_and_owner_fixture_preserve_canonical_git_blobs(self):
         # Existing Git blob identities establish provenance, not new native data.
         for path, sha in (
             ('basic.bsl', '62730fcfa3943bc674f2eb03b1da249bbe5df1e7'),
             ('tests/fixtures/basic.out', 'ea90add03d8036f78ec7e6c61cd67bc974fbd6bc'),
         ):
             data = (ROOT / path).read_bytes()
-            self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode()
-                                         + b'\0' + data).hexdigest(), sha)
+            self.assertEqual(source_blob_id(data), sha)
+
+    def test_git_crlf_checkout_does_not_change_sample_identity(self):
+        for name in ('basic.bsl', 'tests/fixtures/basic.out'):
+            data = (ROOT / name).read_bytes().replace(b'\r\n', b'\n')
+            self.assertEqual(source_blob_id(data), source_blob_id(data.replace(b'\n', b'\r\n')))
+
+    def test_non_transport_changes_are_not_hidden(self):
+        data = (ROOT / 'basic.bsl').read_bytes()
+        for changed in (data + b' ', data + b'\r', data + b'changed'):
+            self.assertNotEqual(source_blob_id(data), source_blob_id(changed))
 
     def test_sample_is_not_an_integration_scenario(self):
         self.assertFalse((ROOT / 'integrational_tests/tests/basic.bsl').exists())

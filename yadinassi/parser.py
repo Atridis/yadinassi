@@ -3,6 +3,7 @@
 from . import ast
 from .errors import BSLError, IncompleteInput
 from .lexer import Lexer, Token
+from .values import NULL
 
 
 PRECEDENCE = {
@@ -114,7 +115,7 @@ class Parser:
             self.pos += 1
             value = self.expect("NUMBER")
             default = ast.Unary(token, token.kind, ast.Literal(value, value.value))
-        elif token.kind in ("NUMBER", "STRING", "DATE", "TRUE", "FALSE", "UNDEFINED"):
+        elif token.kind in ("NUMBER", "STRING", "DATE", "TRUE", "FALSE", "UNDEFINED", "NULL"):
             default = self.primary()
         else:
             self.fail("Ожидается литерал значения параметра по умолчанию")
@@ -276,9 +277,9 @@ class Parser:
 
     def primary(self) -> ast.Node:
         token = self.current
-        if token.kind in ("NUMBER", "STRING", "DATE", "TRUE", "FALSE", "UNDEFINED"):
+        if token.kind in ("NUMBER", "STRING", "DATE", "TRUE", "FALSE", "UNDEFINED", "NULL"):
             self.pos += 1
-            value = {"TRUE": True, "FALSE": False, "UNDEFINED": None}.get(token.kind, token.value)
+            value = {"TRUE": True, "FALSE": False, "UNDEFINED": None, "NULL": NULL}.get(token.kind, token.value)
             return ast.Literal(token, value)
         if self.accept("IDENT"):
             return ast.Name(token, token.value)

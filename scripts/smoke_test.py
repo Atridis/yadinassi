@@ -1486,6 +1486,49 @@ Message(String("1234.5000"));
           'BOM files, imports, all command flags, stdin, console, and error recovery')
 
 
+
+def check_null(executable: str, *, directory: Path, env: dict) -> None:
+    """Replay owner Null output through each frozen input, then recovery/imports."""
+    directory.mkdir()
+    program = (ROOT / "integrational_tests/tests/values.bsl").read_text(encoding="utf-8")
+    expected = (ROOT / "integrational_tests/output/values.out").read_text(encoding="utf-8")
+    source = directory / 'СпециальныеЗначения.bsl'
+    source.write_text(program, encoding='utf-8-sig')
+    cases = [([flag, program], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], program), ([], program + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed native Null checkpoint {arguments!r}: {result!r}')
+    module = directory / 'Особые.bsl'
+    module.write_text('Function DefaultNull(value = Null) Export\nReturn value;\nEndFunction\n',
+                      encoding='utf-8-sig')
+    recovery = '\n'.join([
+        '// #Импорт Особые.bsl',
+        'saved = Особые.DefaultNull(); Message(ValueToStringInternal(saved));',
+        'Try saved = Number(Null); Except Message("null-number-caught"); EndTry;',
+        'Message(ValueToStringInternal(saved));',
+        'Message(ValueToStringInternal(TypeOf(saved)));',
+        'Message(ValueToStringInternal(False And Null));',
+        'Message(ValueToStringInternal(True Or Null));',
+        'a = New Array; a.Add(Undefined); a.Add(saved);',
+        'fixed = New FixedArray(a);',
+        'Message(ValueToStringInternal(fixed.Find(Null)));',
+        'readback = ValueFromStringInternal(ValueToStringInternal(fixed));',
+        'Message(ValueToStringInternal(readback[1]));',
+    ]) + '\n'
+    source.write_text(recovery, encoding='utf-8-sig')
+    result = subprocess.run([executable, str(source)], capture_output=True,
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+    wanted = ('{"L"}\nnull-number-caught\n{"L"}\n'
+              '{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}\n'
+              '{"B",0}\n{"B",1}\n{"N",1}\n{"L"}\n')
+    if (result.returncode, result.stdout, result.stderr) != (0, wanted, ''):
+        raise AssertionError(f'Failed Null import/recovery: {result!r}')
+    print('Binary Null passed: all 40 native observations, true inverse codec, BOM, '
+          'command aliases, stdin, console, imported defaults and recovery')
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -1503,6 +1546,7 @@ def main() -> None:
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
+        check_null(executable, directory=Path(temporary) / "null", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)

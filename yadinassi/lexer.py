@@ -34,6 +34,7 @@ for kind, aliases in {
     "NEW": ("Новый", "New"),
     "TRUE": ("Истина", "True"),
     "FALSE": ("Ложь", "False"),
+    "NULL": ("Null",),
     "UNDEFINED": ("Неопределено", "Undefined"),
     "AND": ("И", "And"),
     "OR": ("Или", "Or"),

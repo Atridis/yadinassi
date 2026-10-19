@@ -7,13 +7,13 @@ from .dates import BSLDate
 from .maps import BSLFixedMap, BSLMap
 from .strings import is_blank
 from .structures import BSLFixedStructure, BSLStructure
-from .values import BSLArray, BSLFixedArray
+from .values import BSLArray, BSLFixedArray, NULL
 
 
 def value_is_filled(value: object) -> bool:
     # Exact types avoid invoking arbitrary extension truth/length/iteration hooks.
     kind = type(value)
-    if value is None:
+    if value is None or value is NULL:
         return False
     if kind is bool:
         return True  # False is filled too; this is not a Boolean conversion.

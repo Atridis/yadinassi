@@ -8,10 +8,11 @@ from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode, BSLRoundModes
 from .search_directions import BSLSearchDirection, BSLSearchDirections
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from .values import BSLArray, BSLFixedArray, BSLType
+from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
 
 
 _VALUE_TYPES = (
+    (BSLNull, BSLType.NULL, "Null"),
     (type(None), BSLType.UNDEFINED, "Undefined"),
     (bool, BSLType.BOOLEAN, "Boolean"),
     (Decimal, BSLType.NUMBER, "Number"),
