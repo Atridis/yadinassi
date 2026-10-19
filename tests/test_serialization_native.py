@@ -20,7 +20,18 @@ from yadinassi.serialization import value_from_string_internal as read
 from yadinassi.serialization import value_to_string_internal as write
 from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from yadinassi.type_values import type_by_name, type_of
+from yadinassi.value_tables import BSLValueTable
 from yadinassi.values import BSLArray, BSLFixedArray, BSLType, NULL, equal, to_string
+
+
+def table_family_samples():
+    vm = Interpreter()
+    vm.execute('table = New ValueTable; columns = table.Columns; '
+               'columns.Add("Имя"); columns.Add("Число", New TypeDescription("Number")); '
+               'For i = 1 To 3 Do row = table.Add(); row.Имя = "row" + String(i); row.Число = i; EndDo;')
+    table = vm.variables['table']
+    return [('table', table), ('columns', table.columns),
+            ('column', table.columns.items[0]), ('row', table.rows[0])]
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -189,7 +200,7 @@ class NativeEvidenceTests(unittest.TestCase):
     def test_all_native_type_guids(self):
         search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL,
                         BSLType.XML_STRING_PROCESSING_MANAGER}
-        family_types = {type_of(value) for _, value in type_family_samples()}
+        family_types = {type_of(value) for _, value in [*type_family_samples(), *table_family_samples()]}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
                          set(BSLType))
         for label, value in type_family_samples():
@@ -197,6 +208,10 @@ class NativeEvidenceTests(unittest.TestCase):
             payload = snapshot.get('TypeWrite')
             self.assertEqual(write(type_of(value)), payload)
             self.assertIs(read(payload), type_of(value))
+        for label, value in table_family_samples():
+            snapshot = read(self.native('collections', 'table.codec.' + label))
+            self.assertEqual(write(type_of(value)), snapshot.get('TypeWrite'))
+            self.assertIs(read(snapshot.get('TypeWrite')), type_of(value))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
         # fail natively. Check its observed record directly, without an alias.
         for value, label in [(BSLType.SEARCH_DIRECTION, 'search.enum.begin.type'),
@@ -260,12 +275,15 @@ class NativeEvidenceTests(unittest.TestCase):
 
     def test_all_runtime_value_types_preserve_native_readback_behavior(self):
         family = type_family_samples()
+        table_family = table_family_samples()
+        table_labels = {type_of(value): label for label, value in table_family}
         family_labels = {type_of(value): label for label, value in family}
         samples = [NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
-                   XML_STRING_PROCESSING, *[value for _, value in family]]
+                   XML_STRING_PROCESSING, *[value for _, value in family],
+                   *[value for _, value in table_family]]
         self.assertEqual({type_of(value) for value in samples}, set(BSLType))
         for value in samples:
             with self.subTest(kind=type_of(value)):
@@ -274,6 +292,11 @@ class NativeEvidenceTests(unittest.TestCase):
                 family_label = family_labels.get(type_of(value))
                 if family_label is not None:
                     snapshot = read(self.native('values', 'types.' + family_label))
+                    self.assertEqual(payload, snapshot.get('Write'))
+                    self.assertEqual(write(restored), snapshot.get('ReadWrite'))
+                    self.assertIs(type_of(restored), snapshot.get('ReadType'))
+                elif type_of(value) in table_labels:
+                    snapshot = read(self.native('collections', 'table.codec.' + table_labels[type_of(value)]))
                     self.assertEqual(payload, snapshot.get('Write'))
                     self.assertEqual(write(restored), snapshot.get('ReadWrite'))
                     self.assertIs(type_of(restored), snapshot.get('ReadType'))

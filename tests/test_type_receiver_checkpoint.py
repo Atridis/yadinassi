@@ -1,4 +1,4 @@
-"""Owner-confirmed receiver supplement and immutable native output."""
+"""Compact receiver supplement, immutable old output, and pending native confirmation."""
 from pathlib import Path
 import hashlib
 import unittest
@@ -40,6 +40,51 @@ def expressions():
 
 
 class TypeReceiverCheckpointTests(unittest.TestCase):
+    def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
+        # Local formatter contract, never a newly manufactured native golden.
+        from decimal import Decimal
+        from yadinassi.serialization import value_to_string_internal
+        from yadinassi.structures import BSLStructure
+        from yadinassi.values import BSLArray, NULL
+        vm = Interpreter()
+        vm.execute(helpers())
+        scalars = [None, NULL, False, Decimal(0), '0', '',
+                   'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
+        for value in scalars:
+            vm.register_function('FormatterValue', lambda: value)
+            actual = vm.execute('ПолеКомпактногоДополнения(FormatterValue())')
+            expected = value_to_string_internal(value).replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
+            self.assertEqual(actual, expected)
+            self.assertNotIn('\r', actual)
+            self.assertNotIn('\n', actual)
+        representations = []
+        for value in (BSLArray(), BSLStructure(), BSLStructure('Count', Decimal(0))):
+            vm.register_function('FormatterValue', lambda: value)
+            representations.append(vm.execute('ПоляКомпактногоДополнения(FormatterValue(), "value")'))
+        self.assertEqual(len(set(representations)), 3)
+
+        # Actual controls and their literal escape spellings must never collide.
+        from yadinassi.serialization import value_from_string_internal
+        pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
+        encoded = []
+        for value in pairs:
+            vm.register_function('FormatterValue', lambda: value)
+            text = vm.execute('ПолеКомпактногоДополнения(FormatterValue())')
+            encoded.append(text)
+            restored, position = [], 0
+            escapes = {'\\': '\\', 'n': '\n', 'r': '\r', 't': '\t'}
+            while position < len(text):
+                if text[position] == '\\':
+                    self.assertLess(position + 1, len(text))
+                    self.assertIn(text[position + 1], escapes)
+                    restored.append(escapes[text[position + 1]])
+                    position += 2
+                else:
+                    restored.append(text[position])
+                    position += 1
+            self.assertEqual(value_from_string_internal(''.join(restored)), value)
+        self.assertEqual(len(set(encoded)), len(pairs))
+
     def test_matrix_has_fourteen_receiver_replacements_and_four_syntax_controls(self):
         probes = expressions()
         self.assertEqual(len(probes), 23)
@@ -88,6 +133,8 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
         self.assertEqual(len(original.splitlines()), 5182)
         self.assertEqual(hashlib.sha256(data).hexdigest(),
                          'e87c380a2b83a4d411f41b48d006bf41d0dcc66dc3b19664cebaab9c22b821d4')
+        self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
+                         '4ee5695345a6f50ffe78f35e47027c88c75a973f')
         self.assertEqual(len(data), 81485)
         self.assertEqual(len(data.splitlines()), 5736)
         self.assertTrue(data.endswith((FINAL + '\n').encode()))
@@ -109,7 +156,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
 ''')
         self.assertEqual(output, ['types-extra.missing: [error]', 'types-extra.syntax: [error]',
                                  'types-extra.serialize: [serialize-error]',
-                                 'types-extra.next: [{"N",0}]'])
+                                 'types-extra.next: [value={"N",0}]'])
 
     def test_default_helper_really_calls_receiver_methods_without_arguments(self):
         seen = []

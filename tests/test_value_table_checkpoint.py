@@ -1,4 +1,4 @@
-"""Native-first table observations: source integrity, never invented goldens."""
+"""Compact native source pending a fresh owner run; historical evidence is immutable."""
 from dataclasses import fields, is_dataclass
 import hashlib
 from pathlib import Path
@@ -45,6 +45,52 @@ def calls():
 
 
 class ValueTableCheckpointTests(unittest.TestCase):
+    def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
+        # Local formatter contract, never a newly manufactured native golden.
+        from decimal import Decimal
+        from yadinassi.serialization import value_to_string_internal
+        from yadinassi.structures import BSLStructure
+        from yadinassi.values import BSLArray, NULL
+        vm = Interpreter()
+        vm.execute(parts()[1])
+        scalars = [None, NULL, False, Decimal(0), '0', '',
+                   'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
+        for value in scalars:
+            vm.register_function('FormatterValue', lambda: value)
+            actual = vm.execute('КомпактноеЗначениеТаблицы(FormatterValue())')
+            expected = value_to_string_internal(value).replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
+            expected = expected.replace('\t', '\\t')
+            self.assertEqual(actual, expected)
+            self.assertNotIn('\r', actual)
+            self.assertNotIn('\n', actual)
+        representations = []
+        for value in (BSLArray(), BSLStructure(), BSLStructure('Count', Decimal(0))):
+            vm.register_function('FormatterValue', lambda: value)
+            representations.append(vm.execute('КомпактноеЗначениеТаблицы(FormatterValue())'))
+        self.assertEqual(len(set(representations)), 3)
+
+        # Actual controls and their literal escape spellings must never collide.
+        from yadinassi.serialization import value_from_string_internal
+        pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
+        encoded = []
+        for value in pairs:
+            vm.register_function('FormatterValue', lambda: value)
+            text = vm.execute('КомпактноеЗначениеТаблицы(FormatterValue())')
+            encoded.append(text)
+            restored, position = [], 0
+            escapes = {'\\': '\\', 'n': '\n', 'r': '\r', 't': '\t'}
+            while position < len(text):
+                if text[position] == '\\':
+                    self.assertLess(position + 1, len(text))
+                    self.assertIn(text[position + 1], escapes)
+                    restored.append(escapes[text[position + 1]])
+                    position += 2
+                else:
+                    restored.append(text[position])
+                    position += 1
+            self.assertEqual(value_from_string_internal(''.join(restored)), value)
+        self.assertEqual(len(set(encoded)), len(pairs))
+
     def test_legacy_source_and_owner_output_are_untouched(self):
         old, _, _ = parts()
         # Transport-normalized source; no legacy procedure or statement changed.
@@ -52,8 +98,14 @@ class ValueTableCheckpointTests(unittest.TestCase):
                          '97d7928e7c59828f916f88d4f31632e2c9bcd8f1ab57786f81ee18978246dfc1')
         output = ROOT / 'integrational_tests/output/collections.out'
         self.assertEqual(hashlib.sha256(output.read_bytes().replace(b'\r\n', b'\n')).hexdigest(),
+                         '75babf916eac5b1f90defdd86f25829271f09ad1488770a00004136bf7ab2ce6')
+        self.assertEqual(len(output.read_bytes().splitlines()), 12988)
+        evidence = output.read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(hashlib.sha1(b'blob ' + str(len(evidence)).encode() + b'\0' + evidence).hexdigest(),
+                         '5a772268172b4d66c77fba033b688deafa3d6de4')
+        legacy = b'\n'.join(output.read_bytes().replace(b'\r\n', b'\n').split(b'\n')[:1451]) + b'\n'
+        self.assertEqual(hashlib.sha256(legacy).hexdigest(),
                          '06f0517acf577d357a2b52e6808da8d208b040025d505c143f08fc1a47f47f69')
-        self.assertEqual(len(output.read_bytes().splitlines()), 1451)
 
     def test_fixed_bounded_unique_observations(self):
         observations = calls()
@@ -112,22 +164,24 @@ class ValueTableCheckpointTests(unittest.TestCase):
             self.assertIn(name, helpers)
         self.assertIn('[snapshot-error]', helpers)
 
-    def test_current_unsupported_runtime_finishes_with_explicit_errors(self):
+    def test_compact_source_retains_labels_but_requires_new_native_output(self):
         messages = []
         Interpreter(output=messages.append).execute(source())
-        labels = ['table.' + c.arguments[0].value + ': [error]' for c in calls()]
-        self.assertEqual(messages[-143:], labels + [FINAL])
-        # These are unsupported-runtime diagnostics, never native answers.
-        actual = '\n'.join(messages[:-143]) + '\n'
+        actual = '\n'.join(messages) + '\n'
         expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
-        self.assertEqual(actual.replace('\r\n', '\n').replace('\r', '\n'), expected)
+        self.assertNotEqual(actual.replace('\r\n', '\n').replace('\r', '\n'), expected)
+        self.assertEqual(messages[-1], FINAL)
+        import re
+        labels = ['table.' + c.arguments[0].value for c in calls()] + ['table.checkpoint.complete']
+        self.assertEqual(re.findall(r'^(table\.[a-z0-9.-]+): \[', expected, re.M), labels)
+        self.assertEqual([line.split(': [', 1)[0] for line in messages
+                          if line.startswith('table.')], labels)
 
-    def test_full_native_gate_rejects_missing_owner_tail(self):
+    def test_full_native_gate_rejects_stale_owner_output(self):
         if __package__:
             from .test_native_outputs import NativeOutputTests
         else:
             from test_native_outputs import NativeOutputTests
         case = NativeOutputTests('test_native_outputs')
-        with self.assertRaises(AssertionError) as caught:
+        with self.assertRaisesRegex(AssertionError, 'collections.bsl: вывод отличается'):
             case.compare_script(SOURCE)
-        self.assertIn('collections.bsl: вывод отличается', str(caught.exception))
