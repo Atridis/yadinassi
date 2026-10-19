@@ -1561,11 +1561,41 @@ def check_clocks(executable: str, *, directory: Path, env: dict) -> None:
           'BOM, imports, command flags, stdin, console, and error recovery')
 
 
+def null_checkpoint_source(program: str) -> str:
+    """Select the owner-confirmed Null helpers/body from the growing values suite."""
+    body_start = '// Значение, тип и настоящий прямой/обратный кодек.'
+    xml_helpers_start = '// Нативный checkpoint скалярного XML.'
+    final = 'Сообщить("null.checkpoint.complete: [ok]");'
+    if program.count(body_start) != 1 or program.count(final) != 1:
+        raise AssertionError('Expected unique Null checkpoint body and completion marker')
+    helpers, _, body = program.partition(body_start)
+    if final not in body:
+        raise AssertionError('Null completion marker must follow its body')
+    # Later thematic helpers belong before the common executable body, but must
+    # not participate in replaying the original native-confirmed observations.
+    if helpers.count(xml_helpers_start) > 1:
+        raise AssertionError('Expected at most one scalar XML helper boundary')
+    helpers = helpers.partition(xml_helpers_start)[0]
+    body = body.partition(final)[0]
+    return helpers + body_start + body + final + '\n'
+
+
+def null_checkpoint_output(output: str) -> str:
+    """Keep the complete original native Null output when later themes are appended."""
+    markers = list(re.finditer(r'^null\.checkpoint\.complete: \[ok\](?:\n|\Z)',
+                              output, re.MULTILINE))
+    if len(markers) != 1:
+        raise AssertionError('Expected one native Null completion marker')
+    return output[:markers[0].end()]
+
+
 def check_null(executable: str, *, directory: Path, env: dict) -> None:
     """Replay owner Null output through each frozen input, then recovery/imports."""
     directory.mkdir()
-    program = (ROOT / "integrational_tests/tests/values.bsl").read_text(encoding="utf-8")
-    expected = (ROOT / "integrational_tests/output/values.out").read_text(encoding="utf-8")
+    program = null_checkpoint_source(
+        (ROOT / "integrational_tests/tests/values.bsl").read_text(encoding="utf-8-sig"))
+    expected = null_checkpoint_output(
+        (ROOT / "integrational_tests/output/values.out").read_text(encoding="utf-8-sig"))
     source = directory / 'СпециальныеЗначения.bsl'
     source.write_text(program, encoding='utf-8-sig')
     cases = [([flag, program], None) for flag in ('-c', '-с', '--command')]
@@ -1603,6 +1633,122 @@ def check_null(executable: str, *, directory: Path, env: dict) -> None:
     print('Binary Null passed: all 40 native observations, true inverse codec, BOM, '
           'command aliases, stdin, console, imported defaults and recovery')
 
+
+def xml_checkpoint_labels(program: str) -> list[str]:
+    """Read ordered packaging labels without inventing native XML results."""
+    body_start = '// Скалярный XML: наблюдения без заранее заданных ответов.'
+    final = 'Сообщить("xml.checkpoint.complete: [ok]");'
+    if program.count(body_start) != 1 or program.count(final) != 1:
+        raise AssertionError('Expected unique scalar XML body and completion marker')
+    body = program.partition(body_start)[2]
+    if final not in body:
+        raise AssertionError('Scalar XML completion marker must follow its body')
+    labels = re.findall(r'^НаблюдатьXML\("([a-z0-9.-]+)", ',
+                        body.partition(final)[0], re.MULTILINE)
+    if len(labels) != 62 or len(set(labels)) != 62:
+        raise AssertionError('Expected 62 unique scalar XML observation labels')
+    return ['xml.' + label for label in labels]
+
+
+def validate_xml_checkpoint_output(output: str, expected_null: str, labels: list[str]) -> None:
+    """Validate ordered observation frames while allowing multiline codec payloads."""
+    expected_null = null_checkpoint_output(expected_null)
+    if not output.startswith(expected_null):
+        raise AssertionError('Scalar XML checkpoint changed the original native Null output')
+    body = output[len(expected_null):]
+    frames = list(re.finditer(r'^(xml\.[a-z0-9.-]+): \[', body, re.MULTILINE))
+    if (len(set(labels)) != len(labels) or not frames or frames[0].start() != 0
+            or [frame[1] for frame in frames] != labels + ['xml.checkpoint.complete']):
+        raise AssertionError('Scalar XML observation frames are missing, duplicated or out of order')
+    for frame, following in zip(frames, frames[1:]):
+        # Do not inspect payload values: array/structure codecs contain newlines,
+        # and payload correctness is checked separately against the owner output.
+        if not body[frame.start():following.start()].endswith(']\n'):
+            raise AssertionError(f'Unclosed scalar XML observation frame: {frame[1]}')
+    if body[frames[-1].start():] != 'xml.checkpoint.complete: [ok]\n':
+        raise AssertionError('Scalar XML checkpoint must end at its completion marker')
+
+
+def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -> None:
+    """Full frozen parity with every committed owner output, not selected lines."""
+    directory.mkdir()
+    environment = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
+    for name in ('functions', 'strings', 'collections', 'numbers', 'dates', 'values'):
+        output = ROOT / 'integrational_tests/output' / (name + '.out')
+        if output.with_suffix('.err').exists():
+            raise AssertionError(f'Native error file exists: {name}')
+        expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+        result = subprocess.run([executable, str(ROOT / 'integrational_tests/tests' / (name + '.bsl'))],
+                                cwd=directory, env=environment, capture_output=True,
+                                encoding='utf-8', timeout=30)
+        if result.returncode or result.stderr or result.stdout != expected:
+            raise AssertionError(f'Frozen native output mismatch: {name}: {result!r}')
+    print('Binary native parity passed: all six complete owner outputs, including 784 values lines')
+
+
+def check_timezone_configuration(executable: str, *, directory: Path, env: dict) -> None:
+    """Standalone timezone configuration tests, not extra native observations."""
+    cases = [
+        ('Europe/Warsaw', '2024-07-01T12:34:56Z', '20240701143456'),
+        ('Europe/Warsaw', '2024-03-31T00:59:59Z', '20240331015959'),
+        ('Europe/Warsaw', '2024-03-31T01:00:00Z', '20240331030000'),
+        ('Europe/Warsaw', '2024-10-27T00:30:00Z', '20241027023000'),
+        ('Europe/Warsaw', '2024-10-27T01:30:00Z', '20241027023000'),
+        ('Asia/Kathmandu', '2024-02-29T12:34:56Z', '20240229181956'),
+        ('UTC', '2024-02-29T12:34:56Z', '20240229123456'),
+    ]
+    for zone, lexical, expected in cases:
+        code = f'Message(ValueToStringInternal(XMLValue(Type("Date"), "{lexical}")));'
+        result = subprocess.run([executable, '-c', code], cwd=directory,
+                                env=dict(env, YADINASSI_TIMEZONE=zone),
+                                capture_output=True, encoding='utf-8', timeout=30)
+        if result.returncode or result.stderr or result.stdout != '{"D",' + expected + '}\n':
+            raise AssertionError(f'Frozen timezone configuration failed: {zone}: {result!r}')
+    # Explicit UTC also applies to the local wall clock, but not UTC clocks.
+    code = ('delta = CurrentDate() - CurrentUniversalDate(); '
+            'Message(delta >= -2 And delta <= 2);')
+    result = subprocess.run([executable, '-c', code], cwd=directory,
+                            env=dict(env, YADINASSI_TIMEZONE='UTC'),
+                            capture_output=True, encoding='utf-8', timeout=30)
+    if result.returncode or result.stderr or result.stdout != 'Да\n':
+        raise AssertionError(f'Frozen configured local clock failed: {result!r}')
+    code = ('Try value = XMLValue(Type("Date"), "2024-02-29T12:34:56Z"); '
+            'Except Message("invalid-zone"); EndTry; '
+            'Message(XMLString(XMLValue(Type("Date"), "2024-02-29T12:34:56")));')
+    result = subprocess.run([executable, '-c', code], cwd=directory,
+                            env=dict(env, YADINASSI_TIMEZONE='../UTC'),
+                            capture_output=True, encoding='utf-8', timeout=30)
+    if (result.returncode or result.stderr
+            or result.stdout != 'invalid-zone\n2024-02-29T12:34:56\n'):
+        raise AssertionError(f'Frozen invalid timezone/recovery failed: {result!r}')
+    print('Binary timezone configuration passed: pinned data, seasonal DST, folds, '
+          'nonwhole-hour zone, UTC clock, invalid configuration and naive-date independence')
+
+
+def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
+    """Replay all native scalar XML bytes with the recorded timezone context."""
+    directory.mkdir()
+    program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
+    labels = xml_checkpoint_labels(program)
+    expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+    expected_null = null_checkpoint_output(expected)
+    # Owner-confirmed Windows zone, CLDR global mapping; do not alter the OS.
+    env = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
+    source = directory / 'СкалярныйXML.bsl'
+    source.write_text(program, encoding='utf-8-sig')
+    for arguments, stdin in [([str(source)], None), (['-c', program], None), (['-'], program)]:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if result.returncode != 0 or result.stderr:
+            raise AssertionError(f'Failed scalar XML checkpoint packaging {arguments!r}: {result!r}')
+        validate_xml_checkpoint_output(result.stdout, expected_null, labels)
+        if result.stdout != expected:
+            raise AssertionError('Frozen scalar XML output differs from the complete owner output')
+    print('Binary scalar XML native parity passed: all 784 lines / 62 observations, '
+          'recorded Warsaw timezone, bundled data, BOM, command and stdin')
+    check_timezone_configuration(executable, directory=directory, env=env)
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -1610,7 +1756,7 @@ def main() -> None:
     executable = str(Path(sys.argv[1]).resolve())
     expected = (ROOT / "tests" / "fixtures" / "basic.out").read_text(encoding="utf-8")
     env = {key: value for key, value in os.environ.items()
-           if key not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
+           if key not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "YADINASSI_TIMEZONE")}
     env["PYTHONIOENCODING"] = "utf-8"
     # The bundled interpreter must work without finding Python on PATH.
     env["PATH"] = os.environ.get("SystemRoot", r"C:\Windows") + r"\System32" if os.name == "nt" else "/usr/bin:/bin"
@@ -1621,7 +1767,9 @@ def main() -> None:
         temporary = str(Path(temporary).resolve())
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
         check_clocks(executable, directory=Path(temporary) / "clocks", env=env)
+        check_saved_native_outputs(executable, directory=Path(temporary) / "native-full", env=env)
         check_null(executable, directory=Path(temporary) / "null", env=env)
+        check_xml_checkpoint(executable, directory=Path(temporary) / "xml-checkpoint", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)

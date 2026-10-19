@@ -7,6 +7,7 @@ from typing import Callable
 from . import ast, bits, clocks, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
+from .xml_processing import XML_STRING_PROCESSING
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
 from .parser import parse, parse_expression, parse_fragment, validate_labels
@@ -301,6 +302,8 @@ class Interpreter:
             return self.functions[name]
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
+        if name in ("обработкастрокиxml", "xmlstringprocessing"):
+            return XML_STRING_PROCESSING
         if name in ("направлениепоиска", "searchdirection"):
             return SEARCH_DIRECTIONS
         raise ValueError(f"Переменная или функция не определена: {node.name}")

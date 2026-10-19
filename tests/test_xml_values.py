@@ -61,7 +61,7 @@ class XMLValueTests(unittest.TestCase):
                 raise AssertionError('host string hook')
             def __eq__(self, other):
                 raise AssertionError('host comparison hook')
-        for value in (None, Decimal(1), 1, BSLType.STRING, Hostile()):
+        for value in (1, BSLType.STRING, Hostile()):
             with self.assertRaises(TypeError):
                 xml_string(value)
         for kind in (None, 'String', True, Hostile()):
@@ -71,7 +71,7 @@ class XMLValueTests(unittest.TestCase):
             with self.assertRaises(TypeError):
                 xml_value(BSLType.STRING, text)
         for kind in BSLType:
-            if kind not in (BSLType.STRING, BSLType.BOOLEAN):
+            if kind not in (BSLType.STRING, BSLType.BOOLEAN, BSLType.NUMBER, BSLType.NULL, BSLType.UNDEFINED, BSLType.DATE):
                 with self.assertRaisesRegex(TypeError, 'пока поддерживаются'):
                     xml_value(kind, '')
 
@@ -79,9 +79,9 @@ class XMLValueTests(unittest.TestCase):
         vm = Interpreter()
         expressions = ('XMLString()', 'XMLString(True, False)', 'XMLValue()',
                        'XMLValue(Type("String"))', 'XMLValue(Type("String"), "x", 1)',
-                       'XMLValue(, "x")', 'XMLString(1)', 'XMLString(Undefined)',
+                       'XMLValue(, "x")',
                        'XMLString(New Array)', 'XMLValue("String", "x")',
-                       'XMLValue(Type("String"), 1)', 'XMLValue(Type("Number"), "1")',
+                       'XMLValue(Type("String"), 1)',
                        'XMLValue(Type("Boolean"), " true ")')
         for expression in expressions:
             with self.subTest(expression=expression):

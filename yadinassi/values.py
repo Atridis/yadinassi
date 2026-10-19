@@ -37,6 +37,7 @@ class BSLType(Enum):
     TYPE = "Тип"
     ROUND_MODE = "РежимОкругления"
     ROUND_MODES = "ПеречислениеРежимОкругления"
+    XML_STRING_PROCESSING_MANAGER = "МенеджерОбработкиСтрокиXML"
     SEARCH_DIRECTION = "НаправлениеПоиска"
     SEARCH_DIRECTIONS = "ПеречислениеНаправлениеПоиска"
 

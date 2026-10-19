@@ -80,7 +80,8 @@ class InternalSerializationTests(unittest.TestCase):
                        'New FixedStructure(New Structure)', 'New Map',
                        'New FixedMap(New Map)', 'Type("Number")',
                        'RoundMode.Round15as10', 'RoundMode.Round15as20', 'RoundMode',
-                       'SearchDirection.FromBegin', 'SearchDirection.FromEnd', 'SearchDirection']
+                       'SearchDirection.FromBegin', 'SearchDirection.FromEnd', 'SearchDirection',
+                       'XMLStringProcessing']
         vm.execute('s = New Structure("Key", 1); For Each pair In s Do EndDo;')
         expressions.append('pair')
         observed = set()
@@ -89,7 +90,8 @@ class InternalSerializationTests(unittest.TestCase):
                 original = vm.execute(expression)
                 kind = type_values.type_of(original)
                 restored = value_from_string_internal(value_to_string_internal(original))
-                if kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS):
+                if kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
+                            BSLType.XML_STRING_PROCESSING_MANAGER):
                     # Native namespace records read as Undefined, unlike their Types.
                     self.assertIsNone(restored)
                     self.assertIs(type_values.type_of(restored), BSLType.UNDEFINED)

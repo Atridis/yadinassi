@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import unittest
 
+from scripts.smoke_test import null_checkpoint_output, null_checkpoint_source
 from yadinassi import BSLError, Interpreter, ast
 from yadinassi.lexer import Lexer
 from yadinassi.maps import BSLFixedMap, BSLMap
@@ -35,8 +36,8 @@ class NativeNullEvidenceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.native = NATIVE.read_text(encoding='utf-8-sig')
-        cls.source = SOURCE.read_text(encoding='utf-8-sig')
+        cls.native = null_checkpoint_output(NATIVE.read_text(encoding='utf-8-sig'))
+        cls.source = null_checkpoint_source(SOURCE.read_text(encoding='utf-8-sig'))
         cls.records = dict(re.findall(
             r'^null\.([a-z0-9.-]+): \[(.*?)\](?=\nnull\.|\n?\Z)',
             cls.native, re.MULTILINE | re.DOTALL))
