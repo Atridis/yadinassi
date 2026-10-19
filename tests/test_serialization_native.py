@@ -45,6 +45,26 @@ TYPE_GUIDS = {
 }
 
 
+TYPE_FAMILY_EXPRESSIONS = (
+    ('description.default.en', 'New TypeDescription'),
+    ('number.default.en', 'New NumberQualifiers'),
+    ('string.default.en', 'New StringQualifiers'),
+    ('date.default.en', 'New DateQualifiers'),
+    ('binary.default.en', 'New BinaryDataQualifiers'),
+    ('allowedsign.namespace', 'AllowedSign'),
+    ('allowedsign.any', 'AllowedSign.Any'),
+    ('allowedlength.namespace', 'AllowedLength'),
+    ('allowedlength.variable', 'AllowedLength.Variable'),
+    ('datefractions.namespace', 'DateFractions'),
+    ('datefractions.datetime', 'DateFractions.DateTime'),
+)
+
+
+def type_family_samples():
+    vm = Interpreter()
+    return [(label, vm.execute(expression)) for label, expression in TYPE_FAMILY_EXPRESSIONS]
+
+
 def normalize_transport(text):
     """Only the launcher's CR/LF normalization, never payload whitespace."""
     return text.replace("\r\n", "\n").replace("\r", "\n")
@@ -169,7 +189,14 @@ class NativeEvidenceTests(unittest.TestCase):
     def test_all_native_type_guids(self):
         search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL,
                         BSLType.XML_STRING_PROCESSING_MANAGER}
-        self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types, set(BSLType))
+        family_types = {type_of(value) for _, value in type_family_samples()}
+        self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
+                         set(BSLType))
+        for label, value in type_family_samples():
+            snapshot = read(self.native('values', 'types.' + label))
+            payload = snapshot.get('TypeWrite')
+            self.assertEqual(write(type_of(value)), payload)
+            self.assertIs(read(payload), type_of(value))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
         # fail natively. Check its observed record directly, without an alias.
         for value, label in [(BSLType.SEARCH_DIRECTION, 'search.enum.begin.type'),
@@ -232,17 +259,25 @@ class NativeEvidenceTests(unittest.TestCase):
                 self.assertEqual(normalize_transport(write(restored)), self.native("collections", label + ".roundtrip.payload"))
 
     def test_all_runtime_value_types_preserve_native_readback_behavior(self):
+        family = type_family_samples()
+        family_labels = {type_of(value): label for label, value in family}
         samples = [NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
-                   XML_STRING_PROCESSING]
+                   XML_STRING_PROCESSING, *[value for _, value in family]]
         self.assertEqual({type_of(value) for value in samples}, set(BSLType))
         for value in samples:
             with self.subTest(kind=type_of(value)):
                 payload = write(value)
                 restored = read(payload)
-                if value is ROUND_MODES:
+                family_label = family_labels.get(type_of(value))
+                if family_label is not None:
+                    snapshot = read(self.native('values', 'types.' + family_label))
+                    self.assertEqual(payload, snapshot.get('Write'))
+                    self.assertEqual(write(restored), snapshot.get('ReadWrite'))
+                    self.assertIs(type_of(restored), snapshot.get('ReadType'))
+                elif value is ROUND_MODES:
                     self.assertIsNone(restored)
                     self.assertEqual(payload, self.native("numbers", "round.namespace.payload"))
                     self.assertEqual(write(restored), self.native("numbers", "round.namespace.read.payload"))

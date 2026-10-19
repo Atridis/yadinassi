@@ -139,8 +139,9 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(self.evaluate('1 // ordinary #Import no.bsl'), Decimal(1))
 
     def test_no_python_host_escape(self):
+        self.vm.execute('array = New Array;')
         for text in ('__import__("os")', 'Eval.function', 'Eval.__class__',
-                     '(New Array).__class__', 'open("secret")', 'lambda: 1'):
+                     'array.__class__', 'open("secret")', 'lambda: 1'):
             with self.subTest(text=text), self.assertRaises(BSLRuntimeError):
                 self.evaluate(text)
         self.assertEqual(self.evaluate('2 + 3'), Decimal(5))

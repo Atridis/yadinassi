@@ -318,7 +318,18 @@ class Parser:
         while True:
             if token := self.accept("("):
                 value = ast.Call(token, value, self.arguments())
-            elif token := self.accept("."):
+            elif self.current.kind == ".":
+                receiver = value
+                while isinstance(receiver, ast.Group):
+                    receiver = receiver.expression
+                # Native BSL rejects direct member access on a static New,
+                # including a parenthesized New. This is a syntax restriction,
+                # independent of the type or the member's runtime availability.
+                # Functional New(...) is not covered by that native evidence.
+                if isinstance(receiver, ast.New):
+                    self.fail("Недопустимое обращение к свойству или методу "
+                              "непосредственно после конструктора")
+                token = self.expect(".")
                 # Execute is a statement keyword, but existing object members
                 # with this spelling remain member names after a dot.
                 member = self.accept("EXECUTE") or self.expect("IDENT")

@@ -642,10 +642,11 @@ class CalendarRuntimeTests(unittest.TestCase):
                          add_month(date('99991231235959'), Decimal(1)),
                          end_period(date('99991231235959'), 'week')):
             self.vm.variables['opaque'] = boundary
+            self.vm.execute('boundaryMap = New Map;')
             self.assertIs(self.vm.execute('TypeOf(opaque)'), BSLType.DATE)
             self.assertEqual(self.vm.execute('ValueToStringInternal(opaque)'), write(boundary))
             failures = ['AddMonth(opaque, 0)', 'String(opaque)', 'opaque = opaque',
-                        'New Map().Get(opaque)', 'ValueToStringInternal(New Structure("When",opaque))']
+                        'boundaryMap.Get(opaque)', 'ValueToStringInternal(New Structure("When",opaque))']
             failures += [en + '(opaque)' for en, _, _, _ in ALIASES]
             failures += [en + '(opaque)' for en, _, _ in NUMBERS]
             for expression in failures:

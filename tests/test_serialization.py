@@ -81,7 +81,13 @@ class InternalSerializationTests(unittest.TestCase):
                        'New FixedMap(New Map)', 'Type("Number")',
                        'RoundMode.Round15as10', 'RoundMode.Round15as20', 'RoundMode',
                        'SearchDirection.FromBegin', 'SearchDirection.FromEnd', 'SearchDirection',
-                       'XMLStringProcessing']
+                       'XMLStringProcessing', 'New TypeDescription',
+                       'New NumberQualifiers', 'New StringQualifiers',
+                       'New DateQualifiers', 'New BinaryDataQualifiers',
+                       'AllowedSign', 'AllowedSign.Any', 'AllowedSign.Nonnegative',
+                       'AllowedLength', 'AllowedLength.Fixed', 'AllowedLength.Variable',
+                       'DateFractions', 'DateFractions.Date', 'DateFractions.Time',
+                       'DateFractions.DateTime']
         vm.execute('s = New Structure("Key", 1); For Each pair In s Do EndDo;')
         expressions.append('pair')
         observed = set()
@@ -91,8 +97,12 @@ class InternalSerializationTests(unittest.TestCase):
                 kind = type_values.type_of(original)
                 restored = value_from_string_internal(value_to_string_internal(original))
                 if kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
-                            BSLType.XML_STRING_PROCESSING_MANAGER):
-                    # Native namespace records read as Undefined, unlike their Types.
+                            BSLType.XML_STRING_PROCESSING_MANAGER,
+                            BSLType.NUMBER_QUALIFIERS, BSLType.STRING_QUALIFIERS,
+                            BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
+                            BSLType.ALLOWED_SIGNS, BSLType.ALLOWED_LENGTHS,
+                            BSLType.DATE_FRACTIONS_NAMESPACE):
+                    # Native qualifier/namespace records read as Undefined, unlike their Types.
                     self.assertIsNone(restored)
                     self.assertIs(type_values.type_of(restored), BSLType.UNDEFINED)
                 else:

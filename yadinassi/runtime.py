@@ -8,6 +8,11 @@ from . import ast, bits, clocks, date_time_conversions, dates, elementary, numbe
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .xml_processing import XML_STRING_PROCESSING
+from .type_descriptions import BSLTypeDescription
+from .type_qualifiers import (
+    ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
+    BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
+)
 from .errors import BSLError, BSLRuntimeError
 from .collation import string_key
 from .parser import parse, parse_expression, parse_fragment, validate_labels
@@ -120,6 +125,12 @@ class Interpreter:
         self.register_type("ФиксированныйМассив", BSLFixedArray, "FixedArray")
         self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
+
+        self.register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
+        self.register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
+        self.register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
+        self.register_type("КвалификаторыДаты", BSLDateQualifiers, "DateQualifiers")
+        self.register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
 
     @property
     def execution_context(self) -> str:
@@ -301,6 +312,12 @@ class Interpreter:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
+        if name in ("допустимыйзнак", "allowedsign"):
+            return ALLOWED_SIGNS
+        if name in ("допустимаядлина", "allowedlength"):
+            return ALLOWED_LENGTHS
+        if name in ("частидаты", "datefractions"):
+            return DATE_FRACTIONS
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
         if name in ("обработкастрокиxml", "xmlstringprocessing"):
@@ -560,8 +577,13 @@ class Interpreter:
         return node
 
     def visit_New(self, node: ast.New) -> object:
-        self.reject_host_omissions(node.arguments)
         factory = self.types.get(node.name.casefold())
+        if factory is not None and factory.function is BSLTypeDescription:
+            # The observed descriptor overloads use positional qualifier holes.
+            # Other host constructors retain their explicit omission rejection.
+            return factory(*(None if isinstance(argument, ast.OmittedArgument)
+                             else self.visit(argument) for argument in node.arguments))
+        self.reject_host_omissions(node.arguments)
         if factory is None:
             raise ValueError(f"Тип не определен: {node.name}")
         return factory(*(self.visit(argument) for argument in node.arguments))

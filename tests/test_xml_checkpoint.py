@@ -18,7 +18,9 @@ FINAL = 'xml.checkpoint.complete: [ok]'
 
 
 def source():
-    return SOURCE.read_text(encoding='utf-8-sig')
+    # Test the unchanged XML block independently of later pending themes.
+    from scripts.smoke_test import pending_types_checkpoint
+    return pending_types_checkpoint(SOURCE.read_text(encoding='utf-8-sig'))[0]
 
 
 def helpers():

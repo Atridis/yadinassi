@@ -1,6 +1,7 @@
 """Test the distributed executable outside the source tree and without PYTHONPATH."""
 
 import os
+import hashlib
 from datetime import datetime, timezone
 import re
 import time
@@ -1669,6 +1670,79 @@ def validate_xml_checkpoint_output(output: str, expected_null: str, labels: list
         raise AssertionError('Scalar XML checkpoint must end at its completion marker')
 
 
+
+# Historical source boundaries are immutable. Native semantics are checked
+# against the complete owner output, including the receiver supplement.
+VALUES_CONFIRMED_SHA256 = '8c6670294114773f6daabb847567390ab82bd2aba5105fe773b54482b065be44'
+TYPES_HELPERS_SHA256 = '4dffaf095b80b3fc01198e7463d8d9a58e096b9e60b86e7327c4b43d5b7b2790'
+TYPES_BODY_SHA256 = 'd2f4ecccc3aa03180d190a52082efb344338fcd9b52aed331d2ef9548d5dbb7a'
+TYPES_HELPERS_START = '// Нативный checkpoint описаний типов.'
+TYPES_BODY_START = '// Описания типов: наблюдения без заранее заданных ответов.'
+TYPES_FINAL = 'types.checkpoint.complete: [ok]'
+
+
+TYPES_ORIGINAL_SOURCE_SHA256 = '2d49d5f557c6994e9d21594880c1c9fb482cf7f68fb39148a4049ecedc7add15'
+TYPES_SUPPLEMENT_HELPERS_SHA256 = '95ed531b206e2cc5815b0f84a1126e7567a7f2dbeeb759beefb3073b1dc1d52e'
+TYPES_SUPPLEMENT_BODY_SHA256 = '21f310a6c5f85a7481b3666606685ab4099eec9ea6f6cf85bad9bb5e422fef25'
+TYPES_SUPPLEMENT_HELPERS_START = '// Дополнение нативной проверки: вызов через переменную.'
+TYPES_SUPPLEMENT_BODY_START = '// Дополнение описаний типов: вызов через переменную.'
+TYPES_SUPPLEMENT_FINAL = 'types-extra.checkpoint.complete: [ok]'
+
+
+def split_type_supplement(program: str) -> tuple[str, str]:
+    """Recover the byte-identical original and separately hash-guarded supplement."""
+    markers = (TYPES_SUPPLEMENT_HELPERS_START, TYPES_SUPPLEMENT_BODY_START)
+    if not any(marker in program for marker in markers):
+        return program, ''
+    if any(program.count(marker) != 1 for marker in (*markers, TYPES_HELPERS_START)):
+        raise AssertionError('Expected unique supplemental TypeDescription boundaries')
+    prefix, rest = program.split(TYPES_SUPPLEMENT_HELPERS_START)
+    helpers, rest = rest.split(TYPES_HELPERS_START)
+    body_boundary = '\n\n' + TYPES_SUPPLEMENT_BODY_START
+    if rest.count(body_boundary) != 1:
+        raise AssertionError('Expected exact supplemental TypeDescription body separator')
+    original_tail, body = rest.split(body_boundary)
+    original = prefix + TYPES_HELPERS_START + original_tail
+    helpers = TYPES_SUPPLEMENT_HELPERS_START + helpers
+    body = body_boundary + body
+    for text, expected in ((original, TYPES_ORIGINAL_SOURCE_SHA256),
+                           (helpers, TYPES_SUPPLEMENT_HELPERS_SHA256),
+                           (body, TYPES_SUPPLEMENT_BODY_SHA256)):
+        if hashlib.sha256(text.encode('utf-8')).hexdigest() != expected:
+            raise AssertionError('TypeDescription supplement source changed; review boundaries and hashes')
+    return original, helpers + body
+
+
+def pending_types_checkpoint(program: str) -> tuple[str, list[str]]:
+    """Historical XML source extraction for its focused tests, not a parity gate.
+
+    Keep the legacy name for test_xml_checkpoint; frozen checks never strip types.
+    """
+    program, _ = split_type_supplement(program)
+    null_body = '// Значение, тип и настоящий прямой/обратный кодек.'
+    xml_final = 'Сообщить("xml.checkpoint.complete: [ok]");\n'
+    for marker in (TYPES_HELPERS_START, TYPES_BODY_START, null_body, xml_final):
+        if program.count(marker) != 1:
+            raise AssertionError('Expected unique TypeDescription checkpoint boundaries')
+    prefix, helpers_and_rest = program.split(TYPES_HELPERS_START)
+    helpers, body = helpers_and_rest.split(null_body)
+    original_body, types_body = body.split(xml_final)
+    confirmed = prefix + null_body + original_body + xml_final
+    if types_body.lstrip()[:len(TYPES_BODY_START)] != TYPES_BODY_START:
+        raise AssertionError('Historical types body must immediately follow native XML')
+    for text, expected in ((confirmed, VALUES_CONFIRMED_SHA256),
+                           (TYPES_HELPERS_START + helpers, TYPES_HELPERS_SHA256),
+                           (types_body, TYPES_BODY_SHA256)):
+        if hashlib.sha256(text.encode('utf-8')).hexdigest() != expected:
+            raise AssertionError('Checkpoint source changed; review historical source boundaries and hashes')
+    labels = re.findall(r'^НаблюдатьТипы\("([a-z0-9.-]+)", ', types_body, re.MULTILINE)
+    if not labels or len(set(labels)) != len(labels):
+        raise AssertionError('Expected unique historical TypeDescription observations')
+    if not types_body.rstrip().endswith('Сообщить("' + TYPES_FINAL + '");'):
+        raise AssertionError('Missing historical TypeDescription completion marker')
+    return confirmed, ['types.' + label for label in labels]
+
+
 def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -> None:
     """Full frozen parity with every committed owner output, not selected lines."""
     directory.mkdir()
@@ -1726,26 +1800,43 @@ def check_timezone_configuration(executable: str, *, directory: Path, env: dict)
 
 
 def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
-    """Replay all native scalar XML bytes with the recorded timezone context."""
+    """Full native values via file/stdin/console; bounded native command sample."""
     directory.mkdir()
     program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
-    labels = xml_checkpoint_labels(program)
-    expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
-    expected_null = null_checkpoint_output(expected)
-    # Owner-confirmed Windows zone, CLDR global mapping; do not alter the OS.
+    # Source preservation is separate from semantic parity; execute the full file.
+    _, command_program = split_type_supplement(program)
+    output = ROOT / 'integrational_tests/output/values.out'
+    if output.with_suffix('.err').exists():
+        raise AssertionError('Native error file exists: values')
+    expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
     env = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
-    source = directory / 'СкалярныйXML.bsl'
+    source = directory / 'НативныеЗначения.bsl'
     source.write_text(program, encoding='utf-8-sig')
-    for arguments, stdin in [([str(source)], None), (['-c', program], None), (['-'], program)]:
+    for arguments, stdin in [([str(source)], None), (['-'], program),
+                             ([], program + '/exit\n')]:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
-        if result.returncode != 0 or result.stderr:
-            raise AssertionError(f'Failed scalar XML checkpoint packaging {arguments!r}: {result!r}')
-        validate_xml_checkpoint_output(result.stdout, expected_null, labels)
-        if result.stdout != expected:
-            raise AssertionError('Frozen scalar XML output differs from the complete owner output')
-    print('Binary scalar XML native parity passed: all 784 lines / 62 observations, '
-          'recorded Warsaw timezone, bundled data, BOM, command and stdin')
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Full native values checkpoint mismatch {arguments[0:1]!r}: {result!r}')
+    print('Binary native values parity passed: all 5736 owner lines, including 146 original '
+          'and 23 supplemental type observations; BOM file, stdin and console')
+    # Windows CreateProcess limits argv to 32767 UTF-16 code units. The full
+    # source exceeds that bound; exercise command aliases with the self-contained
+    # native supplement on every platform instead, never skip native file parity.
+    marker = TYPES_FINAL + '\n'
+    if not command_program or expected.count(marker) != 1:
+        raise AssertionError('Expected native type supplement source and owner-output boundary')
+    command_expected = expected.split(marker, 1)[1]
+    for flag in ('-c', '-с', '--command'):
+        arguments = [executable, flag, command_program]
+        if len(subprocess.list2cmdline(arguments).encode('utf-16-le')) // 2 + 1 >= 32767:
+            raise AssertionError('Native command sample exceeds Windows UTF-16 argv limit')
+        result = subprocess.run(arguments, capture_output=True, encoding='utf-8',
+                                cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
+            raise AssertionError(f'Native type command sample mismatch {flag}: {result!r}')
+    print('Binary command aliases passed: exact 23-probe owner TypeDescription/qualifier/codec '
+          'supplement; bounded sample for Windows argv limit, not full values command coverage')
     check_timezone_configuration(executable, directory=directory, env=env)
 
 

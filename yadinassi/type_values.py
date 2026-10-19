@@ -9,6 +9,12 @@ from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode, BSLRoundModes
 from .search_directions import BSLSearchDirection, BSLSearchDirections
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from .type_descriptions import BSLTypeDescription
+from .type_qualifiers import (
+    BSLAllowedLength, BSLAllowedLengths, BSLAllowedSign, BSLAllowedSigns,
+    BSLBinaryDataQualifiers, BSLDateFractions, BSLDateFractionsNamespace,
+    BSLDateQualifiers, BSLNumberQualifiers, BSLStringQualifiers,
+)
 from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
 
 
@@ -36,6 +42,19 @@ _VALUE_TYPES = (
     # Native search.enum.namespace-type-{ru,en} both fail. TypeOf still has
     # this identity, but neither presentation nor English name resolves it.
     (BSLSearchDirections, BSLType.SEARCH_DIRECTIONS, None),
+    (BSLNumberQualifiers, BSLType.NUMBER_QUALIFIERS, "NumberQualifiers"),
+    (BSLStringQualifiers, BSLType.STRING_QUALIFIERS, "StringQualifiers"),
+    (BSLDateQualifiers, BSLType.DATE_QUALIFIERS, "DateQualifiers"),
+    (BSLBinaryDataQualifiers, BSLType.BINARY_DATA_QUALIFIERS, "BinaryDataQualifiers"),
+    (BSLAllowedSign, BSLType.ALLOWED_SIGN, "AllowedSign"),
+    (BSLAllowedLength, BSLType.ALLOWED_LENGTH, "AllowedLength"),
+    (BSLDateFractions, BSLType.DATE_FRACTIONS, "DateFractions"),
+    # Owner evidence establishes the namespace TypeOf identities, but not
+    # namespace type-name lookup. Do not infer aliases from presentations.
+    (BSLAllowedSigns, BSLType.ALLOWED_SIGNS, None),
+    (BSLAllowedLengths, BSLType.ALLOWED_LENGTHS, None),
+    (BSLDateFractionsNamespace, BSLType.DATE_FRACTIONS_NAMESPACE, None),
+    (BSLTypeDescription, BSLType.TYPE_DESCRIPTION, "TypeDescription"),
 )
 _BY_NAME = {name.casefold(): value_type
             for _, value_type, alias in _VALUE_TYPES
