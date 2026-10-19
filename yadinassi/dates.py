@@ -3,6 +3,7 @@
 Dates retain 100-microsecond ticks. Construction, arithmetic and the lossy
 internal stream are deliberately separate operations, not host datetime casts.
 """
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -170,6 +171,110 @@ def read_codec(text: str) -> BSLDate:
     return _canonical(text, (14,))
 
 
+def add_month(value: BSLDate, months: Decimal) -> BSLDate:
+    value = _require_date(value)
+    if type(months) is not Decimal or not months.is_finite():
+        raise TypeError("ДобавитьМесяц: ожидается конечное число месяцев")
+    if len(months.as_tuple().digits) > _MAX_DIGITS:
+        raise ValueError("ДобавитьМесяц: превышен предел ресурсов Yadinassi (4096 разрядов)")
+    # Bound before int(): an enormous positive exponent must not allocate a
+    # huge integer. No shift this large can yield a supported Gregorian date.
+    if months < -120000 or months > 120000:
+        raise UnsupportedDateRange("ДобавитьМесяц: сдвиг за пределы диапазона пока не поддерживается")
+    count = int(months)  # Truncation toward zero, independent of Decimal context.
+    part = _parts(value)
+    target = (part.year - 1) * 12 + part.month - 1 + count
+    if not 0 <= target < 9999 * 12:
+        # The native probes expose only scalar D records, not hidden tick state.
+        # Both exact endpoint shifts serialize as the minimum date; do not
+        # infer saturation, wraparound, or ordinary Date semantics from that.
+        if ((value.ticks == 0 and months == -1)
+                or (value.ticks == MAX_TICKS and months == 1)):
+            return BSLDate(0, boundary=True)
+        raise UnsupportedDateRange("ДобавитьМесяц: непроверенный выход за диапазон даты")
+    year, month = divmod(target, 12)
+    year, month = year + 1, month + 1
+    day = min(part.day, monthrange(year, month)[1])
+    # Even a zero-month shift discards fractional ticks in the native result.
+    return _from_parts((year, month, day, part.hour, part.minute, part.second))
+
+
+def _period_start(part, unit):
+    if unit == "minute":
+        return part.replace(second=0)
+    if unit == "hour":
+        return part.replace(minute=0, second=0)
+    day = part.replace(hour=0, minute=0, second=0)
+    if unit == "day":
+        return day
+    if unit == "week":
+        return day - timedelta(days=part.weekday())
+    if unit == "month":
+        return day.replace(day=1)
+    if unit == "quarter":
+        return day.replace(month=(part.month - 1) // 3 * 3 + 1, day=1)
+    if unit == "year":
+        return day.replace(month=1, day=1)
+    raise ValueError("Неизвестный календарный период")
+
+
+def _date_from_datetime(part):
+    return _from_parts((part.year, part.month, part.day,
+                        part.hour, part.minute, part.second))
+
+
+def begin_period(value: BSLDate, unit: str) -> BSLDate:
+    return _date_from_datetime(_period_start(_parts(value), unit))
+
+
+def end_period(value: BSLDate, unit: str) -> BSLDate:
+    part = _parts(value)
+    if unit == "minute":
+        end = part.replace(second=59)
+    elif unit == "hour":
+        end = part.replace(minute=59, second=59)
+    elif unit == "day":
+        end = part.replace(hour=23, minute=59, second=59)
+    elif unit == "week":
+        remaining = 6 - part.weekday()
+        if part.toordinal() + remaining > datetime.max.toordinal():
+            if value.ticks == MAX_TICKS:
+                return BSLDate(MAX_TICKS, boundary=True)
+            raise UnsupportedDateRange("КонецНедели: непроверенный выход за диапазон даты")
+        end = (part + timedelta(days=remaining)).replace(hour=23, minute=59, second=59)
+    elif unit in ("month", "quarter", "year"):
+        month = (part.month if unit == "month" else
+                 (part.month - 1) // 3 * 3 + 3 if unit == "quarter" else 12)
+        end = part.replace(month=month, day=monthrange(part.year, month)[1],
+                           hour=23, minute=59, second=59)
+    else:
+        raise ValueError("Неизвестный календарный период")
+    return _date_from_datetime(end)
+
+
+def day_of_year(value: BSLDate) -> Decimal:
+    part = _parts(value)
+    return Decimal(part.toordinal() - datetime(part.year, 1, 1).toordinal() + 1)
+
+
+def week_day(value: BSLDate) -> Decimal:
+    return Decimal(_parts(value).weekday() + 1)
+
+
+def week_of_year(value: BSLDate) -> Decimal:
+    part = _parts(value)
+    first = datetime(part.year, 1, 1)
+    # First partial week is week 1, and each Monday begins the next week.
+    # This is deliberately not ISO week numbering (2016-01-04 is week 2).
+    return Decimal((part.toordinal() - first.toordinal() + first.weekday()) // 7 + 1)
+
+
+def _period_function(unit, end=False):
+    def apply(value):
+        return end_period(value, unit) if end else begin_period(value, unit)
+    return apply
+
+
 def _extractor(part):
     def extract(value):
         return component(value, part)
@@ -181,3 +286,16 @@ BUILTINS = (("Дата", date, "Date"),) + tuple(
     for ru, en, part in (("Год", "Year", "year"), ("Месяц", "Month", "month"),
                          ("День", "Day", "day"), ("Час", "Hour", "hour"),
                          ("Минута", "Minute", "minute"), ("Секунда", "Second", "second")))
+
+
+BUILTINS += (("ДобавитьМесяц", add_month, "AddMonth"),
+             ("ДеньГода", day_of_year, "DayOfYear"),
+             ("ДеньНедели", week_day, "WeekDay"),
+             ("НеделяГода", week_of_year, "WeekOfYear"))
+BUILTINS += tuple(
+    (russian + suffix, _period_function(unit, end), english + name)
+    for unit, suffix, name in (("minute", "Минуты", "Minute"),
+                               ("hour", "Часа", "Hour"), ("day", "Дня", "Day"),
+                               ("week", "Недели", "Week"), ("month", "Месяца", "Month"),
+                               ("quarter", "Квартала", "Quarter"), ("year", "Года", "Year"))
+    for russian, english, end in (("Начало", "BegOf", False), ("Конец", "EndOf", True)))
