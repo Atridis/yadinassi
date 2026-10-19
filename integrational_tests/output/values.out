@@ -1,0 +1,98 @@
+null.literal.upper: [{"L"}]
+null.literal.mixed: [{"L"}]
+null.type.ru: [{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}]
+null.type.en: [{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}]
+null.type.name: [{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}]
+null.codec.value-roundtrip: [{"L"}]
+null.codec.type-roundtrip: [{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}]
+null.convert.string: [{"S",""}]
+null.convert.filled: [{"B",0}]
+null.convert.number: [error]
+null.convert.boolean: [error]
+null.compare.self-equal: [{"B",1}]
+null.compare.self-not-equal: [{"B",0}]
+null.compare.undefined: [{"B",0}]
+null.compare.undefined-reversed: [{"B",0}]
+null.compare.zero: [{"B",0}]
+null.compare.empty-string: [{"B",0}]
+null.compare.less: [error]
+null.compare.greater: [error]
+null.logic.not: [error]
+null.logic.and-false: [error]
+null.logic.false-and: [{"B",0}]
+null.logic.and-true: [error]
+null.logic.true-and: [error]
+null.logic.or-false: [error]
+null.logic.false-or: [error]
+null.logic.or-true: [error]
+null.logic.true-or: [{"B",1}]
+null.conditional: [error]
+null.arithmetic.negative: [error]
+null.arithmetic.plus: [error]
+null.arithmetic.plus-reversed: [error]
+null.arithmetic.minus: [error]
+null.arithmetic.minus-reversed: [error]
+null.arithmetic.times-zero: [error]
+null.arithmetic.divide: [error]
+null.arithmetic.divide-reversed: [error]
+null.collection.nested-roundtrip: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"L"}
+},
+{
+{"S","Items"},
+{"#",51e7a0d2-530b-11d4-b98a-008048da3034,
+{2,
+{"L"},
+{"U"}
+}
+}
+}
+}
+}]
+null.collection.find: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","NullIndex"},
+{"N",1}
+},
+{
+{"S","UndefinedIndex"},
+{"N",0}
+}
+}
+}]
+null.collection.map-roundtrip: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{4,
+{
+{"S","Count"},
+{"N",2}
+},
+{
+{"S","Value"},
+{"S","second"}
+},
+{
+{"S","UndefinedValue"},
+{"S","undefined"}
+},
+{
+{"S","Restored"},
+{"#",3d48feae-a9c6-4c5a-a099-9eb6477630c6,
+{2,
+{
+{"U"},
+{"S","undefined"}
+},
+{
+{"L"},
+{"S","second"}
+}
+}
+}
+}
+}
+}]
+null.checkpoint.complete: [ok]
