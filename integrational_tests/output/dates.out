@@ -125,3 +125,435 @@ date.precision.negative-half-second: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
 }
 }]
 date.checkpoint.complete: [ok]
+date.calendar.period.begin-minute: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123400}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.end-minute: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123459}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.begin-hour: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229120000}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.end-hour: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229125959}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.begin-day: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229000000}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.end-day: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229235959}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.begin-week: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240226000000}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.end-week: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240303235959}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.begin-month: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240201000000}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.end-month: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229235959}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.begin-quarter: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240101000000}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.end-quarter: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240331235959}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.begin-year: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240101000000}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.period.end-year: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20241231235959}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.month.forward-year: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240215123456}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.month.backward-year: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20231115123456}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.month.leap-january: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{2,
+{
+{"S","Value"},
+{"D",20240229123456}
+},
+{
+{"S","Delta"},
+{"N",0}
+}
+}
+}]
+date.calendar.month.common-january: [{"D",20230228000000}]
+date.calendar.month.leap-year: [{"D",20250228000000}]
+date.calendar.month.reverse-end: [{"D",20240229000000}]
+date.calendar.month.chain: [{"N",-172800}]
+date.calendar.month.zero-fraction: [{"N",0}]
+date.calendar.month.count-pos-half: [{"D",20240515000000}]
+date.calendar.month.count-neg-half: [{"D",20240515000000}]
+date.calendar.month.count-pos-one-half: [{"D",20240615000000}]
+date.calendar.month.count-neg-one-half: [{"D",20240415000000}]
+date.calendar.month.min-underflow: [{"D",00010101000000}]
+date.calendar.month.max-overflow: [{"D",00010101000000}]
+date.calendar.number.january-2018: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",1}
+},
+{
+{"S","Day"},
+{"N",1}
+},
+{
+{"S","Ordinal"},
+{"N",1}
+}
+}
+}]
+date.calendar.number.january-2019: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",1}
+},
+{
+{"S","Day"},
+{"N",2}
+},
+{
+{"S","Ordinal"},
+{"N",1}
+}
+}
+}]
+date.calendar.number.january-2020: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",1}
+},
+{
+{"S","Day"},
+{"N",3}
+},
+{
+{"S","Ordinal"},
+{"N",1}
+}
+}
+}]
+date.calendar.number.january-2021: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",1}
+},
+{
+{"S","Day"},
+{"N",5}
+},
+{
+{"S","Ordinal"},
+{"N",1}
+}
+}
+}]
+date.calendar.number.january-2022: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",1}
+},
+{
+{"S","Day"},
+{"N",6}
+},
+{
+{"S","Ordinal"},
+{"N",1}
+}
+}
+}]
+date.calendar.number.january-2023: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",1}
+},
+{
+{"S","Day"},
+{"N",7}
+},
+{
+{"S","Ordinal"},
+{"N",1}
+}
+}
+}]
+date.calendar.number.january-2015: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",1}
+},
+{
+{"S","Day"},
+{"N",4}
+},
+{
+{"S","Ordinal"},
+{"N",1}
+}
+}
+}]
+date.calendar.number.year-end: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",53}
+},
+{
+{"S","Day"},
+{"N",4}
+},
+{
+{"S","Ordinal"},
+{"N",365}
+}
+}
+}]
+date.calendar.number.first-monday: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",2}
+},
+{
+{"S","Day"},
+{"N",1}
+},
+{
+{"S","Ordinal"},
+{"N",4}
+}
+}
+}]
+date.calendar.number.february: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{3,
+{
+{"S","Week"},
+{"N",6}
+},
+{
+{"S","Day"},
+{"N",1}
+},
+{
+{"S","Ordinal"},
+{"N",32}
+}
+}
+}]
+date.calendar.number.leap-ordinals: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{4,
+{
+{"S","Before"},
+{"N",59}
+},
+{
+{"S","Leap"},
+{"N",60}
+},
+{
+{"S","After"},
+{"N",61}
+},
+{
+{"S","Last"},
+{"N",366}
+}
+}
+}]
+date.calendar.number.common-and-weekdays: [{"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{6,
+{
+{"S","March"},
+{"N",60}
+},
+{
+{"S","Last"},
+{"N",365}
+},
+{
+{"S","Sunday"},
+{"N",7}
+},
+{
+{"S","Monday"},
+{"N",1}
+},
+{
+{"S","WeekSunday"},
+{"N",9}
+},
+{
+{"S","WeekMonday"},
+{"N",10}
+}
+}
+}]
+date.calendar.edge.begin-min: [{"D",00010101000000}]
+date.calendar.edge.end-max-week: [{"D",99991231235959}]
+date.calendar.edge.begin-max-year: [{"D",99990101000000}]
+date.calendar.edge.end-max-year: [{"N",0}]
+date.calendar.edge.wrong-date: [error]
+date.calendar.edge.wrong-count: [error]
+date.calendar.edge.missing-argument: [error]
+date.calendar.edge.excess-argument: [error]
+date.calendar.checkpoint.complete: [ok]
