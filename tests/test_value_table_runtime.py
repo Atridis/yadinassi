@@ -78,14 +78,14 @@ class ValueTableRuntimeTests(unittest.TestCase):
             with self.assertRaises(BSLError):
                 self.vm.execute(code)
 
-    def test_bounded_compact_command_requires_fresh_owner_output(self):
+    def test_bounded_compact_command_matches_fresh_owner_output(self):
         program = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
         expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
         program, expected = table_command_checkpoint(program, expected)
         output = []
         Interpreter(output=output.append).execute(program)
-        # The compact source deliberately no longer matches the preserved research
-        # output. Only a fresh native run may replace that owner-generated blob.
-        self.assertNotEqual('\n'.join(output) + '\n', expected)
+        # Exact selected records from genuine owner commit f28dcc51; the full
+        # native suite separately compares every record without selection.
+        self.assertEqual('\n'.join(output) + '\n', expected)
         self.assertEqual(len(TABLE_COMMAND_LABELS), 8)
         self.assertLess(len(program.encode('utf-16-le')) // 2 + 1024, 32767)

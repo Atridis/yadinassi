@@ -36,7 +36,7 @@ Owner commit `e745497fc9a46d5c8b18817347010dfb6a2acbe3` supplied 146 genuine
 added 23 `types-extra.*` observations and the final marker
 `types-extra.checkpoint.complete: [ok]`.
 
-Final `values.out`: 5,736 lines, 81,485 bytes;
+Original research `values.out`: 5,736 lines, 81,485 bytes;
 Git blob `4ee5695345a6f50ffe78f35e47027c88c75a973f`;
 SHA-256 `e87c380a2b83a4d411f41b48d006bf41d0dcc66dc3b19664cebaab9c22b821d4`.
 The original 784-line Null/XML prefix and the initial 5,182-line checkpoint
@@ -104,32 +104,36 @@ are supported only for named table/column-collection receivers or direct
 Table.Columns; computed receivers with holes are rejected before evaluation.
 See the API guides for the supported signatures and remaining schema bounds.
 
-## Compact permanent regression: fresh native output required
+## Compact permanent regression: verified owner output (2026-10-19)
 
-The verified outputs above record the research checkpoint used to implement the
-runtime. The current `collections.bsl` table section and `values.bsl` type
-sections are being compacted into permanent behavioral regression observations.
-All 142 table cases remain. Fourteen invalid constructor-member chains are
-removed from the type section because valid receiver replacements already
-cover their intended behavior; separate syntax controls remain (155 retained
-type/qualifier observations).
+Signed owner commit `f28dcc51a6b631cb4a8a3526dfcdc57172efbfc6` supplied fresh
+genuine output for the compact permanent regression sources:
 
-Keep both existing `.out` files unchanged until a fresh genuine native run.
-The complete six-scenario comparator and frozen comparator must stay red for
-these changed sources; no prefix/tail exceptions or synthetic answer rewriting
-are allowed. Preserve the old evidence through its recorded immutable owner
-commits, rather than adding a second bulky archival fixture folder.
+- `collections.out`: 2,394 lines, 68,412 bytes; Git blob
+  `e1303d51f29feaf475dc253cc20ff965d7ce3570`; SHA-256
+  `50348043789521877229ffc360b5a192d7e3ec15610bda13274685653b7e0eac`.
+- `values.out`: 941 lines, 55,991 bytes; Git blob
+  `016f30d6f3bdb1a814e86a70e3bcf424383a0d27`; SHA-256
+  `bb50c5728bd570027aec834333da515ad11d45c32402c1242c824d0a5746465b`.
 
-The full comparator normalizes only outer text transport line endings. Compact
-codec string fields escape their intrinsic backslashes, CR and LF reversibly;
-those escaped characters are observed data, not transport whitespace. A fresh
-Windows run may reveal an intrinsic line-ending difference. Investigate that
-evidence before changing the model or treating it as platform-dependent; do
-not add a silent codec normalizer.
+All 142 table, 132 main type and 23 supplemental type labels are present in
+source order, with completion markers. The original 1,451-line collections and
+784-line Null/XML prefixes remain exact. Full native comparisons pass without
+prefix/tail exceptions or synthetic answer rewriting. The historical research
+outputs above remain attributable to their immutable owner commits; no second
+bulky archival fixture folder is introduced.
 
-Run the unchanged launcher on the recorded native platform and return complete
-`collections.out` and `values.out`, with completion markers and any `.err`.
-The source-to-observation coverage map below documents the compact selection.
+Fourteen redundant invalid constructor-member chains were removed; valid
+receiver replacements and separate syntax controls remain. The coverage maps
+below retain the old-label mapping. Additionally, 61 detailed mutation states
+(including 19 distinct error actions) are ordinary unit expectations, expanded
+and independently checked against original owner `195e4819` evidence before
+removing their active research-format fixture dependency.
+
+The comparator normalizes only outer text transport line endings. Escaped
+intrinsic backslashes, CR and LF inside codec fields remain observed data and
+match the fresh native records; no silent codec normalizer was added. Full
+native and frozen comparisons retain their complete-output contracts.
 
 ### ValueTable native regression coverage map
 
@@ -138,12 +142,13 @@ The source-to-observation coverage map below documents the compact selection.
 All 142 original `table.*` probe calls remain in the same order, followed by the
 same completion marker. All 70 mutation branches, all 16 typed cases and all
 independently protected error boundaries remain. The pre-ValueTable executable
-body and all old collection helpers are unchanged. No native golden is edited.
-The current genuine reference remains owner commit
+body and all old collection helpers are unchanged. The compact native reference
+is the verified `f28dcc51` output above; the original research evidence remains
+owner commit
 `195e4819794d7687eeafca89feb3d4b318355f18`, 12,988 lines, SHA-256
 `75babf916eac5b1f90defdd86f25829271f09ad1488770a00004136bf7ab2ce6`.
-The compact source requires a fresh genuine 1C run; local execution is solely a
-compile/observability check and is never a replacement golden.
+The fresh genuine compact run is now installed and passes full comparison.
+Local diagnostic output was never used as a replacement golden.
 
 #### Shared observation contracts
 
@@ -187,11 +192,10 @@ so embedded delimiters, quotes, literal escape sequences, Unicode surrogate
 escapes and actual newlines are distinguishable. Field paths come only from
 fixed test-owned field names, not arbitrary input strings.
 
-The local diagnostic replay is about 2,394 lines / 68,412 UTF-8 bytes overall
-(including the unchanged 1,451-line prefix), with maximum line length 676.
-These are implementation-run estimates, not claimed native results. Reduction
-removes duplicated semantic scaffolding and stream copies rather than merely
-joining the original 12,988 lines.
+The verified compact native output is 2,394 lines / 68,412 UTF-8 bytes overall,
+including the unchanged 1,451-line prefix. It matches the local replay in full.
+Reduction removes duplicated semantic scaffolding and stream copies rather
+than merely joining the original 12,988 lines.
 
 #### Old label to new observations
 
@@ -346,7 +350,8 @@ its retained focused observations or explicit representative codec coverage.
 `table.checkpoint.complete: [ok]` remains the independent final completion marker.
 
 ### values.bsl compact native coverage map
-This is a source-review artifact, not native output. Existing goldens are unchanged. A fresh real-1C run is required before comparing compact records.
+This is the source-review coverage map. The fresh genuine compact output from
+owner `f28dcc51` above now confirms the records by full comparison.
 #### Format and observability
 - Null/XML observers and cases remain unchanged.
 - Type records retain their labels; fields are flattened into explicit value paths. All containers retain explicit structure(count)/array(count) markers and arrays retain ordered indices; empty arrays cannot collide with a Structure named Count. Scalars retain their internal stream tags, quoting and exact contents; backslash is doubled before CR/LF become literal \r/\n. Delimiters inside quoted string streams remain quoted. No payload whitespace is removed.

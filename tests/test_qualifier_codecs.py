@@ -4,6 +4,9 @@ The committed native values.out is read-only evidence. Malformed-input and
 resource-budget tests below establish our bounded model, not new native claims.
 """
 
+from tests.native_observations import (read_observation, inverse_stream, assert_snapshot,
+                                       assert_type_inverse, assert_nested, extract_payload)
+
 from decimal import Decimal, ROUND_DOWN, Rounded, localcontext
 from pathlib import Path
 import re
@@ -92,14 +95,10 @@ class QualifierNativeCodecEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.original = NATIVE.read_bytes()
-        cls.native = cls.original.decode('utf-8-sig').replace('\r\n', '\n').replace('\r', '\n')
+        cls.native = cls.original.decode('utf-8-sig')
 
     def record(self, label):
-        matches = re.findall(r'^types\.' + re.escape(label) +
-                             r': \[(.*?)\](?=\ntypes\.|\n?\Z)',
-                             self.native, re.MULTILINE | re.DOTALL)
-        self.assertEqual(len(matches), 1, 'Missing or duplicated native record: ' + label)
-        return read(matches[0])
+        return read_observation(extract_payload(self.native, 'types.' + label))
 
     def test_all_standalone_snapshot_fields_match_native(self):
         values = {
@@ -133,20 +132,7 @@ class QualifierNativeCodecEvidenceTests(unittest.TestCase):
                 native = self.record(label)
                 kind = type_of(value)
                 restored = read(write(value))
-                actual = {
-                    'Type': kind,
-                    'TypeWrite': write(kind),
-                    'TypeRead': write(read(write(kind))),
-                    'Text': to_string(value),
-                    'Write': write(value),
-                    'ReadType': type_of(restored),
-                    'ReadWrite': write(restored),
-                    'Equal': equal(value, restored),
-                    'Nested': write(read(write(array(value)))),
-                }
-                self.assertEqual(set(native._items), {name.casefold() for name in actual})
-                for field, expected in actual.items():
-                    self.assertEqual(native.get(field), expected, (label, field))
+                assert_snapshot(self, native, value)
         self.assertEqual(NATIVE.read_bytes(), self.original)
 
     def test_native_named_type_aliases(self):

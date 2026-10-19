@@ -4,6 +4,9 @@ Malformed-shape rejection and generalized field values are our explicit bounded
 model. They are not asserted as additional native acceptance/rejection evidence.
 """
 
+from tests.native_observations import (read_observation, inverse_stream, assert_snapshot,
+                                       assert_type_inverse, assert_nested, extract_payload)
+
 from decimal import Decimal, ROUND_DOWN, Rounded, localcontext
 from itertools import combinations
 from pathlib import Path
@@ -55,14 +58,10 @@ class TypeDescriptionNativeCodecTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.original = NATIVE.read_bytes()
-        cls.native = cls.original.decode('utf-8-sig').replace('\r\n', '\n').replace('\r', '\n')
+        cls.native = cls.original.decode('utf-8-sig')
 
     def record(self, label, prefix='types'):
-        matches = re.findall(r'^' + re.escape(prefix) + r'\.' + re.escape(label) +
-                             r': \[(.*?)\](?=\n[a-zA-Z][a-zA-Z0-9.-]*:|\n?\Z)',
-                             self.native, re.MULTILINE | re.DOTALL)
-        self.assertEqual(len(matches), 1, 'Missing or duplicated native record: ' + label)
-        return read(matches[0])
+        return read_observation(extract_payload(self.native, prefix + '.' + label))
 
     def test_all_whole_description_snapshot_fields_match_native(self):
         snapshots = {
@@ -85,20 +84,7 @@ class TypeDescriptionNativeCodecTests(unittest.TestCase):
             with self.subTest(label=label):
                 native = self.record(label)
                 restored = read(write(value))
-                actual = {
-                    'Type': type_of(value),
-                    'TypeWrite': write(type_of(value)),
-                    'TypeRead': write(read(write(type_of(value)))),
-                    'Text': to_string(value),
-                    'Write': write(value),
-                    'ReadType': type_of(restored),
-                    'ReadWrite': write(restored),
-                    'Equal': equal(value, restored),
-                    'Nested': write(read(write(array(value)))),
-                }
-                self.assertEqual(set(native._items), {name.casefold() for name in actual})
-                for field, expected in actual.items():
-                    self.assertEqual(native.get(field), expected, (label, field))
+                assert_snapshot(self, native, value)
         self.assertEqual(NATIVE.read_bytes(), self.original)
 
     def test_native_type_identity_and_bilingual_names(self):
@@ -136,9 +122,19 @@ class TypeDescriptionNativeCodecTests(unittest.TestCase):
             with self.subTest(label=label):
                 self.assertEqual(write(value), native.get('Write'))
                 restored = read(native.get('Write'))
-                self.assertEqual(write(restored), native.get('ReadWrite'))
+                self.assertEqual(write(restored), inverse_stream(native))
                 self.assertIs(type_of(restored), native.get('ReadType'))
                 self.assertTrue(equal(value, restored))
+                expected_fields = {'write', 'readtype', 'numberdigits', 'numberfractiondigits',
+                                   'numbersign', 'stringlength', 'stringallowedlength',
+                                   'datefractions', 'binarylength', 'binaryallowedlength'}
+                if native.property('ReadWriteEqual'):
+                    expected_fields.add('readwriteequal')
+                    if native.get('ReadWriteEqual') is False:
+                        expected_fields.add('readwrite')
+                else:
+                    expected_fields.add('readwrite')
+                self.assertEqual(set(native._items), expected_fields)
                 for item in (value, restored):
                     n, s, d, b = (item.number_qualifiers, item.string_qualifiers,
                                   item.date_qualifiers, item.binary_data_qualifiers)

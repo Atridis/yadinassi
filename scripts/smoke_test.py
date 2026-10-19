@@ -1757,7 +1757,7 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
                                 encoding='utf-8', timeout=30)
         if result.returncode or result.stderr or result.stdout != expected:
             raise AssertionError(f'Frozen native output mismatch: {name}: {result!r}')
-    print('Binary native parity passed: all six complete owner outputs, including 784 values lines')
+    print('Binary native parity passed: all six complete owner outputs')
 
 
 def check_timezone_configuration(executable: str, *, directory: Path, env: dict) -> None:
@@ -1899,7 +1899,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
                                 cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
             raise AssertionError(f'Native table command sample mismatch {flag}: {result!r}')
-    print('Binary native collections parity passed: all 12988 owner lines including 142 table '
+    print('Binary native collections parity passed: complete owner output including 142 table '
           'observations via BOM file/stdin/console; eight exact native observations via command aliases')
 
 

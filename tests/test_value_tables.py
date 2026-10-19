@@ -1,11 +1,11 @@
-"""Core table assertions compared with the genuine native collections checkpoint."""
+"""Ordinary ValueTable regressions grounded in the genuine owner checkpoint.
+
+Expected state is independent of the active native output presentation format.
+"""
 from decimal import Decimal, Inexact, Rounded, localcontext
-from pathlib import Path
-import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi.serialization import value_from_string_internal
 from yadinassi.structures import BSLStructure
 from yadinassi.type_descriptions import BSLTypeDescription as TD
 from yadinassi.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
@@ -46,30 +46,102 @@ def plain(value):
     return value
 
 
-def fixtures():
-    source = Path("integrational_tests/output/collections.out").read_text(encoding="utf-8-sig")
-    return {m[1]: value_from_string_internal(m[2]) for m in re.finditer(
-        r'^(table\.(?:mutate|typed)\.[^:]+): \[(.*?)\](?=\n(?:table\.|$))', source, re.M | re.S)}
+# Ordinary unit expectations transcribed from owner commit
+# 195e4819794d7687eeafca89feb3d4b318355f18, collections.out table.mutate.*.
+# Original SHA-256: 75babf916eac5b1f90defdd86f25829271f09ad1488770a00004136bf7ab2ce6.
+# All 61 expanded records were checked against that genuine output before the
+# research-format fixture dependency was removed. These builders contain only
+# expected data, never ValueTable calls or a regenerated native oracle.
+_BASE_ROWS = (("row1", D(1)), ("row2", D(2)), ("row3", D(3)))
+_BASE_COLUMNS = (("Имя", "", D(0), TD()), ("Число", "", D(0), TD("Число")))
+_DEFAULT_ROW = (None, D(0))
 
 
-class ValueTableFixtureEncodingTests(unittest.TestCase):
-    def test_native_fixture_uses_explicit_utf8(self):
-        original = Path.read_text
+def expected_column(fields):
+    return dict(zip(("Name", "Title", "Width", "ValueType"), fields))
 
-        def read(path, *args, **kwargs):
-            self.assertEqual(kwargs.get("encoding"), "utf-8-sig")
-            return original(path, *args, **kwargs)
 
-        with patch.object(Path, "read_text", autospec=True, side_effect=read):
-            self.assertIn("table.typed.fixed-string", fixtures())
+def expected_table(rows=_BASE_ROWS, columns=_BASE_COLUMNS):
+    return {"Count": D(len(rows)), "Columns": [expected_column(c) for c in columns],
+            "Rows": [list(row) for row in rows]}
+
+
+def mutation_expectations():
+    """Compact baseline/deltas retain complete status, schema, rows and result."""
+    expected = {}
+    name, number = _BASE_COLUMNS
+    row1, row2, row3 = _BASE_ROWS
+
+    def cases(labels, *, rows=_BASE_ROWS, columns=_BASE_COLUMNS, result=None, status="ok"):
+        for label in labels.split():
+            if label in expected:
+                raise AssertionError(f"Duplicate expectation: {label}")
+            expected[label] = {"Status": status, "Table": expected_table(rows, columns),
+                               "Result": result}
+
+    # Same observed result does not merge the independent boundary actions.
+    cases("row-add row-insert-end row-insert-negative row-insert-past",
+          rows=(*_BASE_ROWS, _DEFAULT_ROW), result=list(_DEFAULT_ROW))
+    cases("row-insert row-insert-fraction", rows=(row1, _DEFAULT_ROW, row2, row3),
+          result=list(_DEFAULT_ROW))
+    cases("row-name-index", rows=(("renamed", D(1)), row2, row3))
+    cases("row-wrong-number row-null-number row-undefined-number load-invalid-values",
+          rows=(("row1", D(0)), row2, row3))
+    cases("row-missing-property row-index-out row-delete-past row-delete-negative "
+          "row-delete-foreign row-move-wrap row-move-negative column-add-duplicate "
+          "column-add-invalid column-add-number-name column-add-invalid-type "
+          "column-rename-duplicate column-readonly-type columns-readonly "
+          "column-delete-past column-delete-foreign column-move-wrap "
+          "fill-unknown copy-unknown-column", status="error")
+    cases("row-delete-index", rows=(row1, row3))
+    cases("row-delete-object", rows=(row2, row3))
+    cases("row-move", rows=(row2, row3, row1))
+    cases("row-clear", rows=())
+
+    new = ("Новая", "", D(0), TD())
+    titled = ("Новая", "Заголовок", D(12), TD())
+    anonymous = ("", "", D(0), TD())
+    boolean = ("Булево", "", D(0), TD("Булево"))
+    extended = tuple((*row, None) for row in _BASE_ROWS)
+    cases("column-add", rows=extended, columns=(*_BASE_COLUMNS, titled),
+          result=expected_column(titled))
+    cases("column-add-default", rows=extended, columns=(*_BASE_COLUMNS, anonymous),
+          result=expected_column(anonymous))
+    cases("column-insert", rows=tuple((row[0], None, row[1]) for row in _BASE_ROWS),
+          columns=(name, new, number), result=expected_column(new))
+    cases("column-insert-past column-insert-negative", rows=extended,
+          columns=(*_BASE_COLUMNS, new), result=expected_column(new))
+    cases("column-rename-empty", columns=(anonymous, number))
+    cases("column-negative-width", columns=(("Имя", "", D(4294967295), TD()), number))
+    numeric_rows = tuple((row[1],) for row in _BASE_ROWS)
+    cases("column-delete-name column-delete-object column-delete-index",
+          rows=numeric_rows, columns=(number,))
+    cases("column-move", rows=tuple((row[1], row[0]) for row in _BASE_ROWS),
+          columns=(number, name))
+    cases("column-clear", rows=(), columns=())
+    cases("column-add-typed-existing", rows=tuple((*row, False) for row in _BASE_ROWS),
+          columns=(*_BASE_COLUMNS, boolean), result=expected_column(boolean))
+
+    cases("fill-all", rows=((D(7), D(7)),) * 3)
+    cases("fill-selection", rows=tuple(("text", row[1]) for row in _BASE_ROWS))
+    cases("fill-empty", rows=((D(8), D(8)),) * 3)
+    cases("fill-duplicate", rows=tuple((row[0], D(9)) for row in _BASE_ROWS))
+    cases("load-short", rows=(("row1", D(7)), row2, row3))
+    cases("load-long", rows=(("row1", D(11)), ("row2", D(12)), ("row3", D(13))))
+    cases("load-object-column", rows=(("loaded", D(1)), row2, row3))
+
+    cases("copy-empty-columns", result=expected_table(rows=()))
+    cases("copy-all", result=expected_table())
+    cases("copy-columns", result=expected_table(rows=(), columns=(number, name)))
+    cases("copy-selected", result=expected_table(rows=numeric_rows, columns=(number,)))
+    cases("copy-filter", result=expected_table(rows=(row2,)))
+    cases("copy-rows", result=expected_table(rows=(row3, row1, row1)))
+    cases("copy-foreign", result=expected_table(rows=(row1,)))
+    return expected
 
 
 class ValueTableTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.native = fixtures()
-
-    def test_native_mutation_snapshots(self):
+    def test_owner_grounded_mutation_states(self):
         actions = {
             "row-add": lambda t,c,r,k: t.add(),
             "row-insert": lambda t,c,r,k: t.insert(D(1)),
@@ -133,6 +205,10 @@ class ValueTableTests(unittest.TestCase):
             "copy-foreign": lambda t,c,r,k: t.copy(array(sample().rows[0])),
             "copy-unknown-column": lambda t,c,r,k: t.copy_columns("Имя,Нет"),
         }
+        expected = mutation_expectations()
+        self.assertEqual(set(expected), set(actions))
+        self.assertEqual(len(actions), 61)
+        self.assertEqual(sum(v["Status"] == "error" for v in expected.values()), 19)
         for scenario, action in actions.items():
             with self.subTest(scenario=scenario):
                 table = sample()
@@ -141,7 +217,7 @@ class ValueTableTests(unittest.TestCase):
                     result = action(table,table.columns,table.rows[0],table.columns.items[0])
                 except (TypeError, ValueError, IndexError):
                     status = "error"
-                self.assertEqual({"Status": status,"Table": plain(table),"Result": plain(result)}, plain(self.native["table.mutate."+scenario]))
+                self.assertEqual({"Status": status,"Table": plain(table),"Result": plain(result)}, expected[scenario])
 
     def test_scalar_totals(self):
         for kind, value, assigned, total in [

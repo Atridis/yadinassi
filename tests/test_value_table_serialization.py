@@ -3,6 +3,9 @@
 Native fixtures are read only. Defensive rejection/resource tests describe
 Yadinassi's bounded subset, not additional claims about native 1C behavior.
 """
+from tests.native_observations import (read_observation, inverse_stream, assert_snapshot,
+                                       assert_type_inverse, assert_nested, extract_payload)
+
 from decimal import Decimal
 from pathlib import Path
 import re
@@ -43,14 +46,10 @@ class ValueTableNativeCodecTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.output = OUTPUT.read_text(encoding='utf-8')
+        cls.output = OUTPUT.read_bytes().decode('utf-8')
 
     def native(self, label):
-        matches = re.findall(r'^' + re.escape(label) +
-                             r': \[(.*?)\](?=\n[a-zA-Z][a-zA-Z0-9.-]*:|\n?\Z)',
-                             self.output, re.MULTILINE | re.DOTALL)
-        self.assertEqual(len(matches), 1)
-        return read(matches[0])
+        return read_observation(extract_payload(self.output, label))
 
     def test_four_types_and_standalone_streams(self):
         table = sample()
@@ -59,14 +58,8 @@ class ValueTableNativeCodecTests(unittest.TestCase):
                              ('row', table.rows[0])]:
             with self.subTest(label=label):
                 native = self.native('table.codec.' + label)
-                self.assertIs(native.get('Type'), type_of(value))
-                self.assertEqual(write(type_of(value)), native.get('TypeWrite'))
-                self.assertEqual(write(read(native.get('TypeWrite'))), native.get('TypeRead'))
-                self.assertEqual(write(value), native.get('Write'))
-                restored = read(native.get('Write'))
-                self.assertIs(type_of(restored), native.get('ReadType'))
-                self.assertEqual(write(restored), native.get('ReadWrite'))
-                self.assertEqual(write(read(write(array(value)))), native.get('Nested'))
+                assert_snapshot(self, native, value, table=True)
+                restored = read(native.get("Write"))
                 if label in ('columns', 'column', 'row'):
                     self.assertIsNone(restored)
 
@@ -89,12 +82,13 @@ class ValueTableNativeCodecTests(unittest.TestCase):
         table = sample()
         graph = array(table, table.rows[0], table.columns, table.columns.items[0])
         record = self.native('table.links.codec-object-graph').get('Extra').get('Codec')
+        assert_snapshot(self, record, graph, table=True)
         self.assertEqual(write(graph), record.get('Write'))
         restored = read(record.get('Write'))
         self.assertEqual(restored.items[1:], [None, None, None])
         self.assertIs(restored.items[0].rows[0].table, restored.items[0])
-        self.assertEqual(write(restored), record.get('ReadWrite'))
-        self.assertEqual(write(array(restored)), record.get('Nested'))
+        self.assertEqual(write(restored), inverse_stream(record))
+        assert_nested(self, record, graph)
 
 
 class ValueTableDefensiveCodecTests(unittest.TestCase):

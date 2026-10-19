@@ -1,4 +1,4 @@
-"""Compact native source pending a fresh owner run; historical evidence is immutable."""
+"""Compact native checkpoint confirmed by owner commit f28dcc51a6b631cb4a8a3526dfcdc57172efbfc6."""
 from dataclasses import fields, is_dataclass
 import hashlib
 from pathlib import Path
@@ -98,11 +98,11 @@ class ValueTableCheckpointTests(unittest.TestCase):
                          '97d7928e7c59828f916f88d4f31632e2c9bcd8f1ab57786f81ee18978246dfc1')
         output = ROOT / 'integrational_tests/output/collections.out'
         self.assertEqual(hashlib.sha256(output.read_bytes().replace(b'\r\n', b'\n')).hexdigest(),
-                         '75babf916eac5b1f90defdd86f25829271f09ad1488770a00004136bf7ab2ce6')
-        self.assertEqual(len(output.read_bytes().splitlines()), 12988)
+                         '50348043789521877229ffc360b5a192d7e3ec15610bda13274685653b7e0eac')
+        self.assertEqual(len(output.read_bytes().splitlines()), 2394)
         evidence = output.read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(evidence)).encode() + b'\0' + evidence).hexdigest(),
-                         '5a772268172b4d66c77fba033b688deafa3d6de4')
+                         'e1303d51f29feaf475dc253cc20ff965d7ce3570')
         legacy = b'\n'.join(output.read_bytes().replace(b'\r\n', b'\n').split(b'\n')[:1451]) + b'\n'
         self.assertEqual(hashlib.sha256(legacy).hexdigest(),
                          '06f0517acf577d357a2b52e6808da8d208b040025d505c143f08fc1a47f47f69')
@@ -164,12 +164,12 @@ class ValueTableCheckpointTests(unittest.TestCase):
             self.assertIn(name, helpers)
         self.assertIn('[snapshot-error]', helpers)
 
-    def test_compact_source_retains_labels_but_requires_new_native_output(self):
+    def test_compact_source_matches_owner_output_and_ordered_labels(self):
         messages = []
         Interpreter(output=messages.append).execute(source())
         actual = '\n'.join(messages) + '\n'
         expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
-        self.assertNotEqual(actual.replace('\r\n', '\n').replace('\r', '\n'), expected)
+        self.assertEqual(actual.replace('\r\n', '\n').replace('\r', '\n'), expected)
         self.assertEqual(messages[-1], FINAL)
         import re
         labels = ['table.' + c.arguments[0].value for c in calls()] + ['table.checkpoint.complete']
@@ -177,11 +177,10 @@ class ValueTableCheckpointTests(unittest.TestCase):
         self.assertEqual([line.split(': [', 1)[0] for line in messages
                           if line.startswith('table.')], labels)
 
-    def test_full_native_gate_rejects_stale_owner_output(self):
+    def test_full_native_gate_accepts_confirmed_owner_output(self):
         if __package__:
             from .test_native_outputs import NativeOutputTests
         else:
             from test_native_outputs import NativeOutputTests
         case = NativeOutputTests('test_native_outputs')
-        with self.assertRaisesRegex(AssertionError, 'collections.bsl: вывод отличается'):
-            case.compare_script(SOURCE)
+        case.compare_script(SOURCE)

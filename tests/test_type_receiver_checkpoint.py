@@ -1,4 +1,4 @@
-"""Compact receiver supplement, immutable old output, and pending native confirmation."""
+"""Compact receiver supplement confirmed by owner commit f28dcc51a6b631cb4a8a3526dfcdc57172efbfc6."""
 from pathlib import Path
 import hashlib
 import unittest
@@ -129,14 +129,17 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
         self.assertEqual(data.count(marker), 1)
         original = data.split(marker)[0] + marker
         self.assertEqual(hashlib.sha256(original).hexdigest(),
-                         '0b80e880cde1ba4a9e189e3ed1cd36e2560f27efa374b0853a839d245e3608b2')
-        self.assertEqual(len(original.splitlines()), 5182)
+                         '07f4380d7974632c74960dbb4343c5a3f30c774659f41fc63f7179d70aa0075d')
+        self.assertEqual(len(original.splitlines()), 917)
         self.assertEqual(hashlib.sha256(data).hexdigest(),
-                         'e87c380a2b83a4d411f41b48d006bf41d0dcc66dc3b19664cebaab9c22b821d4')
+                         'bb50c5728bd570027aec834333da515ad11d45c32402c1242c824d0a5746465b')
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
-                         '4ee5695345a6f50ffe78f35e47027c88c75a973f')
-        self.assertEqual(len(data), 81485)
-        self.assertEqual(len(data.splitlines()), 5736)
+                         '016f30d6f3bdb1a814e86a70e3bcf424383a0d27')
+        legacy = b'\n'.join(data.split(b'\n')[:784]) + b'\n'
+        self.assertEqual(hashlib.sha256(legacy).hexdigest(),
+                         'ca84b5219516ed4089d6e5c294d5223015013b756b951998a172728e1d39479e')
+        self.assertEqual(len(data), 55991)
+        self.assertEqual(len(data.splitlines()), 941)
         self.assertTrue(data.endswith((FINAL + '\n').encode()))
         labels = [line.decode().split(': [', 1)[0] for line in data.splitlines()
                   if line.startswith(b'types-extra.')]

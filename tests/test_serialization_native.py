@@ -5,6 +5,9 @@ records. SafeSubsetTests describes Yadinassi's defensive model; those checks do
 not claim native acceptance, rejection, cycle behavior, or resource limits.
 """
 
+from tests.native_observations import (read_observation, inverse_stream, assert_snapshot,
+                                       assert_type_inverse, assert_nested, extract_payload)
+
 from decimal import Decimal
 from pathlib import Path
 import re
@@ -122,18 +125,12 @@ class NativeEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.outputs = {
-            name: normalize_transport((OUTPUT / (name + ".out")).read_bytes().decode("utf-8"))
+            name: (OUTPUT / (name + ".out")).read_bytes().decode("utf-8")
             for name in ("numbers", "strings", "collections", "dates", "values")
         }
 
     def native(self, suite, label):
-        # Labels belong to these fixed probes. Multiline values remain intact;
-        # in particular, commas, brackets and quotes inside strings are data.
-        pattern = (r"^" + re.escape(label) +
-                   r": \[(.*?)\](?=\n[a-zA-Z][a-zA-Z0-9.-]*:|\n?\Z)")
-        matches = re.findall(pattern, self.outputs[suite], re.MULTILINE | re.DOTALL)
-        self.assertEqual(len(matches), 1, f"Missing or duplicate native record: {suite}/{label}")
-        return matches[0]
+        return extract_payload(self.outputs[suite], label)
 
     def assert_native_payload(self, suite, label, value):
         expected = self.native(suite, label + ".payload")
@@ -204,12 +201,12 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
                          set(BSLType))
         for label, value in type_family_samples():
-            snapshot = read(self.native('values', 'types.' + label))
+            snapshot = read_observation(self.native('values', 'types.' + label))
             payload = snapshot.get('TypeWrite')
             self.assertEqual(write(type_of(value)), payload)
             self.assertIs(read(payload), type_of(value))
         for label, value in table_family_samples():
-            snapshot = read(self.native('collections', 'table.codec.' + label))
+            snapshot = read_observation(self.native('collections', 'table.codec.' + label))
             self.assertEqual(write(type_of(value)), snapshot.get('TypeWrite'))
             self.assertIs(read(snapshot.get('TypeWrite')), type_of(value))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
@@ -291,14 +288,14 @@ class NativeEvidenceTests(unittest.TestCase):
                 restored = read(payload)
                 family_label = family_labels.get(type_of(value))
                 if family_label is not None:
-                    snapshot = read(self.native('values', 'types.' + family_label))
+                    snapshot = read_observation(self.native('values', 'types.' + family_label))
                     self.assertEqual(payload, snapshot.get('Write'))
-                    self.assertEqual(write(restored), snapshot.get('ReadWrite'))
+                    self.assertEqual(write(restored), inverse_stream(snapshot))
                     self.assertIs(type_of(restored), snapshot.get('ReadType'))
                 elif type_of(value) in table_labels:
-                    snapshot = read(self.native('collections', 'table.codec.' + table_labels[type_of(value)]))
+                    snapshot = read_observation(self.native('collections', 'table.codec.' + table_labels[type_of(value)]))
                     self.assertEqual(payload, snapshot.get('Write'))
-                    self.assertEqual(write(restored), snapshot.get('ReadWrite'))
+                    self.assertEqual(write(restored), inverse_stream(snapshot))
                     self.assertIs(type_of(restored), snapshot.get('ReadType'))
                 elif value is ROUND_MODES:
                     self.assertIsNone(restored)
