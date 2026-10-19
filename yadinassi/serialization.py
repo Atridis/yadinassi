@@ -26,6 +26,7 @@ _MAX_NODES = 10000
 FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
 # These are implementation resource budgets, not inferred native limits.
 _TYPE_IDS = {
+    BSLType.XML_STRING_PROCESSING_MANAGER: "8f646b4e-fc39-44c7-85a2-c2eb39cdf361",
     BSLType.NULL: "af40a278-63bc-478e-91a8-19e0d16b10b5",
     BSLType.UNDEFINED: "ee8d3e7c-f930-4a76-8aad-4ff9083a6ea6",
     BSLType.BOOLEAN: "5d4125ad-f6e7-4313-be32-f71d0ab60915",
@@ -52,7 +53,8 @@ _MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
 _CODECS = frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
                     BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
                     BSLType.ROUND_MODE, BSLType.ROUND_MODES,
-                    BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS}) | _ARRAYS | _STRUCTURES | _MAPS
+                    BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS,
+                    BSLType.XML_STRING_PROCESSING_MANAGER}) | _ARRAYS | _STRUCTURES | _MAPS
 _NUMBER = re.compile(r'[+-]?[0-9]+(?:\.[0-9]+)?')
 _COUNT = re.compile(r'0|[1-9][0-9]*')
 _HEX = frozenset('0123456789abcdef')
@@ -137,7 +139,8 @@ class _Writer:
             self.emit('{"T",' + _TYPE_IDS[value] + '}')
         elif kind in (BSLType.ROUND_MODE, BSLType.SEARCH_DIRECTION):
             self.emit('{"#",' + _TYPE_IDS[kind] + ',' + str(value.value) + '}')
-        elif kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS):
+        elif kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
+                      BSLType.XML_STRING_PROCESSING_MANAGER):
             self.emit('{"#",' + _TYPE_IDS[kind] + '}')
         else:
             identity = id(value)
@@ -312,8 +315,9 @@ class _Reader:
             return None  # Observed lowercase numeric tag; not arbitrary unknown tags.
         if (tag == '#' and len(group) == 2 and type(group[1]) is _Atom
                 and group[1].text in (_TYPE_IDS[BSLType.ROUND_MODES],
-                                      _TYPE_IDS[BSLType.SEARCH_DIRECTIONS])):
-            # Native round/search namespace probes establish Undefined on
+                                      _TYPE_IDS[BSLType.SEARCH_DIRECTIONS],
+                                      _TYPE_IDS[BSLType.XML_STRING_PROCESSING_MANAGER])):
+            # Native round/search/XML manager probes establish Undefined on
             # readback. Type records still restore the namespace identities.
             return None
         if tag not in ('T', '#') or len(group) != (2 if tag == 'T' else 3):

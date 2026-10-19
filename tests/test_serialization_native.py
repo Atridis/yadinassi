@@ -12,6 +12,7 @@ import unittest
 
 from yadinassi import Interpreter
 from yadinassi.dates import BSLDate
+from yadinassi.xml_processing import XML_STRING_PROCESSING
 from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
 from yadinassi.maps import BSLFixedMap, BSLMap
@@ -166,7 +167,8 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(to_string(Decimal("1234.5")), "1\u00a0234,5")
 
     def test_all_native_type_guids(self):
-        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL}
+        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL,
+                        BSLType.XML_STRING_PROCESSING_MANAGER}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types, set(BSLType))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
         # fail natively. Check its observed record directly, without an alias.
@@ -175,6 +177,11 @@ class NativeEvidenceTests(unittest.TestCase):
             payload = self.native('strings', label)
             self.assertEqual(write(value), payload)
             self.assertIs(read(payload), value)
+        manager_types = read(self.native('values', 'xml.manager.types'))
+        for name in ('RU', 'EN'):
+            self.assertIs(manager_types.get(name), BSLType.XML_STRING_PROCESSING_MANAGER)
+            self.assertEqual(write(manager_types.get(name)),
+                             '{"T",8f646b4e-fc39-44c7-85a2-c2eb39cdf361}')
         payload = self.native('values', 'null.type.name')
         self.assertEqual(payload, '{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}')
         self.assertEqual(write(type_by_name('Null')), payload)
@@ -228,7 +235,8 @@ class NativeEvidenceTests(unittest.TestCase):
         samples = [NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
-                   BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS]
+                   BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
+                   XML_STRING_PROCESSING]
         self.assertEqual({type_of(value) for value in samples}, set(BSLType))
         for value in samples:
             with self.subTest(kind=type_of(value)):
@@ -238,6 +246,10 @@ class NativeEvidenceTests(unittest.TestCase):
                     self.assertIsNone(restored)
                     self.assertEqual(payload, self.native("numbers", "round.namespace.payload"))
                     self.assertEqual(write(restored), self.native("numbers", "round.namespace.read.payload"))
+                elif value is XML_STRING_PROCESSING:
+                    self.assertIsNone(restored)
+                    self.assertEqual(payload, read(self.native("values", "xml.manager.write")))
+                    self.assertEqual(write(restored), self.native("values", "xml.manager.inverse"))
                 elif value is SEARCH_DIRECTIONS:
                     self.assertIsNone(restored)
                     self.assertEqual(payload, self.native('strings', 'search.enum.namespace.payload'))

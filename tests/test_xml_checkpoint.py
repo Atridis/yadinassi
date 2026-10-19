@@ -43,8 +43,8 @@ class XMLCheckpointTests(unittest.TestCase):
                          {'functions', 'strings', 'collections', 'numbers', 'dates', 'values'})
 
     def test_unique_bounded_parseable_observations(self):
-        self.assertEqual(len(calls()), 50)
-        self.assertEqual(len(expressions()), 50)
+        self.assertEqual(len(calls()), 62)
+        self.assertEqual(len(expressions()), 62)
         for call in calls():
             self.assertEqual(len(call.arguments), 2)
             label, expression = [argument.value for argument in call.arguments]
@@ -81,7 +81,7 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual(expected.count(marker), 1)
         expected = expected.split(marker, 1)[0] + marker
         self.assertEqual('\n'.join(output[:41]) + '\n', expected)
-        self.assertEqual(len(output), 92)
+        self.assertEqual(len(output), 104)
         self.assertEqual(output[-1], FINAL)
         observed = output[41:-1]
         self.assertEqual([line.split(': [', 1)[0] for line in observed],
@@ -124,6 +124,17 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertIn('-05:30', probes['date.read.offset-west'])
         self.assertIn('.12345', probes['date.read.fraction-tie'])
         self.assertIn('.99995', probes['date.read.fraction-carry'])
+
+    def test_fraction_addendum_distinguishes_rounding_without_expected_answers(self):
+        probes = expressions()
+        labels = [label for label in probes if label.startswith('date.fraction.')]
+        self.assertEqual(len(labels), 10)
+        for token in ('.4999', '.5', '.5001', '.9994', '.9995', '.9999', '.99994', '.99996'):
+            self.assertTrue(any(token + '\"' in probes[label] for label in labels), token)
+        self.assertIn('12:34:57.5', probes['date.fraction.odd-second-half'])
+        self.assertIn('23:59:59.99995', probes['date.fraction.day-carry'])
+        self.assertIn('+ 0.5', probes['date.write.half'])
+        self.assertIn('+ 0.9999', probes['date.write.near-carry'])
 
     def test_date_helper_keeps_delta_in_addition_to_coarser_codec(self):
         vm = Interpreter()
@@ -230,6 +241,9 @@ class XMLCheckpointTests(unittest.TestCase):
         # A platform without this API must still reach subsequent observations.
         output = []
         vm = Interpreter(output=output.append)
+        vm.execute("Перем ОбработкаСтрокиXML, XMLStringProcessing;")
+        vm.variables["обработкастрокиxml"] = BSLObject()
+        vm.variables["xmlstringprocessing"] = BSLObject()
         vm.execute(helpers() + '''
 НаблюдатьXML("unavailable", "ОчисткаXML(ГраницыXML(), ""1.0"")");
 НаблюдатьXML("following", "XMLString(True)");

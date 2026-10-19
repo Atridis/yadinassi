@@ -225,4 +225,17 @@
 НаблюдатьXML("clean.nonstring", "XMLStringProcessing.DeleteDisallowedXMLCharacters(123, ""1.0"")");
 НаблюдатьXML("clean.undefined-version", "XMLStringProcessing.DeleteDisallowedXMLCharacters(""text"", Undefined)");
 
+// Уточнение округления XML-даты: ответы первого прогона не различают алгоритмы.
+НаблюдатьXML("date.fraction.below-half", "ПрочитатьДатуXML(""2024-02-29T12:34:56.4999"")");
+НаблюдатьXML("date.fraction.half", "ПрочитатьДатуXML(""2024-02-29T12:34:56.5"")");
+НаблюдатьXML("date.fraction.above-half", "ПрочитатьДатуXML(""2024-02-29T12:34:56.5001"")");
+НаблюдатьXML("date.fraction.below-millisecond-carry", "ПрочитатьДатуXML(""2024-02-29T12:34:56.9994"")");
+НаблюдатьXML("date.fraction.millisecond-carry-tie", "ПрочитатьДатуXML(""2024-02-29T12:34:56.9995"")");
+НаблюдатьXML("date.fraction.four-digit-carry", "ПрочитатьДатуXML(""2024-02-29T12:34:56.9999"")");
+НаблюдатьXML("date.fraction.below-tick-carry", "ПрочитатьДатуXML(""2024-02-29T12:34:56.99994"")");
+НаблюдатьXML("date.fraction.above-tick-carry", "ПрочитатьДатуXML(""2024-02-29T12:34:56.99996"")");
+НаблюдатьXML("date.fraction.odd-second-half", "ПрочитатьДатуXML(""2024-02-29T12:34:57.5"")");
+НаблюдатьXML("date.fraction.day-carry", "ПрочитатьДатуXML(""2024-02-29T23:59:59.99995"")");
+НаблюдатьXML("date.write.half", "XMLString(Date(2024,2,29,12,34,56) + 0.5)");
+НаблюдатьXML("date.write.near-carry", "XMLString(Date(2024,2,29,12,34,56) + 0.9999)");
 Сообщить("xml.checkpoint.complete: [ok]");

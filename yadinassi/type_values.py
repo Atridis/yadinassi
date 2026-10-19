@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from .dates import BSLDate
+from .xml_processing import BSLXMLStringProcessingManager
 
 from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode, BSLRoundModes
@@ -12,6 +13,7 @@ from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
 
 
 _VALUE_TYPES = (
+    (BSLXMLStringProcessingManager, BSLType.XML_STRING_PROCESSING_MANAGER, "XMLStringProcessingManager"),
     (BSLNull, BSLType.NULL, "Null"),
     (type(None), BSLType.UNDEFINED, "Undefined"),
     (bool, BSLType.BOOLEAN, "Boolean"),
