@@ -1561,11 +1561,41 @@ def check_clocks(executable: str, *, directory: Path, env: dict) -> None:
           'BOM, imports, command flags, stdin, console, and error recovery')
 
 
+def null_checkpoint_source(program: str) -> str:
+    """Select the owner-confirmed Null helpers/body from the growing values suite."""
+    body_start = '// Значение, тип и настоящий прямой/обратный кодек.'
+    xml_helpers_start = '// Нативный checkpoint скалярного XML.'
+    final = 'Сообщить("null.checkpoint.complete: [ok]");'
+    if program.count(body_start) != 1 or program.count(final) != 1:
+        raise AssertionError('Expected unique Null checkpoint body and completion marker')
+    helpers, _, body = program.partition(body_start)
+    if final not in body:
+        raise AssertionError('Null completion marker must follow its body')
+    # Later thematic helpers belong before the common executable body, but must
+    # not participate in replaying the original native-confirmed observations.
+    if helpers.count(xml_helpers_start) > 1:
+        raise AssertionError('Expected at most one scalar XML helper boundary')
+    helpers = helpers.partition(xml_helpers_start)[0]
+    body = body.partition(final)[0]
+    return helpers + body_start + body + final + '\n'
+
+
+def null_checkpoint_output(output: str) -> str:
+    """Keep the complete original native Null output when later themes are appended."""
+    markers = list(re.finditer(r'^null\.checkpoint\.complete: \[ok\](?:\n|\Z)',
+                              output, re.MULTILINE))
+    if len(markers) != 1:
+        raise AssertionError('Expected one native Null completion marker')
+    return output[:markers[0].end()]
+
+
 def check_null(executable: str, *, directory: Path, env: dict) -> None:
     """Replay owner Null output through each frozen input, then recovery/imports."""
     directory.mkdir()
-    program = (ROOT / "integrational_tests/tests/values.bsl").read_text(encoding="utf-8")
-    expected = (ROOT / "integrational_tests/output/values.out").read_text(encoding="utf-8")
+    program = null_checkpoint_source(
+        (ROOT / "integrational_tests/tests/values.bsl").read_text(encoding="utf-8-sig"))
+    expected = null_checkpoint_output(
+        (ROOT / "integrational_tests/output/values.out").read_text(encoding="utf-8-sig"))
     source = directory / 'СпециальныеЗначения.bsl'
     source.write_text(program, encoding='utf-8-sig')
     cases = [([flag, program], None) for flag in ('-c', '-с', '--command')]
@@ -1603,6 +1633,61 @@ def check_null(executable: str, *, directory: Path, env: dict) -> None:
     print('Binary Null passed: all 40 native observations, true inverse codec, BOM, '
           'command aliases, stdin, console, imported defaults and recovery')
 
+
+def xml_checkpoint_labels(program: str) -> list[str]:
+    """Read ordered packaging labels without inventing native XML results."""
+    body_start = '// Скалярный XML: наблюдения без заранее заданных ответов.'
+    final = 'Сообщить("xml.checkpoint.complete: [ok]");'
+    if program.count(body_start) != 1 or program.count(final) != 1:
+        raise AssertionError('Expected unique scalar XML body and completion marker')
+    body = program.partition(body_start)[2]
+    if final not in body:
+        raise AssertionError('Scalar XML completion marker must follow its body')
+    labels = re.findall(r'^НаблюдатьXML\("([a-z0-9.-]+)", ',
+                        body.partition(final)[0], re.MULTILINE)
+    if len(labels) != 47 or len(set(labels)) != 47:
+        raise AssertionError('Expected 47 unique scalar XML observation labels')
+    return ['xml.' + label for label in labels]
+
+
+def validate_xml_checkpoint_output(output: str, expected_null: str, labels: list[str]) -> None:
+    """Validate ordered observation frames while allowing multiline codec payloads."""
+    expected_null = null_checkpoint_output(expected_null)
+    if not output.startswith(expected_null):
+        raise AssertionError('Scalar XML checkpoint changed the original native Null output')
+    body = output[len(expected_null):]
+    frames = list(re.finditer(r'^(xml\.[a-z0-9.-]+): \[', body, re.MULTILINE))
+    if (len(set(labels)) != len(labels) or not frames or frames[0].start() != 0
+            or [frame[1] for frame in frames] != labels + ['xml.checkpoint.complete']):
+        raise AssertionError('Scalar XML observation frames are missing, duplicated or out of order')
+    for frame, following in zip(frames, frames[1:]):
+        # Do not inspect payload values: array/structure codecs contain newlines,
+        # and actual native XML semantics are still awaiting owner observations.
+        if not body[frame.start():following.start()].endswith(']\n'):
+            raise AssertionError(f'Unclosed scalar XML observation frame: {frame[1]}')
+    if body[frames[-1].start():] != 'xml.checkpoint.complete: [ok]\n':
+        raise AssertionError('Scalar XML checkpoint must end at its completion marker')
+
+
+def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
+    """Check scalar XML observation packaging, never unconfirmed native payloads."""
+    directory.mkdir()
+    program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
+    labels = xml_checkpoint_labels(program)
+    expected_null = null_checkpoint_output(
+        (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig'))
+    source = directory / 'СкалярныйXML.bsl'
+    source.write_text(program, encoding='utf-8-sig')
+    for arguments, stdin in [([str(source)], None), (['-c', program], None), (['-'], program)]:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if result.returncode != 0 or result.stderr:
+            raise AssertionError(f'Failed scalar XML checkpoint packaging {arguments!r}: {result!r}')
+        validate_xml_checkpoint_output(result.stdout, expected_null, labels)
+    print('Binary scalar XML checkpoint packaging passed: 47 ordered observations, '
+          'completion marker, BOM, command and stdin; native XML results remain pending')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -1622,6 +1707,7 @@ def main() -> None:
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
         check_clocks(executable, directory=Path(temporary) / "clocks", env=env)
         check_null(executable, directory=Path(temporary) / "null", env=env)
+        check_xml_checkpoint(executable, directory=Path(temporary) / "xml-checkpoint", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)

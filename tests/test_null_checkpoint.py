@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 
 from integrational_tests.test_launcher import collect_scripts
+from scripts.smoke_test import null_checkpoint_source
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse
 
@@ -12,7 +13,9 @@ FINAL = 'null.checkpoint.complete: [ok]'
 
 
 def source():
-    return SOURCE.read_text(encoding='utf-8-sig')
+    # XML and future thematic observations have their own packaging guards.
+    # Keep these assertions scoped to the original owner-confirmed Null block.
+    return null_checkpoint_source(SOURCE.read_text(encoding='utf-8-sig'))
 
 
 def calls():
@@ -32,6 +35,33 @@ def helper():
 
 
 class NullCheckpointTests(unittest.TestCase):
+    def test_null_extraction_ignores_other_helpers_and_appended_observations(self):
+        original = source()
+        body_start = '// Значение, тип и настоящий прямой/обратный кодек.'
+        helpers, _, body = original.partition(body_start)
+        extended = helpers + '''// Нативный checkpoint скалярного XML.
+Процедура НаблюдатьXML(Знач Выражение)
+    Сообщить(Вычислить(Выражение));
+КонецПроцедуры
+
+''' + body_start + body + '''
+// Скалярный XML: наблюдения без заранее заданных ответов.
+НаблюдатьXML("NoSuchFunction()");
+Сообщить("xml.checkpoint.complete: [ok]");
+'''
+        self.assertEqual(null_checkpoint_source(extended), original)
+
+    def test_null_extraction_requires_unique_ordered_boundaries(self):
+        original = source()
+        body_start = '// Значение, тип и настоящий прямой/обратный кодек.'
+        final = 'Сообщить("' + FINAL + '");'
+        malformed = [original.replace(body_start, ''), original + body_start,
+                     original.replace(final, ''), original + final,
+                     final + original.replace(final, '')]
+        for program in malformed:
+            with self.subTest(program=program), self.assertRaises(AssertionError):
+                null_checkpoint_source(program)
+
     def test_discovery_keeps_five_existing_scenarios_and_adds_values(self):
         self.assertEqual({p.name for p in collect_scripts(SOURCE.parent)},
                          {name + '.bsl' for name in
