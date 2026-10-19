@@ -25,3 +25,6 @@ include = ["yadinassi*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "yadinassi.__version__"}
+
+[tool.setuptools.package-data]
+yadinassi = ["data/*.txt"]

@@ -1,7 +1,8 @@
 """Bounded ValueTable operations evidenced by collections.out's table checkpoint.
 
-Budgets are Yadinassi limits, not native platform limits. Sorting, grouping,
-indexes and unprobed foreign-row schemas deliberately remain unsupported.
+Budgets are Yadinassi limits, not native platform limits. Sort and GroupBy
+use bounded native-backed helpers; indexes and unprobed foreign-row schemas
+deliberately remain unsupported.
 """
 from decimal import Decimal, localcontext
 
@@ -233,7 +234,10 @@ class BSLValueTableRow(BSLObject):
             raise ValueError("Строка таблицы удалена")
 
     def __iter__(self):
-        self._live()
+        # Native detached rows enumerate their still-live owner table, even
+        # though Owner/Get/member access remains invalid.
+        if self._deleted:
+            return iter(self.table.rows)
         return iter([self.cells[c] for c in self.table.columns.items])
 
     def owner(self):
@@ -401,6 +405,14 @@ class BSLValueTable(BSLObject):
             ctx.Emin = -999999
             return sum(values[1:], values[0])
 
+    def sort(self, columns, comparator=None):
+        from .value_table_sort import sort_table
+        return sort_table(self, columns, comparator)
+
+    def group_by(self, grouping_columns, totaling_columns=None):
+        from .value_table_group import group_by
+        return group_by(self, grouping_columns, totaling_columns)
+
     def copy_columns(self, columns=None):
         result = BSLValueTable()
         for column in self._selection(columns):
@@ -440,6 +452,10 @@ class BSLValueTable(BSLObject):
         return super().get_member(name)
 
     def get_method(self, name):
+        if name.casefold() in ("sort", "сортировать"):
+            return HostFunction(name, self.sort, returns_value=False)
+        if name.casefold() in ("groupby", "свернуть"):
+            return HostFunction(name, self.group_by, returns_value=False)
         return _method(name, {"count": lambda: Decimal(len(self.rows)), "количество": lambda: Decimal(len(self.rows)),
             "get": self.get, "получить": self.get, "indexof": self.index_of, "индекс": self.index_of,
             "add": self.add, "добавить": self.add, "insert": self.insert, "вставить": self.insert,
