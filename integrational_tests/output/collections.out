@@ -2391,4 +2391,391 @@ table.links.unload-sharing: [
   After.Rows=[[[{"N",1}; {"N",2}]; {"N",1}]; [{"S","row2"}; {"N",2}]; [{"S","row3"}; {"N",3}]]
   Extra={"N",2}
 ]
+table.ops.sort.ascending: [
+  Status={"S","ok"}
+  Order=[{"N",2}; {"N",4}; {"N",6}; {"N",1}; {"N",3}; {"N",5}]
+  FirstIndex={"N",3}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.descending: [
+  Status={"S","ok"}
+  Order=[{"N",1}; {"N",3}; {"N",5}; {"N",2}; {"N",4}; {"N",6}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.multi: [
+  Status={"S","ok"}
+  Order=[{"N",2}; {"N",4}; {"N",6}; {"N",5}; {"N",1}; {"N",3}]
+  FirstIndex={"N",4}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.russian: [
+  Status={"S","ok"}
+  Order=[{"N",1}; {"N",3}; {"N",5}; {"N",4}; {"N",6}; {"N",2}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.case-space: [
+  Status={"S","ok"}
+  Order=[{"N",1}; {"N",3}; {"N",5}; {"N",4}; {"N",6}; {"N",2}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.duplicate: [
+  Status={"S","ok"}
+  Order=[{"N",2}; {"N",4}; {"N",6}; {"N",1}; {"N",3}; {"N",5}]
+  FirstIndex={"N",3}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.empty-order: [
+  Status={"S","error"}
+  Order=[{"N",1}; {"N",2}; {"N",3}; {"N",4}; {"N",5}; {"N",6}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.unknown: [
+  Status={"S","error"}
+  Order=[{"N",1}; {"N",2}; {"N",3}; {"N",4}; {"N",5}; {"N",6}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.bad-direction: [
+  Status={"S","ok"}
+  Order=[{"N",2}; {"N",4}; {"N",6}; {"N",1}; {"N",3}; {"N",5}]
+  FirstIndex={"N",3}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.empty-item: [
+  Status={"S","ok"}
+  Order=[{"N",4}; {"N",6}; {"N",2}; {"N",1}; {"N",3}; {"N",5}]
+  FirstIndex={"N",3}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.trailing-comma: [
+  Status={"S","ok"}
+  Order=[{"N",2}; {"N",4}; {"N",6}; {"N",1}; {"N",3}; {"N",5}]
+  FirstIndex={"N",3}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.wrong-order-type: [
+  Status={"S","error"}
+  Order=[{"N",1}; {"N",2}; {"N",3}; {"N",4}; {"N",5}; {"N",6}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.undefined-comparator: [
+  Status={"S","ok"}
+  Order=[{"N",2}; {"N",4}; {"N",6}; {"N",1}; {"N",3}; {"N",5}]
+  FirstIndex={"N",3}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.invalid-comparator: [
+  Status={"S","error"}
+  Order=[{"N",1}; {"N",2}; {"N",3}; {"N",4}; {"N",5}; {"N",6}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.empty: [
+  Status={"S","ok"}
+  Order=[]
+  FirstIndex={"U"}
+  FirstID={"U"}
+  SameRow={"U"}
+]
+table.ops.sort.locale-asc: [
+  Status={"S","ok"}
+  Order=[{"N",14}; {"N",15}; {"N",6}; {"N",7}; {"N",9}; {"N",8}; {"N",10}; {"N",11}; {"N",12}; {"N",13}; {"N",2}; {"N",4}; {"N",3}; {"N",5}; {"N",1}; {"N",17}; {"N",16}]
+  FirstIndex={"N",14}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.locale-desc: [
+  Status={"S","ok"}
+  Order=[{"N",16}; {"N",1}; {"N",17}; {"N",3}; {"N",5}; {"N",2}; {"N",4}; {"N",13}; {"N",12}; {"N",11}; {"N",10}; {"N",8}; {"N",6}; {"N",7}; {"N",9}; {"N",15}; {"N",14}]
+  FirstIndex={"N",1}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.mixed-asc: [
+  Status={"S","ok"}
+  Order=[{"N",4}; {"N",12}; {"N",6}; {"N",11}; {"N",7}; {"N",3}; {"N",13}; {"N",8}; {"N",2}; {"N",14}; {"N",9}; {"N",1}; {"N",15}; {"N",10}; {"N",5}]
+  FirstIndex={"N",11}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.mixed-desc: [
+  Status={"S","ok"}
+  Order=[{"N",5}; {"N",10}; {"N",1}; {"N",15}; {"N",9}; {"N",2}; {"N",14}; {"N",8}; {"N",3}; {"N",13}; {"N",7}; {"N",6}; {"N",11}; {"N",4}; {"N",12}]
+  FirstIndex={"N",2}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.objects: [
+  Status={"S","ok"}
+  Order=[{"N",2}; {"N",4}; {"N",1}; {"N",3}; {"N",6}; {"N",5}]
+  FirstIndex={"N",2}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.group.basic: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",6}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",5}]]
+]
+table.ops.group.multi: [
+  Status={"S","ok"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}]; [{"S","A"}; {"S","x"}; {"N",3}]; [{"S","B"}; {"S","y"}; {"N",4}]; [{"S","C"}; {"S","x"}; {"N",5}]]
+]
+table.ops.group.russian: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",6}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",5}]]
+]
+table.ops.group.group-only: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}]
+  After.Rows=[[{"S","B"}]; [{"S","A"}]; [{"S","C"}]]
+]
+table.ops.group.total-only: [
+  Status={"S","ok"}
+  After.Count={"N",1}
+  After.Names=[{"S","Amount"}]
+  After.Rows=[[{"N",14}]]
+]
+table.ops.group.no-columns: [
+  Status={"S","ok"}
+  After.Count={"N",0}
+  After.Names=[]
+  After.Rows=[]
+]
+table.ops.group.empty: [
+  Status={"S","ok"}
+  After.Count={"N",0}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[]
+]
+table.ops.group.empty-total-only: [
+  Status={"S","ok"}
+  After.Count={"N",0}
+  After.Names=[{"S","Amount"}]
+  After.Rows=[]
+]
+table.ops.group.reordered-schema: [
+  Status={"S","ok"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}]; [{"S","A"}; {"S","x"}; {"N",3}]; [{"S","B"}; {"S","y"}; {"N",4}]; [{"S","C"}; {"S","x"}; {"N",5}]]
+]
+table.ops.group.spaces: [
+  Status={"S","ok"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}]; [{"S","A"}; {"S","x"}; {"N",3}]; [{"S","B"}; {"S","y"}; {"N",4}]; [{"S","C"}; {"S","x"}; {"N",5}]]
+]
+table.ops.group.duplicate-group: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",6}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",5}]]
+]
+table.ops.group.duplicate-total: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",6}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",5}]]
+]
+table.ops.group.overlap: [
+  Status={"S","error"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}; {"S","Discard"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}; {"N",1}]; [{"S","A"}; {"S","x"}; {"N",3}; {"N",2}]; [{"S","B"}; {"S","y"}; {"N",4}; {"N",3}]; [{"S","C"}; {"S","x"}; {"N",5}; {"N",4}]]
+]
+table.ops.group.unknown-group: [
+  Status={"S","error"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}; {"S","Discard"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}; {"N",1}]; [{"S","A"}; {"S","x"}; {"N",3}; {"N",2}]; [{"S","B"}; {"S","y"}; {"N",4}; {"N",3}]; [{"S","C"}; {"S","x"}; {"N",5}; {"N",4}]]
+]
+table.ops.group.unknown-total: [
+  Status={"S","error"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}; {"S","Discard"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}; {"N",1}]; [{"S","A"}; {"S","x"}; {"N",3}; {"N",2}]; [{"S","B"}; {"S","y"}; {"N",4}; {"N",3}]; [{"S","C"}; {"S","x"}; {"N",5}; {"N",4}]]
+]
+table.ops.group.empty-group-item: [
+  Status={"S","ok"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}]; [{"S","A"}; {"S","x"}; {"N",3}]; [{"S","B"}; {"S","y"}; {"N",4}]; [{"S","C"}; {"S","x"}; {"N",5}]]
+]
+table.ops.group.wrong-group-type: [
+  Status={"S","ok"}
+  After.Count={"N",1}
+  After.Names=[{"S","Amount"}]
+  After.Rows=[[{"N",14}]]
+]
+table.ops.group.undefined-total: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}]
+  After.Rows=[[{"S","B"}]; [{"S","A"}]; [{"S","C"}]]
+]
+table.ops.group.references: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",6}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",5}]]
+  First.Owner={"B",1}
+  First.Index={"N",0}
+  First.Cells=[{"S","B"}; {"N",6}]
+  First.Key={"S","B"}
+  First.Amount={"N",6}
+  First.Discard={"S","[error]"}
+  First.SameRow={"B",1}
+  Third.Owner={"S","[error]"}
+  Third.Index={"N",-1}
+  Third.Cells=[{"#",ac6bbae9-9a0f-4ec9-be2a-d9b1caa4eb36}; {"#",ac6bbae9-9a0f-4ec9-be2a-d9b1caa4eb36}; {"#",ac6bbae9-9a0f-4ec9-be2a-d9b1caa4eb36}]
+  Third.Key={"S","[error]"}
+  Third.Amount={"S","[error]"}
+  Third.Discard={"S","[error]"}
+  Third.SameRow={"B",0}
+  Second.Owner={"B",1}
+  Second.Index={"N",1}
+  Second.Cells=[{"S","A"}; {"N",3}]
+  Second.Key={"S","A"}
+  Second.Amount={"N",3}
+  Second.Discard={"S","[error]"}
+  Second.SameRow={"B",1}
+  Schema=[{{"S","Name"}={"S","Key"}; {"S","Title"}={"S","Key title"}; {"S","Width"}={"N",12}; {"S","ValueType"}={"#",f5c65050-3bbb-11d5-b988-0050bae0a95d,\n{"Pattern"}\n}}; {{"S","Name"}={"S","Amount"}; {"S","Title"}={"S","Amount title"}; {"S","Width"}={"N",9}; {"S","ValueType"}={"#",f5c65050-3bbb-11d5-b988-0050bae0a95d,\n{"Pattern"}\n}}]
+  KeyIndex={"N",0}
+  AmountIndex={"N",1}
+  RemovedIndex={"N",4294967295}
+  RemovedName={"S",""}
+  Write={"S","ok"}
+  AfterWrite.Count={"N",3}
+  AfterWrite.Names=[{"S","Key"}; {"S","Amount"}]
+  AfterWrite.Rows=[[{"S","changed"}; {"N",6}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",5}]]
+]
+table.ops.group.null-undefined: [
+  Status={"S","ok"}
+  After.Count={"N",2}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"L"}; {"N",6}]; [{"U"}; {"N",8}]]
+]
+table.ops.group.case: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","a"}; {"N",2}]; [{"S","A"}; {"N",8}]; [{"S","a "}; {"N",4}]]
+]
+table.ops.group.mixed-keys: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"N",1}; {"N",7}]; [{"S","1"}; {"N",3}]; [{"B",1}; {"N",4}]]
+]
+table.ops.group.number: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",6}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",5}]]
+]
+table.ops.group.qualified: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",99}]; [{"S","A"}; {"N",99}]; [{"S","C"}; {"N",99}]]
+  SameColumn={"B",1}
+  ColumnType=[{"T",b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec}]
+  Digits={"N",2}
+  FractionDigits={"N",0}
+]
+table.ops.group.string: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"S","6"}]; [{"S","A"}; {"S","3"}]; [{"S","C"}; {"S","5"}]]
+]
+table.ops.group.bad-string: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"S","2"}]; [{"S","A"}; {"S","3"}]; [{"S","C"}; {"S","5"}]]
+]
+table.ops.group.boolean: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"B",1}]; [{"S","A"}; {"B",0}]; [{"S","C"}; {"B",1}]]
+]
+table.ops.group.date: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"D",00010101000000}]; [{"S","A"}; {"D",20240102000000}]; [{"S","C"}; {"D",20240104000000}]]
+]
+table.ops.group.multi-number: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",2}]; [{"S","A"}; {"N",3}]; [{"S","C"}; {"N",0}]]
+]
+table.ops.group.multi-no-number: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"S","0"}]; [{"S","A"}; {"S","0"}]; [{"S","C"}; {"S","0"}]]
+]
+table.ops.group.untyped-mixed: [
+  Status={"S","ok"}
+  After.Count={"N",3}
+  After.Names=[{"S","Key"}; {"S","Amount"}]
+  After.Rows=[[{"S","B"}; {"N",2}]; [{"S","A"}; {"N",0}]; [{"S","C"}; {"N",0}]]
+]
+table.ops.sort.missing-order: [
+  Status={"S","error"}
+  Order=[{"N",1}; {"N",2}; {"N",3}; {"N",4}; {"N",5}; {"N",6}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.sort.singleton: [
+  Status={"S","ok"}
+  Order=[{"N",1}]
+  FirstIndex={"N",0}
+  FirstID={"N",1}
+  SameRow={"B",1}
+]
+table.ops.group.numeric-group: [
+  Status={"S","error"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}; {"S","Discard"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}; {"N",1}]; [{"S","A"}; {"S","x"}; {"N",3}; {"N",2}]; [{"S","B"}; {"S","y"}; {"N",4}; {"N",3}]; [{"S","C"}; {"S","x"}; {"N",5}; {"N",4}]]
+]
+table.ops.group.numeric-total: [
+  Status={"S","error"}
+  After.Count={"N",4}
+  After.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}; {"S","Discard"}]
+  After.Rows=[[{"S","B"}; {"S","x"}; {"N",2}; {"N",1}]; [{"S","A"}; {"S","x"}; {"N",3}; {"N",2}]; [{"S","B"}; {"S","y"}; {"N",4}; {"N",3}]; [{"S","C"}; {"S","x"}; {"N",5}; {"N",4}]]
+]
+table.ops.checkpoint.complete: [ok]
 table.checkpoint.complete: [ok]
