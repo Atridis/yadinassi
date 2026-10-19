@@ -4378,7 +4378,7 @@ UUID, кодек, доступность и поведение квалифиц�
 
 Владелец предоставил `Get-TimeZone`: `Central European Standard Time`,
 BaseUtcOffset `01:00:00`, SupportsDaylightSavingTime `True`, отображаемые города
-Варшава, Загреб, Сараево, Скопье. Данные записаны в `integrational_tests/meta.md`.
+Варшава, Загреб, Сараево, Скопье. Данные записаны в [docs/native-testing.md](docs/native-testing.md#xml-checkpoint-timezone-2026-10-19).
 [CLDR release-48](https://github.com/unicode-org/cldr/blob/release-48/common/supplemental/windowsZones.xml)
 сопоставляет именно этот Windows ID с `Europe/Warsaw` для территории `001`.
 Похожее `Central Europe Standard Time` — другой идентификатор.
@@ -4644,7 +4644,7 @@ Launcher исполняет тест через `&НаСервереБезКон
 квалификаторов удалены только 14 невалидных цепочек `New(...).member`,
 которые уже заменены проверками через переменные; отдельные синтаксические
 контроли сохраняются. Подробная карта покрытия находится в
-[integrational_tests/meta.md](integrational_tests/meta.md).
+[docs/native-testing.md](docs/native-testing.md#valuetable-native-regression-coverage-map).
 
 Новые настоящие результаты получены в подписанном owner commit
 `f28dcc51a6b631cb4a8a3526dfcdc57172efbfc6`: `collections.out` — 2 394 строки,
@@ -4652,7 +4652,7 @@ Launcher исполняет тест через `&НаСервереБезКон
 132 `types.*` и 23 `types-extra.*` наблюдения идут в порядке исходников;
 старые префиксы из 1 451 и 784 строк сохранены точно. Полное нативное сравнение
 проходит, без исключений для хвоста или нормализации данных внутренних потоков.
-Хеши и Git blob обоих файлов записаны в `integrational_tests/meta.md`.
+Хеши и Git blob обоих файлов записаны в [docs/native-testing.md](docs/native-testing.md#compact-permanent-regression-verified-owner-output-2026-10-19).
 
 Исследовательские результаты сохранены в исходных owner commits и картах
 покрытия, без второго архивного каталога эталонов. Для 61 операции таблицы

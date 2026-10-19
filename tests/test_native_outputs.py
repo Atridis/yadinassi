@@ -66,7 +66,7 @@ class NativeOutputTests(unittest.TestCase):
         environment["PYTHONIOENCODING"] = "utf-8"
         # Replay the owner-confirmed Windows timezone using its CLDR mapping.
         # Only execution context changes; every native output byte is compared.
-        # See integrational_tests/meta.md; never inherit a CI host timezone.
+        # See docs/native-testing.md; never inherit a CI host timezone.
         environment["YADINASSI_TIMEZONE"] = "Europe/Warsaw"
         try:
             result = subprocess.run(
