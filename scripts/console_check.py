@@ -131,6 +131,18 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
              'Message("date-type=" + (TypeOf(dateValue) = Тип("Дата")));\n')
         expect('date-alias={"D",20240229123456}')
         expect('date-type=Да')
+        send(">>> ", 'calendarDate = ДобавитьМесяц(\n')
+        send("... ", 'Date(2024,1,31,12,34,56) + 0.1234, 1);\n')
+        send(">>> ", 'Message("calendar-month=" + ValueToStringInternal(calendarDate)); '
+             'Message("calendar-end=" + ValueToStringInternal(EndOfMonth(calendarDate))); '
+             'Message("calendar-week=" + ValueToStringInternal(НеделяГода(Date(2016,1,4))));\n')
+        expect('calendar-month={"D",20240229123456}')
+        expect('calendar-end={"D",20240229235959}')
+        expect('calendar-week={"N",2}')
+        send(">>> ", 'calendarDate = String(AddMonth(Date(1,1,1),-1));\n')
+        expect('после выхода за диапазон известно только скалярное')
+        send(">>> ", 'Message("calendar-recovered=" + ValueToStringInternal(calendarDate));\n')
+        expect('calendar-recovered={"D",20240229123456}')
         send(">>> ", 'целая = цЕл(-12.99); Message("int-value=" + ValueToStringInternal(целая));\n')
         expect('int-value={"N",-12}')
         send(">>> ", 'целая = Int(Undefined);\n')
@@ -543,10 +555,10 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data.decode("utf-8"))
         if code != 1 or "Traceback" in output or "^[[D" in output:
             raise AssertionError(f"Console failed ({code}): {output}")
-        if (output.count('<консоль>:1:') != 26
+        if (output.count('<консоль>:1:') != 27
                 or output.count('Дата: ожидается строка или 3 либо 6 числовых компонентов') != 1
                 or output.count('Перенос строки в литерале даты не поддерживается') != 1
-                or output.count('после выхода за диапазон известно только скалярное') != 1
+                or output.count('после выхода за диапазон известно только скалярное') != 2
                 or output.count('ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi') != 1
                 or output.count('СтрШаблон: очень много параметров') != 1
                 or output.count('строка поиска не должна быть пустой') != 1
@@ -565,7 +577,11 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (('date-edited={"D",20240229123456}', 1),
+        for message, count in (('calendar-month={"D",20240229123456}', 1),
+                               ('calendar-end={"D",20240229235959}', 1),
+                               ('calendar-week={"N",2}', 1),
+                               ('calendar-recovered={"D",20240229123456}', 1),
+                               ('date-edited={"D",20240229123456}', 1),
                                ('date-ticks={"N",0.0002}', 1), ('date-codec={"N",0}', 1),
                                ('date-default={"D",20240229123456}', 1), ('date-caught', 1),
                                ('date-recovered={"N",0.0002}', 1),

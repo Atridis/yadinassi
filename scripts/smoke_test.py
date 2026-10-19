@@ -64,7 +64,50 @@ for _english, _russian, _value in [('Year', 'Год', 2024), ('Month', 'Меся
     DATE_EXAMPLES += [(f'{name}(baseDate)', '{"N",' + str(_value) + '}')
                      for name in (_english, _russian)]
 
+# Whole-second values and numbering below are observed in the owner's 48-case
+# calendar append. Numeric deltas witness fractions that the D codec discards.
+for _unit, _suffix, _begin, _end in (
+        ('Minute', 'Минуты', '20240229123400', '20240229123459'),
+        ('Hour', 'Часа', '20240229120000', '20240229125959'),
+        ('Day', 'Дня', '20240229000000', '20240229235959'),
+        ('Week', 'Недели', '20240226000000', '20240303235959'),
+        ('Month', 'Месяца', '20240201000000', '20240229235959'),
+        ('Quarter', 'Квартала', '20240101000000', '20240331235959'),
+        ('Year', 'Года', '20240101000000', '20241231235959')):
+    for _name, _value in (('BegOf' + _unit, _begin), ('Начало' + _suffix, _begin),
+                          ('EndOf' + _unit, _end), ('Конец' + _suffix, _end)):
+        DATE_EXAMPLES += [(f'{_name}(baseDate + 0.1234)', '{"D",' + _value + '}'),
+                          (f'{_name}(baseDate + 0.1234) - Date("{_value}")', '{"N",0}')]
+for _name in ('AddMonth', 'ДобавитьМесяц'):
+    DATE_EXAMPLES += [
+        (f'{_name}(Date(2024,1,31,12,34,56) + 0.1234,1)', '{"D",20240229123456}'),
+        (f'{_name}(Date(2024,1,31,12,34,56) + 0.1234,1) - baseDate', '{"N",0}'),
+        (f'{_name}(baseDate + 0.1234,0) - baseDate', '{"N",0}'),
+        (f'{_name}(Date(2024,5,15),1.5)', '{"D",20240615000000}'),
+        (f'{_name}(Date(2024,5,15),-1.5)', '{"D",20240415000000}'),
+        (f'{_name}(Date(1,1,1),-1)', '{"D",00010101000000}'),
+        (f'{_name}(Date(9999,12,31,23,59,59),1)', '{"D",00010101000000}'),
+    ]
+for _name in ('WeekOfYear', 'НеделяГода'):
+    DATE_EXAMPLES += [(f'{_name}(Date(2016,1,4))', '{"N",2}'),
+                      (f'{_name}(Date(2021,2,1))', '{"N",6}'),
+                      (f'{_name}(Date(2024,3,3))', '{"N",9}'),
+                      (f'{_name}(Date(2024,3,4))', '{"N",10}')]
+for _name in ('WeekDay', 'ДеньНедели'):
+    DATE_EXAMPLES += [(f'{_name}(Date(2024,3,3))', '{"N",7}'),
+                      (f'{_name}(Date(2024,3,4))', '{"N",1}')]
+for _name in ('DayOfYear', 'ДеньГода'):
+    DATE_EXAMPLES += [(f'{_name}(baseDate)', '{"N",60}'),
+                      (f'{_name}(Date(2024,12,31))', '{"N",366}')]
+DATE_EXAMPLES += [('EndOfWeek(Date(9999,12,31,23,59,59))', '{"D",99991231235959}')]
+
 DATE_FAILURES = [
+    ('BegOfDay(0)', 'Ожидается дата'),
+    ('AddMonth(Date(2024,2,29), Undefined)', 'ДобавитьМесяц: ожидается конечное число месяцев'),
+    ('WeekOfYear(Date(1,1,1) - 1)', 'после выхода за диапазон известно только скалярное'),
+    ('String(AddMonth(Date(1,1,1),-1))', 'после выхода за диапазон известно только скалярное'),
+    ('EndOfWeek(Date(9999,12,30))', 'КонецНедели: непроверенный выход за диапазон даты'),
+
     ('Date(2024, 2, 29, 12)', 'Дата: ожидается строка или 3 либо 6 числовых компонентов'),
     ('Date(2024, 2, 29, 12, 34)', 'Дата: ожидается строка или 3 либо 6 числовых компонентов'),
     ('Date(2024, 2, 29, , , 56)', 'Пропуск аргументов встроенных функций, методов и конструкторов'),
@@ -202,7 +245,7 @@ def check_dates(executable: str, *, directory: Path, env: dict) -> None:
             or 'Перенос строки в литерале даты не поддерживается' not in result.stderr):
         raise AssertionError(f'Failed incomplete Date literal recovery: {result!r}')
     print('Binary Date checks passed: native literals, constructors, ticks, lossy codec, components, '
-          'BOM files, imports/defaults, command flags, stdin, console and guarded errors')
+          'calendar periods/month shifts/week numbering, BOM files, imports/defaults, command flags, stdin, console and guarded errors')
 
 
 # Explicit goldens are shared by the source CLI tests and the frozen checks.
