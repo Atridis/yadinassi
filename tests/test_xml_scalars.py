@@ -37,10 +37,7 @@ class NativeXMLScalarEvidenceTests(unittest.TestCase):
                 r'\[(.*?)\](?=\nxml\.|\n?\Z)', text, re.MULTILINE | re.DOTALL))
 
         expected = records(NATIVE.read_text(encoding='utf-8-sig'))
-        # The writer's lone fractional observation cannot settle its rounding
-        # rule. Additional pending probes may be present without native output.
-        del expected['xml.date.write.fraction']
-        self.assertEqual(len(expected), 25)
+        self.assertEqual(len(expected), 28)
         actual = records('\n'.join(output) + '\n')
         self.assertEqual({label: actual[label] for label in expected}, expected)
         self.assertEqual(before, {path: path.read_bytes() for path in before})
@@ -203,13 +200,13 @@ class XMLDateWriterTests(unittest.TestCase):
                 ('20240229123456', '2024-02-29T12:34:56'),
                 ('99991231235959', '9999-12-31T23:59:59')):
             self.assertEqual(xml_string(date(source)), expected)
-    def test_fractional_writer_policy_remains_explicitly_unsupported(self):
+    def test_fractional_writer_truncates_without_mutating_date(self):
         base = date('20240229123456')
         for delta in ('0.0001', '0.1234', '0.5', '0.9999', '-0.0001'):
             value = shift_date(base, Decimal(delta))
             ticks = value.ticks
-            with self.assertRaisesRegex(UnsupportedDateRange, 'дробные секунды'):
-                xml_string(value)
+            expected = '2024-02-29T12:34:55' if delta.startswith('-') else '2024-02-29T12:34:56'
+            self.assertEqual(xml_string(value), expected)
             self.assertEqual(value.ticks, ticks)
 
     def test_bilingual_aliases_and_internal_string_codec(self):

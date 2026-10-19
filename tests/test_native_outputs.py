@@ -64,6 +64,10 @@ class NativeOutputTests(unittest.TestCase):
             self.fail(f"Не удалось прочитать нативный результат {expected_path}: {error}")
         environment = os.environ.copy()
         environment["PYTHONIOENCODING"] = "utf-8"
+        # Replay the owner-confirmed Windows timezone using its CLDR mapping.
+        # Only execution context changes; every native output byte is compared.
+        # See integrational_tests/meta.md; never inherit a CI host timezone.
+        environment["YADINASSI_TIMEZONE"] = "Europe/Warsaw"
         try:
             result = subprocess.run(
                 [sys.executable, "-c", EXECUTE_SCRIPT, str(script)],
@@ -95,6 +99,12 @@ class NativeOutputRunnerTests(unittest.TestCase):
         self.root = Path(temporary.name)
         (self.root / "tests").mkdir()
         (self.root / "output").mkdir()
+
+    def test_recorded_timezone_overrides_ambient_context_without_changing_output(self):
+        self.add_case(code='Сообщить(XMLString(XMLValue(Type("Date"), "2024-02-29T12:34:56Z")));',
+                      output=b'2024-02-29T13:34:56\n')
+        with patch.dict(os.environ, {'YADINASSI_TIMEZONE': 'Asia/Kathmandu'}):
+            self.assert_comparison_passes()
 
     def add_case(self, name="sample.bsl", code='Сообщить("Привет");',
                  output="Привет\n".encode("utf-8")):

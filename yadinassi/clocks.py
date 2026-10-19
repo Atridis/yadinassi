@@ -13,6 +13,7 @@ from decimal import Decimal
 import time
 
 from .dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, _from_parts
+from .timezones import local_parts, TimezoneConfigurationError
 
 
 _NS_PER_SECOND = 1_000_000_000
@@ -37,7 +38,9 @@ def current_date() -> BSLDate:
     try:
         # localtime applies the process host's timezone and DST for this exact
         # sample. Do not use today's UTC offset or cache a timezone snapshot.
-        return _from_parts(time.localtime(seconds)[:6])
+        return _from_parts(local_parts(seconds))
+    except TimezoneConfigurationError:
+        raise
     except (OSError, OverflowError, ValueError):
         raise UnsupportedDateRange(
             "ТекущаяДата: системную дату нельзя представить в поддержанном диапазоне") from None

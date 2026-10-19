@@ -529,5 +529,30 @@ class ClockRuntimeTests(unittest.TestCase):
                     self.assertEqual(value.ticks, 0)
 
 
+class ConfiguredClockTests(unittest.TestCase):
+    """Standalone timezone override, not a measured native clock contract."""
+
+    def test_explicit_zone_affects_only_local_clock_and_uses_sample_season(self):
+        for stamp, offset in (('20240229123456', 3600), ('20240701123456', 7200)):
+            sample = datetime.strptime(stamp, '%Y%m%d%H%M%S')
+            seconds = int((sample - UNIX_EPOCH).total_seconds())
+            with patch.dict(os.environ, {'YADINASSI_TIMEZONE': 'Europe/Warsaw'}), \
+                    patch.object(clocks, '_read_time_ns', return_value=seconds * 10**9):
+                self.assertEqual(clocks.current_universal_date(), date(stamp))
+                self.assertEqual(date_difference(clocks.current_date(), date(stamp)), offset)
+                self.assertEqual(clocks.current_universal_date_in_milliseconds(),
+                                 (seconds + clocks._UNIX_EPOCH_SECONDS) * 1000)
+
+    def test_invalid_explicit_zone_is_not_hidden_or_used_by_utc_clocks(self):
+        from yadinassi.timezones import TimezoneConfigurationError
+        with patch.dict(os.environ, {'YADINASSI_TIMEZONE': '../UTC'}), \
+                patch.object(clocks, '_read_time_ns', return_value=0):
+            with self.assertRaisesRegex(TimezoneConfigurationError, 'YADINASSI_TIMEZONE'):
+                clocks.current_date()
+            self.assertEqual(clocks.current_universal_date(), date('19700101000000'))
+            self.assertEqual(clocks.current_universal_date_in_milliseconds(),
+                             clocks._UNIX_EPOCH_SECONDS * 1000)
+
+
 if __name__ == '__main__':
     unittest.main()
