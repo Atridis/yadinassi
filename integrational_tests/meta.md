@@ -28,3 +28,28 @@ host-local policy is separate from the recorded test environment.
 Fixture replay uses `YADINASSI_TIMEZONE=Europe/Warsaw` and bundled
 `tzdata==2026.5` (IANA `2026e`). This changes only the execution environment;
 all output bytes remain compared without timezone normalization.
+
+## TypeDescription checkpoint pending (2026-10-19)
+
+`tests/values.bsl` now appends 146 guarded `types.*` observations for
+TypeDescription, scalar/binary qualifiers and their system enums. The existing
+Null/XML blocks and all saved output files are unchanged. `output/values.out`
+contains only the previously confirmed 784 lines, ending at
+`xml.checkpoint.complete: [ok]`; there is no owner output for the new tail yet.
+
+Run the normal launcher against the owner's real 1C platform and return the
+actual `values.out` (and `.err`, if present). The new source must reach
+`types.checkpoint.complete: [ok]`. No expected native answers, type GUIDs, or
+runtime support are supplied by this checkpoint. Local pending-tail framing
+checks are packaging checks only; they must be replaced by full native
+comparison when the genuine output is received and implementation is ready.
+
+BinaryDataQualifiers is inspected without BinaryData runtime values. Binary
+value coercion is neither probed nor claimed. Official names/signatures are
+from the verified EDT 2026.2 generic documentation package described in
+`features.md`; runtime details require this native run.
+
+The original strict full-output comparator is unchanged and currently fails on
+values.bsl, as expected for this native-pending draft. Separate prefix/framing
+checks do not replace that gate. Full unittest and release build remain blocked
+until genuine output and the corresponding runtime implementation are present.

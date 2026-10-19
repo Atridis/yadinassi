@@ -1,6 +1,7 @@
 """Test the distributed executable outside the source tree and without PYTHONPATH."""
 
 import os
+import hashlib
 from datetime import datetime, timezone
 import re
 import time
@@ -1669,6 +1670,61 @@ def validate_xml_checkpoint_output(output: str, expected_null: str, labels: list
         raise AssertionError('Scalar XML checkpoint must end at its completion marker')
 
 
+
+# The TypeDescription tail is native-pending: these hashes protect packaging,
+# not 1C semantics. The complete pre-existing owner output is still mandatory.
+VALUES_CONFIRMED_SHA256 = '8c6670294114773f6daabb847567390ab82bd2aba5105fe773b54482b065be44'
+TYPES_HELPERS_SHA256 = '4dffaf095b80b3fc01198e7463d8d9a58e096b9e60b86e7327c4b43d5b7b2790'
+TYPES_BODY_SHA256 = 'd2f4ecccc3aa03180d190a52082efb344338fcd9b52aed331d2ef9548d5dbb7a'
+TYPES_HELPERS_START = '// Нативный checkpoint описаний типов.'
+TYPES_BODY_START = '// Описания типов: наблюдения без заранее заданных ответов.'
+TYPES_FINAL = 'types.checkpoint.complete: [ok]'
+
+
+def pending_types_checkpoint(program: str) -> tuple[str, list[str]]:
+    """Return the unchanged native-confirmed source and pending ordered labels."""
+    null_body = '// Значение, тип и настоящий прямой/обратный кодек.'
+    xml_final = 'Сообщить("xml.checkpoint.complete: [ok]");\n'
+    for marker in (TYPES_HELPERS_START, TYPES_BODY_START, null_body, xml_final):
+        if program.count(marker) != 1:
+            raise AssertionError('Expected unique TypeDescription checkpoint boundaries')
+    prefix, helpers_and_rest = program.split(TYPES_HELPERS_START)
+    helpers, body = helpers_and_rest.split(null_body)
+    original_body, pending_body = body.split(xml_final)
+    confirmed = prefix + null_body + original_body + xml_final
+    if pending_body.lstrip()[:len(TYPES_BODY_START)] != TYPES_BODY_START:
+        raise AssertionError('Pending types body must immediately follow native XML')
+    for text, expected in ((confirmed, VALUES_CONFIRMED_SHA256),
+                           (TYPES_HELPERS_START + helpers, TYPES_HELPERS_SHA256),
+                           (pending_body, TYPES_BODY_SHA256)):
+        if hashlib.sha256(text.encode('utf-8')).hexdigest() != expected:
+            raise AssertionError('Checkpoint source changed; review native/pending boundaries and hashes')
+    labels = re.findall(r'^НаблюдатьТипы\("([a-z0-9.-]+)", ', pending_body, re.MULTILINE)
+    if not labels or len(set(labels)) != len(labels):
+        raise AssertionError('Expected unique pending TypeDescription observations')
+    if not pending_body.rstrip().endswith('Сообщить("' + TYPES_FINAL + '");'):
+        raise AssertionError('Missing pending TypeDescription completion marker')
+    return confirmed, ['types.' + label for label in labels]
+
+
+def validate_pending_types_output(output: str, expected: str, labels: list[str]) -> None:
+    """Exact full native prefix plus framing only for the unconfirmed type tail."""
+    if not output.startswith(expected):
+        raise AssertionError('TypeDescription checkpoint changed the complete native output prefix')
+    body = output[len(expected):]
+    frames = list(re.finditer(r'^(types\.[a-z0-9.-]+): \[', body, re.MULTILINE))
+    if (not labels or len(set(labels)) != len(labels) or not frames
+            or frames[0].start() != 0
+            or [frame[1] for frame in frames] != labels + ['types.checkpoint.complete']):
+        raise AssertionError('Pending TypeDescription frames are missing, duplicated or out of order')
+    for frame, following in zip(frames, frames[1:]):
+        payload = body[frame.end():following.start()]
+        if not re.fullmatch(r'(?:error|serialize-error|\{.*\})\]\n', payload, re.DOTALL):
+            raise AssertionError('Malformed pending TypeDescription observation: ' + frame[1])
+    if body[frames[-1].start():] != TYPES_FINAL + '\n':
+        raise AssertionError('Pending TypeDescription output must end at its completion marker')
+
+
 def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -> None:
     """Full frozen parity with every committed owner output, not selected lines."""
     directory.mkdir()
@@ -1729,6 +1785,7 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     """Replay all native scalar XML bytes with the recorded timezone context."""
     directory.mkdir()
     program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
+    program, pending_labels = pending_types_checkpoint(program)
     labels = xml_checkpoint_labels(program)
     expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
     expected_null = null_checkpoint_output(expected)
@@ -1746,6 +1803,18 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
             raise AssertionError('Frozen scalar XML output differs from the complete owner output')
     print('Binary scalar XML native parity passed: all 784 lines / 62 observations, '
           'recorded Warsaw timezone, bundled data, BOM, command and stdin')
+    pending_program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
+    source.write_text(pending_program, encoding='utf-8-sig')
+    for arguments, stdin in [([str(source)], None), (['-c', pending_program], None),
+                             (['-с', pending_program], None), (['--command', pending_program], None),
+                             (['-'], pending_program), ([], pending_program + '/exit\n')]:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if result.returncode or result.stderr:
+            raise AssertionError(f'Failed pending TypeDescription execution: {result!r}')
+        validate_pending_types_output(result.stdout, expected, pending_labels)
+    print('Binary TypeDescription packaging passed: native-pending observations only, '
+          'full 784-line confirmed prefix, BOM, command aliases, stdin and console')
     check_timezone_configuration(executable, directory=directory, env=env)
 
 

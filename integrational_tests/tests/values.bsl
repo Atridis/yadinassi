@@ -109,6 +109,112 @@
         КодыXML(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(Очищено))));
 КонецФункции
 
+// Нативный checkpoint описаний типов. Никакие ответы не заданы заранее.
+// Новые конструкторы и пространства перечислений находятся только в строках
+// Вычислить внутри защиты. Все подпрограммы предшествуют основному коду.
+Процедура НаблюдатьТипы(Знач Метка, Знач Выражение)
+    Попытка
+        Результат = Вычислить(Выражение);
+    Исключение
+        Сообщить("types." + Метка + ": [error]");
+        Возврат;
+    КонецПопытки;
+    Попытка
+        Запись = ЗначениеВСтрокуВнутр(Результат);
+        Сообщить("types." + Метка + ": [" + Запись + "]");
+    Исключение
+        Сообщить("types." + Метка + ": [serialize-error]");
+    КонецПопытки;
+КонецПроцедуры
+
+// Каждая стадия независима: ошибка записи не скрывает имя и тип объекта;
+// ошибка обратного чтения не скрывает настоящий прямой поток.
+Функция СнимокТипов(Знач Значение)
+    Итог = Новый Структура("Type,TypeWrite,TypeRead,Text,Write,ReadType,ReadWrite,Equal,Nested");
+    Попытка Итог.Type = ТипЗнч(Значение); Исключение Итог.Type = "[error]"; КонецПопытки;
+    Попытка
+        Итог.TypeWrite = ЗначениеВСтрокуВнутр(ТипЗнч(Значение));
+        Итог.TypeRead = ЗначениеВСтрокуВнутр(ЗначениеИзСтрокиВнутр(Итог.TypeWrite));
+    Исключение
+        Итог.TypeRead = "[error]";
+    КонецПопытки;
+    Попытка Итог.Text = Строка(Значение); Исключение Итог.Text = "[error]"; КонецПопытки;
+    Попытка Итог.Write = ЗначениеВСтрокуВнутр(Значение); Исключение Итог.Write = "[error]"; КонецПопытки;
+    Попытка
+        Копия = ЗначениеИзСтрокиВнутр(Итог.Write);
+        Попытка Итог.ReadType = ТипЗнч(Копия); Исключение Итог.ReadType = "[error]"; КонецПопытки;
+        Попытка Итог.ReadWrite = ЗначениеВСтрокуВнутр(Копия); Исключение Итог.ReadWrite = "[error]"; КонецПопытки;
+        Попытка Итог.Equal = Копия = Значение; Исключение Итог.Equal = "[error]"; КонецПопытки;
+    Исключение
+        Итог.ReadType = "[error]";
+    КонецПопытки;
+    Попытка
+        Контейнер = Новый Массив;
+        Контейнер.Добавить(Значение);
+        Итог.Nested = ЗначениеВСтрокуВнутр(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(Контейнер)));
+    Исключение
+        Итог.Nested = "[error]";
+    КонецПопытки;
+    Возврат Итог;
+КонецФункции
+
+Функция СвойстваЧислаТипов(Знач Значение)
+    Возврат Новый Структура("Digits,FractionDigits,AllowedSign,Aliases",
+        Значение.Digits, Значение.FractionDigits, Значение.AllowedSign,
+        Значение.Разрядность = Значение.Digits И Значение.РазрядностьДробнойЧасти = Значение.FractionDigits
+        И Значение.ДопустимыйЗнак = Значение.AllowedSign);
+КонецФункции
+
+Функция СвойстваДлиныТипов(Знач Значение)
+    Возврат Новый Структура("Length,AllowedLength,Aliases", Значение.Length, Значение.AllowedLength,
+        Значение.Длина = Значение.Length И Значение.ДопустимаяДлина = Значение.AllowedLength);
+КонецФункции
+
+Функция СвойстваДатыТипов(Знач Значение)
+    Возврат Новый Структура("DateFractions,Aliases", Значение.DateFractions,
+        Значение.ЧастиДаты = Значение.DateFractions);
+КонецФункции
+
+Функция СвойстваОписанияТипов(Знач Значение)
+    Возврат Новый Структура("Types,Number,String,Date,Binary",
+        Значение.Types(), СнимокТипов(Значение.NumberQualifiers), СнимокТипов(Значение.StringQualifiers),
+        СнимокТипов(Значение.DateQualifiers), СнимокТипов(Значение.BinaryDataQualifiers));
+КонецФункции
+
+Функция МассивТиповПробы()
+    Результат = Новый Массив;
+    Результат.Добавить(Тип("Строка"));
+    Результат.Добавить(Тип("Число"));
+    Результат.Добавить(Тип("Строка"));
+    Возврат Результат;
+КонецФункции
+
+Функция НезависимостьТипов(Знач Значение)
+    Список = Значение.Types();
+    До = ЗначениеВСтрокуВнутр(Список);
+    Список.Очистить();
+    Список.Добавить(Тип("Дата"));
+    Возврат Новый Структура("Before,After,Russian", До, Значение.Types(), Значение.Типы());
+КонецФункции
+
+Функция ПриведениеТипов(Знач Описание, Знач Значение)
+    Результат = Описание.AdjustValue(Значение);
+    Итог = Новый Структура("Value,Type,Russian,DateDelta", Результат, ТипЗнч(Результат),
+        Описание.ПривестиЗначение(Значение), Неопределено);
+    Если ТипЗнч(Результат) = Тип("Дата") Тогда
+        Итог.DateDelta = Результат - Дата(2024,2,29,12,34,56);
+    КонецЕсли;
+    Возврат Итог;
+КонецФункции
+
+// Действие — только фиксированная строка из списка ниже, без файлов и внешних вызовов.
+Функция ЗаписьСвойстваТипов(Знач Значение, Знач Действие)
+    До = СнимокТипов(Значение);
+    Статус = "ok";
+    Попытка Выполнить(Действие); Исключение Статус = "error"; КонецПопытки;
+    Возврат Новый Структура("Status,Before,After", Статус, До, СнимокТипов(Значение));
+КонецФункции
+
 // Значение, тип и настоящий прямой/обратный кодек.
 НаблюдатьNull("literal.upper", "NULL");
 НаблюдатьNull("literal.mixed", "nUlL");
@@ -239,3 +345,154 @@
 НаблюдатьXML("date.write.half", "XMLString(Date(2024,2,29,12,34,56) + 0.5)");
 НаблюдатьXML("date.write.near-carry", "XMLString(Date(2024,2,29,12,34,56) + 0.9999)");
 Сообщить("xml.checkpoint.complete: [ok]");
+
+
+// Описания типов: наблюдения без заранее заданных ответов.
+// Двоичные квалификаторы наблюдаются без создания ДвоичныхДанных.
+НаблюдатьТипы("description.default.en", "СнимокТипов(New TypeDescription())");
+НаблюдатьТипы("description.default.ru", "СнимокТипов(Новый ОписаниеТипов())");
+НаблюдатьТипы("description.configured", "СнимокТипов(New TypeDescription(""String,Number,Date,Boolean""))");
+НаблюдатьТипы("description.type.names", "Type(""TypeDescription"") = Тип(""ОписаниеТипов"")");
+НаблюдатьТипы("number.default.en", "СнимокТипов(New NumberQualifiers())");
+НаблюдатьТипы("number.default.ru", "СнимокТипов(Новый КвалификаторыЧисла())");
+НаблюдатьТипы("number.configured", "СнимокТипов(New NumberQualifiers(5, 2, AllowedSign.Nonnegative))");
+НаблюдатьТипы("number.type.names", "Type(""NumberQualifiers"") = Тип(""КвалификаторыЧисла"")");
+НаблюдатьТипы("string.default.en", "СнимокТипов(New StringQualifiers())");
+НаблюдатьТипы("string.default.ru", "СнимокТипов(Новый КвалификаторыСтроки())");
+НаблюдатьТипы("string.configured", "СнимокТипов(New StringQualifiers(4, AllowedLength.Fixed))");
+НаблюдатьТипы("string.type.names", "Type(""StringQualifiers"") = Тип(""КвалификаторыСтроки"")");
+НаблюдатьТипы("date.default.en", "СнимокТипов(New DateQualifiers())");
+НаблюдатьТипы("date.default.ru", "СнимокТипов(Новый КвалификаторыДаты())");
+НаблюдатьТипы("date.configured", "СнимокТипов(New DateQualifiers(DateFractions.Date))");
+НаблюдатьТипы("date.type.names", "Type(""DateQualifiers"") = Тип(""КвалификаторыДаты"")");
+НаблюдатьТипы("binary.default.en", "СнимокТипов(New BinaryDataQualifiers())");
+НаблюдатьТипы("binary.default.ru", "СнимокТипов(Новый КвалификаторыДвоичныхДанных())");
+НаблюдатьТипы("binary.configured", "СнимокТипов(New BinaryDataQualifiers(4, AllowedLength.Fixed))");
+НаблюдатьТипы("binary.type.names", "Type(""BinaryDataQualifiers"") = Тип(""КвалификаторыДвоичныхДанных"")");
+НаблюдатьТипы("allowedsign.namespace", "СнимокТипов(AllowedSign)");
+НаблюдатьТипы("allowedsign.namespace-alias", "TypeOf(AllowedSign) = ТипЗнч(ДопустимыйЗнак)");
+НаблюдатьТипы("allowedsign.type-name", "Type(""AllowedSign"") = Тип(""ДопустимыйЗнак"")");
+НаблюдатьТипы("allowedsign.any", "СнимокТипов(AllowedSign.Any)");
+НаблюдатьТипы("allowedsign.any.alias", "AllowedSign.Any = ДопустимыйЗнак.Любой");
+НаблюдатьТипы("allowedsign.nonnegative", "СнимокТипов(AllowedSign.Nonnegative)");
+НаблюдатьТипы("allowedsign.nonnegative.alias", "AllowedSign.Nonnegative = ДопустимыйЗнак.Неотрицательный");
+НаблюдатьТипы("allowedlength.namespace", "СнимокТипов(AllowedLength)");
+НаблюдатьТипы("allowedlength.namespace-alias", "TypeOf(AllowedLength) = ТипЗнч(ДопустимаяДлина)");
+НаблюдатьТипы("allowedlength.type-name", "Type(""AllowedLength"") = Тип(""ДопустимаяДлина"")");
+НаблюдатьТипы("allowedlength.variable", "СнимокТипов(AllowedLength.Variable)");
+НаблюдатьТипы("allowedlength.variable.alias", "AllowedLength.Variable = ДопустимаяДлина.Переменная");
+НаблюдатьТипы("allowedlength.fixed", "СнимокТипов(AllowedLength.Fixed)");
+НаблюдатьТипы("allowedlength.fixed.alias", "AllowedLength.Fixed = ДопустимаяДлина.Фиксированная");
+НаблюдатьТипы("datefractions.namespace", "СнимокТипов(DateFractions)");
+НаблюдатьТипы("datefractions.namespace-alias", "TypeOf(DateFractions) = ТипЗнч(ЧастиДаты)");
+НаблюдатьТипы("datefractions.type-name", "Type(""DateFractions"") = Тип(""ЧастиДаты"")");
+НаблюдатьТипы("datefractions.datetime", "СнимокТипов(DateFractions.DateTime)");
+НаблюдатьТипы("datefractions.datetime.alias", "DateFractions.DateTime = ЧастиДаты.ДатаВремя");
+НаблюдатьТипы("datefractions.date", "СнимокТипов(DateFractions.Date)");
+НаблюдатьТипы("datefractions.date.alias", "DateFractions.Date = ЧастиДаты.Дата");
+НаблюдатьТипы("datefractions.time", "СнимокТипов(DateFractions.Time)");
+НаблюдатьТипы("datefractions.time.alias", "DateFractions.Time = ЧастиДаты.Время");
+НаблюдатьТипы("properties.number.default", "СвойстваЧислаТипов(New NumberQualifiers())");
+НаблюдатьТипы("properties.number.configured", "СвойстваЧислаТипов(New NumberQualifiers(5,2,AllowedSign.Nonnegative))");
+НаблюдатьТипы("properties.string.default", "СвойстваДлиныТипов(New StringQualifiers())");
+НаблюдатьТипы("properties.string.configured", "СвойстваДлиныТипов(New StringQualifiers(4,AllowedLength.Fixed))");
+НаблюдатьТипы("properties.date.default", "СвойстваДатыТипов(New DateQualifiers())");
+НаблюдатьТипы("properties.date.time", "СвойстваДатыТипов(New DateQualifiers(DateFractions.Time))");
+НаблюдатьТипы("properties.binary.default", "СвойстваДлиныТипов(New BinaryDataQualifiers())");
+НаблюдатьТипы("properties.binary.configured", "СвойстваДлиныТипов(New BinaryDataQualifiers(4,AllowedLength.Fixed))");
+НаблюдатьТипы("properties.description.default", "СвойстваОписанияТипов(New TypeDescription())");
+НаблюдатьТипы("properties.description.scalars", "СвойстваОписанияТипов(New TypeDescription(""Number,String,Date,Boolean""))");
+НаблюдатьТипы("number.ctor.negative", "СвойстваЧислаТипов(New NumberQualifiers(-1))");
+НаблюдатьТипы("number.ctor.fraction", "СвойстваЧислаТипов(New NumberQualifiers(5.9, 2.9))");
+НаблюдатьТипы("number.ctor.fraction-exceeds", "СвойстваЧислаТипов(New NumberQualifiers(2, 3))");
+НаблюдатьТипы("number.ctor.zero-digits", "СвойстваЧислаТипов(New NumberQualifiers(0, 2))");
+НаблюдатьТипы("number.ctor.max38", "СвойстваЧислаТипов(New NumberQualifiers(38, 10))");
+НаблюдатьТипы("number.ctor.above38", "СвойстваЧислаТипов(New NumberQualifiers(39))");
+НаблюдатьТипы("number.ctor.text", "СвойстваЧислаТипов(New NumberQualifiers(""5"", ""2""))");
+НаблюдатьТипы("number.ctor.undefined", "СвойстваЧислаТипов(New NumberQualifiers(Undefined))");
+НаблюдатьТипы("number.ctor.wrong-sign", "СвойстваЧислаТипов(New NumberQualifiers(5, 2, 0))");
+НаблюдатьТипы("string.ctor.negative", "СвойстваДлиныТипов(New StringQualifiers(-1))");
+НаблюдатьТипы("string.ctor.fraction", "СвойстваДлиныТипов(New StringQualifiers(3.9))");
+НаблюдатьТипы("string.ctor.text", "СвойстваДлиныТипов(New StringQualifiers(""3""))");
+НаблюдатьТипы("string.ctor.wrong-length", "СвойстваДлиныТипов(New StringQualifiers(3, 0))");
+НаблюдатьТипы("string.ctor.zero-fixed", "СвойстваДлиныТипов(New StringQualifiers(0, AllowedLength.Fixed))");
+НаблюдатьТипы("binary.ctor.negative", "СвойстваДлиныТипов(New BinaryDataQualifiers(-1))");
+НаблюдатьТипы("binary.ctor.fraction", "СвойстваДлиныТипов(New BinaryDataQualifiers(3.9))");
+НаблюдатьТипы("binary.ctor.text", "СвойстваДлиныТипов(New BinaryDataQualifiers(""3""))");
+НаблюдатьТипы("binary.ctor.wrong-length", "СвойстваДлиныТипов(New BinaryDataQualifiers(3, 0))");
+НаблюдатьТипы("binary.ctor.zero-fixed", "СвойстваДлиныТипов(New BinaryDataQualifiers(0, AllowedLength.Fixed))");
+НаблюдатьТипы("date.ctor.wrong-fraction", "New DateQualifiers(0)");
+НаблюдатьТипы("description.ctor.empty", "СнимокТипов(New TypeDescription(""""))");
+НаблюдатьТипы("description.ctor.spaces", "СнимокТипов(New TypeDescription("" Строка , Число ""))");
+НаблюдатьТипы("description.ctor.duplicates", "СнимокТипов(New TypeDescription(""String,Number,String""))");
+НаблюдатьТипы("description.ctor.array", "СнимокТипов(New TypeDescription(МассивТиповПробы()))");
+НаблюдатьТипы("description.ctor.unknown", "СнимокТипов(New TypeDescription(""NoSuchType""))");
+НаблюдатьТипы("description.ctor.undefined", "СнимокТипов(New TypeDescription(Undefined))");
+НаблюдатьТипы("description.ctor.null", "СнимокТипов(New TypeDescription(""Null""))");
+НаблюдатьТипы("description.ctor.undefined-type", "СнимокТипов(New TypeDescription(""Undefined""))");
+НаблюдатьТипы("description.types-copy", "НезависимостьТипов(New TypeDescription(""String,Number""))");
+НаблюдатьТипы("description.contains", "New TypeDescription(""String,Number"").ContainsType(Type(""String""))");
+НаблюдатьТипы("description.contains-missing", "New TypeDescription(""String,Number"").СодержитТип(Тип(""Дата""))");
+НаблюдатьТипы("description.contains-wrong", "New TypeDescription(""String"").ContainsType(""String"")");
+НаблюдатьТипы("description.copy.add-remove", "СнимокТипов(New TypeDescription(New TypeDescription(""String,Number""), ""Date"", ""String""))");
+НаблюдатьТипы("description.copy.qualifiers", "СвойстваОписанияТипов(New TypeDescription(New TypeDescription(""Number"", New NumberQualifiers(5,2))))");
+НаблюдатьТипы("description.copy.override", "СвойстваОписанияТипов(New TypeDescription(New TypeDescription(""Number"", New NumberQualifiers(5,2)), , , New NumberQualifiers(3,1)))");
+НаблюдатьТипы("description.all-qualifiers", "СвойстваОписанияТипов(New TypeDescription(""Number,String,Date"", New NumberQualifiers(5,2), New StringQualifiers(4), New DateQualifiers(DateFractions.Time), New BinaryDataQualifiers(8)))");
+НаблюдатьТипы("adjust.default.number", "New TypeDescription(""Number"").AdjustValue()");
+НаблюдатьТипы("adjust.default.string", "New TypeDescription(""String"").AdjustValue()");
+НаблюдатьТипы("adjust.default.date", "New TypeDescription(""Date"").AdjustValue()");
+НаблюдатьТипы("adjust.default.boolean", "New TypeDescription(""Boolean"").AdjustValue()");
+НаблюдатьТипы("adjust.default.number-string", "New TypeDescription(""Number,String"").AdjustValue()");
+НаблюдатьТипы("adjust.default.string-number", "New TypeDescription(""String,Number"").AdjustValue()");
+НаблюдатьТипы("adjust.default.number-date", "New TypeDescription(""Number,Date"").AdjustValue()");
+НаблюдатьТипы("adjust.default.undefined-number", "New TypeDescription(""Undefined,Number"").AdjustValue()");
+НаблюдатьТипы("adjust.default.null", "New TypeDescription(""Null"").AdjustValue()");
+НаблюдатьТипы("adjust.default.empty", "New TypeDescription("""").AdjustValue()");
+НаблюдатьТипы("adjust.number.text", "ПриведениеТипов(New TypeDescription(""Number""), ""12.5"")");
+НаблюдатьТипы("adjust.number.invalid", "ПриведениеТипов(New TypeDescription(""Number""), ""abc"")");
+НаблюдатьТипы("adjust.number.boolean", "ПриведениеТипов(New TypeDescription(""Number""), True)");
+НаблюдатьТипы("adjust.number.undefined", "ПриведениеТипов(New TypeDescription(""Number""), Undefined)");
+НаблюдатьТипы("adjust.string.number", "ПриведениеТипов(New TypeDescription(""String""), 12.5)");
+НаблюдатьТипы("adjust.string.boolean", "ПриведениеТипов(New TypeDescription(""String""), False)");
+НаблюдатьТипы("adjust.string.undefined", "ПриведениеТипов(New TypeDescription(""String""), Undefined)");
+НаблюдатьТипы("adjust.date.text", "ПриведениеТипов(New TypeDescription(""Date""), ""20240229123456"")");
+НаблюдатьТипы("adjust.date.number", "ПриведениеТипов(New TypeDescription(""Date""), 1)");
+НаблюдатьТипы("adjust.boolean.text", "ПриведениеТипов(New TypeDescription(""Boolean""), ""True"")");
+НаблюдатьТипы("adjust.boolean.zero", "ПриведениеТипов(New TypeDescription(""Boolean""), 0)");
+НаблюдатьТипы("adjust.boolean.number", "ПриведениеТипов(New TypeDescription(""Boolean""), 2)");
+НаблюдатьТипы("adjust.boolean.undefined", "ПриведениеТипов(New TypeDescription(""Boolean""), Undefined)");
+НаблюдатьТипы("adjust.empty.number", "ПриведениеТипов(New TypeDescription(""""), 12)");
+НаблюдатьТипы("adjust.null.number", "ПриведениеТипов(New TypeDescription(""Null""), 12)");
+НаблюдатьТипы("adjust.union-number-string.text", "ПриведениеТипов(New TypeDescription(""Number,String""), ""12"")");
+НаблюдатьТипы("adjust.union-string-number.number", "ПриведениеТипов(New TypeDescription(""String,Number""), 12)");
+НаблюдатьТипы("adjust.union-number-date.text", "ПриведениеТипов(New TypeDescription(""Number,Date""), ""20240229"")");
+НаблюдатьТипы("adjust.union-date-number.text", "ПриведениеТипов(New TypeDescription(""Date,Number""), ""20240229"")");
+НаблюдатьТипы("adjust.union-number-string.boolean", "ПриведениеТипов(New TypeDescription(""Number,String""), True)");
+НаблюдатьТипы("adjust.union-string-number.boolean", "ПриведениеТипов(New TypeDescription(""String,Number""), True)");
+НаблюдатьТипы("adjust.union-undefined-number.text", "ПриведениеТипов(New TypeDescription(""Undefined,Number""), ""12"")");
+НаблюдатьТипы("adjust.qualified-number.below-half", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), 1.234)");
+НаблюдатьТипы("adjust.qualified-number.half", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), 1.235)");
+НаблюдатьТипы("adjust.qualified-number.even-half", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), 1.245)");
+НаблюдатьТипы("adjust.qualified-number.negative-even-half", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), -1.245)");
+НаблюдатьТипы("adjust.qualified-number.negative-half", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), -1.235)");
+НаблюдатьТипы("adjust.qualified-number.max", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), 999.99)");
+НаблюдатьТипы("adjust.qualified-number.overflow", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), 1000)");
+НаблюдатьТипы("adjust.qualified-number.round-overflow", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), 999.995)");
+НаблюдатьТипы("adjust.qualified-number.negative-overflow", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2)), -1000)");
+НаблюдатьТипы("adjust.nonnegative", "ПриведениеТипов(New TypeDescription(""Number"", New NumberQualifiers(5,2,AllowedSign.Nonnegative)), -1.235)");
+НаблюдатьТипы("adjust.string.variable-short", "ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(4)), ""ab"")");
+НаблюдатьТипы("adjust.string.fixed-short", "ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed)), ""ab"")");
+НаблюдатьТипы("adjust.string.fixed-long", "ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed)), ""abcdef"")");
+НаблюдатьТипы("adjust.string.utf16-cut", "ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(2)), ""Я😀Z"")");
+НаблюдатьТипы("adjust.string.unicode-exact", "ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(3)), ""Я😀Z"")");
+НаблюдатьТипы("adjust.string.trim-spaces", "ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(3)), ""a  b"")");
+НаблюдатьТипы("adjust.date.date", "ПриведениеТипов(New TypeDescription(""Date"", , , New DateQualifiers(DateFractions.Date)), Date(2024,2,29,12,34,56) + 0.1234)");
+НаблюдатьТипы("adjust.date.time", "ПриведениеТипов(New TypeDescription(""Date"", , , New DateQualifiers(DateFractions.Time)), Date(2024,2,29,12,34,56) + 0.1234)");
+НаблюдатьТипы("adjust.date.datetime", "ПриведениеТипов(New TypeDescription(""Date"", , , New DateQualifiers(DateFractions.DateTime)), Date(2024,2,29,12,34,56) + 0.1234)");
+НаблюдатьТипы("readonly.number", "ЗаписьСвойстваТипов(New NumberQualifiers(5,2), ""Значение.Разрядность = 9;"")");
+НаблюдатьТипы("readonly.string", "ЗаписьСвойстваТипов(New StringQualifiers(4), ""Значение.Length = 9;"")");
+НаблюдатьТипы("readonly.date", "ЗаписьСвойстваТипов(New DateQualifiers(), ""Значение.DateFractions = Значение.DateFractions;"")");
+НаблюдатьТипы("readonly.binary", "ЗаписьСвойстваТипов(New BinaryDataQualifiers(4), ""Значение.Длина = 9;"")");
+НаблюдатьТипы("readonly.description", "ЗаписьСвойстваТипов(New TypeDescription(""String""), ""Значение.StringQualifiers = Значение.StringQualifiers;"")");
+НаблюдатьТипы("description.property-aliases", "New TypeDescription(""String"").КвалификаторыСтроки.Length = New TypeDescription(""String"").StringQualifiers.Длина");
+Сообщить("types.checkpoint.complete: [ok]");
