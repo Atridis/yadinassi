@@ -1,4 +1,4 @@
-"""Owner-confirmed receiver supplement and immutable native output."""
+"""Compact receiver supplement confirmed by owner commit f28dcc51a6b631cb4a8a3526dfcdc57172efbfc6."""
 from pathlib import Path
 import hashlib
 import unittest
@@ -40,6 +40,51 @@ def expressions():
 
 
 class TypeReceiverCheckpointTests(unittest.TestCase):
+    def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
+        # Local formatter contract, never a newly manufactured native golden.
+        from decimal import Decimal
+        from yadinassi.serialization import value_to_string_internal
+        from yadinassi.structures import BSLStructure
+        from yadinassi.values import BSLArray, NULL
+        vm = Interpreter()
+        vm.execute(helpers())
+        scalars = [None, NULL, False, Decimal(0), '0', '',
+                   'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
+        for value in scalars:
+            vm.register_function('FormatterValue', lambda: value)
+            actual = vm.execute('ПолеКомпактногоДополнения(FormatterValue())')
+            expected = value_to_string_internal(value).replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
+            self.assertEqual(actual, expected)
+            self.assertNotIn('\r', actual)
+            self.assertNotIn('\n', actual)
+        representations = []
+        for value in (BSLArray(), BSLStructure(), BSLStructure('Count', Decimal(0))):
+            vm.register_function('FormatterValue', lambda: value)
+            representations.append(vm.execute('ПоляКомпактногоДополнения(FormatterValue(), "value")'))
+        self.assertEqual(len(set(representations)), 3)
+
+        # Actual controls and their literal escape spellings must never collide.
+        from yadinassi.serialization import value_from_string_internal
+        pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
+        encoded = []
+        for value in pairs:
+            vm.register_function('FormatterValue', lambda: value)
+            text = vm.execute('ПолеКомпактногоДополнения(FormatterValue())')
+            encoded.append(text)
+            restored, position = [], 0
+            escapes = {'\\': '\\', 'n': '\n', 'r': '\r', 't': '\t'}
+            while position < len(text):
+                if text[position] == '\\':
+                    self.assertLess(position + 1, len(text))
+                    self.assertIn(text[position + 1], escapes)
+                    restored.append(escapes[text[position + 1]])
+                    position += 2
+                else:
+                    restored.append(text[position])
+                    position += 1
+            self.assertEqual(value_from_string_internal(''.join(restored)), value)
+        self.assertEqual(len(set(encoded)), len(pairs))
+
     def test_matrix_has_fourteen_receiver_replacements_and_four_syntax_controls(self):
         probes = expressions()
         self.assertEqual(len(probes), 23)
@@ -84,12 +129,17 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
         self.assertEqual(data.count(marker), 1)
         original = data.split(marker)[0] + marker
         self.assertEqual(hashlib.sha256(original).hexdigest(),
-                         '0b80e880cde1ba4a9e189e3ed1cd36e2560f27efa374b0853a839d245e3608b2')
-        self.assertEqual(len(original.splitlines()), 5182)
+                         '07f4380d7974632c74960dbb4343c5a3f30c774659f41fc63f7179d70aa0075d')
+        self.assertEqual(len(original.splitlines()), 917)
         self.assertEqual(hashlib.sha256(data).hexdigest(),
-                         'e87c380a2b83a4d411f41b48d006bf41d0dcc66dc3b19664cebaab9c22b821d4')
-        self.assertEqual(len(data), 81485)
-        self.assertEqual(len(data.splitlines()), 5736)
+                         'bb50c5728bd570027aec834333da515ad11d45c32402c1242c824d0a5746465b')
+        self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
+                         '016f30d6f3bdb1a814e86a70e3bcf424383a0d27')
+        legacy = b'\n'.join(data.split(b'\n')[:784]) + b'\n'
+        self.assertEqual(hashlib.sha256(legacy).hexdigest(),
+                         'ca84b5219516ed4089d6e5c294d5223015013b756b951998a172728e1d39479e')
+        self.assertEqual(len(data), 55991)
+        self.assertEqual(len(data.splitlines()), 941)
         self.assertTrue(data.endswith((FINAL + '\n').encode()))
         labels = [line.decode().split(': [', 1)[0] for line in data.splitlines()
                   if line.startswith(b'types-extra.')]
@@ -109,7 +159,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
 ''')
         self.assertEqual(output, ['types-extra.missing: [error]', 'types-extra.syntax: [error]',
                                  'types-extra.serialize: [serialize-error]',
-                                 'types-extra.next: [{"N",0}]'])
+                                 'types-extra.next: [value={"N",0}]'])
 
     def test_default_helper_really_calls_receiver_methods_without_arguments(self):
         seen = []

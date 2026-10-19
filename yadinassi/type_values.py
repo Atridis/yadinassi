@@ -16,6 +16,8 @@ from .type_qualifiers import (
     BSLDateQualifiers, BSLNumberQualifiers, BSLStringQualifiers,
 )
 from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
+from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
+                           BSLValueTableColumn, BSLValueTableRow)
 
 
 _VALUE_TYPES = (
@@ -55,6 +57,10 @@ _VALUE_TYPES = (
     (BSLAllowedLengths, BSLType.ALLOWED_LENGTHS, None),
     (BSLDateFractionsNamespace, BSLType.DATE_FRACTIONS_NAMESPACE, None),
     (BSLTypeDescription, BSLType.TYPE_DESCRIPTION, "TypeDescription"),
+    (BSLValueTable, BSLType.VALUE_TABLE, "ValueTable"),
+    (BSLValueTableColumnCollection, BSLType.VALUE_TABLE_COLUMN_COLLECTION, "ValueTableColumnCollection"),
+    (BSLValueTableColumn, BSLType.VALUE_TABLE_COLUMN, "ValueTableColumn"),
+    (BSLValueTableRow, BSLType.VALUE_TABLE_ROW, "ValueTableRow"),
 )
 _BY_NAME = {name.casefold(): value_type
             for _, value_type, alias in _VALUE_TYPES

@@ -5,10 +5,14 @@ records. SafeSubsetTests describes Yadinassi's defensive model; those checks do
 not claim native acceptance, rejection, cycle behavior, or resource limits.
 """
 
+from tests.native_observations import (read_observation, inverse_stream, assert_snapshot,
+                                       assert_type_inverse, assert_nested, extract_payload)
+
 from decimal import Decimal
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.dates import BSLDate
@@ -20,7 +24,18 @@ from yadinassi.serialization import value_from_string_internal as read
 from yadinassi.serialization import value_to_string_internal as write
 from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from yadinassi.type_values import type_by_name, type_of
+from yadinassi.value_tables import BSLValueTable
 from yadinassi.values import BSLArray, BSLFixedArray, BSLType, NULL, equal, to_string
+
+
+def table_family_samples():
+    vm = Interpreter()
+    vm.execute('table = New ValueTable; columns = table.Columns; '
+               'columns.Add("Имя"); columns.Add("Число", New TypeDescription("Number")); '
+               'For i = 1 To 3 Do row = table.Add(); row.Имя = "row" + String(i); row.Число = i; EndDo;')
+    table = vm.variables['table']
+    return [('table', table), ('columns', table.columns),
+            ('column', table.columns.items[0]), ('row', table.rows[0])]
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,19 +125,15 @@ class NativeEvidenceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # Checkout/launcher line endings are transport. Compact scalar CR/LF
+        # are escaped at this stage and must only be decoded afterward.
         cls.outputs = {
             name: normalize_transport((OUTPUT / (name + ".out")).read_bytes().decode("utf-8"))
             for name in ("numbers", "strings", "collections", "dates", "values")
         }
 
     def native(self, suite, label):
-        # Labels belong to these fixed probes. Multiline values remain intact;
-        # in particular, commas, brackets and quotes inside strings are data.
-        pattern = (r"^" + re.escape(label) +
-                   r": \[(.*?)\](?=\n[a-zA-Z][a-zA-Z0-9.-]*:|\n?\Z)")
-        matches = re.findall(pattern, self.outputs[suite], re.MULTILINE | re.DOTALL)
-        self.assertEqual(len(matches), 1, f"Missing or duplicate native record: {suite}/{label}")
-        return matches[0]
+        return extract_payload(self.outputs[suite], label)
 
     def assert_native_payload(self, suite, label, value):
         expected = self.native(suite, label + ".payload")
@@ -189,14 +200,18 @@ class NativeEvidenceTests(unittest.TestCase):
     def test_all_native_type_guids(self):
         search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL,
                         BSLType.XML_STRING_PROCESSING_MANAGER}
-        family_types = {type_of(value) for _, value in type_family_samples()}
+        family_types = {type_of(value) for _, value in [*type_family_samples(), *table_family_samples()]}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
                          set(BSLType))
         for label, value in type_family_samples():
-            snapshot = read(self.native('values', 'types.' + label))
+            snapshot = read_observation(self.native('values', 'types.' + label))
             payload = snapshot.get('TypeWrite')
             self.assertEqual(write(type_of(value)), payload)
             self.assertIs(read(payload), type_of(value))
+        for label, value in table_family_samples():
+            snapshot = read_observation(self.native('collections', 'table.codec.' + label))
+            self.assertEqual(write(type_of(value)), snapshot.get('TypeWrite'))
+            self.assertIs(read(snapshot.get('TypeWrite')), type_of(value))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
         # fail natively. Check its observed record directly, without an alias.
         for value, label in [(BSLType.SEARCH_DIRECTION, 'search.enum.begin.type'),
@@ -260,12 +275,15 @@ class NativeEvidenceTests(unittest.TestCase):
 
     def test_all_runtime_value_types_preserve_native_readback_behavior(self):
         family = type_family_samples()
+        table_family = table_family_samples()
+        table_labels = {type_of(value): label for label, value in table_family}
         family_labels = {type_of(value): label for label, value in family}
         samples = [NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
-                   XML_STRING_PROCESSING, *[value for _, value in family]]
+                   XML_STRING_PROCESSING, *[value for _, value in family],
+                   *[value for _, value in table_family]]
         self.assertEqual({type_of(value) for value in samples}, set(BSLType))
         for value in samples:
             with self.subTest(kind=type_of(value)):
@@ -273,9 +291,14 @@ class NativeEvidenceTests(unittest.TestCase):
                 restored = read(payload)
                 family_label = family_labels.get(type_of(value))
                 if family_label is not None:
-                    snapshot = read(self.native('values', 'types.' + family_label))
+                    snapshot = read_observation(self.native('values', 'types.' + family_label))
                     self.assertEqual(payload, snapshot.get('Write'))
-                    self.assertEqual(write(restored), snapshot.get('ReadWrite'))
+                    self.assertEqual(write(restored), inverse_stream(snapshot))
+                    self.assertIs(type_of(restored), snapshot.get('ReadType'))
+                elif type_of(value) in table_labels:
+                    snapshot = read_observation(self.native('collections', 'table.codec.' + table_labels[type_of(value)]))
+                    self.assertEqual(payload, snapshot.get('Write'))
+                    self.assertEqual(write(restored), inverse_stream(snapshot))
                     self.assertIs(type_of(restored), snapshot.get('ReadType'))
                 elif value is ROUND_MODES:
                     self.assertIsNone(restored)
@@ -517,6 +540,43 @@ class SafeSubsetTests(unittest.TestCase):
             with self.subTest(kind=type(value).__name__):
                 with self.assertRaisesRegex(ValueError, "предел ресурсов Yadinassi"):
                     write(value)
+
+
+class NativeFixtureTransportTests(unittest.TestCase):
+    """Checkout simulation and synthetic escaping checks, not new native output."""
+
+    def test_legacy_fixture_loading_accepts_lf_crlf_and_lone_cr_checkouts(self):
+        original_read = Path.read_bytes
+        NativeEvidenceTests.setUpClass()
+        baseline = dict(NativeEvidenceTests.outputs)
+        self.addCleanup(NativeEvidenceTests.setUpClass)
+        for newline in (b"\r\n", b"\r"):
+            def checkout_bytes(path):
+                data = original_read(path)
+                if path.parent == OUTPUT and path.suffix == '.out':
+                    data = data.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+                    return data.replace(b'\n', newline)
+                return data
+            with self.subTest(newline=newline), patch.object(Path, 'read_bytes', checkout_bytes):
+                NativeEvidenceTests.setUpClass()
+                self.assertEqual(NativeEvidenceTests.outputs, baseline)
+                # Exercise actual legacy multiline stream comparisons too.
+                probe = NativeEvidenceTests('test_native_primitive_tags_and_values')
+                probe.test_native_primitive_tags_and_values()
+
+    def test_outer_transport_normalization_precedes_compact_escape_decoding(self):
+        intrinsic = '{"S","first\r\nsecond\rthird\nfourth\\n"}'
+        escaped = write(intrinsic).replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
+        logical = 'sample: [value=' + escaped + ']\nnext: [{"N",1}]\n'
+        for transported in (logical, logical.replace('\n', '\r\n'),
+                            logical.replace('\n', '\r'),
+                            logical.replace(']\nnext', ']\r\nnext').replace('1}]\n', '1}]\r')):
+            with self.subTest(transported=transported):
+                normalized = normalize_transport(transported)
+                self.assertEqual(normalized, logical)
+                decoded = read_observation(extract_payload(normalized, 'sample'))
+                self.assertEqual(decoded, intrinsic)
+                self.assertIn('first\r\nsecond\rthird\nfourth\\n', decoded)
 
 
 if __name__ == "__main__":

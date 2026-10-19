@@ -9,6 +9,8 @@ from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .xml_processing import XML_STRING_PROCESSING
 from .type_descriptions import BSLTypeDescription
+from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
+                           BSLValueTableColumn, BSLValueTableRow)
 from .type_qualifiers import (
     ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
@@ -26,7 +28,9 @@ from .values import (
 
 
 _COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
-                BSLMap, BSLFixedMap)
+                BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
+                BSLValueTableRow)
+_TABLE_COLLECTIONS = (BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow)
 
 
 # Explicit Yadinassi resource limits, not asserted native language limits.
@@ -126,6 +130,7 @@ class Interpreter:
         self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
+        self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
         self.register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
         self.register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
         self.register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
@@ -410,9 +415,9 @@ class Interpreter:
     def visit_Index(self, node: ast.Index) -> object:
         value = self.visit(node.object)
         if not isinstance(value, _COLLECTIONS):
-            raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
+            raise TypeError("Индексирование поддерживается только для коллекций")
         index = self.visit(node.index)
-        if isinstance(value, BSLFixedMap):
+        if isinstance(value, (BSLFixedMap, *_TABLE_COLLECTIONS)):
             return value.get_index(index)
         return value.get(index)
 
@@ -433,16 +438,24 @@ class Interpreter:
                 routine = module.routine(callee.name)
         if routine is not None:
             return self.call_routine(routine, node.arguments, owner, require_value=require_value)
-        # Preserve early omission rejection before evaluating method receivers.
-        # Only named registrations of these exact builtins admit optional gaps;
-        # final dispatch still verifies identity after resolving possible shadows.
+        # Existing host calls reject omitted arguments before receiver effects.
+        # Native table methods need optional holes; admit them only for a known
+        # exact built-in receiver (a variable or its Columns property). We never
+        # execute a factory merely to discover whether it allows omissions.
+        table_receiver = None
+        table_optional = None
+        if (isinstance(callee, ast.Attribute)
+                and any(isinstance(a, ast.OmittedArgument) for a in node.arguments)):
+            table_receiver = self.known_table_receiver(callee.object)
+            table_optional = self.table_optional_arguments(table_receiver, callee.name)
         registered = (self.functions.get(callee.name.casefold())
                       if isinstance(callee, ast.Name) else None)
-        if registered is None or (registered.function is not fill_property_values
-                                  and registered.function is not strings.str_find):
+        if table_optional is None and (registered is None or
+                (registered.function is not fill_property_values
+                 and registered.function is not strings.str_find)):
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
-            receiver = self.visit(callee.object)
+            receiver = table_receiver if table_optional is not None else self.visit(callee.object)
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
             function = receiver.get_method(callee.name)
@@ -458,6 +471,9 @@ class Interpreter:
             if not 2 <= len(node.arguments) <= 5:
                 raise TypeError("СтрНайти ожидает от 2 до 5 аргументов")
             self.reject_host_omissions(node.arguments[:2])
+        elif table_optional is not None:
+            self.reject_host_omissions([argument for index, argument in enumerate(node.arguments)
+                                       if index not in table_optional])
         else:
             self.reject_host_omissions(node.arguments)
         if require_value and not function.returns_value:
@@ -469,12 +485,50 @@ class Interpreter:
         if function.function is strings.str_find:
             return function(*(strings._OMITTED if isinstance(argument, ast.OmittedArgument)
                               else self.visit(argument) for argument in node.arguments))
+        if table_optional is not None:
+            defaults = None
+            if type(table_receiver) is BSLValueTableColumnCollection:
+                defaults = ("", None, "", Decimal(0))
+                if callee.name.casefold() in {"insert", "вставить"}:
+                    defaults = (None,) + defaults
+            return function(*((defaults[index] if defaults is not None else None)
+                              if isinstance(argument, ast.OmittedArgument) else self.visit(argument)
+                              for index, argument in enumerate(node.arguments)))
         if function.function is fill_property_values:
             return function(*(None if isinstance(argument, ast.OmittedArgument)
                               else self.visit(argument) for argument in node.arguments))
         return function(*(self.argument(argument) if index in function.reference_parameters
                           else self.visit(argument)
                           for index, argument in enumerate(node.arguments)))
+
+    def known_table_receiver(self, node: ast.Node) -> object:
+        """Read only explicit built-in receiver storage; never invoke factories."""
+        node = self.ungroup(node)
+        if isinstance(node, ast.Name):
+            value = self.visit_Name(node)
+            return value if type(value) in (BSLValueTable, BSLValueTableColumnCollection) else None
+        if isinstance(node, ast.Attribute) and node.name.casefold() in {"колонки", "columns"}:
+            parent = self.known_table_receiver(node.object)
+            if type(parent) is BSLValueTable:
+                return parent.columns
+        return None
+
+    @staticmethod
+    def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
+        key = name.casefold()
+        if type(receiver) is BSLValueTableColumnCollection:
+            if key in {"add", "добавить"}:
+                return frozenset(range(4))
+            if key in {"insert", "вставить"}:
+                return frozenset(range(1, 5))
+        if type(receiver) is BSLValueTable:
+            if key in {"copy", "скопировать"}:
+                return frozenset({0, 1})
+            if key in {"copycolumns", "скопироватьколонки"}:
+                return frozenset({0})
+            if key in {"fillvalues", "заполнитьзначения"}:
+                return frozenset({1})
+        return None
 
     def import_receiver(self, node: ast.Node) -> _Module | _Namespace | None:
         """Resolve only explicit namespace syntax; ordinary values keep normal dispatch."""
@@ -549,8 +603,8 @@ class Interpreter:
             return _Reference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = self.visit(node.object)
-            if not isinstance(owner, (BSLStructure, BSLFixedStructure)):
-                raise TypeError("Передача свойства по ссылке поддерживается только для структуры")
+            if not isinstance(owner, (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTableColumn)):
+                raise TypeError("Передача свойства по ссылке поддерживается только для структуры, строки или колонки таблицы")
             # Bind the receiver once and validate existence before entering the
             # callee. Fixed properties remain readable; their setter rejects an
             # actual assignment inside the callee, not the argument itself.
@@ -560,13 +614,14 @@ class Interpreter:
         if isinstance(node, ast.Index):
             owner = self.visit(node.object)
             if not isinstance(owner, _COLLECTIONS):
-                raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
+                raise TypeError("Индексирование поддерживается только для коллекций")
             index = self.visit(node.index)
-            getter = owner.get_index if isinstance(owner, BSLFixedMap) else owner.get
+            getter = owner.get_index if isinstance(owner, (BSLFixedMap, *_TABLE_COLLECTIONS)) else owner.get
             # Native PR47: bad array indices / absent structure properties fail
             # before entry; a mutable map's missing key is a valid output slot.
             getter(index)
-            return _Reference(lambda: getter(index), lambda value: owner.set(index, value))
+            setter = owner.set_index if isinstance(owner, _TABLE_COLLECTIONS) else owner.set
+            return _Reference(lambda: getter(index), lambda value: setter(index, value))
         # Literals and computed expressions have no caller storage to rebind.
         return self.visit(node)
 
@@ -617,9 +672,10 @@ class Interpreter:
                 value.set_member(node.target.name, self.visit(node.value))
             else:
                 if not isinstance(value, _COLLECTIONS):
-                    raise TypeError("Индексирование поддерживается только для массива, структуры и соответствия")
+                    raise TypeError("Индексирование поддерживается только для коллекций")
                 index = self.visit(node.target.index)
-                value.set(index, self.visit(node.value))
+                setter = value.set_index if isinstance(value, _TABLE_COLLECTIONS) else value.set
+                setter(index, self.visit(node.value))
 
     def set_variable(self, name: str, value: object) -> None:
         name = name.casefold()

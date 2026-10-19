@@ -51,6 +51,10 @@ class BSLType(Enum):
     DATE_FRACTIONS = "ЧастиДаты"
     DATE_FRACTIONS_NAMESPACE = "ПеречислениеЧастиДаты"
     TYPE_DESCRIPTION = "ОписаниеТипов"
+    VALUE_TABLE = "ТаблицаЗначений"
+    VALUE_TABLE_COLUMN_COLLECTION = "КоллекцияКолонокТаблицыЗначений"
+    VALUE_TABLE_COLUMN = "КолонкаТаблицыЗначений"
+    VALUE_TABLE_ROW = "СтрокаТаблицыЗначений"
 
     def __str__(self) -> str:
         return "Не определено" if self is BSLType.UNDEFINED else self.value

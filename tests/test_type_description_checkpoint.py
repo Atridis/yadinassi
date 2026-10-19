@@ -1,4 +1,4 @@
-"""Immutable native TypeDescription probes and exact owner-output parity."""
+"""Compact TypeDescription probes confirmed by owner commit f28dcc51a6b631cb4a8a3526dfcdc57172efbfc6."""
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 import unittest
@@ -15,7 +15,7 @@ from scripts.smoke_test import (pending_types_checkpoint, split_type_supplement,
                                 TYPES_SUPPLEMENT_HELPERS_START, TYPES_SUPPLEMENT_BODY_START)
 
 from yadinassi import Interpreter, ast
-from yadinassi.parser import parse
+from yadinassi.parser import parse, parse_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
@@ -23,6 +23,14 @@ START = '// Нативный checkpoint описаний типов.'
 OLD_BODY = '// Значение, тип и настоящий прямой/обратный кодек.'
 BODY = '// Описания типов: наблюдения без заранее заданных ответов.'
 FINAL = 'types.checkpoint.complete: [ok]'
+REMOVED_RESEARCH_LABELS = {
+    'description.contains', 'description.contains-missing', 'description.contains-wrong',
+    'description.property-aliases',
+    'adjust.default.number', 'adjust.default.string', 'adjust.default.date',
+    'adjust.default.boolean', 'adjust.default.number-string', 'adjust.default.string-number',
+    'adjust.default.number-date', 'adjust.default.undefined-number', 'adjust.default.null',
+    'adjust.default.empty',
+}
 
 
 def source():
@@ -52,9 +60,54 @@ def walk(value):
 
 
 class TypeDescriptionCheckpointTests(unittest.TestCase):
+    def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
+        # Local formatter contract, never a newly manufactured native golden.
+        from decimal import Decimal
+        from yadinassi.serialization import value_to_string_internal
+        from yadinassi.structures import BSLStructure
+        from yadinassi.values import BSLArray, NULL
+        vm = Interpreter()
+        vm.execute(helpers())
+        scalars = [None, NULL, False, Decimal(0), '0', '',
+                   'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
+        for value in scalars:
+            vm.register_function('FormatterValue', lambda: value)
+            actual = vm.execute('ПолеКомпактныхТипов(FormatterValue())')
+            expected = value_to_string_internal(value).replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
+            self.assertEqual(actual, expected)
+            self.assertNotIn('\r', actual)
+            self.assertNotIn('\n', actual)
+        representations = []
+        for value in (BSLArray(), BSLStructure(), BSLStructure('Count', Decimal(0))):
+            vm.register_function('FormatterValue', lambda: value)
+            representations.append(vm.execute('ПоляКомпактныхТипов(FormatterValue(), "value")'))
+        self.assertEqual(len(set(representations)), 3)
+
+        # Actual controls and their literal escape spellings must never collide.
+        from yadinassi.serialization import value_from_string_internal
+        pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
+        encoded = []
+        for value in pairs:
+            vm.register_function('FormatterValue', lambda: value)
+            text = vm.execute('ПолеКомпактныхТипов(FormatterValue())')
+            encoded.append(text)
+            restored, position = [], 0
+            escapes = {'\\': '\\', 'n': '\n', 'r': '\r', 't': '\t'}
+            while position < len(text):
+                if text[position] == '\\':
+                    self.assertLess(position + 1, len(text))
+                    self.assertIn(text[position + 1], escapes)
+                    restored.append(escapes[text[position + 1]])
+                    position += 2
+                else:
+                    restored.append(text[position])
+                    position += 1
+            self.assertEqual(value_from_string_internal(''.join(restored)), value)
+        self.assertEqual(len(set(encoded)), len(pairs))
+
     def test_fixed_bounded_matrix(self):
         observations = calls()
-        self.assertEqual(len(observations), 146)
+        self.assertEqual(len(observations), 132)
         labels = set()
         for call in observations:
             self.assertEqual(len(call.arguments), 2)
@@ -67,8 +120,9 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
             self.assertLess(len(expression), 250)
             self.assertNotRegex(expression, r'[\r\n]')
             self.assertNotRegex(expression, r'(?i)\b(?:Eval|Execute|Import|Goto|While|For)\b')
-            # Fixed Eval strings include native syntax-error controls. The
-            # outer source must parse; these strings need not be valid syntax.
+            # Obsolete direct-constructor controls were removed; every retained
+            # main expression must compile. Explicit syntax probes live in the supplement.
+            parse_expression(expression)
         self.assertTrue(source().rstrip().endswith('Сообщить("' + FINAL + '");'))
 
     def test_declarations_precede_main_and_new_constructors_are_only_strings(self):
@@ -97,7 +151,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
             self.assertIn(family + '.type-name', probes)
         for label in ('description.copy.add-remove', 'description.copy.qualifiers',
                       'description.copy.override', 'description.all-qualifiers',
-                      'description.types-copy', 'description.contains',
+                      'description.types-copy',
                       'number.ctor.fraction-exceeds', 'number.ctor.max38',
                       'number.ctor.above38', 'adjust.qualified-number.half',
                       'adjust.qualified-number.negative-half',
@@ -120,17 +174,55 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
 ''')
         self.assertEqual(output, ['types.missing: [error]', 'types.syntax: [error]',
                                  'types.unserializable: [serialize-error]',
-                                 'types.next: [{"N",5}]'])
+                                 'types.next: [value={"N",5}]'])
 
     def test_snapshot_records_real_codec_and_nested_inverse_for_existing_value(self):
         vm = Interpreter()
         vm.execute(helpers())
         result = vm.execute('СнимокТипов(12.5)')
         self.assertEqual(result.get('Write'), '{"N",12.5}')
-        self.assertEqual(result.get('ReadWrite'), result.get('Write'))
+        self.assertTrue(result.get('ReadWriteEqual'))
+        self.assertNotIn('readwrite', result._items)  # Equal stream is represented once.
+        self.assertTrue(result.get('TypeReadEqual'))
         self.assertEqual(result.get('ReadType'), result.get('Type'))
         self.assertTrue(result.get('Equal'))
         self.assertIn('{"N",12.5}', result.get('Nested'))
+
+    def test_qualifier_snapshot_retains_exact_differing_inverse_from_owner_evidence(self):
+        import re
+        from yadinassi.serialization import value_to_string_internal
+        from yadinassi.values import BSLType
+        # Exact fields of the genuine compact owner record, not generated goldens.
+        native = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        records = re.findall(r'^types\.number\.default\.en: \[(.*)\]$', native, re.MULTILINE)
+        self.assertEqual(len(records), 1)
+        expected_write = '{"#",f6f6ce00-392c-49ed-8c6e-4e0295fd4051}'
+        for name, value in (('Write', expected_write), ('ReadType', BSLType.UNDEFINED),
+                            ('ReadWriteEqual', False), ('ReadWrite', '{"U"}')):
+            field = 'value.' + name + '=' + value_to_string_internal(value)
+            self.assertRegex(records[0], re.escape(field) + r'(?:;|$)')
+        vm = Interpreter()
+        vm.execute(helpers())
+        result = vm.execute('СнимокТипов(New NumberQualifiers())')
+        self.assertEqual(result.get('Write'), expected_write)
+        self.assertEqual(result.get('ReadType'), BSLType.UNDEFINED)
+        self.assertFalse(result.get('ReadWriteEqual'))
+        self.assertEqual(result.get('ReadWrite'), '{"U"}')
+
+    def test_supplement_retains_raw_inverse_when_a_stage_changes(self):
+        # Synthetic stage failure/change is a formatter observability test,
+        # not a claim about a new native TypeDescription conversion.
+        _, supplement = split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))
+        vm = Interpreter()
+        vm.execute(supplement.split(TYPES_SUPPLEMENT_BODY_START, 1)[0])
+        ordinary = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
+        self.assertTrue(ordinary.get('ReadWriteEqual'))
+        self.assertNotIn('readwrite', ordinary._items)
+        vm.register_function('ЗначениеИзСтрокиВнутр', lambda text: None)
+        changed = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
+        self.assertEqual(changed.get('Write'), ordinary.get('Write'))
+        self.assertFalse(changed.get('ReadWriteEqual'))
+        self.assertEqual(changed.get('ReadWrite'), '{"U"}')
 
     def test_snapshot_failed_stages_do_not_prevent_record(self):
         vm = Interpreter()
@@ -140,16 +232,26 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         for field in ('Type', 'Write', 'ReadType', 'Nested'):
             self.assertEqual(result.get(field), '[error]')
 
-    def test_original_type_observations_match_owner_output_exactly(self):
-        # Run helpers and the original 146 probes independently; the full-file
-        # comparator additionally covers preceding XML and every other output byte.
+    def test_compact_type_observations_match_owner_output_and_ordered_labels(self):
+        import re
         output = []
         Interpreter(output=output.append).execute(helpers() + BODY + source().split(BODY, 1)[1])
         expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
         expected = expected.split('xml.checkpoint.complete: [ok]\n', 1)[1]
         expected = expected.split('types.checkpoint.complete: [ok]\n', 1)[0] + FINAL + '\n'
+        native_labels = re.findall(r'^types\.([a-z0-9.-]+): \[', expected, re.M)
+        self.assertFalse(set(native_labels) & REMOVED_RESEARCH_LABELS)
+        compact_labels = [c.arguments[0].value for c in calls()] + ['checkpoint.complete']
+        self.assertEqual(compact_labels, native_labels)
         actual = native_outputs.normalize_newlines('\n'.join(output) + '\n')
         self.assertEqual(actual, expected)
+        self.assertEqual(output[-1], FINAL)
+        self.assertEqual([line.split(': [', 1)[0] for line in output],
+                         ['types.' + label for label in compact_labels])
+
+    def test_full_native_comparator_accepts_confirmed_values_output(self):
+        case = native_outputs.NativeOutputTests('test_native_outputs')
+        case.compare_script(SOURCE)
 
 
 
@@ -175,7 +277,7 @@ class SupplementalTypesGateTests(unittest.TestCase):
         program = SOURCE.read_text(encoding='utf-8-sig')
         original, supplement = split_type_supplement(program)
         self.assertEqual(hashlib.sha256(original.encode()).hexdigest(),
-                         '2d49d5f557c6994e9d21594880c1c9fb482cf7f68fb39148a4049ecedc7add15')
+                         smoke_test.TYPES_ORIGINAL_SOURCE_SHA256)
         self.assertEqual(split_type_supplement(original), (original, ''))
         self.assertTrue(supplement.startswith(TYPES_SUPPLEMENT_HELPERS_START))
         self.assertIn(TYPES_SUPPLEMENT_BODY_START, supplement)
@@ -188,7 +290,7 @@ class SupplementalTypesGateTests(unittest.TestCase):
             with self.subTest(changed=changed[-100:]), self.assertRaises(AssertionError):
                 split_type_supplement(changed)
 
-    def test_standalone_supplement_matches_owner_output_exactly(self):
+    def test_compact_supplement_matches_confirmed_native_output(self):
         _, supplement = split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))
         output = []
         Interpreter(output=output.append).execute(supplement)
@@ -196,6 +298,7 @@ class SupplementalTypesGateTests(unittest.TestCase):
         expected = expected.split('types.checkpoint.complete: [ok]\n', 1)[1]
         actual = native_outputs.normalize_newlines('\n'.join(output) + '\n')
         self.assertEqual(actual, expected)
+        self.assertEqual(output[-1], 'types-extra.checkpoint.complete: [ok]')
 
 
 class StrictNativeGateTests(unittest.TestCase):
@@ -203,13 +306,13 @@ class StrictNativeGateTests(unittest.TestCase):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(hashlib.sha256(actual).hexdigest(), '964a0505512651473dcaf6f8bf038d89bf7934ea254e772fc2e1ea17aca5738b')
 
-    def test_original_frozen_full_native_comparator_is_unchanged(self):
+    def test_frozen_full_native_comparator_has_reviewed_diagnostic_only_update(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')
         block = ('def check_saved_native_outputs('
                  + text.split('def check_saved_native_outputs(', 1)[1]
                  .split('def check_timezone_configuration(', 1)[0])
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
-                         "9f73caaec2334b4bcdf745819ae39d69fa3d8e8de065f7ace5ead14cc48914a8")
+                         "127882904780d3083fb7bd651997defb55449db8e6eb4758c0ea20e67d0d9426")
 
     def test_frozen_full_modes_and_bounded_command_aliases(self):
         expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')

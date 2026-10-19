@@ -1671,18 +1671,18 @@ def validate_xml_checkpoint_output(output: str, expected_null: str, labels: list
 
 
 
-# Historical source boundaries are immutable. Native semantics are checked
-# against the complete owner output, including the receiver supplement.
+# Compact-source boundaries are review-guarded; the legacy Null/XML prefix
+# stays immutable. Fresh owner output is required after source compaction.
 VALUES_CONFIRMED_SHA256 = '8c6670294114773f6daabb847567390ab82bd2aba5105fe773b54482b065be44'
-TYPES_HELPERS_SHA256 = '4dffaf095b80b3fc01198e7463d8d9a58e096b9e60b86e7327c4b43d5b7b2790'
-TYPES_BODY_SHA256 = 'd2f4ecccc3aa03180d190a52082efb344338fcd9b52aed331d2ef9548d5dbb7a'
+TYPES_HELPERS_SHA256 = '9ef8a920cd7f557a490ae8003a0460d61d5141602ea5316546f09faa29d4e5d4'
+TYPES_BODY_SHA256 = 'a0f362ced62489c3b7e2b837ed6f9850258c2cbdca082d90ae50ad75c3f35bbf'
 TYPES_HELPERS_START = '// Нативный checkpoint описаний типов.'
 TYPES_BODY_START = '// Описания типов: наблюдения без заранее заданных ответов.'
 TYPES_FINAL = 'types.checkpoint.complete: [ok]'
 
 
-TYPES_ORIGINAL_SOURCE_SHA256 = '2d49d5f557c6994e9d21594880c1c9fb482cf7f68fb39148a4049ecedc7add15'
-TYPES_SUPPLEMENT_HELPERS_SHA256 = '95ed531b206e2cc5815b0f84a1126e7567a7f2dbeeb759beefb3073b1dc1d52e'
+TYPES_ORIGINAL_SOURCE_SHA256 = '819d8b8e4cc68782692281b46446c9eca58552162a9cad762a7f967b5162dec6'
+TYPES_SUPPLEMENT_HELPERS_SHA256 = '1765b1520cf6fc59c7380c8a767e28dc12759616f6440ab019153f5e5a92eb66'
 TYPES_SUPPLEMENT_BODY_SHA256 = '21f310a6c5f85a7481b3666606685ab4099eec9ea6f6cf85bad9bb5e422fef25'
 TYPES_SUPPLEMENT_HELPERS_START = '// Дополнение нативной проверки: вызов через переменную.'
 TYPES_SUPPLEMENT_BODY_START = '// Дополнение описаний типов: вызов через переменную.'
@@ -1690,7 +1690,7 @@ TYPES_SUPPLEMENT_FINAL = 'types-extra.checkpoint.complete: [ok]'
 
 
 def split_type_supplement(program: str) -> tuple[str, str]:
-    """Recover the byte-identical original and separately hash-guarded supplement."""
+    """Split the reviewed main source and self-contained receiver supplement."""
     markers = (TYPES_SUPPLEMENT_HELPERS_START, TYPES_SUPPLEMENT_BODY_START)
     if not any(marker in program for marker in markers):
         return program, ''
@@ -1757,7 +1757,7 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
                                 encoding='utf-8', timeout=30)
         if result.returncode or result.stderr or result.stdout != expected:
             raise AssertionError(f'Frozen native output mismatch: {name}: {result!r}')
-    print('Binary native parity passed: all six complete owner outputs, including 784 values lines')
+    print('Binary native parity passed: all six complete owner outputs')
 
 
 def check_timezone_configuration(executable: str, *, directory: Path, env: dict) -> None:
@@ -1818,7 +1818,7 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Full native values checkpoint mismatch {arguments[0:1]!r}: {result!r}')
-    print('Binary native values parity passed: all 5736 owner lines, including 146 original '
+    print('Binary native values parity passed: complete committed owner output, including main '
           'and 23 supplemental type observations; BOM file, stdin and console')
     # Windows CreateProcess limits argv to 32767 UTF-16 code units. The full
     # source exceeds that bound; exercise command aliases with the self-contained
@@ -1838,6 +1838,69 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     print('Binary command aliases passed: exact 23-probe owner TypeDescription/qualifier/codec '
           'supplement; bounded sample for Windows argv limit, not full values command coverage')
     check_timezone_configuration(executable, directory=directory, env=env)
+
+
+TABLE_COMMAND_LABELS = (
+    'codec.table', 'codec.column', 'read.column-property', 'mutate.column-add',
+    'mutate.copy-selected', 'typed.fixed-string', 'links.nested-sharing',
+    'links.codec-object-graph',
+)
+
+
+def table_command_checkpoint(program: str, expected: str) -> tuple[str, str]:
+    """Select unchanged native observations for the Windows command-size budget."""
+    start = '// Нативный checkpoint ТаблицыЗначений: без придуманных ответов.'
+    end = '// Конец помощников checkpoint ТаблицыЗначений.'
+    if program.count(start) != 1 or program.count(end) != 1:
+        raise AssertionError('Expected immutable table helper boundaries')
+    helpers = start + program.split(start, 1)[1].split(end, 1)[0]
+    lines = []
+    records = []
+    boundaries = list(re.finditer(r'^(table\.[a-z0-9.-]+): \[', expected, re.MULTILINE))
+    for label in TABLE_COMMAND_LABELS:
+        source_lines = [line for line in program.splitlines()
+                        if line.startswith('НаблюдатьТаблицы("' + label + '", ')]
+        matches = [index for index, match in enumerate(boundaries)
+                   if match.group(1) == 'table.' + label]
+        if len(source_lines) != 1 or len(matches) != 1:
+            raise AssertionError('Missing/duplicate bounded table observation: ' + label)
+        lines.append(source_lines[0])
+        index = matches[0]
+        last = boundaries[index + 1].start() if index + 1 < len(boundaries) else len(expected)
+        records.append(expected[boundaries[index].start():last])
+    return helpers + '\n'.join(lines) + '\n', ''.join(records)
+
+
+def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
+    """Every owner collections byte in full modes; bounded exact command sample."""
+    directory.mkdir()
+    source_path = ROOT / 'integrational_tests/tests/collections.bsl'
+    output_path = ROOT / 'integrational_tests/output/collections.out'
+    if output_path.with_suffix('.err').exists():
+        raise AssertionError('Native error file exists: collections')
+    program = source_path.read_text(encoding='utf-8-sig')
+    expected = output_path.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+    if not expected.endswith('table.checkpoint.complete: [ok]\n'):
+        raise AssertionError('Missing native table completion marker')
+    env = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
+    source = directory / 'Таблицы с пробелами.bsl'
+    source.write_text(program, encoding='utf-8-sig')
+    for arguments, stdin in [([str(source)], None), (['-'], program), ([], program + '/exit\n')]:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Full native collections checkpoint mismatch {arguments[0:1]!r}: {result!r}')
+    command_program, command_expected = table_command_checkpoint(program, expected)
+    for flag in ('-c', '-с', '--command'):
+        arguments = [executable, flag, command_program]
+        if len(subprocess.list2cmdline(arguments).encode('utf-16-le')) // 2 + 1 >= 32767:
+            raise AssertionError('Native table command sample exceeds Windows UTF-16 argv limit')
+        result = subprocess.run(arguments, capture_output=True, encoding='utf-8',
+                                cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
+            raise AssertionError(f'Native table command sample mismatch {flag}: {result!r}')
+    print('Binary native collections parity passed: complete owner output including 142 table '
+          'observations via BOM file/stdin/console; eight exact native observations via command aliases')
 
 
 def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dict) -> None:
@@ -1910,6 +1973,7 @@ def main() -> None:
         check_saved_native_outputs(executable, directory=Path(temporary) / "native-full", env=env)
         check_null(executable, directory=Path(temporary) / "null", env=env)
         check_xml_checkpoint(executable, directory=Path(temporary) / "xml-checkpoint", env=env)
+        check_table_checkpoint(executable, directory=Path(temporary) / "table-checkpoint", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
@@ -2075,7 +2139,7 @@ For Each pair In m Do
     Message(ТипЗнч(pair) = Type("kEyAnDvAlUe"));
 EndDo;
 Try
-    Type("ValueTable");
+    Type("ValueList");
 Except
     Message("неизвестный тип");
 EndTry;
@@ -2093,7 +2157,7 @@ Message(TypeOf(kind) = Тип("Тип"));
         type_file.write_text(type_code, encoding='utf-8-sig')
         type_module = Path(temporary) / 'ТипыМодуля.bsl'
         type_module.write_text(
-            'Function Failure() Export\nReturn Type("ValueTable");\nEndFunction\n'
+            'Function Failure() Export\nReturn Type("ValueList");\nEndFunction\n'
             'Function Kind(Val value) Export Return TypeOf(value); EndFunction\n'
             'Function Mapping() Export\n'
             'm = New Map; m[Тип("Число")] = Тип("Строка"); Return m;\nEndFunction\n',
@@ -2250,7 +2314,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             (['-'], type_code, type_output, 0),
             ([], type_code + '/exit\n', type_output, 0),
             ([str(type_importer)], None,
-             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: ValueTable\nДа\n', 0),
+             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: ValueList\nДа\n', 0),
             ([str(region_file)], None, '42\n', 0),
             (['-c', region_code], None, '42\n', 0),
             (['-'], region_code, '42\n', 0),
@@ -2334,18 +2398,18 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed fixed-collection diagnostics {arguments!r}: {result!r}')
         type_errors = [
-            (['-c', 'Type("ValueTable");'], None, '', '<команда>:1:', 'Тип не поддерживается: ValueTable'),
+            (['-c', 'Type("ValueList");'], None, '', '<команда>:1:', 'Тип не поддерживается: ValueList'),
             (['-c', 'Тип(1);'], None, '', '<команда>:1:', 'Имя типа должно быть строкой'),
             (['-c', 'TypeOf(Message);'], None, '', '<команда>:1:',
              'ТипЗнч для этого значения пока не поддерживается'),
-            (['-'], 'Тип("ТаблицаЗначений");\n', '', '<stdin>:1:', 'Тип не поддерживается: ТаблицаЗначений'),
+            (['-'], 'Тип("СписокЗначений");\n', '', '<stdin>:1:', 'Тип не поддерживается: СписокЗначений'),
             ([str(type_error_file)], None, '', str(type_error_file) + ':2:',
              'ТипЗнч для этого значения пока не поддерживается'),
             ([str(type_error_importer)], None, '', str(type_module.resolve()) + ':2:',
-             'Тип не поддерживается: ValueTable'),
-            ([], 'kind = Type("Number");\nkind = Type("ValueTable");\n'
+             'Тип не поддерживается: ValueList'),
+            ([], 'kind = Type("Number");\nkind = Type("ValueList");\n'
              'kind\nTypeOf(kind)\n/exit\n', 'Число\nТип\n', '<консоль>:1:',
-             'Тип не поддерживается: ValueTable'),
+             'Тип не поддерживается: ValueList'),
         ]
         for arguments, stdin, stdout, location, message in type_errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,

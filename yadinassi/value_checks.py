@@ -8,6 +8,7 @@ from .maps import BSLFixedMap, BSLMap
 from .strings import is_blank
 from .structures import BSLFixedStructure, BSLStructure
 from .values import BSLArray, BSLFixedArray, NULL
+from .value_tables import BSLValueTable
 
 
 def value_is_filled(value: object) -> bool:
@@ -30,6 +31,8 @@ def value_is_filled(value: object) -> bool:
     if (kind is BSLStructure or kind is BSLFixedStructure
             or kind is BSLMap or kind is BSLFixedMap):
         return len(value._items) != 0
+    if kind is BSLValueTable:
+        return len(value.rows) != 0
     # Defaults for type descriptors, system enums and other objects have not
     # been established. Do not invent native behavior or use Python truthiness.
     raise TypeError("ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi")

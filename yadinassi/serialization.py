@@ -20,8 +20,9 @@ from .type_qualifiers import (
     BSLAllowedLength, BSLAllowedSign, BSLDateFractions, BSLDateQualifiers,
     BSLNumberQualifiers, BSLStringQualifiers,
 )
+from .value_tables import BSLValueTable
 from .type_values import type_of
-from .values import BSLArray, BSLFixedArray, BSLType, NULL
+from .values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
 
 _MAX_NUMBER_DIGITS = 4096
@@ -61,6 +62,10 @@ _TYPE_IDS = {
     BSLType.DATE_FRACTIONS: "8089abb5-ff39-4414-8252-c0dcef1c3d6b",
     BSLType.DATE_FRACTIONS_NAMESPACE: "83f71799-efb3-4984-a19b-6ed4f3cbc691",
     BSLType.TYPE_DESCRIPTION: "f5c65050-3bbb-11d5-b988-0050bae0a95d",
+    BSLType.VALUE_TABLE: "acf6192e-81ca-46ef-93a6-5a6968b78663",
+    BSLType.VALUE_TABLE_COLUMN_COLLECTION: "0e2c7b45-ad6d-4ebe-8c9b-358d42ab5002",
+    BSLType.VALUE_TABLE_COLUMN: "e162969e-36e8-44f4-a5fd-fa2bf170a4f5",
+    BSLType.VALUE_TABLE_ROW: "ac6bbae9-9a0f-4ec9-be2a-d9b1caa4eb36",
 }
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
@@ -84,11 +89,13 @@ _OPAQUE_TYPES = frozenset({
     BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
     BSLType.ALLOWED_SIGNS, BSLType.ALLOWED_LENGTHS,
     BSLType.DATE_FRACTIONS_NAMESPACE,
+    BSLType.VALUE_TABLE_COLUMN_COLLECTION, BSLType.VALUE_TABLE_COLUMN,
+    BSLType.VALUE_TABLE_ROW,
 })
 _OPAQUE_IDS = frozenset(_TYPE_IDS[kind] for kind in _OPAQUE_TYPES)
 _CODECS = (frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
                      BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
-                     BSLType.TYPE_DESCRIPTION})
+                     BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE})
            | frozenset(_ENUM_TYPES) | _OPAQUE_TYPES | _ARRAYS | _STRUCTURES | _MAPS)
 _PATTERN_TYPES = {'B': BSLType.BOOLEAN, 'S': BSLType.STRING, 'D': BSLType.DATE,
                  'N': BSLType.NUMBER, 'L': BSLType.NULL}
@@ -130,6 +137,19 @@ def _require_representable_description(value: BSLTypeDescription) -> None:
             or b.length != 0 or b.allowed_length is not BSLAllowedLength.VARIABLE):
         raise ValueError("ЗначениеВСтрокуВнутр: квалификаторы отсутствующего типа "
                          "пока не поддерживаются в Yadinassi до проверки на реальной 1С")
+
+
+def _table_cell_matches(description, value):
+    """Validate a snapshot without coercing its payload or erasing qualifiers."""
+    if not description.types:
+        return True
+    if value is None:
+        # Composite descriptions have Undefined as their observed default.
+        return len(description.types) > 1
+    if type_of(value) not in description.types:
+        return False
+    adjusted = description.adjust_value(value)
+    return type_of(adjusted) is type_of(value) and equal(adjusted, value)
 
 
 def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
@@ -225,7 +245,9 @@ class _Writer:
             self.active.add(identity)
             try:
                 self.emit('{"#",' + _TYPE_IDS[kind] + ',\n')
-                if kind is BSLType.KEY_AND_VALUE:
+                if kind is BSLType.VALUE_TABLE:
+                    self.table(value, depth)
+                elif kind is BSLType.KEY_AND_VALUE:
                     self.pair(value.key, value.value, depth)
                 else:
                     count = len(value.items) if kind in _ARRAYS else len(value._items)
@@ -253,6 +275,50 @@ class _Writer:
                 self.emit('\n}')
             finally:
                 self.active.remove(identity)
+
+    def table(self, table, depth):
+        # Canonical snapshot layout established by table.codec.empty/table.
+        # Index definitions and noncanonical historic IDs are not synthesized.
+        columns, rows = table.columns.items, table.rows
+        nc, nr = len(columns), len(rows)
+        self.nodes += nc + nr
+        if self.nodes > _MAX_NODES or nc * nr > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        self.emit('{9,\n{' + str(nc))
+        for index, column in enumerate(columns):
+            description = column.value_type
+            if type(description) is not BSLTypeDescription:
+                raise TypeError("ЗначениеВСтрокуВнутр: ожидается ОписаниеТипов колонки")
+            width = column.width
+            if (type(width) is not Decimal or not width.is_finite()
+                    or not 0 <= width < 2 ** 32 or width != width.to_integral_value()):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимая ширина колонки")
+            _require_representable_description(description)
+            self.emit(',\n{' + str(index) + ',')
+            self.string(column.name)
+            self.emit(',\n{"Pattern"')
+            for kind in description.types:
+                self.emit(',\n' + _pattern_entry(kind, description))
+            self.emit('\n}' if description.types else '}')
+            self.emit(',')
+            self.string(column.title)
+            self.emit(',' + str(int(width)) + '}')
+        self.emit('\n}' if nc else '}')
+        self.emit(',\n{2,' + str(nc))
+        for index in range(nc):
+            self.emit(',' + str(index) + ',' + str(index))
+        self.emit(',\n{1,' + str(nr))
+        for index, row in enumerate(rows):
+            self.emit(',\n{2,' + str(index) + ',' + str(nc))
+            for column in columns:
+                self.emit(',\n')
+                cell = row.cells[column]
+                if not _table_cell_matches(column.value_type, cell):
+                    raise ValueError("ЗначениеВСтрокуВнутр: значение ячейки не соответствует типу колонки")
+                self.value(cell, depth + 1)
+            self.emit(',0}')
+        self.emit('\n}' if nr else '}')
+        self.emit(',' + str(nc - 1) + ',' + str(nr - 1) + '},\n{0,0}\n}')
 
     def pair(self, key, value, depth):
         self.emit('{\n')
@@ -426,6 +492,71 @@ class _Reader:
             self.fail()
         return result
 
+    def table_count(self, token):
+        if type(token) is not _Atom or _COUNT.fullmatch(token.text) is None:
+            self.fail()
+        if len(token.text) > 5 or int(token.text) > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        return int(token.text)
+
+    def table(self, body, depth):
+        # Deliberately strict inverse subset of the observed version-9 stream.
+        # Unknown versions, indexes, reference IDs and flags are not guessed.
+        if (len(body) != 4 or body[0] != _Atom('9')
+                or type(body[1]) is not list or not body[1]
+                or type(body[2]) is not list or body[3] != [_Atom('0'), _Atom('0')]):
+            self.fail()
+        definitions, data = body[1], body[2]
+        nc = self.table_count(definitions[0])
+        if len(definitions) != nc + 1 or len(data) != 2 * nc + 5:
+            self.fail()
+        if data[:2] != [_Atom('2'), _Atom(str(nc))]:
+            self.fail()
+        for index in range(nc):
+            if data[2 + index * 2:4 + index * 2] != [_Atom(str(index))] * 2:
+                self.fail()
+        rows = data[-3]
+        if type(rows) is not list or len(rows) < 2 or rows[0] != _Atom('1'):
+            self.fail()
+        nr = self.table_count(rows[1])
+        if len(rows) != nr + 2 or data[-2:] != [_Atom(str(nc - 1)), _Atom(str(nr - 1))]:
+            self.fail()
+        self.nodes += nc + nr
+        if self.nodes > _MAX_NODES or nc * nr > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        result = BSLValueTable()
+        for index, entry in enumerate(definitions[1:]):
+            if (type(entry) is not list or len(entry) != 5
+                    or entry[0] != _Atom(str(index)) or type(entry[1]) is not str
+                    or type(entry[2]) is not list or type(entry[3]) is not str):
+                self.fail()
+            description = self.pattern(entry[2])
+            width = self.number(entry[4])
+            if not 0 <= width < 2 ** 32 or width != width.to_integral_value():
+                self.fail()
+            try:
+                column = result.columns.add(entry[1], description, entry[3], width)
+            except (TypeError, ValueError):
+                self.fail()
+            if column.name != entry[1] or column.title != entry[3] or column.width != width:
+                self.fail()
+        for index, entry in enumerate(rows[2:]):
+            if (type(entry) is not list or len(entry) != nc + 4
+                    or entry[:3] != [_Atom('2'), _Atom(str(index)), _Atom(str(nc))]
+                    or entry[-1] != _Atom('0')):
+                self.fail()
+            row = result.add()
+            for column, cell in zip(result.columns.items, entry[3:-1]):
+                value = self.value(cell, depth + 1)
+                try:
+                    matches = _table_cell_matches(column.value_type, value)
+                except (TypeError, ValueError):
+                    self.fail()
+                if not matches:
+                    self.fail()
+                row.cells[column] = value
+        return result
+
     def value(self, group, depth=0):
         self.nodes += 1
         if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
@@ -475,6 +606,8 @@ class _Reader:
             self.fail()
         if kind is BSLType.TYPE_DESCRIPTION:
             return self.pattern(body)
+        if kind is BSLType.VALUE_TABLE:
+            return self.table(body, depth)
         if kind is BSLType.KEY_AND_VALUE and len(body) == 2:
             return BSLKeyAndValue(self.value(body[0], depth + 1), self.value(body[1], depth + 1))
         if kind not in _ARRAYS | _STRUCTURES | _MAPS or not body or type(body[0]) is not _Atom:

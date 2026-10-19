@@ -261,7 +261,7 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send("... ", 'Message("Перехвачено");\n')
         send("... ", 'EndTry;\n')
         # An uncaught failure must preserve the value and restore the main prompt.
-        send(">>> ", 'kind = Type("ValueTable");\n')
+        send(">>> ", 'kind = Type("ValueList");\n')
         send(">>> ", 'kind\n')
         send(">>> ", '(TypeOf(True) = Type("bOoLeAn"))\n')
         send(">>> ", '(kind = "Число")\n')
@@ -599,7 +599,7 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Значения несовместимы для сравнения') != 2
                 or output.count('Невозможно преобразовать значение в число') != 5
                 or output.count('Окр: ожидается число или значение РежимОкругления') != 1
-                or output.count('Тип не поддерживается: ValueTable') != 1
+                or output.count('Тип не поддерживается: ValueList') != 1
                 or output.count('недоступны для записи') != 2
                 or output.count('недоступно для записи') != 1
                 or output.count('не найдено: Add') != 1
