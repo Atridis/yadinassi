@@ -1400,7 +1400,7 @@ def check_numeric_presentation(executable: str, *, directory: Path, env: dict) -
     """Check the native NBSP grouping and decimal-comma contract before the native sample gate.
 
     This is not a substitute for native comparison: main() still requires the
-    untouched owner-provided basic output, including its arithmetic precision.
+    untouched owner-provided sample fixture, including its arithmetic precision.
     """
     directory.mkdir()
     code = '''value = nUmBeR("-1234.5000");
@@ -1520,7 +1520,7 @@ def main() -> None:
         check_goto(executable, directory=Path(temporary) / "goto", env=env)
         check_internal_serialization(executable, directory=Path(temporary) / "serialization", env=env)
         sample = Path(temporary) / "пример.bsl"
-        sample.write_bytes((ROOT / "integrational_tests" / "tests" / "basic.bsl").read_bytes())
+        sample.write_bytes((ROOT / "basic.bsl").read_bytes())
         module = Path(temporary) / "Побочное.bsl"
         module.write_text('#Область ПубличныйИнтерфейс\n#Если Клиент Тогда\n&НаКлиенте\n'
                           'Функция ПолучитьСумму(А, Б = 2) Экспорт\n'

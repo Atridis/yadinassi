@@ -32,10 +32,10 @@ def helper():
 
 
 class NullCheckpointTests(unittest.TestCase):
-    def test_discovery_keeps_six_existing_scenarios_and_adds_values(self):
+    def test_discovery_keeps_five_existing_scenarios_and_adds_values(self):
         self.assertEqual({p.name for p in collect_scripts(SOURCE.parent)},
                          {name + '.bsl' for name in
-                          ('basic', 'functions', 'strings', 'numbers',
+                          ('functions', 'strings', 'numbers',
                            'collections', 'dates', 'values')})
 
     def test_exact_unique_bounded_observations(self):

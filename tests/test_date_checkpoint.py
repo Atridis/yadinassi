@@ -39,7 +39,7 @@ def helper():
 class DateCheckpointTests(unittest.TestCase):
     def test_discovery_includes_new_scenario_and_existing_five(self):
         scripts = {path.name for path in collect_scripts(SOURCE.parent)}
-        self.assertTrue({'basic.bsl', 'functions.bsl', 'collections.bsl',
+        self.assertTrue({'functions.bsl', 'collections.bsl',
                          'numbers.bsl', 'strings.bsl', 'dates.bsl'} <= scripts)
 
     def test_exact_probe_count_unique_labels_and_bounded_payloads(self):
