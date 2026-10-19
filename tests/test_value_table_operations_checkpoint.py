@@ -19,6 +19,12 @@ def source():
     return SOURCE.read_text(encoding='utf-8-sig')
 
 
+def canonical_output_bytes(data):
+    # Only checkout/launcher line endings. Compact escaped scalar CR/LF bytes
+    # remain untouched; this is not a relaxed native output comparison.
+    return data.replace(b'\r\n', b'\n')
+
+
 def section(markers):
     return source().split(markers[0], 1)[1].split(markers[1], 1)[0]
 
@@ -45,8 +51,20 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
             ('collections', 'e1303d51f29feaf475dc253cc20ff965d7ce3570'),
             ('values', '016f30d6f3bdb1a814e86a70e3bcf424383a0d27'),
         ):
-            data = (ROOT / f'integrational_tests/output/{name}.out').read_bytes()
+            data = canonical_output_bytes((ROOT / f'integrational_tests/output/{name}.out').read_bytes())
             self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(), expected)
+
+    def test_owner_output_integrity_accepts_crlf_and_preserves_escapes(self):
+        self.assertEqual(canonical_output_bytes(b'row\r\n{"S","literal \\r\\n"}\r\n'),
+                         b'row\n{"S","literal \\r\\n"}\n')
+        original = Path.read_bytes
+        def windows_bytes(path):
+            data = original(path)
+            if path.suffix == '.out':
+                return data.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+            return data
+        with patch.object(Path, 'read_bytes', windows_bytes):
+            self.test_owner_source_and_outputs_preserved_exactly()
 
     def test_fixed_unique_bounded_expressions(self):
         calls = observations()
