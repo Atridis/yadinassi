@@ -474,3 +474,26 @@ index and cell fields rather than opaque row serialization, with a bound of eigh
 items and independent error catches. These new expected results are still
 pending; the genuine first-run output is unchanged. Full comparisons remain
 strict, and no lookup table or guessed iterator behavior substitutes for evidence.
+
+## Owner supplementary observations (2026-10-19)
+
+Owner commit `6e8d31f942c5d8162d233471ccc375e20a64ed4c` supplies all 62 ordered
+operation records and both completion markers. `collections.out`: 2,870 lines,
+87,513 bytes; Git blob `1230b2a63eee62f88eee0d8a93cfba15d002f376`; SHA-256
+`6bfe5b39236c2745bb99678da8597bb5ee263c7cea2cd445f13054e054010eb9`.
+Removing the seven supplemental records reproduces the prior 2,781-line output
+byte-for-byte. No other golden changed and no `.err` file was added.
+
+Detached rows enumerate current owner-table rows after GroupBy or explicit
+Delete, while Owner/Get/member access still fails; fresh enumeration reflects
+subsequent Add/Clear. Mutation during an already active iterator was not probed.
+Single-type singleton totals retain their original values, and single-type
+aggregation adjusts through column qualifiers after each merge (99+99-99 in
+Number(2,0) produces 0). Ambiguous composite numeric qualification remains
+explicitly unsupported where incremental and final conversion differ.
+
+The supplementary sort boundary disproves the initial UTF-16-surrogate/UCA10
+hypothesis. Official UCA6.0 DUCET codepoint primary/secondary keys match both
+locale observations and the new boundary order without character-specific
+exceptions. This supports a bounded implementation choice, not a claim that
+1C internally uses UCA6.0 or that untested characters/locales are equivalent.

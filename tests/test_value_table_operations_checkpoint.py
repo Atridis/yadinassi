@@ -48,7 +48,7 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'cf922dbeabcd77f5a0ea27fec7164d246d78e9eb')
         for name, expected in (
-            ('collections', '6645f7fa667dfe498cef9109fb7b42078dfb9c43'),
+            ('collections', '1230b2a63eee62f88eee0d8a93cfba15d002f376'),
             ('values', '016f30d6f3bdb1a814e86a70e3bcf424383a0d27'),
         ):
             data = canonical_output_bytes((ROOT / f'integrational_tests/output/{name}.out').read_bytes())
@@ -157,14 +157,14 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
         self.assertEqual(result.get_member('FirstID'), '[error]')
         self.assertEqual(result.get_member('SameRow'), False)
 
-    def test_real_current_runtime_records_all_unsupported_calls(self):
+    def test_real_runtime_records_all_operations(self):
         output = []
         Interpreter(output=output.append).execute(source())
         records = [line for line in output if line.startswith('table.ops.')
                    and not line.startswith('table.ops.checkpoint.')]
         self.assertEqual(len(records), 62)
-        # Do not assert native results. Before implementation, missing methods
-        # must still leave useful state records instead of outer errors.
+        # All operations must leave useful observations, including errors.
+        # Exact native results are enforced by the complete-output gates.
         for record in records:
             self.assertIn('  Status=', record)
             self.assertTrue('  Order=' in record or '  After.Count=' in record)

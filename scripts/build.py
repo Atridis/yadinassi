@@ -57,6 +57,7 @@ def main() -> int:
         "--specpath", str(ROOT / "build"),
         "--add-data", str(Path(pyuca.__file__).with_name(TABLE_NAME)) + os.pathsep + "pyuca",
         "--collect-data", "tzdata",
+        "--collect-data", "yadinassi",
     ]
     if platform.system() == "Darwin":
         command += ["--target-architecture", platform.machine()]

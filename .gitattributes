@@ -1,0 +1,2 @@
+# Keep pinned upstream Unicode data byte-exact on every checkout.
+yadinassi/data/*.txt -text

@@ -50,7 +50,7 @@ class ValueTableSmokeTests(unittest.TestCase):
                 for expected in [self.expected] * 3 + [self.command_expected] * 3]
 
     def test_full_owner_output_and_bounded_sample_use_all_six_transports(self):
-        self.assertEqual(len(self.expected.splitlines()), 2781)
+        self.assertEqual(len(self.expected.splitlines()), 2870)
         with patch.object(smoke_test.subprocess, 'run', side_effect=self.success_results()) as run:
             self.invoke()
         self.assertEqual(run.call_count, 6)
