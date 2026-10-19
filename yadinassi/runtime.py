@@ -4,7 +4,7 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Callable
 
-from . import ast, bits, clocks, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
+from . import ast, bits, clocks, date_time_conversions, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .xml_processing import XML_STRING_PROCESSING
@@ -110,7 +110,8 @@ class Interpreter:
                                "ValueFromStringInternal")
         for name, function, alias in (*strings.BUILTINS, *numbers.BUILTINS,
                                       *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS,
-                                      *dates.BUILTINS, *clocks.BUILTINS):
+                                      *dates.BUILTINS, *clocks.BUILTINS,
+                                      *date_time_conversions.BUILTINS):
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_type("Массив", BSLArray, "Array")

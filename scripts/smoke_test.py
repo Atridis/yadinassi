@@ -1749,6 +1749,54 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     check_timezone_configuration(executable, directory=directory, env=env)
 
 
+def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dict) -> None:
+    """Documented whole-second GMT subset, not owner-generated native output."""
+    directory.mkdir()
+    program = (
+        'base = Date(2024, 2, 29, 23, 59, 59);\n'
+        'local = МестноеВремя(base, "GMT+00:01");\n'
+        'Message(ValueToStringInternal(local));\n'
+        'Message(УниверсальноеВремя(local, "GMT+0:01") = base);\n'
+        'Message(ToLocalTime(base, "GMT-00:00") = base);\n'
+        'Message(ValueToStringInternal(ToUniversalTime(base, "GMT-23:59")));\n'
+        'Message(Eval("ToLocalTime(base, ""GMT+0"")") = base);\n'
+        'a = New Array; a.Add(local);\n'
+        'Message(ValueFromStringInternal(ValueToStringInternal(a))[0] = local);\n')
+    expected = '{"D",20240301000059}\nДа\nДа\n{"D",20240301235859}\nДа\nДа\n'
+    # Each unsupported call must be catchable without assigning over saved data.
+    for expression in ('ToLocalTime(base)', 'ToUniversalTime(base, Undefined)',
+                       'ToLocalTime(base, "Europe/Warsaw")',
+                       'ToLocalTime(base + 0.0001, "GMT+0")',
+                       'ToUniversalTime(Date(1,1,1), "GMT+0:01")',
+                       'ToLocalTime(base, "GMT+24")'):
+        program += (f'saved = base; Try saved = {expression}; '
+                    'Except Message("caught"); EndTry; Message(saved = base);\n')
+        expected += 'caught\nДа\n'
+    source = directory / 'Смещения.bsl'
+    source.write_text(program, encoding='utf-8-sig')
+    # Explicit GMT conversion must not consult either ambient timezone setting.
+    env = dict(env, YADINASSI_TIMEZONE='invalid/zone', TZ='UTC0')
+    cases = [([flag, program], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], program), ([], program + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed fixed-GMT conversion {arguments!r}: {result!r}')
+    module = directory / 'Пояс.bsl'
+    module.write_text('Function Convert(d) Export Return ToLocalTime(d, "GMT+5:30"); '
+                      'EndFunction\n', encoding='utf-8-sig')
+    importer = directory / 'Импорт.bsl'
+    importer.write_text('// #Импорт Пояс.bsl\n'
+                        'Message(ValueToStringInternal(Пояс.Convert(Date(2024,12,31,22,0,0))));\n',
+                        encoding='utf-8-sig')
+    for path in (importer, importer.relative_to(directory.parent)):
+        result = subprocess.run([executable, str(path)], capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, '{"D",20250101033000}\n', ''):
+            raise AssertionError(f'Failed imported fixed-GMT conversion {path!r}: {result!r}')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -1767,6 +1815,7 @@ def main() -> None:
         temporary = str(Path(temporary).resolve())
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
         check_clocks(executable, directory=Path(temporary) / "clocks", env=env)
+        check_fixed_offset_conversions(executable, directory=Path(temporary) / "fixed-gmt", env=env)
         check_saved_native_outputs(executable, directory=Path(temporary) / "native-full", env=env)
         check_null(executable, directory=Path(temporary) / "null", env=env)
         check_xml_checkpoint(executable, directory=Path(temporary) / "xml-checkpoint", env=env)
