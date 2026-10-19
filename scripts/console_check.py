@@ -95,6 +95,25 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         expect("Метка не определена")
         send(">>> ", '~recovered: Message("goto-recovered=" + String(jump_count));\n')
         expect("goto-recovered=3")
+        send(">>> ", 'Function ClockSnapshot()\n')
+        send("... ", 'Return New Structure("Local,UTC,MS", CurrentDate(), '
+             'ТекущаяУниверсальнаяДата(), CurrentUniversalDateInMilliseconds());\n')
+        send("... ", 'EndFunction\n')
+        send(">>> ", 'clockSnapshot = ClockSnapshot();\n')
+        send(">>> ", 'Message("clock-types=" + String(TypeOf(clockSnapshot.Local) = Type("Date") '
+             'And TypeOf(clockSnapshot.UTC) = Type("Date") '
+             'And TypeOf(clockSnapshot.MS) = Type("Number")));\n')
+        expect('clock-types=Да')
+        send(">>> ", 'Try\n')
+        send("... ", 'clockSnapshot = ТекущаяДата(1);\n')
+        send("... ", 'Except\n')
+        send("... ", 'Message("clock-caught");\n')
+        send("... ", 'EndTry;\n')
+        expect('clock-caught')
+        send(">>> ", 'clockRestored = ValueFromStringInternal(ValueToStringInternal(clockSnapshot)); '
+             'Message("clock-recovered=" + String(clockRestored.UTC = clockSnapshot.UTC '
+             'And clockRestored.MS = clockSnapshot.MS));\n')
+        expect('clock-recovered=Да')
         send(">>> ", 'nullValue = nUlL;\n')
         send(">>> ", 'Message("null-codec=" + ValueToStringInternal(nullValue));\n')
         expect('null-codec={"L"}')
@@ -591,7 +610,8 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                 or output.count('Деление: превышен предел ресурсов Yadinassi '
                                 '(4096 десятичных разрядов)') != 1):
             raise AssertionError(f"Unexpected console diagnostics: {output}")
-        for message, count in (('null-codec={"L"}', 1), ('null-default={"L"}', 1),
+        for message, count in (('clock-types=Да', 1), ('clock-caught', 1),
+                               ('clock-recovered=Да', 1), ('null-codec={"L"}', 1), ('null-default={"L"}', 1),
                                ('null-caught', 1), ('null-recovered={"L"}', 1),
                                ('null-short={"B",0}', 1), ('calendar-month={"D",20240229123456}', 1),
                                ('calendar-end={"D",20240229235959}', 1),

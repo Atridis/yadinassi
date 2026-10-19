@@ -1,6 +1,9 @@
 """Test the distributed executable outside the source tree and without PYTHONPATH."""
 
 import os
+from datetime import datetime, timezone
+import re
+import time
 from pathlib import Path
 import subprocess
 import sys
@@ -1487,6 +1490,77 @@ Message(String("1234.5000"));
 
 
 
+def check_clocks(executable: str, *, directory: Path, env: dict) -> None:
+    """Check live wall clocks without saving nondeterministic native goldens."""
+    directory.mkdir()
+    code = '\n'.join([
+        'localClock = ТекущаяДата(); utcClock = CurrentUniversalDate();',
+        'milliseconds = ТекущаяУниверсальнаяДатаВМиллисекундах();',
+        'Message(TypeOf(localClock) = Type("Date"));',
+        'Message(TypeOf(utcClock) = Type("Дата"));',
+        'Message(TypeOf(milliseconds) = Type("Число"));',
+        'Message(TypeOf(cUrReNtDaTe()) = Type("Date"));',
+        'Message(TypeOf(тЕкУщАяУнИвЕрСаЛьНаЯдАтА()) = Type("Date"));',
+        'Message(TypeOf(CurrentUniversalDateInMilliseconds()) = Type("Number"));',
+        'Message(ValueFromStringInternal(ValueToStringInternal(localClock)) = localClock);',
+        'Message(ValueFromStringInternal(ValueToStringInternal(utcClock)) = utcClock);',
+        'Message(ValueFromStringInternal(ValueToStringInternal(milliseconds)) = milliseconds);',
+        'Message(Int(milliseconds) = milliseconds);',
+        'snapshot = New Structure("Local,UTC,MS", localClock, utcClock, milliseconds);',
+        'restored = ValueFromStringInternal(ValueToStringInternal(snapshot));',
+        'Message(restored.Local = localClock And restored.UTC = utcClock And restored.MS = milliseconds);',
+        'saved = utcClock;',
+        'Try saved = CurrentDate(1); Except Message("clock-arity-caught"); EndTry;',
+        'Message(saved = utcClock);',
+        'Message(ValueToStringInternal(utcClock));',
+        'Message(ValueToStringInternal(milliseconds));',
+    ]) + '\n'
+    source = directory / 'СистемныеЧасы.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    for arguments, stdin in cases:
+        before = time.time_ns()
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        after = time.time_ns()
+        lines = result.stdout.splitlines()
+        if (result.returncode != 0 or result.stderr or len(lines) != 15
+                or lines[:13] != ['Да'] * 11 + ['clock-arity-caught', 'Да']):
+            raise AssertionError(f'Failed wall clock checks {arguments!r}: {result!r}')
+        utc = re.fullmatch(r'\{"D",([0-9]{14})\}', lines[13])
+        ms = re.fullmatch(r'\{"N",([0-9]+)\}', lines[14])
+        if utc is None or ms is None:
+            raise AssertionError(f'Invalid clock codec records: {lines[-2:]!r}')
+        # UTC milliseconds use year 1, not Unix time. No binary float conversion.
+        epoch_ms = 62135596800000
+        low, high = sorted((before, after))
+        if not low // 1000000 + epoch_ms <= int(ms[1]) <= high // 1000000 + epoch_ms:
+            raise AssertionError('Frozen millisecond clock is outside the invocation interval')
+        actual = datetime.strptime(utc[1], '%Y%m%d%H%M%S').replace(tzinfo=timezone.utc)
+        lo_date = datetime.fromtimestamp(low // 1000000000, timezone.utc)
+        hi_date = datetime.fromtimestamp(high // 1000000000, timezone.utc)
+        if not lo_date <= actual <= hi_date:
+            raise AssertionError('Frozen UTC Date is outside the invocation interval')
+    module = directory / 'Часы.bsl'
+    module.write_text('Function Snapshot() Export\n'
+                      'Return New Structure("Local,UTC,MS", CurrentDate(), '
+                      'ТекущаяУниверсальнаяДата(), CurrentUniversalDateInMilliseconds());\n'
+                      'EndFunction\n', encoding='utf-8-sig')
+    importer = directory / 'ИмпортЧасов.bsl'
+    importer.write_text('// #Импорт Часы.bsl\nvalue = Часы.Snapshot();\n'
+                        'Message(TypeOf(value.Local) = Type("Date"));\n'
+                        'Message(TypeOf(value.UTC) = Type("Date"));\n'
+                        'Message(TypeOf(value.MS) = Type("Number"));\n', encoding='utf-8-sig')
+    for path in (importer, importer.relative_to(directory.parent)):
+        result = subprocess.run([executable, str(path)], capture_output=True, encoding='utf-8',
+                                cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, 'Да\n' * 3, ''):
+            raise AssertionError(f'Failed imported clocks: {result!r}')
+    print('Binary clocks passed: live UTC interval, year-1 milliseconds, aliases, codecs, '
+          'BOM, imports, command flags, stdin, console, and error recovery')
+
+
 def check_null(executable: str, *, directory: Path, env: dict) -> None:
     """Replay owner Null output through each frozen input, then recovery/imports."""
     directory.mkdir()
@@ -1546,6 +1620,7 @@ def main() -> None:
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
+        check_clocks(executable, directory=Path(temporary) / "clocks", env=env)
         check_null(executable, directory=Path(temporary) / "null", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
