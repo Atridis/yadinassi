@@ -20,7 +20,18 @@ def source():
 
 
 def parts():
-    prefix, rest = source().split('\n\n' + START, 1)
+    full = source()
+    # Isolate this already owner-confirmed checkpoint from the next native
+    # checkpoint. Complete source/native comparisons below remain strict.
+    for start, end in (
+        ('// Начало компактных проб Sort/GroupBy.\n', '// Конец компактных проб Sort/GroupBy.\n\n'),
+        ('// Начало наблюдений Sort/GroupBy.\n', '// Конец наблюдений Sort/GroupBy.\n'),
+    ):
+        if start in full:
+            before, rest = full.split(start, 1)
+            _, after = rest.split(end, 1)
+            full = before + after
+    prefix, rest = full.split('\n\n' + START, 1)
     helpers, rest = rest.split(END, 1)
     old_tail, body = rest.split('\n' + BODY, 1)
     return prefix + old_tail, START + helpers, BODY + body

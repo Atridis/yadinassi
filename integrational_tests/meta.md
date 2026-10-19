@@ -416,3 +416,42 @@ owner `f28dcc51` above now confirms the records by full comparison.
 
 - Retained same label: exact Write, independent ReadType, ReadWriteEqual, and all actual qualifier properties.
   `types-extra.qualifiers.default`, `types-extra.qualifiers.full`, `types-extra.qualifiers.copy`, `types-extra.qualifiers.override`, `types-extra.qualifiers.date-only`
+
+## Pending Sort/GroupBy regression checkpoint (2026-10-19)
+
+The existing `collections.bsl` now adds 55 bounded behavior records:
+22 `table.ops.sort.*` and 33 `table.ops.group.*`, followed by
+`table.ops.checkpoint.complete: [ok]`. The previous 142 table observations,
+all six genuine output files, and the final legacy table marker are preserved.
+No expected output is generated locally. Complete native comparisons deliberately
+remain red until the owner runs the updated scenario on the platform and supplies
+its output; there are no ignored tails or relaxed prefix comparisons.
+
+Sort records capture row-ID order, retained-row position/identity and status:
+default/descending/multiple keys, ties, Russian aliases, column/direction syntax,
+empty/singleton tables, locale-sensitive strings, unlike scalar types and
+nonprimitive presentation ordering. Explicit Undefined and invalid comparison
+arguments are separate cases. A valid `CompareValues` object and index types are
+not introduced by this checkpoint.
+
+GroupBy records capture status, resulting column names, row count and typed
+cells, including failures after any partial mutation. Cases cover group order,
+multiple/reordered grouping keys, discarded columns, omitted/empty lists,
+empty inputs, aliases, invalid/duplicate/overlapping lists, Null/Undefined,
+case/type-sensitive grouping, and nine totaling datasets. The retained-reference
+case separately checks surviving/removed columns, three original row references,
+reads and write-through. Numeric qualifiers are inspected after aggregation.
+
+The compact formatter remains unchanged. Output uses focused scalar/array/state
+fields, not repeated full internal streams; no new serialization format is being
+claimed. Local instrumented tests prove all 55 operations are actually reached,
+including invalid inputs, and that a mutation followed by an exception remains
+observable. Those tests validate the probe, not 1C behavior.
+
+Official reference: EDT 2026.2 `com._1c.g5.v8.dt.platform.doc`, version
+`3.0.1.v202609171902`, English/Russian ValueTable methods `Sort647.html` and
+`GroupBy650.html`. These document native type-code ordering for unlike Sort
+values and distinct single-/multi-/untyped GroupBy totaling rules. Stability,
+locale details, mutation order and retained-reference behavior still require the
+native run. Availability is server/thick client/external connection; the existing
+launcher remains unchanged.
