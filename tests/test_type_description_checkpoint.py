@@ -1,4 +1,4 @@
-"""Safety/packaging tests only; native TypeDescription answers remain unknown."""
+"""Packaging tests only; owner TypeDescription answers exist, runtime parity is pending."""
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 import unittest
@@ -8,7 +8,9 @@ if __package__:
     from . import test_native_outputs as native_outputs
 else:
     import test_native_outputs as native_outputs
-from scripts.smoke_test import pending_types_checkpoint, validate_pending_types_output
+from scripts.smoke_test import (pending_types_checkpoint, validate_pending_types_output,
+                                split_type_supplement, validate_type_supplement_output,
+                                TYPES_SUPPLEMENT_HELPERS_START, TYPES_SUPPLEMENT_BODY_START)
 
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse, parse_expression
@@ -22,7 +24,7 @@ FINAL = 'types.checkpoint.complete: [ok]'
 
 
 def source():
-    return SOURCE.read_text(encoding='utf-8-sig')
+    return split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))[0]
 
 
 def helpers():
@@ -149,7 +151,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
 
 
 class PendingTypesGateTests(unittest.TestCase):
-    """The new tail is packaging-only until the owner supplies real 1C output."""
+    """Owner output exists; these checks cover packaging, never runtime parity."""
 
     def test_source_gate_rejects_changes_to_confirmed_or_pending_blocks(self):
         program = (SOURCE).read_text(encoding='utf-8-sig')
@@ -189,6 +191,59 @@ class PendingTypesGateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate_pending_types_output(expected + first + second + final, expected,
                                           ['types.first', 'types.first'])
+
+
+class SupplementalTypesGateTests(unittest.TestCase):
+    def test_split_recovers_exact_original_and_rejects_mutations(self):
+        program = SOURCE.read_text(encoding='utf-8-sig')
+        original, supplement = split_type_supplement(program)
+        self.assertEqual(hashlib.sha256(original.encode()).hexdigest(),
+                         '2d49d5f557c6994e9d21594880c1c9fb482cf7f68fb39148a4049ecedc7add15')
+        self.assertEqual(split_type_supplement(original), (original, ''))
+        self.assertTrue(supplement.startswith(TYPES_SUPPLEMENT_HELPERS_START))
+        self.assertIn(TYPES_SUPPLEMENT_BODY_START, supplement)
+        for changed in (program.replace('НаблюдатьNull', 'ИзменитьNull', 1),
+                        program.replace('НаблюдатьДополнениеТипов', 'ИзменитьДополнение', 1),
+                        program.replace('contains.present', 'contains.changed', 1),
+                        program.replace(TYPES_SUPPLEMENT_BODY_START, '// missing', 1),
+                        program.replace(TYPES_SUPPLEMENT_HELPERS_START, '// missing', 1),
+                        program + 'Сообщить("extra");\n'):
+            with self.subTest(changed=changed[-100:]), self.assertRaises(AssertionError):
+                split_type_supplement(changed)
+
+    def test_standalone_supplement_reaches_its_marker_without_predicting_answers(self):
+        _, supplement = split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))
+        observations = [node.expression for node in parse(supplement)
+                        if isinstance(node, ast.ExpressionStatement)
+                        and isinstance(node.expression, ast.Call)
+                        and isinstance(node.expression.callee, ast.Name)
+                        and node.expression.callee.name == 'НаблюдатьДополнениеТипов']
+        self.assertEqual(len(observations), 23)
+        labels = ['types-extra.' + call.arguments[0].value for call in observations]
+        output = []
+        Interpreter(output=output.append).execute(supplement)
+        validate_type_supplement_output('\n'.join(output) + '\n', labels)
+
+    def test_supplement_framing_rejects_missing_reordered_extra_and_malformed(self):
+        first = 'types-extra.first: [{\n{"N",1}\n}]\n'
+        second = 'types-extra.second: [serialize-error]\n'
+        final = 'types-extra.checkpoint.complete: [ok]\n'
+        labels = ['types-extra.first', 'types-extra.second']
+        validate_type_supplement_output(first + second + final, labels)
+        validate_type_supplement_output('types-extra.first: [error]\n' + second + final, labels)
+        for output in (first + final, second + first + final,
+                       first + first + second + final, first + second,
+                       first + second + final + 'extra\n',
+                       'extra\n' + first + second + final,
+                       first + 'extra\n' + second + final,
+                       first + second + final + final,
+                       first.replace('}]\n', '}\n') + second + final,
+                       first + second.replace('serialize-error', 'guessed') + final):
+            with self.subTest(output=output), self.assertRaises(AssertionError):
+                validate_type_supplement_output(output, labels)
+        with self.assertRaises(AssertionError):
+            validate_type_supplement_output(first + second + final,
+                                            ['types-extra.first', 'types-extra.first'])
 
 
 class StrictNativeGateTests(unittest.TestCase):

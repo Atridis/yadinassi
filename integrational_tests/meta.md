@@ -53,3 +53,22 @@ The original strict full-output comparator is unchanged and currently fails on
 values.bsl, as expected for this native-pending draft. Separate prefix/framing
 checks do not replace that gate. Full unittest and release build remain blocked
 until genuine output and the corresponding runtime implementation are present.
+
+## Owner TypeDescription output and receiver supplement (2026-10-19)
+
+Owner commit `e745497fc9a46d5c8b18817347010dfb6a2acbe3` supplied the genuine
+5,182-line `values.out`, blob `db5180be398036d259dc91650ea2dc4a7d88d601`.
+SHA-256: `0b80e880cde1ba4a9e189e3ed1cd36e2560f27efa374b0853a839d245e3608b2`.
+All 146 labels and final marker match the source order; the prior 784-line
+prefix and the other five outputs are unchanged, with no `.err` file.
+
+Fourteen direct constructor/member expressions produced `[error]`; these do
+not establish the behavior of ContainsType, default AdjustValue, or aliases.
+A 23-observation `types-extra.*` supplement invokes methods through parameter
+receivers, adds four syntax controls, and observes full qualified descriptor
+streams/inverse reads plus scalar qualifier fields. The existing owner output
+is untouched. No supplementary output has been generated locally.
+
+Please return real launcher output ending in
+`types-extra.checkpoint.complete: [ok]`. Full native comparators remain strict;
+packaging checks and preserved-prefix checks do not replace them.

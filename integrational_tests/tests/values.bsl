@@ -109,6 +109,66 @@
         КодыXML(ЗначениеИзСтрокиВнутр(ЗначениеВСтрокуВнутр(Очищено))));
 КонецФункции
 
+// Дополнение нативной проверки: вызов через переменную.
+// Прежние ошибки New ... .Method могли возникать до вызова метода.
+// Конструкторы остаются в фиксированных строках Вычислить внутри защиты.
+Процедура НаблюдатьДополнениеТипов(Знач Метка, Знач Выражение)
+    Попытка
+        Результат = Вычислить(Выражение);
+    Исключение
+        Сообщить("types-extra." + Метка + ": [error]");
+        Возврат;
+    КонецПопытки;
+    Попытка
+        Запись = ЗначениеВСтрокуВнутр(Результат);
+        Сообщить("types-extra." + Метка + ": [" + Запись + "]");
+    Исключение
+        Сообщить("types-extra." + Метка + ": [serialize-error]");
+    КонецПопытки;
+КонецПроцедуры
+
+Функция СодержитТипДополнения(Знач Описание, Знач ПроверяемыйТип)
+    Возврат Новый Структура("RU,EN", Описание.СодержитТип(ПроверяемыйТип),
+        Описание.ContainsType(ПроверяемыйТип));
+КонецФункции
+
+Функция УмолчаниеТипаДополнения(Знач Описание)
+    Результат = Описание.AdjustValue();
+    Возврат Новый Структура("Value,Type,Russian", Результат, ТипЗнч(Результат),
+        Описание.ПривестиЗначение());
+КонецФункции
+
+Функция СвойстваТипаДополнения(Знач Описание)
+    Возврат Новый Структура("RU,EN", Описание.КвалификаторыСтроки.Length,
+        Описание.StringQualifiers.Длина);
+КонецФункции
+
+Функция КоличествоМассиваДополнения(Знач Массив)
+    Возврат Массив.Count();
+КонецФункции
+
+Функция КвалификаторыОписанияДополнения(Знач Описание)
+    Итог = Новый Структура("Write,ReadWrite,ReadType,NumberDigits,NumberFractionDigits,NumberSign,StringLength,StringAllowedLength,DateFractions,BinaryLength,BinaryAllowedLength",
+        Неопределено, Неопределено, Неопределено,
+        Описание.NumberQualifiers.Digits, Описание.NumberQualifiers.FractionDigits,
+        Описание.NumberQualifiers.AllowedSign, Описание.StringQualifiers.Length,
+        Описание.StringQualifiers.AllowedLength, Описание.DateQualifiers.DateFractions,
+        Описание.BinaryDataQualifiers.Length, Описание.BinaryDataQualifiers.AllowedLength);
+    Попытка Итог.Write = ЗначениеВСтрокуВнутр(Описание);
+    Исключение Итог.Write = "[error]"; КонецПопытки;
+    Попытка
+        Копия = ЗначениеИзСтрокиВнутр(Итог.Write);
+        Попытка Итог.ReadType = ТипЗнч(Копия); Исключение Итог.ReadType = "[error]"; КонецПопытки;
+        Попытка Итог.ReadWrite = ЗначениеВСтрокуВнутр(Копия); Исключение Итог.ReadWrite = "[error]"; КонецПопытки;
+    Исключение Итог.ReadType = "[error]"; КонецПопытки;
+    Возврат Итог;
+КонецФункции
+
+Функция УмолчанияКвалификаторовДополнения(Знач Пустое, Знач Скалярное)
+    Возврат Новый Структура("Empty,Scalars", КвалификаторыОписанияДополнения(Пустое),
+        КвалификаторыОписанияДополнения(Скалярное));
+КонецФункции
+
 // Нативный checkpoint описаний типов. Никакие ответы не заданы заранее.
 // Новые конструкторы и пространства перечислений находятся только в строках
 // Вычислить внутри защиты. Все подпрограммы предшествуют основному коду.
@@ -496,3 +556,31 @@
 НаблюдатьТипы("readonly.description", "ЗаписьСвойстваТипов(New TypeDescription(""String""), ""Значение.StringQualifiers = Значение.StringQualifiers;"")");
 НаблюдатьТипы("description.property-aliases", "New TypeDescription(""String"").КвалификаторыСтроки.Length = New TypeDescription(""String"").StringQualifiers.Длина");
 Сообщить("types.checkpoint.complete: [ok]");
+
+
+// Дополнение описаний типов: вызов через переменную.
+// Отдельные синтаксические контроли намеренно проверяют цепочку конструктора.
+НаблюдатьДополнениеТипов("contains.present", "СодержитТипДополнения(New TypeDescription(""String,Number""), Type(""String""))");
+НаблюдатьДополнениеТипов("contains.absent", "СодержитТипДополнения(New TypeDescription(""String,Number""), Type(""Date""))");
+НаблюдатьДополнениеТипов("contains.wrong", "СодержитТипДополнения(New TypeDescription(""String""), ""String"")");
+НаблюдатьДополнениеТипов("default.number", "УмолчаниеТипаДополнения(New TypeDescription(""Number""))");
+НаблюдатьДополнениеТипов("default.string", "УмолчаниеТипаДополнения(New TypeDescription(""String""))");
+НаблюдатьДополнениеТипов("default.date", "УмолчаниеТипаДополнения(New TypeDescription(""Date""))");
+НаблюдатьДополнениеТипов("default.boolean", "УмолчаниеТипаДополнения(New TypeDescription(""Boolean""))");
+НаблюдатьДополнениеТипов("default.number-string", "УмолчаниеТипаДополнения(New TypeDescription(""Number,String""))");
+НаблюдатьДополнениеТипов("default.string-number", "УмолчаниеТипаДополнения(New TypeDescription(""String,Number""))");
+НаблюдатьДополнениеТипов("default.number-date", "УмолчаниеТипаДополнения(New TypeDescription(""Number,Date""))");
+НаблюдатьДополнениеТипов("default.undefined-number", "УмолчаниеТипаДополнения(New TypeDescription(""Undefined,Number""))");
+НаблюдатьДополнениеТипов("default.null", "УмолчаниеТипаДополнения(New TypeDescription(""Null""))");
+НаблюдатьДополнениеТипов("default.empty", "УмолчаниеТипаДополнения(New TypeDescription(""""))");
+НаблюдатьДополнениеТипов("properties.aliases", "СвойстваТипаДополнения(New TypeDescription(""String""))");
+НаблюдатьДополнениеТипов("syntax.array-direct", "New Array().Count()");
+НаблюдатьДополнениеТипов("syntax.array-parentheses", "(New Array()).Count()");
+НаблюдатьДополнениеТипов("syntax.array-receiver", "КоличествоМассиваДополнения(New Array())");
+НаблюдатьДополнениеТипов("syntax.description-parentheses", "(New TypeDescription(""String"")).ContainsType(Type(""String""))");
+НаблюдатьДополнениеТипов("qualifiers.default", "УмолчанияКвалификаторовДополнения(New TypeDescription(), New TypeDescription(""Number,String,Date,Boolean""))");
+НаблюдатьДополнениеТипов("qualifiers.full", "КвалификаторыОписанияДополнения(New TypeDescription(""Number,String,Date"", New NumberQualifiers(5,2,AllowedSign.Nonnegative), New StringQualifiers(4,AllowedLength.Fixed), New DateQualifiers(DateFractions.Time), New BinaryDataQualifiers(8,AllowedLength.Fixed)))");
+НаблюдатьДополнениеТипов("qualifiers.copy", "КвалификаторыОписанияДополнения(New TypeDescription(New TypeDescription(""Number"", New NumberQualifiers(5,2))))");
+НаблюдатьДополнениеТипов("qualifiers.override", "КвалификаторыОписанияДополнения(New TypeDescription(New TypeDescription(""Number"", New NumberQualifiers(5,2)), , , New NumberQualifiers(3,1)))");
+НаблюдатьДополнениеТипов("qualifiers.date-only", "КвалификаторыОписанияДополнения(New TypeDescription(""Date"", , , New DateQualifiers(DateFractions.Date)))");
+Сообщить("types-extra.checkpoint.complete: [ok]");

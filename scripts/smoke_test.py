@@ -1671,8 +1671,9 @@ def validate_xml_checkpoint_output(output: str, expected_null: str, labels: list
 
 
 
-# The TypeDescription tail is native-pending: these hashes protect packaging,
-# not 1C semantics. The complete pre-existing owner output is still mandatory.
+# The original 146 TypeDescription observations now have real owner output.
+# Runtime parity is still pending: these hashes protect packaging, not semantics.
+# The independent full-native comparator still requires every owner byte.
 VALUES_CONFIRMED_SHA256 = '8c6670294114773f6daabb847567390ab82bd2aba5105fe773b54482b065be44'
 TYPES_HELPERS_SHA256 = '4dffaf095b80b3fc01198e7463d8d9a58e096b9e60b86e7327c4b43d5b7b2790'
 TYPES_BODY_SHA256 = 'd2f4ecccc3aa03180d190a52082efb344338fcd9b52aed331d2ef9548d5dbb7a'
@@ -1681,8 +1682,56 @@ TYPES_BODY_START = '// Описания типов: наблюдения без 
 TYPES_FINAL = 'types.checkpoint.complete: [ok]'
 
 
+TYPES_ORIGINAL_SOURCE_SHA256 = '2d49d5f557c6994e9d21594880c1c9fb482cf7f68fb39148a4049ecedc7add15'
+TYPES_SUPPLEMENT_HELPERS_SHA256 = '95ed531b206e2cc5815b0f84a1126e7567a7f2dbeeb759beefb3073b1dc1d52e'
+TYPES_SUPPLEMENT_BODY_SHA256 = '21f310a6c5f85a7481b3666606685ab4099eec9ea6f6cf85bad9bb5e422fef25'
+TYPES_SUPPLEMENT_HELPERS_START = '// Дополнение нативной проверки: вызов через переменную.'
+TYPES_SUPPLEMENT_BODY_START = '// Дополнение описаний типов: вызов через переменную.'
+TYPES_SUPPLEMENT_FINAL = 'types-extra.checkpoint.complete: [ok]'
+
+
+def split_type_supplement(program: str) -> tuple[str, str]:
+    """Recover the byte-identical original and separately hash-guarded supplement."""
+    markers = (TYPES_SUPPLEMENT_HELPERS_START, TYPES_SUPPLEMENT_BODY_START)
+    if not any(marker in program for marker in markers):
+        return program, ''
+    if any(program.count(marker) != 1 for marker in (*markers, TYPES_HELPERS_START)):
+        raise AssertionError('Expected unique supplemental TypeDescription boundaries')
+    prefix, rest = program.split(TYPES_SUPPLEMENT_HELPERS_START)
+    helpers, rest = rest.split(TYPES_HELPERS_START)
+    body_boundary = '\n\n' + TYPES_SUPPLEMENT_BODY_START
+    if rest.count(body_boundary) != 1:
+        raise AssertionError('Expected exact supplemental TypeDescription body separator')
+    original_tail, body = rest.split(body_boundary)
+    original = prefix + TYPES_HELPERS_START + original_tail
+    helpers = TYPES_SUPPLEMENT_HELPERS_START + helpers
+    body = body_boundary + body
+    for text, expected in ((original, TYPES_ORIGINAL_SOURCE_SHA256),
+                           (helpers, TYPES_SUPPLEMENT_HELPERS_SHA256),
+                           (body, TYPES_SUPPLEMENT_BODY_SHA256)):
+        if hashlib.sha256(text.encode('utf-8')).hexdigest() != expected:
+            raise AssertionError('TypeDescription supplement source changed; review boundaries and hashes')
+    return original, helpers + body
+
+
+def validate_type_supplement_output(output: str, labels: list[str]) -> None:
+    """Check bounded frames only; never predict supplemental native semantics."""
+    frames = list(re.finditer(r'^(types-extra\.[a-z0-9.-]+): \[', output, re.MULTILINE))
+    if (not labels or len(set(labels)) != len(labels) or not frames
+            or frames[0].start() != 0
+            or [frame[1] for frame in frames] != labels + ['types-extra.checkpoint.complete']):
+        raise AssertionError('Supplemental TypeDescription frames are missing, duplicated or out of order')
+    for frame, following in zip(frames, frames[1:]):
+        payload = output[frame.end():following.start()]
+        if not re.fullmatch(r'(?:error|serialize-error|\{.*\})\]\n', payload, re.DOTALL):
+            raise AssertionError('Malformed supplemental TypeDescription observation: ' + frame[1])
+    if output[frames[-1].start():] != TYPES_SUPPLEMENT_FINAL + '\n':
+        raise AssertionError('Supplemental TypeDescription output must end at its completion marker')
+
+
 def pending_types_checkpoint(program: str) -> tuple[str, list[str]]:
-    """Return the unchanged native-confirmed source and pending ordered labels."""
+    """Return the unchanged pre-types source and runtime-pending ordered labels."""
+    program, _ = split_type_supplement(program)
     null_body = '// Значение, тип и настоящий прямой/обратный кодек.'
     xml_final = 'Сообщить("xml.checkpoint.complete: [ok]");\n'
     for marker in (TYPES_HELPERS_START, TYPES_BODY_START, null_body, xml_final):
@@ -1708,7 +1757,7 @@ def pending_types_checkpoint(program: str) -> tuple[str, list[str]]:
 
 
 def validate_pending_types_output(output: str, expected: str, labels: list[str]) -> None:
-    """Exact full native prefix plus framing only for the unconfirmed type tail."""
+    """Exact old native prefix plus packaging-only framing for runtime-pending types."""
     if not output.startswith(expected):
         raise AssertionError('TypeDescription checkpoint changed the complete native output prefix')
     body = output[len(expected):]
@@ -1785,9 +1834,14 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     """Replay all native scalar XML bytes with the recorded timezone context."""
     directory.mkdir()
     program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
-    program, pending_labels = pending_types_checkpoint(program)
+    pending_program, supplement = split_type_supplement(program)
+    program, pending_labels = pending_types_checkpoint(pending_program)
     labels = xml_checkpoint_labels(program)
     expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+    xml_final = 'xml.checkpoint.complete: [ok]\n'
+    if expected.count(xml_final) != 1:
+        raise AssertionError('Expected unique native XML output completion marker')
+    expected = expected.split(xml_final)[0] + xml_final
     expected_null = null_checkpoint_output(expected)
     # Owner-confirmed Windows zone, CLDR global mapping; do not alter the OS.
     env = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
@@ -1803,7 +1857,6 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
             raise AssertionError('Frozen scalar XML output differs from the complete owner output')
     print('Binary scalar XML native parity passed: all 784 lines / 62 observations, '
           'recorded Warsaw timezone, bundled data, BOM, command and stdin')
-    pending_program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
     source.write_text(pending_program, encoding='utf-8-sig')
     for arguments, stdin in [([str(source)], None), (['-c', pending_program], None),
                              (['-с', pending_program], None), (['--command', pending_program], None),
@@ -1813,8 +1866,22 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
         if result.returncode or result.stderr:
             raise AssertionError(f'Failed pending TypeDescription execution: {result!r}')
         validate_pending_types_output(result.stdout, expected, pending_labels)
-    print('Binary TypeDescription packaging passed: native-pending observations only, '
-          'full 784-line confirmed prefix, BOM, command aliases, stdin and console')
+    print('Binary TypeDescription packaging passed: 146 owner-observed probes, runtime parity pending; '
+          'exact old 784-line prefix, BOM, command aliases, stdin and console; not a semantics gate')
+    if supplement:
+        supplement_labels = ['types-extra.' + label for label in re.findall(
+            r'^НаблюдатьДополнениеТипов\("([a-z0-9.-]+)", ', supplement, re.MULTILINE)]
+        source.write_text(supplement, encoding='utf-8-sig')
+        for arguments, stdin in [([str(source)], None), (['-c', supplement], None),
+                                 (['-с', supplement], None), (['--command', supplement], None),
+                                 (['-'], supplement), ([], supplement + '/exit\n')]:
+            result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+            if result.returncode or result.stderr:
+                raise AssertionError(f'Failed supplemental TypeDescription execution: {result!r}')
+            validate_type_supplement_output(result.stdout, supplement_labels)
+        print('Binary supplemental TypeDescription packaging passed: bounded frames only, '
+              'BOM, command aliases, stdin and console; native semantics remain pending')
     check_timezone_configuration(executable, directory=directory, env=env)
 
 
