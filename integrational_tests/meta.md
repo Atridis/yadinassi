@@ -62,3 +62,31 @@ Command aliases (-c, Cyrillic -с, --command) use a bounded representative
 TypeDescription/qualifier/codec program instead: the full native source exceeds
 Windows CreateProcess's command-line budget. Those command-mode checks do not
 claim to replay the full scenario; the full six-file native gate is unchanged.
+
+## Pending ValueTable checkpoint (2026-10-19)
+
+`collections.bsl` now adds 142 uniquely labeled `table.*` observations and
+`table.checkpoint.complete: [ok]`. The original scenario is unchanged, as are
+all six owner-generated outputs. Existing `collections.out` has 1,451 lines;
+SHA-256 `06f0517acf577d357a2b52e6808da8d208b040025d505c143f08fc1a47f47f69`.
+No native answers for the new tail have been supplied or fabricated.
+
+Scope: four core ValueTable types, 70 isolated mutations, typed-cell defaults
+and conversion/Total cases, field snapshots, codecs/inverse reads, and live
+references. Indexes, Sort, GroupBy and ChooseRow are excluded. Invalid/new
+constructors are inside fixed protected Eval strings; methods use receivers.
+Codec failures are recorded independently from field snapshots. Mutators retain
+status and post-error state; detached-object reads are independently protected.
+
+Run the unchanged `test_launcher.py` workflow on the recorded native platform.
+The existing launcher invokes the test module from
+`&НаСервереБезКонтекста ЗапуститьТестНаСервере`; its managed form runs the caller
+on the client. Official EDT docs list these types for server, thick client and
+external connection, not thin/web client. This fixture confirms server-context
+semantics, not availability in every native client context.
+
+Return the complete genuine `collections.out` and any `collections.err`, with
+the completion marker. Never replace the older prefix with interpreter output.
+Before output and implementation exist, the full native comparator and the
+full frozen smoke gate must remain failing. Separate source/packaging checks
+are not native parity and must not be reported as such.
