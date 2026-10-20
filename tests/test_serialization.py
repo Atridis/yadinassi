@@ -68,9 +68,9 @@ class InternalSerializationTests(unittest.TestCase):
                     value_to_string_internal(Decimal(text))
 
     def test_every_runtime_type_has_explicit_codec_and_identifier(self):
-        self.assertEqual(set(serialization._CODECS), set(BSLType))
-        self.assertEqual(set(serialization._TYPE_IDS), set(BSLType))
-        self.assertEqual(set(serialization._CODECS),
+        self.assertEqual(serialization._CODECS, set(BSLType))
+        self.assertEqual(set(serialization._TYPE_IDS), set(serialization._CODECS))
+        self.assertEqual(serialization._CODECS,
                          {kind for _, kind, _ in type_values._VALUE_TYPES})
 
     def test_every_implemented_type_has_native_readback_behavior(self):
@@ -94,6 +94,8 @@ class InternalSerializationTests(unittest.TestCase):
                    'column = columns.Add("A"); row = table.Add();')
         vm.execute('indexes = table.Indexes; index = indexes.Add("A");')
         expressions.extend(['table', 'columns', 'column', 'row', 'indexes', 'index'])
+        vm.execute('values = New ValueList; item = values.Add(10, "first", True);')
+        expressions.extend(['values', 'item'])
         observed = set()
         for expression in expressions:
             with self.subTest(expression=expression):
@@ -114,7 +116,7 @@ class InternalSerializationTests(unittest.TestCase):
                 else:
                     self.assertIs(type_values.type_of(restored), kind)
                 observed.add(kind)
-        self.assertEqual(observed, set(BSLType))
+        self.assertEqual(observed, set(serialization._CODECS))
 
     def test_host_values_and_subclasses_do_not_fall_back_to_reflection(self):
         class Host:

@@ -57,6 +57,8 @@ class BSLType(Enum):
     VALUE_TABLE_ROW = "СтрокаТаблицыЗначений"
     COLLECTION_INDEXES = "ИндексыКоллекции"
     COLLECTION_INDEX = "ИндексКоллекции"
+    VALUE_LIST = "СписокЗначений"
+    VALUE_LIST_ITEM = "ЭлементСпискаЗначений"
 
     def __str__(self) -> str:
         if self is BSLType.VALUE_TABLE:
@@ -65,6 +67,10 @@ class BSLType(Enum):
             return "Коллекция индексов таблицы значений"
         if self is BSLType.COLLECTION_INDEX:
             return "Индекс таблицы значений"
+        if self is BSLType.VALUE_LIST:
+            return "Список значений"
+        if self is BSLType.VALUE_LIST_ITEM:
+            return "Элемент списка значений"
         return "Не определено" if self is BSLType.UNDEFINED else self.value
 
 

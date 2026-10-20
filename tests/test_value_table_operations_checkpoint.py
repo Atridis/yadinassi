@@ -20,6 +20,9 @@ def source():
     # Isolate the already confirmed operations checkpoint. Full native gates
     # read collections.bsl directly and still compare every output byte.
     for start, end in (
+        ('// Начало уточняющих проб списка значений.\n', '// Конец уточняющих проб списка значений.\n\n'),
+        ('// Начало компактных проб списка значений.\n', '// Конец компактных проб списка значений.\n\n'),
+        ('// Начало наблюдений списка значений.\n', '// Конец наблюдений списка значений.\n'),
         ('// Начало дополнительных компактных проб индексов.\n', '// Конец дополнительных компактных проб индексов.\n\n'),
         ('// Начало дополнительных наблюдений индексов.\n', '// Конец дополнительных наблюдений индексов.\n'),
         ('// Начало компактных проб индексов.\n', '// Конец компактных проб индексов.\n\n'),
@@ -61,7 +64,7 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'cf922dbeabcd77f5a0ea27fec7164d246d78e9eb')
         for name, expected in (
-            ('collections', 'c3e5ae6e3211b2fb85ba3614cadb764475315ce8'),
+            ('collections', 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e'),
             ('values', '016f30d6f3bdb1a814e86a70e3bcf424383a0d27'),
         ):
             data = canonical_output_bytes((ROOT / f'integrational_tests/output/{name}.out').read_bytes())

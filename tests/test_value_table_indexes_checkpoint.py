@@ -40,14 +40,19 @@ def observations():
 class IndexProbeTests(unittest.TestCase):
     def test_old_source_and_all_owner_goldens_are_byte_exact(self):
         old = source()
-        for start, end in (HELPERS, BODY, EXTRA_HELPERS, EXTRA_BODY):
+        for start, end in (
+            ('// Начало уточняющих проб списка значений.\n', '// Конец уточняющих проб списка значений.\n\n'),
+            ('// Начало компактных проб списка значений.\n', '// Конец компактных проб списка значений.\n\n'),
+            ('// Начало наблюдений списка значений.\n', '// Конец наблюдений списка значений.\n'),
+            HELPERS, BODY, EXTRA_HELPERS, EXTRA_BODY,
+        ):
             before, rest = old.split(start, 1)
             _, after = rest.split(end, 1)
             old = before + after
         data = ('\ufeff' + old).encode()
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'd6176c44edf9a3d7ad9f8cf7a474a12aca25c809')
-        hashes = {'collections': 'c3e5ae6e3211b2fb85ba3614cadb764475315ce8',
+        hashes = {'collections': 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e',
                   'values': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
                   'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
                   'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',

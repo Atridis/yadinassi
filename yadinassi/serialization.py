@@ -22,6 +22,7 @@ from .type_qualifiers import (
 )
 from .value_tables import (BSLValueTable, BSLValueTableColumn,
                            BSLCollectionIndexes, BSLCollectionIndex)
+from .value_lists import BSLValueList, BSLValueListItem
 from .type_values import type_of
 from .values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
@@ -30,6 +31,13 @@ _MAX_NUMBER_DIGITS = 4096
 _MAX_TEXT = 1024 * 1024
 _MAX_DEPTH = 64
 _MAX_NODES = 10000
+# Lexical tokens include metadata that is not a semantic value node. The
+# supported layouts need at most 23 metadata tokens per charged node (a
+# fully qualified table column plus its two column-map references); an empty
+# table needs 18, a list header 14, and a list item 19 before its child value.
+# Keep a separate bounded allowance, with headroom, so valid writer output
+# does not exhaust the parser solely on default picture/pattern metadata.
+_MAX_TOKENS_PER_NODE = 32
 FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
 # These are implementation resource budgets, not inferred native limits.
 _TYPE_IDS = {
@@ -63,6 +71,8 @@ _TYPE_IDS = {
     BSLType.DATE_FRACTIONS: "8089abb5-ff39-4414-8252-c0dcef1c3d6b",
     BSLType.DATE_FRACTIONS_NAMESPACE: "83f71799-efb3-4984-a19b-6ed4f3cbc691",
     BSLType.TYPE_DESCRIPTION: "f5c65050-3bbb-11d5-b988-0050bae0a95d",
+    BSLType.VALUE_LIST: "4772b3b4-f4a3-49c0-a1a5-8cb5961511a3",
+    BSLType.VALUE_LIST_ITEM: "c27d99e0-2f53-11d5-a3be-0050bae0a776",
     BSLType.VALUE_TABLE: "acf6192e-81ca-46ef-93a6-5a6968b78663",
     BSLType.VALUE_TABLE_COLUMN_COLLECTION: "0e2c7b45-ad6d-4ebe-8c9b-358d42ab5002",
     BSLType.VALUE_TABLE_COLUMN: "e162969e-36e8-44f4-a5fd-fa2bf170a4f5",
@@ -99,13 +109,16 @@ _OPAQUE_TYPES = frozenset({
 _OPAQUE_IDS = frozenset(_TYPE_IDS[kind] for kind in _OPAQUE_TYPES)
 _CODECS = (frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
                      BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
-                     BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE})
+                     BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE,
+                     BSLType.VALUE_LIST, BSLType.VALUE_LIST_ITEM})
            | frozenset(_ENUM_TYPES) | _OPAQUE_TYPES | _ARRAYS | _STRUCTURES | _MAPS)
 _PATTERN_TYPES = {'B': BSLType.BOOLEAN, 'S': BSLType.STRING, 'D': BSLType.DATE,
                  'N': BSLType.NUMBER, 'L': BSLType.NULL}
 _PATTERN_TAGS = {kind: tag for tag, kind in _PATTERN_TYPES.items()}
 _NUMBER = re.compile(r'[+-]?[0-9]+(?:\.[0-9]+)?')
 _COUNT = re.compile(r'0|[1-9][0-9]*')
+_LIST_ENTRY_ID = "1e512aab-1b41-4ef6-9375-f0137be9dd91"
+_LIST_PICTURE = '{4,0,\n{0},"",-1,-1,0,0,""}'
 _HEX = frozenset('0123456789abcdef')
 
 
@@ -249,7 +262,11 @@ class _Writer:
             self.active.add(identity)
             try:
                 self.emit('{"#",' + _TYPE_IDS[kind] + ',\n')
-                if kind is BSLType.VALUE_TABLE:
+                if kind is BSLType.VALUE_LIST:
+                    self.value_list(value, depth)
+                elif kind is BSLType.VALUE_LIST_ITEM:
+                    self.value_list_item(value, depth)
+                elif kind is BSLType.VALUE_TABLE:
                     self.table(value, depth)
                 elif kind is BSLType.KEY_AND_VALUE:
                     self.pair(value.key, value.value, depth)
@@ -279,6 +296,61 @@ class _Writer:
                 self.emit('\n}')
             finally:
                 self.active.remove(identity)
+
+    def value_list(self, value, depth):
+        description = value.value_type
+        if type(description) is not BSLTypeDescription or description.types:
+            raise ValueError("ЗначениеВСтрокуВнутр: поддерживается только пустой тип списка значений")
+        _require_representable_description(description)
+        if (type(value.items) is not list or type(value._by_id) is not dict
+                or type(value._next_id) is not int or not 0 <= value._next_id <= 2 ** 32):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние списка значений")
+        count = len(value.items)
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        seen = set()
+        for item in value.items:
+            if (type(item) is not BSLValueListItem or type(item._id) is not int
+                    or not 0 <= item._id < value._next_id or item._id in seen
+                    or item._detached or item._owner_ref() is not value
+                    or value._by_id.get(item._id) is not item):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+            seen.add(item._id)
+        if len(value._by_id) != count:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимые идентификаторы списка значений")
+        self.emit('{6,' + _LIST_ENTRY_ID + ',0,0,\n{' + str(count))
+        for item in value.items:
+            # Item identity participates in cycles even though list entries do
+            # not carry the standalone item type wrapper.
+            identity = id(item)
+            if identity in self.active:
+                raise ValueError("ЗначениеВСтрокуВнутр: циклические значения пока не поддерживаются в Yadinassi")
+            self.active.add(identity)
+            try:
+                self.emit(',\n{' + _LIST_ENTRY_ID + ',\n')
+                self.value_list_item(item, depth + 1)
+                self.emit('\n}')
+            finally:
+                self.active.remove(identity)
+        self.emit('\n}' if count else '}')
+        self.emit(',\n{"Pattern"},0,' + str(value._next_id - 1) + '}')
+
+    def value_list_item(self, item, depth):
+        if (type(item.presentation) is not str or type(item.check) is not bool
+                or type(item._id) is not int or not -1 <= item._id < 2 ** 32):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние элемента списка значений")
+        if getattr(item, '_decoded_standalone', False):
+            identifier = item._id
+        else:
+            owner = item._owner_ref()
+            identifier = (item._id if not item._detached and owner is not None
+                          and owner._by_id.get(item._id) is item else -1)
+        self.emit('{')
+        self.string(item.presentation)
+        self.emit(',' + ('1' if item.check else '0') + ',\n')
+        self.value(item.value, depth + 1)
+        self.emit(',\n' + _LIST_PICTURE + ',' + str(identifier) + ',0,""}')
 
     def table(self, table, depth):
         # Canonical snapshot layout established by table.codec.empty/table.
@@ -417,7 +489,7 @@ class _Reader:
 
     def token(self, depth=0):
         self.tokens += 1
-        if self.tokens > _MAX_NODES * 8 or depth > _MAX_DEPTH * 3 + 3:
+        if self.tokens > _MAX_NODES * _MAX_TOKENS_PER_NODE or depth > _MAX_DEPTH * 3 + 3:
             raise _resource("ЗначениеИзСтрокиВнутр")
         self.whitespace()
         if self.position >= len(self.text):
@@ -532,6 +604,56 @@ class _Reader:
         if len(token.text) > 5 or int(token.text) > _MAX_NODES:
             raise _resource("ЗначениеИзСтрокиВнутр")
         return int(token.text)
+
+    def list_identifier(self, token):
+        if token == _Atom('-1'):
+            return -1
+        if type(token) is not _Atom or _COUNT.fullmatch(token.text) is None:
+            self.fail()
+        if len(token.text) > 10 or int(token.text) >= 2 ** 32:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        return int(token.text)
+
+    def value_list_item(self, body, depth, owner=None):
+        # Only the observed default picture block is supported. This is not a
+        # public Picture codec and unknown flags are never silently discarded.
+        picture = [_Atom('4'), _Atom('0'), [_Atom('0')], '',
+                   _Atom('-1'), _Atom('-1'), _Atom('0'), _Atom('0'), '']
+        if (len(body) != 7 or type(body[0]) is not str
+                or body[1] not in (_Atom('0'), _Atom('1'))
+                or body[3] != picture or body[5:] != [_Atom('0'), '']):
+            self.fail()
+        identifier = self.list_identifier(body[4])
+        value = self.value(body[2], depth + 1)
+        if owner is None:
+            return BSLValueListItem._from_stream(identifier, value, body[0], body[1] == _Atom('1'))
+        if identifier < 0 or identifier in owner._by_id or identifier >= owner._next_id:
+            self.fail()
+        item = BSLValueListItem(owner, identifier, value, body[0], body[1] == _Atom('1'))
+        owner.items.append(item)
+        owner._by_id[identifier] = item
+        return item
+
+    def value_list(self, body, depth):
+        if (len(body) != 8 or body[:4] != [_Atom('6'), _Atom(_LIST_ENTRY_ID), _Atom('0'), _Atom('0')]
+                or type(body[4]) is not list or not body[4]
+                or body[5:7] != [['Pattern'], _Atom('0')]):
+            self.fail()
+        entries = body[4]
+        count = self.table_count(entries[0])
+        if len(entries) != count + 1:
+            self.fail()
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        result = BSLValueList()
+        result._next_id = self.list_identifier(body[7]) + 1
+        for entry in entries[1:]:
+            if (type(entry) is not list or len(entry) != 2
+                    or entry[0] != _Atom(_LIST_ENTRY_ID) or type(entry[1]) is not list):
+                self.fail()
+            self.value_list_item(entry[1], depth + 1, result)
+        return result
 
     def table(self, body, depth):
         # Deliberately strict inverse subset of the observed version-9 stream.
@@ -671,6 +793,10 @@ class _Reader:
             self.fail()
         if kind is BSLType.TYPE_DESCRIPTION:
             return self.pattern(body)
+        if kind is BSLType.VALUE_LIST:
+            return self.value_list(body, depth)
+        if kind is BSLType.VALUE_LIST_ITEM:
+            return self.value_list_item(body, depth)
         if kind is BSLType.VALUE_TABLE:
             return self.table(body, depth)
         if kind is BSLType.KEY_AND_VALUE and len(body) == 2:
