@@ -29,7 +29,11 @@ def source():
 
 
 def strip_probe(text):
-    for start, end in (HELPERS, BODY):
+    for start, end in (
+        ('// Начало компактных проб копирования списка.\n', '// Конец компактных проб копирования списка.\n\n'),
+        ('// Начало наблюдений копирования списка.\n', '// Конец наблюдений копирования списка.\n'),
+        HELPERS, BODY,
+    ):
         before, rest = text.split(start, 1)
         _, after = rest.split(end, 1)
         text = before + after
