@@ -427,6 +427,12 @@ class ValueListCheckpointTests(unittest.TestCase):
 
     def test_genuine_owner_addition_preserves_previous_output_and_native_presentations(self):
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        # Isolate the historical core evidence, not the full-native comparator.
+        self.assertEqual(blob_hash(data), 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6')
+        before_sort, sort_tail = data.split(b'table.list.sort.enum.identity:', 1)
+        self.assertTrue(sort_tail.endswith(b'table.list.sort.checkpoint.complete: [ok]\n'
+                                           b'table.checkpoint.complete: [ok]\n'))
+        data = before_sort + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob_hash(data), 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e')
         before, tail = data.split(b'table.list.identity:', 1)
         self.assertTrue(tail.endswith(b'table.list.checkpoint.complete: [ok]\n'
@@ -446,7 +452,7 @@ class ValueListCheckpointTests(unittest.TestCase):
         restored = ('\ufeff' + without_list_probe(without_sort_probe(source()))).encode()
         self.assertEqual(blob_hash(restored), '92ba44889c221de39f8b3ae578f0c1408ccbf0ae')
         hashes = {
-            'collections': 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e',
+            'collections': 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6',
             'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',

@@ -1,7 +1,8 @@
-"""Pinned DUCET 6.0 empirical keys exclusively for bounded ValueTable.Sort.
+"""Pinned DUCET 6.0 empirical data for bounded collection sorting.
 
 The official, unmodified data reproduces the owner's two locale checkpoints;
 this is evidence for this bounded implementation, not proof that 1C uses UCA6.
+ValueList sorting separately selects key strength from its own native evidence.
 Existing String/StrCompare UCA10 behavior is intentionally independent.
 The adjacent data and license must ship in wheels and frozen applications.
 """

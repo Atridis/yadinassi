@@ -14,6 +14,7 @@ import re
 from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode
 from .search_directions import BSLSearchDirection
+from .sort_directions import BSLSortDirection
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (
@@ -60,6 +61,7 @@ _TYPE_IDS = {
     BSLType.ROUND_MODES: "a47c4665-311c-405a-828e-0c5a3ca3bdda",
     BSLType.SEARCH_DIRECTION: "bee8fa9f-59d0-4e71-9f6e-599d83cb1960",
     BSLType.SEARCH_DIRECTIONS: "ca8683c7-a41c-4c82-b912-6afb606e8b01",
+    BSLType.SORT_DIRECTION: "8acd280e-c29c-4543-8be7-7f78cad52c06",
     BSLType.NUMBER_QUALIFIERS: "f6f6ce00-392c-49ed-8c6e-4e0295fd4051",
     BSLType.STRING_QUALIFIERS: "a5e1773c-a947-455a-a2f7-c51736d3f2de",
     BSLType.DATE_QUALIFIERS: "e73e1337-53df-4b30-a78c-ee1e8cf30fc0",
@@ -87,6 +89,7 @@ _MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
 _ENUM_TYPES = {
     BSLType.ROUND_MODE: BSLRoundMode,
     BSLType.SEARCH_DIRECTION: BSLSearchDirection,
+    BSLType.SORT_DIRECTION: BSLSortDirection,
     BSLType.ALLOWED_SIGN: BSLAllowedSign,
     BSLType.ALLOWED_LENGTH: BSLAllowedLength,
     BSLType.DATE_FRACTIONS: BSLDateFractions,

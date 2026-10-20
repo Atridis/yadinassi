@@ -1,4 +1,4 @@
-"""Instrumentation tests, not a native sorting implementation or oracle.
+"""Probe instrumentation plus independently supplied native-evidence integrity.
 
 Synthetic sorting deliberately reverses the receiver. No synthetic stream is
 saved as native output. Full native gates still read the whole scenario.
@@ -138,7 +138,7 @@ class ValueListSortCheckpointTests(unittest.TestCase):
     def test_exact_base_and_protected_files(self):
         self.assertEqual(blob(('\ufeff' + strip_probe(source())).encode()), '922aafef9f03dce85f1fa5149af9f4c615356661')
         expected = {
-            'collections.out': 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e',
+            'collections.out': 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6',
             'dates.out': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions.out': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers.out': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -152,6 +152,28 @@ class ValueListSortCheckpointTests(unittest.TestCase):
         self.assertEqual(metadata_blob((ROOT / 'integrational_tests/meta.md').read_bytes()),
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
         self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text())
+
+    def test_complete_owner_evidence_preserves_every_prior_byte(self):
+        # Owner Atridis commit 317262725bf3507a6b66dd1f2d962d822806d338.
+        # Only Git checkout line-ending transport is normalized.
+        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(blob(data), 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6')
+        before, added = data.split(b'table.list.sort.enum.identity:', 1)
+        self.assertEqual(len(before), 134955)
+        self.assertEqual(blob(before + b'table.checkpoint.complete: [ok]\n'),
+                         'c648f0a577aba3cb19c98ad4effaea4088e1ea1e')
+        tail = b'table.list.sort.enum.identity:' + added
+        labels = re.findall(rb'^(table\.list\.sort\.[a-z.-]+): \[', tail, re.MULTILINE)
+        self.assertEqual([label.decode() for label in labels],
+                         ['table.' + c.arguments[0].value for c in observations()]
+                         + ['table.list.sort.checkpoint.complete'])
+        self.assertEqual(len(data.splitlines()), 3631)
+        self.assertEqual(len(tail.splitlines()), 52)
+        self.assertTrue(data.endswith(b'table.list.sort.checkpoint.complete: [ok]\n'
+                                     b'table.checkpoint.complete: [ok]\n'))
+        for marker in (b'[iteration-error]', b'[serialize-error]', b'[limit]', b'[result-error]'):
+            self.assertNotIn(marker, tail)
+        self.assertEqual(list((ROOT / 'integrational_tests/output').glob('*.err')), [])
 
     def test_metadata_transport_preserves_content_check(self):
         data = (ROOT / 'integrational_tests/meta.md').read_bytes().replace(b'\r\n', b'\n')

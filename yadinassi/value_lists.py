@@ -1,7 +1,8 @@
 """Bounded default-state ValueList operations from the owner core checkpoint.
 
 Only Value, Presentation and Check are exposed on items. Typed constraints,
-pictures, sorting and UI methods are deliberately outside this implementation.
+pictures and UI methods are deliberately outside this implementation. Sorting
+uses the separate, bounded owner-confirmed ValueList sort checkpoint.
 Resource budgets below are Yadinassi limits, not asserted native limits.
 """
 
@@ -334,6 +335,14 @@ class BSLValueList(BSLObject):
         result.items = [item.value for item in self.items]
         return result
 
+    def sort_by_value(self, direction=None):
+        from .value_list_sort import sort_list
+        sort_list(self, direction, by_presentation=False)
+
+    def sort_by_presentation(self, direction=None):
+        from .value_list_sort import sort_list
+        sort_list(self, direction, by_presentation=True)
+
     def get_member(self, name):
         key = name.casefold()
         if key in {"valuetype", "типзначения"}:
@@ -366,6 +375,10 @@ class BSLValueList(BSLObject):
             "move": self.move, "сдвинуть": self.move,
             "loadvalues": self.load_values, "загрузитьзначения": self.load_values,
             "fillchecks": self.fill_checks, "заполнитьпометки": self.fill_checks,
+            "sortbyvalue": self.sort_by_value,
+            "сортироватьпозначению": self.sort_by_value,
+            "sortbypresentation": self.sort_by_presentation,
+            "сортироватьпопредставлению": self.sort_by_presentation,
         }
         if key in functions:
             return HostFunction(name, functions[key])
