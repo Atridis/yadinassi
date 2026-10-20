@@ -29,7 +29,11 @@ def source():
 
 
 def strip_probe(text):
-    for start, end in (HELPERS, BODY):
+    for start, end in (
+        ('// Начало компактных проб копирования списка.\n', '// Конец компактных проб копирования списка.\n\n'),
+        ('// Начало наблюдений копирования списка.\n', '// Конец наблюдений копирования списка.\n'),
+        HELPERS, BODY,
+    ):
         before, rest = text.split(start, 1)
         _, after = rest.split(end, 1)
         text = before + after
@@ -138,7 +142,7 @@ class ValueListSortCheckpointTests(unittest.TestCase):
     def test_exact_base_and_protected_files(self):
         self.assertEqual(blob(('\ufeff' + strip_probe(source())).encode()), '922aafef9f03dce85f1fa5149af9f4c615356661')
         expected = {
-            'collections.out': 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6',
+            'collections.out': 'd4cce35fea3cc5271a871c26062c1b6167c0b092',
             'dates.out': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions.out': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers.out': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -157,6 +161,9 @@ class ValueListSortCheckpointTests(unittest.TestCase):
         # Owner Atridis commit 317262725bf3507a6b66dd1f2d962d822806d338.
         # Only Git checkout line-ending transport is normalized.
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(blob(data), 'd4cce35fea3cc5271a871c26062c1b6167c0b092')
+        # Isolate the historical sort block; full-native comparisons remain exact.
+        data = data.split(b'table.list.copy.fresh-empty:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob(data), 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6')
         before, added = data.split(b'table.list.sort.enum.identity:', 1)
         self.assertEqual(len(before), 134955)

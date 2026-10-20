@@ -725,9 +725,10 @@ The empty-picture payload is codec data, not a public Picture API.
 
 The original pending-checkpoint sections above describe earlier stages, now
 superseded by this complete native evidence. No further native probes are required
-for this bounded slice. Copy of historical/reordered IDs, empty-list or empty-item
-Presentation string conversion, item-property by-reference arguments, lifetime
-after owner release, structural mutation during iteration, and unprobed coercion
+for this bounded slice. Copy of historical/reordered IDs was excluded at this
+stage and is covered by the later confirmed Copy-history checkpoint below.
+Empty-list or empty-item Presentation string conversion, item-property by-reference
+arguments, lifetime after owner release, structural mutation during iteration, and unprobed coercion
 forms remain outside the supported contract. UI, constraint setters, Picture and FormattedString remain excluded. Sorting
 is covered separately by the confirmed checkpoint below. Local regression and full strict
 comparison results must be checked separately; this evidence section does not
@@ -831,3 +832,112 @@ read back both value streams and the type stream. Namespace presentation and
 iteration Asc then Desc are observed; namespace TypeOf and namespace codecs are
 not, so no namespace type/GUID is invented. UI, CompareValues, pictures, typed
 constraints and active-iteration mutation remain outside this slice.
+
+
+## Prepared ValueList Copy-history checkpoint (2026-10-20)
+
+The checkpoint preparation continued merged main
+`37d88c53c907979318f58d233e749ed568f464d7` without implementing unobserved
+Copy identity or allocator semantics. The two bounded helper/invocation blocks
+added to `collections.bsl` contain ten `table.list.copy.*` records and the marker
+`table.list.copy.checkpoint.complete: [ok]`, before the existing final marker.
+Removing only those blocks restores source blob
+`f09b5ebe948c9a44790b164b0ca6e7cdff5f3fd6` byte-for-byte, including the BOM.
+
+At preparation, all six saved native outputs and the six-field `meta.md` were
+unchanged. The saved `collections.out` was still owner commit
+`317262725bf3507a6b66dd1f2d962d822806d338`,
+blob `b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6` (149,098 bytes, 3,631 lines).
+It did not contain the new checkpoint. No output was synthesized, no old result
+was removed, and the probes selected no expected identity/allocation policy.
+
+### Copy-history matrix
+
+| Records | Preparation and distinguishing observations |
+| --- | --- |
+| `fresh-empty`, `fresh` | Empty and three-item controls, no prior mutation; English and Russian Copy aliases |
+| `value-asc`, `value-desc` | Real value-sort permutations of three distinct values, in both directions |
+| `presentation-asc`, `presentation-desc` | Real presentation-sort permutations, distinct from value order, in both directions |
+| `deleted-reordered` | Four allocations, deletion of highest and interior IDs, then Move; surviving IDs [2,0] distinguish count 2, maximum live ID plus one 3, and allocation high-water 4 |
+| `clear-empty`, `clear-refilled` | Clear after three allocations, first while empty, then with two new items; distinguishes allocation history from an ordinary empty/fresh list |
+| `nested` | Deleted and presentation-reordered source with a mutable numeric array; copied-item identity, nested mutation and independently changed Value/Presentation/Check |
+
+Each list snapshot records Count and ordered item rows
+`[Value, Presentation, Check, ID, FoundByOwnID]`. Numeric nested arrays are eagerly
+projected into new arrays, so later mutation cannot rewrite an earlier snapshot.
+The fixed lookup vector probes IDs 0 through 5: `-1` means Undefined, `-2` means a
+returned object absent from independent owner iteration, and a nonnegative value
+is its enumerated position. It does not use IndexOf or FindByValue as an oracle.
+Dynamic ID/FindByID observations cover every live and newly added item as well.
+
+Both source and copy owners remain alive until all observations complete. Saved
+source references are compared against every item in source and copy, independently
+of value order or IDs. This detects source replacement, cross-owner aliasing and
+reordered reused items, not just aliasing at corresponding positions. Fields,
+GetID, lookup, Count and iteration have separate error boundaries. Reference-capture failure is recorded
+separately, does not erase Before or prevent Copy, and suppresses only comparisons
+that would depend on incomplete saved references. Setup failure
+is recorded and does not masquerade as a successful Copy preparation.
+
+Source Add is attempted even if Copy throws, exposing allocator-only changes
+before failure. Source and copy Add have independent status/ID/findability/position
+observations and counts after each operation. No copy Add is attempted when no
+ValueList copy exists. The nested case separately captures shared-value mutation
+and copied-item field replacement, without relying on item serialization after
+an owner has been released. List/item raw codecs are not part of this checkpoint.
+
+The Python instrumentation deliberately exercises incompatible synthetic policies
+(fresh IDs, preserved IDs, preserved allocator history, reversed fields and reused
+references) to prove they are distinguishable; it is not native evidence. Existing
+Copy runtime restrictions remained intact during preparation, pending genuine
+1C output and its review. The updated source still runs through the existing
+server-side launcher
+in the recorded owner environment; no launcher or platform-context change is made.
+
+All complete-output native gates and frozen smoke comparisons remain strict and
+read the entire updated scenario. At preparation, they were expected to fail while
+the new native results and corresponding runtime behavior were pending. That
+evidence status is superseded by the confirmed checkpoint below. Historical source-hash
+tests remove the new blocks only to verify their own prior source boundary; this
+is not an exception in any native comparator. Version 0.3.2 is unchanged.
+
+## Confirmed ValueList Copy-history checkpoint (2026-10-20)
+
+Owner commit `0601200672edcc1cd5ab6703d0ef47e958329846` supplies the genuine
+native result for the prepared checkpoint. Only `collections.out` changed:
+blob `d4cce35fea3cc5271a871c26062c1b6167c0b092`, 162,177 bytes and 3,937 lines,
+SHA-256 `9e1962801f19b6ca24cbd64ec82574e6e2bbb826a3b45481f249f89e6f5b2d01`.
+The 149,066-byte prefix before the new block is exact. Removing the new block
+restores the previous owner output, including its final marker, byte-for-byte.
+There are 306 added lines: ten ordered `table.list.copy.*` records and
+`table.list.copy.checkpoint.complete: [ok]`; the overall completion marker remains
+last. No `.err` file was supplied, and all other tree files, including the scenario,
+five other outputs and `meta.md`, are unchanged. No expected output was generated
+by Yadinassi.
+
+All ten preparations, reference captures and Copy calls succeed. The observations
+establish the following bounded behavior for the default-state lists in the matrix:
+
+- Copy preserves current order and each item's Value, Presentation and Check.
+  It creates a different list and different items; saved source references still
+  identify the same source items and none of the copied items.
+- Copy IDs are freshly allocated in current order, `0…Count - 1`, and FindByID
+  resolves those IDs in the copy. The next copied-list Add receives ID `Count`.
+  The source retains its item IDs, lookup results and allocation history.
+- In `deleted-reordered`, source IDs `[2,0]` become copy IDs `[0,1]`; the next
+  source/copy IDs are `4`/`2`. In `clear-empty` they are `3`/`0`, and in
+  `clear-refilled` source IDs `[3,4]` become `[0,1]` with next IDs `5`/`2`.
+  Independent counts after each Add confirm separate list membership.
+- The nested numeric array remains shared: its mutation is visible through both
+  lists. Replacing Value, Presentation and Check on the copied item leaves the
+  source item's fields unchanged. This is not deep copying.
+
+The implementation removes the prior fresh-source-ID restriction and retains
+normal fresh item allocation, current-order addition and existing resource bounds.
+This changes Copy, not codec history preservation. Both owners stayed alive for
+all observations; owner-release behavior, active-iteration structural mutation,
+UI, typed constraints, pictures and additional codec forms remain outside scope.
+The existing server-side launcher and recorded platform context are unchanged.
+Full native and frozen comparators still consume complete outputs without a tail
+exception. Implementation test results are separate from this evidence record;
+this section does not claim that every gate has passed. Version 0.3.2 is unchanged.
