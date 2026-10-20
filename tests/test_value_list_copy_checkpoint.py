@@ -149,7 +149,18 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
         self.assertEqual(list((ROOT / 'integrational_tests/output').glob('*.err')), [])
         self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text())
-        self.assertNotIn('table.list.copy.', (ROOT / 'integrational_tests/output/collections.out').read_text())
+        self.assertNotIn('table.list.copy.', (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8'))
+
+    def test_native_fixture_text_uses_utf8_under_legacy_default_encoding(self):
+        # Reproduce a pre-UTF-8 Windows default without changing host locale.
+        original = Path.read_text
+        reads = []
+        def legacy_read(path, encoding=None, errors=None):
+            reads.append((path, encoding))
+            return original(path, encoding=encoding or 'cp1252', errors=errors)
+        with patch.object(Path, 'read_text', legacy_read):
+            self.test_exact_base_and_protected_native_evidence()
+        self.assertIn((ROOT / 'integrational_tests/output/collections.out', 'utf-8'), reads)
 
     def test_fixed_unique_records_and_declarations_before_statements(self):
         calls = observations()
