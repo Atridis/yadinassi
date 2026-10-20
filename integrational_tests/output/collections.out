@@ -2867,4 +2867,531 @@ table.ops.sort.utf16-boundary-desc: [
   SameRow={"B",1}
 ]
 table.ops.checkpoint.complete: [ok]
+table.indexes.identity: [
+  Status={"S","ok"}
+  Extra.SameProperty={"B",1}
+  Extra.SameIteration={"B",1}
+  Extra.EqualOtherCollection={"B",0}
+  Extra.EqualOtherIndex={"B",0}
+  Extra.CollectionType={"B",1}
+  Extra.IndexType={"B",1}
+  Extra.RussianCollection={"B",1}
+  Extra.RussianIndex={"B",1}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.access: [
+  Status={"S","ok"}
+  Extra.IndexZero={"S","Key"}
+  Extra.IndexLast={"S","Second"}
+  Extra.IndexPast={"S","[error]"}
+  Extra.CollectionZero={"B",1}
+  Extra.CollectionGet={"S","[error]"}
+  Extra.IndexCount={"S","[error]"}
+  Extra.IndexNegative={"S","[error]"}
+  Extra.IndexFraction={"S","Key"}
+  Extra.IndexString={"S","[error]"}
+  Extra.IndexUndefined={"S","[error]"}
+  Extra.IndexWrite={"S","[error]"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.readonly: [
+  Status={"S","error"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.constructor.collection: [error]
+table.indexes.constructor.index: [error]
+table.indexes.codec.empty: [
+  Type={"S","Коллекция индексов таблицы значений"}
+  Text={"S","ИндексыКоллекции"}
+  View.Count={"N",0}
+  View.Items=[]
+  TypeWrite={"S","{""T"",3a461c5c-0a17-430a-ae05-90890129a7da}"}
+  TypeRead.Type={"S","Тип"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",3a461c5c-0a17-430a-ae05-90890129a7da}"}
+  ReadType={"S","Не определено"}
+  ReadWrite={"S","{""U""}"}
+  ReadView={"S","[error]"}
+  Equal={"B",0}
+]
+table.indexes.codec.collection: [
+  Type={"S","Коллекция индексов таблицы значений"}
+  Text={"S","ИндексыКоллекции"}
+  View.Count={"N",1}
+  View.Items=[[{"S","Key"}; {"S","Second"}]]
+  TypeWrite={"S","{""T"",3a461c5c-0a17-430a-ae05-90890129a7da}"}
+  TypeRead.Type={"S","Тип"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",3a461c5c-0a17-430a-ae05-90890129a7da}"}
+  ReadType={"S","Не определено"}
+  ReadWrite={"S","{""U""}"}
+  ReadView={"S","[error]"}
+  Equal={"B",0}
+]
+table.indexes.codec.index: [
+  Type={"S","Индекс таблицы значений"}
+  Text={"S","Key, Second"}
+  View=[{"S","Key"}; {"S","Second"}]
+  TypeWrite={"S","{""T"",4523f487-9cd3-4779-89f5-92023e88037b}"}
+  TypeRead.Type={"S","Тип"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",4523f487-9cd3-4779-89f5-92023e88037b}"}
+  ReadType={"S","Не определено"}
+  ReadWrite={"S","{""U""}"}
+  ReadView={"S","[error]"}
+  Equal={"B",0}
+]
+table.indexes.codec.table: [
+  Type={"S","Таблица значений"}
+  Text={"S","ТаблицаЗначений"}
+  View.Table.Count={"N",2}
+  View.Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  View.Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  View.Indexes.Count={"N",2}
+  View.Indexes.Items=[[{"S","Key"}; {"S","Second"}]; [{"S","Amount"}]]
+  TypeWrite={"S","{""T"",acf6192e-81ca-46ef-93a6-5a6968b78663}"}
+  TypeRead.Type={"S","Тип"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",acf6192e-81ca-46ef-93a6-5a6968b78663,\n{9,\n{3,\n{0,""Key"",\n{""Pattern""},"""",0},\n{1,""Second"",\n{""Pattern""},"""",0},\n{2,""Amount"",\n{""Pattern""},"""",0}\n},\n{2,3,0,0,1,1,2,2,\n{1,2,\n{2,0,3,\n{""S"",""a""},\n{""N"",1},\n{""N"",1},0},\n{2,1,3,\n{""S"",""a""},\n{""N"",2},\n{""N"",2},0}\n},2,1},\n{0,2,\n{0,2,0,1},\n{0,1,2}\n}\n}\n}"}
+  ReadType={"S","Таблица значений"}
+  ReadWrite={"S","same-as-Write"}
+  ReadView.Table.Count={"N",2}
+  ReadView.Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  ReadView.Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  ReadView.Indexes.Count={"N",2}
+  ReadView.Indexes.Items=[[{"S","Key"}; {"S","Second"}]; [{"S","Amount"}]]
+  Equal={"B",0}
+]
+table.indexes.add.valid: [
+  Status={"S","ok"}
+  Extra=[{"S","Key"}]
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}]
+]
+table.indexes.add.case: [
+  Status={"S","ok"}
+  Extra=[{"S","Key"}]
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}]
+]
+table.indexes.add.spaces: [
+  Status={"S","ok"}
+  Extra=[{"S","Key"}; {"S","Second"}]
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.add.multi: [
+  Status={"S","ok"}
+  Extra=[{"S","Second"}; {"S","Key"}]
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Second"}; {"S","Key"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Second"}; {"S","Key"}]
+]
+table.indexes.add.duplicate-column: [
+  Status={"S","ok"}
+  Extra=[{"S","Key"}; {"S","Key"}]
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Key"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Key"}]
+]
+table.indexes.add.invalid-list: [[{{"S","Case"}={"S","unknown"}; {"S","Status"}={"S","error"}; {"S","Indexes"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}; {{"S","Case"}={"S","trailing"}; {"S","Status"}={"S","ok"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"S","Key"}]]}}; {{"S","Case"}={"S","consecutive"}; {"S","Status"}={"S","ok"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"S","Key"}; {"S","Second"}]]}}; {{"S","Case"}={"S","undefined"}; {"S","Status"}={"S","ok"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[]]}}; {{"S","Case"}={"S","omitted"}; {"S","Status"}={"S","ok"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[]]}}]]
+table.indexes.add.empty: [
+  Status={"S","ok"}
+  Extra=[]
+  Indexes.Count={"N",1}
+  Indexes.Items=[[]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[]
+]
+table.indexes.add.nonstring: [
+  Status={"S","error"}
+  Extra={"U"}
+  Indexes.Count={"N",0}
+  Indexes.Items=[]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+]
+table.indexes.add.repeat: [
+  Status={"S","ok"}
+  Extra.Same={"B",0}
+  Extra.Names=[{"S","Key"}; {"S","Second"}]
+  Indexes.Count={"N",2}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.delete-number: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Amount"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.delete-object: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Amount"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.delete-foreign: [
+  Status={"S","error"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.delete-stale: [
+  Status={"S","error"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Amount"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.delete-invalid: [[{{"S","Case"}={"S","negative"}; {"S","Status"}={"S","error"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"S","Key"}]]}}; {{"S","Case"}={"S","past"}; {"S","Status"}={"S","error"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"S","Key"}]]}}; {{"S","Case"}={"S","fraction"}; {"S","Status"}={"S","ok"}; {"S","Indexes"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}; {{"S","Case"}={"S","string"}; {"S","Status"}={"S","ok"}; {"S","Indexes"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}; {{"S","Case"}={"S","undefined"}; {"S","Status"}={"S","error"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"S","Key"}]]}}; {{"S","Case"}={"S","omitted"}; {"S","Status"}={"S","error"}; {"S","Indexes"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"S","Key"}]]}}]]
+table.indexes.clear: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",0}
+  Indexes.Items=[]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S",""}; {"S",""}]
+]
+table.indexes.rename: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Renamed"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Renamed"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Renamed"}; {"S","Second"}]
+]
+table.indexes.column-delete: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"N",1}; {"N",1}]; [{"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Second"}]
+]
+table.indexes.column-move: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Second"}; {"S","Amount"}; {"S","Key"}]
+  Table.Rows=[[{"N",1}; {"N",1}; {"S","a"}]; [{"N",2}; {"N",2}; {"S","a"}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.group: [
+  Status={"S","ok"}
+  Extra.Count={"N",0}
+  Extra.Items=[]
+  Indexes.Count={"N",0}
+  Indexes.Items=[]
+  Table.Count={"N",1}
+  Table.Names=[{"S","Key"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",3}]]
+  SavedIndex=[{"S",""}; {"S",""}]
+]
+table.indexes.copy: [
+  Status={"S","ok"}
+  Extra.Indexes.Count={"N",1}
+  Extra.Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Extra.Rows.Count={"N",2}
+  Extra.Rows.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Extra.Rows.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  Extra.Same={"B",0}
+  Extra.ProjectedIndexes.Count={"N",0}
+  Extra.ProjectedIndexes.Items=[]
+  Extra.ColumnsOnlyIndexes.Count={"N",0}
+  Extra.ColumnsOnlyIndexes.Items=[]
+  Extra.ProjectedColumn={"S","Key"}
+  Extra.ColumnsOnlyColumn={"S","Key"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.search-edit: [
+  Status={"S","ok"}
+  Extra=[{{"S","Count"}={"N",2}; {"S","Rows"}=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]; {"S","FindIsSaved"}={"B",1}; {"S","FindIndex"}={"N",0}}; {{"S","Count"}={"N",1}; {"S","Rows"}=[[{"S","a"}; {"N",2}; {"N",2}]]; {"S","FindIsSaved"}={"B",0}; {"S","FindIndex"}={"N",1}}; {{"S","Count"}={"N",2}; {"S","Rows"}=[[{"S","a"}; {"N",2}; {"N",2}]; [{"S","a"}; {"N",1}; {"N",1}]]; {"S","FindIsSaved"}={"B",0}; {"S","FindIndex"}={"N",1}}]
+  Indexes.Count={"N",2}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  Composite.Count={"N",1}
+  Composite.ReverseCount={"N",1}
+  Composite.SameSaved={"B",1}
+  Composite.ReverseSameSaved={"B",1}
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.search-add-delete: [
+  Status={"S","ok"}
+  Extra=[{{"S","Count"}={"N",2}; {"S","Rows"}=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]; {"S","FindIsSaved"}={"B",1}; {"S","FindIndex"}={"N",0}}; {{"S","Count"}={"N",3}; {"S","Rows"}=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]; [{"S","a"}; {"N",3}; {"N",3}]]; {"S","FindIsSaved"}={"B",1}; {"S","FindIndex"}={"N",0}}; {{"S","Count"}={"N",2}; {"S","Rows"}=[[{"S","a"}; {"N",2}; {"N",2}]; [{"S","a"}; {"N",3}; {"N",3}]]; {"S","FindIsSaved"}={"B",0}; {"S","FindIndex"}={"N",0}}]
+  Indexes.Count={"N",2}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",2}; {"N",2}]; [{"S","a"}; {"N",3}; {"N",3}]]
+  Composite.Count={"N",1}
+  Composite.ReverseCount={"N",1}
+  Composite.SameSaved={"B",1}
+  Composite.ReverseSameSaved={"B",1}
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.search-bulk: [
+  Status={"S","ok"}
+  Extra=[{{"S","Count"}={"N",2}; {"S","Rows"}=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]; {"S","FindIsSaved"}={"B",1}; {"S","FindIndex"}={"N",0}}; {{"S","Count"}={"N",0}; {"S","Rows"}=[]; {"S","FindIsSaved"}={"B",0}; {"S","FindIndex"}={"N",-1}}; {{"S","Count"}={"N",2}; {"S","Rows"}=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]; {"S","FindIsSaved"}={"B",1}; {"S","FindIndex"}={"N",0}}]
+  Indexes.Count={"N",2}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",1}; {"N",1}]; [{"S","a"}; {"N",2}; {"N",2}]]
+  Composite.Count={"N",1}
+  Composite.ReverseCount={"N",1}
+  Composite.SameSaved={"B",1}
+  Composite.ReverseSameSaved={"B",1}
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.table-clear: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",0}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.columns-clear: [
+  Status={"S","ok"}
+  Extra={"U"}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[]]
+  Table.Count={"N",0}
+  Table.Names=[]
+  Table.Rows=[]
+  SavedIndex=[]
+]
+table.indexes.sort: [
+  Status={"S","ok"}
+  Extra.Count={"N",2}
+  Extra.Rows=[[{"S","a"}; {"N",2}; {"N",2}]; [{"S","a"}; {"N",1}; {"N",1}]]
+  Extra.FindIsSaved={"B",0}
+  Extra.FindIndex={"N",0}
+  Indexes.Count={"N",1}
+  Indexes.Items=[[{"S","Key"}; {"S","Second"}]]
+  Table.Count={"N",2}
+  Table.Names=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Table.Rows=[[{"S","a"}; {"N",2}; {"N",2}]; [{"S","a"}; {"N",1}; {"N",1}]]
+  SavedIndex=[{"S","Key"}; {"S","Second"}]
+]
+table.indexes.checkpoint.complete: [ok]
+table.indexes.extra.edit-order: [
+  Steps=[{"S","AddKey:ok"}; {"S","SameKey:ok"}; {"S","OtherColumn:ok"}; {"S","BeforeFill:ok"}; {"S","Fill:ok"}; {"S","BeforeLoad:ok"}; {"S","Load:ok"}]
+  Initial.Order=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.FindKey={"N",1}
+  SameKey.Order=[{"N",1}; {"N",2}; {"N",3}]
+  SameKey.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  SameKey.FindKey={"N",2}
+  OtherColumn.Order=[{"N",1}; {"N",2}; {"N",3}]
+  OtherColumn.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  OtherColumn.FindKey={"N",2}
+  BeforeFill.Order=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeFill.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  BeforeFill.FindKey={"N",2}
+  AfterFill.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterFill.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterFill.FindKey={"N",1}
+  BeforeLoad.Order=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeLoad.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  BeforeLoad.FindKey={"N",2}
+  AfterLoad.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterLoad.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterLoad.FindKey={"N",1}
+]
+table.indexes.extra.reorder: [
+  Steps=[{"S","AddKey:ok"}; {"S","Sort:ok"}; {"S","Move:ok"}]
+  Initial.Order=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.FindKey={"N",1}
+  Initial.FindAll={"N",1}
+  Initial.FindSecondKey={"N",1}
+  Sorted.Order=[{"N",3}; {"N",2}; {"N",1}]
+  Sorted.Rows=[{"N",3}; {"N",2}; {"N",1}]
+  Sorted.FindKey={"N",3}
+  Sorted.FindAll={"N",3}
+  Sorted.FindSecondKey={"N",3}
+  Moved.Order=[{"N",2}; {"N",1}; {"N",3}]
+  Moved.Rows=[{"N",2}; {"N",1}; {"N",3}]
+  Moved.FindKey={"N",2}
+  Moved.FindAll={"N",2}
+  Moved.FindSecondKey={"N",2}
+]
+table.indexes.extra.selection: [
+  Steps=[{"S","AddOld:ok"}; {"S","Scramble:ok"}; {"S","AddComposite:ok"}; {"S","DeleteOld:ok"}; {"S","DeleteComposite:ok"}]
+  BeforeAdd.Order=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeAdd.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  BeforeAdd.FindKey={"N",2}
+  BeforeAdd.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeAdd.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  AfterComposite.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterComposite.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  AfterComposite.FindKey={"N",2}
+  AfterComposite.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterComposite.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  DuplicateAdd={"S","ok"}
+  AfterDuplicate.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDuplicate.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  AfterDuplicate.FindKey={"N",2}
+  AfterDuplicate.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDuplicate.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.FindKey={"N",1}
+  AfterDeleteOld.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.FindKey={"N",1}
+  AfterDeleteComposite.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+]
+table.indexes.extra.copy: [
+  Steps=[{"S","AddComposite:ok"}; {"S","AddKey:ok"}; {"S","AddAmount:ok"}; {"S","FullCopy:ok"}; {"S","RenameCopy:ok"}]
+  CopyAll.Columns=[{"S","Second"}; {"S","Key"}; {"S","Amount"}]
+  CopyAll.Indexes=[]
+  CopyPair.Columns=[{"S","Second"}; {"S","Key"}]
+  CopyPair.Indexes=[]
+  CopyKey.Columns=[{"S","Key"}]
+  CopyKey.Indexes=[]
+  ColumnsAll.Columns=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  ColumnsAll.Indexes=[]
+  ColumnsPair.Columns=[{"S","Second"}; {"S","Key"}]
+  ColumnsPair.Indexes=[]
+  ColumnsKey.Columns=[{"S","Key"}]
+  ColumnsKey.Indexes=[]
+  FullCopy.Columns=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  FullCopy.Indexes=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}]; [{"S","Amount"}]]
+  RenamedCopy.Columns=[{"S","Renamed"}; {"S","Second"}; {"S","Amount"}]
+  RenamedCopy.Indexes=[[{"S","Renamed"}; {"S","Second"}]; [{"S","Renamed"}]; [{"S","Amount"}]]
+  Source.Columns=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Source.Indexes=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}]; [{"S","Amount"}]]
+]
+table.indexes.extra.stale-links: [
+  Delete.Steps=[{"S","Add:ok"}; {"S","Delete:ok"}; {"S","Rename:ok"}; {"S","DeleteSecond:ok"}]
+  Delete.Immediately.Names=[{"S","Key"}; {"S","Second"}]
+  Delete.Immediately.Zero={"S","Key"}
+  Delete.Immediately.One={"S","Second"}
+  Delete.Immediately.Text={"S","Key, Second"}
+  Delete.Immediately.Count={"N",0}
+  Delete.AfterRename.Names=[{"S","Renamed"}; {"S","Second"}]
+  Delete.AfterRename.Zero={"S","Renamed"}
+  Delete.AfterRename.One={"S","Second"}
+  Delete.AfterRename.Text={"S","Renamed, Second"}
+  Delete.AfterRename.Count={"N",0}
+  Delete.AfterDeleteSecond.Names=[{"S","Renamed"}; {"S",""}]
+  Delete.AfterDeleteSecond.Zero={"S","Renamed"}
+  Delete.AfterDeleteSecond.One={"S",""}
+  Delete.AfterDeleteSecond.Text={"S","Renamed, "}
+  Delete.AfterDeleteSecond.Count={"N",0}
+  Clear.Steps=[{"S","Add:ok"}; {"S","Clear:ok"}; {"S","Rename:ok"}; {"S","DeleteSecond:ok"}]
+  Clear.Immediately.Names=[{"S",""}; {"S",""}]
+  Clear.Immediately.Zero={"S",""}
+  Clear.Immediately.One={"S",""}
+  Clear.Immediately.Text={"S","[error]"}
+  Clear.Immediately.Count={"N",0}
+  Clear.AfterRename.Names=[{"S",""}; {"S",""}]
+  Clear.AfterRename.Zero={"S",""}
+  Clear.AfterRename.One={"S",""}
+  Clear.AfterRename.Text={"S","[error]"}
+  Clear.AfterRename.Count={"N",0}
+  Clear.AfterDeleteSecond.Names=[{"S",""}; {"S",""}]
+  Clear.AfterDeleteSecond.Zero={"S",""}
+  Clear.AfterDeleteSecond.One={"S",""}
+  Clear.AfterDeleteSecond.Text={"S","[error]"}
+  Clear.AfterDeleteSecond.Count={"N",0}
+  Group.Steps=[{"S","Add:ok"}; {"S","Group:ok"}; {"S","Rename:ok"}; {"S","DeleteAmount:ok"}]
+  Group.Immediately.Names=[{"S",""}; {"S",""}]
+  Group.Immediately.Zero={"S",""}
+  Group.Immediately.One={"S",""}
+  Group.Immediately.Text={"S","[error]"}
+  Group.Immediately.Count={"N",0}
+  Group.AfterRename.Names=[{"S",""}; {"S",""}]
+  Group.AfterRename.Zero={"S",""}
+  Group.AfterRename.One={"S",""}
+  Group.AfterRename.Text={"S","[error]"}
+  Group.AfterRename.Count={"N",0}
+  Group.AfterDeleteAmount.Names=[{"S",""}; {"S",""}]
+  Group.AfterDeleteAmount.Zero={"S",""}
+  Group.AfterDeleteAmount.One={"S",""}
+  Group.AfterDeleteAmount.Text={"S","[error]"}
+  Group.AfterDeleteAmount.Count={"N",0}
+]
 table.checkpoint.complete: [ok]

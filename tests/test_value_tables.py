@@ -263,9 +263,12 @@ class ValueTableTests(unittest.TestCase):
         for selector in (D(0), t.columns.items[0]):
             with self.assertRaises(TypeError):
                 t.total(selector)
-        with self.assertRaises(TypeError):
+        # Native index checkpoint also confirms string column selectors here.
+        t.columns.move("Имя", D(1))
+        self.assertEqual([column.name for column in t.columns], ["Число", "Имя"])
+        with self.assertRaises(IndexError):
             t.columns.move("Имя", D(1))
-        self.assertEqual(t.columns.items[0].name, "Имя")
+        self.assertEqual([column.name for column in t.columns], ["Число", "Имя"])
 
     def test_clear_columns_also_clears_zero_column_rows(self):
         t = BSLValueTable()
