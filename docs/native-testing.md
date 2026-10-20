@@ -941,3 +941,67 @@ The existing server-side launcher and recorded platform context are unchanged.
 Full native and frozen comparators still consume complete outputs without a tail
 exception. Implementation test results are separate from this evidence record;
 this section does not claim that every gate has passed. Version 0.3.2 is unchanged.
+
+## Prepared ValueList String checkpoint (2026-10-20)
+
+This checkpoint continues merged main
+`53bd014741cdf11b761b273c7911362aaad48f9a` without changing runtime behavior.
+Eight grouped `table.list.string.*` records and the separate
+`table.list.string.checkpoint.complete: [ok]` marker are added to the existing
+`collections.bsl`, immediately before its final overall marker. Removing only
+these new helper and invocation blocks restores source blob
+`0b7ad4f171bb45a201fe67e05a6dafe7f9e143fa` byte-for-byte, including the BOM.
+
+All six saved native outputs and the six-field `meta.md` remain unchanged.
+The saved `collections.out` is still owner commit
+`0601200672edcc1cd5ab6703d0ef47e958329846`, blob
+`d4cce35fea3cc5271a871c26062c1b6167c0b092` (162,177 bytes, 3,937 lines).
+It does not yet contain these observations. No output has been synthesized,
+and neither item fallback nor empty-item separator behavior is inferred from
+standalone `String(Value)`.
+
+### String observation matrix
+
+| Record | Cases |
+| --- | --- |
+| `empty` | Fresh list; Add then Clear; Add then empty LoadValues |
+| `absent` | Actual no-argument Add(); explicit Undefined; Null |
+| `numbers-booleans` | 0, -7.25, 1234.5, False, True |
+| `strings` | Empty, one space, Unicode, semicolon, actual LF, literal backslash-n |
+| `dates` | Empty date; fixed 2024-02-29 13:14:15 |
+| `joins` | Leading/interior/trailing/all-empty string values; Undefined/Null/empty; whitespace; explicit labels surrounding empty |
+| `load` | Eight mixed scalar values supplied through LoadValues |
+| `live` | Explicit empty Presentation at construction; Value change; explicit label; changed Value under label; Check true then false; whitespace Presentation; cleared Presentation; Undefined Value |
+
+There are 36 list snapshots and 52 ordered item rows. Each snapshot separately
+captures Count, ordered Items and a list-conversion result. Each item row is
+`[Value, Presentation, Check, ID, ValueText, ItemText]`. The last two fields and
+the list-conversion result each have independent `Status` and `Text` fields:
+success with an empty string cannot be mistaken for failure. The three direct
+conversion categories are attempted independently (140 attempts in total),
+including the scalar controls for numeric grouping, Boolean localization and
+date presentation. A failed field/ID read does not suppress other fields;
+a failed iteration does not suppress list conversion. Preparation and each live
+mutation retain their own status and post-action snapshot.
+
+Owners remain alive until all their observations complete. Live changes also
+record identity against the saved item; earlier snapshots contain captured
+scalar values, not live list/item objects. The existing compact encoder is reused
+unchanged, preserving typed values, quoted strings, Unicode, whitespace,
+semicolons and actual control characters versus literal escape spellings.
+Iteration is explicitly bounded to eight items. No raw list/item codec, object
+fallback, cycle, enum/type fallback, UI, picture or typed-list behavior is added.
+
+Synthetic instrumentation exercises incompatible fallback/join policies and
+independent conversion/read failures solely to validate the observer. It is not
+native evidence. Rendered-string and joined-text budgets belong to the eventual
+runtime implementation and must have boundary tests after the native result is
+reviewed; this preparation does not relax existing runtime guards or limits.
+
+All complete-output native gates and frozen smoke comparisons remain strict and
+consume the entire updated scenario. They are expected to fail until genuine
+native output is collected and corresponding behavior is implemented. Historical
+source-hash tests remove only the new blocks to verify their prior boundaries;
+no native comparator has a tail exception. The existing server-side launcher,
+recorded platform context and version 0.3.2 remain unchanged. A local successful
+parse or instrumentation run is not a claim of native 1C compilation.
