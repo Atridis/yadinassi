@@ -16,7 +16,18 @@ BODY = ('// Начало наблюдений Sort/GroupBy.\n', '// Конец �
 
 
 def source():
-    return SOURCE.read_text(encoding='utf-8-sig')
+    text = SOURCE.read_text(encoding='utf-8-sig')
+    # Isolate the already confirmed operations checkpoint. Full native gates
+    # read collections.bsl directly and still compare every output byte.
+    for start, end in (
+        ('// Начало компактных проб индексов.\n', '// Конец компактных проб индексов.\n\n'),
+        ('// Начало наблюдений индексов.\n', '// Конец наблюдений индексов.\n'),
+    ):
+        if start in text:
+            before, rest = text.split(start, 1)
+            _, after = rest.split(end, 1)
+            text = before + after
+    return text
 
 
 def canonical_output_bytes(data):

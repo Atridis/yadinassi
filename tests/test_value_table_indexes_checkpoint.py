@@ -1,0 +1,249 @@
+"""Probe observability only; index behavior and codecs require owner 1C output."""
+from decimal import Decimal
+import hashlib
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+
+from yadinassi import Interpreter, ast, serialization
+from yadinassi.parser import parse
+from yadinassi.value_tables import (BSLValueTable, BSLValueTableColumn,
+                                   BSLValueTableColumnCollection, BSLValueTableRow)
+from yadinassi.values import BSLArray, BSLType, HostFunction
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'
+HELPERS = ('// Начало компактных проб индексов.\n', '// Конец компактных проб индексов.\n\n')
+BODY = ('// Начало наблюдений индексов.\n', '// Конец наблюдений индексов.\n')
+
+
+def source():
+    return SOURCE.read_text(encoding='utf-8-sig')
+
+
+def section(markers):
+    return source().split(markers[0], 1)[1].split(markers[1], 1)[0]
+
+
+def observations():
+    return [node.expression for node in parse(section(BODY))
+            if isinstance(node, ast.ExpressionStatement)
+            and isinstance(node.expression, ast.Call)
+            and isinstance(node.expression.callee, ast.Name)
+            and node.expression.callee.name == 'НаблюдатьТаблицы']
+
+
+class IndexProbeTests(unittest.TestCase):
+    def test_old_source_and_all_owner_goldens_are_byte_exact(self):
+        old = source()
+        for start, end in (HELPERS, BODY):
+            before, rest = old.split(start, 1)
+            _, after = rest.split(end, 1)
+            old = before + after
+        data = ('\ufeff' + old).encode()
+        self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
+                         'd6176c44edf9a3d7ad9f8cf7a474a12aca25c809')
+        hashes = {'collections': '1230b2a63eee62f88eee0d8a93cfba15d002f376',
+                  'values': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
+                  'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
+                  'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
+                  'numbers': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
+                  'strings': 'a1ecb5458c3eb10b0df52cd9ae241994a2e4f462'}
+        for name, expected in hashes.items():
+            data = (ROOT / f'integrational_tests/output/{name}.out').read_bytes().replace(b'\r\n', b'\n')
+            self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(), expected)
+        self.assertEqual((ROOT / 'integrational_tests/meta.md').read_text(encoding='utf-8'),
+                         '1c-version: 8.3.27.2342\nos: Windows\ninfobase-mode: файловая база\n'
+                         'infobase-locale: русский (Россия)\nsession-locale: русский (Россия)\n'
+                         'compatibility-mode: НеУказан\n')
+
+    def test_fixed_bounded_expressions_and_full_source_compile(self):
+        calls = observations()
+        self.assertEqual(len(calls), 35)
+        labels = []
+        for call in calls:
+            self.assertEqual(len(call.arguments), 2)
+            self.assertTrue(all(isinstance(arg, ast.Literal) and type(arg.value) is str for arg in call.arguments))
+            label, expression = (arg.value for arg in call.arguments)
+            self.assertRegex(label, r'^indexes\.[a-z.-]+$')
+            self.assertLess(len(expression), 180)
+            self.assertNotRegex(expression, r'[\r\n]')
+            parse('Result = ' + expression + ';')
+            labels.append(label)
+        self.assertEqual(len(labels), len(set(labels)))
+        started = False
+        for node in parse(source()):
+            if isinstance(node, ast.Routine):
+                self.assertFalse(started, node.name)
+            elif not isinstance(node, ast.Var):
+                started = True
+        for field in ('TypeWrite', 'TypeRead', 'ReadType', 'ReadWrite', 'ReadView', 'SavedIndex'):
+            self.assertIn(field, section(HELPERS))
+        self.assertNotIn('New CollectionIndex(', section(HELPERS).split('Вычислить')[0])
+
+    def test_current_runtime_reports_each_missing_api_and_completes(self):
+        output = []
+        Interpreter(output=output.append).execute(source())
+        records = [line for line in output if line.startswith('table.indexes.')
+                   and not line.startswith('table.indexes.checkpoint.')]
+        self.assertEqual(len(records), 35)
+        self.assertTrue(all(line.endswith('[error]') for line in records))
+        self.assertEqual(output[-2:], ['table.indexes.checkpoint.complete: [ok]', 'table.checkpoint.complete: [ok]'])
+
+    def test_targets_reached_and_concrete_snapshots_survive(self):
+        # Arrays are deliberately used as serializable host instrumentation,
+        # not as an implementation or an oracle for native index semantics.
+        owners, calls = {}, []
+        fail_after_add = [False]
+        original = BSLValueTable.get_member
+        original_set = BSLValueTable.set_member
+        original_method = BSLValueTable.get_method
+
+        def table_method(table, name):
+            method = original_method(table, name)
+            def invoke(*args):
+                calls.append(("table." + name.casefold(), args))
+                return method(*args)
+            return HostFunction(name, invoke, returns_value=method.returns_value)
+
+        original_columns_method = BSLValueTableColumnCollection.get_method
+        original_column_set = BSLValueTableColumn.set_member
+        original_row_set = BSLValueTableRow.set_member
+
+        def columns_method(columns, name):
+            method = original_columns_method(columns, name)
+            def invoke(*args):
+                calls.append(('columns.' + name.casefold(), args))
+                return method(*args)
+            return HostFunction(name, invoke, returns_value=method.returns_value)
+
+        def column_set(column, name, value):
+            calls.append(('column.' + name.casefold(), (value,)))
+            return original_column_set(column, name, value)
+
+        def row_set(row, name, value):
+            calls.append(('row.' + name.casefold(), (value,)))
+            return original_row_set(row, name, value)
+
+        def get_member(table, name):
+            if name.casefold() not in ('indexes', 'индексы'):
+                return original(table, name)
+            if table not in owners:
+                collection = BSLArray()
+                def method(name):
+                    key = name.casefold()
+                    key = {'добавить': 'add', 'удалить': 'delete',
+                           'очистить': 'clear', 'количество': 'count'}.get(key, key)
+                    def invoke(*args):
+                        calls.append((key, args))
+                        if key in ('add', 'добавить'):
+                            item = BSLArray()
+                            text = args[0] if args and type(args[0]) is str else ''
+                            item.items = [part.strip() for part in text.split(',') if part.strip()]
+                            collection.items.append(item)
+                            if fail_after_add[0]:
+                                raise ValueError("instrumented failure after insertion")
+                            return item
+                        if key in ('delete', 'удалить'):
+                            value, = args
+                            if type(value) is Decimal:
+                                del collection.items[int(value)]
+                            else:
+                                collection.items.remove(value)
+                            return None
+                        if key in ('clear', 'очистить'):
+                            collection.items.clear()
+                            return None
+                        if key in ('count', 'количество'):
+                            return Decimal(len(collection.items))
+                        if key in ('get', 'получить'):
+                            return collection.get(*args)
+                        raise ValueError(name)
+                    return HostFunction(name, invoke)
+                collection.get_method = method
+                owners[table] = collection
+            return owners[table]
+
+        def set_member(table, name, value):
+            if name.casefold() in ('indexes', 'индексы'):
+                calls.append(('readonly', (value,)))
+            return original_set(table, name, value)
+
+        output = []
+        vm = Interpreter(output=output.append)
+        vm.execute(source().split('#Область МассивыИСтруктуры', 1)[0])
+        with patch.object(BSLValueTable, 'get_member', get_member), patch.object(BSLValueTable, 'set_member', set_member), patch.object(BSLValueTable, 'get_method', table_method), patch.object(BSLValueTableColumnCollection, 'get_method', columns_method), patch.object(BSLValueTableColumn, 'set_member', column_set), patch.object(BSLValueTableRow, 'set_member', row_set):
+            for call in observations():
+                label, expression = (arg.value for arg in call.arguments)
+                if '.constructor.' in label:
+                    continue
+                calls.clear(); output.clear()
+                quoted = expression.replace('"', '""')
+                vm.execute('НаблюдатьТаблицы("' + label + '", "' + quoted + '")')
+                with self.subTest(label=label):
+                    if label != 'indexes.codec.empty':
+                        self.assertTrue(any(name == 'add' for name, _ in calls), calls)
+                    self.assertEqual(len(output), 1)
+                    self.assertNotIn('[serialize-error]', output[0])
+                    self.assertNotEqual(output[0], 'table.' + label + ': [error]')
+                    if '.codec.' in label:
+                        self.assertIn('  Write=', output[0])
+                        self.assertIn('  ReadType=', output[0])
+                    elif label.endswith('readonly'):
+                        self.assertIn('readonly', [name for name, _ in calls])
+                    elif '.delete' in label:
+                        self.assertIn('delete', [name for name, _ in calls])
+                    elif label.endswith('.clear'):
+                        self.assertIn('clear', [name for name, _ in calls])
+                    target = {'indexes.group': 'table.groupby', 'indexes.sort': 'table.sort',
+                              'indexes.copy': 'table.copy', 'indexes.table-clear': 'table.clear',
+                              'indexes.search-add-delete': 'table.delete',
+                              'indexes.search-bulk': 'table.loadcolumn',
+                              'indexes.rename': 'column.name',
+                              'indexes.column-delete': 'columns.delete',
+                              'indexes.column-move': 'columns.move',
+                              'indexes.columns-clear': 'columns.clear'}.get(label)
+                    if target:
+                        self.assertIn(target, [name for name, _ in calls])
+                    if label == 'indexes.copy':
+                        self.assertIn('table.copycolumns', [name for name, _ in calls])
+                    if label == 'indexes.search-edit':
+                        self.assertIn(('row.key', ('b',)), calls)
+                        self.assertGreaterEqual(calls.count(('row.key', ('a',))), 3)
+                    if label == 'indexes.search-bulk':
+                        self.assertIn('table.fillvalues', [name for name, _ in calls])
+                    if '.search-' in label:
+                        self.assertIn('table.findrows', [name for name, _ in calls])
+
+            # Deliberately mutate then fail: the checkpoint must retain both
+            # the failure and concrete partial state, rather than an outer error.
+            fail_after_add[0] = True
+            output.clear()
+            vm.execute('НаблюдатьТаблицы("indexes.instrumented", "ИндексыТаблицыПробы(""add"", ""Key"")")')
+            self.assertIn('  Status={"S","error"}', output[0])
+            self.assertIn('  Indexes.Count={"N",1}', output[0])
+
+            # A failed view or type codec must not hide the value codec.
+            fail_after_add[0] = False
+            original_iter = BSLArray.__iter__
+            def broken_index_view(value):
+                if any(value is collection for collection in owners.values()):
+                    raise ValueError('instrumented view failure')
+                return original_iter(value)
+            def broken_type_write(value):
+                if isinstance(value, BSLType):
+                    raise ValueError('instrumented type codec failure')
+                return serialization.value_to_string_internal(value)
+            vm.register_function('ЗначениеВСтрокуВнутр', broken_type_write,
+                                 'ValueToStringInternal')
+            output.clear()
+            with patch.object(BSLArray, '__iter__', broken_index_view):
+                vm.execute('НаблюдатьТаблицы("indexes.instrumented", "КодекИндексовПробы(""collection"")")')
+            self.assertIn('  View={"S","[error]"}', output[0])
+            self.assertIn('  TypeWrite={"S","[error]"}', output[0])
+            self.assertIn('  ReadWrite={"S","same-as-Write"}', output[0])
+            self.assertNotIn('[serialize-error]', output[0])
+
+
+if __name__ == '__main__':
+    unittest.main()

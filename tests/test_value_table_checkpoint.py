@@ -24,6 +24,8 @@ def parts():
     # Isolate this already owner-confirmed checkpoint from the next native
     # checkpoint. Complete source/native comparisons below remain strict.
     for start, end in (
+        ('// Начало компактных проб индексов.\n', '// Конец компактных проб индексов.\n\n'),
+        ('// Начало наблюдений индексов.\n', '// Конец наблюдений индексов.\n'),
         ('// Начало компактных проб Sort/GroupBy.\n', '// Конец компактных проб Sort/GroupBy.\n\n'),
         ('// Начало наблюдений Sort/GroupBy.\n', '// Конец наблюдений Sort/GroupBy.\n'),
     ):

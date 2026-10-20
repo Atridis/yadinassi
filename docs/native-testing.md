@@ -498,3 +498,29 @@ hypothesis. Official UCA6.0 DUCET codepoint primary/secondary keys match both
 locale observations and the new boundary order without character-specific
 exceptions. This supports a bounded implementation choice, not a claim that
 1C internally uses UCA6.0 or that untested characters/locales are equivalent.
+
+## Pending ValueTable index checkpoint
+
+The next checkpoint adds 35 bounded `table.indexes.*` records to the existing
+collections scenario. It covers property/type identity, index column access,
+Add/Delete/Clear validation and partial state, rename/delete/move of columns,
+GroupBy/Copy/Clear/Sort interactions, and Find/FindRows after direct and bulk row
+mutations. Search snapshots retain row order and saved-row identity; no timing
+measurements enter expected output.
+
+Four dedicated codec records inspect an empty index collection, a populated
+collection, one index and an indexed table. Type/value streams and inverse
+streams remain exact; equal inverse streams use the existing explicit
+`same-as-Write` convention. Field inspection and serialization are protected
+independently so an unsupported codec cannot hide observable collection state.
+No UUID, indexed-table layout or golden output is guessed.
+
+The API inventory was checked against the official EDT 2026.2 generic syntax
+help (English and Russian `CollectionIndexes`, `CollectionIndex` and
+`ValueTable.Indexes` entries): Add(String), Delete(Number or CollectionIndex),
+Clear(), Count(), collection iteration, and numeric index column access. This
+is documentation evidence only; runtime edge cases and codecs await the owner’s
+1C 8.3.27.2342 run. The six existing outputs remain untouched. Full native
+comparisons intentionally fail on the additional records until genuine owner
+output and implementation are available. Host instrumentation tests prove calls
+are reached and partial state remains visible; they are not native oracles.
