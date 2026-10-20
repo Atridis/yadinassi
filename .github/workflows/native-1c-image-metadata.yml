@@ -45,7 +45,7 @@ jobs:
             exit "$status"
           fi
           unset GHCR_TOKEN
-          IMAGE_REF='ghcr.io/atridis/onec-ubuntu20:8.3.27.1508'
+          IMAGE_REF='ghcr.io/atridis/onec-ubuntu22:8.3.27.1508'
           if docker pull "$IMAGE_REF" > "$DOCKER_LOG" 2>&1; then
             printf 'Image download completed; no image process was started.\n'
           else
@@ -68,7 +68,7 @@ jobs:
           import sys
 
           image, = json.loads(Path(sys.argv[1]).read_text())
-          repository = "ghcr.io/atridis/onec-ubuntu20"
+          repository = "ghcr.io/atridis/onec-ubuntu22"
           digests = sorted(digest for digest in image.get("RepoDigests", [])
                            if re.fullmatch(re.escape(repository) + r"@sha256:[0-9a-f]{64}", digest))
           if not digests:

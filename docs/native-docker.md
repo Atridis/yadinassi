@@ -1,12 +1,20 @@
 # Native 1C Docker validation
 
 The owner's private training image is
-`ghcr.io/atridis/onec-ubuntu20:8.3.27.1508`. The owner identifies its training
+`ghcr.io/atridis/onec-ubuntu22:8.3.27.1508`. The owner identifies its training
 executable as `1cv8t`, rather than the production edition's `1cv8`.
 
 This first stage only checks package access and image metadata. It does not run
 any process from the image, create a database, build an EPF, or claim native test
 success. Existing Windows reference outputs remain unchanged.
+
+The current checked-in build files use Ubuntu 22.04 and explicitly install
+`tigervnc-tools`. The entrypoint accepts either `tigervncpasswd` or `vncpasswd`,
+but still requires `VNC_PASSWORD` and starts a persistent VNC desktop. It does
+not create an infobase or invoke the test launcher. These source files describe
+the intended build; they do not prove the contents of the registry image.
+The new `onec-ubuntu22` package needs its own Actions Read grant for this
+repository; access to the former Ubuntu 20 package does not establish it.
 
 ## Image metadata preflight
 

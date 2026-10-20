@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y \
 ARG ONEC_VERSION=8.3.27.1508
 ARG ONEC_COMPONENTS=client_full,desktop_icons,ru
 
-# Устанавливаем только учебный дистрибутив заданной версии 1С.
+# Устанавливаем только full-установщик заданной версии 1С.
 # .run монтируется на время сборки, а не сохраняется в финальном слое.
 RUN --mount=type=bind,source=installers,target=/mnt/installers,readonly \
     set -eux; \
@@ -61,7 +61,7 @@ RUN --mount=type=bind,source=installers,target=/mnt/installers,readonly \
     test -x "/opt/1cv8t/x86_64/${ONEC_VERSION}/1cv8ct"
 
 # Добавляем реальные исполняемые файлы 1С в PATH.
-# В учебной версии используются имена 1cv8t, 1cv8ct, 1cv8st; отсутствующие бинарники пропускаем.
+# 1cv8s может отсутствовать при клиентской установке: не подменяем его другой командой.
 RUN set -eux; \
     for exe in 1cv8t 1cv8ct 1cv8st; do \
         target="/opt/1cv8t/x86_64/${ONEC_VERSION}/${exe}"; \
@@ -71,6 +71,12 @@ RUN set -eux; \
             echo "INFO: ${exe} not found in full client installation"; \
         fi; \
     done
+
+# Утилиты TigerVNC для Ubuntu 22.04
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    tigervnc-tools \
+    && rm -rf /var/lib/apt/lists/*
 
 # Пользователь для графической сессии
 RUN useradd -m -s /bin/bash onec \
