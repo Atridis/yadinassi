@@ -17,7 +17,8 @@ from .type_qualifiers import (
 )
 from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
-                           BSLValueTableColumn, BSLValueTableRow)
+                           BSLValueTableColumn, BSLValueTableRow,
+                           BSLCollectionIndexes, BSLCollectionIndex)
 
 
 _VALUE_TYPES = (
@@ -61,6 +62,8 @@ _VALUE_TYPES = (
     (BSLValueTableColumnCollection, BSLType.VALUE_TABLE_COLUMN_COLLECTION, "ValueTableColumnCollection"),
     (BSLValueTableColumn, BSLType.VALUE_TABLE_COLUMN, "ValueTableColumn"),
     (BSLValueTableRow, BSLType.VALUE_TABLE_ROW, "ValueTableRow"),
+    (BSLCollectionIndexes, BSLType.COLLECTION_INDEXES, "CollectionIndexes"),
+    (BSLCollectionIndex, BSLType.COLLECTION_INDEX, "CollectionIndex"),
 )
 _BY_NAME = {name.casefold(): value_type
             for _, value_type, alias in _VALUE_TYPES

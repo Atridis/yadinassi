@@ -47,7 +47,7 @@ class IndexProbeTests(unittest.TestCase):
         data = ('\ufeff' + old).encode()
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'd6176c44edf9a3d7ad9f8cf7a474a12aca25c809')
-        hashes = {'collections': 'dc6c4ab155eb27c49d68ef22f7917d91ff90e876',
+        hashes = {'collections': 'c3e5ae6e3211b2fb85ba3614cadb764475315ce8',
                   'values': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
                   'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
                   'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
@@ -60,6 +60,18 @@ class IndexProbeTests(unittest.TestCase):
                          '1c-version: 8.3.27.2342\nos: Windows\ninfobase-mode: файловая база\n'
                          'infobase-locale: русский (Россия)\nsession-locale: русский (Россия)\n'
                          'compatibility-mode: НеУказан\n')
+
+    def test_owner_addition_preserves_exact_historical_output(self):
+        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        before, tail = data.split(b'table.indexes.identity:', 1)
+        self.assertTrue(tail.endswith(b'table.checkpoint.complete: [ok]\n'))
+        before_extra, extra = data.split(b'table.indexes.extra.edit-order:', 1)
+        first_run = before_extra + b'table.checkpoint.complete: [ok]\n'
+        self.assertEqual(hashlib.sha1(b'blob ' + str(len(first_run)).encode() + b'\0' + first_run).hexdigest(),
+                         'dc6c4ab155eb27c49d68ef22f7917d91ff90e876')
+        historical = before + b'table.checkpoint.complete: [ok]\n'
+        self.assertEqual(hashlib.sha1(b'blob ' + str(len(historical)).encode() + b'\0' + historical).hexdigest(),
+                         '1230b2a63eee62f88eee0d8a93cfba15d002f376')
 
     def test_fixed_bounded_expressions_and_full_source_compile(self):
         calls = observations()
@@ -85,18 +97,16 @@ class IndexProbeTests(unittest.TestCase):
             self.assertIn(field, section(HELPERS))
         self.assertNotIn('New CollectionIndex(', section(HELPERS).split('Вычислить')[0])
 
-    def test_current_runtime_reports_each_missing_api_and_completes(self):
+    def test_current_runtime_matches_full_owner_output_and_completes(self):
         output = []
         Interpreter(output=output.append).execute(source())
         records = [line for line in output if line.startswith('table.indexes.')
                    and not line.startswith('table.indexes.checkpoint.')]
         self.assertEqual(len(records), 40)
-        for line in records:
-            if line.startswith('table.indexes.extra.stale-links:'):
-                for branch in ('Delete', 'Clear', 'Group'):
-                    self.assertIn('  ' + branch + '.Setup={"S","[error]"}', line)
-            else:
-                self.assertTrue(line.endswith('[error]'), line)
+        expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
+        self.assertEqual('\n'.join(output) + '\n', expected)
+        self.assertEqual([line.split(':', 1)[0] for line in records],
+                         ['table.' + call.arguments[0].value for call in observations()])
         self.assertEqual(output[-1], 'table.checkpoint.complete: [ok]')
         self.assertEqual(output.count('table.indexes.checkpoint.complete: [ok]'), 1)
 

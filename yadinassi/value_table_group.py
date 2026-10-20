@@ -140,6 +140,9 @@ def group_by(table, grouping_columns, totaling_columns=None):
                   for rows in buckets.values()]
     survivors = [rows[0] for rows, _ in calculated]
     survivor_set = set(survivors)
+    # All validation is complete. Native GroupBy discards definitions; do so
+    # once before schema changes, avoiding a full index rebuild per column.
+    table.indexes.clear()
     for rows, sums in calculated:
         rows[0].cells.update(sums)
     for row in table.rows:

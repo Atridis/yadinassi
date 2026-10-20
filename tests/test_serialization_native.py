@@ -38,6 +38,14 @@ def table_family_samples():
             ('column', table.columns.items[0]), ('row', table.rows[0])]
 
 
+def index_family_samples():
+    table = BSLValueTable()
+    table.columns.add('Key')
+    table.columns.add('Second')
+    index = table.indexes.add('Key,Second')
+    return [('collection', table.indexes), ('index', index)]
+
+
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "integrational_tests" / "output"
 FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
@@ -200,7 +208,8 @@ class NativeEvidenceTests(unittest.TestCase):
     def test_all_native_type_guids(self):
         search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL,
                         BSLType.XML_STRING_PROCESSING_MANAGER}
-        family_types = {type_of(value) for _, value in [*type_family_samples(), *table_family_samples()]}
+        family_types = {type_of(value) for _, value in
+                        [*type_family_samples(), *table_family_samples(), *index_family_samples()]}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
                          set(BSLType))
         for label, value in type_family_samples():
@@ -210,6 +219,10 @@ class NativeEvidenceTests(unittest.TestCase):
             self.assertIs(read(payload), type_of(value))
         for label, value in table_family_samples():
             snapshot = read_observation(self.native('collections', 'table.codec.' + label))
+            self.assertEqual(write(type_of(value)), snapshot.get('TypeWrite'))
+            self.assertIs(read(snapshot.get('TypeWrite')), type_of(value))
+        for label, value in index_family_samples():
+            snapshot = read_observation(self.native('collections', 'table.indexes.codec.' + label))
             self.assertEqual(write(type_of(value)), snapshot.get('TypeWrite'))
             self.assertIs(read(snapshot.get('TypeWrite')), type_of(value))
         # The namespace has a TypeOf/codec identity but both Type(name) calls
@@ -276,14 +289,16 @@ class NativeEvidenceTests(unittest.TestCase):
     def test_all_runtime_value_types_preserve_native_readback_behavior(self):
         family = type_family_samples()
         table_family = table_family_samples()
+        index_family = index_family_samples()
         table_labels = {type_of(value): label for label, value in table_family}
+        index_labels = {type_of(value): label for label, value in index_family}
         family_labels = {type_of(value): label for label, value in family}
         samples = [NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
                    XML_STRING_PROCESSING, *[value for _, value in family],
-                   *[value for _, value in table_family]]
+                   *[value for _, value in table_family], *[value for _, value in index_family]]
         self.assertEqual({type_of(value) for value in samples}, set(BSLType))
         for value in samples:
             with self.subTest(kind=type_of(value)):
@@ -300,6 +315,13 @@ class NativeEvidenceTests(unittest.TestCase):
                     self.assertEqual(payload, snapshot.get('Write'))
                     self.assertEqual(write(restored), inverse_stream(snapshot))
                     self.assertIs(type_of(restored), snapshot.get('ReadType'))
+                elif type_of(value) in index_labels:
+                    snapshot = read_observation(self.native(
+                        'collections', 'table.indexes.codec.' + index_labels[type_of(value)]))
+                    self.assertEqual(payload, snapshot.get('Write'))
+                    self.assertEqual(write(restored), inverse_stream(snapshot))
+                    self.assertIsNone(restored)
+                    self.assertEqual(str(type_of(restored)), snapshot.get('ReadType'))
                 elif value is ROUND_MODES:
                     self.assertIsNone(restored)
                     self.assertEqual(payload, self.native("numbers", "round.namespace.payload"))

@@ -92,7 +92,8 @@ class InternalSerializationTests(unittest.TestCase):
         expressions.append('pair')
         vm.execute('table = New ValueTable; columns = table.Columns; '
                    'column = columns.Add("A"); row = table.Add();')
-        expressions.extend(['table', 'columns', 'column', 'row'])
+        vm.execute('indexes = table.Indexes; index = indexes.Add("A");')
+        expressions.extend(['table', 'columns', 'column', 'row', 'indexes', 'index'])
         observed = set()
         for expression in expressions:
             with self.subTest(expression=expression):
@@ -105,7 +106,8 @@ class InternalSerializationTests(unittest.TestCase):
                             BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
                             BSLType.ALLOWED_SIGNS, BSLType.ALLOWED_LENGTHS,
                             BSLType.DATE_FRACTIONS_NAMESPACE, BSLType.VALUE_TABLE_ROW,
-                            BSLType.VALUE_TABLE_COLUMN, BSLType.VALUE_TABLE_COLUMN_COLLECTION):
+                            BSLType.VALUE_TABLE_COLUMN, BSLType.VALUE_TABLE_COLUMN_COLLECTION,
+                            BSLType.COLLECTION_INDEXES, BSLType.COLLECTION_INDEX):
                     # Native qualifier/namespace records read as Undefined, unlike their Types.
                     self.assertIsNone(restored)
                     self.assertIs(type_values.type_of(restored), BSLType.UNDEFINED)

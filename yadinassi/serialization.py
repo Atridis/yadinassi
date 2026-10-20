@@ -20,7 +20,8 @@ from .type_qualifiers import (
     BSLAllowedLength, BSLAllowedSign, BSLDateFractions, BSLDateQualifiers,
     BSLNumberQualifiers, BSLStringQualifiers,
 )
-from .value_tables import BSLValueTable
+from .value_tables import (BSLValueTable, BSLValueTableColumn,
+                           BSLCollectionIndexes, BSLCollectionIndex)
 from .type_values import type_of
 from .values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
@@ -66,6 +67,8 @@ _TYPE_IDS = {
     BSLType.VALUE_TABLE_COLUMN_COLLECTION: "0e2c7b45-ad6d-4ebe-8c9b-358d42ab5002",
     BSLType.VALUE_TABLE_COLUMN: "e162969e-36e8-44f4-a5fd-fa2bf170a4f5",
     BSLType.VALUE_TABLE_ROW: "ac6bbae9-9a0f-4ec9-be2a-d9b1caa4eb36",
+    BSLType.COLLECTION_INDEXES: "3a461c5c-0a17-430a-ae05-90890129a7da",
+    BSLType.COLLECTION_INDEX: "4523f487-9cd3-4779-89f5-92023e88037b",
 }
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
@@ -91,6 +94,7 @@ _OPAQUE_TYPES = frozenset({
     BSLType.DATE_FRACTIONS_NAMESPACE,
     BSLType.VALUE_TABLE_COLUMN_COLLECTION, BSLType.VALUE_TABLE_COLUMN,
     BSLType.VALUE_TABLE_ROW,
+    BSLType.COLLECTION_INDEXES, BSLType.COLLECTION_INDEX,
 })
 _OPAQUE_IDS = frozenset(_TYPE_IDS[kind] for kind in _OPAQUE_TYPES)
 _CODECS = (frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
@@ -278,7 +282,8 @@ class _Writer:
 
     def table(self, table, depth):
         # Canonical snapshot layout established by table.codec.empty/table.
-        # Index definitions and noncanonical historic IDs are not synthesized.
+        # The owner's table.indexes.codec.table adds ordered index definitions.
+        # Historic column/row IDs and undocumented flags are not synthesized.
         columns, rows = table.columns.items, table.rows
         nc, nr = len(columns), len(rows)
         self.nodes += nc + nr
@@ -318,7 +323,36 @@ class _Writer:
                 self.value(cell, depth + 1)
             self.emit(',0}')
         self.emit('\n}' if nr else '}')
-        self.emit(',' + str(nc - 1) + ',' + str(nr - 1) + '},\n{0,0}\n}')
+        self.emit(',' + str(nc - 1) + ',' + str(nr - 1) + '},\n')
+        self.table_indexes(table)
+        self.emit('\n}')
+
+    def table_indexes(self, table):
+        collection = table.indexes
+        if (type(collection) is not BSLCollectionIndexes or collection.table is not table
+                or type(collection.items) is not list):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимая коллекция индексов")
+        count = len(collection.items)
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        positions = {id(column): position for position, column in enumerate(table.columns.items)}
+        self.emit('{0,' + str(count))
+        for index in collection.items:
+            if (type(index) is not BSLCollectionIndex or index.table is not table
+                    or index._deleted or type(index.columns) is not list):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
+            self.nodes += len(index.columns)
+            if self.nodes > _MAX_NODES:
+                raise _resource("ЗначениеВСтрокуВнутр")
+            self.emit(',\n{0,' + str(len(index.columns)))
+            for column in index.columns:
+                if (type(column) is not BSLValueTableColumn or column.table is not table
+                        or column._deleted or id(column) not in positions):
+                    raise ValueError("ЗначениеВСтрокуВнутр: недопустимая колонка индекса")
+                self.emit(',' + str(positions[id(column)]))
+            self.emit('}')
+        self.emit('\n}' if count else '}')
 
     def pair(self, key, value, depth):
         self.emit('{\n')
@@ -501,10 +535,10 @@ class _Reader:
 
     def table(self, body, depth):
         # Deliberately strict inverse subset of the observed version-9 stream.
-        # Unknown versions, indexes, reference IDs and flags are not guessed.
+        # Unknown versions, noncanonical reference IDs and flags are not guessed.
         if (len(body) != 4 or body[0] != _Atom('9')
                 or type(body[1]) is not list or not body[1]
-                or type(body[2]) is not list or body[3] != [_Atom('0'), _Atom('0')]):
+                or type(body[2]) is not list or type(body[3]) is not list):
             self.fail()
         definitions, data = body[1], body[2]
         nc = self.table_count(definitions[0])
@@ -555,7 +589,38 @@ class _Reader:
                 if not matches:
                     self.fail()
                 row.cells[column] = value
+        self.table_indexes(result, body[3])
         return result
+
+    def table_indexes(self, table, body):
+        if len(body) < 2 or body[0] != _Atom('0'):
+            self.fail()
+        count = self.table_count(body[1])
+        if len(body) != count + 2:
+            self.fail()
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        columns = table.columns.items
+        for entry in body[2:]:
+            if type(entry) is not list or len(entry) < 2 or entry[0] != _Atom('0'):
+                self.fail()
+            size = self.table_count(entry[1])
+            if len(entry) != size + 2:
+                self.fail()
+            self.nodes += size
+            if self.nodes > _MAX_NODES:
+                raise _resource("ЗначениеИзСтрокиВнутр")
+            selected = []
+            for token in entry[2:]:
+                position = self.table_count(token)
+                if position >= len(columns):
+                    self.fail()
+                selected.append(columns[position])
+            try:
+                table.indexes._add_columns(selected)
+            except (TypeError, ValueError, IndexError):
+                self.fail()
 
     def value(self, group, depth=0):
         self.nodes += 1

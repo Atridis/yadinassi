@@ -10,7 +10,8 @@ from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .xml_processing import XML_STRING_PROCESSING
 from .type_descriptions import BSLTypeDescription
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
-                           BSLValueTableColumn, BSLValueTableRow)
+                           BSLValueTableColumn, BSLValueTableRow,
+                           BSLCollectionIndexes, BSLCollectionIndex)
 from .type_qualifiers import (
     ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
@@ -29,8 +30,9 @@ from .values import (
 
 _COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
-                BSLValueTableRow)
-_TABLE_COLLECTIONS = (BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow)
+                BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex)
+_TABLE_COLLECTIONS = (BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+                      BSLCollectionIndexes, BSLCollectionIndex)
 
 
 # Explicit Yadinassi resource limits, not asserted native language limits.

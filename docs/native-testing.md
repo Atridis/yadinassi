@@ -499,9 +499,9 @@ locale observations and the new boundary order without character-specific
 exceptions. This supports a bounded implementation choice, not a claim that
 1C internally uses UCA6.0 or that untested characters/locales are equivalent.
 
-## Pending ValueTable index checkpoint
+## ValueTable index checkpoint
 
-The next checkpoint adds 35 bounded `table.indexes.*` records to the existing
+The initial checkpoint added 35 bounded `table.indexes.*` records to the existing
 collections scenario. It covers property/type identity, index column access,
 Add/Delete/Clear validation and partial state, rename/delete/move of columns,
 GroupBy/Copy/Clear/Sort interactions, and Find/FindRows after direct and bulk row
@@ -519,20 +519,64 @@ The API inventory was checked against the official EDT 2026.2 generic syntax
 help (English and Russian `CollectionIndexes`, `CollectionIndex` and
 `ValueTable.Indexes` entries): Add(String), Delete(Number or CollectionIndex),
 Clear(), Count(), collection iteration, and numeric index column access. This
-is documentation evidence only; runtime edge cases and codecs await the owner’s
-1C 8.3.27.2342 run. The six existing outputs remain untouched. Full native
-comparisons intentionally fail on the additional records until genuine owner
-output and implementation are available. Host instrumentation tests prove calls
-are reached and partial state remains visible; they are not native oracles.
+is documentation evidence only; native results are recorded below. The initial
+checkpoint preserved all existing outputs and kept full comparisons strict. Host
+instrumentation tests prove calls are reached and partial state remains visible;
+they are not native oracles.
 
-## Pending index-order supplement
+## Owner index observations (2026-10-20)
 
-The owner supplied all 35 index observations in commit
-`3b2fa58484f9dfbd6d296b7f11c373fef184dca5`; the full 3,255-line output is
-preserved unchanged. Five further compact records distinguish only unresolved
-implementation choices: same-value/unrelated writes and bulk updates, active-index
-Sort/Move, competing exact indexes, fully covered copy projections, and saved
-index references after later schema changes. Snapshots use unique row IDs and
-column names, not opaque row/index values. There are no repeated codec streams
-or timing measurements. Native output for these five records is still pending;
-all full comparisons remain strict.
+Owner commit `3b2fa58484f9dfbd6d296b7f11c373fef184dca5` supplies all 35
+ordered index records and both completion markers. At that commit, `collections.out` has
+3,255 lines and 103,659 bytes; Git blob
+`dc6c4ab155eb27c49d68ef22f7917d91ff90e876`. Removing the index records
+reproduces the previous 2,870-line output byte-for-byte. The other five outputs
+are unchanged, and no `.err` file was added.
+
+The output establishes both index type UUIDs, opaque standalone index/collection
+readback to Undefined, and the indexed-table version-9 tail with independent
+restored index definitions. It also establishes a visible search-order effect:
+changing an indexed key away and back moves that row after the other matching
+rows, while the table's physical row order stays unchanged.
+
+Immediate deleted-index references retain column names; clearing the collection
+instead preserves the saved index's arity with empty names. Column rename/delete
+updates live index definitions. GroupBy clears indexes. Full Copy keeps independent
+indexes, while the observed projections that remove an indexed column do not.
+Same-value writes, active-index reordering, competing index selection, fully
+covered projections and later schema changes through detached references need
+separate differentiating observations before those details are claimed.
+
+## Owner supplementary index observations (2026-10-20)
+
+Owner commit `eea37ff099b5c46721b9f5d16ca01ba4971d9c62` supplies five
+additional records, all in source order. The complete output has 3,397 lines
+and 109,915 bytes; Git blob `c3e5ae6e3211b2fb85ba3614cadb764475315ce8`.
+Removing these 142 lines reproduces the first 35-record owner output byte-for-byte.
+The other five outputs remain unchanged; no `.err` file was added.
+
+The supplement resolves the preceding questions for the bounded fixtures:
+- Writing the same indexed key moves the row to the end of its matching bucket;
+  changing an unrelated column does not. FillValues/LoadColumn revisit rows in
+  table order, including same-value writes.
+- Sort and Move restore active-index lookup order to the new physical row order.
+- The first matching exact-key definition remains selected after a duplicate is
+  added; deleting it exposes the later definition. Composite filter property
+  order does not alter the result.
+- Explicit column projections, including all columns, omit indexes from Copy;
+  CopyColumns also omits them. Full Copy retains independent definitions.
+- A deleted saved index follows later renames and retains a blank slot when its
+  referenced column is deleted. Clear and GroupBy retain blank indexed slots but
+  converting the saved index to String raises an error. GroupBy preserves this
+  arity even when grouping removes an indexed column.
+
+The five records use concrete IDs, names, counts and independently guarded
+mutation snapshots; no repeated codec streams or performance timings were added.
+These observations do not establish every optimizer choice, partial-key lookup,
+or mutation during active iteration. Divergent duplicate-field lookup ordering
+remains explicitly unsupported rather than inferred from metadata alone.
+
+Additional unprobed combinations are guarded explicitly: non-append Insert on
+an indexed table, indexed Copy with an explicitly empty column string, and
+omitted/empty-column Find where index versus table scan could select different
+rows. These restrictions preserve the confirmed scope without guessing behavior.

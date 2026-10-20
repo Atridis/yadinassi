@@ -55,8 +55,16 @@ class BSLType(Enum):
     VALUE_TABLE_COLUMN_COLLECTION = "КоллекцияКолонокТаблицыЗначений"
     VALUE_TABLE_COLUMN = "КолонкаТаблицыЗначений"
     VALUE_TABLE_ROW = "СтрокаТаблицыЗначений"
+    COLLECTION_INDEXES = "ИндексыКоллекции"
+    COLLECTION_INDEX = "ИндексКоллекции"
 
     def __str__(self) -> str:
+        if self is BSLType.VALUE_TABLE:
+            return "Таблица значений"
+        if self is BSLType.COLLECTION_INDEXES:
+            return "Коллекция индексов таблицы значений"
+        if self is BSLType.COLLECTION_INDEX:
+            return "Индекс таблицы значений"
         return "Не определено" if self is BSLType.UNDEFINED else self.value
 
 
