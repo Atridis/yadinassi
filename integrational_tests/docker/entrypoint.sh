@@ -13,9 +13,20 @@ export XDG_RUNTIME_DIR="/tmp/runtime-onec"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+# Поддержка разных версий Ubuntu
+if command -v tigervncpasswd >/dev/null 2>&1; then
+    VNC_PASSWD_CMD=tigervncpasswd
+elif command -v vncpasswd >/dev/null 2>&1; then
+    VNC_PASSWD_CMD=vncpasswd
+else
+    echo "ERROR: VNC password utility not found"
+    exit 1
+fi
+
 # Устанавливаем пароль VNC
 printf '%s\n' "$VNC_PASSWORD" \
-    | vncpasswd -f > "$HOME/.vnc/passwd"
+    | "$VNC_PASSWD_CMD" -f > "$HOME/.vnc/passwd"
+
 
 chmod 600 "$HOME/.vnc/passwd"
 unset VNC_PASSWORD
