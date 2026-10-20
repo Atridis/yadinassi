@@ -1064,3 +1064,53 @@ strict and are expected to fail until the new native run and corresponding
 implementation are verified. Historical source/evidence tests isolate their own
 confirmed block only; no complete-output comparator has a tail exception.
 The launcher, recorded platform context and version 0.3.2 remain unchanged.
+
+## Confirmed cache run and final empty-result discriminator (2026-10-20)
+
+Owner commit `4a3f55f8a0636144dc1fb13fae1d66447b5049de` has verified parent
+`a50a2cf95c36033c00f735a3b98ef876c137973b` and changes only `collections.out`.
+Blob `97e90791a4011bd7f6ef2922533f92f698557cbd` is 200,954 bytes / 4,579 lines,
+SHA-256 `c86a2d4deb97e9268456a056abc4be3587382289e1a40ca4fe3d879af4e9f599`.
+The previous 176,987-byte prefix and final marker are preserved exactly.
+All five groups, 21 cases, 94 field snapshots, 215 item rows and 69 conversions
+were independently validated. Only the deliberate Delete(-1) action fails;
+all conversions and other actions/readbacks succeed. Source, five other native
+outputs and metadata are unchanged.
+
+The first list conversion captures current fields; earlier scalar/item conversion
+does not prime it. Field changes and FillChecks preserve warmed list text.
+Add, Insert, successful Delete, nonempty LoadValues, nonzero Move and both sorts
+invalidate lazily, including the tested already-ordered three-item sorts.
+Move(0,0) and rejected Delete(-1) preserve warmed text. Clear and empty LoadValues
+produce empty text, without distinguishing eager from lazy empty recomputation.
+Copy starts with fresh observable string state and leaves the source cache alone.
+
+Two ordinary paths remain unproven: a single empty item becoming nonempty through
+field changes only, and a singleton sort that might return early unlike the
+observed three-item sort. In particular, the warm-empty-list/Add observation does
+not prove that an empty string is a true cache hit, because Add invalidates the
+cache in either model. A conservative unsupported guard could preserve all
+collected cases, but would leave these ordinary operations unfinished.
+
+The final supplement is limited to two grouped records and five cases:
+
+- `list.string-cache.empty-result`: an empty Value with empty Presentation;
+  an explicitly cleared Presentation before the first empty rendering; and two
+  empty items as a separator-only, nonempty-text control. Each first renders the
+  list, changes Value to `A`, reads list text, then changes Presentation to `B`
+  and reads list text again. The independent item conversion occurs only after
+  the last list read, so it cannot affect the empty-cache discriminator.
+- `list.string-cache.short-sorts`: one-item SortByValue and SortByPresentation.
+  Each warms `start`, changes the label to `pending`, sorts, changes it to
+  `between` before the next list conversion, then changes it to `after` before
+  a second conversion. This separates retained, eager, lazy and repeated text.
+
+The field-only snapshot helper is reused unchanged. Preparation, writes, sorting
+and each conversion remain independently protected; owners remain alive.
+Removing only the two final blocks restores source blob
+`137dca5e4b6a47ea083a0dfe989e07c22d91a9e6` exactly. The final completion marker
+is `table.list.string-cache.final.complete: [ok]`. The genuine output above does
+not yet contain these records. No output is synthesized and no native semantics
+are chosen by synthetic discrimination tests. Runtime, codecs, launcher,
+metadata, version and complete-output comparison rules remain unchanged in this
+checkpoint; full gates stay red until evidence and implementation are verified.

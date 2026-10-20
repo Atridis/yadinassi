@@ -188,7 +188,10 @@ class Instrumentation:
 class ValueListStringCacheCheckpointTests(unittest.TestCase):
     def test_new_blocks_restore_old_source_and_preserve_current_native_evidence(self):
         text = source()
-        for start, end in (HELPERS, BODY):
+        for start, end in (
+            ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
+            ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
+            HELPERS, BODY):
             self.assertEqual(text.count(start), 1)
             self.assertEqual(text.count(end), 1)
             before, rest = text.split(start, 1)
@@ -198,10 +201,11 @@ class ValueListStringCacheCheckpointTests(unittest.TestCase):
                          'eb8e11cbd332225cfbdeb19ac4b203691ad45662')
         native = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(blob(native),
-                         '3a413ce8e775c5275cddac289ebee3a7063192bc')
-        self.assertEqual(len(native), 177019)
-        self.assertEqual(len(native.splitlines()), 4142)
-        self.assertNotIn(b'list.string-cache.', native)
+                         '97e90791a4011bd7f6ef2922533f92f698557cbd')
+        self.assertEqual(len(native), 200954)
+        self.assertEqual(len(native.splitlines()), 4579)
+        self.assertIn(FINAL.encode(), native)
+        self.assertNotIn(b'list.string-cache.final.complete', native)
 
     def test_five_fixed_labels_full_parse_and_all_declarations_first(self):
         calls = observations()
@@ -214,7 +218,8 @@ class ValueListStringCacheCheckpointTests(unittest.TestCase):
             self.assertLess(len(call.arguments[1].value), 100)
             parse('Result = ' + call.arguments[1].value)
         self.assertEqual(source().count(FINAL), 1)
-        self.assertTrue(source().endswith(BODY[1] + 'Сообщить("table.checkpoint.complete: [ok]");\n'))
+        self.assertLess(source().index(BODY[1]), source().index('// Начало заключительных наблюдений пустой строки кэша списка.'))
+        self.assertTrue(source().endswith('Сообщить("table.checkpoint.complete: [ok]");\n'))
         started = False
         for node in parse(source()):
             if isinstance(node, ast.Routine):

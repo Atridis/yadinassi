@@ -30,6 +30,8 @@ def source():
 
 def strip_probe(text):
     for start, end in (
+        ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
+        ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
         ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
         ('// Начало компактных проб строкового представления списка.\n', '// Конец компактных проб строкового представления списка.\n\n'),
@@ -146,7 +148,7 @@ class ValueListSortCheckpointTests(unittest.TestCase):
     def test_exact_base_and_protected_files(self):
         self.assertEqual(blob(('\ufeff' + strip_probe(source())).encode()), '922aafef9f03dce85f1fa5149af9f4c615356661')
         expected = {
-            'collections.out': '3a413ce8e775c5275cddac289ebee3a7063192bc',
+            'collections.out': '97e90791a4011bd7f6ef2922533f92f698557cbd',
             'dates.out': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions.out': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers.out': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -165,7 +167,7 @@ class ValueListSortCheckpointTests(unittest.TestCase):
         # Owner Atridis commit 317262725bf3507a6b66dd1f2d962d822806d338.
         # Only Git checkout line-ending transport is normalized.
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(blob(data), '3a413ce8e775c5275cddac289ebee3a7063192bc')
+        self.assertEqual(blob(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         # Isolate the historical sort block; full-native comparisons remain exact.
         data = data.split(b'table.list.copy.fresh-empty:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob(data), 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6')

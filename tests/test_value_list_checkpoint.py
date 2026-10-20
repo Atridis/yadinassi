@@ -36,6 +36,8 @@ FINAL = 'table.list.checkpoint.complete: [ok]'
 def without_sort_probe(text):
     # Historical-source integrity only; full native comparators use the file.
     for start, end in (
+        ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
+        ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
         ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
         ('// Начало компактных проб строкового представления списка.\n', '// Конец компактных проб строкового представления списка.\n\n'),
@@ -434,7 +436,7 @@ class ValueListCheckpointTests(unittest.TestCase):
     def test_genuine_owner_addition_preserves_previous_output_and_native_presentations(self):
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
         # Isolate the historical core evidence, not the full-native comparator.
-        self.assertEqual(blob_hash(data), '3a413ce8e775c5275cddac289ebee3a7063192bc')
+        self.assertEqual(blob_hash(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         data = data.split(b'table.list.copy.fresh-empty:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob_hash(data), 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6')
         before_sort, sort_tail = data.split(b'table.list.sort.enum.identity:', 1)
@@ -460,7 +462,7 @@ class ValueListCheckpointTests(unittest.TestCase):
         restored = ('\ufeff' + without_list_probe(without_sort_probe(source()))).encode()
         self.assertEqual(blob_hash(restored), '92ba44889c221de39f8b3ae578f0c1408ccbf0ae')
         hashes = {
-            'collections': '3a413ce8e775c5275cddac289ebee3a7063192bc',
+            'collections': '97e90791a4011bd7f6ef2922533f92f698557cbd',
             'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',

@@ -33,6 +33,8 @@ def source():
 
 def strip_probe(text):
     for start, end in (
+        ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
+        ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
         ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
         ('// Начало компактных проб строкового представления списка.\n', '// Конец компактных проб строкового представления списка.\n\n'),
@@ -141,7 +143,7 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
         self.assertEqual(blob(('\ufeff' + strip_probe(source())).encode()),
                          'f09b5ebe948c9a44790b164b0ca6e7cdff5f3fd6')
         for name, expected in {
-            'collections.out': '3a413ce8e775c5275cddac289ebee3a7063192bc',
+            'collections.out': '97e90791a4011bd7f6ef2922533f92f698557cbd',
             'dates.out': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions.out': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers.out': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -160,7 +162,7 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
         # Owner Atridis commit 0601200672edcc1cd5ab6703d0ef47e958329846.
         # Normalize Git checkout line endings only, never any native content.
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(blob(data), '3a413ce8e775c5275cddac289ebee3a7063192bc')
+        self.assertEqual(blob(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         # Isolate historical Copy evidence; full comparators use the entire file.
         data = data.split(b'table.list.string.empty:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob(data), 'd4cce35fea3cc5271a871c26062c1b6167c0b092')

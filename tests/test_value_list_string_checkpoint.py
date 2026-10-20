@@ -45,6 +45,8 @@ def section(markers):
 
 def strip_probe(text):
     for start, end in (
+        ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
+        ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
         ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
         HELPERS, BODY):
@@ -156,7 +158,7 @@ class ValueListStringCheckpointTests(unittest.TestCase):
         self.assertEqual(blob(('\ufeff' + strip_probe(source())).encode()),
                          '0b7ad4f171bb45a201fe67e05a6dafe7f9e143fa')
         for name, expected in {
-            'collections.out': '3a413ce8e775c5275cddac289ebee3a7063192bc',
+            'collections.out': '97e90791a4011bd7f6ef2922533f92f698557cbd',
             'dates.out': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions.out': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers.out': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -175,6 +177,9 @@ class ValueListStringCheckpointTests(unittest.TestCase):
         # Owner Atridis commit 87723a25f22d359bb72163e184a871d6448930d1.
         # Only checkout line-ending transport is normalized, not native text.
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(blob(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
+        # Isolate the first String run; full native comparisons stay complete.
+        data = data.split(b'table.list.string-cache.initialize:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob(data), '3a413ce8e775c5275cddac289ebee3a7063192bc')
         self.assertEqual(hashlib.sha256(data).hexdigest(),
                          'e65040d2ed7a88cdf9e3bc33f242f39a20e76aa612cde6881002a6b4e5273451')
