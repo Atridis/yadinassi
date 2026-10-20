@@ -19,6 +19,7 @@ from yadinassi.dates import BSLDate
 from yadinassi.xml_processing import XML_STRING_PROCESSING
 from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
+from yadinassi.sort_directions import BSLSortDirection
 from yadinassi.maps import BSLFixedMap, BSLMap
 from yadinassi.serialization import value_from_string_internal as read
 from yadinassi.serialization import value_to_string_internal as write
@@ -218,12 +219,16 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(to_string(Decimal("1234.5")), "1\u00a0234,5")
 
     def test_all_native_type_guids(self):
-        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL,
+        search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS,
+                        BSLType.SORT_DIRECTION, BSLType.DATE, BSLType.NULL,
                         BSLType.XML_STRING_PROCESSING_MANAGER}
         family_types = {type_of(value) for _, value in
                         [*type_family_samples(), *table_family_samples(), *index_family_samples(), *list_family_samples()]}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
                          set(serialization._CODECS))
+        sort_snapshot = read_observation(self.native('collections', 'table.list.sort.enum.asc-codec'))
+        self.assertEqual(write(BSLType.SORT_DIRECTION), sort_snapshot.get('TypeWrite'))
+        self.assertIs(read(sort_snapshot.get('TypeWrite')), BSLType.SORT_DIRECTION)
         for label, value in list_family_samples():
             snapshot = read_observation(self.native('collections', 'table.list.codec.' + label))
             self.assertEqual(write(type_of(value)), snapshot.get('TypeWrite'))
@@ -315,6 +320,7 @@ class NativeEvidenceTests(unittest.TestCase):
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
+                   BSLSortDirection.ASC, BSLSortDirection.DESC,
                    XML_STRING_PROCESSING, *[value for _, value in family],
                    *[value for _, value in table_family], *[value for _, value in index_family],
                    *[value for _, value in list_family]]
@@ -359,6 +365,14 @@ class NativeEvidenceTests(unittest.TestCase):
                     self.assertIsNone(restored)
                     self.assertEqual(payload, self.native('strings', 'search.enum.namespace.payload'))
                     self.assertEqual(write(restored), self.native('strings', 'search.enum.namespace.readback'))
+                elif type(value) is BSLSortDirection:
+                    label = 'asc' if value is BSLSortDirection.ASC else 'desc'
+                    snapshot = read_observation(self.native(
+                        'collections', 'table.list.sort.enum.' + label + '-codec'))
+                    self.assertEqual(payload, snapshot.get('Write'))
+                    self.assertEqual(write(restored), inverse_stream(snapshot))
+                    self.assertEqual(type_of(restored) is type_of(value), snapshot.get('ReadType'))
+                    self.assertEqual(equal(restored, value), snapshot.get('ReadEqual'))
                 else:
                     self.assertIs(type(restored), type(value))
                     self.assertEqual(write(restored), payload)  # These maps have only one entry.

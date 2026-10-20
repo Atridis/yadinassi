@@ -81,6 +81,7 @@ class InternalSerializationTests(unittest.TestCase):
                        'New FixedMap(New Map)', 'Type("Number")',
                        'RoundMode.Round15as10', 'RoundMode.Round15as20', 'RoundMode',
                        'SearchDirection.FromBegin', 'SearchDirection.FromEnd', 'SearchDirection',
+                       'SortDirection.Asc', 'SortDirection.Desc',
                        'XMLStringProcessing', 'New TypeDescription',
                        'New NumberQualifiers', 'New StringQualifiers',
                        'New DateQualifiers', 'New BinaryDataQualifiers',

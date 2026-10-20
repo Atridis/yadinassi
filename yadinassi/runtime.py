@@ -7,6 +7,7 @@ from typing import Callable
 from . import ast, bits, clocks, date_time_conversions, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
+from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
 from .xml_processing import XML_STRING_PROCESSING
 from .type_descriptions import BSLTypeDescription
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
@@ -333,6 +334,8 @@ class Interpreter:
             return XML_STRING_PROCESSING
         if name in ("направлениепоиска", "searchdirection"):
             return SEARCH_DIRECTIONS
+        if name in ("направлениесортировки", "sortdirection"):
+            return SORT_DIRECTIONS
         raise ValueError(f"Переменная или функция не определена: {node.name}")
 
     def visit_Group(self, node: ast.Group) -> object:
@@ -877,7 +880,8 @@ class Interpreter:
         collection = self.visit(node.collection)
         if (not isinstance(collection, _COLLECTIONS)
                 and type(collection) is not BSLRoundModes
-                and type(collection) is not BSLSearchDirections):
+                and type(collection) is not BSLSearchDirections
+                and type(collection) is not BSLSortDirections):
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         for item in collection:
             self.set_variable(node.name, item)

@@ -8,6 +8,7 @@ from .xml_processing import BSLXMLStringProcessingManager
 from .maps import BSLFixedMap, BSLMap
 from .round_modes import BSLRoundMode, BSLRoundModes
 from .search_directions import BSLSearchDirection, BSLSearchDirections
+from .sort_directions import BSLSortDirection
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (
@@ -46,6 +47,9 @@ _VALUE_TYPES = (
     # Native search.enum.namespace-type-{ru,en} both fail. TypeOf still has
     # this identity, but neither presentation nor English name resolves it.
     (BSLSearchDirections, BSLType.SEARCH_DIRECTIONS, None),
+    # SortDirection's namespace presentation/iteration are observed, but its
+    # TypeOf identity and codec are not. Do not infer either from SearchDirection.
+    (BSLSortDirection, BSLType.SORT_DIRECTION, "SortDirection"),
     (BSLNumberQualifiers, BSLType.NUMBER_QUALIFIERS, "NumberQualifiers"),
     (BSLStringQualifiers, BSLType.STRING_QUALIFIERS, "StringQualifiers"),
     (BSLDateQualifiers, BSLType.DATE_QUALIFIERS, "DateQualifiers"),

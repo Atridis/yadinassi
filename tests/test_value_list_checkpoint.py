@@ -33,6 +33,18 @@ EXTRA_BODY = ('// Начало уточняющих наблюдений спи�
 FINAL = 'table.list.checkpoint.complete: [ok]'
 
 
+def without_sort_probe(text):
+    # Historical-source integrity only; full native comparators use the file.
+    for start, end in (
+        ('// Начало компактных проб сортировки списка.\n', '// Конец компактных проб сортировки списка.\n\n'),
+        ('// Начало наблюдений сортировки списка.\n', '// Конец наблюдений сортировки списка.\n'),
+    ):
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    return text
+
+
 def source():
     return SOURCE.read_text(encoding='utf-8-sig')
 
@@ -396,7 +408,7 @@ class Host:
 
 class ValueListCheckpointTests(unittest.TestCase):
     def test_owner_source_is_restored_by_only_the_reviewed_supplement_changes(self):
-        original = source()
+        original = without_sort_probe(source())
         for start, end in (EXTRA_HELPERS, EXTRA_BODY):
             before, rest = original.split(start, 1)
             _, after = rest.split(end, 1)
@@ -415,6 +427,12 @@ class ValueListCheckpointTests(unittest.TestCase):
 
     def test_genuine_owner_addition_preserves_previous_output_and_native_presentations(self):
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        # Isolate the historical core evidence, not the full-native comparator.
+        self.assertEqual(blob_hash(data), 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6')
+        before_sort, sort_tail = data.split(b'table.list.sort.enum.identity:', 1)
+        self.assertTrue(sort_tail.endswith(b'table.list.sort.checkpoint.complete: [ok]\n'
+                                           b'table.checkpoint.complete: [ok]\n'))
+        data = before_sort + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob_hash(data), 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e')
         before, tail = data.split(b'table.list.identity:', 1)
         self.assertTrue(tail.endswith(b'table.list.checkpoint.complete: [ok]\n'
@@ -431,10 +449,10 @@ class ValueListCheckpointTests(unittest.TestCase):
         self.assertIn('ItemType={"S","' + str(ITEM_TYPE) + '"}', identity)
 
     def test_original_source_all_goldens_and_environment_are_unchanged(self):
-        restored = ('\ufeff' + without_list_probe(source())).encode()
+        restored = ('\ufeff' + without_list_probe(without_sort_probe(source()))).encode()
         self.assertEqual(blob_hash(restored), '92ba44889c221de39f8b3ae578f0c1408ccbf0ae')
         hashes = {
-            'collections': 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e',
+            'collections': 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6',
             'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',

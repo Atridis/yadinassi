@@ -128,7 +128,7 @@ class ValueListRuntimeTests(unittest.TestCase):
 
     def test_host_attributes_and_out_of_scope_methods_are_not_exposed(self):
         for code in ('values.items', 'values._next_id', 'first._id', 'first._owner_ref',
-                     'values.SortByValue()', 'values.ChooseItem()', 'first.Picture',
+                     'values.ChooseItem()', 'first.Picture',
                      'For Each x In first Do EndDo;', 'first[0]'):
             with self.assertRaises(BSLError):
                 self.vm.execute(code)

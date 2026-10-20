@@ -40,6 +40,7 @@ class BSLType(Enum):
     XML_STRING_PROCESSING_MANAGER = "МенеджерОбработкиСтрокиXML"
     SEARCH_DIRECTION = "НаправлениеПоиска"
     SEARCH_DIRECTIONS = "ПеречислениеНаправлениеПоиска"
+    SORT_DIRECTION = "НаправлениеСортировки"
     NUMBER_QUALIFIERS = "КвалификаторыЧисла"
     STRING_QUALIFIERS = "КвалификаторыСтроки"
     DATE_QUALIFIERS = "КвалификаторыДаты"
