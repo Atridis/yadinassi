@@ -3252,4 +3252,146 @@ table.indexes.sort: [
   SavedIndex=[{"S","Key"}; {"S","Second"}]
 ]
 table.indexes.checkpoint.complete: [ok]
+table.indexes.extra.edit-order: [
+  Steps=[{"S","AddKey:ok"}; {"S","SameKey:ok"}; {"S","OtherColumn:ok"}; {"S","BeforeFill:ok"}; {"S","Fill:ok"}; {"S","BeforeLoad:ok"}; {"S","Load:ok"}]
+  Initial.Order=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.FindKey={"N",1}
+  SameKey.Order=[{"N",1}; {"N",2}; {"N",3}]
+  SameKey.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  SameKey.FindKey={"N",2}
+  OtherColumn.Order=[{"N",1}; {"N",2}; {"N",3}]
+  OtherColumn.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  OtherColumn.FindKey={"N",2}
+  BeforeFill.Order=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeFill.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  BeforeFill.FindKey={"N",2}
+  AfterFill.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterFill.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterFill.FindKey={"N",1}
+  BeforeLoad.Order=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeLoad.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  BeforeLoad.FindKey={"N",2}
+  AfterLoad.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterLoad.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterLoad.FindKey={"N",1}
+]
+table.indexes.extra.reorder: [
+  Steps=[{"S","AddKey:ok"}; {"S","Sort:ok"}; {"S","Move:ok"}]
+  Initial.Order=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  Initial.FindKey={"N",1}
+  Initial.FindAll={"N",1}
+  Initial.FindSecondKey={"N",1}
+  Sorted.Order=[{"N",3}; {"N",2}; {"N",1}]
+  Sorted.Rows=[{"N",3}; {"N",2}; {"N",1}]
+  Sorted.FindKey={"N",3}
+  Sorted.FindAll={"N",3}
+  Sorted.FindSecondKey={"N",3}
+  Moved.Order=[{"N",2}; {"N",1}; {"N",3}]
+  Moved.Rows=[{"N",2}; {"N",1}; {"N",3}]
+  Moved.FindKey={"N",2}
+  Moved.FindAll={"N",2}
+  Moved.FindSecondKey={"N",2}
+]
+table.indexes.extra.selection: [
+  Steps=[{"S","AddOld:ok"}; {"S","Scramble:ok"}; {"S","AddComposite:ok"}; {"S","DeleteOld:ok"}; {"S","DeleteComposite:ok"}]
+  BeforeAdd.Order=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeAdd.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  BeforeAdd.FindKey={"N",2}
+  BeforeAdd.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  BeforeAdd.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  AfterComposite.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterComposite.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  AfterComposite.FindKey={"N",2}
+  AfterComposite.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterComposite.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  DuplicateAdd={"S","ok"}
+  AfterDuplicate.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDuplicate.Rows=[{"N",2}; {"N",3}; {"N",1}]
+  AfterDuplicate.FindKey={"N",2}
+  AfterDuplicate.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDuplicate.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.FindKey={"N",1}
+  AfterDeleteOld.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteOld.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.Order=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.Rows=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.FindKey={"N",1}
+  AfterDeleteComposite.Composite=[{"N",1}; {"N",2}; {"N",3}]
+  AfterDeleteComposite.Reverse=[{"N",1}; {"N",2}; {"N",3}]
+]
+table.indexes.extra.copy: [
+  Steps=[{"S","AddComposite:ok"}; {"S","AddKey:ok"}; {"S","AddAmount:ok"}; {"S","FullCopy:ok"}; {"S","RenameCopy:ok"}]
+  CopyAll.Columns=[{"S","Second"}; {"S","Key"}; {"S","Amount"}]
+  CopyAll.Indexes=[]
+  CopyPair.Columns=[{"S","Second"}; {"S","Key"}]
+  CopyPair.Indexes=[]
+  CopyKey.Columns=[{"S","Key"}]
+  CopyKey.Indexes=[]
+  ColumnsAll.Columns=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  ColumnsAll.Indexes=[]
+  ColumnsPair.Columns=[{"S","Second"}; {"S","Key"}]
+  ColumnsPair.Indexes=[]
+  ColumnsKey.Columns=[{"S","Key"}]
+  ColumnsKey.Indexes=[]
+  FullCopy.Columns=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  FullCopy.Indexes=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}]; [{"S","Amount"}]]
+  RenamedCopy.Columns=[{"S","Renamed"}; {"S","Second"}; {"S","Amount"}]
+  RenamedCopy.Indexes=[[{"S","Renamed"}; {"S","Second"}]; [{"S","Renamed"}]; [{"S","Amount"}]]
+  Source.Columns=[{"S","Key"}; {"S","Second"}; {"S","Amount"}]
+  Source.Indexes=[[{"S","Key"}; {"S","Second"}]; [{"S","Key"}]; [{"S","Amount"}]]
+]
+table.indexes.extra.stale-links: [
+  Delete.Steps=[{"S","Add:ok"}; {"S","Delete:ok"}; {"S","Rename:ok"}; {"S","DeleteSecond:ok"}]
+  Delete.Immediately.Names=[{"S","Key"}; {"S","Second"}]
+  Delete.Immediately.Zero={"S","Key"}
+  Delete.Immediately.One={"S","Second"}
+  Delete.Immediately.Text={"S","Key, Second"}
+  Delete.Immediately.Count={"N",0}
+  Delete.AfterRename.Names=[{"S","Renamed"}; {"S","Second"}]
+  Delete.AfterRename.Zero={"S","Renamed"}
+  Delete.AfterRename.One={"S","Second"}
+  Delete.AfterRename.Text={"S","Renamed, Second"}
+  Delete.AfterRename.Count={"N",0}
+  Delete.AfterDeleteSecond.Names=[{"S","Renamed"}; {"S",""}]
+  Delete.AfterDeleteSecond.Zero={"S","Renamed"}
+  Delete.AfterDeleteSecond.One={"S",""}
+  Delete.AfterDeleteSecond.Text={"S","Renamed, "}
+  Delete.AfterDeleteSecond.Count={"N",0}
+  Clear.Steps=[{"S","Add:ok"}; {"S","Clear:ok"}; {"S","Rename:ok"}; {"S","DeleteSecond:ok"}]
+  Clear.Immediately.Names=[{"S",""}; {"S",""}]
+  Clear.Immediately.Zero={"S",""}
+  Clear.Immediately.One={"S",""}
+  Clear.Immediately.Text={"S","[error]"}
+  Clear.Immediately.Count={"N",0}
+  Clear.AfterRename.Names=[{"S",""}; {"S",""}]
+  Clear.AfterRename.Zero={"S",""}
+  Clear.AfterRename.One={"S",""}
+  Clear.AfterRename.Text={"S","[error]"}
+  Clear.AfterRename.Count={"N",0}
+  Clear.AfterDeleteSecond.Names=[{"S",""}; {"S",""}]
+  Clear.AfterDeleteSecond.Zero={"S",""}
+  Clear.AfterDeleteSecond.One={"S",""}
+  Clear.AfterDeleteSecond.Text={"S","[error]"}
+  Clear.AfterDeleteSecond.Count={"N",0}
+  Group.Steps=[{"S","Add:ok"}; {"S","Group:ok"}; {"S","Rename:ok"}; {"S","DeleteAmount:ok"}]
+  Group.Immediately.Names=[{"S",""}; {"S",""}]
+  Group.Immediately.Zero={"S",""}
+  Group.Immediately.One={"S",""}
+  Group.Immediately.Text={"S","[error]"}
+  Group.Immediately.Count={"N",0}
+  Group.AfterRename.Names=[{"S",""}; {"S",""}]
+  Group.AfterRename.Zero={"S",""}
+  Group.AfterRename.One={"S",""}
+  Group.AfterRename.Text={"S","[error]"}
+  Group.AfterRename.Count={"N",0}
+  Group.AfterDeleteAmount.Names=[{"S",""}; {"S",""}]
+  Group.AfterDeleteAmount.Zero={"S",""}
+  Group.AfterDeleteAmount.One={"S",""}
+  Group.AfterDeleteAmount.Text={"S","[error]"}
+  Group.AfterDeleteAmount.Count={"N",0}
+]
 table.checkpoint.complete: [ok]
