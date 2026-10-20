@@ -40,7 +40,11 @@ def observations():
 class IndexProbeTests(unittest.TestCase):
     def test_old_source_and_all_owner_goldens_are_byte_exact(self):
         old = source()
-        for start, end in (HELPERS, BODY, EXTRA_HELPERS, EXTRA_BODY):
+        for start, end in (
+            ('// Начало компактных проб списка значений.\n', '// Конец компактных проб списка значений.\n\n'),
+            ('// Начало наблюдений списка значений.\n', '// Конец наблюдений списка значений.\n'),
+            HELPERS, BODY, EXTRA_HELPERS, EXTRA_BODY,
+        ):
             before, rest = old.split(start, 1)
             _, after = rest.split(end, 1)
             old = before + after
