@@ -1,6 +1,7 @@
 """Native list streams plus defensive inverse models, never generated .out files."""
 from decimal import Decimal as D
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -29,7 +30,7 @@ def sample():
 class ValueListCodecBoundaryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.output = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8')
+        cls.output = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
 
     def native(self, name):
         return read_observation(extract_payload(self.output, 'table.list.codec.' + name))
@@ -241,6 +242,13 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
         self.assertEqual(vm.execute('saved'), 'unchanged')
         self.assertEqual(output, ['caught'])
 
+    def test_cli_transport_ignores_non_utf8_process_defaults(self):
+        # Model the Windows parent pipe codec on Linux too. Also supply a
+        # non-UTF8 inherited stdio setting; the CLI configures its own UTF-8.
+        with patch('subprocess._text_encoding', return_value='cp1252'), \
+                patch.dict(os.environ, {'PYTHONIOENCODING': 'cp1252'}):
+            self.test_cli_roundtrip_all_text_transports()
+
     def test_cli_roundtrip_all_text_transports(self):
         code = ('values = New СписокЗначений; item = values.Add(1, "item"); '
                 'copy = ValueFromStringInternal(ValueToStringInternal(values)); '
@@ -253,7 +261,8 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
                                 (("-",), code), ((), code + '\n/exit\n')):
                 with self.subTest(args=args):
                     result = subprocess.run([sys.executable, '-m', 'yadinassi', *args],
-                                            input=stdin, text=True, capture_output=True,
+                                            input=stdin, encoding='utf-8', capture_output=True,
+                                            env=dict(os.environ, PYTHONIOENCODING='utf-8'),
                                             cwd=ROOT, timeout=30)
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
                                      (0, 'Да\n0\n1\n', ''))
