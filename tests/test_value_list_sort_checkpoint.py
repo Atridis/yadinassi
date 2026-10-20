@@ -52,6 +52,11 @@ def blob(data):
     return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
 
 
+def metadata_blob(data):
+    # Checkout transport only, never metadata payload or native comparisons.
+    return blob(data.replace(b'\r\n', b'\n'))
+
+
 class _Namespace(BSLObject):
     def __str__(self):
         return "SYNTHETIC sort namespace"
@@ -142,8 +147,18 @@ class ValueListSortCheckpointTests(unittest.TestCase):
         }
         for name, expected_hash in expected.items():
             self.assertEqual(blob((ROOT / 'integrational_tests/output' / name).read_bytes().replace(b'\r\n', b'\n')), expected_hash)
-        self.assertEqual(blob((ROOT / 'integrational_tests/meta.md').read_bytes()), 'f76530bce7bd3b8a54055b2390ec7551024c62e2')
+        # Git's Windows checkout may transport text with CRLF. Only line
+        # endings are normalized; metadata field content remains exact.
+        self.assertEqual(metadata_blob((ROOT / 'integrational_tests/meta.md').read_bytes()),
+                         'f76530bce7bd3b8a54055b2390ec7551024c62e2')
         self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text())
+
+    def test_metadata_transport_preserves_content_check(self):
+        data = (ROOT / 'integrational_tests/meta.md').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(metadata_blob(data.replace(b'\n', b'\r\n')),
+                         'f76530bce7bd3b8a54055b2390ec7551024c62e2')
+        self.assertNotEqual(metadata_blob(data.replace(b'8.3.27.2342', b'8.3.27.2343')),
+                            'f76530bce7bd3b8a54055b2390ec7551024c62e2')
 
     def test_bounded_unique_records_and_full_source_parse(self):
         calls = observations()
