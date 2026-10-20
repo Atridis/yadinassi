@@ -25,8 +25,12 @@ def section(markers):
     return source().split(markers[0], 1)[1].split(markers[1], 1)[0]
 
 
+EXTRA_HELPERS = ('// Начало дополнительных компактных проб индексов.\n', '// Конец дополнительных компактных проб индексов.\n\n')
+EXTRA_BODY = ('// Начало дополнительных наблюдений индексов.\n', '// Конец дополнительных наблюдений индексов.\n')
+
+
 def observations():
-    return [node.expression for node in parse(section(BODY))
+    return [node.expression for node in parse(section(BODY) + section(EXTRA_BODY))
             if isinstance(node, ast.ExpressionStatement)
             and isinstance(node.expression, ast.Call)
             and isinstance(node.expression.callee, ast.Name)
@@ -36,14 +40,14 @@ def observations():
 class IndexProbeTests(unittest.TestCase):
     def test_old_source_and_all_owner_goldens_are_byte_exact(self):
         old = source()
-        for start, end in (HELPERS, BODY):
+        for start, end in (HELPERS, BODY, EXTRA_HELPERS, EXTRA_BODY):
             before, rest = old.split(start, 1)
             _, after = rest.split(end, 1)
             old = before + after
         data = ('\ufeff' + old).encode()
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'd6176c44edf9a3d7ad9f8cf7a474a12aca25c809')
-        hashes = {'collections': '1230b2a63eee62f88eee0d8a93cfba15d002f376',
+        hashes = {'collections': 'dc6c4ab155eb27c49d68ef22f7917d91ff90e876',
                   'values': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
                   'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
                   'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
@@ -59,7 +63,7 @@ class IndexProbeTests(unittest.TestCase):
 
     def test_fixed_bounded_expressions_and_full_source_compile(self):
         calls = observations()
-        self.assertEqual(len(calls), 35)
+        self.assertEqual(len(calls), 40)
         labels = []
         for call in calls:
             self.assertEqual(len(call.arguments), 2)
@@ -86,15 +90,22 @@ class IndexProbeTests(unittest.TestCase):
         Interpreter(output=output.append).execute(source())
         records = [line for line in output if line.startswith('table.indexes.')
                    and not line.startswith('table.indexes.checkpoint.')]
-        self.assertEqual(len(records), 35)
-        self.assertTrue(all(line.endswith('[error]') for line in records))
-        self.assertEqual(output[-2:], ['table.indexes.checkpoint.complete: [ok]', 'table.checkpoint.complete: [ok]'])
+        self.assertEqual(len(records), 40)
+        for line in records:
+            if line.startswith('table.indexes.extra.stale-links:'):
+                for branch in ('Delete', 'Clear', 'Group'):
+                    self.assertIn('  ' + branch + '.Setup={"S","[error]"}', line)
+            else:
+                self.assertTrue(line.endswith('[error]'), line)
+        self.assertEqual(output[-1], 'table.checkpoint.complete: [ok]')
+        self.assertEqual(output.count('table.indexes.checkpoint.complete: [ok]'), 1)
 
     def test_targets_reached_and_concrete_snapshots_survive(self):
         # Arrays are deliberately used as serializable host instrumentation,
         # not as an implementation or an oracle for native index semantics.
         owners, calls = {}, []
         fail_after_add = [False]
+        fail_after_sort = [False]
         original = BSLValueTable.get_member
         original_set = BSLValueTable.set_member
         original_method = BSLValueTable.get_method
@@ -103,7 +114,10 @@ class IndexProbeTests(unittest.TestCase):
             method = original_method(table, name)
             def invoke(*args):
                 calls.append(("table." + name.casefold(), args))
-                return method(*args)
+                result = method(*args)
+                if fail_after_sort[0] and name.casefold() == 'sort':
+                    raise ValueError('instrumented failure after sort')
+                return result
             return HostFunction(name, invoke, returns_value=method.returns_value)
 
         original_columns_method = BSLValueTableColumnCollection.get_method
@@ -212,6 +226,15 @@ class IndexProbeTests(unittest.TestCase):
                         self.assertGreaterEqual(calls.count(('row.key', ('a',))), 3)
                     if label == 'indexes.search-bulk':
                         self.assertIn('table.fillvalues', [name for name, _ in calls])
+                    extra_targets = {
+                        'indexes.extra.edit-order': ('table.fillvalues', 'table.loadcolumn'),
+                        'indexes.extra.reorder': ('table.sort', 'table.move'),
+                        'indexes.extra.selection': ('delete', 'table.findrows'),
+                        'indexes.extra.copy': ('table.copy', 'table.copycolumns', 'column.name'),
+                        'indexes.extra.stale-links': ('delete', 'clear', 'columns.delete', 'column.name'),
+                    }.get(label, ())
+                    for extra_target in extra_targets:
+                        self.assertIn(extra_target, [name for name, _ in calls])
                     if '.search-' in label:
                         self.assertIn('table.findrows', [name for name, _ in calls])
 
@@ -222,6 +245,17 @@ class IndexProbeTests(unittest.TestCase):
             vm.execute('НаблюдатьТаблицы("indexes.instrumented", "ИндексыТаблицыПробы(""add"", ""Key"")")')
             self.assertIn('  Status={"S","error"}', output[0])
             self.assertIn('  Indexes.Count={"N",1}', output[0])
+
+            # Supplement stage failures retain earlier and later snapshots.
+            fail_after_add[0] = False
+            fail_after_sort[0] = True
+            output.clear()
+            vm.execute('НаблюдатьТаблицы("indexes.instrumented", "ДопПорядокИндексов(""reorder"")")')
+            self.assertIn('Sort:error', output[0])
+            self.assertIn('  Initial.Order=[{"N",1}; {"N",2}; {"N",3}]', output[0])
+            self.assertIn('  Sorted.Order=[{"N",3}; {"N",2}; {"N",1}]', output[0])
+            self.assertIn('  Moved.Order=[{"N",2}; {"N",1}; {"N",3}]', output[0])
+            fail_after_sort[0] = False
 
             # A failed view or type codec must not hide the value codec.
             fail_after_add[0] = False

@@ -524,3 +524,15 @@ is documentation evidence only; runtime edge cases and codecs await the owner’
 comparisons intentionally fail on the additional records until genuine owner
 output and implementation are available. Host instrumentation tests prove calls
 are reached and partial state remains visible; they are not native oracles.
+
+## Pending index-order supplement
+
+The owner supplied all 35 index observations in commit
+`3b2fa58484f9dfbd6d296b7f11c373fef184dca5`; the full 3,255-line output is
+preserved unchanged. Five further compact records distinguish only unresolved
+implementation choices: same-value/unrelated writes and bulk updates, active-index
+Sort/Move, competing exact indexes, fully covered copy projections, and saved
+index references after later schema changes. Snapshots use unique row IDs and
+column names, not opaque row/index values. There are no repeated codec streams
+or timing measurements. Native output for these five records is still pending;
+all full comparisons remain strict.
