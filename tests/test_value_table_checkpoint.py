@@ -24,6 +24,7 @@ def parts():
     # Isolate this already owner-confirmed checkpoint from the next native
     # checkpoint. Complete source/native comparisons below remain strict.
     for start, end in (
+        ('// Начало уточняющих проб списка значений.\n', '// Конец уточняющих проб списка значений.\n\n'),
         ('// Начало компактных проб списка значений.\n', '// Конец компактных проб списка значений.\n\n'),
         ('// Начало наблюдений списка значений.\n', '// Конец наблюдений списка значений.\n'),
         ('// Начало дополнительных компактных проб индексов.\n', '// Конец дополнительных компактных проб индексов.\n\n'),
@@ -194,9 +195,9 @@ class ValueTableCheckpointTests(unittest.TestCase):
         self.assertEqual(messages[-1], FINAL)
         import re
         labels = ['table.' + c.arguments[0].value for c in calls()] + ['table.checkpoint.complete']
-        self.assertEqual([label for label in re.findall(r'^(table\.[a-z0-9.-]+): \[', expected, re.M) if not label.startswith(('table.ops.', 'table.indexes.'))], labels)
+        self.assertEqual([label for label in re.findall(r'^(table\.[a-z0-9.-]+): \[', expected, re.M) if not label.startswith(('table.ops.', 'table.indexes.', 'table.list.'))], labels)
         self.assertEqual([line.split(': [', 1)[0] for line in messages
-                          if line.startswith('table.') and not line.startswith(('table.ops.', 'table.indexes.'))], labels)
+                          if line.startswith('table.') and not line.startswith(('table.ops.', 'table.indexes.', 'table.list.'))], labels)
 
     def test_full_native_gate_accepts_confirmed_owner_output(self):
         if __package__:

@@ -649,3 +649,45 @@ and post-error snapshots. Their substitute host objects are deliberately not
 native behavior oracles. The owner remains the source of the 1C 8.3.27.2342,
 Windows, ru-RU results; those results must be reviewed before implementation and
 merge readiness are claimed.
+
+## Owner ValueList observations and observer correction (2026-10-20)
+
+Owner commit `f41b3c9a301f556e5c56ea68e9240ba0637a8146` supplies all 36
+ordered records and both completion markers. `collections.out` contains 3,563
+lines and 134,803 bytes, Git blob `ec2d032913e0aee492410423851b3a69450068f0`.
+Removing the 166 new lines restores the previous owner output exactly. The other
+five outputs and `meta.md` are unchanged. This genuine first result is preserved.
+
+The run exposes an observer defect: native type presentations are `Список значений`
+and `Элемент списка значений`, whereas the result projector compared constructor
+names without spaces. As a result, ordinary Result/Other and codec ReadView fields
+retained native internal streams instead of the intended compact projections.
+The independent operation statuses, After snapshots, explicit identity checks,
+and dedicated raw codec records remain valid observations. Ordinary item streams
+may be serialized after their local owning list has gone out of scope; their `-1`
+ID therefore does not establish the live item's ID. They are not a substitute for
+live identity observations. The synthetic test types now use the observed spaced
+presentations, and the projector compares type identities, not presentation text.
+
+Two bounded records are added to close concrete evidence gaps:
+
+- `list.extra.returned-identity` independently checks that Add/Insert return the
+  live indexed items and FindByValue/FindByID return those exact references. A
+  mutation through the Add result is followed by the actual list state.
+- `list.extra.foreign-move` separates foreign-item value, numeric ID and position.
+  Four fresh cases use disjoint values; then a foreign reorder makes ID differ
+  from position, a fourth foreign ID has no local counterpart, and a deleted
+  foreign item has no live position. The argument's ID and foreign IndexOf are
+  recorded independently; status and both lists' final states survive errors.
+  These observations are required because the first run accepted a foreign Move
+  argument even though Delete rejected the foreign item and IndexOf returned -1.
+  No foreign-selection algorithm is inferred from that single ambiguous case.
+
+The revised source has 38 records. The owner must rerun the complete scenario:
+all original 36 records need fresh projections, followed by the two distinguishing
+records and the completion marker. No first-run stream is rewritten into a guessed
+compact answer, and no output is produced by the interpreter as an expected file.
+Complete native comparisons remain strict and intentionally fail while the new
+observations and runtime implementation are pending. The additional cases stay
+within the original core scope; no UI, sorting, pictures or typed constraints
+are introduced.

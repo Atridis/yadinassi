@@ -9,11 +9,13 @@ from copy import deepcopy
 from decimal import Decimal
 import hashlib
 from pathlib import Path
+import re
 import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, ast, runtime, serialization, type_values
 from yadinassi.parser import parse
+from yadinassi.structures import BSLStructure
 from yadinassi.type_descriptions import BSLTypeDescription
 from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, equal
 
@@ -24,6 +26,10 @@ HELPERS = ('// Начало компактных проб списка знач�
            '// Конец компактных проб списка значений.\n\n')
 BODY = ('// Начало наблюдений списка значений.\n',
         '// Конец наблюдений списка значений.\n')
+EXTRA_HELPERS = ('// Начало уточняющих проб списка значений.\n',
+                 '// Конец уточняющих проб списка значений.\n\n')
+EXTRA_BODY = ('// Начало уточняющих наблюдений списка значений.\n',
+              '// Конец уточняющих наблюдений списка значений.\n')
 FINAL = 'table.list.checkpoint.complete: [ok]'
 
 
@@ -37,7 +43,7 @@ def section(markers):
 
 def without_list_probe(text):
     """Historical-source integrity only; never used by a native comparator."""
-    for start, end in (HELPERS, BODY):
+    for start, end in (EXTRA_HELPERS, HELPERS, BODY):
         before, rest = text.split(start, 1)
         _, after = rest.split(end, 1)
         text = before + after
@@ -63,18 +69,21 @@ def array(values):
 
 
 class _SyntheticType:
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, name, presentation):
+        self.name, self.presentation = name, presentation
 
     def __str__(self):
-        return self.name
+        return self.presentation
 
     def __deepcopy__(self, memo):
         return self
 
 
-LIST_TYPE = _SyntheticType('СписокЗначений')
-ITEM_TYPE = _SyntheticType('ЭлементСпискаЗначений')
+# These presentations are the owner's f41b3c9 observations, not type names.
+# Keeping them different is essential: string-based dispatch previously hid a
+# projection failure by falling back to successful opaque serialization.
+LIST_TYPE = _SyntheticType('СписокЗначений', 'Список значений')
+ITEM_TYPE = _SyntheticType('ЭлементСпискаЗначений', 'Элемент списка значений')
 
 
 ALIASES = {
@@ -194,6 +203,7 @@ class _List(BSLObject):
 
     def invoke(self, key, *args):
         self.host.events.append((key, args))
+        self.host.receivers.append((key, self, args))
         if key == 'add':
             result = self.add_item(args)
         elif key == 'insert':
@@ -258,7 +268,9 @@ class _List(BSLObject):
 class Host:
     def __init__(self):
         self.events, self.output, self.streams = [], [], {}
+        self.receivers = []
         self.command_events = []
+        self.forbid_object_codec = False
         self.broken_property = None
         self.broken_iteration = self.broken_count = self.broken_id = self.broken_get = False
         self.broken_type_codec = False
@@ -308,6 +320,8 @@ class Host:
             text = 'SYNTHETIC-TYPE:' + value.name
         elif type(value) in {_List, _Item}:
             self.events.append(('codec.write.list' if type(value) is _List else 'codec.write.item', ()))
+            if self.forbid_object_codec:
+                raise ValueError('synthetic raw object serialization forbidden outside codec probes')
             rows = value.items if type(value) is _List else [value]
             projected = array(array([row.identifier, row.fields['value'],
                                      row.fields['presentation'], row.fields['check']])
@@ -372,6 +386,7 @@ class Host:
 
     def observe(self, label, expression):
         self.events.clear()
+        self.receivers.clear()
         self.command_events.clear()
         self.output.clear()
         escaped = expression.replace('"', '""')
@@ -380,11 +395,47 @@ class Host:
 
 
 class ValueListCheckpointTests(unittest.TestCase):
+    def test_owner_source_is_restored_by_only_the_reviewed_supplement_changes(self):
+        original = source()
+        for start, end in (EXTRA_HELPERS, EXTRA_BODY):
+            before, rest = original.split(start, 1)
+            _, after = rest.split(end, 1)
+            original = before + after
+        # Reverse precisely the two reviewed identity-dispatch corrections.
+        for fixed, historical in (
+            ('Если ТипЗнч(Ответ) = Тип("ValueListItem") Тогда',
+             'Если Строка(ТипЗнч(Ответ)) = "ЭлементСпискаЗначений" Тогда'),
+            ('ИначеЕсли ТипЗнч(Ответ) = Тип("ValueList") Тогда',
+             'ИначеЕсли Строка(ТипЗнч(Ответ)) = "СписокЗначений" Тогда'),
+        ):
+            self.assertEqual(original.count(fixed), 1)
+            original = original.replace(fixed, historical)
+        self.assertEqual(blob_hash(('\ufeff' + original).encode()),
+                         '1c1e516847eca80e53cda3f218c5490418a241bf')
+
+    def test_genuine_owner_addition_preserves_previous_output_and_native_presentations(self):
+        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(blob_hash(data), 'ec2d032913e0aee492410423851b3a69450068f0')
+        before, tail = data.split(b'table.list.identity:', 1)
+        self.assertTrue(tail.endswith(b'table.list.checkpoint.complete: [ok]\n'
+                                      b'table.checkpoint.complete: [ok]\n'))
+        historical = before + b'table.checkpoint.complete: [ok]\n'
+        self.assertEqual(blob_hash(historical), 'c3e5ae6e3211b2fb85ba3614cadb764475315ce8')
+        self.assertEqual(len(data.splitlines()) - len(historical.splitlines()), 166)
+        labels = re.findall(rb'^(table\.list\.[a-z.-]+): \[', data, re.MULTILINE)
+        old_labels = ['table.' + call.arguments[0].value for call in observations()
+                      if not call.arguments[0].value.startswith('list.extra.')]
+        self.assertEqual([label.decode() for label in labels],
+                         old_labels + ['table.list.checkpoint.complete'])
+        identity = tail.split(b'\ntable.list.constructor.list:', 1)[0].decode()
+        self.assertIn('ListType={"S","' + str(LIST_TYPE) + '"}', identity)
+        self.assertIn('ItemType={"S","' + str(ITEM_TYPE) + '"}', identity)
+
     def test_original_source_all_goldens_and_environment_are_unchanged(self):
         restored = ('\ufeff' + without_list_probe(source())).encode()
         self.assertEqual(blob_hash(restored), '92ba44889c221de39f8b3ae578f0c1408ccbf0ae')
         hashes = {
-            'collections': 'c3e5ae6e3211b2fb85ba3614cadb764475315ce8',
+            'collections': 'ec2d032913e0aee492410423851b3a69450068f0',
             'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -401,7 +452,7 @@ class ValueListCheckpointTests(unittest.TestCase):
 
     def test_fixed_unique_bounded_observations_and_full_source_parse(self):
         calls = observations()
-        self.assertEqual(len(calls), 36)
+        self.assertEqual(len(calls), 38)
         labels = []
         for call in calls:
             self.assertEqual(len(call.arguments), 2)
@@ -447,6 +498,9 @@ class ValueListCheckpointTests(unittest.TestCase):
             'load.invalid': ('loadvalues',), 'unload': ('unloadvalues',),
             'codec.empty': ('codec.write.list',), 'codec.populated': ('codec.write.list',),
             'codec.item': ('codec.write.item',), 'codec.history': ('delete', 'move', 'codec.write.list'),
+            'extra.returned-identity': ('add', 'insert', 'get', 'findbyvalue', 'findbyid',
+                                        'item.write.value'),
+            'extra.foreign-move': ('move', 'getid', 'indexof'),
         }
         self.assertEqual(set(expected), {call.arguments[0].value[5:] for call in observations()})
         with Host() as host:
@@ -505,6 +559,104 @@ class ValueListCheckpointTests(unittest.TestCase):
                              ['table.' + call.arguments[0].value for call in observations()]
                              + ['table.list.checkpoint.complete'])
             self.assertEqual(host.output[-1], FINAL)
+
+    def test_all_noncodec_records_project_objects_without_raw_serialization(self):
+        with Host() as host:
+            host.forbid_object_codec = True
+            for call in observations():
+                label, expression = (arg.value for arg in call.arguments)
+                if '.codec.' in label:
+                    continue
+                with self.subTest(label=label):
+                    output = host.observe(label, expression)
+                    self.assertNotEqual(output, 'table.' + label + ': [error]')
+                    self.assertNotIn('[serialize-error]', output)
+                    self.assertNotIn('[result-error]', output)
+                    self.assertFalse(any(name.startswith('codec.write.') for name, args in host.events))
+
+    def test_spaced_type_presentations_preserve_saved_identity_and_projected_fields(self):
+        with Host() as host:
+            host.forbid_object_codec = True
+            for command, saved, value in (
+                ('Ответ = Список.Get(0);', True, Decimal(10)),
+                ('Ответ = Список.FindByValue(10);', True, Decimal(10)),
+                ('Ответ = Список.FindByID(Сохраненный.GetID());', True, Decimal(10)),
+                ('Ответ = Список.Add(30);', False, Decimal(30)),
+                ('Ответ = Список.Insert(0, 30);', False, Decimal(30)),
+            ):
+                with self.subTest(command=command):
+                    result = host.vm.execute('ДействиеСпискаПробы("' + command + '")')
+                    projected = result.get('Result')
+                    self.assertIs(type(projected), BSLStructure)
+                    self.assertIs(projected.get('Saved'), saved)
+                    self.assertEqual(projected.get('Fields').items[0], value)
+            result = host.vm.execute('ДействиеСпискаПробы("Ответ = Новый ValueList;")')
+            self.assertIs(type(result.get('Result')), BSLStructure)
+            self.assertEqual(result.get('Result').get('Count'), Decimal(0))
+            self.assertEqual(result.get('Result').get('Items').items, [])
+            copy = host.vm.execute('КопированиеСпискаПробы("copy")')
+            self.assertIs(type(copy.get('Other')), BSLStructure)
+            self.assertEqual(copy.get('Other').get('Count'), Decimal(1))
+
+    def test_returned_identity_checks_use_live_references_and_keep_failed_write(self):
+        with Host() as host:
+            result = host.vm.execute('ВозвращенныеЭлементыСпискаПробы()')
+            for name in ('Add', 'Insert', 'FindValue', 'FindID'):
+                self.assertIs(result.get(name), True)
+            self.assertEqual(result.get('WriteStatus'), 'ok')
+            self.assertEqual([row.items[0] for row in result.get('After').get('Items')],
+                             [Decimal(20), Decimal(11)])
+            host.fail_after = lambda name, args: name == 'item.write.value'
+            result = host.vm.execute('ВозвращенныеЭлементыСпискаПробы()')
+            self.assertEqual(result.get('WriteStatus'), 'error')
+            self.assertEqual(result.get('After').get('Items').items[1].items[0], Decimal(11))
+            host.fail_after = None
+            host.broken_get = True
+            result = host.vm.execute('ВозвращенныеЭлементыСпискаПробы()')
+            self.assertEqual(result.get('Add'), '[error]')
+            self.assertEqual(result.get('Insert'), '[error]')
+            self.assertIs(result.get('FindValue'), True)
+            self.assertIs(result.get('FindID'), True)
+
+    def test_foreign_move_reaches_four_distinct_cases_and_observes_both_lists(self):
+        with Host() as host:
+            results = host.vm.execute('ЧужойСдвигСпискаПробы()').items
+            self.assertEqual([result.get('Case') for result in results],
+                             ['different-value', 'reordered', 'missing-id', 'deleted'])
+            targeted = [(owner, args) for name, owner, args in host.receivers
+                        if name == 'move' and type(args[0]) is _Item and args[0].owner is not owner]
+            self.assertEqual(len(targeted), 4)
+            for result in results:
+                self.assertEqual(result.get('Status'), 'error')  # This fake rejects foreign objects.
+                self.assertEqual(result.get('Target').get('Count'), Decimal(3))
+                self.assertIs(type(result.get('Foreign')), BSLStructure)
+            self.assertEqual([result.get('Foreign').get('Count') for result in results],
+                             [Decimal(3), Decimal(3), Decimal(4), Decimal(2)])
+            self.assertEqual([result.get('ForeignIndex') for result in results],
+                             [Decimal(1), Decimal(0), Decimal(0), Decimal(-1)])
+            self.assertEqual([result.get('ID') for result in results],
+                             [Decimal(1), Decimal(1), Decimal(3), Decimal(1)])
+
+    def test_foreign_move_snapshots_survive_mutation_and_failure_on_both_owners(self):
+        original = _List.invoke
+
+        def mutate_then_fail(owner, name, *args):
+            if name == 'move' and type(args[0]) is _Item and args[0].owner is not owner:
+                # Deliberately wrong host behavior verifies observation only.
+                owner.items.pop(0)
+                args[0].owner.items.pop(0)
+                raise ValueError('synthetic foreign mutation before failure')
+            return original(owner, name, *args)
+
+        with Host() as host, patch.object(_List, 'invoke', mutate_then_fail):
+            results = host.vm.execute('ЧужойСдвигСпискаПробы()').items
+            self.assertEqual(len(results), 4)
+            for result in results:
+                self.assertEqual(result.get('Status'), 'error')
+                self.assertEqual(result.get('Target').get('Count'), Decimal(2))
+                self.assertEqual(result.get('Target').get('Items').items[0].items[0], Decimal(20))
+            self.assertEqual([result.get('Foreign').get('Count') for result in results],
+                             [Decimal(2), Decimal(2), Decimal(3), Decimal(1)])
 
     def test_mutation_before_failure_survives_in_status_and_state(self):
         cases = [('Список.Add(99);', 'add', Decimal(3)),
