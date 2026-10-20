@@ -732,3 +732,71 @@ forms remain outside the supported contract. UI, sorting, constraint setters,
 Picture and FormattedString remain excluded. Local regression and full strict
 comparison results must be checked separately; this evidence section does not
 claim that every implementation gate has passed. Version 0.3.2 is unchanged.
+
+## Pending ValueList sorting checkpoint (2026-10-20)
+
+This is a probe-only continuation of main
+`c0f46217dd2492d2f2a7e77f771bbe9c02d75b78`. The isolated helper and invocation
+blocks in `collections.bsl` add 27 `table.list.sort.*` records and the marker
+`table.list.sort.checkpoint.complete: [ok]`. Removing only those two blocks
+restores the main source byte-for-byte. All six genuine output files, all six
+fields of `meta.md`, and version 0.3.2 remain unchanged. No runtime sorting or
+expected native output is introduced.
+
+The official EDT 2026.2 generic reference JAR linked above was reread and its
+SHA-256 verified (`ab11892048f63c656a53a76e35ab5002d29faac5e0afe7a380230a12bdac0e49`).
+The English `ValueList/methods/SortByValue196.html` and
+`SortByPresentation197.html` entries document procedures with one optional
+`SortDirection` argument, default Asc, and server availability. The English and
+Russian `catalog2/catalog2088/SortDirection` entries establish Asc/Возр and
+Desc/Убыв. They do not establish collation, tie handling, conversion or error
+atomicity. The target remains the owner's 1C 8.3.27.2342 on Windows, ru-RU,
+using the existing server helper. No UI, DB/query operation, or CompareValues
+API is added.
+
+### Compact sorting matrix
+
+| Records | Distinguishing observations |
+| --- | --- |
+| `enum.identity`, `enum.asc-codec`, `enum.desc-codec`, `enum.boundaries` | RU/EN type identities and member aliases, distinct values, presentations, namespace iteration; type stream once, each enum value stream once with independent inverse checks; constructor/write/unknown-member/index rejection |
+| `value.directions`, `presentation.directions` | omitted, explicit RU ascending, explicit EN descending, and Undefined on fresh lists |
+| `empty`, `singleton` | both procedures in both directions with no/missing comparison work |
+| `value.numeric`, `value.boolean`, `value.date` | duplicate numeric keys, Boolean order, date/time precision, equal-key ordering in both directions |
+| `value.mixed`, `value.nulls` | String/Date/Number/Boolean/Undefined/Null separation and repeated null-like keys |
+| `value.strings`, `presentation.strings` | case, accents, trailing space, punctuation, lexical digits and е/ё; identical input sequence for both APIs |
+| `value.unicode`, `presentation.unicode` | the prior table-sort discriminator я/emoji/U+10000/U+E000 plus canonical equivalence, sharp-s and dotted-i |
+| `value.objects`, `value.types`, `value.enums` | repeated mutable reference versus distinct objects, type values and enum values; success or rejection with post-error order |
+| `presentation.duplicates`, `presentation.blank` | same presentation with different values; empty stored presentations versus an explicit numeric-looking presentation |
+| `value.invalid-direction`, `presentation.invalid-direction`, `arity` | number 0/1, string, Boolean, Null, foreign enum; extra argument and procedure used as expression; fresh receiver for each case |
+| `identity`, `repeat` | historical/gapped IDs, retained live items, metadata and findability across both sorts/directions; repeated ascending and descending-then-ascending |
+
+The ordinary projection records Count and the sequence of original item positions
+(0-based), independently. Positions are identified by actual item reference
+comparison against saved live objects, never by value, ID or a type presentation.
+The sequence is capped at 12, sufficient for every fixed seed. Unknown references
+are `-1`; count and iteration failures remain independent. Input values and
+presentations are explicit in `НаборСортировкиСписка`, so ordinary records do not
+repeat whole list codecs. Each series starts a fresh list per command. The
+identity record alone captures full scalar fields and before/after ID/findability,
+while the owner list is still live. A failure after mutation retains the status
+and observed final order. Type comparisons use `ТипЗнч(...) = Тип(...)`, never
+localized display strings.
+
+Only instrumentation is checked locally: fixed record reachability, framing,
+independent failures, reference-based discrimination, fresh receivers and
+post-error state. The test double deliberately reverses items rather than
+implementing any hypothesized 1C order. It is not a behavioral oracle and its
+streams are never stored as expected output. Existing StrCompare/UCA 10 and
+ValueTable.Sort/UCA 6 policies cannot be transplanted to these APIs without
+native evidence; the shared discriminator records compare observations without
+assuming an algorithm or locale equivalence.
+
+The complete strict native gates intentionally fail while this new source has
+no owner-produced records and sorting is unimplemented. Do not skip, truncate,
+regenerate, normalize payloads, or loosen those comparisons. Historical integrity
+checks isolate the two new blocks only to prove prior source is unchanged.
+Before implementation or merge readiness, the owner must run the full scenario
+and supply genuine output with all 27 records and both final completion markers.
+Review status, permutations, IDs and exact enum codecs before choosing a bounded
+implementation. No claim is made for large tie sets, arbitrary mutable graphs,
+active-iteration mutation, typed constraints, locale-general collation or UI.

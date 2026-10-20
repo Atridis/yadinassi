@@ -1772,6 +1772,155 @@
 КонецФункции
 // Конец уточняющих проб списка значений.
 
+// Начало компактных проб сортировки списка.
+// Порядок — позиции исходных живых элементов, а не значения/представления.
+Функция ПорядокСортировкиСписка(Знач Список, Знач Исходные)
+    Итог = Новый Структура("Count,Order");
+    Попытка Итог.Count = Список.Count();
+    Исключение Итог.Count = "[error]"; КонецПопытки;
+    Порядок = Новый Массив;
+    Итог.Order = Порядок;
+    Попытка
+        Для Каждого Элемент Из Список Цикл
+            Если Порядок.Count() >= 12 Тогда
+                Порядок.Add("[limit]"); Прервать;
+            КонецЕсли;
+            Позиция = -1;
+            Для Номер = 0 По Исходные.Count() - 1 Цикл
+                Если Элемент = Исходные[Номер] Тогда Позиция = Номер; КонецЕсли;
+            КонецЦикла;
+            Порядок.Add(Позиция);
+        КонецЦикла;
+    Исключение Порядок.Add("[iteration-error]"); КонецПопытки;
+    Возврат Итог;
+КонецФункции
+
+Функция НаборСортировкиСписка(Знач Вид)
+    Список = Новый ValueList;
+    Ключи = Новый Массив;
+    Если Вид = "numeric" Тогда
+        Ключи.Add(2.1); Ключи.Add(-1); Ключи.Add(2.10); Ключи.Add(0); Ключи.Add(-1);
+    ИначеЕсли Вид = "boolean" Тогда
+        Ключи.Add(Истина); Ключи.Add(Ложь); Ключи.Add(Истина); Ключи.Add(Ложь);
+    ИначеЕсли Вид = "date" Тогда
+        Ключи.Add(Дата(2024, 1, 2)); Ключи.Add(Дата(2024, 1, 1, 12, 0, 0));
+        Ключи.Add(Дата(2024, 1, 1)); Ключи.Add(Дата(2024, 1, 1, 12, 0, 0));
+    ИначеЕсли Вид = "mixed" Тогда
+        Ключи.Add("2"); Ключи.Add(Дата(2024, 1, 1)); Ключи.Add(2);
+        Ключи.Add(Истина); Ключи.Add(Неопределено); Ключи.Add(Null); Ключи.Add(Ложь); Ключи.Add(0);
+    ИначеЕсли Вид = "nulls" Тогда
+        Ключи.Add(Null); Ключи.Add(Неопределено); Ключи.Add(Null); Ключи.Add(Неопределено);
+    ИначеЕсли Вид = "strings" Тогда
+        Ключи = СтрРазделить("a|A|á|a |a-1|a1|a10|a2|ё|е|Е|Ё", "|");
+    ИначеЕсли Вид = "unicode" Тогда
+        Ключи = СтрРазделить("я|😀|😁|𐀀||é|é|ß|SS|İ|i", "|");
+    ИначеЕсли Вид = "objects" Тогда
+        Ключи.Add(Новый Массив); Ключи.Add(Новый Структура); Ключи.Add(Ключи[0]); Ключи.Add(Новый Массив);
+    ИначеЕсли Вид = "types" Тогда
+        Ключи.Add(Тип("Строка")); Ключи.Add(Тип("Число")); Ключи.Add(Тип("Строка"));
+    ИначеЕсли Вид = "enums" Тогда
+        Ключи.Add(SortDirection.Desc); Ключи.Add(SortDirection.Asc); Ключи.Add(SortDirection.Desc);
+    ИначеЕсли Вид = "singleton" Тогда
+        Ключи.Add(7);
+    ИначеЕсли Вид <> "empty" Тогда
+        Ключи.Add(30); Ключи.Add(10); Ключи.Add(20); Ключи.Add(10);
+    КонецЕсли;
+    Для Номер = 0 По Ключи.Count() - 1 Цикл
+        Представление = Строка(Номер);
+        Если Вид = "strings" Или Вид = "unicode" Тогда
+            Представление = Ключи[Номер];
+        ИначеЕсли Вид = "duplicates" Тогда
+            Представление = ?(Номер = 0 Или Номер = 2, "b", "a");
+        ИначеЕсли Вид = "blank" Тогда
+            Представление = ?(Номер = 1, "15", "");
+        КонецЕсли;
+        Список.Add(Ключи[Номер], Представление, Номер = 0);
+    КонецЦикла;
+    Если Вид = "history" Тогда
+        Список.Delete(1); Список.Insert(0, 15, "x", Истина);
+    КонецЕсли;
+    Возврат Список;
+КонецФункции
+
+Функция ДействиеСортировкиСписка(Знач Вид, Знач Команда)
+    Список = НаборСортировкиСписка(Вид);
+    Исходные = Новый Массив;
+    Для Каждого Элемент Из Список Цикл Исходные.Add(Элемент); КонецЦикла;
+    Итог = Новый Структура("Status,After", "ok");
+    Если Вид = "history" Тогда
+        Итог.Insert("BeforeIDs", ИдентификаторыСпискаПробы(Список));
+    КонецЕсли;
+    Попытка Выполнить(Команда);
+    Исключение Итог.Status = "error"; КонецПопытки;
+    Итог.After = ПорядокСортировкиСписка(Список, Исходные);
+    Если Вид = "history" Тогда
+        Итог.Insert("AfterIDs", ИдентификаторыСпискаПробы(Список));
+        Итог.Insert("Fields", ПоляСпискаПробы(Список));
+        Ссылки = Новый Массив;
+        Для Каждого Элемент Из Исходные Цикл
+            Запись = Новый Структура("ID,Index,Same");
+            Попытка Запись.ID = Элемент.GetID(); Исключение Запись.ID = "[error]"; КонецПопытки;
+            Попытка Запись.Index = Список.IndexOf(Элемент); Исключение Запись.Index = "[error]"; КонецПопытки;
+            Попытка Запись.Same = Список.FindByID(Запись.ID) = Элемент; Исключение Запись.Same = "[error]"; КонецПопытки;
+            Ссылки.Add(Запись);
+        КонецЦикла;
+        Итог.Insert("Saved", Ссылки);
+    КонецЕсли;
+    Возврат Итог;
+КонецФункции
+
+Функция СерияСортировкиСписка(Знач Вид, Знач Команды)
+    Итоги = Новый Массив;
+    Для Каждого Команда Из СтрРазделить(Команды, "|") Цикл
+        Итоги.Add(ДействиеСортировкиСписка(Вид, Команда));
+    КонецЦикла;
+    Возврат Итоги;
+КонецФункции
+
+Функция ТипНаправленияСортировкиПробы()
+    Итог = Новый Структура("TypeRU,TypeEN,AscAlias,DescAlias,Distinct,AscText,DescText,Namespace,Iteration");
+    Попытка Итог.TypeRU = ТипЗнч(SortDirection.Asc) = Тип("НаправлениеСортировки"); Исключение Итог.TypeRU = "[error]"; КонецПопытки;
+    Попытка Итог.TypeEN = ТипЗнч(НаправлениеСортировки.Убыв) = Тип("SortDirection"); Исключение Итог.TypeEN = "[error]"; КонецПопытки;
+    Попытка Итог.AscAlias = SortDirection.Asc = НаправлениеСортировки.Возр; Исключение Итог.AscAlias = "[error]"; КонецПопытки;
+    Попытка Итог.DescAlias = SortDirection.Desc = НаправлениеСортировки.Убыв; Исключение Итог.DescAlias = "[error]"; КонецПопытки;
+    Попытка Итог.Distinct = SortDirection.Asc <> SortDirection.Desc; Исключение Итог.Distinct = "[error]"; КонецПопытки;
+    Попытка Итог.AscText = Строка(SortDirection.Asc); Исключение Итог.AscText = "[error]"; КонецПопытки;
+    Попытка Итог.DescText = Строка(SortDirection.Desc); Исключение Итог.DescText = "[error]"; КонецПопытки;
+    Попытка Итог.Namespace = Строка(SortDirection); Исключение Итог.Namespace = "[error]"; КонецПопытки;
+    Порядок = Новый Массив; Итог.Iteration = Порядок;
+    Попытка
+        Для Каждого Направление Из SortDirection Цикл
+            Если Порядок.Count() >= 4 Тогда Порядок.Add("[limit]"); Прервать; КонецЕсли;
+            Порядок.Add(Новый Структура("Asc,Desc", Направление = SortDirection.Asc, Направление = SortDirection.Desc));
+        КонецЦикла;
+    Исключение Порядок.Add("[iteration-error]"); КонецПопытки;
+    Возврат Итог;
+КонецФункции
+
+Функция КодекНаправленияСортировкиПробы(Знач Направление, Знач СТипом = Ложь)
+    Итог = Новый Структура("Write,ReadType,ReadEqual,ReadWrite");
+    Если СТипом Тогда
+        Итог.Insert("TypeWrite"); Итог.Insert("TypeRead");
+        Попытка Итог.TypeWrite = ЗначениеВСтрокуВнутр(ТипЗнч(Направление)); Исключение Итог.TypeWrite = "[error]"; КонецПопытки;
+        Попытка
+            ТипКопии = ЗначениеИзСтрокиВнутр(Итог.TypeWrite);
+            Итог.TypeRead = Новый Структура("Equal,Stable", ТипКопии = ТипЗнч(Направление), ЗначениеВСтрокуВнутр(ТипКопии) = Итог.TypeWrite);
+        Исключение Итог.TypeRead = "[error]"; КонецПопытки;
+    КонецЕсли;
+    Попытка Итог.Write = ЗначениеВСтрокуВнутр(Направление); Исключение Итог.Write = "[error]"; КонецПопытки;
+    Попытка
+        Копия = ЗначениеИзСтрокиВнутр(Итог.Write);
+        Попытка Итог.ReadType = ТипЗнч(Копия) = ТипЗнч(Направление); Исключение Итог.ReadType = "[error]"; КонецПопытки;
+        Попытка Итог.ReadEqual = Копия = Направление; Исключение Итог.ReadEqual = "[error]"; КонецПопытки;
+        Попытка
+            Повтор = ЗначениеВСтрокуВнутр(Копия);
+            Итог.ReadWrite = ?(Повтор = Итог.Write, "same-as-Write", Повтор);
+        Исключение Итог.ReadWrite = "[error]"; КонецПопытки;
+    Исключение Итог.ReadType = "[error]"; КонецПопытки;
+    Возврат Итог;
+КонецФункции
+// Конец компактных проб сортировки списка.
+
 #Область МассивыИСтруктуры
 // Типичный конвейер: массив записей, расчет суммы и сбор кодов для выгрузки.
 Позиции = Новый Массив;
@@ -2687,4 +2836,34 @@
 // Конец уточняющих наблюдений списка значений.
 Сообщить("table.list.checkpoint.complete: [ok]");
 // Конец наблюдений списка значений.
+// Начало наблюдений сортировки списка.
+НаблюдатьТаблицы("list.sort.enum.identity", "ТипНаправленияСортировкиПробы()");
+НаблюдатьТаблицы("list.sort.enum.asc-codec", "КодекНаправленияСортировкиПробы(SortDirection.Asc, Истина)");
+НаблюдатьТаблицы("list.sort.enum.desc-codec", "КодекНаправленияСортировкиПробы(SortDirection.Desc)");
+НаблюдатьТаблицы("list.sort.enum.boundaries", "СерияСортировкиСписка(""empty"", ""Ответ = Новый SortDirection;|SortDirection.Asc = SortDirection.Desc;|Ответ = SortDirection.Unknown;|Ответ = SortDirection[0];"")");
+НаблюдатьТаблицы("list.sort.value.directions", "СерияСортировкиСписка(""numeric"", ""Список.SortByValue();|Список.СортироватьПоЗначению(НаправлениеСортировки.Возр);|Список.SortByValue(SortDirection.Desc);|Список.SortByValue(Неопределено);"")");
+НаблюдатьТаблицы("list.sort.presentation.directions", "СерияСортировкиСписка(""duplicates"", ""Список.SortByPresentation();|Список.СортироватьПоПредставлению(НаправлениеСортировки.Возр);|Список.SortByPresentation(SortDirection.Desc);|Список.SortByPresentation(Неопределено);"")");
+НаблюдатьТаблицы("list.sort.empty", "СерияСортировкиСписка(""empty"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);|Список.SortByPresentation();|Список.SortByPresentation(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.singleton", "СерияСортировкиСписка(""singleton"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);|Список.SortByPresentation();|Список.SortByPresentation(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.numeric", "СерияСортировкиСписка(""numeric"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.boolean", "СерияСортировкиСписка(""boolean"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.date", "СерияСортировкиСписка(""date"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.mixed", "СерияСортировкиСписка(""mixed"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.nulls", "СерияСортировкиСписка(""nulls"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.strings", "СерияСортировкиСписка(""strings"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.unicode", "СерияСортировкиСписка(""unicode"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.objects", "СерияСортировкиСписка(""objects"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.types", "СерияСортировкиСписка(""types"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.enums", "СерияСортировкиСписка(""enums"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.presentation.strings", "СерияСортировкиСписка(""strings"", ""Список.SortByPresentation();|Список.SortByPresentation(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.presentation.unicode", "СерияСортировкиСписка(""unicode"", ""Список.SortByPresentation();|Список.SortByPresentation(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.presentation.duplicates", "СерияСортировкиСписка(""duplicates"", ""Список.SortByPresentation();|Список.SortByPresentation(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.presentation.blank", "СерияСортировкиСписка(""blank"", ""Список.SortByPresentation();|Список.SortByPresentation(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.value.invalid-direction", "СерияСортировкиСписка(""numeric"", ""Список.SortByValue(0);|Список.SortByValue(1);|Список.SortByValue(""""Asc"""");|Список.SortByValue(Истина);|Список.SortByValue(Null);|Список.SortByValue(SearchDirection.FromBegin);"")");
+НаблюдатьТаблицы("list.sort.presentation.invalid-direction", "СерияСортировкиСписка(""numeric"", ""Список.SortByPresentation(0);|Список.SortByPresentation(1);|Список.SortByPresentation(""""Asc"""");|Список.SortByPresentation(Истина);|Список.SortByPresentation(Null);|Список.SortByPresentation(SearchDirection.FromBegin);"")");
+НаблюдатьТаблицы("list.sort.arity", "СерияСортировкиСписка(""numeric"", ""Список.SortByValue(SortDirection.Asc, 1);|Список.SortByPresentation(SortDirection.Asc, 1);|Ответ = Список.SortByValue();|Ответ = Список.SortByPresentation();"")");
+НаблюдатьТаблицы("list.sort.identity", "СерияСортировкиСписка(""history"", ""Список.SortByValue();|Список.SortByValue(SortDirection.Desc);|Список.SortByPresentation();|Список.SortByPresentation(SortDirection.Desc);"")");
+НаблюдатьТаблицы("list.sort.repeat", "СерияСортировкиСписка(""numeric"", ""Список.SortByValue(); Список.SortByValue();|Список.SortByValue(SortDirection.Desc); Список.SortByValue();"")");
+Сообщить("table.list.sort.checkpoint.complete: [ok]");
+// Конец наблюдений сортировки списка.
 Сообщить("table.checkpoint.complete: [ok]");
