@@ -41,6 +41,8 @@ class IndexProbeTests(unittest.TestCase):
     def test_old_source_and_all_owner_goldens_are_byte_exact(self):
         old = source()
         for start, end in (
+            ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
+            ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
             ('// Начало компактных проб строкового представления списка.\n', '// Конец компактных проб строкового представления списка.\n\n'),
             ('// Начало наблюдений строкового представления списка.\n', '// Конец наблюдений строкового представления списка.\n'),
             ('// Начало компактных проб копирования списка.\n', '// Конец компактных проб копирования списка.\n\n'),
@@ -58,7 +60,7 @@ class IndexProbeTests(unittest.TestCase):
         data = ('\ufeff' + old).encode()
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'd6176c44edf9a3d7ad9f8cf7a474a12aca25c809')
-        hashes = {'collections': 'd4cce35fea3cc5271a871c26062c1b6167c0b092',
+        hashes = {'collections': '3a413ce8e775c5275cddac289ebee3a7063192bc',
                   'values': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
                   'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
                   'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',

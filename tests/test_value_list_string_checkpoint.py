@@ -7,11 +7,17 @@ from collections import Counter
 from contextlib import ExitStack
 from decimal import Decimal
 import hashlib
+import re
 import gc
 import weakref
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+
+if __package__:
+    from .native_observations import read_observation
+else:
+    from native_observations import read_observation
 
 from yadinassi import Interpreter, ast, serialization
 from yadinassi.parser import parse
@@ -38,7 +44,10 @@ def section(markers):
 
 
 def strip_probe(text):
-    for start, end in (HELPERS, BODY):
+    for start, end in (
+        ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
+        ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
+        HELPERS, BODY):
         before, rest = text.split(start, 1)
         _, after = rest.split(end, 1)
         text = before + after
@@ -147,7 +156,7 @@ class ValueListStringCheckpointTests(unittest.TestCase):
         self.assertEqual(blob(('\ufeff' + strip_probe(source())).encode()),
                          '0b7ad4f171bb45a201fe67e05a6dafe7f9e143fa')
         for name, expected in {
-            'collections.out': 'd4cce35fea3cc5271a871c26062c1b6167c0b092',
+            'collections.out': '3a413ce8e775c5275cddac289ebee3a7063192bc',
             'dates.out': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions.out': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers.out': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -159,8 +168,66 @@ class ValueListStringCheckpointTests(unittest.TestCase):
         self.assertEqual(blob((ROOT / 'integrational_tests/meta.md').read_bytes().replace(b'\r\n', b'\n')),
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
         self.assertEqual(list((ROOT / 'integrational_tests/output').glob('*.err')), [])
-        self.assertNotIn(FINAL, (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8'))
+        self.assertIn(FINAL, (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8'))
         self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text(encoding='utf-8'))
+
+    def test_complete_owner_string_evidence_and_live_cache_boundary(self):
+        # Owner Atridis commit 87723a25f22d359bb72163e184a871d6448930d1.
+        # Only checkout line-ending transport is normalized, not native text.
+        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(blob(data), '3a413ce8e775c5275cddac289ebee3a7063192bc')
+        self.assertEqual(hashlib.sha256(data).hexdigest(),
+                         'e65040d2ed7a88cdf9e3bc33f242f39a20e76aa612cde6881002a6b4e5273451')
+        self.assertEqual((len(data), len(data.splitlines())), (177019, 4142))
+        before, added = data.split(b'table.list.string.empty:', 1)
+        self.assertEqual(len(before), 162145)
+        self.assertEqual(blob(before + b'table.checkpoint.complete: [ok]\n'),
+                         'd4cce35fea3cc5271a871c26062c1b6167c0b092')
+        tail = b'table.list.string.empty:' + added
+        self.assertEqual(len(tail.splitlines()), 206)
+        self.assertTrue(tail.endswith((FINAL + '\ntable.checkpoint.complete: [ok]\n').encode()))
+        labels = re.findall(rb'^table\.list\.string\.([a-z.-]+): \[', tail, re.MULTILINE)
+        self.assertEqual([label.decode() for label in labels], list(CASES) + ['checkpoint.complete'])
+        records = {name: plain(read_observation(payload, compact=True))
+                   for name, payload in re.findall(r'^table\.list\.string\.([a-z.-]+): \[\n(.*?)^\]\n',
+                                                   tail.decode(), re.MULTILINE | re.DOTALL)}
+        self.assertEqual(tuple(records), CASES)
+        states = []
+        def visit(value):
+            if type(value) is dict:
+                if set(value) == {'Count', 'Items', 'Text'}:
+                    states.append(value)
+                else:
+                    for key, child in value.items():
+                        if key in ('Prepare', 'Status'):
+                            self.assertEqual(child, 'ok')
+                        if key == 'SameItem':
+                            self.assertIs(child, True)
+                        visit(child)
+        for record in records.values():
+            visit(record)
+        self.assertEqual(len(states), 36)
+        self.assertEqual(sum(len(state['Items']) for state in states), 52)
+        for state in states:
+            self.assertEqual(state['Count'], len(state['Items']))
+            conversions = [state['Text']]
+            for index, row in enumerate(state['Items']):
+                self.assertEqual(len(row), 6)
+                self.assertEqual(row[3], index)
+                self.assertIs(type(row[1]), str)
+                self.assertIs(type(row[2]), bool)
+                conversions.extend(row[4:])
+            for conversion in conversions:
+                self.assertEqual(conversion['Status'], 'ok')
+                self.assertIs(type(conversion['Text']), str)
+        # This proves stale text after these field changes, not when the cache
+        # initializes or which structural operations invalidate it.
+        live = records['live']
+        self.assertEqual(live['Initial']['Text']['Text'], '7')
+        self.assertEqual([live[key]['State']['Text']['Text'] for key in
+                          ('Value', 'Label', 'LabeledValue', 'Checked', 'Unchecked', 'Whitespace', 'Cleared', 'Undefined')],
+                         ['7'] * 8)
+        self.assertEqual(live['Undefined']['State']['Items'][0][5]['Text'], '<Пустое значение>')
 
     def test_fixed_unique_labels_full_parse_and_declarations_first(self):
         calls = observations()
@@ -171,7 +238,8 @@ class ValueListStringCheckpointTests(unittest.TestCase):
             self.assertLess(len(call.arguments[1].value), 100)
             parse('Result = ' + call.arguments[1].value)
         self.assertEqual(source().count(FINAL), 1)
-        self.assertTrue(source().endswith(BODY[1] + 'Сообщить("table.checkpoint.complete: [ok]");\n'))
+        self.assertLess(source().index(BODY[1]), source().index('// Начало уточняющих наблюдений кэша строки списка.'))
+        self.assertTrue(source().endswith('Сообщить("table.checkpoint.complete: [ok]");\n'))
         started = False
         for node in parse(source()):
             if isinstance(node, ast.Routine):

@@ -49,7 +49,8 @@ class ValueListCopyTests(unittest.TestCase):
         vm.execute(body.split("// Конец наблюдений копирования списка.\n", 1)[0])
         expected = (ROOT / "integrational_tests/output/collections.out").read_text(encoding="utf-8")
         start = expected.index("table.list.copy.fresh-empty:")
-        end = expected.index("table.checkpoint.complete: [ok]", start)
+        marker = "table.list.copy.checkpoint.complete: [ok]\n"
+        end = expected.index(marker, start) + len(marker)
         self.assertEqual("\n".join(output) + "\n", expected[start:end])
         self.assertEqual(len(output), 11)
         self.assertEqual(output[-1], "table.list.copy.checkpoint.complete: [ok]")

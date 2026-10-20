@@ -1005,3 +1005,62 @@ source-hash tests remove only the new blocks to verify their prior boundaries;
 no native comparator has a tail exception. The existing server-side launcher,
 recorded platform context and version 0.3.2 remain unchanged. A local successful
 parse or instrumentation run is not a claim of native 1C compilation.
+
+## Confirmed ValueList String evidence and cache supplement (2026-10-20)
+
+The initial String checkpoint above was run by the owner in commit
+`87723a25f22d359bb72163e184a871d6448930d1`, whose verified parent is the
+published checkpoint `bd5577f20d7df953a6cb01731c891e2727e2a7c0`.
+Only `collections.out` changed: blob
+`3a413ce8e775c5275cddac289ebee3a7063192bc`, 177,019 bytes and 4,142 lines,
+SHA-256 `e65040d2ed7a88cdf9e3bc33f242f39a20e76aa612cde6881002a6b4e5273451`.
+Its 162,145-byte prior prefix plus the final overall marker restores the previous
+native output exactly. All eight grouped records, 36 snapshots, 52 item rows and
+140 independent conversions succeeded. The five other outputs, metadata and
+source were unchanged. The saved native output has not been edited locally.
+
+The evidence confirms empty-list text, positional `; ` separators even for empty
+strings, explicit Presentation precedence (including whitespace), and live scalar
+item fallback after clearing Presentation. Undefined and Null item fallbacks are
+`<Пустое значение>`, not the empty standalone scalar string. Other observed scalar
+fallbacks match the independently captured number, Boolean, string and date
+controls. However, the live list stays `7` throughout all eight field changes,
+while its item text changes. That result alone does **not** establish when list
+text initializes or which operations invalidate it. Runtime support remains
+unchanged pending that distinction; arbitrary objects and codecs are not widened.
+
+The supplement adds five grouped `table.list.string-cache.*` records, 21
+microcases and `table.list.string-cache.checkpoint.complete: [ok]`, using only the
+existing `collections.bsl`. Removing just its two new blocks restores source blob
+`eb8e11cbd332225cfbdeb19ac4b203691ad45662` exactly, including the BOM.
+
+| Record | Cases and distinction |
+| --- | --- |
+| `initialize` | Five independent lists: Value without a trigger, standalone Value conversion, item conversion; Presentation without/with item conversion. Mutations before and after first list conversion separate insertion, item-triggered, first-conversion and repeated rendering. |
+| `structural` | Add, Insert, Delete, Clear, nonempty/empty LoadValues, Move, SortByValue and SortByPresentation after a warm list and pending field changes. |
+| `controls` | FillChecks, zero Move, already-ordered sorts by each field and failed Delete; the same pending changes expose invalidation even when order does not change. |
+| `empty` | Warm empty list, Add, field mutation before first post-Add render, then a second mutation/render; distinguishes an empty cached string from missing initialization and stale/eager/lazy refresh. |
+| `copy` | Warm source with a pending field change, Copy, copied-item changes before and after first copy rendering, plus independent source conversions; distinguishes inherited, eagerly reconstructed and lazily initialized text. |
+
+Field-only snapshots capture Count and ordered `[Value, Presentation, Check, ID]`
+rows without converting a list or item. For every nonempty structural/control
+case, mutations between the operation and first render distinguish eager from
+lazy refresh; another mutation and second render distinguish retained from live
+text. Clear and empty LoadValues can distinguish stale text from empty text but,
+with no remaining item to change, do not by themselves distinguish eager from
+lazy recomputation. No outcome is assumed by the instrumentation.
+
+Preparation, action, field reads and conversions have independent status
+boundaries. Failed Add/Copy preserves available list/source observations and
+marks unavailable dependent item/copy observations `not-run`; a scalar-trigger
+Value read failure does not erase its record. Both Copy owners remain live.
+Existing compact encoding and eight-item snapshot bounds remain unchanged.
+Synthetic incompatible initialization/invalidation policies test discrimination
+and accidental priming only; none is a native oracle.
+
+The six saved outputs and metadata remain byte-exact, and the current native
+output does not contain this supplement. Full-output and frozen gates remain
+strict and are expected to fail until the new native run and corresponding
+implementation are verified. Historical source/evidence tests isolate their own
+confirmed block only; no complete-output comparator has a tail exception.
+The launcher, recorded platform context and version 0.3.2 remain unchanged.
