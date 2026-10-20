@@ -2139,7 +2139,7 @@ For Each pair In m Do
     Message(ТипЗнч(pair) = Type("kEyAnDvAlUe"));
 EndDo;
 Try
-    Type("ValueList");
+    Type("ValueTree");
 Except
     Message("неизвестный тип");
 EndTry;
@@ -2157,7 +2157,7 @@ Message(TypeOf(kind) = Тип("Тип"));
         type_file.write_text(type_code, encoding='utf-8-sig')
         type_module = Path(temporary) / 'ТипыМодуля.bsl'
         type_module.write_text(
-            'Function Failure() Export\nReturn Type("ValueList");\nEndFunction\n'
+            'Function Failure() Export\nReturn Type("ValueTree");\nEndFunction\n'
             'Function Kind(Val value) Export Return TypeOf(value); EndFunction\n'
             'Function Mapping() Export\n'
             'm = New Map; m[Тип("Число")] = Тип("Строка"); Return m;\nEndFunction\n',
@@ -2314,7 +2314,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             (['-'], type_code, type_output, 0),
             ([], type_code + '/exit\n', type_output, 0),
             ([str(type_importer)], None,
-             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: ValueList\nДа\n', 0),
+             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: ValueTree\nДа\n', 0),
             ([str(region_file)], None, '42\n', 0),
             (['-c', region_code], None, '42\n', 0),
             (['-'], region_code, '42\n', 0),
@@ -2398,18 +2398,18 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed fixed-collection diagnostics {arguments!r}: {result!r}')
         type_errors = [
-            (['-c', 'Type("ValueList");'], None, '', '<команда>:1:', 'Тип не поддерживается: ValueList'),
+            (['-c', 'Type("ValueTree");'], None, '', '<команда>:1:', 'Тип не поддерживается: ValueTree'),
             (['-c', 'Тип(1);'], None, '', '<команда>:1:', 'Имя типа должно быть строкой'),
             (['-c', 'TypeOf(Message);'], None, '', '<команда>:1:',
              'ТипЗнч для этого значения пока не поддерживается'),
-            (['-'], 'Тип("СписокЗначений");\n', '', '<stdin>:1:', 'Тип не поддерживается: СписокЗначений'),
+            (['-'], 'Тип("ДеревоЗначений");\n', '', '<stdin>:1:', 'Тип не поддерживается: ДеревоЗначений'),
             ([str(type_error_file)], None, '', str(type_error_file) + ':2:',
              'ТипЗнч для этого значения пока не поддерживается'),
             ([str(type_error_importer)], None, '', str(type_module.resolve()) + ':2:',
-             'Тип не поддерживается: ValueList'),
-            ([], 'kind = Type("Number");\nkind = Type("ValueList");\n'
+             'Тип не поддерживается: ValueTree'),
+            ([], 'kind = Type("Number");\nkind = Type("ValueTree");\n'
              'kind\nTypeOf(kind)\n/exit\n', 'Число\nТип\n', '<консоль>:1:',
-             'Тип не поддерживается: ValueList'),
+             'Тип не поддерживается: ValueTree'),
         ]
         for arguments, stdin, stdout, location, message in type_errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,

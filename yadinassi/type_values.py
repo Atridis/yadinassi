@@ -19,6 +19,7 @@ from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
                            BSLValueTableColumn, BSLValueTableRow,
                            BSLCollectionIndexes, BSLCollectionIndex)
+from .value_lists import BSLValueList, BSLValueListItem
 
 
 _VALUE_TYPES = (
@@ -64,6 +65,9 @@ _VALUE_TYPES = (
     (BSLValueTableRow, BSLType.VALUE_TABLE_ROW, "ValueTableRow"),
     (BSLCollectionIndexes, BSLType.COLLECTION_INDEXES, "CollectionIndexes"),
     (BSLCollectionIndex, BSLType.COLLECTION_INDEX, "CollectionIndex"),
+    # Lookup names are unspaced; __str__ presentations are not extra aliases.
+    (BSLValueList, BSLType.VALUE_LIST, "ValueList"),
+    (BSLValueListItem, BSLType.VALUE_LIST_ITEM, "ValueListItem"),
 )
 _BY_NAME = {name.casefold(): value_type
             for _, value_type, alias in _VALUE_TYPES

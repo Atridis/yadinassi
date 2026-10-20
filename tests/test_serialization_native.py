@@ -14,7 +14,7 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter
+from yadinassi import Interpreter, serialization
 from yadinassi.dates import BSLDate
 from yadinassi.xml_processing import XML_STRING_PROCESSING
 from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
@@ -25,6 +25,7 @@ from yadinassi.serialization import value_to_string_internal as write
 from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
 from yadinassi.type_values import type_by_name, type_of
 from yadinassi.value_tables import BSLValueTable
+from yadinassi.value_lists import BSLValueList
 from yadinassi.values import BSLArray, BSLFixedArray, BSLType, NULL, equal, to_string
 
 
@@ -44,6 +45,17 @@ def index_family_samples():
     table.columns.add('Second')
     index = table.indexes.add('Key,Second')
     return [('collection', table.indexes), ('index', index)]
+
+
+def list_family_samples():
+    values = BSLValueList()
+    item = values.add(Decimal(10), 'first', True)
+    # The item holds a weak reference: the fixture must retain its live owner.
+    class Samples(list):
+        pass
+    samples = Samples([('empty', BSLValueList()), ('item', item)])
+    samples.owner = values
+    return samples
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -209,9 +221,13 @@ class NativeEvidenceTests(unittest.TestCase):
         search_types = {BSLType.SEARCH_DIRECTION, BSLType.SEARCH_DIRECTIONS, BSLType.DATE, BSLType.NULL,
                         BSLType.XML_STRING_PROCESSING_MANAGER}
         family_types = {type_of(value) for _, value in
-                        [*type_family_samples(), *table_family_samples(), *index_family_samples()]}
+                        [*type_family_samples(), *table_family_samples(), *index_family_samples(), *list_family_samples()]}
         self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
-                         set(BSLType))
+                         set(serialization._CODECS))
+        for label, value in list_family_samples():
+            snapshot = read_observation(self.native('collections', 'table.list.codec.' + label))
+            self.assertEqual(write(type_of(value)), snapshot.get('TypeWrite'))
+            self.assertIs(read(snapshot.get('TypeWrite')), type_of(value))
         for label, value in type_family_samples():
             snapshot = read_observation(self.native('values', 'types.' + label))
             payload = snapshot.get('TypeWrite')
@@ -290,6 +306,8 @@ class NativeEvidenceTests(unittest.TestCase):
         family = type_family_samples()
         table_family = table_family_samples()
         index_family = index_family_samples()
+        list_family = list_family_samples()
+        list_labels = {type_of(value): label for label, value in list_family}
         table_labels = {type_of(value): label for label, value in table_family}
         index_labels = {type_of(value): label for label, value in index_family}
         family_labels = {type_of(value): label for label, value in family}
@@ -298,8 +316,9 @@ class NativeEvidenceTests(unittest.TestCase):
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
                    XML_STRING_PROCESSING, *[value for _, value in family],
-                   *[value for _, value in table_family], *[value for _, value in index_family]]
-        self.assertEqual({type_of(value) for value in samples}, set(BSLType))
+                   *[value for _, value in table_family], *[value for _, value in index_family],
+                   *[value for _, value in list_family]]
+        self.assertEqual({type_of(value) for value in samples}, set(serialization._CODECS))
         for value in samples:
             with self.subTest(kind=type_of(value)):
                 payload = write(value)
@@ -321,6 +340,12 @@ class NativeEvidenceTests(unittest.TestCase):
                     self.assertEqual(payload, snapshot.get('Write'))
                     self.assertEqual(write(restored), inverse_stream(snapshot))
                     self.assertIsNone(restored)
+                    self.assertEqual(str(type_of(restored)), snapshot.get('ReadType'))
+                elif type_of(value) in list_labels:
+                    snapshot = read_observation(self.native(
+                        'collections', 'table.list.codec.' + list_labels[type_of(value)]))
+                    self.assertEqual(payload, snapshot.get('Write'))
+                    self.assertEqual(write(restored), inverse_stream(snapshot))
                     self.assertEqual(str(type_of(restored)), snapshot.get('ReadType'))
                 elif value is ROUND_MODES:
                     self.assertIsNone(restored)

@@ -64,7 +64,7 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'cf922dbeabcd77f5a0ea27fec7164d246d78e9eb')
         for name, expected in (
-            ('collections', 'ec2d032913e0aee492410423851b3a69450068f0'),
+            ('collections', 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e'),
             ('values', '016f30d6f3bdb1a814e86a70e3bcf424383a0d27'),
         ):
             data = canonical_output_bytes((ROOT / f'integrational_tests/output/{name}.out').read_bytes())

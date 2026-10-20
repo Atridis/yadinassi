@@ -12,6 +12,7 @@ from .type_descriptions import BSLTypeDescription
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
                            BSLValueTableColumn, BSLValueTableRow,
                            BSLCollectionIndexes, BSLCollectionIndex)
+from .value_lists import BSLValueList, BSLValueListItem
 from .type_qualifiers import (
     ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
@@ -30,9 +31,9 @@ from .values import (
 
 _COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
-                BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex)
+                BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList)
 _TABLE_COLLECTIONS = (BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
-                      BSLCollectionIndexes, BSLCollectionIndex)
+                      BSLCollectionIndexes, BSLCollectionIndex, BSLValueList)
 
 
 # Explicit Yadinassi resource limits, not asserted native language limits.
@@ -133,6 +134,7 @@ class Interpreter:
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
         self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
+        self.register_type("СписокЗначений", BSLValueList, "ValueList")
         self.register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
         self.register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
         self.register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
@@ -441,7 +443,7 @@ class Interpreter:
         if routine is not None:
             return self.call_routine(routine, node.arguments, owner, require_value=require_value)
         # Existing host calls reject omitted arguments before receiver effects.
-        # Native table methods need optional holes; admit them only for a known
+        # Native table/list methods need optional holes; admit them only for a known
         # exact built-in receiver (a variable or its Columns property). We never
         # execute a factory merely to discover whether it allows omissions.
         table_receiver = None
@@ -493,6 +495,10 @@ class Interpreter:
                 defaults = ("", None, "", Decimal(0))
                 if callee.name.casefold() in {"insert", "вставить"}:
                     defaults = (None,) + defaults
+            elif type(table_receiver) is BSLValueList:
+                defaults = (None, "", False)
+                if callee.name.casefold() in {"insert", "вставить"}:
+                    defaults = (None,) + defaults
             return function(*((defaults[index] if defaults is not None else None)
                               if isinstance(argument, ast.OmittedArgument) else self.visit(argument)
                               for index, argument in enumerate(node.arguments)))
@@ -508,7 +514,7 @@ class Interpreter:
         node = self.ungroup(node)
         if isinstance(node, ast.Name):
             value = self.visit_Name(node)
-            return value if type(value) in (BSLValueTable, BSLValueTableColumnCollection) else None
+            return value if type(value) in (BSLValueTable, BSLValueTableColumnCollection, BSLValueList) else None
         if isinstance(node, ast.Attribute) and node.name.casefold() in {"колонки", "columns"}:
             parent = self.known_table_receiver(node.object)
             if type(parent) is BSLValueTable:
@@ -518,6 +524,11 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        if type(receiver) is BSLValueList:
+            if key in {"add", "добавить"}:
+                return frozenset(range(3))
+            if key in {"insert", "вставить"}:
+                return frozenset(range(1, 4))
         if type(receiver) is BSLValueTableColumnCollection:
             if key in {"add", "добавить"}:
                 return frozenset(range(4))
@@ -605,6 +616,9 @@ class Interpreter:
             return _Reference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = self.visit(node.object)
+            if type(owner) is BSLValueListItem:
+                raise TypeError("Передача свойства элемента списка значений по ссылке "
+                                "пока не поддерживается в Yadinassi")
             if not isinstance(owner, (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTableColumn)):
                 raise TypeError("Передача свойства по ссылке поддерживается только для структуры, строки или колонки таблицы")
             # Bind the receiver once and validate existence before entering the

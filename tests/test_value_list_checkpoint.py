@@ -415,18 +415,17 @@ class ValueListCheckpointTests(unittest.TestCase):
 
     def test_genuine_owner_addition_preserves_previous_output_and_native_presentations(self):
         data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(blob_hash(data), 'ec2d032913e0aee492410423851b3a69450068f0')
+        self.assertEqual(blob_hash(data), 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e')
         before, tail = data.split(b'table.list.identity:', 1)
         self.assertTrue(tail.endswith(b'table.list.checkpoint.complete: [ok]\n'
                                       b'table.checkpoint.complete: [ok]\n'))
         historical = before + b'table.checkpoint.complete: [ok]\n'
         self.assertEqual(blob_hash(historical), 'c3e5ae6e3211b2fb85ba3614cadb764475315ce8')
-        self.assertEqual(len(data.splitlines()) - len(historical.splitlines()), 166)
+        self.assertEqual(len(data.splitlines()) - len(historical.splitlines()), 183)
         labels = re.findall(rb'^(table\.list\.[a-z.-]+): \[', data, re.MULTILINE)
-        old_labels = ['table.' + call.arguments[0].value for call in observations()
-                      if not call.arguments[0].value.startswith('list.extra.')]
+        owner_labels = ['table.' + call.arguments[0].value for call in observations()]
         self.assertEqual([label.decode() for label in labels],
-                         old_labels + ['table.list.checkpoint.complete'])
+                         owner_labels + ['table.list.checkpoint.complete'])
         identity = tail.split(b'\ntable.list.constructor.list:', 1)[0].decode()
         self.assertIn('ListType={"S","' + str(LIST_TYPE) + '"}', identity)
         self.assertIn('ItemType={"S","' + str(ITEM_TYPE) + '"}', identity)
@@ -435,7 +434,7 @@ class ValueListCheckpointTests(unittest.TestCase):
         restored = ('\ufeff' + without_list_probe(source())).encode()
         self.assertEqual(blob_hash(restored), '92ba44889c221de39f8b3ae578f0c1408ccbf0ae')
         hashes = {
-            'collections': 'ec2d032913e0aee492410423851b3a69450068f0',
+            'collections': 'c648f0a577aba3cb19c98ad4effaea4088e1ea1e',
             'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',

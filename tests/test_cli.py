@@ -1082,7 +1082,7 @@ EndDo;
 
     def test_type_errors_are_catchable_in_command_stdin_and_console(self):
         code = '''Попытка
-    Тип("СписокЗначений");
+    Тип("ДеревоЗначений");
 Исключение
     Сообщить("неизвестный тип");
 КонецПопытки;
@@ -1112,7 +1112,7 @@ EndTry;
                                   'непрозрачный тип\nТип\n', ''))
 
     def test_type_errors_have_clean_command_file_and_stdin_diagnostics(self):
-        failures = [('Тип("СписокЗначений")', 'Тип не поддерживается: СписокЗначений'),
+        failures = [('Тип("ДеревоЗначений")', 'Тип не поддерживается: ДеревоЗначений'),
                     ('Type(1)', 'Имя типа должно быть строкой'),
                     ('TypeOf(Message)', 'ТипЗнч для этого значения пока не поддерживается')]
         with tempfile.TemporaryDirectory() as temporary:
@@ -1133,12 +1133,12 @@ EndTry;
 
     def test_type_console_recovers_without_overwriting_existing_value(self):
         result = self.run_cli(stdin='kind = Type("Array");\n'
-                                   'kind = Type("ValueList");\nkind\n'
+                                   'kind = Type("ValueTree");\nkind\n'
                                    'TypeOf(Message)\nTypeOf(kind)\n'
                                    'Message(TypeOf(New Array) = kind);\n/exit\n')
         self.assertEqual((result.returncode, result.stdout), (1, 'Массив\nТип\nДа\n'))
         self.assertEqual(result.stderr.count('<консоль>:1:'), 2)
-        self.assertIn('Тип не поддерживается: ValueList', result.stderr)
+        self.assertIn('Тип не поддерживается: ValueTree', result.stderr)
         self.assertIn('ТипЗнч для этого значения пока не поддерживается', result.stderr)
         self.assertNotIn('Traceback', result.stderr)
 
@@ -1167,7 +1167,7 @@ EndTry;
                                      (0, 'Массив\nТип\nСтрока\nДа\n', ''))
 
     def test_imported_type_errors_preserve_canonical_path_and_are_catchable(self):
-        failures = [('Type("ValueList")', 12, 'Тип не поддерживается: ValueList'),
+        failures = [('Type("ValueTree")', 12, 'Тип не поддерживается: ValueTree'),
                     ('TypeOf(Message)', 14, 'ТипЗнч для этого значения пока не поддерживается')]
         for expression, column, message in failures:
             with self.subTest(expression=expression), tempfile.TemporaryDirectory() as temporary:
