@@ -3394,4 +3394,170 @@ table.indexes.extra.stale-links: [
   Group.AfterDeleteAmount.Text={"S","[error]"}
   Group.AfterDeleteAmount.Count={"N",0}
 ]
+table.list.identity: [
+  ListType={"S","Список значений"}
+  ItemType={"S","Элемент списка значений"}
+  Names=[{"B",1}; {"B",1}]
+  Text.List={"S","first; second"}
+  Text.Item={"S","first"}
+  IndexIdentity={"B",1}
+  IterationIdentity={"B",1}
+  ValueType=[]
+  AvailableValues={"U"}
+  Fields.Count={"N",2}
+  Fields.Items=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]
+]
+table.list.constructor.list: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{0},\n{"Pattern"},0,-1}\n}; {"S","After"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{0},\n{"Pattern"},0,-1}\n}; {"S","After"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}]]
+table.list.constructor.item: [
+  Status={"S","error"}
+  Result={"U"}
+  After.Count={"N",0}
+  After.Items=[]
+]
+table.list.add.defaults: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"U"},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"U"}; {"S",""}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"U"},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"U"}; {"S",""}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",10}; {"S",""}; {"B",0}]]}}]]
+table.list.add.explicit: [
+  Status={"S","ok"}
+  Result={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"строка",1,\n{"S","Я"\\d83d"\\de00"},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}
+  After.Count={"N",1}
+  After.Items=[[{"S","Я"\\d83d"\\de00"}; {"S","строка"}; {"B",1}]]
+]
+table.list.add.omitted: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",10}; {"S",""}; {"B",1}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"missing",1,\n{"U"},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"U"}; {"S","missing"}; {"B",1}]]}}]]
+table.list.add.invalid: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"7",0,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]; [{"N",30}; {"S","7"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]; [{"N",30}; {"S",""}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"x",1,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]; [{"N",30}; {"S","x"}; {"B",1}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.insert.boundaries: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",30}; {"S",""}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]; [{"N",30}; {"S",""}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.insert.coercion: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",30}; {"S",""}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",30}; {"S",""}; {"B",0}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",0,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",3}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",30}; {"S",""}; {"B",0}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.get.access: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"second",0,\n{"N",20},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"second",0,\n{"N",20},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.get.boundaries: [[{{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"second",0,\n{"N",20},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.index.write: [[{{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.fields.aliases: [
+  Status={"S","ok"}
+  Result={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"имя",0,\n{"S","new"},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}
+  After.Count={"N",2}
+  After.Items=[[{"S","new"}; {"S","имя"}; {"B",0}]; [{"N",20}; {"S","second"}; {"B",0}]]
+]
+table.list.fields.presentation: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"7",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","7"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S",""}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S",""}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.fields.check: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",0,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",0}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.fill-checks: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",1}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",0}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",1}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.find.values: [[{"N",0}; {"N",1}; {"N",2}; {"N",3}; {"N",4}; {"N",5}; {"N",6}; {"N",7}; {"N",8}; {"U"}; {"U"}]]
+table.list.indexof: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"N",0}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"N",-1}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.delete.index: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.delete.item: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.clear: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}]]
+table.list.move.index: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.move.item: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",1}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.move.invalid: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.id.lifecycle: [
+  Status={"S","ok"}
+  BeforeID={"N",0}
+  AfterID={"N",0}
+  Found={"B",1}
+  Index={"N",2}
+  Fields=[{"N",10}; {"S","first"}; {"B",1}]
+  After.Count={"N",4}
+  After.Items=[[{"N",30}; {"S",""}; {"B",0}]; [{"N",20}; {"S","second"}; {"B",0}]; [{"N",10}; {"S","first"}; {"B",1}]; [{"N",40}; {"S",""}; {"B",0}]]
+  NewID={"N",3}
+]
+table.list.id.find: [[{{"S","Status"}={"S","ok"}; {"S","Result"}={{"S","LocalID"}={"N",0}; {"S","ForeignID"}={"N",0}}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},-1,0,""}\n}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}]]
+table.list.detached.delete: [
+  Status={"S","ok"}
+  BeforeID={"N",0}
+  AfterID={"N",-1}
+  Found={"B",0}
+  Index={"N",-1}
+  Fields=[{"N",10}; {"S","first"}; {"B",1}]
+  After.Count={"N",2}
+  After.Items=[[{"N",20}; {"S","second"}; {"B",0}]; [{"N",40}; {"S",""}; {"B",0}]]
+  NewID={"N",2}
+  WriteStatus.Value={"S","ok"}
+  WriteStatus.Presentation={"S","ok"}
+  WriteStatus.Check={"S","ok"}
+  Written=[{"N",99}; {"S","detached"}; {"B",0}]
+]
+table.list.detached.clear: [
+  Status={"S","ok"}
+  BeforeID={"N",0}
+  AfterID={"N",-1}
+  Found={"B",0}
+  Index={"N",-1}
+  Fields=[{"N",10}; {"S","first"}; {"B",1}]
+  After.Count={"N",1}
+  After.Items=[[{"N",40}; {"S",""}; {"B",0}]]
+  NewID={"N",2}
+  WriteStatus.Value={"S","ok"}
+  WriteStatus.Presentation={"S","ok"}
+  WriteStatus.Check={"S","ok"}
+  Written=[{"N",99}; {"S","detached"}; {"B",0}]
+]
+table.list.copy: [
+  Status={"S","ok"}
+  After.Count={"N",2}
+  After.Items=[[[{"N",1}; {"N",2}]; {"S","nested"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]
+  Other={"#",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{1,\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{"copy",1,\n{"#",51e7a0d2-530b-11d4-b98a-008048da3034,\n{2,\n{"N",1},\n{"N",2}\n}\n},\n{4,0,\n{0},"",-1,-1,0,0,""},0,0,""}\n}\n},\n{"Pattern"},0,1}\n}
+  SameItem={"B",0}
+  SharedValue={"B",1}
+  IDs.Original={"N",0}
+  IDs.Copy={"N",0}
+]
+table.list.load: [
+  Status={"S","ok"}
+  After.Count={"N",2}
+  After.Items=[[[{"N",1}; {"N",2}]; {"S",""}; {"B",0}]; [{"U"}; {"S",""}; {"B",0}]]
+  Other=[[{"N",1}; {"N",2}]; {"S","nested"}; {"B",1}]
+  SameItem={"B",0}
+  SharedValue={"B",1}
+  IDs.Old={"N",-1}
+  IDs.New={"N",2}
+]
+table.list.load.invalid: [[{{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","error"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",2}; {"S","Items"}=[[{"N",10}; {"S","first"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]}}; {{"S","Status"}={"S","ok"}; {"S","Result"}={"U"}; {"S","After"}={{"S","Count"}={"N",0}; {"S","Items"}=[]}}]]
+table.list.unload: [
+  Status={"S","ok"}
+  After.Count={"N",2}
+  After.Items=[[[{"N",1}; {"N",2}]; {"S","nested"}; {"B",1}]; [{"N",20}; {"S","second"}; {"B",0}]]
+  Other=[[{"N",1}; {"N",2}]; {"N",20}; {"N",30}]
+  SameItem={"U"}
+  SharedValue={"B",1}
+  IDs={"U"}
+]
+table.list.codec.empty: [
+  TypeWrite={"S","{""T"",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3}"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{0},\n{""Pattern""},0,-1}\n}"}
+  ReadType={"S","Список значений"}
+  ReadWrite={"S","same-as-Write"}
+  ReadView={"#",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{0},\n{"Pattern"},0,-1}\n}
+  Equal={"B",0}
+]
+table.list.codec.populated: [
+  TypeWrite={"S","{""T"",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3}"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{2,\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{""first"",1,\n{""S"",""Я""\\d83d""\\de00""},\n{4,0,\n{0},"""",-1,-1,0,0,""""},0,0,""""}\n},\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{""second"",0,\n{""#"",51e7a0d2-530b-11d4-b98a-008048da3034,\n{3,\n{""N"",10},\n{""L""},\n{""U""}\n}\n},\n{4,0,\n{0},"""",-1,-1,0,0,""""},1,0,""""}\n}\n},\n{""Pattern""},0,1}\n}"}
+  ReadType={"S","Список значений"}
+  ReadWrite={"S","same-as-Write"}
+  ReadView={"#",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{2,\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{"first",1,\n{"S","Я"\\d83d"\\de00"},\n{4,0,\n{0},"",-1,-1,0,0,""},0,0,""}\n},\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{"second",0,\n{"#",51e7a0d2-530b-11d4-b98a-008048da3034,\n{3,\n{"N",10},\n{"L"},\n{"U"}\n}\n},\n{4,0,\n{0},"",-1,-1,0,0,""},1,0,""}\n}\n},\n{"Pattern"},0,1}\n}
+  Equal={"B",0}
+]
+table.list.codec.item: [
+  TypeWrite={"S","{""T"",c27d99e0-2f53-11d5-a3be-0050bae0a776}"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{""first"",1,\n{""N"",10},\n{4,0,\n{0},"""",-1,-1,0,0,""""},0,0,""""}\n}"}
+  ReadType={"S","Элемент списка значений"}
+  ReadWrite={"S","same-as-Write"}
+  ReadView={"#",c27d99e0-2f53-11d5-a3be-0050bae0a776,\n{"first",1,\n{"N",10},\n{4,0,\n{0},"",-1,-1,0,0,""},0,0,""}\n}
+  Equal={"B",0}
+]
+table.list.codec.history: [
+  TypeWrite={"S","{""T"",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3}"}
+  TypeRead.Equal={"B",1}
+  TypeRead.Stable={"B",1}
+  Write={"S","{""#"",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{2,\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{""third"",1,\n{""N"",30},\n{4,0,\n{0},"""",-1,-1,0,0,""""},2,0,""""}\n},\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{""second"",0,\n{""N"",20},\n{4,0,\n{0},"""",-1,-1,0,0,""""},1,0,""""}\n}\n},\n{""Pattern""},0,2}\n}"}
+  ReadType={"S","Список значений"}
+  ReadWrite={"S","same-as-Write"}
+  ReadView={"#",4772b3b4-f4a3-49c0-a1a5-8cb5961511a3,\n{6,1e512aab-1b41-4ef6-9375-f0137be9dd91,0,0,\n{2,\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{"third",1,\n{"N",30},\n{4,0,\n{0},"",-1,-1,0,0,""},2,0,""}\n},\n{1e512aab-1b41-4ef6-9375-f0137be9dd91,\n{"second",0,\n{"N",20},\n{4,0,\n{0},"",-1,-1,0,0,""},1,0,""}\n}\n},\n{"Pattern"},0,2}\n}
+  Equal={"B",0}
+  IDs=[{{"S","ID"}={"N",2}; {"S","Found"}={"B",1}}; {{"S","ID"}={"N",1}; {"S","Found"}={"B",1}}]
+  ReadIDs=[{{"S","ID"}={"N",2}; {"S","Found"}={"B",1}}; {{"S","ID"}={"N",1}; {"S","Found"}={"B",1}}]
+]
+table.list.checkpoint.complete: [ok]
 table.checkpoint.complete: [ok]
