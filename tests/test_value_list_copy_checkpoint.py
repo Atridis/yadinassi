@@ -1,7 +1,7 @@
-"""Copy-history probe instrumentation, not native Copy behavior or goldens.
+"""Owner-confirmed Copy evidence integrity and probe instrumentation.
 
 Synthetic policies below deliberately disagree. They establish that the BSL
-observer distinguishes identity/allocation policies without selecting one.
+observer distinguishes identity/allocation policies without selecting one. Native replay is separate from these synthetic policies.
 Full native and frozen comparison still consume the complete scenario.
 """
 from contextlib import ExitStack
@@ -136,7 +136,7 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
         self.assertEqual(blob(('\ufeff' + strip_probe(source())).encode()),
                          'f09b5ebe948c9a44790b164b0ca6e7cdff5f3fd6')
         for name, expected in {
-            'collections.out': 'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6',
+            'collections.out': 'd4cce35fea3cc5271a871c26062c1b6167c0b092',
             'dates.out': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
             'functions.out': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
             'numbers.out': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
@@ -149,7 +149,30 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
         self.assertEqual(list((ROOT / 'integrational_tests/output').glob('*.err')), [])
         self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text())
-        self.assertNotIn('table.list.copy.', (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8'))
+        self.assertIn(FINAL, (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8'))
+
+    def test_complete_owner_evidence_preserves_every_prior_byte(self):
+        # Owner Atridis commit 0601200672edcc1cd5ab6703d0ef47e958329846.
+        # Normalize Git checkout line endings only, never any native content.
+        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(blob(data), 'd4cce35fea3cc5271a871c26062c1b6167c0b092')
+        self.assertEqual(hashlib.sha256(data).hexdigest(),
+                         '9e1962801f19b6ca24cbd64ec82574e6e2bbb826a3b45481f249f89e6f5b2d01')
+        self.assertEqual((len(data), len(data.splitlines())), (162177, 3937))
+        before, added = data.split(b'table.list.copy.fresh-empty:', 1)
+        self.assertEqual(len(before), 149066)
+        self.assertEqual(blob(before + b'table.checkpoint.complete: [ok]\n'),
+                         'b934bc3fe6d8c8f6b9d4ba23972ccb29bd3d00f6')
+        tail = b'table.list.copy.fresh-empty:' + added
+        labels = [line.split(b': [', 1)[0].decode() for line in tail.splitlines()
+                  if line.startswith(b'table.list.copy.')]
+        self.assertEqual(labels, ['table.list.copy.' + case for case in CASES]
+                         + ['table.list.copy.checkpoint.complete'])
+        self.assertEqual(len(tail.splitlines()), 307)
+        self.assertTrue(tail.endswith((FINAL + '\ntable.checkpoint.complete: [ok]\n').encode()))
+        for marker in ('[error]', '[iteration-error]', '[serialize-error]', '[limit]',
+                       '[id-error]', '[find-error]', 'not-run'):
+            self.assertNotIn(marker.encode(), tail)
 
     def test_native_fixture_text_uses_utf8_under_legacy_default_encoding(self):
         # Reproduce a pre-UTF-8 Windows default without changing host locale.

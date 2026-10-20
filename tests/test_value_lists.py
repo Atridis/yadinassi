@@ -469,18 +469,12 @@ class ValueListTests(unittest.TestCase):
         self.assertEqual(nested.items, [D(1), D(2)])
         self.assertEqual(other.items, [nested, D(20), D(30)])
 
-    def test_unobserved_presentation_and_historical_copy_are_guarded(self):
+    def test_unobserved_empty_presentations_are_guarded(self):
         values = BSLValueList()
         item = values.add(D(10))
         for value in (item, values):
             with self.assertRaisesRegex(ValueError, "пока не поддерживается"):
                 str(value)
-        for operation in (lambda x: x.delete(D(1)), lambda x: x.move(D(0), D(1)),
-                          lambda x: x.clear()):
-            values = base()
-            operation(values)
-            with self.assertRaisesRegex(ValueError, "историей идентификаторов"):
-                values.copy()
 
     def test_active_iteration_rejects_unobserved_structural_changes(self):
         values = base()

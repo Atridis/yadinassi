@@ -304,10 +304,8 @@ class BSLValueList(BSLObject):
             item.check = check
 
     def copy(self):
-        # Base-copy evidence does not establish historical ID handling.
-        if (self._next_id != len(self.items)
-                or any(item._id != position for position, item in enumerate(self.items))):
-            _unsupported("копирование списка с измененной историей идентификаторов")
+        # Native Copy preserves current order and shared values, but allocates
+        # independent items with fresh IDs, regardless of the source history.
         result = BSLValueList()
         for item in self.items:
             result.add(item.value, item.presentation, item.check)
