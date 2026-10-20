@@ -3934,4 +3934,209 @@ table.list.copy.nested: [
   CountsAfterCopyAdd=[{"N",3}; {"N",3}]
 ]
 table.list.copy.checkpoint.complete: [ok]
+table.list.string.empty: [
+  Fresh.Prepare={"S","ok"}
+  Fresh.State.Count={"N",0}
+  Fresh.State.Items=[]
+  Fresh.State.Text.Status={"S","ok"}
+  Fresh.State.Text.Text={"S",""}
+  Clear.Prepare={"S","ok"}
+  Clear.State.Count={"N",0}
+  Clear.State.Items=[]
+  Clear.State.Text.Status={"S","ok"}
+  Clear.State.Text.Text={"S",""}
+  LoadEmpty.Prepare={"S","ok"}
+  LoadEmpty.State.Count={"N",0}
+  LoadEmpty.State.Items=[]
+  LoadEmpty.State.Text.Status={"S","ok"}
+  LoadEmpty.State.Text.Text={"S",""}
+]
+table.list.string.absent: [
+  Omitted.Prepare={"S","ok"}
+  Omitted.State.Count={"N",1}
+  Omitted.State.Items=[[{"U"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]]
+  Omitted.State.Text.Status={"S","ok"}
+  Omitted.State.Text.Text={"S","<Пустое значение>"}
+  Undefined.Prepare={"S","ok"}
+  Undefined.State.Count={"N",1}
+  Undefined.State.Items=[[{"U"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]]
+  Undefined.State.Text.Status={"S","ok"}
+  Undefined.State.Text.Text={"S","<Пустое значение>"}
+  Null.Prepare={"S","ok"}
+  Null.State.Count={"N",1}
+  Null.State.Items=[[{"L"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]]
+  Null.State.Text.Status={"S","ok"}
+  Null.State.Text.Text={"S","<Пустое значение>"}
+]
+table.list.string.numbers-booleans: [
+  Zero.Prepare={"S","ok"}
+  Zero.State.Count={"N",1}
+  Zero.State.Items=[[{"N",0}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","0"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","0"}}]]
+  Zero.State.Text.Status={"S","ok"}
+  Zero.State.Text.Text={"S","0"}
+  Negative.Prepare={"S","ok"}
+  Negative.State.Count={"N",1}
+  Negative.State.Items=[[{"N",-7.25}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","-7,25"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","-7,25"}}]]
+  Negative.State.Text.Status={"S","ok"}
+  Negative.State.Text.Text={"S","-7,25"}
+  Grouped.Prepare={"S","ok"}
+  Grouped.State.Count={"N",1}
+  Grouped.State.Items=[[{"N",1234.5}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}]]
+  Grouped.State.Text.Status={"S","ok"}
+  Grouped.State.Text.Text={"S","1 234,5"}
+  False.Prepare={"S","ok"}
+  False.State.Count={"N",1}
+  False.State.Items=[[{"B",0}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Нет"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Нет"}}]]
+  False.State.Text.Status={"S","ok"}
+  False.State.Text.Text={"S","Нет"}
+  True.Prepare={"S","ok"}
+  True.State.Count={"N",1}
+  True.State.Items=[[{"B",1}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Да"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Да"}}]]
+  True.State.Text.Status={"S","ok"}
+  True.State.Text.Text={"S","Да"}
+]
+table.list.string.strings: [
+  Empty.Prepare={"S","ok"}
+  Empty.State.Count={"N",1}
+  Empty.State.Items=[[{"S",""}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]]
+  Empty.State.Text.Status={"S","ok"}
+  Empty.State.Text.Text={"S",""}
+  Space.Prepare={"S","ok"}
+  Space.State.Count={"N",1}
+  Space.State.Items=[[{"S"," "}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S"," "}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S"," "}}]]
+  Space.State.Text.Status={"S","ok"}
+  Space.State.Text.Text={"S"," "}
+  Unicode.Prepare={"S","ok"}
+  Unicode.State.Count={"N",1}
+  Unicode.State.Items=[[{"S","Я"\\d83d"\\de00"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Я"\\d83d"\\de00"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Я"\\d83d"\\de00"}}]]
+  Unicode.State.Text.Status={"S","ok"}
+  Unicode.State.Text.Text={"S","Я"\\d83d"\\de00"}
+  Semicolon.Prepare={"S","ok"}
+  Semicolon.State.Count={"N",1}
+  Semicolon.State.Items=[[{"S","a; b"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","a; b"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","a; b"}}]]
+  Semicolon.State.Text.Status={"S","ok"}
+  Semicolon.State.Text.Text={"S","a; b"}
+  Newline.Prepare={"S","ok"}
+  Newline.State.Count={"N",1}
+  Newline.State.Items=[[{"S","a\nb"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","a\nb"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","a\nb"}}]]
+  Newline.State.Text.Status={"S","ok"}
+  Newline.State.Text.Text={"S","a\nb"}
+  Escaped.Prepare={"S","ok"}
+  Escaped.State.Count={"N",1}
+  Escaped.State.Items=[[{"S","a\\nb"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","a\\nb"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","a\\nb"}}]]
+  Escaped.State.Text.Status={"S","ok"}
+  Escaped.State.Text.Text={"S","a\\nb"}
+]
+table.list.string.dates: [
+  Empty.Prepare={"S","ok"}
+  Empty.State.Count={"N",1}
+  Empty.State.Items=[[{"D",00010101000000}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","01.01.0001 0:00:00"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","01.01.0001 0:00:00"}}]]
+  Empty.State.Text.Status={"S","ok"}
+  Empty.State.Text.Text={"S","01.01.0001 0:00:00"}
+  Fixed.Prepare={"S","ok"}
+  Fixed.State.Count={"N",1}
+  Fixed.State.Items=[[{"D",20240229131415}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","29.02.2024 13:14:15"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","29.02.2024 13:14:15"}}]]
+  Fixed.State.Text.Status={"S","ok"}
+  Fixed.State.Text.Text={"S","29.02.2024 13:14:15"}
+]
+table.list.string.joins: [
+  Leading.Prepare={"S","ok"}
+  Leading.State.Count={"N",2}
+  Leading.State.Items=[[{"S",""}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]; [{"S","A"}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}]]
+  Leading.State.Text.Status={"S","ok"}
+  Leading.State.Text.Text={"S","; A"}
+  Interior.Prepare={"S","ok"}
+  Interior.State.Count={"N",3}
+  Interior.State.Items=[[{"S","A"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]; [{"S","B"}; {"S",""}; {"B",0}; {"N",2}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","B"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","B"}}]]
+  Interior.State.Text.Status={"S","ok"}
+  Interior.State.Text.Text={"S","A; ; B"}
+  Trailing.Prepare={"S","ok"}
+  Trailing.State.Count={"N",2}
+  Trailing.State.Items=[[{"S","A"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]]
+  Trailing.State.Text.Status={"S","ok"}
+  Trailing.State.Text.Text={"S","A; "}
+  AllEmpty.Prepare={"S","ok"}
+  AllEmpty.State.Count={"N",3}
+  AllEmpty.State.Items=[[{"S",""}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",2}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]]
+  AllEmpty.State.Text.Status={"S","ok"}
+  AllEmpty.State.Text.Text={"S","; ; "}
+  Absent.Prepare={"S","ok"}
+  Absent.State.Count={"N",3}
+  Absent.State.Items=[[{"U"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]; [{"L"}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",2}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]]
+  Absent.State.Text.Status={"S","ok"}
+  Absent.State.Text.Text={"S","<Пустое значение>; <Пустое значение>; "}
+  Whitespace.Prepare={"S","ok"}
+  Whitespace.State.Count={"N",3}
+  Whitespace.State.Items=[[{"S"," "}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S"," "}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S"," "}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]; [{"S","A"}; {"S",""}; {"B",0}; {"N",2}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","A"}}]]
+  Whitespace.State.Text.Status={"S","ok"}
+  Whitespace.State.Text.Text={"S"," ; ; A"}
+  Explicit.Prepare={"S","ok"}
+  Explicit.State.Count={"N",3}
+  Explicit.State.Items=[[{"S",""}; {"S","left"}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","left"}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]; [{"S",""}; {"S","right"}; {"B",0}; {"N",2}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","right"}}]]
+  Explicit.State.Text.Status={"S","ok"}
+  Explicit.State.Text.Text={"S","left; ; right"}
+]
+table.list.string.load: [
+  Prepare={"S","ok"}
+  State.Count={"N",8}
+  State.Items=[[{"U"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]; [{"L"}; {"S",""}; {"B",0}; {"N",1}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]; [{"N",0}; {"S",""}; {"B",0}; {"N",2}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","0"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","0"}}]; [{"N",-7.25}; {"S",""}; {"B",0}; {"N",3}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","-7,25"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","-7,25"}}]; [{"B",1}; {"S",""}; {"B",0}; {"N",4}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Да"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Да"}}]; [{"S",""}; {"S",""}; {"B",0}; {"N",5}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}]; [{"S","Я"\\d83d"\\de00"}; {"S",""}; {"B",0}; {"N",6}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Я"\\d83d"\\de00"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","Я"\\d83d"\\de00"}}]; [{"D",20240229131415}; {"S",""}; {"B",0}; {"N",7}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","29.02.2024 13:14:15"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","29.02.2024 13:14:15"}}]]
+  State.Text.Status={"S","ok"}
+  State.Text.Text={"S","<Пустое значение>; <Пустое значение>; 0; -7,25; Да; ; Я"\\d83d"\\de00; 29.02.2024 13:14:15"}
+]
+table.list.string.live: [
+  Prepare={"S","ok"}
+  Initial.Count={"N",1}
+  Initial.Items=[[{"N",7}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","7"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","7"}}]]
+  Initial.Text.Status={"S","ok"}
+  Initial.Text.Text={"S","7"}
+  Value.Status={"S","ok"}
+  Value.SameItem={"B",1}
+  Value.State.Count={"N",1}
+  Value.State.Items=[[{"N",-7.25}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","-7,25"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","-7,25"}}]]
+  Value.State.Text.Status={"S","ok"}
+  Value.State.Text.Text={"S","7"}
+  Label.Status={"S","ok"}
+  Label.SameItem={"B",1}
+  Label.State.Count={"N",1}
+  Label.State.Items=[[{"N",-7.25}; {"S","fixed; Я"\\d83d"\\de00"}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","-7,25"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","fixed; Я"\\d83d"\\de00"}}]]
+  Label.State.Text.Status={"S","ok"}
+  Label.State.Text.Text={"S","7"}
+  LabeledValue.Status={"S","ok"}
+  LabeledValue.SameItem={"B",1}
+  LabeledValue.State.Count={"N",1}
+  LabeledValue.State.Items=[[{"N",1234.5}; {"S","fixed; Я"\\d83d"\\de00"}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","fixed; Я"\\d83d"\\de00"}}]]
+  LabeledValue.State.Text.Status={"S","ok"}
+  LabeledValue.State.Text.Text={"S","7"}
+  Checked.Status={"S","ok"}
+  Checked.SameItem={"B",1}
+  Checked.State.Count={"N",1}
+  Checked.State.Items=[[{"N",1234.5}; {"S","fixed; Я"\\d83d"\\de00"}; {"B",1}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","fixed; Я"\\d83d"\\de00"}}]]
+  Checked.State.Text.Status={"S","ok"}
+  Checked.State.Text.Text={"S","7"}
+  Unchecked.Status={"S","ok"}
+  Unchecked.SameItem={"B",1}
+  Unchecked.State.Count={"N",1}
+  Unchecked.State.Items=[[{"N",1234.5}; {"S","fixed; Я"\\d83d"\\de00"}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","fixed; Я"\\d83d"\\de00"}}]]
+  Unchecked.State.Text.Status={"S","ok"}
+  Unchecked.State.Text.Text={"S","7"}
+  Whitespace.Status={"S","ok"}
+  Whitespace.SameItem={"B",1}
+  Whitespace.State.Count={"N",1}
+  Whitespace.State.Items=[[{"N",1234.5}; {"S"," "}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S"," "}}]]
+  Whitespace.State.Text.Status={"S","ok"}
+  Whitespace.State.Text.Text={"S","7"}
+  Cleared.Status={"S","ok"}
+  Cleared.SameItem={"B",1}
+  Cleared.State.Count={"N",1}
+  Cleared.State.Items=[[{"N",1234.5}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","1 234,5"}}]]
+  Cleared.State.Text.Status={"S","ok"}
+  Cleared.State.Text.Text={"S","7"}
+  Undefined.Status={"S","ok"}
+  Undefined.SameItem={"B",1}
+  Undefined.State.Count={"N",1}
+  Undefined.State.Items=[[{"U"}; {"S",""}; {"B",0}; {"N",0}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S",""}}; {{"S","Status"}={"S","ok"}; {"S","Text"}={"S","<Пустое значение>"}}]]
+  Undefined.State.Text.Status={"S","ok"}
+  Undefined.State.Text.Text={"S","7"}
+]
+table.list.string.checkpoint.complete: [ok]
 table.checkpoint.complete: [ok]
