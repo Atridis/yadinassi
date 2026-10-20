@@ -1,0 +1,113 @@
+name: Inspect native 1C image metadata
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  metadata:
+    name: Read image metadata without running 1C
+    if: >-
+      github.repository == 'Atridis/yadinassi' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # No checkout, arbitrary image/ref input, container creation, or image execution.
+      # Authentication stays on this ephemeral host and is never passed to an image.
+      - name: Pull fixed training image and report allowlisted metadata
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export DOCKER_CONFIG
+          DOCKER_CONFIG=$(mktemp -d "$RUNNER_TEMP/onec-registry-auth.XXXXXXXX")
+          RAW_INSPECT="$RUNNER_TEMP/onec-image-inspect.json"
+          DOCKER_LOG="$RUNNER_TEMP/onec-docker-command.log"
+          cleanup() {
+            docker logout ghcr.io >/dev/null 2>&1 || true
+            rm -f -- "$DOCKER_CONFIG/config.json" "$RAW_INSPECT" "$DOCKER_LOG"
+            rmdir -- "$DOCKER_CONFIG" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          if printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin > "$DOCKER_LOG" 2>&1; then
+            printf 'Registry authentication succeeded.\n'
+          else
+            status=$?
+            printf 'Registry authentication failed (Docker exit %s).\n' "$status" >&2
+            exit "$status"
+          fi
+          unset GHCR_TOKEN
+          IMAGE_REF='ghcr.io/atridis/onec-ubuntu20:8.3.27.1508'
+          if docker pull "$IMAGE_REF" > "$DOCKER_LOG" 2>&1; then
+            printf 'Image download completed; no image process was started.\n'
+          else
+            status=$?
+            printf 'Image pull failed (Docker exit %s). Check package Read access for this repository.\n' "$status" >&2
+            exit "$status"
+          fi
+          if docker image inspect "$IMAGE_REF" > "$RAW_INSPECT" 2> "$DOCKER_LOG"; then
+            printf 'Image inspection completed.\n'
+          else
+            status=$?
+            printf 'Image inspection failed (Docker exit %s).\n' "$status" >&2
+            exit "$status"
+          fi
+          python3 - "$RAW_INSPECT" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import sys
+
+          image, = json.loads(Path(sys.argv[1]).read_text())
+          repository = "ghcr.io/atridis/onec-ubuntu20"
+          digests = sorted(digest for digest in image.get("RepoDigests", [])
+                           if re.fullmatch(re.escape(repository) + r"@sha256:[0-9a-f]{64}", digest))
+          if not digests:
+              raise SystemExit("No immutable digest for the requested repository")
+          image_id = image.get("Id", "")
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+              raise SystemExit("Unexpected image ID")
+          platform = {key.lower(): image.get(key, "")
+                      for key in ("Os", "Architecture", "Variant")}
+          if any(not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_.-]*", value)
+                 for value in platform.values()):
+              raise SystemExit("Unexpected platform metadata")
+          config = image.get("Config") or {}
+          size = image.get("Size")
+          if type(size) is not int or size < 0:
+              raise SystemExit("Unexpected image size metadata")
+          user = config.get("User", "")
+          user_kind = ("default" if not user else
+                       "numeric" if re.fullmatch(r"[0-9]+(?::[0-9]+)?", user) else "named")
+          # Never print Env, Labels, history, Entrypoint/Cmd text or raw config:
+          # a private image could accidentally embed credentials or private details.
+          report = {
+              "requested_image": repository + ":8.3.27.1508",
+              "immutable_references": digests,
+              "image_id": image_id,
+              "platform": platform,
+              "size_bytes": size,
+              "configuration": {
+                  "user_kind": user_kind,
+                  "has_entrypoint": bool(config.get("Entrypoint")),
+                  "has_command": bool(config.get("Cmd")),
+                  "has_environment": bool(config.get("Env")),
+              },
+              "image_process_started": False,
+              "native_test_completed": False,
+          }
+          rendered = json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True)
+          print(rendered)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+              summary.write("Metadata only. No image process or native test was started.\n\n")
+              summary.write("```json\n" + rendered + "\n```\n")
+          PY
