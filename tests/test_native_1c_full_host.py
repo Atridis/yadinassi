@@ -578,7 +578,13 @@ class SemanticComparisonTests(ComparisonTests):
     def setUp(self):
         super().setUp()
         source = smoke.ROOT / "integrational_tests/tests/collections.bsl"
-        (self.root / "integrational_tests/tests/collections.bsl").write_bytes(source.read_bytes())
+        # This synthetic fixture represents the reviewed LF source, not the
+        # checkout's platform-specific line endings. Never normalize inputs in
+        # the production staging, reader, or comparator to satisfy this gate.
+        reviewed = source.read_bytes().replace(b"\r\n", b"\n")
+        self.assertTrue(reviewed.startswith(b"\xef\xbb\xbf"))
+        self.assertEqual(full.digest(reviewed), full.COLLECTIONS_SOURCE_SHA256)
+        (self.root / "integrational_tests/tests/collections.bsl").write_bytes(reviewed)
         self.inputs["integrational_tests/tests/collections.bsl"] = full.COLLECTIONS_SOURCE_SHA256
         self.stage3 = fixture(self.payload, input_hashes=self.inputs)[0]["report"]["stage3"]
         self.context = bootstrap_report()
@@ -690,6 +696,58 @@ class SemanticComparisonTests(ComparisonTests):
             changed=copy.deepcopy(result);edit(changed)
             with self.subTest(edit=edit),self.assertRaisesRegex(full.FullError,"^comparison_evidence_invalid$"):
                 full.validate_comparison(changed,self.stage3,full.LINUX_TARGET,full.MAP_MODE)
+
+
+class SemanticFixtureTests(unittest.TestCase):
+    def test_lf_and_crlf_checkout_setup_keeps_reviewed_fixture_and_strict_source_gate(self):
+        source = smoke.ROOT / "integrational_tests/tests/collections.bsl"
+        read_bytes = Path.read_bytes
+        reviewed = read_bytes(source).replace(b"\r\n", b"\n")
+        for ending, checkout in (("LF", reviewed), ("CRLF", reviewed.replace(b"\n", b"\r\n"))):
+            with self.subTest(checkout=ending):
+                case = SemanticComparisonTests("test_semantic_acceptance_keeps_raw_mismatch_and_explicit_target")
+                try:
+                    def read_checkout(path):
+                        return checkout if path == source else read_bytes(path)
+                    with mock.patch.object(Path, "read_bytes", read_checkout):
+                        case.setUp()
+                    copied = case.root / "integrational_tests/tests/collections.bsl"
+                    self.assertEqual(copied.read_bytes(), reviewed)
+                    self.assertTrue(copied.read_bytes().startswith(b"\xef\xbb\xbf"))
+                    self.assertEqual(full.digest(copied.read_bytes()), full.COLLECTIONS_SOURCE_SHA256)
+                    case.test_semantic_acceptance_keeps_raw_mismatch_and_explicit_target()
+                    # The production comparator must still reject any change
+                    # after fixture setup, including line endings or the BOM.
+                    for mutation, changed in (("CRLF", reviewed.replace(b"\n", b"\r\n")),
+                                              ("missing BOM", reviewed[3:]),
+                                              ("content", reviewed + b"// changed\n")):
+                        with self.subTest(mutation=mutation):
+                            copied.write_bytes(changed)
+                            result, verifier, calls = case.semantic_compare()
+                            self.assertEqual(result["acceptance_status"], "rejected")
+                            self.assertEqual(result["cases"][0]["status"], "error")
+                            self.assertEqual(result["cases"][0]["failure_kind"], "source_changed")
+                            verifier.assert_not_called()
+                            self.assertEqual(calls, list(full.SCENARIOS[1:]))
+                finally:
+                    case.doCleanups()
+
+    def test_fixture_setup_rejects_unreviewed_checkout_bytes(self):
+        source = smoke.ROOT / "integrational_tests/tests/collections.bsl"
+        read_bytes = Path.read_bytes
+        reviewed = read_bytes(source).replace(b"\r\n", b"\n")
+        for mutation, checkout in (("missing BOM", reviewed[3:]),
+                                   ("bare CR", reviewed.replace(b"\n", b"\r")),
+                                   ("content", reviewed + b"// changed\n")):
+            with self.subTest(mutation=mutation):
+                case = SemanticComparisonTests("test_semantic_acceptance_keeps_raw_mismatch_and_explicit_target")
+                try:
+                    def read_checkout(path):
+                        return checkout if path == source else read_bytes(path)
+                    with mock.patch.object(Path, "read_bytes", read_checkout), self.assertRaises(AssertionError):
+                        case.setUp()
+                finally:
+                    case.doCleanups()
 
 
 if __name__ == "__main__":
