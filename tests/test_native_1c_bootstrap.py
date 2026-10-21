@@ -151,11 +151,15 @@ class DraftTest(unittest.TestCase):
     def markers(self, stage="verify"):
         common = dict(protocol=PROTOCOL, run_id=RUN, stage=stage, user=USER, status="ok", error="")
         server = dict(common, hook="session", users_before=1 if stage == "verify" else 0,
-                      users_after=1, persisted_user=USER, protection_type="Boolean",
-                      persisted_protection=False, standard_authentication=True,
+                      users_after=1, persisted_user=USER, persisted_protection_type="UnsafeOperationProtectionDescription",
+                      persisted_warning_type="Boolean",
+                      observed_protection_type="UnsafeOperationProtectionDescription",
+                      observed_warning_type="Boolean",
+                      persisted_warning=False, standard_authentication=True,
                       current_user_at_start=USER if stage == "verify" else "",
                       current_protection_verified=stage == "verify")
-        if stage == "verify": server["current_protection"] = False
+        if stage == "verify": server.update(current_protection_type="UnsafeOperationProtectionDescription",
+                                               current_warning_type="Boolean", current_warning=False)
         client = dict(common, hook="managed", actual_version="8.3.27.1508", server_hook_verified=True)
         self.write_markers(server, client, stage)
         return server, client
@@ -173,17 +177,92 @@ class DraftTest(unittest.TestCase):
             self.assertEqual(self.verify(stage)["actual_version"], "8.3.27.1508")
 
     def test_rejects_false_success_cases(self):
-        cases = [("persisted_protection", 0), ("persisted_protection", "false"),
-                 ("current_protection", True), ("current_user_at_start", "WrongUser"),
+        cases = [("persisted_warning", 0), ("persisted_warning", "false"),
+                 ("current_warning", True), ("current_user_at_start", "WrongUser"),
                  ("current_protection_verified", 1), ("run_id", "old"),
                  ("status", "error"), ("error", "compile failed"), ("users_after", True),
-                 ("protection_type", "UnsafeOperationProtectionDescription")]
+                 ("persisted_protection_type", "Boolean")]
         for key, value in cases:
             with self.subTest(key=key, value=value):
                 server, client = self.markers()
                 server[key] = value
                 self.write_markers(server, client)
                 with self.assertRaises(DraftError): self.verify()
+
+    def test_exact_descriptor_and_inner_boolean_required_for_all_readbacks(self):
+        cases = [("persisted_protection_type", value) for value in ("Boolean", "other", None, False)]
+        cases += [("persisted_warning_type", value) for value in ("Number", None, False)]
+        cases += [("persisted_warning", value) for value in (0, "false", None, True)]
+        cases += [("observed_protection_type", value) for value in ("Boolean", "other", "not_observed")]
+        cases += [("observed_warning_type", value) for value in ("Undefined", "other", "not_observed")]
+        for stage in ("bootstrap", "verify"):
+            checks = cases + ([("current_protection_type", "Boolean"), ("current_warning_type", "Number")]
+                              + [("current_warning", v) for v in (0, "false", None, True)] if stage == "verify" else [])
+            for key, value in checks:
+                with self.subTest(stage=stage, key=key, value=value):
+                    server, client = self.markers(stage)
+                    self.verify(stage)
+                    server[key] = value
+                    self.write_markers(server, client, stage)
+                    with self.assertRaises(DraftError): self.verify(stage)
+
+    def test_missing_descriptor_observation_or_readback_fields_fail_closed(self):
+        for stage in ("bootstrap", "verify"):
+            server, _ = self.markers(stage)
+            fields = [key for key in server if key.startswith(("observed_", "persisted_warning", "current_warning"))
+                      or key in ("persisted_protection_type", "current_protection_type")]
+            for key in fields:
+                with self.subTest(stage=stage, key=key):
+                    server, client = self.markers(stage)
+                    del server[key]
+                    self.write_markers(server, client, stage)
+                    with self.assertRaises(DraftError): self.verify(stage)
+
+    def test_legacy_whole_property_boolean_markers_are_rejected(self):
+        for stage in ("bootstrap", "verify"):
+            server, client = self.markers(stage)
+            self.verify(stage)
+            for key in list(server):
+                if key.startswith(("persisted_warning", "observed_")) or key == "persisted_protection_type":
+                    del server[key]
+            server.update(protection_type="Boolean", persisted_protection=False)
+            if stage == "verify":
+                for key in ("current_protection_type", "current_warning_type", "current_warning"):
+                    del server[key]
+                server["current_protection"] = False
+            self.write_markers(server, client, stage)
+            with self.assertRaises(DraftError): self.verify(stage)
+
+    def test_anonymous_bootstrap_cannot_claim_fresh_current_descriptor(self):
+        server, client = self.markers("bootstrap")
+        server.update(current_protection_type="UnsafeOperationProtectionDescription",
+                      current_warning_type="Boolean", current_warning=False)
+        self.write_markers(server, client, "bootstrap")
+        with self.assertRaises(DraftError): self.verify("bootstrap")
+
+    def test_source_checks_actual_shape_before_narrow_assignment_and_all_readbacks(self):
+        self.inject()
+        source = (self.output / "Ext/SessionModule.bsl").read_text(encoding="utf-8-sig")
+        sequence = ['Защита = NativeНаблюдатьЗащиту(Пользователь, Результат);',
+                    'Если ТипЗнч(Защита) <> Тип("ОписаниеЗащитыОтОпасныхДействий") Тогда',
+                    'Если ТипЗнч(Защита.ПредупреждатьОбОпасныхДействиях) <> Тип("Булево") Тогда',
+                    'Защита.ПредупреждатьОбОпасныхДействиях = Ложь;',
+                    'Пользователь.ЗащитаОтОпасныхДействий = Защита;',
+                    'NativeПроверитьПользователя(Пользователь);', 'Пользователь.Записать();']
+        positions = [source.index(item) for item in sequence]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(source.count('Защита.ПредупреждатьОбОпасныхДействиях = Ложь;'), 1)
+        self.assertNotIn('Новый ОписаниеЗащитыОтОпасныхДействий', source)
+        self.assertNotIn('Пользователь.ЗащитаОтОпасныхДействий = Ложь;', source)
+        for name in ('Текущий', 'Сохраненный'):
+            self.assertIn('NativeПроверитьПользователя(' + name + ');', source)
+            self.assertIn(name + '.ЗащитаОтОпасныхДействий.ПредупреждатьОбОпасныхДействиях', source)
+        helper = source[source.index('Процедура NativeПроверитьПользователя'):]
+        for check in (sequence[1], sequence[2], 'Если Защита.ПредупреждатьОбОпасныхДействиях <> Ложь Тогда'):
+            self.assertIn(check, helper)
+        observation = source[source.index('Функция NativeНаблюдатьЗащиту'):source.index('Процедура NativeПроверитьПользователя')]
+        self.assertNotIn(' = Ложь;', observation)
+        self.assertNotIn('.Записать()', observation)
 
     def test_rejects_missing_hooks_wrong_version_or_timeout(self):
         server, client = self.markers()

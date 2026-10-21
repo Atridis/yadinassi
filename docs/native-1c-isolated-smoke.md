@@ -8,9 +8,11 @@ It did not establish the actual application version or user/bootstrap behavior.
 The first stage-two native run confirmed full module import, database update and
 byte-identical re-export, then failed in anonymous bootstrap with a nonzero process
 result. Persisted security state and actual application version remain unverified.
-The diagnostic-only revision described below does not change BSL, native commands
-or security settings and does not claim a fix. Its mock tests are not native
-execution evidence.
+The subsequent diagnostic-only run identified our whole-property Boolean guard
+as the failure before protection assignment or user Write. This candidate changes
+that BSL guard and its narrow warning update to a runtime-checked descriptor
+hypothesis, while keeping native commands and containment unchanged. Mock tests
+are not evidence that the corrected contract or later native stages have passed.
 
 ## Invocation and unchanged trust boundary
 
@@ -81,14 +83,20 @@ remain in tmpfs. There is one fresh database and no concurrent 1C sessions.
    incremental import is used.
 4. Start anonymous Enterprise under an exact per-run bootstrap token. The internal
    session hook refuses nonanonymous startup or existing users. It creates the
-   one disposable `NativeSmoke` user, requires the user-scoped
-   `ЗащитаОтОпасныхДействий` property to be Boolean, sets it to false, and checks
-   persisted FindByName readback, standard authentication, exactly one user and
-   zero roles. It does not use an external EPF for bootstrap.
+   one disposable `NativeSmoke` user, observes the actual user-scoped
+   `ЗащитаОтОпасныхДействий` type without mutation, and proceeds only if it is
+   exactly `ОписаниеЗащитыОтОпасныхДействий` and its
+   `ПредупреждатьОбОпасныхДействиях` field is actually Boolean. It changes only
+   that existing descriptor's warning flag to false, assigns the descriptor back,
+   checks the assigned state, and writes the user. It checks persisted FindByName
+   descriptor type and nested Boolean false, standard authentication, exactly
+   one user and zero roles. No new descriptor resets other settings, and no
+   initial warning value is assumed. It does not use an external EPF for bootstrap.
 5. Remove the control file. A separate Designer invocation with `/N NativeSmoke`
    must successfully dump metadata and preserve the injected modules.
 6. A separate Enterprise `/N NativeSmoke` invocation must verify both the fresh
-   CurrentUser snapshot and persisted FindByName security state. Both bootstrap
+   CurrentUser snapshot and persisted FindByName security state, including the
+   same exact descriptor type and nested Boolean false. Both bootstrap
    and verification require fresh session and managed-hook markers with exact
    protocol, run nonce, stage, identity, fields and primitive types. Managed hooks
    obtain `SystemInfo.AppVersion`; anything other than `8.3.27.1508` fails.
@@ -105,9 +113,15 @@ unchanged. No new security bypass, conf.cfg setting, global protection mode,
 role-escalation fallback, password, real data or production database is added.
 
 Module discovery on full import has been demonstrated by byte-identical native
-re-export. Native compilation/API compatibility, zero-parameter startup-hook
-behavior and role-free named-user permissions still require successful runtime
-evidence. Any compile failure, unsupported API, denied
+re-export. [The diagnostic run](https://github.com/Atridis/yadinassi/actions/runs/39522764403)
+reached the internal session hook and rejected the previous whole-property
+Boolean assumption before assigning protection or writing the user. It did not
+establish the actual property type. The descriptor relationship above is a
+fail-closed runtime hypothesis, not a claim that the exact API contract has been
+verified by public documentation or by the earlier run. The next run must observe
+that shape before mutation and then prove persisted and fresh-session readbacks.
+Role-free named-user permissions, actual platform version and simple EPF execution
+remain unverified. Any compile failure, unsupported API, denied
 access, missing hook or modal timeout stops the stage. Do not add broad roles or
 weaken protections to turn a failure green. A retry after an attempted bootstrap
 requires a newly created disposable database, not another bootstrap against the
@@ -139,7 +153,7 @@ process failure, timeout, invalid marker or module mismatch). A separate strict
   is never used. UTF-16 and UTF-8 BOMs are decoded strictly; only no-BOM input tries
   strict UTF-8 followed by CP1251. Raw text is never returned.
 - Optional source locations require an exact Russian/English alias for the known
-  session or managed module and a line within its unchanged source. Optional BSL
+  session or managed module and a line within its exact staged source. Optional BSL
   identifiers must match an explicit finite allowlist and native error syntax.
   Location and identifier must come from the same error line as the category;
   unrelated frames, conflicting locations or ambiguous identifiers are omitted.
@@ -152,6 +166,17 @@ process failure, timeout, invalid marker or module mismatch). A separate strict
 The host independently validates diagnostic keys, types, enums, source bounds,
 identifiers, provenance and consistency with the failed stage. No native errors,
 paths, usernames, UUIDs, raw source fragments or unknown identifiers are exported.
+
+`protection_observation` is separate from success/security gates. A fresh,
+identity-matched session marker can report its stage plus finite property/inner
+warning types even when the native process fails. The only type values are
+`not_observed`, `UnsafeOperationProtectionDescription`, `Boolean`, `Undefined`
+and `other`; arbitrary platform type names are never exported. A non-descriptor
+property cannot claim an observed inner flag. The type observation is read-only,
+before assignment; persisted/fresh false values remain independent required
+gates. Invalid, unmatched or stale markers cannot supply a new observation.
+An observation alone never means settings were changed or verified. The strict
+marker schema rejects the former whole-property-Boolean fixture shape.
 
 `security_change_attempted` and the finite security state distinguish no attempt,
 unverified partial execution and verified persisted mutation. The outer
@@ -180,7 +205,9 @@ python -m unittest discover -s tests -v
 
 Coverage includes exact staging, restrictive host umask, containment, registry
 authentication separation, fresh markers, Boolean-versus-integer flags, anonymous
-identity, module-byte preservation, strict user/version/output gates, named
+identity, module-byte preservation, descriptor and nested-Boolean guards, legacy
+Boolean-schema rejection, read-only finite type observations, strict
+user/version/output gates, named
 Designer/Enterprise separation, partial security state and timeout/error paths.
 Diagnostic regressions cover nonzero error markers, UTF-16/UTF-8/CP1251, corrupt
 BOMs, same-line attribution, contradictory sources, stale evidence, bounded exit

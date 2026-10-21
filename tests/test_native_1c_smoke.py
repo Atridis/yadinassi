@@ -373,6 +373,7 @@ def valid_stage2():
             "simple_output_sha256": smoke.SIMPLE_OUTPUT_SHA256,
             "security_change_attempted": True, "security_settings_state": "verified",
             "diagnostics": smoke.DIAGNOSTICS.empty_diagnostics(),
+            "protection_observation": {"stage": "verify", "property_type": "UnsafeOperationProtectionDescription", "warning_type": "Boolean"},
             **{key: True for key in smoke.STAGE_FLAGS}}
 
 
@@ -424,6 +425,7 @@ class BootstrapReportTests(unittest.TestCase):
         data['stage2'].update(status='failed', failed_stage='bootstrap', failure_kind='hook_missing',
                               actual_version=None, version_source='not_measured',
                               simple_output_sha256=None, security_settings_state='unverified',
+                              protection_observation=smoke.DIAGNOSTICS.empty_protection_observation(),
                               **{key: key == 'modules_reimported' for key in smoke.STAGE_FLAGS})
         self.assertIsNone(smoke.validate_report(json.dumps(data).encode(), bootstrap=True)['security_settings_changed'])
         data['security_settings_changed'] = False

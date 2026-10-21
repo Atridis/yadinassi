@@ -11,20 +11,22 @@ CATEGORIES = frozenset({'none', 'unknown', 'compile_error', 'runtime_error',
                        'evidence_invalid', 'conflicting_evidence'})
 ORIGINS = frozenset({'none', 'native_log', 'session_marker', 'managed_marker'})
 MARKER_STATES = frozenset({'not_checked', 'absent', 'invalid', 'ok', 'error'})
-# Must match the unchanged trusted BSL sources; tests verify these exact limits.
-SOURCE_LINE_LIMITS = {'SessionModule': 144, 'ManagedApplicationModule': 83}
+# Must match the trusted BSL sources; tests verify these exact limits.
+SOURCE_LINE_LIMITS = {'SessionModule': 187, 'ManagedApplicationModule': 89}
 MODULE_ALIASES = {'МодульСеанса': 'SessionModule', 'SessionModule': 'SessionModule',
                   'МодульУправляемогоПриложения': 'ManagedApplicationModule',
                   'ManagedApplicationModule': 'ManagedApplicationModule'}
 IDENTIFIERS = frozenset({
-    'ЗащитаОтОпасныхДействий', 'АутентификацияСтандартная',
+    'ЗащитаОтОпасныхДействий', 'ОписаниеЗащитыОтОпасныхДействий',
+    'ПредупреждатьОбОпасныхДействиях', 'АутентификацияСтандартная',
     'ПользователиИнформационнойБазы', 'ПолучитьПользователей', 'ТекущийПользователь',
     'СоздатьПользователя', 'НайтиПоИмени', 'Записать', 'Роли', 'Количество',
     'Имя', 'ПолноеИмя', 'ТипЗнч', 'Тип', 'СистемнаяИнформация', 'ВерсияПриложения',
     'ЧтениеJSON', 'ЗаписьJSON', 'ОткрытьФайл', 'ПрочитатьJSON', 'ЗаписатьJSON',
     'Закрыть', 'Файл', 'Существует', 'ПараметрЗапуска', 'УстановкаПараметровСеанса',
     'ПриНачалеРаботыСистемы', 'ЗавершитьРаботуСистемы', 'NativeПрочитатьJSON',
-    'NativeЗаписатьJSON', 'NativeПроверитьПользователя', 'ПодробноеПредставлениеОшибки',
+    'NativeЗаписатьJSON', 'NativeПроверитьПользователя', 'NativeТипЗащиты',
+    'NativeНаблюдатьЗащиту', 'ПодробноеПредставлениеОшибки',
     'ИнформацияОбОшибке', 'Структура', 'Вставить', 'ПустаяСтрока',
 })
 PHRASES = {
@@ -140,27 +142,69 @@ def reject_constant(_):
     raise ValueError('nonfinite marker constant')
 
 
+def matching_marker(path: Path, stage: str, hook: str, manifest: dict) -> dict:
+    value = json.loads(bounded_file(path, 65536).decode('utf-8-sig'),
+                       object_pairs_hook=unique_pairs, parse_constant=reject_constant)
+    if type(value) is not dict:
+        raise ValueError('marker object')
+    expected = {'protocol': 'native-bootstrap-v1', 'run_id': manifest['run_id'],
+                'stage': stage, 'hook': hook, 'user': manifest['user']}
+    if any(type(value.get(key)) is not str or value[key] != item for key, item in expected.items()):
+        raise ValueError('marker identity')
+    if type(value.get('status')) is not str or value['status'] not in {'error', 'ok'}:
+        raise ValueError('marker status')
+    if type(value.get('error')) is not str or (value['status'] == 'ok' and value['error'] != ''):
+        raise ValueError('marker error')
+    return value
+
+
 def marker_error(path: Path, stage: str, hook: str, manifest: dict) -> tuple[str, str | None]:
     try:
         if not path.exists() and not path.is_symlink():
             return 'absent', None
-        value = json.loads(bounded_file(path, 65536).decode('utf-8-sig'),
-                           object_pairs_hook=unique_pairs, parse_constant=reject_constant)
-        if type(value) is not dict:
-            raise ValueError('marker object')
-        expected = {'protocol': 'native-bootstrap-v1', 'run_id': manifest['run_id'],
-                    'stage': stage, 'hook': hook, 'user': manifest['user']}
-        if any(type(value.get(key)) is not str or value[key] != item for key, item in expected.items()):
-            raise ValueError('marker identity')
-        if type(value.get('status')) is not str or value['status'] not in {'error', 'ok'}:
-            raise ValueError('marker status')
-        if type(value.get('error')) is not str:
-            raise ValueError('marker error')
-        if value['status'] == 'ok':
-            return ('ok', None) if value['error'] == '' else ('invalid', None)
-        return 'error', value['error']
+        value = matching_marker(path, stage, hook, manifest)
+        return value['status'], value['error'] if value['status'] == 'error' else None
     except (OSError, ValueError, UnicodeError, TypeError, KeyError, RecursionError):
         return 'invalid', None
+
+
+PROTECTION_TYPES = frozenset({'not_observed', 'UnsafeOperationProtectionDescription',
+                              'Boolean', 'Undefined', 'other'})
+
+
+def empty_protection_observation() -> dict:
+    return {'stage': None, 'property_type': 'not_observed', 'warning_type': 'not_observed'}
+
+
+def validate_protection_observation(value: object) -> dict:
+    if type(value) is not dict or set(value) != set(empty_protection_observation()):
+        raise ValueError('protection observation keys')
+    for key in ('property_type', 'warning_type'):
+        if type(value[key]) is not str or value[key] not in PROTECTION_TYPES:
+            raise ValueError('protection observation type')
+    if value['stage'] is None:
+        if value != empty_protection_observation():
+            raise ValueError('protection observation without stage')
+    elif type(value['stage']) is not str or value['stage'] not in {'bootstrap', 'verify'}:
+        raise ValueError('protection observation stage')
+    elif value['property_type'] == 'not_observed':
+        raise ValueError('protection observation without property')
+    if (value['property_type'] != 'UnsafeOperationProtectionDescription'
+            and value['warning_type'] != 'not_observed'):
+        raise ValueError('warning observation without descriptor')
+    return value
+
+
+def collect_protection_observation(evidence: Path, stage: str, manifest: dict) -> dict:
+    try:
+        if stage not in {'bootstrap', 'verify'}:
+            raise ValueError('protection observation stage')
+        marker = matching_marker(evidence / (stage + '-session.json'), stage, 'session', manifest)
+        result = {'stage': stage, 'property_type': marker.get('observed_protection_type'),
+                  'warning_type': marker.get('observed_warning_type')}
+        return validate_protection_observation(result)
+    except (OSError, ValueError, UnicodeError, TypeError, KeyError, RecursionError):
+        return empty_protection_observation()
 
 
 def summarize_text(text: str) -> dict:

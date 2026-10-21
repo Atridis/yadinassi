@@ -42,7 +42,7 @@ class DiagnosticTests(unittest.TestCase):
         path.write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
         return path
 
-    def test_source_limits_equal_unchanged_bsl_sources(self):
+    def test_source_limits_equal_trusted_bsl_sources(self):
         for name, limit in diag.SOURCE_LINE_LIMITS.items():
             self.assertEqual(len((HELPERS / 'modules' / (name + '.bsl')).read_text(encoding='utf-8-sig').splitlines()), limit)
 
@@ -73,8 +73,8 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_unknown_partial_out_of_bounds_locations_are_not_exported(self):
         values = ['{/private/SessionModule(12)}', '{SecretModule(12)}', 'SessionModule(12)',
-                  '{PrefixSessionModule(12)}', '{SessionModule(0)}', '{SessionModule(145)}',
-                  '{ManagedApplicationModule(84)}', '{SessionModule(999999999999)}',
+                  '{PrefixSessionModule(12)}', '{SessionModule(0)}', '{SessionModule(' + str(diag.SOURCE_LINE_LIMITS['SessionModule'] + 1) + ')}',
+                  '{ManagedApplicationModule(' + str(diag.SOURCE_LINE_LIMITS['ManagedApplicationModule'] + 1) + ')}', '{SessionModule(999999999999)}',
                   '{SessionModule(True)}', '{SessionModule(12.2)}']
         for text in values:
             with self.subTest(text=text):
@@ -238,7 +238,7 @@ class DiagnosticTests(unittest.TestCase):
                  lambda d: d.update(native_exit_code=1.0), lambda d: d.update(native_exit_code=256),
                  lambda d: d.update(native_exit_code=0), lambda d: d.update(category='compile_error'),
                  lambda d: d.update(line=1), lambda d: d.update(module='SessionModule', line=True),
-                 lambda d: d.update(module='SessionModule', line=145),
+                 lambda d: d.update(module='SessionModule', line=diag.SOURCE_LINE_LIMITS['SessionModule'] + 1),
                  lambda d: d.update(module='PRIVATE', line=1),
                  lambda d: d.update(identifier='PRIVATE'),
                  lambda d: d.update(origin='session_marker', category='unknown')]
@@ -248,6 +248,7 @@ class DiagnosticTests(unittest.TestCase):
             data['stage2'].update(status='failed', failed_stage='bootstrap', failure_kind='process_failed',
                                   actual_version=None, version_source='not_measured', simple_output_sha256=None,
                                   security_settings_state='unverified',
+                    protection_observation=diag.empty_protection_observation(),
                                   **{key: key == 'modules_reimported' for key in smoke.STAGE_FLAGS})
             data['stage2']['diagnostics'].update(category='unknown', native_exit_code=1,
                                                    session_marker='absent', managed_marker='absent')
@@ -269,11 +270,66 @@ class DiagnosticTests(unittest.TestCase):
         data.update(status='failed', failed_stage='bootstrap', failure_kind='stale_evidence',
                     actual_version=None, version_source='not_measured', simple_output_sha256=None,
                     security_settings_state='unverified',
+                    protection_observation=diag.empty_protection_observation(),
                     **{key: key == 'modules_reimported' for key in smoke.STAGE_FLAGS})
         smoke.validate_stage2(data)
         data['diagnostics'].update(category='compile_error', origin='native_log',
                                    module='SessionModule', line=7)
         with self.assertRaises(ValueError): smoke.validate_stage2(data)
+
+    def test_protection_observation_requires_matching_finite_marker(self):
+        expected = {'stage': 'bootstrap', 'property_type': 'UnsafeOperationProtectionDescription', 'warning_type': 'Boolean'}
+        self.marker(error_marker(observed_protection_type=expected['property_type'], observed_warning_type='Boolean'))
+        self.assertEqual(diag.collect_protection_observation(self.root, 'bootstrap', MANIFEST), expected)
+        for key, value in (('run_id', 'stale'), ('hook', 'managed'), ('status', []),
+                           ('error', 1), ('observed_protection_type', 'PRIVATE'),
+                           ('observed_warning_type', False), ('observed_warning_type', [])):
+            with self.subTest(key=key, value=value):
+                marker = error_marker(observed_protection_type=expected['property_type'], observed_warning_type='Boolean')
+                marker[key] = value
+                self.marker(marker)
+                self.assertEqual(diag.collect_protection_observation(self.root, 'bootstrap', MANIFEST), diag.empty_protection_observation())
+
+    def test_only_allowlisted_actual_type_shapes_are_reported(self):
+        for property_type, warning_type in (('Boolean', 'not_observed'), ('Undefined', 'not_observed'),
+                                            ('other', 'not_observed'), ('UnsafeOperationProtectionDescription', 'Undefined'),
+                                            ('UnsafeOperationProtectionDescription', 'other'),
+                                            ('UnsafeOperationProtectionDescription', 'not_observed')):
+            self.marker(error_marker(observed_protection_type=property_type, observed_warning_type=warning_type))
+            value = diag.collect_protection_observation(self.root, 'bootstrap', MANIFEST)
+            self.assertEqual(value, dict(stage='bootstrap', property_type=property_type, warning_type=warning_type))
+        self.marker(error_marker(observed_protection_type='Boolean', observed_warning_type='Boolean'))
+        self.assertEqual(diag.collect_protection_observation(self.root, 'bootstrap', MANIFEST), diag.empty_protection_observation())
+
+    def test_malformed_protection_marker_never_exports_a_type(self):
+        path = self.root / 'bootstrap-session.json'
+        for raw in ('[' * 1500, '{"x":NaN}', '{"x":1,"x":2}', '[]', 'null'):
+            path.write_text(raw, encoding='utf-8')
+            self.assertEqual(diag.collect_protection_observation(self.root, 'bootstrap', MANIFEST), diag.empty_protection_observation())
+
+    def test_host_rejects_invalid_observation_on_otherwise_valid_failed_report(self):
+        for edit in (lambda d: d.update(extra='PRIVATE'), lambda d: d.update(stage=[]),
+                     lambda d: d.update(property_type='PRIVATE'), lambda d: d.update(warning_type=0),
+                     lambda d: d.update(property_type='Boolean'), lambda d: d.update(stage=None),
+                     lambda d: d.update(stage='verify')):
+            data = bootstrap_report()['stage2']
+            data.update(status='failed', failed_stage='bootstrap', failure_kind='process_failed',
+                        actual_version=None, version_source='not_measured', simple_output_sha256=None,
+                        security_settings_state='unverified',
+                        **{key: key == 'modules_reimported' for key in smoke.STAGE_FLAGS})
+            data['protection_observation']['stage'] = 'bootstrap'
+            smoke.validate_stage2(data)
+            edit(data['protection_observation'])
+            with self.assertRaises(ValueError): smoke.validate_stage2(data)
+
+    def test_success_requires_observed_supported_named_shape(self):
+        for observation in (diag.empty_protection_observation(),
+                            dict(stage='bootstrap', property_type='UnsafeOperationProtectionDescription', warning_type='Boolean'),
+                            dict(stage='verify', property_type='other', warning_type='not_observed')):
+            data = bootstrap_report()['stage2']
+            smoke.validate_stage2(data)
+            data['protection_observation'] = observation
+            with self.assertRaises(ValueError): smoke.validate_stage2(data)
 
     def test_success_diagnostics_must_be_empty(self):
         value = diag.empty_diagnostics()
@@ -301,6 +357,50 @@ class DiagnosticFlowTests(Stage2Harness):
         self.assertEqual(report['diagnostics']['category'], 'unsupported_api')
         self.assertNotIn('PRIVATE', json.dumps(report))
         smoke.validate_stage2(report)
+
+    def test_nonzero_type_guard_reports_observation_but_never_security_success(self):
+        def fail(stage, _command, _directory):
+            if stage == 'bootstrap':
+                marker = self.marker('bootstrap', 'session')
+                marker.update(status='error', error='PRIVATE type guard', observed_protection_type='Boolean',
+                              observed_warning_type='not_observed')
+                (self.evidence / 'bootstrap-session.json').write_text(json.dumps(marker), encoding='utf-8')
+                raise self.module.StageError('process_failed', exit_code=1)
+        self.native_hook = fail
+        report = self.module.run()
+        self.assert_failed(report, 'bootstrap', 'process_failed')
+        self.assertEqual(report['protection_observation'], dict(stage='bootstrap', property_type='Boolean', warning_type='not_observed'))
+        self.assertFalse(report['bootstrap_verified'])
+        self.assertEqual(report['security_settings_state'], 'unverified')
+        self.assertIsNone(report['actual_version'])
+        self.assertNotIn('PRIVATE', json.dumps(report))
+        smoke.validate_stage2(report)
+
+    def test_fresh_mismatched_type_observation_does_not_reuse_bootstrap_success(self):
+        def fail(stage, _command, _directory):
+            if stage == 'verify':
+                marker = self.marker('verify', 'session')
+                marker.update(status='error', error='PRIVATE type guard', observed_protection_type='Undefined',
+                              observed_warning_type='not_observed')
+                (self.evidence / 'verify-session.json').write_text(json.dumps(marker), encoding='utf-8')
+                raise self.module.StageError('process_failed', exit_code=1)
+        self.native_hook = fail
+        report = self.module.run()
+        self.assert_failed(report, 'verify', 'process_failed')
+        self.assertTrue(report['bootstrap_verified'])
+        self.assertFalse(report['named_user_verified'])
+        self.assertEqual(report['protection_observation'], dict(stage='verify', property_type='Undefined', warning_type='not_observed'))
+        smoke.validate_stage2(report)
+
+    def test_stale_session_evidence_never_supplies_new_type_observation(self):
+        self.failures['bootstrap'] = 'stale_evidence'
+        with mock.patch.object(self.module, 'collect_protection_observation', side_effect=AssertionError('must not read stale marker')):
+            report = self.module.run()
+        self.assert_failed(report, 'bootstrap', 'stale_evidence')
+        self.assertEqual(report['protection_observation'], diag.empty_protection_observation())
+        smoke.validate_stage2(report)
+        report['protection_observation'] = dict(stage='bootstrap', property_type='Boolean', warning_type='not_observed')
+        with self.assertRaises(ValueError): smoke.validate_stage2(report)
 
     def test_timeout_is_primary_even_if_log_contains_a_compile_phrase(self):
         self.failures['bootstrap'] = 'timeout'

@@ -214,7 +214,7 @@ def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
 def validate_stage2(data: object) -> dict:
     if type(data) is not dict or set(data) != set(STAGE_FLAGS) | {
         "schema", "status", "failed_stage", "failure_kind", "actual_version", "version_source",
-        "simple_output_sha256", "security_change_attempted", "security_settings_state", "diagnostics"}:
+        "simple_output_sha256", "security_change_attempted", "security_settings_state", "diagnostics", "protection_observation"}:
         raise ValueError("stage2 keys")
     if type(data["schema"]) is not int or data["schema"] != 1 or data["status"] not in {"ok", "failed"}:
         raise ValueError("stage2 status")
@@ -245,6 +245,21 @@ def validate_stage2(data: object) -> dict:
         if completed is None or any(data[key] is not (index < completed)
                                     for index, key in enumerate(STAGE_FLAGS)):
             raise ValueError("failed-stage gate claims")
+    observation = DIAGNOSTICS.validate_protection_observation(data["protection_observation"])
+    observed_stage = observation["stage"]
+    supported_shape = (observation["property_type"] == "UnsafeOperationProtectionDescription"
+                       and observation["warning_type"] == "Boolean")
+    if observed_stage == "bootstrap" and (not data["modules_reimported"]
+            or (data["failed_stage"] == "bootstrap" and data["failure_kind"] == "stale_evidence")):
+        raise ValueError("unreached bootstrap type observation")
+    if observed_stage == "verify" and (not data["named_designer_verified"]
+            or (data["failed_stage"] == "verify" and data["failure_kind"] == "stale_evidence")):
+        raise ValueError("unreached named type observation")
+    if data["bootstrap_verified"] and (observed_stage is None
+            or (observed_stage == "bootstrap" and not supported_shape)):
+        raise ValueError("verified bootstrap without supported observed shape")
+    if data["named_user_verified"] and (observed_stage != "verify" or not supported_shape):
+        raise ValueError("verified named user without supported observed shape")
     version = data["actual_version"]
     if version is None:
         if data["version_source"] != "not_measured" or data["bootstrap_verified"]:

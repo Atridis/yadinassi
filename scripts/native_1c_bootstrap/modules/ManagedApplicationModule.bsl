@@ -32,15 +32,21 @@
             Или Сервер.user <> @@USER@@ Или Сервер.persisted_user <> @@USER@@ Тогда
             ВызватьИсключение "Native client: successful matching server hook is absent";
         КонецЕсли;
-        Если ТипЗнч(Сервер.persisted_protection) <> Тип("Булево")
-            Или Сервер.persisted_protection <> Ложь Тогда
-            ВызватьИсключение "Native client: persisted Boolean false was not verified";
+        Если Сервер.observed_protection_type <> "UnsafeOperationProtectionDescription"
+            Или Сервер.observed_warning_type <> "Boolean"
+            Или Сервер.persisted_protection_type <> "UnsafeOperationProtectionDescription"
+            Или Сервер.persisted_warning_type <> "Boolean"
+            Или ТипЗнч(Сервер.persisted_warning) <> Тип("Булево")
+            Или Сервер.persisted_warning <> Ложь Тогда
+            ВызватьИсключение "Native client: persisted descriptor with warning false was not verified";
         КонецЕсли;
         Если Этап = "verify" Тогда
             Если Сервер.current_user_at_start <> @@USER@@
                 Или Сервер.current_protection_verified <> Истина
-                Или ТипЗнч(Сервер.current_protection) <> Тип("Булево")
-                Или Сервер.current_protection <> Ложь Тогда
+                Или Сервер.current_protection_type <> "UnsafeOperationProtectionDescription"
+                Или Сервер.current_warning_type <> "Boolean"
+                Или ТипЗнч(Сервер.current_warning) <> Тип("Булево")
+                Или Сервер.current_warning <> Ложь Тогда
                 ВызватьИсключение "Native client: fresh named-user verification is absent";
             КонецЕсли;
         КонецЕсли;

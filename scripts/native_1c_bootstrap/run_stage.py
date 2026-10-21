@@ -14,7 +14,8 @@ import subprocess
 import sys
 import uuid
 
-from diagnostics import bounded_exit_code, collect_diagnostics, empty_diagnostics
+from diagnostics import (bounded_exit_code, collect_diagnostics, empty_diagnostics,
+                         collect_protection_observation, empty_protection_observation)
 from inject_modules import DraftError, PROTOCOL, inject
 from evidence_gates import (bounded_bytes, read_marker, require_epf,
                             require_marker_pair, require_reimported_modules,
@@ -47,6 +48,7 @@ def empty_report() -> dict:
             'failure_kind': 'unexpected_failure', 'actual_version': None,
             'version_source': 'not_measured', 'simple_output_sha256': None,
             'security_settings_state': 'not_attempted', 'diagnostics': empty_diagnostics(),
+            'protection_observation': empty_protection_observation(),
             **{flag: False for flag in FLAGS}}
 
 
@@ -108,9 +110,19 @@ def enterprise(stage: str, database: Path, evidence: Path, manifest: dict,
         json.dump({'protocol': PROTOCOL, 'run_id': manifest['run_id'],
                    'stage': stage, 'launch_token': token}, target)
     try:
-        process(command('ENTERPRISE', database, user) +
-                ['/RunModeManagedApplication', '/C', token, '/Out', str(log)],
-                evidence, evidence / (stage + '-console.log'))
+        try:
+            process(command('ENTERPRISE', database, user) +
+                    ['/RunModeManagedApplication', '/C', token, '/Out', str(log)],
+                    evidence, evidence / (stage + '-console.log'))
+        except StageError as error:
+            if error.kind != 'stale_evidence':
+                observation = collect_protection_observation(evidence, stage, manifest)
+                if observation['stage'] is not None:
+                    report['protection_observation'] = observation
+            raise
+        observation = collect_protection_observation(evidence, stage, manifest)
+        if observation['stage'] is not None:
+            report['protection_observation'] = observation
         if not all(path.is_file() and not path.is_symlink() for path in markers):
             raise StageError('hook_missing')
         # Check the complete matching marker pair before exposing a numeric

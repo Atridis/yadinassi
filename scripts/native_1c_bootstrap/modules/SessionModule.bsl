@@ -41,6 +41,8 @@
     Результат.Вставить("status", "error");
     Результат.Вставить("user", @@USER@@);
     Результат.Вставить("error", "");
+    Результат.Вставить("observed_protection_type", "not_observed");
+    Результат.Вставить("observed_warning_type", "not_observed");
 
     Попытка
         Пользователи = ПользователиИнформационнойБазы.ПолучитьПользователей();
@@ -63,11 +65,18 @@
             Пользователь.Имя = @@USER@@;
             Пользователь.ПолноеИмя = "Disposable native integration smoke user";
             Пользователь.АутентификацияСтандартная = Истина;
-            // This USER property is Boolean, not UnsafeOperationProtectionDescription.
-            Если ТипЗнч(Пользователь.ЗащитаОтОпасныхДействий) <> Тип("Булево") Тогда
-                ВызватьИсключение "Native bootstrap: unsupported user protection property type";
+            // Fail closed on the actual API contract before changing its one warning flag.
+            Защита = NativeНаблюдатьЗащиту(Пользователь, Результат);
+            Если ТипЗнч(Защита) <> Тип("ОписаниеЗащитыОтОпасныхДействий") Тогда
+                ВызватьИсключение "Native bootstrap: unsupported user protection descriptor type";
             КонецЕсли;
-            Пользователь.ЗащитаОтОпасныхДействий = Ложь;
+            Если ТипЗнч(Защита.ПредупреждатьОбОпасныхДействиях) <> Тип("Булево") Тогда
+                ВызватьИсключение "Native bootstrap: warning flag is not Boolean";
+            КонецЕсли;
+            // Preserve every other descriptor setting; do not construct default protection.
+            Защита.ПредупреждатьОбОпасныхДействиях = Ложь;
+            Пользователь.ЗащитаОтОпасныхДействий = Защита;
+            NativeПроверитьПользователя(Пользователь);
             Пользователь.Записать();
             // CurrentUser() remains the startup snapshot; do not claim it was changed.
             Результат.Вставить("current_protection_verified", Ложь);
@@ -75,16 +84,20 @@
             Если Пользователи.Количество() <> 1 Тогда
                 ВызватьИсключение "Native verify: expected exactly one disposable user";
             КонецЕсли;
+            Защита = NativeНаблюдатьЗащиту(Текущий, Результат);
             NativeПроверитьПользователя(Текущий);
             Результат.Вставить("current_protection_verified", Истина);
-            Результат.Вставить("current_protection", Текущий.ЗащитаОтОпасныхДействий);
+            Результат.Вставить("current_protection_type", "UnsafeOperationProtectionDescription");
+            Результат.Вставить("current_warning_type", "Boolean");
+            Результат.Вставить("current_warning", Текущий.ЗащитаОтОпасныхДействий.ПредупреждатьОбОпасныхДействиях);
         КонецЕсли;
 
         Сохраненный = ПользователиИнформационнойБазы.НайтиПоИмени(@@USER@@);
         NativeПроверитьПользователя(Сохраненный);
         Результат.Вставить("persisted_user", Сохраненный.Имя);
-        Результат.Вставить("protection_type", "Boolean");
-        Результат.Вставить("persisted_protection", Сохраненный.ЗащитаОтОпасныхДействий);
+        Результат.Вставить("persisted_protection_type", "UnsafeOperationProtectionDescription");
+        Результат.Вставить("persisted_warning_type", "Boolean");
+        Результат.Вставить("persisted_warning", Сохраненный.ЗащитаОтОпасныхДействий.ПредупреждатьОбОпасныхДействиях);
         Результат.Вставить("standard_authentication", Сохраненный.АутентификацияСтандартная);
         Результат.Вставить("users_after", ПользователиИнформационнойБазы.ПолучитьПользователей().Количество());
         Если Результат.users_after <> 1 Тогда
@@ -101,6 +114,32 @@
 КонецПроцедуры
 
 
+// Read-only observation. Never serialize an arbitrary platform type name.
+Функция NativeТипЗащиты(Значение)
+    Если ТипЗнч(Значение) = Тип("Булево") Тогда
+        Возврат "Boolean";
+    ИначеЕсли ТипЗнч(Значение) = Тип("Неопределено") Тогда
+        Возврат "Undefined";
+    ИначеЕсли ТипЗнч(Значение) = Тип("ОписаниеЗащитыОтОпасныхДействий") Тогда
+        Возврат "UnsafeOperationProtectionDescription";
+    КонецЕсли;
+    Возврат "other";
+КонецФункции
+
+
+Функция NativeНаблюдатьЗащиту(Пользователь, Результат)
+    Если Пользователь = Неопределено Тогда
+        Возврат Неопределено;
+    КонецЕсли;
+    Защита = Пользователь.ЗащитаОтОпасныхДействий;
+    Результат.observed_protection_type = NativeТипЗащиты(Защита);
+    Если Результат.observed_protection_type = "UnsafeOperationProtectionDescription" Тогда
+        Результат.observed_warning_type = NativeТипЗащиты(Защита.ПредупреждатьОбОпасныхДействиях);
+    КонецЕсли;
+    Возврат Защита;
+КонецФункции
+
+
 Процедура NativeПроверитьПользователя(Пользователь)
     Если Пользователь = Неопределено Тогда
         ВызватьИсключение "Native verify: expected user is absent";
@@ -108,11 +147,15 @@
     Если Пользователь.Имя <> @@USER@@ Тогда
         ВызватьИсключение "Native verify: wrong current or persisted user";
     КонецЕсли;
-    Если ТипЗнч(Пользователь.ЗащитаОтОпасныхДействий) <> Тип("Булево") Тогда
-        ВызватьИсключение "Native verify: user protection is not Boolean";
+    Защита = Пользователь.ЗащитаОтОпасныхДействий;
+    Если ТипЗнч(Защита) <> Тип("ОписаниеЗащитыОтОпасныхДействий") Тогда
+        ВызватьИсключение "Native verify: unexpected user protection descriptor type";
     КонецЕсли;
-    Если Пользователь.ЗащитаОтОпасныхДействий <> Ложь Тогда
-        ВызватьИсключение "Native verify: user protection was not disabled";
+    Если ТипЗнч(Защита.ПредупреждатьОбОпасныхДействиях) <> Тип("Булево") Тогда
+        ВызватьИсключение "Native verify: warning flag is not Boolean";
+    КонецЕсли;
+    Если Защита.ПредупреждатьОбОпасныхДействиях <> Ложь Тогда
+        ВызватьИсключение "Native verify: user warning was not disabled";
     КонецЕсли;
     Если Пользователь.АутентификацияСтандартная <> Истина Тогда
         ВызватьИсключение "Native verify: standard authentication is not enabled";

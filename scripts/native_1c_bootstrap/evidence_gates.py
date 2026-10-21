@@ -73,16 +73,19 @@ def require_marker_pair(root: Path, stage: str, run_id: str, user: str,
         if any(marker.get(key) != value for key, value in expected.items()):
             raise DraftError(f"Wrong identity/stage or unsuccessful {hook} marker")
     common_keys = {"protocol", "run_id", "stage", "hook", "user", "status", "error"}
-    session_keys = common_keys | {"persisted_user", "protection_type", "persisted_protection", "standard_authentication", "users_before", "users_after", "current_user_at_start", "current_protection_verified"}
+    session_keys = common_keys | {"persisted_user", "persisted_protection_type", "persisted_warning_type", "persisted_warning", "standard_authentication", "users_before", "users_after", "current_user_at_start", "current_protection_verified", "observed_protection_type", "observed_warning_type"}
     if stage == "verify":
-        session_keys.add("current_protection")
+        session_keys.update({"current_protection_type", "current_warning_type", "current_warning"})
     if set(session) != session_keys or set(managed) != common_keys | {"actual_version", "server_hook_verified"}:
         raise DraftError("Unexpected marker fields")
-    if (session.get("persisted_user") != user
-            or session.get("protection_type") != "Boolean"
-            or session.get("persisted_protection") is not False
+    if (session.get("observed_protection_type") != "UnsafeOperationProtectionDescription"
+            or session.get("observed_warning_type") != "Boolean"
+            or session.get("persisted_user") != user
+            or session.get("persisted_protection_type") != "UnsafeOperationProtectionDescription"
+            or session.get("persisted_warning_type") != "Boolean"
+            or session.get("persisted_warning") is not False
             or session.get("standard_authentication") is not True):
-        raise DraftError("Persisted user Boolean false / standard authentication not proven")
+        raise DraftError("Persisted user descriptor / Boolean warning false / standard authentication not proven")
     for key, count in (("users_before", 0 if stage == "bootstrap" else 1), ("users_after", 1)):
         if type(session.get(key)) is not int or session[key] != count:
             raise DraftError("Unexpected user count")
@@ -93,8 +96,10 @@ def require_marker_pair(root: Path, stage: str, run_id: str, user: str,
     if stage == "verify":
         if (session.get("current_user_at_start") != user
                 or session.get("current_protection_verified") is not True
-                or session.get("current_protection") is not False):
-            raise DraftError("Fresh named CurrentUser Boolean false not proven")
+                or session.get("current_protection_type") != "UnsafeOperationProtectionDescription"
+                or session.get("current_warning_type") != "Boolean"
+                or session.get("current_warning") is not False):
+            raise DraftError("Fresh named CurrentUser descriptor / Boolean warning false not proven")
     elif session.get("current_protection_verified") is not False:
         raise DraftError("Anonymous bootstrap cannot prove changed CurrentUser state")
     version = managed.get("actual_version")

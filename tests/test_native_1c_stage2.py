@@ -44,7 +44,7 @@ REPORT_FLAGS = {
 }
 REPORT_KEYS = REPORT_FLAGS | {
     "schema", "status", "failed_stage", "failure_kind", "actual_version",
-    "version_source", "simple_output_sha256", "security_settings_state", "diagnostics",
+    "version_source", "simple_output_sha256", "security_settings_state", "diagnostics", "protection_observation",
 }
 SUCCESS_EVENTS = [
     "inject", "load", "redump", "bootstrap", "named_designer", "verify",
@@ -145,13 +145,17 @@ class Stage2Harness(unittest.TestCase):
         if hook == "session":
             marker.update(
                 users_before=0 if stage == "bootstrap" else 1, users_after=1,
-                persisted_user="NativeSmoke", protection_type="Boolean",
-                persisted_protection=False, standard_authentication=True,
+                persisted_user="NativeSmoke", persisted_protection_type="UnsafeOperationProtectionDescription",
+                persisted_warning_type="Boolean",
+                observed_protection_type="UnsafeOperationProtectionDescription",
+                observed_warning_type="Boolean",
+                persisted_warning=False, standard_authentication=True,
                 current_user_at_start="" if stage == "bootstrap" else "NativeSmoke",
                 current_protection_verified=stage == "verify",
             )
             if stage == "verify":
-                marker["current_protection"] = False
+                marker.update(current_protection_type="UnsafeOperationProtectionDescription",
+                              current_warning_type="Boolean", current_warning=False)
         else:
             marker.update(actual_version="8.3.27.1508", server_hook_verified=True)
         marker.update(self.marker_overrides.get((stage, hook), {}))
@@ -260,6 +264,7 @@ class Stage2FlowTests(Stage2Harness):
             "version_source": "SystemInfo.AppVersion",
             "simple_output_sha256": hashlib.sha256(EXPECTED_OUTPUT).hexdigest(),
             "security_settings_state": "verified", "diagnostics": self.module.empty_diagnostics(),
+            "protection_observation": dict(stage="verify", property_type="UnsafeOperationProtectionDescription", warning_type="Boolean"),
             **dict.fromkeys(REPORT_FLAGS, True),
         })
         self.assertEqual(self.events, SUCCESS_EVENTS)
@@ -411,7 +416,7 @@ class Stage2FlowTests(Stage2Harness):
         self.assertNotIn("private native error", json.dumps(report))
 
     def test_managed_version_requires_valid_session_pair_before_export(self):
-        self.marker_overrides["bootstrap", "session"] = {"persisted_protection": True}
+        self.marker_overrides["bootstrap", "session"] = {"persisted_warning": True}
         report = self.module.run()
         self.assert_failed(report, "bootstrap", "marker_invalid")
         self.assertIsNone(report["actual_version"])
@@ -449,7 +454,7 @@ class Stage2FlowTests(Stage2Harness):
         self.assertFalse(report["launcher_built"])
 
     def test_named_verify_requires_actual_boolean_false_not_zero(self):
-        self.marker_overrides["verify", "session"] = {"current_protection": 0}
+        self.marker_overrides["verify", "session"] = {"current_warning": 0}
         report = self.module.run()
         self.assert_failed(report, "verify", "marker_invalid")
         self.assertEqual(self.events, SUCCESS_EVENTS[:6])
@@ -564,6 +569,7 @@ class Stage2UnitTests(unittest.TestCase):
             "failure_kind": "unexpected_failure", "actual_version": None,
             "version_source": "not_measured", "simple_output_sha256": None,
             "security_settings_state": "not_attempted", "diagnostics": self.module.empty_diagnostics(),
+            "protection_observation": self.module.empty_protection_observation(),
             **dict.fromkeys(REPORT_FLAGS, False),
         })
 
