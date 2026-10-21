@@ -23,6 +23,7 @@ from .collation import string_key
 from .parser import parse, parse_expression, parse_fragment, validate_labels
 from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
+from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
 from .structures import BSLFixedStructure, BSLStructure, fill_property_values
 from .values import (
     BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, Reference as _Reference,
@@ -91,7 +92,9 @@ class _Namespace:
 
 
 class Interpreter:
-    def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig"):
+    def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig",
+                 native_target: str = WINDOWS_8_3_27_2342):
+        self._native_target = validate_native_target(native_target)
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
@@ -141,6 +144,11 @@ class Interpreter:
         self.register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
         self.register_type("КвалификаторыДаты", BSLDateQualifiers, "DateQualifiers")
         self.register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
+
+    @property
+    def native_target(self) -> str:
+        """The explicitly selected native checkpoint, shared by this VM's imports."""
+        return self._native_target
 
     @property
     def execution_context(self) -> str:
@@ -231,18 +239,19 @@ class Interpreter:
         return self.execute_program(parse(text, source))
 
     def execute_program(self, program: list[ast.Node]) -> object:
-        # A diagnostic source label need not name a readable filesystem path.
-        if not any(isinstance(node, ast.Import) for node in program):
-            return self._execute_program(program)
-        source = program[0].token.source if program else "<строка>"
-        path = None if source.startswith("<") else Path(source).resolve()
-        if path is None:
-            return self._execute_program(program)
-        self._loading.append(path)
-        try:
-            return self._execute_program(program)
-        finally:
-            self._loading.pop()
+        with target_context(self.native_target):
+            # A diagnostic source label need not name a readable filesystem path.
+            if not any(isinstance(node, ast.Import) for node in program):
+                return self._execute_program(program)
+            source = program[0].token.source if program else "<строка>"
+            path = None if source.startswith("<") else Path(source).resolve()
+            if path is None:
+                return self._execute_program(program)
+            self._loading.append(path)
+            try:
+                return self._execute_program(program)
+            finally:
+                self._loading.pop()
 
     def _execute_program(self, program: list[ast.Node]) -> object:
         # Also validate callers supplying an AST directly. No import or declaration
@@ -783,7 +792,8 @@ class Interpreter:
                 text = path.read_text(encoding=self.encoding)
             except (OSError, UnicodeError, LookupError) as error:
                 raise ValueError(f"Не удалось прочитать модуль {path}: {error}") from None
-            child = Interpreter(self.output, encoding=self.encoding)
+            child = Interpreter(self.output, encoding=self.encoding,
+                                native_target=self.native_target)
             child.functions = self.functions.copy()
             child.types = self.types.copy()
             child._module_cache = self._module_cache

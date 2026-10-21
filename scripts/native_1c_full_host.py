@@ -1,0 +1,911 @@
+"""Private, bounded six-scenario capture validation and UTC host comparison.
+
+By default only finite metadata leaves this module. An explicit opt-in may retain
+exactly six validated native outputs and bounded provenance after all cleanup gates.
+"""
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+import importlib.metadata
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import selectors
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+SCENARIOS = ("collections", "dates", "functions", "numbers", "strings", "values")
+SCHEMA = "native-1c-full-v1"
+MAX_FILE = 1_048_576
+MAX_TOTAL = 2_097_152
+MAX_TRANSPORT = 3_145_728
+MAX_REPORT = 32_768
+MAX_STDERR = 65_536
+ARTIFACT_DIRECTORY = "native-smoke/native-outputs"
+ARTIFACT_FILES = tuple(name + ".out" for name in SCENARIOS) + ("provenance.json",)
+WINDOWS_TARGET = "windows-8.3.27.2342"
+LINUX_TARGET = "linux-8.3.27.1508"
+BYTE_EXACT = "byte_exact"
+MAP_MODE = "typed-map-order-v1"
+APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
+COLLECTIONS_SOURCE_SHA256 = "908ccf338cff45f07182fbfa376e2d5045d3ed9248b0f216f6ac09cb97faf0e6"
+CASE_SECONDS = 10
+DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
+FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
+            "invalid_result", "invalid_dump_result", "artifact_missing", "output_mismatch",
+            "output_limit", "module_mismatch", "timeout", "process_failed", "unexpected_failure",
+            "export_failed"}
+CASE_KEYS = {"name", "status", "source_sha256", "module_sha256", "output_sha256",
+             "output_size", "message_count"}
+EXECUTE_SCRIPT = r'''
+import sys
+import importlib.util
+from pathlib import Path
+# Load only the verified package, not arbitrary modules beside the checkout.
+package = Path(sys.argv[1]) / "yadinassi"
+spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                            submodule_search_locations=[str(package)])
+module = importlib.util.module_from_spec(spec)
+sys.modules["yadinassi"] = module
+spec.loader.exec_module(module)
+Interpreter = module.Interpreter
+
+def emit(message):
+    message = message.replace("\r\n", "\n").replace("\r", "\n")
+    sys.stdout.buffer.write((message + "\n").encode("utf-8"))
+
+source = Path(sys.argv[2])
+options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
+Interpreter(output=emit, **options).execute(source.read_text(encoding="utf-8-sig"), str(source))
+'''
+
+
+class FullError(Exception):
+    """Fixed error codes only; never include source/native/exception text."""
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def is_digest(value: object) -> bool:
+    return type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def is_int(value: object, maximum: int) -> bool:
+    return type(value) is int and 0 <= value <= maximum
+
+
+def unique_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate")
+        result[key] = value
+    return result
+
+
+def reject_constant(value):
+    raise ValueError("constant")
+
+
+def strict_json(raw: bytes, limit: int):
+    if type(raw) is not bytes or not 0 < len(raw) <= limit:
+        raise ValueError("size")
+    # UTF-8 (not JSON's permissive UTF-16 autodetection), no BOM or surrogates.
+    text = raw.decode("utf-8")
+    depth, quoted, escaped = 0, False, False
+    for char in text:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+            if depth > 12:
+                raise ValueError("depth")
+        elif char in "]}":
+            depth -= 1
+            if depth < 0:
+                raise ValueError("depth")
+    result = json.loads(text, object_pairs_hook=unique_pairs, parse_constant=reject_constant,
+                        parse_int=lambda value: int(value) if len(value) <= 10 else reject_constant(value))
+    def bounded(value, depth=0):
+        if depth > 12:
+            raise ValueError("depth")
+        if type(value) is dict:
+            if len(value) > 128:
+                raise ValueError("members")
+            for key, item in value.items():
+                key.encode("utf-8")
+                bounded(item, depth + 1)
+        elif type(value) is list:
+            if len(value) > 128:
+                raise ValueError("items")
+            for item in value:
+                bounded(item, depth + 1)
+        elif type(value) is str:
+            value.encode("utf-8")
+        elif value is not None and type(value) not in (int, bool):
+            raise ValueError("scalar")
+    bounded(result)
+    return result
+
+
+def _open_private(path: Path) -> int:
+    # Descriptor-relative traversal prevents parent-directory symlink races.
+    path = path.absolute()
+    if os.open in os.supports_dir_fd:
+        directory = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for part in path.parts[1:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                dir_fd=directory)
+                os.close(directory)
+                directory = child
+            return os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                           dir_fd=directory)
+        finally:
+            os.close(directory)
+    # Offline Windows validation only; the execution workflow is Linux-only.
+    if any(parent.is_symlink() for parent in (path, *path.parents)):
+        raise ValueError("link")
+    return os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+
+
+def read_regular(path: Path, limit: int, *, nonempty=False) -> bytes:
+    """No links/special files; bound bytes and check stable opened descriptor."""
+    try:
+        fd = _open_private(path)
+        with os.fdopen(fd, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+                raise ValueError("file")
+            data = stream.read(limit + 1)
+            after = os.fstat(stream.fileno())
+            signature = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_nlink, s.st_size,
+                                   s.st_mtime_ns, s.st_ctime_ns)
+            if (signature(before) != signature(after) or signature(after) != signature(path.lstat())
+                    or len(data) != before.st_size or len(data) > limit or (nonempty and not data)):
+                raise ValueError("unstable")
+            return data
+    except (OSError, ValueError):
+        raise FullError("invalid_private_file") from None
+
+
+def generated_module(source: bytes) -> bytes:
+    return source.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n").encode("utf-8-sig")
+
+
+def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool):
+    if type(data) is not dict or set(data) != {"schema", "nonce", "status", "failure_kind", "failed_case", "input_sha256", "cases"}:
+        raise ValueError("stage3 keys")
+    if type(data["schema"]) is not int or data["schema"] != 1 or data["nonce"] != nonce:
+        raise ValueError("stage3 identity")
+    status = data["status"]
+    if status not in {"not_started", "failed", "ok"} or data["failure_kind"] not in FAILURES:
+        raise ValueError("stage3 status")
+    if type(data["input_sha256"]) is not dict:
+        raise ValueError("inputs")
+    if data["input_sha256"] != input_hashes and not (status != "ok" and data["input_sha256"] == {}):
+        raise ValueError("inputs")
+    cases = data["cases"]
+    if type(cases) is not list or len(cases) != len(SCENARIOS):
+        raise ValueError("cases")
+    seen_incomplete = False
+    failed = []
+    for name, case in zip(SCENARIOS, cases):
+        if type(case) is not dict or set(case) != CASE_KEYS or case["name"] != name:
+            raise ValueError("case keys")
+        if case["status"] not in {"not_started", "failed", "ok"}:
+            raise ValueError("case status")
+        if seen_incomplete and case["status"] != "not_started":
+            raise ValueError("case order")
+        seen_incomplete |= case["status"] != "ok"
+        source_hash = input_hashes[f"integrational_tests/tests/{name}.bsl"]
+        if case["status"] == "ok":
+            if (case["source_sha256"] != source_hash or case["module_sha256"] != module_hashes[name]
+                    or not is_digest(case["output_sha256"]) or not is_int(case["output_size"], MAX_FILE)
+                    or not is_int(case["message_count"], 32_768)):
+                raise ValueError("case evidence")
+        elif case["status"] == "not_started":
+            if any(case[key] is not None for key in CASE_KEYS - {"name", "status"}):
+                raise ValueError("unreached evidence")
+        else:
+            failed.append(name)
+            if (case["source_sha256"] not in (None, source_hash)
+                    or case["module_sha256"] not in (None, module_hashes[name])
+                    or any(case[key] is not None for key in ("output_sha256", "output_size", "message_count"))):
+                raise ValueError("failed evidence")
+    if sum(case["output_size"] or 0 for case in cases) > MAX_TOTAL:
+        raise ValueError("aggregate")
+    if data["input_sha256"] != input_hashes and any(case["status"] != "not_started" for case in cases):
+        raise ValueError("inputs not established")
+    if status == "ok":
+        if (not prerequisites or seen_incomplete or data["failure_kind"] != "none" or data["failed_case"] is not None):
+            raise ValueError("success")
+    elif status == "not_started":
+        if (prerequisites or any(case["status"] != "not_started" for case in cases)
+                or data["failure_kind"] != "prerequisites_failed" or data["failed_case"] is not None):
+            raise ValueError("not started")
+    elif (not prerequisites or data["failure_kind"] in {"none", "prerequisites_failed"}
+            or (failed and data["failed_case"] != failed[0])
+            or (not failed and data["failed_case"] is not None)):
+        raise ValueError("failed")
+    return data
+
+
+def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator):
+    """Return validated report and exact bytes, never the unchecked envelope."""
+    try:
+        if not re.fullmatch(r"[0-9a-f]{32}", nonce):
+            raise ValueError("nonce")
+        data = strict_json(raw, MAX_TRANSPORT)
+        if (type(data) is not dict or set(data) != {"schema", "nonce", "report", "outputs"}
+                or data["schema"] != SCHEMA or data["nonce"] != nonce):
+            raise ValueError("envelope")
+        report_raw = json.dumps(data["report"], separators=(",", ":"), ensure_ascii=True).encode()
+        if len(report_raw) > MAX_REPORT:
+            raise ValueError("report limit")
+        report = report_validator(report_raw, bootstrap=True, full_suite=True)
+        prerequisites = bool(report.get("stage2") and report["stage2"]["status"] == "ok")
+        stage3 = validate_stage3(report["stage3"], nonce, input_hashes, module_hashes,
+                                 prerequisites=prerequisites)
+        if report["native_tests_completed"] is not (stage3["status"] == "ok"):
+            raise ValueError("completion")
+        if (report["status"] == "ok") is not (stage3["status"] == "ok"):
+            raise ValueError("success")
+        if prerequisites and stage3["status"] != "ok" and report["status"] != "stage3_failed":
+            raise ValueError("status")
+        outputs = data["outputs"]
+        if type(outputs) is not list:
+            raise ValueError("outputs")
+        if stage3["status"] != "ok":
+            if outputs:
+                raise ValueError("failed payload")
+            return report, {}
+        if len(outputs) != len(SCENARIOS):
+            raise ValueError("coverage")
+        result = {}
+        total = 0
+        for name, case, entry in zip(SCENARIOS, stage3["cases"], outputs):
+            if (type(entry) is not dict or set(entry) != {"name", "size", "sha256", "data_b64"}
+                    or entry["name"] != name + ".out" or not is_int(entry["size"], MAX_FILE)
+                    or not is_digest(entry["sha256"]) or type(entry["data_b64"]) is not str):
+                raise ValueError("entry")
+            if len(entry["data_b64"]) > 4 * ((MAX_FILE + 2) // 3):
+                raise ValueError("base64 limit")
+            payload = base64.b64decode(entry["data_b64"], validate=True)
+            if base64.b64encode(payload).decode("ascii") != entry["data_b64"]:
+                raise ValueError("base64 canonical")
+            total += len(payload)
+            if (len(payload) != entry["size"] or digest(payload) != entry["sha256"]
+                    or entry["size"] != case["output_size"] or entry["sha256"] != case["output_sha256"]
+                    or total > MAX_TOTAL):
+                raise ValueError("payload evidence")
+            result[name] = payload
+        return report, result
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError, binascii.Error):
+        raise FullError("invalid_full_envelope") from None
+
+
+def quarantine_outputs(parent: Path, payloads: dict[str, bytes]) -> Path:
+    """Exclusive host-chosen directory; caller must remove it on every outcome."""
+    if list(payloads) != list(SCENARIOS) or any(type(b) is not bytes or len(b) > MAX_FILE for b in payloads.values()) or sum(map(len, payloads.values())) > MAX_TOTAL:
+        raise FullError("invalid_private_payloads")
+    if parent.is_symlink() or not parent.is_dir():
+        raise FullError("invalid_private_directory")
+    target = parent / "native-capture"
+    try:
+        target.mkdir(mode=0o700)
+        for name in SCENARIOS:
+            fd = os.open(target / (name + ".out"), os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(payloads[name])
+                stream.flush()
+                os.fsync(stream.fileno())
+            (target / (name + ".out")).chmod(0o400)
+        for name in SCENARIOS:
+            if read_regular(target / (name + ".out"), MAX_FILE) != payloads[name]:
+                raise FullError("private_capture_failed")
+        return target
+    except OSError:
+        raise FullError("private_capture_failed") from None
+
+
+def child_environment() -> dict[str, str]:
+    # No credentials, PYTHONPATH/PYTHONSTARTUP, locale or timezone inherited.
+    return {"PATH": os.defpath, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "Etc/UTC",
+            "YADINASSI_TIMEZONE": "Etc/UTC", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+
+
+def bounded_child(args: list[str], cwd: Path, *, seconds=CASE_SECONDS,
+                  stdout_limit=MAX_FILE, stderr_limit=MAX_STDERR):
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    deadline = time.monotonic() + seconds
+    try:
+        with subprocess.Popen(args, cwd=cwd, env=child_environment(), stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as process:
+            try:
+                with selectors.DefaultSelector() as selector:
+                    for stream, name in ((process.stdout, "stdout"), (process.stderr, "stderr")):
+                        selector.register(stream, selectors.EVENT_READ, name)
+                    while selector.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise FullError("interpreter_timeout")
+                        for key, _ in selector.select(min(remaining, 0.1)):
+                            chunk = os.read(key.fileobj.fileno(), 4096)
+                            if not chunk:
+                                selector.unregister(key.fileobj)
+                                continue
+                            buffers[key.data].extend(chunk)
+                            limit = stdout_limit if key.data == "stdout" else stderr_limit
+                            if len(buffers[key.data]) > limit:
+                                raise FullError("interpreter_output_limit")
+                    code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                return code, bytes(buffers["stdout"]), bytes(buffers["stderr"])
+            finally:
+                # Reap the direct child and kill any descendants, including one
+                # that outlives a successful process after closing its pipes.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+    except subprocess.TimeoutExpired:
+        raise FullError("interpreter_timeout") from None
+    except OSError:
+        raise FullError("interpreter_unavailable") from None
+
+
+def mismatch_metadata(expected: bytes, actual: bytes) -> dict:
+    shared = min(len(expected), len(actual))
+    differing = sum(a != b for a, b in zip(expected, actual)) + abs(len(expected) - len(actual))
+    first = next((i for i in range(shared) if expected[i] != actual[i]), shared)
+    return {"different_byte_positions": differing, "first_mismatch_byte": first,
+            "first_mismatch_native_line": expected[:first].count(b"\n") + 1,
+            "native_line_count": expected.count(b"\n"), "interpreter_line_count": actual.count(b"\n")}
+
+
+def validate_comparison_options(native_target: str, comparison_mode: str) -> None:
+    if (type(native_target) is not str or native_target not in {WINDOWS_TARGET, LINUX_TARGET}
+            or type(comparison_mode) is not str or comparison_mode not in {BYTE_EXACT, MAP_MODE}
+            or (comparison_mode == MAP_MODE and native_target != LINUX_TARGET)):
+        raise FullError("comparison_configuration_invalid")
+
+
+def validate_semantic_context(report: dict, image: str) -> None:
+    """Only this measured native checkpoint may use the reviewed semantic contract."""
+    try:
+        stage2, stage3 = report["stage2"], report["stage3"]
+        if (image != APPROVED_IMAGE or report["image"] != image or report["platform"] != "linux/amd64"
+                or report["native_target"] != LINUX_TARGET or report["comparison_mode"] != MAP_MODE
+                or report["configured_timezone"] != "Etc/UTC" or report["configured_native_locale"] != "ru_RU"
+                or report["status"] != "ok" or report["container_exit_code"] != 0
+                or report["runtime_version"] != "8.3.27.1508"
+                or report["runtime_version_source"] != "SystemInfo.AppVersion"
+                or stage2["status"] != "ok" or stage2["actual_version"] != "8.3.27.1508"
+                or stage2["version_source"] != "SystemInfo.AppVersion"
+                or stage2["named_user_verified"] is not True
+                or stage3["status"] != "ok" or stage3["nonce"] != report["invocation_nonce"]
+                or not re.fullmatch(r"[0-9a-f]{32}", report["invocation_nonce"])
+                or stage3["input_sha256"]["integrational_tests/tests/collections.bsl"] != COLLECTIONS_SOURCE_SHA256
+                or stage3["cases"][0]["source_sha256"] != COLLECTIONS_SOURCE_SHA256
+                or report["trusted_input_sha256"] != stage3["input_sha256"]
+                or any(report[key] is not True for key in ("container_cleanup_verified",
+                    "native_cases_completed", "native_transport_validated", "native_evidence_accepted"))):
+            raise ValueError("semantic context")
+    except (KeyError, TypeError, ValueError, IndexError):
+        raise FullError("semantic_context_invalid") from None
+
+
+def map_contract():
+    # Compile the checked helper source directly, ignoring any repository bytecode.
+    path = Path(__file__).with_name("native_1c_map_contract.py")
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_1c_map_contract", path))
+    exec(compile(read_regular(path, 4 * MAX_FILE, nonempty=True), str(path), "exec"), module.__dict__)
+    return module
+
+
+def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
+    contract = map_contract()
+    if type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}:
+        raise FullError("semantic_result_invalid")
+    if (type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}
+            or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != MAP_MODE
+            or type(result["reason"]) is not str or result["reason"] not in contract.REASONS
+            or not is_int(result["records"], 776) or not is_int(result["byte_equal_records"], result["records"])
+            or type(result["accepted_labels"]) is not list
+            or any(type(label) is not str or label not in contract.ELIGIBLE_LABELS for label in result["accepted_labels"])
+            or len(set(result["accepted_labels"])) != len(result["accepted_labels"])):
+        raise FullError("semantic_result_invalid")
+    if result["status"] == "equivalent":
+        if (result["reason"] != "none" or result["records"] != 776
+                or result["byte_equal_records"] + len(result["accepted_labels"]) != 776
+                or raw_matched != (result["byte_equal_records"] == 776)):
+            raise FullError("semantic_result_invalid")
+    elif (result["reason"] == "none" or result["records"] != 0
+            or result["byte_equal_records"] != 0 or result["accepted_labels"]):
+        raise FullError("semantic_result_invalid")
+    if result["accepted_labels"] != [label for label in contract.ELIGIBLE_LABELS if label in result["accepted_labels"]]:
+        raise FullError("semantic_result_invalid")
+
+
+def validate_comparison(comparison: dict, stage3: dict, native_target: str, comparison_mode: str) -> None:
+    """Validate both raw evidence and separately named acceptance, never conflate them."""
+    validate_comparison_options(native_target, comparison_mode)
+    try:
+        if (type(comparison) is not dict or set(comparison) != {"schema", "configured_timezone", "configured_locale",
+                "native_target", "comparison_mode", "status", "acceptance_status", "cases"}
+                or type(comparison["schema"]) is not int or comparison["schema"] != 2
+                or comparison["configured_timezone"] != "Etc/UTC" or comparison["configured_locale"] != "C.UTF-8"
+                or comparison["native_target"] != native_target or comparison["comparison_mode"] != comparison_mode
+                or comparison["status"] not in {"ok", "failed"}
+                or comparison["acceptance_status"] not in {"accepted", "rejected"}
+                or type(comparison["cases"]) is not list or len(comparison["cases"]) != len(SCENARIOS)
+                or type(stage3["cases"]) is not list or len(stage3["cases"]) != len(SCENARIOS)):
+            raise ValueError("comparison")
+        for name, native, case in zip(SCENARIOS, stage3["cases"], comparison["cases"]):
+            if (type(case) is not dict or set(case) != {"name", "status", "failure_kind", "native_size", "native_sha256",
+                    "interpreter_size", "interpreter_sha256", "mismatch", "acceptance_status", "semantic"}
+                    or case["name"] != name or native["name"] != name
+                    or not is_int(case["native_size"], MAX_FILE) or not is_int(native["output_size"], MAX_FILE)
+                    or not is_digest(case["native_sha256"]) or not is_digest(native["output_sha256"])
+                    or case["native_size"] != native["output_size"] or case["native_sha256"] != native["output_sha256"]
+                    or case["status"] not in {"matched", "mismatched", "error", "timeout"}
+                    or case["acceptance_status"] not in {"accepted", "rejected"}):
+                raise ValueError("case")
+            if case["status"] in {"error", "timeout"}:
+                if (case["acceptance_status"] != "rejected" or case["semantic"] is not None
+                        or case["mismatch"] is not None or case["interpreter_size"] is not None
+                        or case["interpreter_sha256"] is not None
+                        or case["failure_kind"] not in {"source_changed", "native_capture_changed", "invalid_private_file",
+                            "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed"}
+                        or (case["status"] == "timeout") != (case["failure_kind"] == "interpreter_timeout")):
+                    raise ValueError("failure")
+                continue
+            matched = case["status"] == "matched"
+            if (case["failure_kind"] != "none" or not is_digest(case["interpreter_sha256"])
+                    or not is_int(case["interpreter_size"], MAX_FILE)
+                    or matched != (case["interpreter_sha256"] == case["native_sha256"] and case["interpreter_size"] == case["native_size"])):
+                raise ValueError("raw")
+            if matched:
+                if case["mismatch"] is not None:
+                    raise ValueError("mismatch")
+            else:
+                mismatch = case["mismatch"]
+                if (type(mismatch) is not dict or set(mismatch) != {"different_byte_positions", "first_mismatch_byte",
+                        "first_mismatch_native_line", "native_line_count", "interpreter_line_count"}
+                        or any(not is_int(value, MAX_FILE + 1) for value in mismatch.values())
+                        or not 1 <= mismatch["different_byte_positions"] <= max(case["native_size"], case["interpreter_size"])
+                        or mismatch["first_mismatch_byte"] > min(case["native_size"], case["interpreter_size"])
+                        or not 1 <= mismatch["first_mismatch_native_line"] <= mismatch["native_line_count"] + 1):
+                    raise ValueError("mismatch")
+            semantic = case["semantic"]
+            if comparison_mode == MAP_MODE and name == "collections":
+                if native["source_sha256"] != COLLECTIONS_SOURCE_SHA256:
+                    raise ValueError("source")
+                validate_semantic_result(semantic, raw_matched=matched)
+                accepted = semantic["status"] == "equivalent"
+            else:
+                if semantic is not None:
+                    raise ValueError("unexpected semantic")
+                accepted = matched
+            if (case["acceptance_status"] == "accepted") != accepted:
+                raise ValueError("acceptance")
+        if ((comparison["status"] == "ok") != all(case["status"] == "matched" for case in comparison["cases"])
+                or (comparison["acceptance_status"] == "accepted") != all(case["acceptance_status"] == "accepted" for case in comparison["cases"])):
+            raise ValueError("aggregate")
+    except (KeyError, TypeError, ValueError, FullError):
+        raise FullError("comparison_evidence_invalid") from None
+
+
+def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict, *, runner=bounded_child,
+                    native_target=WINDOWS_TARGET, comparison_mode=BYTE_EXACT, runtime_evidence=None) -> dict:
+    validate_comparison_options(native_target, comparison_mode)
+    if comparison_mode == MAP_MODE:
+        validate_semantic_context(runtime_evidence, APPROVED_IMAGE)
+        if runtime_evidence["stage3"] != stage3 or runtime_evidence["trusted_input_sha256"] != input_hashes:
+            raise FullError("semantic_context_invalid")
+    if (stage3.get("status") != "ok" or len(stage3.get("cases", [])) != len(SCENARIOS)
+            or [case.get("name") for case in stage3["cases"]] != list(SCENARIOS)
+            or any(case.get("status") != "ok" for case in stage3["cases"])):
+        raise FullError("comparison_coverage_invalid")
+    records = []
+    for name, case in zip(SCENARIOS, stage3["cases"]):
+        record = {"name": name, "status": "error", "failure_kind": "none",
+                  "native_size": case["output_size"], "native_sha256": case["output_sha256"],
+                  "interpreter_size": None, "interpreter_sha256": None, "mismatch": None,
+                  "acceptance_status": "rejected", "semantic": None}
+        try:
+            source = root / f"integrational_tests/tests/{name}.bsl"
+            if digest(read_regular(source, MAX_FILE, nonempty=True)) != input_hashes[f"integrational_tests/tests/{name}.bsl"]:
+                raise FullError("source_changed")
+            expected = read_regular(capture / (name + ".out"), MAX_FILE)
+            if digest(expected) != case["output_sha256"] or len(expected) != case["output_size"]:
+                raise FullError("native_capture_changed")
+            # An ignored stale/tampered repository __pycache__ is not source
+            # provenance. Use a new empty private cache prefix and never write it.
+            with tempfile.TemporaryDirectory(prefix="interpreter-cache-", dir=capture.parent) as cache:
+                code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+                                              "-c", EXECUTE_SCRIPT, str(root), str(source), native_target], root)
+            if code != 0 or stderr:
+                raise FullError("interpreter_failed")
+            record.update(interpreter_size=len(actual), interpreter_sha256=digest(actual))
+            record["status"] = "matched" if actual == expected else "mismatched"
+            if actual != expected:
+                record["mismatch"] = mismatch_metadata(expected, actual)
+            if name == "collections" and comparison_mode == MAP_MODE:
+                result = map_contract().compare_collections(expected, actual, case["source_sha256"])
+                validate_semantic_result(result, raw_matched=actual == expected)
+                record["semantic"] = result
+                accepted = result["status"] == "equivalent"
+            else:
+                accepted = actual == expected
+            record["acceptance_status"] = "accepted" if accepted else "rejected"
+        except FullError as error:
+            if str(error) == "semantic_result_invalid":
+                raise
+            record["failure_kind"] = str(error)
+            record["status"] = "timeout" if str(error) == "interpreter_timeout" else "error"
+        records.append(record)
+    result = {"schema": 2, "configured_timezone": "Etc/UTC", "configured_locale": "C.UTF-8",
+              "native_target": native_target, "comparison_mode": comparison_mode,
+              "status": "ok" if all(case["status"] == "matched" for case in records) else "failed",
+              "acceptance_status": "accepted" if all(case["acceptance_status"] == "accepted" for case in records) else "rejected",
+              "cases": records}
+    validate_comparison(result, stage3, native_target, comparison_mode)
+    return result
+
+
+def windows_fingerprints(root: Path) -> dict[str, str]:
+    names = [f"integrational_tests/output/{name}.out" for name in SCENARIOS] + ["integrational_tests/meta.md"]
+    return {name: digest(read_regular(root / name, MAX_FILE, nonempty=True)) for name in names}
+
+
+def repository_provenance(root: Path) -> dict:
+    def git(*args):
+        code, stdout, stderr = bounded_child(["git", "-C", str(root), *args], root,
+                                             stdout_limit=8192, stderr_limit=8192)
+        if code != 0 or stderr:
+            raise FullError("repository_identity_unverified")
+        return stdout.decode("ascii").strip()
+    commit = git("rev-parse", "HEAD^{commit}")
+    tree = git("rev-parse", "HEAD^{tree}")
+    if (not re.fullmatch(r"[0-9a-f]{40}", commit) or not re.fullmatch(r"[0-9a-f]{40}", tree)
+            or git("status", "--porcelain", "--untracked-files=all")):
+        raise FullError("repository_identity_unverified")
+    tracked = set(git("ls-files", "--", "yadinassi").splitlines())
+    actual = {path.relative_to(root).as_posix() for path in (root / "yadinassi").rglob("*")
+              if not path.is_dir() and "__pycache__" not in path.parts}
+    if not tracked or actual != tracked:
+        raise FullError("repository_sources_unverified")
+    expected = os.environ.get("GITHUB_SHA")
+    if expected is not None and expected != commit:
+        raise FullError("repository_commit_mismatch")
+    result = {"commit": commit, "tree": tree}
+    for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
+        value = os.environ.get(key)
+        if value is not None:
+            if not re.fullmatch(r"[0-9]{1,20}", value):
+                raise FullError("workflow_identity_invalid")
+            result[key.lower()] = value
+    return result
+
+
+def interpreter_provenance(root: Path) -> dict:
+    files = sorted([path for path in (root / "yadinassi").rglob("*")
+                    if not path.is_dir() and "__pycache__" not in path.parts])
+    if any(path.suffix not in {".py", ".txt"} for path in files):
+        raise FullError("unexpected_interpreter_source")
+    files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
+              root / "scripts/native_1c_map_contract.py"]
+    if not files or len(files) > 512:
+        raise FullError("interpreter_provenance_invalid")
+    hashes = {path.relative_to(root).as_posix(): digest(read_regular(path, 4 * MAX_FILE, nonempty=True)) for path in files}
+    dependencies = {}
+    for package, expected_version in DEPENDENCIES.items():
+        try:
+            value = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            raise FullError("interpreter_dependency_missing") from None
+        if value != expected_version:
+            raise FullError("interpreter_dependency_invalid")
+        dependencies[package] = value
+    return {"python_version": ".".join(map(str, sys.version_info[:3])),
+            "dependencies": dependencies, "source_file_count": len(hashes),
+            "source_sha256": digest(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()),
+            "comparison_driver_sha256": hashes["scripts/native_1c_full_host.py"],
+            "map_contract_sha256": hashes["scripts/native_1c_map_contract.py"]}
+
+
+
+def retain_output_bytes(capture: Path, stage3: dict) -> dict[str, bytes]:
+    """Retain only the six already validated captures, without transforming bytes."""
+    try:
+        if (capture.is_symlink() or not capture.is_dir()
+                or set(path.name for path in capture.iterdir()) != set(ARTIFACT_FILES[:-1])
+                or stage3["status"] != "ok"
+                or [case["name"] for case in stage3["cases"]] != list(SCENARIOS)):
+            raise ValueError("coverage")
+        result = {}
+        for name, case in zip(SCENARIOS, stage3["cases"]):
+            payload = read_regular(capture / (name + ".out"), MAX_FILE)
+            if (case["status"] != "ok" or len(payload) != case["output_size"]
+                    or digest(payload) != case["output_sha256"]):
+                raise ValueError("identity")
+            result[name + ".out"] = payload
+        if sum(map(len, result.values())) > MAX_TOTAL:
+            raise ValueError("aggregate")
+        return result
+    except (OSError, KeyError, TypeError, ValueError, FullError):
+        raise FullError("native_artifact_capture_invalid") from None
+
+
+def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) -> dict[str, bytes]:
+    """Rebuild a finite allowlisted manifest; never copy logs or exception strings."""
+    try:
+        if (list(payloads) != list(ARTIFACT_FILES[:-1])
+                or any(type(value) is not bytes or len(value) > MAX_FILE for value in payloads.values())
+                or sum(map(len, payloads.values())) > MAX_TOTAL
+                or any(report[key] is not True for key in ("native_evidence_accepted",
+                    "native_transport_validated", "native_cases_completed", "container_cleanup_verified",
+                    "private_payloads_removed", "windows_goldens_unchanged"))
+                or report["status"] != "ok" or report["container_exit_code"] != 0
+                or report["runtime_version_source"] != "SystemInfo.AppVersion"
+                or report["runtime_version"] != "8.3.27.1508"
+                or report["configured_timezone"] != "Etc/UTC"
+                or report["configured_native_locale"] != "ru_RU"
+                or not re.fullmatch(r"[0-9a-f]{32}", report["invocation_nonce"])
+                or not re.fullmatch(r"ghcr\.io/atridis/onec-ubuntu22@sha256:[0-9a-f]{64}", image)):
+            raise ValueError("gates")
+        repository = report["repository"]
+        if (set(repository) - {"commit", "tree", "github_run_id", "github_run_attempt"}
+                or any(not re.fullmatch(r"[0-9a-f]{40}", repository[key]) for key in ("commit", "tree"))
+                or any(not re.fullmatch(r"[0-9]{1,20}", repository[key])
+                       for key in set(repository) - {"commit", "tree"})):
+            raise ValueError("repository")
+        interpreter = report["interpreter"]
+        if (set(interpreter) != {"python_version", "dependencies", "source_file_count",
+                               "source_sha256", "comparison_driver_sha256", "map_contract_sha256"}
+                or not re.fullmatch(r"[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}", interpreter["python_version"])
+                or interpreter["dependencies"] != DEPENDENCIES
+                or not is_int(interpreter["source_file_count"], 512)
+                or interpreter["source_file_count"] == 0
+                or not is_digest(interpreter["source_sha256"])
+                or not is_digest(interpreter["comparison_driver_sha256"])
+                or not is_digest(interpreter["map_contract_sha256"])):
+            raise ValueError("interpreter")
+        stage3 = report["stage3"]
+        comparison = report["comparison"]
+        native_target, comparison_mode = report["native_target"], report["comparison_mode"]
+        validate_comparison(comparison, stage3, native_target, comparison_mode)
+        if comparison_mode == MAP_MODE:
+            validate_semantic_context(report, image)
+        if (stage3["status"] != "ok" or stage3["nonce"] != report["invocation_nonce"]
+                or [case["name"] for case in stage3["cases"]] != list(SCENARIOS)
+                or [case["name"] for case in comparison["cases"]] != list(SCENARIOS)
+                or comparison["status"] not in {"ok", "failed"}):
+            raise ValueError("coverage")
+        cases = []
+        for name, native, compared in zip(SCENARIOS, stage3["cases"], comparison["cases"]):
+            payload = payloads[name + ".out"]
+            if (native["status"] != "ok" or native["output_sha256"] != digest(payload)
+                    or native["output_size"] != len(payload)
+                    or not is_digest(native["source_sha256"]) or not is_digest(native["module_sha256"])
+                    or native["source_sha256"] != stage3["input_sha256"][f"integrational_tests/tests/{name}.bsl"]
+                    or not is_int(native["message_count"], 32_768)
+                    or compared["status"] not in {"matched", "mismatched"}
+                    or compared["native_sha256"] != native["output_sha256"]
+                    or compared["native_size"] != native["output_size"]
+                    or not is_digest(compared["interpreter_sha256"])
+                    or not is_int(compared["interpreter_size"], MAX_FILE)
+                    or (compared["status"] == "matched") != (compared["interpreter_sha256"] == native["output_sha256"]
+                        and compared["interpreter_size"] == native["output_size"])):
+                raise ValueError("case")
+            cases.append({"name": name, "file": name + ".out",
+                          **{key: native[key] for key in ("source_sha256", "module_sha256",
+                              "output_sha256", "output_size", "message_count")},
+                          "comparison_status": compared["status"],
+                          "interpreter_sha256": compared["interpreter_sha256"],
+                          "interpreter_size": compared["interpreter_size"],
+                          "mismatch": compared["mismatch"],
+                          "acceptance_status": compared["acceptance_status"],
+                          "semantic": compared["semantic"]})
+        if (comparison["status"] == "ok") != all(case["comparison_status"] == "matched" for case in cases):
+            raise ValueError("comparison")
+        metadata = {"schema": "native-1c-outputs-v2", "image": image, "platform": "linux/amd64",
+                    "runtime_version": report["runtime_version"], "runtime_version_source": "SystemInfo.AppVersion",
+                    "invocation_nonce": report["invocation_nonce"], "repository": repository,
+                    "interpreter": interpreter, "configured_timezone": "Etc/UTC", "configured_native_locale": "ru_RU",
+                    "container_cleanup_verified": True, "private_payloads_removed": True,
+                    "windows_goldens_unchanged": True, "comparison_status": comparison["status"],
+                    "native_target": native_target, "comparison_mode": comparison_mode,
+                    "acceptance_status": comparison["acceptance_status"], "cases": cases}
+        raw = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        if len(raw) > MAX_REPORT:
+            raise ValueError("limit")
+        return {**payloads, "provenance.json": raw}
+    except (KeyError, TypeError, ValueError, UnicodeError, FullError):
+        raise FullError("native_artifact_evidence_invalid") from None
+
+
+def _artifact_directory(path: Path) -> int:
+    """Pin every directory without following any symlink, including ancestors."""
+    directory = os.open(path.absolute().anchor, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.absolute().parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        return directory
+    except BaseException:
+        os.close(directory)
+        raise
+
+
+def _verify_artifact_directory(path: Path, descriptor: int) -> None:
+    visible = _artifact_directory(path)
+    try:
+        expected, actual = os.fstat(descriptor), os.fstat(visible)
+        if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
+            raise FullError("native_artifact_directory_changed")
+    finally:
+        os.close(visible)
+
+
+def _rename_artifact_exclusive(parent: int, source: str, destination: str) -> None:
+    # POSIX rename replaces empty destinations. Linux RENAME_NOREPLACE instead
+    # atomically refuses *any* existing target, even one raced into place.
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(libc, "renameat2", None)
+    if rename is None:
+        raise FullError("native_artifact_atomic_rename_unavailable")
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(parent, source.encode("ascii"), parent, destination.encode("ascii"), 1) != 0:
+        raise FullError("native_artifact_promotion_failed")
+
+
+def export_output_artifact(root: Path, files: dict[str, bytes]) -> None:
+    """Publish one complete directory atomically; Linux only, no replace fallback."""
+    if (not sys.platform.startswith("linux") or list(files) != list(ARTIFACT_FILES)
+            or any(type(value) is not bytes for value in files.values())
+            or any(len(files[name]) > MAX_FILE for name in ARTIFACT_FILES[:-1])
+            or sum(len(files[name]) for name in ARTIFACT_FILES[:-1]) > MAX_TOTAL
+            or not 0 < len(files["provenance.json"]) <= MAX_REPORT):
+        raise FullError("native_artifact_export_invalid")
+    root_fd = parent_fd = stage_fd = None
+    staging = ".native-outputs-" + uuid.uuid4().hex
+    created = promoted = False
+    failure = None
+    cleanup_failed = False
+    try:
+        root_fd = _artifact_directory(root)
+        try:
+            os.mkdir("native-smoke", mode=0o700, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+        parent_fd = os.open("native-smoke", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        # Early refusal is useful; the atomic rename below also closes the race.
+        try:
+            os.stat("native-outputs", dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            raise FullError("native_artifact_target_exists")
+        os.mkdir(staging, mode=0o700, dir_fd=parent_fd)
+        created = True
+        stage_fd = os.open(staging, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        for name in ARTIFACT_FILES:
+            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=stage_fd)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(files[name])
+                stream.flush()
+                os.fsync(stream.fileno())
+                os.fchmod(stream.fileno(), 0o400)
+        if set(os.listdir(stage_fd)) != set(ARTIFACT_FILES):
+            raise FullError("native_artifact_files_invalid")
+        for name in ARTIFACT_FILES:
+            if read_regular(root / "native-smoke" / staging / name, MAX_REPORT if name == "provenance.json" else MAX_FILE) != files[name]:
+                raise FullError("native_artifact_files_invalid")
+        os.fsync(stage_fd)
+        _verify_artifact_directory(root, root_fd)
+        _verify_artifact_directory(root / "native-smoke", parent_fd)
+        _verify_artifact_directory(root / "native-smoke" / staging, stage_fd)
+        _rename_artifact_exclusive(parent_fd, staging, "native-outputs")
+        promoted = True
+        # Actions opens visible paths later, not our descriptors. A swapped
+        # ancestor or staging path must never produce the upload-ready signal.
+        _verify_artifact_directory(root, root_fd)
+        _verify_artifact_directory(root / "native-smoke", parent_fd)
+        _verify_artifact_directory(root / ARTIFACT_DIRECTORY, stage_fd)
+        if set(os.listdir(stage_fd)) != set(ARTIFACT_FILES):
+            raise FullError("native_artifact_files_invalid")
+        for name in ARTIFACT_FILES:
+            if read_regular(root / ARTIFACT_DIRECTORY / name, MAX_REPORT if name == "provenance.json" else MAX_FILE) != files[name]:
+                raise FullError("native_artifact_files_invalid")
+        _verify_artifact_directory(root / "native-smoke", parent_fd)
+        _verify_artifact_directory(root / ARTIFACT_DIRECTORY, stage_fd)
+    except OSError:
+        failure = FullError("native_artifact_export_failed")
+    except BaseException as error:
+        failure = error
+    finally:
+        try:
+            if failure is not None and created and stage_fd is not None:
+                # Remove only our pinned directory's fixed files, never a
+                # replacement directory reached through a changed visible path.
+                for name in ARTIFACT_FILES:
+                    try:
+                        os.unlink(name, dir_fd=stage_fd)
+                    except FileNotFoundError:
+                        pass
+                    except OSError:
+                        cleanup_failed = True
+                try:
+                    selected = "native-outputs" if promoted else staging
+                    visible = os.stat(selected, dir_fd=parent_fd, follow_symlinks=False)
+                    pinned = os.fstat(stage_fd)
+                    if (visible.st_dev, visible.st_ino) != (pinned.st_dev, pinned.st_ino):
+                        cleanup_failed = True
+                    else:
+                        os.rmdir(selected, dir_fd=parent_fd)
+                except OSError:
+                    cleanup_failed = True
+        finally:
+            for descriptor in (stage_fd, parent_fd, root_fd):
+                if descriptor is not None:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        cleanup_failed = True
+    if cleanup_failed:
+        if failure is None:
+            failure = FullError("native_artifact_cleanup_unverified")
+        failure.cleanup_error = "native_artifact_cleanup_unverified"
+    if failure is not None:
+        raise failure from None
+
+
+def verify_output_artifact(root: Path, expected_hashes: dict[str, str]) -> None:
+    """Recheck the exact visible upload tree immediately before signaling readiness."""
+    directory = None
+    try:
+        if set(expected_hashes) != set(ARTIFACT_FILES) or not all(is_digest(value) for value in expected_hashes.values()):
+            raise ValueError("hashes")
+        target = root / ARTIFACT_DIRECTORY
+        directory = _artifact_directory(target)
+        if set(os.listdir(directory)) != set(ARTIFACT_FILES):
+            raise ValueError("coverage")
+        total = 0
+        for name in ARTIFACT_FILES:
+            raw = read_regular(target / name, MAX_REPORT if name == "provenance.json" else MAX_FILE)
+            if digest(raw) != expected_hashes[name]:
+                raise ValueError("identity")
+            if name != "provenance.json":
+                total += len(raw)
+        if total > MAX_TOTAL or set(os.listdir(directory)) != set(ARTIFACT_FILES):
+            raise ValueError("aggregate or coverage")
+        _verify_artifact_directory(target, directory)
+    except (OSError, ValueError, TypeError, FullError):
+        raise FullError("native_artifact_final_verification_failed") from None
+    finally:
+        if directory is not None:
+            os.close(directory)

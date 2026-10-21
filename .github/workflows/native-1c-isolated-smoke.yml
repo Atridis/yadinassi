@@ -1,0 +1,241 @@
+name: Isolated native 1C six-scenario comparison
+
+# Owner-only existing-repository route. Eligibility is not a privacy boundary
+# against edited workflows or the existing public-repository package grant.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: native-1c-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  eligibility:
+    name: Native 1C eligibility
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate owner, repository, event and revision without checkout
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        shell: bash
+        run: |
+          python3 -I -B - <<'PYTHON'
+          # BEGIN NATIVE CI ADMISSION
+          import json
+          import os
+          import re
+          import sys
+
+          REPOSITORY = "Atridis/yadinassi"
+          REPOSITORY_ID = 359770628
+          OWNER = "Atridis"
+          OWNER_ID = 30860798
+          PR_ACTIONS = frozenset({"opened", "synchronize", "reopened"})
+          MAX_EVENT_BYTES = 8 * 1024 * 1024
+
+
+          class PolicyError(Exception):
+              """A finite reason safe to emit without printing event data."""
+
+
+          def require(condition, reason):
+              if not condition:
+                  raise PolicyError(reason)
+
+
+          def object_value(value):
+              return value if type(value) is dict else {}
+
+
+          def is_sha(value):
+              return (type(value) is str and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+                      and value != "0" * 40)
+
+
+          def owner_identity(value):
+              value = object_value(value)
+              return (value.get("login") == OWNER and type(value.get("id")) is int
+                      and value["id"] == OWNER_ID and value.get("type") == "User")
+
+
+          def trusted_repository(value):
+              value = object_value(value)
+              return (value.get("full_name") == REPOSITORY and type(value.get("id")) is int
+                      and value["id"] == REPOSITORY_ID and value.get("fork") is False
+                      and owner_identity(value.get("owner")))
+
+
+          def validate_admission(event, context):
+              require(type(event) is dict and type(context) is dict, "event_invalid")
+              expected = {
+                  "GITHUB_REPOSITORY": REPOSITORY,
+                  "GITHUB_REPOSITORY_ID": str(REPOSITORY_ID),
+                  "GITHUB_REPOSITORY_OWNER": OWNER,
+                  "GITHUB_REPOSITORY_OWNER_ID": str(OWNER_ID),
+                  "GITHUB_ACTOR": OWNER,
+                  "GITHUB_ACTOR_ID": str(OWNER_ID),
+                  # GitHub exposes triggering_actor login, not a triggering_actor_id.
+                  # Anchor that unique login to the checked current repository owner.
+                  "NATIVE_TRIGGERING_ACTOR": OWNER,
+              }
+              require(all(context.get(key) == value for key, value in expected.items()), "identity_not_approved")
+              require(trusted_repository(event.get("repository")), "repository_not_approved")
+              require(owner_identity(event.get("sender")), "sender_not_approved")
+              require(is_sha(context.get("GITHUB_SHA")), "revision_invalid")
+              if context.get("GITHUB_EVENT_NAME") == "pull_request":
+                  require(event.get("action") in PR_ACTIONS if type(event.get("action")) is str else False,
+                          "pr_action_not_approved")
+                  pr = object_value(event.get("pull_request"))
+                  number = event.get("number")
+                  require(type(number) is int and 0 < number < 10 ** 12 and pr.get("number") == number
+                          and type(pr.get("number")) is int, "pr_number_invalid")
+                  require(context.get("GITHUB_REF") == f"refs/pull/{number}/merge", "pr_ref_invalid")
+                  require(pr.get("state") == "open" and pr.get("merged") is False
+                          and type(pr.get("draft")) is bool, "pr_state_not_approved")
+                  require(owner_identity(pr.get("user")), "pr_author_not_approved")
+                  base, head = object_value(pr.get("base")), object_value(pr.get("head"))
+                  require(trusted_repository(base.get("repo")) and trusted_repository(head.get("repo")),
+                          "pr_repositories_not_approved")
+                  require(base.get("ref") == "main" and context.get("GITHUB_BASE_REF") == "main",
+                          "pr_base_not_approved")
+                  require(is_sha(base.get("sha")) and is_sha(head.get("sha")), "pr_revisions_invalid")
+                  return "pull_request"
+              if context.get("GITHUB_EVENT_NAME") == "push":
+                  require(context.get("GITHUB_REF") == "refs/heads/main" and event.get("ref") == "refs/heads/main",
+                          "push_ref_not_approved")
+                  require(event.get("deleted") is False, "push_deleted_or_invalid")
+                  require(event.get("after") == context["GITHUB_SHA"]
+                          and object_value(event.get("head_commit")).get("id") == context["GITHUB_SHA"],
+                          "push_revision_mismatch")
+                  return "push"
+              raise PolicyError("event_not_approved")
+
+
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  require(key not in result, "event_invalid")
+                  result[key] = value
+              return result
+
+
+          def read_event(context):
+              try:
+                  with open(context["GITHUB_EVENT_PATH"], "rb") as stream:
+                      data = stream.read(MAX_EVENT_BYTES + 1)
+                  require(len(data) <= MAX_EVENT_BYTES, "event_invalid")
+                  return json.loads(data, object_pairs_hook=unique_object)
+              except (OSError, ValueError, KeyError, TypeError, RecursionError):
+                  raise PolicyError("event_invalid") from None
+
+
+          def admission_main():
+              try:
+                  validate_admission(read_event(os.environ), dict(os.environ))
+              except PolicyError as error:
+                  print(f"Native CI blocked: {error}", file=sys.stderr)
+                  return 1
+              print("Native CI admission accepted.")
+              return 0
+          # END NATIVE CI ADMISSION
+          raise SystemExit(admission_main())
+          PYTHON
+
+  smoke:
+    name: Native 1C six scenarios
+    needs: eligibility
+    if: >-
+      needs.eligibility.result == 'success' &&
+      github.repository == 'Atridis/yadinassi' &&
+      github.repository_id == '359770628' &&
+      github.repository_owner_id == '30860798' &&
+      github.actor == 'Atridis' &&
+      github.actor_id == '30860798' &&
+      github.triggering_actor == 'Atridis' &&
+      ((github.event_name == 'pull_request' && github.base_ref == 'main') ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 2
+          submodules: false
+          lfs: false
+      - name: Verify immutable checkout and ordered merge parents
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 -I -B scripts/native_1c_ci_policy.py bind
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12.10"
+      - name: Install exact host interpreter dependencies
+        run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
+      - name: Run approved digest with no network, ports or credentials
+        id: native
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1
+      - name: Upload only validated finite comparison report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-full-summary
+          path: native-smoke/report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload explicitly approved exact native test outputs
+        if: always() && steps.native.outputs.native_outputs_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-six-scenario-outputs
+          path: |
+            native-smoke/native-outputs/collections.out
+            native-smoke/native-outputs/dates.out
+            native-smoke/native-outputs/functions.out
+            native-smoke/native-outputs/numbers.out
+            native-smoke/native-outputs/strings.out
+            native-smoke/native-outputs/values.out
+            native-smoke/native-outputs/provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+  verdict:
+    name: Native 1C required verdict
+    if: always()
+    needs: [eligibility, smoke]
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require admission and genuine native success
+        env:
+          ELIGIBILITY_RESULT: ${{ needs.eligibility.result }}
+          NATIVE_RESULT: ${{ needs.smoke.result }}
+        shell: bash
+        run: |
+          python3 -I -B - <<'PYTHON'
+          import os
+          # BEGIN NATIVE CI VERDICT
+          def final_verdict(eligibility_result, native_result):
+              # Skipped, cancelled, unavailable and failed native runs are never green.
+              return 0 if eligibility_result == "success" and native_result == "success" else 1
+          # END NATIVE CI VERDICT
+          result = final_verdict(os.environ.get("ELIGIBILITY_RESULT"), os.environ.get("NATIVE_RESULT"))
+          print("Native CI passed." if result == 0 else "Native CI failed or unavailable.")
+          raise SystemExit(result)
+          PYTHON

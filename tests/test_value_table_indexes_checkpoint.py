@@ -5,6 +5,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
+from scripts.native_historical_replay import historical_collections_source
+
 from yadinassi import Interpreter, ast, serialization
 from yadinassi.parser import parse
 from yadinassi.value_tables import (BSLValueTable, BSLValueTableColumn,
@@ -114,7 +116,9 @@ class IndexProbeTests(unittest.TestCase):
 
     def test_current_runtime_matches_full_owner_output_and_completes(self):
         output = []
-        Interpreter(output=output.append).execute(source())
+        Interpreter(output=output.append).execute(historical_collections_source(
+            SOURCE.read_bytes(),
+            (ROOT / 'integrational_tests/output/collections.out').read_bytes()).decode('utf-8-sig'))
         records = [line for line in output if line.startswith('table.indexes.')
                    and not line.startswith('table.indexes.checkpoint.')]
         self.assertEqual(len(records), 40)

@@ -1,0 +1,41 @@
+"""Source-bound complete Windows replay; live CI runs full current source."""
+import hashlib
+
+# Windows capture 4a3f55f8 predates only the final two discriminator groups.
+# Keep its entire source and output coverage; never truncate observed output.
+HISTORICAL_COLLECTIONS_BLOB = "137dca5e4b6a47ea083a0dfe989e07c22d91a9e6"
+HISTORICAL_COLLECTIONS_OUTPUT_BLOB = "97e90791a4011bd7f6ef2922533f92f698557cbd"
+FINAL_PROBE_BLOCKS = (
+    ("// Начало заключительных проб пустой строки кэша списка.\n",
+     "// Конец заключительных проб пустой строки кэша списка.\n\n"),
+    ("// Начало заключительных наблюдений пустой строки кэша списка.\n",
+     "// Конец заключительных наблюдений пустой строки кэша списка.\n"),
+)
+
+
+def git_blob(data):
+    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+
+
+def historical_collections_source(source, output):
+    """Exact source-bound replay, not a current-output prefix exception.
+
+    The complete current scenario is separately mandatory in live Docker CI.
+    Only line-ending transport is normalized, including for source binding.
+    """
+    source = source.replace(b"\r\n", b"\n")
+    output = output.replace(b"\r\n", b"\n")
+    if git_blob(output) != HISTORICAL_COLLECTIONS_OUTPUT_BLOB:
+        raise ValueError("historical collections output binding changed")
+    text = source.decode("utf-8-sig")
+    for start, end in FINAL_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError("historical collections probe boundaries changed")
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    replay = ("\ufeff" + text).encode("utf-8")
+    if git_blob(replay) != HISTORICAL_COLLECTIONS_BLOB:
+        raise ValueError("historical collections source binding changed")
+    return replay
+

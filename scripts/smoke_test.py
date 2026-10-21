@@ -11,6 +11,11 @@ import sys
 import tempfile
 
 
+if __package__:
+    from .native_historical_replay import historical_collections_source
+else:
+    from native_historical_replay import historical_collections_source
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -1752,7 +1757,12 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
         if output.with_suffix('.err').exists():
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
-        result = subprocess.run([executable, str(ROOT / 'integrational_tests/tests' / (name + '.bsl'))],
+        script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
+        if name == 'collections':
+            replay = directory / 'collections-historical.bsl'
+            replay.write_bytes(historical_collections_source(script.read_bytes(), output.read_bytes()))
+            script = replay
+        result = subprocess.run([executable, str(script)],
                                 cwd=directory, env=environment, capture_output=True,
                                 encoding='utf-8', timeout=30)
         if result.returncode or result.stderr or result.stdout != expected:
@@ -1882,6 +1892,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
     expected = output_path.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
     if not expected.endswith('table.checkpoint.complete: [ok]\n'):
         raise AssertionError('Missing native table completion marker')
+    program = historical_collections_source(source_path.read_bytes(), output_path.read_bytes()).decode('utf-8-sig')
     env = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
     source = directory / 'Таблицы с пробелами.bsl'
     source.write_text(program, encoding='utf-8-sig')

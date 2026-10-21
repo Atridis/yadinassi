@@ -6,6 +6,14 @@ coverage maps and timezone replay details are kept here separately. The dated
 sections record the progression of the evidence; later checkpoints supersede
 earlier pending statuses.
 
+## Separate automated Linux capture
+
+[The isolated six-scenario workflow](native-1c-full-regression.md) creates a fresh
+Linux/UTC native capture and compares its exact bytes with a separate interpreter
+run. Only finite summaries/hashes are public; capture bytes and native logs are
+not uploaded. This does not replace the owner-confirmed Windows fixtures below.
+A bootstrap/simple-EPF success alone does not establish six-scenario parity.
+
 ## XML checkpoint timezone (2026-10-19)
 
 Owner-confirmed `Get-TimeZone` output for the XML checkpoint run:
@@ -1114,3 +1122,27 @@ not yet contain these records. No output is synthesized and no native semantics
 are chosen by synthetic discrimination tests. Runtime, codecs, launcher,
 metadata, version and complete-output comparison rules remain unchanged in this
 checkpoint; full gates stay red until evidence and implementation are verified.
+
+
+## PR69 automatic native evidence and historical replay
+
+Supported same-repository PR/main Docker CI runs the complete current six-scenario
+suite on pinned real 1C for each run. The final empty-result and singleton-sort
+discriminator is collected automatically, not requested as a manual Windows run.
+See [native CI](native-1c-ci.md) for event/platform boundaries. Earlier checkpoint
+entries above describe historical work states.
+
+The independent Windows collections capture remains byte-for-byte owner evidence
+(blob `97e90791a4011bd7f6ef2922533f92f698557cbd`, 4,579 lines). Its replay removes
+only the two final, then-unobserved helper/invocation blocks and requires the
+complete resulting source to match blob
+`137dca5e4b6a47ea083a0dfe989e07c22d91a9e6`. Every output byte remains compared;
+there is no output-tail suppression. The other five Windows captures remain
+unchanged. Live Docker CI executes all current source, including the new cases.
+
+The reviewed current collections source SHA-256 is
+`908ccf338cff45f07182fbfa376e2d5045d3ed9248b0f216f6ac09cb97faf0e6`.
+Its 776 framed records retain precisely the same eight source-bound Map-order
+exceptions at their original ordinals. All 18 added String/cache records are
+strict. Source binding and record cardinality are updated together; arbitrary
+source changes or omitted/extra output records still fail closed.

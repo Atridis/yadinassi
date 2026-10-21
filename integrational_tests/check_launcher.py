@@ -213,6 +213,60 @@ class IntegrationLauncherTests(unittest.TestCase):
         event = form.find(".//f:Event[@name='OnOpen']", forms)
         self.assertEqual(event.text, "ПриОткрытии")
 
+    def test_explicit_training_executable_preserves_selected_edition(self):
+        executable = self.root / ("1cv8t.exe" if os.name == "nt" else "1cv8t")
+        executable.write_bytes(b"placeholder; never executed")
+        executable.chmod(0o755)
+        self.assertEqual(launcher.validate_executable(executable), executable.resolve())
+        (self.root / "1Cv8.1CD").write_bytes(b"placeholder database")
+        with patch.object(launcher, "run_suite", return_value=0) as run:
+            self.assertEqual(launcher.main([
+                "--bd", str(self.root), "--executable-1c", str(executable),
+            ]), 0)
+        selected = run.call_args.args[0]
+        self.assertEqual(selected.executable, executable.resolve())
+        self.assertEqual(selected.command("DESIGNER")[0], str(executable.resolve()))
+        self.assertEqual(selected.command("ENTERPRISE")[0], str(executable.resolve()))
+
+    def test_explicit_executable_rejects_missing_file_and_directory(self):
+        for path in (self.root / "missing-1cv8t", self.root):
+            with self.subTest(path=path), self.assertRaises(launcher.LaunchError):
+                launcher.validate_executable(path)
+
+    @unittest.skipIf(os.name == "nt", "Windows does not use POSIX executable bits")
+    def test_explicit_executable_rejects_nonexecutable_file(self):
+        executable = self.root / "1cv8t"
+        executable.write_bytes(b"placeholder; never executed")
+        executable.chmod(0o644)
+        with self.assertRaisesRegex(launcher.LaunchError, "Нет права на исполнение"):
+            launcher.validate_executable(executable)
+
+    def test_cli_requires_exactly_one_platform_selection(self):
+        # Valid unrelated arguments prevent a database error masking selector bugs.
+        (self.root / "1Cv8.1CD").write_bytes(b"placeholder database")
+        executable = self.root / ("1cv8.exe" if os.name == "nt" else "1cv8")
+        executable.write_bytes(b"placeholder; never executed")
+        executable.chmod(0o755)
+        with contextlib.redirect_stderr(io.StringIO()), \
+                patch.object(launcher, "run_suite", return_value=0) as run:
+            for arguments in ([], ["--path-1c", str(self.root),
+                                   "--executable-1c", str(self.root / "1cv8t")]):
+                with self.subTest(arguments=arguments), self.assertRaises(SystemExit) as error:
+                    launcher.main(["--bd", str(self.root), *arguments])
+                self.assertEqual(error.exception.code, 2)
+            run.assert_not_called()
+
+    def test_existing_directory_cli_still_selects_regular_platform(self):
+        executable = self.root / ("1cv8.exe" if os.name == "nt" else "1cv8")
+        executable.write_bytes(b"placeholder; never executed")
+        executable.chmod(0o755)
+        (self.root / "1Cv8.1CD").write_bytes(b"placeholder database")
+        with patch.object(launcher, "run_suite", return_value=0) as run:
+            self.assertEqual(launcher.main([
+                "--bd", str(self.root), "--path-1c", str(self.root),
+            ]), 0)
+        self.assertEqual(run.call_args.args[0].executable, executable.resolve())
+
 
 if __name__ == "__main__":
     unittest.main()

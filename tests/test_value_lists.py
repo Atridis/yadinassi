@@ -41,8 +41,7 @@ class ValueListTests(unittest.TestCase):
         values = BSLValueList()
         self.assertEqual(values.count(), D(0))
         self.assertEqual(list(values), [])
-        with self.assertRaisesRegex(ValueError, "пустого списка.*пока не поддерживается"):
-            str(values)
+        self.assertEqual(str(values), "")
         description = values.get_member("ValueType")
         self.assertIs(type(description), BSLTypeDescription)
         self.assertEqual(description.types, ())
@@ -469,12 +468,18 @@ class ValueListTests(unittest.TestCase):
         self.assertEqual(nested.items, [D(1), D(2)])
         self.assertEqual(other.items, [nested, D(20), D(30)])
 
-    def test_unobserved_empty_presentations_are_guarded(self):
+    def test_unobserved_object_presentations_are_guarded(self):
         values = BSLValueList()
-        item = values.add(D(10))
+        item = values.add(BSLArray())
         for value in (item, values):
             with self.assertRaisesRegex(ValueError, "пока не поддерживается"):
                 str(value)
+
+    def test_scalar_item_and_list_fallbacks_are_supported(self):
+        values = BSLValueList()
+        item = values.add(D(10))
+        self.assertEqual(str(item), "10")
+        self.assertEqual(str(values), "10")
 
     def test_active_iteration_rejects_unobserved_structural_changes(self):
         values = base()

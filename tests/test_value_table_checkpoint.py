@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 import unittest
 
+from scripts.native_historical_replay import historical_collections_source
+
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse
 
@@ -198,7 +200,9 @@ class ValueTableCheckpointTests(unittest.TestCase):
 
     def test_compact_source_matches_owner_output_and_ordered_labels(self):
         messages = []
-        Interpreter(output=messages.append).execute(source())
+        Interpreter(output=messages.append).execute(historical_collections_source(
+            SOURCE.read_bytes(),
+            (ROOT / 'integrational_tests/output/collections.out').read_bytes()).decode('utf-8-sig'))
         actual = '\n'.join(messages) + '\n'
         expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
         self.assertEqual(actual.replace('\r\n', '\n').replace('\r', '\n'), expected)

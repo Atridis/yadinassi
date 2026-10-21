@@ -43,6 +43,15 @@ class Platform:
         return arguments
 
 
+def validate_executable(executable: Path) -> Path:
+    """Validate an explicitly selected platform file without guessing its edition."""
+    if not executable.is_file():
+        raise LaunchError(f"Нет исполняемого файла платформы 1С: {executable}")
+    if os.name != "nt" and not os.access(executable, os.X_OK):
+        raise LaunchError(f"Нет права на исполнение: {executable}")
+    return executable.resolve()
+
+
 def find_platform(directory: Path) -> Path:
     """Accept a platform's bin/version directory or a macOS application directory."""
     if not directory.is_dir():
@@ -53,9 +62,7 @@ def find_platform(directory: Path) -> Path:
     candidates = [root / name for root in roots for name in names]
     for candidate in candidates:
         if candidate.is_file():
-            if os.name != "nt" and not os.access(candidate, os.X_OK):
-                raise LaunchError(f"Нет права на исполнение: {candidate}")
-            return candidate.resolve()
+            return validate_executable(candidate)
     raise LaunchError(
         f"В {directory} не найден 1cv8/1cv8.exe. "
         "Укажите bin конкретной версии платформы с Конфигуратором и толстым клиентом."
@@ -244,7 +251,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Собрать BSL-тесты в EPF, запустить в 1С и сохранить вывод в output.")
     parser.add_argument("--bd", required=True, type=Path, help="Каталог существующей файловой базы")
-    parser.add_argument("--path-1c", required=True, type=Path, help="Каталог bin конкретной версии 1С")
+    platform_options = parser.add_mutually_exclusive_group(required=True)
+    platform_options.add_argument("--path-1c", type=Path,
+                                  help="Каталог bin конкретной версии 1С (1cv8/1cv8.exe)")
+    platform_options.add_argument("--executable-1c", type=Path,
+                                  help="Точный путь к исполняемому файлу 1С, включая учебную 1cv8t")
     parser.add_argument("--timeout", type=float, default=180,
                         help="Таймаут каждого процесса 1С в секундах (по умолчанию 180)")
     parser.add_argument("--user", help="Имя пользователя базы, если требуется")
@@ -259,7 +270,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.password is not None and args.user is None:
         parser.error("Для пароля нужно указать --user")
     try:
-        executable = find_platform(args.path_1c.expanduser().resolve())
+        if args.executable_1c is not None:
+            executable = validate_executable(args.executable_1c.expanduser().resolve())
+        else:
+            executable = find_platform(args.path_1c.expanduser().resolve())
         return run_suite(Platform(executable, database, args.timeout, args.user, args.password))
     except (LaunchError, OSError, UnicodeError) as error:
         print(f"Ошибка запуска: {error}", file=sys.stderr)
