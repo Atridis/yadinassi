@@ -949,3 +949,245 @@ The existing server-side launcher and recorded platform context are unchanged.
 Full native and frozen comparators still consume complete outputs without a tail
 exception. Implementation test results are separate from this evidence record;
 this section does not claim that every gate has passed. Version 0.3.2 is unchanged.
+
+## Prepared ValueList String checkpoint (2026-10-20)
+
+This checkpoint continues merged main
+`53bd014741cdf11b761b273c7911362aaad48f9a` without changing runtime behavior.
+Eight grouped `table.list.string.*` records and the separate
+`table.list.string.checkpoint.complete: [ok]` marker are added to the existing
+`collections.bsl`, immediately before its final overall marker. Removing only
+these new helper and invocation blocks restores source blob
+`0b7ad4f171bb45a201fe67e05a6dafe7f9e143fa` byte-for-byte, including the BOM.
+
+All six saved native outputs and the six-field `meta.md` remain unchanged.
+The saved `collections.out` is still owner commit
+`0601200672edcc1cd5ab6703d0ef47e958329846`, blob
+`d4cce35fea3cc5271a871c26062c1b6167c0b092` (162,177 bytes, 3,937 lines).
+It does not yet contain these observations. No output has been synthesized,
+and neither item fallback nor empty-item separator behavior is inferred from
+standalone `String(Value)`.
+
+### String observation matrix
+
+| Record | Cases |
+| --- | --- |
+| `empty` | Fresh list; Add then Clear; Add then empty LoadValues |
+| `absent` | Actual no-argument Add(); explicit Undefined; Null |
+| `numbers-booleans` | 0, -7.25, 1234.5, False, True |
+| `strings` | Empty, one space, Unicode, semicolon, actual LF, literal backslash-n |
+| `dates` | Empty date; fixed 2024-02-29 13:14:15 |
+| `joins` | Leading/interior/trailing/all-empty string values; Undefined/Null/empty; whitespace; explicit labels surrounding empty |
+| `load` | Eight mixed scalar values supplied through LoadValues |
+| `live` | Explicit empty Presentation at construction; Value change; explicit label; changed Value under label; Check true then false; whitespace Presentation; cleared Presentation; Undefined Value |
+
+There are 36 list snapshots and 52 ordered item rows. Each snapshot separately
+captures Count, ordered Items and a list-conversion result. Each item row is
+`[Value, Presentation, Check, ID, ValueText, ItemText]`. The last two fields and
+the list-conversion result each have independent `Status` and `Text` fields:
+success with an empty string cannot be mistaken for failure. The three direct
+conversion categories are attempted independently (140 attempts in total),
+including the scalar controls for numeric grouping, Boolean localization and
+date presentation. A failed field/ID read does not suppress other fields;
+a failed iteration does not suppress list conversion. Preparation and each live
+mutation retain their own status and post-action snapshot.
+
+Owners remain alive until all their observations complete. Live changes also
+record identity against the saved item; earlier snapshots contain captured
+scalar values, not live list/item objects. The existing compact encoder is reused
+unchanged, preserving typed values, quoted strings, Unicode, whitespace,
+semicolons and actual control characters versus literal escape spellings.
+Iteration is explicitly bounded to eight items. No raw list/item codec, object
+fallback, cycle, enum/type fallback, UI, picture or typed-list behavior is added.
+
+Synthetic instrumentation exercises incompatible fallback/join policies and
+independent conversion/read failures solely to validate the observer. It is not
+native evidence. Rendered-string and joined-text budgets belong to the eventual
+runtime implementation and must have boundary tests after the native result is
+reviewed; this preparation does not relax existing runtime guards or limits.
+
+All complete-output native gates and frozen smoke comparisons remain strict and
+consume the entire updated scenario. They are expected to fail until genuine
+native output is collected and corresponding behavior is implemented. Historical
+source-hash tests remove only the new blocks to verify their prior boundaries;
+no native comparator has a tail exception. The existing server-side launcher,
+recorded platform context and version 0.3.2 remain unchanged. A local successful
+parse or instrumentation run is not a claim of native 1C compilation.
+
+## Confirmed ValueList String evidence and cache supplement (2026-10-20)
+
+The initial String checkpoint above was run by the owner in commit
+`87723a25f22d359bb72163e184a871d6448930d1`, whose verified parent is the
+published checkpoint `bd5577f20d7df953a6cb01731c891e2727e2a7c0`.
+Only `collections.out` changed: blob
+`3a413ce8e775c5275cddac289ebee3a7063192bc`, 177,019 bytes and 4,142 lines,
+SHA-256 `e65040d2ed7a88cdf9e3bc33f242f39a20e76aa612cde6881002a6b4e5273451`.
+Its 162,145-byte prior prefix plus the final overall marker restores the previous
+native output exactly. All eight grouped records, 36 snapshots, 52 item rows and
+140 independent conversions succeeded. The five other outputs, metadata and
+source were unchanged. The saved native output has not been edited locally.
+
+The evidence confirms empty-list text, positional `; ` separators even for empty
+strings, explicit Presentation precedence (including whitespace), and live scalar
+item fallback after clearing Presentation. Undefined and Null item fallbacks are
+`<Пустое значение>`, not the empty standalone scalar string. Other observed scalar
+fallbacks match the independently captured number, Boolean, string and date
+controls. However, the live list stays `7` throughout all eight field changes,
+while its item text changes. That result alone does **not** establish when list
+text initializes or which operations invalidate it. Runtime support remains
+unchanged pending that distinction; arbitrary objects and codecs are not widened.
+
+The supplement adds five grouped `table.list.string-cache.*` records, 21
+microcases and `table.list.string-cache.checkpoint.complete: [ok]`, using only the
+existing `collections.bsl`. Removing just its two new blocks restores source blob
+`eb8e11cbd332225cfbdeb19ac4b203691ad45662` exactly, including the BOM.
+
+| Record | Cases and distinction |
+| --- | --- |
+| `initialize` | Five independent lists: Value without a trigger, standalone Value conversion, item conversion; Presentation without/with item conversion. Mutations before and after first list conversion separate insertion, item-triggered, first-conversion and repeated rendering. |
+| `structural` | Add, Insert, Delete, Clear, nonempty/empty LoadValues, Move, SortByValue and SortByPresentation after a warm list and pending field changes. |
+| `controls` | FillChecks, zero Move, already-ordered sorts by each field and failed Delete; the same pending changes expose invalidation even when order does not change. |
+| `empty` | Warm empty list, Add, field mutation before first post-Add render, then a second mutation/render; distinguishes an empty cached string from missing initialization and stale/eager/lazy refresh. |
+| `copy` | Warm source with a pending field change, Copy, copied-item changes before and after first copy rendering, plus independent source conversions; distinguishes inherited, eagerly reconstructed and lazily initialized text. |
+
+Field-only snapshots capture Count and ordered `[Value, Presentation, Check, ID]`
+rows without converting a list or item. For every nonempty structural/control
+case, mutations between the operation and first render distinguish eager from
+lazy refresh; another mutation and second render distinguish retained from live
+text. Clear and empty LoadValues can distinguish stale text from empty text but,
+with no remaining item to change, do not by themselves distinguish eager from
+lazy recomputation. No outcome is assumed by the instrumentation.
+
+Preparation, action, field reads and conversions have independent status
+boundaries. Failed Add/Copy preserves available list/source observations and
+marks unavailable dependent item/copy observations `not-run`; a scalar-trigger
+Value read failure does not erase its record. Both Copy owners remain live.
+Existing compact encoding and eight-item snapshot bounds remain unchanged.
+Synthetic incompatible initialization/invalidation policies test discrimination
+and accidental priming only; none is a native oracle.
+
+The six saved outputs and metadata remain byte-exact, and the current native
+output does not contain this supplement. Full-output and frozen gates remain
+strict and are expected to fail until the new native run and corresponding
+implementation are verified. Historical source/evidence tests isolate their own
+confirmed block only; no complete-output comparator has a tail exception.
+The launcher, recorded platform context and version 0.3.2 remain unchanged.
+
+## Confirmed cache run and final empty-result discriminator (2026-10-20)
+
+Owner commit `4a3f55f8a0636144dc1fb13fae1d66447b5049de` has verified parent
+`a50a2cf95c36033c00f735a3b98ef876c137973b` and changes only `collections.out`.
+Blob `97e90791a4011bd7f6ef2922533f92f698557cbd` is 200,954 bytes / 4,579 lines,
+SHA-256 `c86a2d4deb97e9268456a056abc4be3587382289e1a40ca4fe3d879af4e9f599`.
+The previous 176,987-byte prefix and final marker are preserved exactly.
+All five groups, 21 cases, 94 field snapshots, 215 item rows and 69 conversions
+were independently validated. Only the deliberate Delete(-1) action fails;
+all conversions and other actions/readbacks succeed. Source, five other native
+outputs and metadata are unchanged.
+
+The first list conversion captures current fields; earlier scalar/item conversion
+does not prime it. Field changes and FillChecks preserve warmed list text.
+Add, Insert, successful Delete, nonempty LoadValues, nonzero Move and both sorts
+invalidate lazily, including the tested already-ordered three-item sorts.
+Move(0,0) and rejected Delete(-1) preserve warmed text. Clear and empty LoadValues
+produce empty text, without distinguishing eager from lazy empty recomputation.
+Copy starts with fresh observable string state and leaves the source cache alone.
+
+Two ordinary paths remain unproven: a single empty item becoming nonempty through
+field changes only, and a singleton sort that might return early unlike the
+observed three-item sort. In particular, the warm-empty-list/Add observation does
+not prove that an empty string is a true cache hit, because Add invalidates the
+cache in either model. A conservative unsupported guard could preserve all
+collected cases, but would leave these ordinary operations unfinished.
+
+The final supplement is limited to two grouped records and five cases:
+
+- `list.string-cache.empty-result`: an empty Value with empty Presentation;
+  an explicitly cleared Presentation before the first empty rendering; and two
+  empty items as a separator-only, nonempty-text control. Each first renders the
+  list, changes Value to `A`, reads list text, then changes Presentation to `B`
+  and reads list text again. The independent item conversion occurs only after
+  the last list read, so it cannot affect the empty-cache discriminator.
+- `list.string-cache.short-sorts`: one-item SortByValue and SortByPresentation.
+  Each warms `start`, changes the label to `pending`, sorts, changes it to
+  `between` before the next list conversion, then changes it to `after` before
+  a second conversion. This separates retained, eager, lazy and repeated text.
+
+The field-only snapshot helper is reused unchanged. Preparation, writes, sorting
+and each conversion remain independently protected; owners remain alive.
+Removing only the two final blocks restores source blob
+`137dca5e4b6a47ea083a0dfe989e07c22d91a9e6` exactly. The final completion marker
+is `table.list.string-cache.final.complete: [ok]`. The genuine output above does
+not yet contain these records. No output is synthesized and no native semantics
+are chosen by synthetic discrimination tests. Runtime, codecs, launcher,
+metadata, version and complete-output comparison rules remain unchanged in this
+checkpoint; full gates stay red until evidence and implementation are verified.
+
+
+## PR69 automatic native evidence and historical replay
+
+Supported same-repository PR/main Docker CI runs the complete current six-scenario
+suite on pinned real 1C for each run. The final empty-result and singleton-sort
+discriminator is collected automatically, not requested as a manual Windows run.
+See [native CI](native-1c-ci.md) for event/platform boundaries. Earlier checkpoint
+entries above describe historical work states.
+
+The independent Windows collections capture remains byte-for-byte owner evidence
+(blob `97e90791a4011bd7f6ef2922533f92f698557cbd`, 4,579 lines). Its replay removes
+only the two final, then-unobserved helper/invocation blocks and requires the
+complete resulting source to match blob
+`137dca5e4b6a47ea083a0dfe989e07c22d91a9e6`. Every output byte remains compared;
+there is no output-tail suppression. The other five Windows captures remain
+unchanged. Live Docker CI executes all current source, including the new cases.
+
+The reviewed current collections source SHA-256 is
+`908ccf338cff45f07182fbfa376e2d5045d3ed9248b0f216f6ac09cb97faf0e6`.
+Its 776 framed records retain precisely the same eight source-bound Map-order
+exceptions at their original ordinals. All 18 added String/cache records are
+strict. Source binding and record cardinality are updated together; arbitrary
+source changes or omitted/extra output records still fail closed.
+
+### Fresh final discriminator: Linux 8.3.27.1508
+
+[Automatic run 39591770740](https://github.com/Atridis/yadinassi/actions/runs/39591770740)
+executed all six scenarios at synthetic merge
+`5f2add07d8fe47b1ad75eb56cb493d3a8f9cce39`, tree
+`2429435d2fdc3ccc0082882a4d3359e6092abe54`, with ordered parents main
+`46aa731186d7b524c8a140c5f8e10c4fad53d18f` and PR head
+`49243b22b54c53a15f8bc7be0b80dc6ef3dc0a57`.
+The pinned image reported real version `8.3.27.1508` under UTC/ru_RU.
+All 23 trusted inputs, six source/module/output identities, invocation nonce,
+cleanup, interpreter fingerprint and seven-file artifact were verified.
+The collections capture contains 776 records / 4,677 lines / 205,168 bytes,
+SHA-256 `e0b9443ec4dddbe1e91956232435a02f4cd8d3ec69b3593e479eae1848d357bb`.
+Artifact ZIP SHA-256 is
+`ce49f0243d896cb90f3884c4a16180370e3d3d76a14743e082c5de7186776eba`.
+The provenance file SHA-256 is
+`262e12767e5c2787b8107291671e670d898bfcb11988222a0b5103b454e27208`.
+
+The two final groups provide five cases and 18 successful conversions:
+
+- `empty-result.Value` and `Cleared`: warm, value-mutated and presentation-mutated
+  list text are all empty. The terminal item text is `B`.
+- `empty-result.Separated`: all three list texts remain `; `, including its exact
+  trailing space. The terminal item text is `B`.
+- `short-sorts.Value` and `Presentation`: warm, first post-sort and second
+  post-sort list texts all remain `start`, while field snapshots progress through
+  `pending`, `between` and `after`. Successful singleton sorts preserve warmed
+  text, unlike the independently observed three-item sort invalidation.
+
+Thus empty text is a real cache hit, and singleton sorting preserves the cache.
+The initial checkpoint's required native verdict intentionally failed: its two
+unsupported guards differed from these newly measured cases. The only other raw
+differences were the eight already-permitted Map-order records. Native execution
+itself completed successfully for all six scenarios. That red checkpoint run is
+valid observation evidence, not a successful interpreter-parity gate; a fresh
+run of the completed implementation must pass before readiness.
+
+These final five cases were measured on Linux training 8.3.27.1508, not on the
+historical Windows 8.3.27.2342 target. Applying the same bounded cache mechanism
+in the common runtime is an explicit compatibility inference, consistent with
+all 21 directly observed Windows cache cases and with no observed platform
+conflict. The new Windows cases are not claimed to have been natively verified.
+No saved Windows output is extended, replaced or relabeled; future supported
+PR/main runs independently regenerate the complete current Linux oracle.

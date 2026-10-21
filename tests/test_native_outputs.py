@@ -27,12 +27,19 @@ def emit(message):
 
 
 script = Path(sys.argv[1])
-Interpreter(output=emit).execute(script.read_text(encoding="utf-8-sig"), str(script))
+source = Path(sys.argv[2]) if len(sys.argv) > 2 else script
+Interpreter(output=emit).execute(source.read_text(encoding="utf-8-sig"), str(script))
 '''
 
 
 def normalize_newlines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+from scripts.native_historical_replay import (
+    historical_collections_source, git_blob, FINAL_PROBE_BLOCKS,
+    HISTORICAL_COLLECTIONS_BLOB, HISTORICAL_COLLECTIONS_OUTPUT_BLOB,
+)
 
 
 class NativeOutputTests(unittest.TestCase):
@@ -69,13 +76,20 @@ class NativeOutputTests(unittest.TestCase):
         # See docs/native-testing.md; never inherit a CI host timezone.
         environment["YADINASSI_TIMEZONE"] = "Europe/Warsaw"
         try:
-            result = subprocess.run(
-                [sys.executable, "-c", EXECUTE_SCRIPT, str(script)],
-                cwd=ROOT.parent, env=environment, capture_output=True, timeout=10,
-            )
+            with tempfile.TemporaryDirectory(prefix="native-historical-") as temporary:
+                arguments = [sys.executable, "-c", EXECUTE_SCRIPT, str(script)]
+                if self.native_root == ROOT and script.name == "collections.bsl":
+                    replay = Path(temporary) / script.name
+                    replay.write_bytes(historical_collections_source(
+                        script.read_bytes(), expected_path.read_bytes()))
+                    arguments.append(str(replay))
+                result = subprocess.run(
+                    arguments, cwd=ROOT.parent, env=environment,
+                    capture_output=True, timeout=10,
+                )
         except subprocess.TimeoutExpired:
             self.fail(f"Yadinassi не выполнил {script}: истек таймаут 10 с.")
-        except OSError as error:
+        except (OSError, ValueError) as error:
             self.fail(f"Не удалось запустить Yadinassi для {script}: {error}")
         self.assertEqual(result.returncode, 0,
                          f"Yadinassi не выполнил {script}:\n"
@@ -239,6 +253,68 @@ class NativeOutputRunnerTests(unittest.TestCase):
         self.assert_comparison_passes()
         self.assertEqual(before, {path: path.read_bytes() for path in self.root.rglob("*")
                                   if path.is_file()})
+
+
+
+
+
+class HistoricalCollectionsBindingTests(unittest.TestCase):
+    def setUp(self):
+        # Canonical mutation inputs keep the negative controls effective on CRLF checkouts.
+        # The explicit CRLF transport case below still exercises production normalization.
+        self.source = (ROOT / 'tests/collections.bsl').read_bytes().replace(b'\r\n', b'\n')
+        self.output = (ROOT / 'output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+
+    def test_full_historical_source_and_all_output_bytes_are_bound(self):
+        replay = historical_collections_source(self.source, self.output)
+        self.assertEqual(git_blob(replay), HISTORICAL_COLLECTIONS_BLOB)
+        self.assertEqual(len(self.output.replace(b'\r\n', b'\n').splitlines()), 4579)
+        self.assertIn(b'table.list.string-cache.checkpoint.complete', replay)
+        self.assertNotIn(b'table.list.string-cache.final.complete', replay)
+        self.assertIn(b'table.list.string-cache.final.complete', self.source)
+        self.assertEqual(historical_collections_source(
+            self.source.replace(b'\n', b'\r\n'), self.output.replace(b'\n', b'\r\n')), replay)
+
+    def test_changed_historical_source_or_output_fails_closed(self):
+        for source, output in (
+            (self.source + b'// mutation\n', self.output),
+            (self.source.replace(b'list.string.empty', b'list.string.other'), self.output),
+            (self.source, self.output + b'\n'),
+            (self.source, self.output[:-32]),
+            (self.source, self.output.replace(b'list.string.empty', b'list.string.other')),
+        ):
+            with self.subTest(source_changed=source != self.source, output_changed=output != self.output):
+                with self.assertRaises(ValueError):
+                    historical_collections_source(source, output)
+
+    def test_missing_duplicated_or_reordered_boundaries_fail_closed(self):
+        start, end = FINAL_PROBE_BLOCKS[0]
+        for source in (self.source.replace(start.encode(), b''),
+                       self.source + start.encode(),
+                       self.source.replace(end.encode(), b''),
+                       self.source.replace(start.encode(), b'__SWAP__').replace(
+                           end.encode(), start.encode()).replace(b'__SWAP__', end.encode())):
+            with self.assertRaises(ValueError):
+                historical_collections_source(source, self.output)
+
+
+    def test_mutation_controls_work_with_crlf_checkout(self):
+        original = Path.read_bytes
+        def crlf_bytes(path):
+            data = original(path)
+            if path in (ROOT / 'tests/collections.bsl', ROOT / 'output/collections.out'):
+                return data.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+            return data
+        names = (
+            'test_full_historical_source_and_all_output_bytes_are_bound',
+            'test_changed_historical_source_or_output_fails_closed',
+            'test_missing_duplicated_or_reordered_boundaries_fail_closed',
+        )
+        suite = unittest.TestSuite(type(self)(name) for name in names)
+        stream = io.StringIO()
+        with patch.object(Path, 'read_bytes', crlf_bytes):
+            result = unittest.TextTestRunner(stream=stream).run(suite)
+        self.assertTrue(result.wasSuccessful(), stream.getvalue())
 
 
 if __name__ == "__main__":

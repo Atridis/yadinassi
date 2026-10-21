@@ -332,8 +332,8 @@ def semantic_report(*, equal=False):
     comparison.update(native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                       acceptance_status="accepted")
     comparison["cases"][0].update(acceptance_status="accepted", semantic={
-        "status":"equivalent", "profile":full.MAP_MODE, "records":758,
-        "byte_equal_records":758 if equal else 757,
+        "status":"equivalent", "profile":full.MAP_MODE, "records":776,
+        "byte_equal_records":776 if equal else 775,
         "accepted_labels":[] if equal else [full.map_contract().ELIGIBLE_LABELS[0]], "reason":"none"})
     return report
 
@@ -363,7 +363,7 @@ class SemanticManifestTests(SyntheticFilesystemCase):
             lambda r:r["interpreter"].pop("map_contract_sha256"),lambda r:r["interpreter"].update(map_contract_sha256="PRIVATE"),
             lambda r:r["comparison"].pop("acceptance_status"),lambda r:r["comparison"].update(acceptance_status="rejected"),
             lambda r:r["comparison"]["cases"][0].pop("semantic"),lambda r:r["comparison"]["cases"][0].update(semantic=None),
-            lambda r:r["comparison"]["cases"][0]["semantic"].update(records=757),
+            lambda r:r["comparison"]["cases"][0]["semantic"].update(records=775),
             lambda r:r["comparison"]["cases"][0]["semantic"].update(accepted_labels=["PRIVATE"]),
             lambda r:r["comparison"]["cases"][0]["semantic"].update(extra="PRIVATE"),
             lambda r:r["comparison"]["cases"][1].update(semantic=r["comparison"]["cases"][0]["semantic"]),

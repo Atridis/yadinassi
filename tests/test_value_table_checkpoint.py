@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 import unittest
 
+from scripts.native_historical_replay import historical_collections_source
+
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse
 
@@ -24,6 +26,12 @@ def parts():
     # Isolate this already owner-confirmed checkpoint from the next native
     # checkpoint. Complete source/native comparisons below remain strict.
     for start, end in (
+        ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
+        ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
+        ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
+        ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
+        ('// Начало компактных проб строкового представления списка.\n', '// Конец компактных проб строкового представления списка.\n\n'),
+        ('// Начало наблюдений строкового представления списка.\n', '// Конец наблюдений строкового представления списка.\n'),
         ('// Начало компактных проб копирования списка.\n', '// Конец компактных проб копирования списка.\n\n'),
         ('// Начало наблюдений копирования списка.\n', '// Конец наблюдений копирования списка.\n'),
         ('// Начало компактных проб сортировки списка.\n', '// Конец компактных проб сортировки списка.\n\n'),
@@ -192,7 +200,9 @@ class ValueTableCheckpointTests(unittest.TestCase):
 
     def test_compact_source_matches_owner_output_and_ordered_labels(self):
         messages = []
-        Interpreter(output=messages.append).execute(source())
+        Interpreter(output=messages.append).execute(historical_collections_source(
+            SOURCE.read_bytes(),
+            (ROOT / 'integrational_tests/output/collections.out').read_bytes()).decode('utf-8-sig'))
         actual = '\n'.join(messages) + '\n'
         expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
         self.assertEqual(actual.replace('\r\n', '\n').replace('\r', '\n'), expected)

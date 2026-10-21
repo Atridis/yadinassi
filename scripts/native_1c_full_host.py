@@ -37,7 +37,7 @@ LINUX_TARGET = "linux-8.3.27.1508"
 BYTE_EXACT = "byte_exact"
 MAP_MODE = "typed-map-order-v1"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
-COLLECTIONS_SOURCE_SHA256 = "70dfefabf9466e1d8d3e00e844f931a7b8f005ed110d74049e07fbfed8fbbc72"
+COLLECTIONS_SOURCE_SHA256 = "908ccf338cff45f07182fbfa376e2d5045d3ed9248b0f216f6ac09cb97faf0e6"
 CASE_SECONDS = 10
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
 FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
@@ -429,15 +429,15 @@ def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
     if (type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}
             or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != MAP_MODE
             or type(result["reason"]) is not str or result["reason"] not in contract.REASONS
-            or not is_int(result["records"], 758) or not is_int(result["byte_equal_records"], result["records"])
+            or not is_int(result["records"], 776) or not is_int(result["byte_equal_records"], result["records"])
             or type(result["accepted_labels"]) is not list
             or any(type(label) is not str or label not in contract.ELIGIBLE_LABELS for label in result["accepted_labels"])
             or len(set(result["accepted_labels"])) != len(result["accepted_labels"])):
         raise FullError("semantic_result_invalid")
     if result["status"] == "equivalent":
-        if (result["reason"] != "none" or result["records"] != 758
-                or result["byte_equal_records"] + len(result["accepted_labels"]) != 758
-                or raw_matched != (result["byte_equal_records"] == 758)):
+        if (result["reason"] != "none" or result["records"] != 776
+                or result["byte_equal_records"] + len(result["accepted_labels"]) != 776
+                or raw_matched != (result["byte_equal_records"] == 776)):
             raise FullError("semantic_result_invalid")
     elif (result["reason"] == "none" or result["records"] != 0
             or result["byte_equal_records"] != 0 or result["accepted_labels"]):

@@ -19,6 +19,8 @@ class ValueTableSmokeTests(unittest.TestCase):
         cls.program = (smoke_test.ROOT / 'integrational_tests/tests/collections.bsl').read_text(
             encoding='utf-8-sig')
         cls.owner_bytes = (smoke_test.ROOT / 'integrational_tests/output/collections.out').read_bytes()
+        cls.replay = smoke_test.historical_collections_source(
+            ('\ufeff' + cls.program).encode(), cls.owner_bytes).decode('utf-8-sig')
         cls.expected = cls.owner_bytes.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         cls.command, cls.command_expected = smoke_test.table_command_checkpoint(cls.program, cls.expected)
 
@@ -50,20 +52,20 @@ class ValueTableSmokeTests(unittest.TestCase):
                 for expected in [self.expected] * 3 + [self.command_expected] * 3]
 
     def test_full_owner_output_and_bounded_sample_use_all_six_transports(self):
-        self.assertEqual(len(self.expected.splitlines()), 3937)
+        self.assertEqual(len(self.expected.splitlines()), 4579)
         with patch.object(smoke_test.subprocess, 'run', side_effect=self.success_results()) as run:
             self.invoke()
         self.assertEqual(run.call_count, 6)
         source = self.directory / 'Таблицы с пробелами.bsl'
         self.assertTrue(source.read_bytes().startswith(b'\xef\xbb\xbf'))
-        self.assertEqual(source.read_text(encoding='utf-8-sig'), self.program)
+        self.assertEqual(source.read_text(encoding='utf-8-sig'), self.replay)
         calls = run.call_args_list
         self.assertEqual(calls[0].args[0], [self.executable, str(source)])
         self.assertIsNone(calls[0].kwargs['input'])
         self.assertEqual(calls[1].args[0], [self.executable, '-'])
-        self.assertEqual(calls[1].kwargs['input'], self.program)
+        self.assertEqual(calls[1].kwargs['input'], self.replay)
         self.assertEqual(calls[2].args[0], [self.executable])
-        self.assertEqual(calls[2].kwargs['input'], self.program + '/exit\n')
+        self.assertEqual(calls[2].kwargs['input'], self.replay + '/exit\n')
         for call, flag in zip(calls[3:], ('-c', '-с', '--command')):
             argv = [self.executable, flag, self.command]
             self.assertEqual(call.args[0], argv)

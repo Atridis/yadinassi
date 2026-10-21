@@ -302,19 +302,19 @@ class SupplementalTypesGateTests(unittest.TestCase):
 
 
 class StrictNativeGateTests(unittest.TestCase):
-    def test_original_comparator_file_is_unchanged(self):
+    def test_comparator_has_reviewed_source_bound_historical_replay(self):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
-        # Re-pinned only for the timezone documentation link relocation;
-        # the comparator logic and strict full-output checks are unchanged.
-        self.assertEqual(hashlib.sha256(actual).hexdigest(), '770cb17a4a4cf2a5f1374bcd21703ea9c7eb88ca3afc5a2c76a22d143621f7a3')
+        # Reviewed migration preserves every captured output byte and binds the
+        # complete historical source; live Docker compares all current cases.
+        self.assertEqual(hashlib.sha256(actual).hexdigest(), 'ef6ed3ca6211390c33962127a2e65e19928337a0c4ad991a95d0d8ff0d9aecad')
 
-    def test_frozen_full_native_comparator_has_reviewed_diagnostic_only_update(self):
+    def test_frozen_full_native_comparator_has_reviewed_historical_replay(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')
         block = ('def check_saved_native_outputs('
                  + text.split('def check_saved_native_outputs(', 1)[1]
                  .split('def check_timezone_configuration(', 1)[0])
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
-                         "127882904780d3083fb7bd651997defb55449db8e6eb4758c0ea20e67d0d9426")
+                         "e9ee8ad13bfdaac35780e4a3509a874fcd410e8eb05d1b892a2181573262ee62")
 
     def test_frozen_full_modes_and_bounded_command_aliases(self):
         expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')

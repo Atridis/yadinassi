@@ -5,6 +5,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
+from scripts.native_historical_replay import historical_collections_source
+
 from yadinassi import Interpreter, ast, serialization
 from yadinassi.parser import parse
 from yadinassi.value_tables import (BSLValueTable, BSLValueTableColumn,
@@ -41,6 +43,12 @@ class IndexProbeTests(unittest.TestCase):
     def test_old_source_and_all_owner_goldens_are_byte_exact(self):
         old = source()
         for start, end in (
+            ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
+            ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
+            ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
+            ('// Начало уточняющих наблюдений кэша строки списка.\n', '// Конец уточняющих наблюдений кэша строки списка.\n'),
+            ('// Начало компактных проб строкового представления списка.\n', '// Конец компактных проб строкового представления списка.\n\n'),
+            ('// Начало наблюдений строкового представления списка.\n', '// Конец наблюдений строкового представления списка.\n'),
             ('// Начало компактных проб копирования списка.\n', '// Конец компактных проб копирования списка.\n\n'),
             ('// Начало наблюдений копирования списка.\n', '// Конец наблюдений копирования списка.\n'),
             ('// Начало компактных проб сортировки списка.\n', '// Конец компактных проб сортировки списка.\n\n'),
@@ -56,7 +64,7 @@ class IndexProbeTests(unittest.TestCase):
         data = ('\ufeff' + old).encode()
         self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
                          'd6176c44edf9a3d7ad9f8cf7a474a12aca25c809')
-        hashes = {'collections': 'd4cce35fea3cc5271a871c26062c1b6167c0b092',
+        hashes = {'collections': '97e90791a4011bd7f6ef2922533f92f698557cbd',
                   'values': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
                   'dates': '05d23c46540b301820f2ac81c8a67fc0e1273dc8',
                   'functions': '6df192ac9d10c07755948d7c14cfed9e2311c65f',
@@ -108,7 +116,9 @@ class IndexProbeTests(unittest.TestCase):
 
     def test_current_runtime_matches_full_owner_output_and_completes(self):
         output = []
-        Interpreter(output=output.append).execute(source())
+        Interpreter(output=output.append).execute(historical_collections_source(
+            SOURCE.read_bytes(),
+            (ROOT / 'integrational_tests/output/collections.out').read_bytes()).decode('utf-8-sig'))
         records = [line for line in output if line.startswith('table.indexes.')
                    and not line.startswith('table.indexes.checkpoint.')]
         self.assertEqual(len(records), 40)

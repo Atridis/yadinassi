@@ -10,8 +10,9 @@ from decimal import Decimal
 import re
 import weakref
 
+from .dates import BSLDate
 from .type_descriptions import BSLTypeDescription
-from .values import BSLArray, BSLObject, HostFunction, equal, to_string
+from .values import BSLArray, BSLObject, HostFunction, NULL, equal, to_string
 
 
 _MAX_ITEMS = 100_000
@@ -127,9 +128,32 @@ class BSLValueListItem(BSLObject):
         return item
 
     def __str__(self):
-        if not self.presentation:
-            _unsupported("строковое представление элемента с пустым Представлением")
-        return self.presentation
+        presentation = self.presentation
+        if type(presentation) is not str:
+            _unsupported("этот тип представления элемента")
+        if presentation:
+            # A nonempty label, including whitespace, never renders Value.
+            text = presentation
+        else:
+            value = self.value
+            kind = type(value)
+            if value is None or value is NULL:
+                text = "<Пустое значение>"
+            elif kind is str:
+                text = value
+            elif kind is Decimal:
+                # Validate stored precision before the scalar formatter guards
+                # expanded fixed-point text. Do not broaden its numeric limits.
+                text = to_string(_value(value))
+            elif kind is bool or kind is BSLDate:
+                text = to_string(value)
+            else:
+                # Native scalar observations do not establish object fallbacks.
+                # Exact types also keep arbitrary host conversion hooks out.
+                _unsupported("строковое представление этого типа значения элемента")
+        if len(text) > _MAX_TEXT:
+            _budget()
+        return text
 
     def get_id(self):
         if self._decoded_standalone:
@@ -177,15 +201,34 @@ class BSLValueList(BSLObject):
         self._next_id = 0
         self._revision = 0
         self.value_type = BSLTypeDescription()
+        self._text_cache = None
 
     def __str__(self):
-        # Joining nonempty explicit presentations is directly observed. Do not
-        # infer the native fallback for empty Presentation from String(Value).
-        if not self.items:
-            _unsupported("строковое представление пустого списка")
-        if sum(len(item.presentation) + 2 for item in self.items) > _MAX_TEXT:
+        if type(self.items) is not list:
+            _unsupported("этот контейнер элементов")
+        if len(self.items) > _MAX_ITEMS:
             _budget()
-        return "; ".join(str(item) for item in self.items)
+        cached = self._text_cache
+        if cached is not None and cached[0] == self._revision:
+            text = cached[1]
+            if len(text) > _MAX_TEXT:
+                _budget()
+            return text
+        # Structural operations and sorts advance _revision; _sort carries a
+        # valid singleton cache forward. Fields, FillChecks, zero Move and failed
+        # mutations preserve it. Never publish a partial/failed render.
+        parts, size = [], 0
+        for item in self.items:
+            if type(item) is not BSLValueListItem:
+                _unsupported("этот тип элемента")
+            text = str(item)
+            size += len(text) + (2 if parts else 0)
+            if size > _MAX_TEXT:
+                _budget()
+            parts.append(text)
+        text = "; ".join(parts)
+        self._text_cache = (self._revision, text)
+        return text
 
     def __iter__(self):
         expected = self._revision
@@ -334,12 +377,22 @@ class BSLValueList(BSLObject):
         return result
 
     def sort_by_value(self, direction=None):
-        from .value_list_sort import sort_list
-        sort_list(self, direction, by_presentation=False)
+        self._sort(direction, by_presentation=False)
 
     def sort_by_presentation(self, direction=None):
+        self._sort(direction, by_presentation=True)
+
+    def _sort(self, direction, *, by_presentation):
         from .value_list_sort import sort_list
-        sort_list(self, direction, by_presentation=True)
+        cached = self._text_cache
+        singleton_cache = (len(self.items) == 1 and cached is not None
+                           and cached[0] == self._revision)
+        sort_list(self, direction, by_presentation=by_presentation)
+        if singleton_cache:
+            # The Linux 8.3.27.1508 discriminator preserves singleton text for
+            # both sorts. Keep the existing local revision/iteration policy;
+            # only carry a valid cache across the successfully completed sort.
+            self._text_cache = (self._revision, cached[1])
 
     def get_member(self, name):
         key = name.casefold()
