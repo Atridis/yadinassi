@@ -1770,7 +1770,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
             diagnostic = process_diagnostics(reason="unexpected_processes", classes={"other": 1})
             arguments = ["emitter", "1" if cleanup_failed else "0", "stage2" if cleanup_failed else "complete",
                          "true", "true", "true", "true", "true", "true", host_fixture.NONCE,
-                         "true", "true" if watchdog else "false", "true" if cleanup_failed else "false"]
+                         "true", "true" if watchdog else "false", "false", "true" if cleanup_failed else "false"]
             reader = (mock.patch.object(suite, "secure_bytes", new=stage_fixture.portable_fixture_bytes)
                       if os.name == "nt" else contextlib.nullcontext())
             with reader, mock.patch.object(sys, "argv", arguments), mock.patch.object(sys, "path", sys.path.copy()), \

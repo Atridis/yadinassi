@@ -60,11 +60,12 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False) -> dict:
-    if not valid_nonce(nonce) or (watchdog_check and not client_probe):
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False) -> dict:
+    if not valid_nonce(nonce) or ((watchdog_check or client_dates) and not client_probe):
         raise FullError('invalid_input')
     return {**({'client_probe': empty_client_report()} if client_probe else {}),
             **({'client_watchdog': empty_watchdog_report()} if watchdog_check else {}),
+            **({'client_dates': empty_dates_report()} if client_dates else {}),
             'schema': 1, 'nonce': nonce, 'status': 'not_started',
             'failure_kind': 'prerequisites_failed', 'failed_case': None,
             'input_sha256': {}, 'cases': [
@@ -296,8 +297,8 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float,
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False) -> dict:
-    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check)
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates)
     report.update(status='failed', failure_kind='unexpected_failure')
     active = None
     old_reader, old_process, old_build = launcher.read_result, launcher.run_process, launcher.build_epf
@@ -357,6 +358,12 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
                                                        nonce, report['input_sha256'])
             if report['client_probe']['status'] != 'ok':
                 raise FullError(report['client_probe']['failure_kind'])
+        if client_dates:
+            report['client_dates'] = run_client_probe(
+                platform, root / 'client-dates', inputs, nonce, report['input_sha256'],
+                dates_output=root / 'dates.out')
+            if report['client_dates']['status'] != 'ok':
+                raise FullError(report['client_dates']['failure_kind'])
         if watchdog_check:
             report['client_watchdog'] = run_client_watchdog(
                 platform, root / 'client-watchdog', inputs, nonce, report['input_sha256'])
@@ -509,6 +516,11 @@ def empty_client_report() -> dict:
             'source_sha256': None, 'module_sha256': None, 'roundtrip_sha256': None,
             **{key: False for key in CLIENT_FLAGS}}
 
+
+
+def empty_dates_report() -> dict:
+    return {**empty_client_report(), 'output_sha256': None, 'output_size': None,
+            'message_count': None}
 
 def client_marker(path: Path, nonce: str, phase: str) -> dict:
     if not valid_nonce(nonce) or phase not in {'entered', 'completed'}:
@@ -747,7 +759,10 @@ def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
 def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostics=None) -> None:
     """Keep a final teardown/census failure valid, finite and non-exportable."""
     suite.update(status='failed', failure_kind='process_failed')
-    last = suite['client_watchdog'] if watchdog_check else suite['client_probe']
+    last = (suite['client_watchdog'] if watchdog_check else
+            suite['client_dates'] if 'client_dates' in suite else suite['client_probe'])
+    if 'output_sha256' in last:
+        last.update(output_sha256=None, output_size=None, message_count=None)
     last.update(status='failed', failure_kind='process_failed', quiet=False, witness_verified=False)
     if watchdog_check:
         last['timeout_verified'] = False
@@ -769,12 +784,14 @@ def final_client_process_census(nonce: str) -> None:
 
 
 def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
-                     hashes: dict, *, stall: bool = False) -> dict:
+                     hashes: dict, *, stall: bool = False, dates_output: Path | None = None) -> dict:
     """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
-    record = empty_client_report()
+    record = empty_dates_report() if dates_output is not None else empty_client_report()
+    marker_reader = client_dates_marker if dates_output is not None else client_marker
     record.update(status='failed', failure_kind='unexpected_failure')
     try:
-        if (not valid_nonce(nonce) or type(stall) is not bool or platform.timeout != 120
+        if (not valid_nonce(nonce) or type(stall) is not bool
+                or (dates_output is not None and stall) or platform.timeout != 120
                 or platform.user != 'NativeSmoke' or platform.password is not None):
             raise FullError('invalid_input')
         record['process_diagnostics'].update(stage='baseline', reason='unverified')
@@ -788,8 +805,15 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
         if digest(source) != hashes[CLIENT_SOURCE]:
             raise FullError('invalid_input')
-        record['source_sha256'] = digest(source)
-        module = generated_module(source)
+        if dates_output is not None:
+            dates_source = secure_bytes(inputs / 'scenarios/dates.bsl', MAX_OUTPUT)
+            if digest(dates_source) != hashes['integrational_tests/tests/dates.bsl']:
+                raise FullError('invalid_input')
+            record['source_sha256'] = digest(dates_source)
+            module = client_dates_module(dates_source, source)
+        else:
+            record['source_sha256'] = digest(source)
+            module = generated_module(source)
         src = root / 'src'
         src.mkdir()
         # Only the verified launcher metadata is copied; no TestModule/server code.
@@ -851,18 +875,25 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             # Diagnostic phase only. A timeout/nonzero exit never becomes success.
             for path, phase in ((entered, 'entered'), (completed, 'completed')):
                 try:
-                    client_marker(path, nonce, phase)
+                    marker_reader(path, nonce, phase)
                     record[phase] = True
                 except FullError:
                     pass
-        client_marker(entered, nonce, 'entered')
-        client_marker(completed, nonce, 'completed')
+        marker_reader(entered, nonce, 'entered')
+        completion = marker_reader(completed, nonce, 'completed')
         if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
             raise FullError('invalid_result')
         if not record['quiet']:
             raise FullError('process_failed')
         if secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT) != module:
             raise FullError('module_mismatch')
+        if dates_output is not None:
+            client_output = serialize_messages(completion['values'])
+            server_output = secure_bytes(dates_output, MAX_OUTPUT, allow_empty=True)
+            if client_output != server_output:
+                raise FullError('output_mismatch')
+            record.update(output_sha256=digest(client_output), output_size=len(client_output),
+                          message_count=len(completion['values']))
         record.update(status='ok', failure_kind='none', witness_verified=True)
     except Exception as error:
         if isinstance(error, ClientProcessError):
@@ -897,3 +928,118 @@ def run_client_watchdog(platform, root: Path, inputs: Path, nonce: str, hashes: 
     except FullError as error:
         record.update(status='failed', failure_kind=error.kind, witness_verified=False)
     return record
+
+
+# This is a deliberately source-specific adapter, not a general BSL rewriter.
+CLIENT_DATES_SOURCE_SHA256 = 'a995169b82f6170f55eb2a935a6e113b53596d529b125563d1e75c394296bcb5'
+CLIENT_DATES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
+CLIENT_DATES_MESSAGE_COUNT = 100
+
+
+def client_dates_module(source: bytes, template: bytes) -> bytes:
+    """Adapt only the pinned dates source into the pinned managed-client harness.
+
+    Source statements retain their exact spelling/order. Only the five verified
+    message-call identifiers change; helpers gain client directives and the
+    original module body moves into a client procedure. No server trampoline,
+    string conversion, date reference generation or expected values are added.
+    """
+    if (digest(source) != CLIENT_DATES_SOURCE_SHA256
+            or digest(template) != CLIENT_DATES_TEMPLATE_SHA256):
+        raise FullError('invalid_input')
+    original = generated_module(source).decode('utf-8-sig')
+    harness = generated_module(template).decode('utf-8-sig')
+    lines = original.splitlines(keepends=True)
+    # Pin declarations, body boundary and actual call sites, not text matches
+    # inside expression strings or comments. The raw digest is checked above.
+    sites = (6, 11, 13, 80, 131)
+    declarations = {2: 'Процедура НаблюдатьДату(Знач Метка, Знач Выражение)\n',
+                    19: 'Функция ПроверитьКлючиДат()\n'}
+    capture = 'ДатыКлиентЗахват'
+    if (len(lines) != 132 or any(lines[i] != text for i, text in declarations.items())
+            or lines[15] != 'КонецПроцедуры\n' or lines[28] != 'КонецФункции\n'
+            or lines[30] != 'НаблюдатьДату("construct.parts", "Date(2024, 2, 29, 12, 34, 56)");\n'
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Сообщить\(', line)) != sites
+            or any(name in original or name in harness for name in
+                   (capture, 'ДатыКлиентСообщения', 'ДатыКлиентСимволы', 'ДатыКлиентВыполнить'))):
+        raise FullError('invalid_input')
+    adapted = lines.copy()
+    for i in sites:
+        adapted[i] = adapted[i].replace('Сообщить(', capture + '(', 1)
+    for i in declarations:
+        adapted[i] = '&НаКлиенте\n' + adapted[i]
+    # Runtime inverse assertion is explicit, independent of Python -O.
+    restored = adapted.copy()
+    for i in declarations:
+        restored[i] = restored[i].removeprefix('&НаКлиенте\n')
+    for i in sites:
+        restored[i] = restored[i].replace(capture + '(', 'Сообщить(', 1)
+    if ''.join(restored) != original:
+        raise FullError('invalid_input')
+    fixed = re.search(r'&НаКлиенте\nФункция ВычислитьПробу\(\)\n.*?\nКонецФункции\n',
+                      harness, flags=re.DOTALL)
+    if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
+        raise FullError('invalid_input')
+    # Client-only, non-exported module variables are supported in form modules.
+    # 4 UTF-8 bytes per character plus all 100 message LFs is conservative;
+    # the receiving verifier enforces the exact serialized UTF-8 byte limit.
+    budget = (MAX_OUTPUT - CLIENT_DATES_MESSAGE_COUNT) // 4
+    variables = ('&НаКлиенте\nПерем ДатыКлиентСообщения;\n'
+                 '&НаКлиенте\nПерем ДатыКлиентСимволы;\n\n')
+    wrapper = f'''&НаКлиенте
+Процедура ДатыКлиентЗахват(Знач Текст)
+    Если ТипЗнч(Текст) <> Тип("Строка") Тогда
+        ВызватьИсключение "client-dates-type";
+    КонецЕсли;
+    Если ДатыКлиентСообщения.Количество() >= {CLIENT_DATES_MESSAGE_COUNT}
+        Или ДатыКлиентСимволы + СтрДлина(Текст) > {budget} Тогда
+        ВызватьИсключение "client-dates-limit";
+    КонецЕсли;
+    ДатыКлиентСимволы = ДатыКлиентСимволы + СтрДлина(Текст);
+    ДатыКлиентСообщения.Добавить(Текст);
+КонецПроцедуры
+
+'''
+    wrapper += ''.join(adapted[:30])
+    wrapper += '&НаКлиенте\nПроцедура ДатыКлиентВыполнить()\n'
+    wrapper += ''.join(adapted[30:])
+    wrapper += 'КонецПроцедуры\n\n'
+    wrapper += '''&НаКлиенте
+Функция ВычислитьПробу()
+    ДатыКлиентСообщения = Новый Массив;
+    ДатыКлиентСимволы = 0;
+    ДатыКлиентВыполнить();
+    Возврат ДатыКлиентСообщения;
+КонецФункции
+'''
+    result = variables + harness[:fixed.start()] + wrapper + harness[fixed.end():]
+    return generated_module(result.encode('utf-8'))
+
+
+def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
+    """Validate fresh dates evidence; preserve string/order semantics for parity.
+
+    This validates shape, not date values. Only the downstream byte comparison
+    with this run's independently captured server output establishes parity.
+    """
+    if not valid_nonce(nonce) or phase not in {'entered', 'completed'}:
+        raise FullError('invalid_input')
+    # Retain the existing private result envelope limit, including JSON escapes.
+    value = strict_json(secure_bytes(path, MAX_RESULT), max_depth=3)
+    expected_count = 0 if phase == 'entered' else CLIENT_DATES_MESSAGE_COUNT
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != expected_count
+            or any(type(item) is not str for item in value['values'])):
+        raise FullError('invalid_result')
+    try:
+        if sum(len(item.encode('utf-8')) for item in value['values']) > MAX_OUTPUT:
+            raise FullError('output_limit')
+        serialize_messages(value['values'])
+    except UnicodeError:
+        raise FullError('invalid_result') from None
+    return value

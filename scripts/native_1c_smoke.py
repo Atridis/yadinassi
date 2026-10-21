@@ -207,8 +207,33 @@ def validate_input_tree(root: Path, *, full_suite: bool = False, client_probe: b
         raise SmokeError("invalid_staged_inputs")
 
 
+def client_dates_module_hash(staged: Path) -> str:
+    """Hash the same reviewed adapter over staged inputs, without import leakage."""
+    names = ("inject_modules", "evidence_gates", "full_suite")
+    saved = {name: sys.modules.get(name) for name in names}
+    try:
+        # Explicit paths avoid unrelated checkout modules or ambient sys.path.
+        for name in names:
+            spec = importlib.util.spec_from_file_location(
+                name, staged / "bootstrap" / (name + ".py"))
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        source = FULL.read_regular(staged / "scenarios/dates.bsl", FULL.MAX_FILE, nonempty=True)
+        template = FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)
+        return FULL.digest(module.client_dates_module(source, template))
+    finally:
+        for name in names:
+            if saved[name] is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = saved[name]
+
+
 def container_command(probe: Path, name: str, *, bootstrap: bool = False,
-                      full_suite: bool = False, nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False) -> list[str]:
+                      full_suite: bool = False, nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False) -> list[str]:
+    if client_dates and (not client_probe or not full_suite):
+        raise SmokeError("client_dates_requires_client_probe_and_full_suite")
     if watchdog_check and not client_probe:
         raise SmokeError("watchdog_check_requires_client_probe")
     if client_probe and not full_suite:
@@ -242,7 +267,7 @@ def container_command(probe: Path, name: str, *, bootstrap: bool = False,
         "LANG=ru_RU.UTF-8", "LC_ALL=ru_RU.UTF-8", "TZ=Etc/UTC",
         "/bin/bash", "--noprofile", "--norc", "/smoke/probe.sh",
     ] + (["--full-suite", "--invocation-nonce", nonce] if full_suite else
-         ["--bootstrap-simple-epf"] if bootstrap else []) + (["--client-probe"] if client_probe else []) + (["--client-watchdog-check"] if watchdog_check else [])
+         ["--bootstrap-simple-epf"] if bootstrap else []) + (["--client-probe"] if client_probe else []) + (["--client-watchdog-check"] if watchdog_check else []) + (["--client-dates-parity"] if client_dates else [])
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -393,7 +418,9 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
 
 def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
               export_native_outputs: bool = False, native_target: str = FULL.WINDOWS_TARGET,
-              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False) -> dict[str, object]:
+              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False) -> dict[str, object]:
+    if client_dates and (not client_probe or not full_suite):
+        raise SmokeError("client_dates_requires_client_probe_and_full_suite")
     if watchdog_check and not client_probe:
         raise SmokeError("watchdog_check_requires_client_probe")
     if client_probe and not full_suite:
@@ -428,6 +455,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
             if client_probe:
                 module_hashes["client_probe"] = FULL.digest(FULL.generated_module(
                     FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)))
+            if client_dates:
+                module_hashes["client_dates"] = client_dates_module_hash(staged)
             auth = work / "registry-auth"
             auth.mkdir(mode=0o700)
             auth_env = docker_environment(auth)
@@ -445,7 +474,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
             if code != 0 or platform.strip() != b"linux/amd64|0":
                 raise SmokeError("unexpected_image_platform_or_volumes")
             run_command = container_command(staged if bootstrap else PROBE, name, bootstrap=bootstrap,
-                                            full_suite=full_suite, nonce=nonce, client_probe=client_probe, watchdog_check=watchdog_check)
+                                            full_suite=full_suite, nonce=nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates)
             payloads = {}
             report = None
             primary_error = None
@@ -454,7 +483,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 runtime = FULL_MAX_RUNTIME if full_suite else BOOTSTRAP_MAX_RUNTIME if bootstrap else MAX_RUNTIME
                 if full_suite:
                     code, raw = bounded_run(run_command, env, runtime, FULL.MAX_TRANSPORT)
-                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report, watchdog_check=watchdog_check)
+                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report, watchdog_check=watchdog_check, client_dates=client_dates)
                     del raw
                 else:
                     code, raw = bounded_run(run_command, env, runtime)
@@ -562,6 +591,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Run six approved native scenarios and compare privately on the host under UTC")
     parser.add_argument("--client-watchdog-check", action="store_true",
                         help="Require a controlled client stall to time out and clean up")
+    parser.add_argument("--client-dates-parity", action="store_true",
+                        help="Also require private client/server dates parity after the client checkpoint")
     parser.add_argument("--client-probe", action="store_true",
                         help="Also require fresh managed-form client-only execution proof")
     parser.add_argument("--export-native-outputs", action="store_true",
@@ -572,6 +603,8 @@ def main(argv: list[str] | None = None) -> int:
                         default=FULL.BYTE_EXACT, help="Raw-byte comparison or the reviewed, source-bound typed Map contract")
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
+    if args.client_dates_parity and (not args.client_probe or not args.full_suite):
+        parser.error("--client-dates-parity requires --client-probe and --full-suite")
     if args.client_watchdog_check and not args.client_probe:
         parser.error("--client-watchdog-check requires --client-probe and --full-suite")
     if args.client_probe and not args.full_suite:
@@ -591,7 +624,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     artifact_evidence_validated = False
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check)
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check, client_dates=args.client_dates_parity)
         if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")
