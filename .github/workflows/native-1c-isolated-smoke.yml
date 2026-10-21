@@ -1,0 +1,49 @@
+name: Isolated native 1C capability smoke
+
+# Temporary, deliberately narrow route for this approved validation task.
+# Remove this push route after validation; do not broaden it to PR/main events.
+on:
+  push:
+    branches:
+      - codex/native-1c-isolated-smoke
+    paths:
+      - .github/workflows/native-1c-isolated-smoke.yml
+      - scripts/native_1c_smoke.py
+      - scripts/native_1c_smoke_probe.sh
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: native-1c-isolated-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: >-
+      github.repository == 'Atridis/yadinassi' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/codex/native-1c-isolated-smoke' &&
+      github.actor == 'Atridis' &&
+      github.triggering_actor == 'Atridis'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run approved digest with no network, ports or credentials
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --output native-smoke/report.json
+      - name: Upload only validated capability report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-1c-capability-report
+          path: native-smoke/report.json
+          if-no-files-found: error
+          retention-days: 7
