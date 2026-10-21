@@ -5,6 +5,7 @@ import copy
 import io
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +17,47 @@ from test_native_1c_smoke import smoke, bootstrap_report
 
 full = smoke.FULL
 NONCE = "1234567890abcdef" * 2
+
+# The real native host is Linux. Windows CI runs the same finite-schema,
+# comparison, staging and orchestration assertions with synthetic files, not
+# NTFS as a claimed emulation of Linux descriptor/path metadata equality.
+_USE_SYNTHETIC_FILE_READER = os.name == "nt"
+
+
+def read_synthetic_file(path, limit, *, nonempty=False):
+    """Test-only bounded stable fixture reads; never used by the native runner.
+
+    Linux tests retain the production descriptor-relative no-follow reader.
+    This adapter uses one metadata API consistently for static Windows fixtures;
+    it does not claim to prove the production descriptor-race security boundary.
+    """
+    try:
+        if any(parent.is_symlink() for parent in (path, *path.parents)):
+            raise ValueError("link")
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+            raise ValueError("file")
+        with path.open("rb") as source:
+            data = source.read(limit + 1)
+        after = path.lstat()
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+                                 info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        if (identity(before) != identity(after) or len(data) != before.st_size
+                or len(data) > limit or (nonempty and not data)):
+            raise ValueError("unstable")
+        return data
+    except (OSError, ValueError):
+        raise full.FullError("invalid_private_file") from None
+
+
+class SyntheticFilesystemCase(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        if _USE_SYNTHETIC_FILE_READER:
+            patcher = mock.patch.object(full, "read_regular", side_effect=read_synthetic_file)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
 
 
 def fixture(payload=b" PRIVATE synthetic output \n\n", *, input_hashes=None, modules=None):
@@ -40,6 +82,19 @@ def encode(data):
 
 def validate(data, inputs, modules):
     return full.validate_envelope(encode(data), NONCE, inputs, modules, smoke.validate_report)
+
+
+class SyntheticReaderTests(unittest.TestCase):
+    def test_fixture_adapter_preserves_bytes_bounds_and_empty_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / "fixture.out"
+            path.write_bytes(b"x\r\n\x00\xff")
+            self.assertEqual(read_synthetic_file(path, 8), b"x\r\n\x00\xff")
+            with self.assertRaises(full.FullError): read_synthetic_file(path, 2)
+            with self.assertRaises(full.FullError): read_synthetic_file(path.parent, 8)
+            path.write_bytes(b"")
+            self.assertEqual(read_synthetic_file(path, 8), b"")
+            with self.assertRaises(full.FullError): read_synthetic_file(path, 8, nonempty=True)
 
 
 class EnvelopeTests(unittest.TestCase):
@@ -153,7 +208,7 @@ class EnvelopeTests(unittest.TestCase):
         with self.assertRaises(smoke.SmokeError): validate(data, inputs, modules)
 
 
-class CaptureTests(unittest.TestCase):
+class CaptureTests(SyntheticFilesystemCase):
     def test_private_exclusive_fixed_files_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as temporary:
             parent = Path(temporary).resolve()
@@ -191,7 +246,7 @@ class CaptureTests(unittest.TestCase):
         self.assertNotEqual(full.generated_module(b"x"), b"x")
 
 
-class StagingTests(unittest.TestCase):
+class StagingTests(SyntheticFilesystemCase):
     def test_full_exact23_inputs_no_goldens_repository_or_interpreter_mount(self):
         self.assertEqual(len(smoke.STAGED_FILES), 16)
         self.assertEqual(len(smoke.FULL_STAGED_FILES), 23)
@@ -229,8 +284,9 @@ class StagingTests(unittest.TestCase):
         for name, version in full.DEPENDENCIES.items(): self.assertIn(name + "==" + version, text)
 
 
-class ComparisonTests(unittest.TestCase):
+class ComparisonTests(SyntheticFilesystemCase):
     def setUp(self):
+        super().setUp()
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
@@ -363,7 +419,7 @@ class ChildTests(unittest.TestCase):
             self.assertEqual(output, b"2024-02-29T12:34:56\n \n\n")
 
 
-class OrchestrationTests(unittest.TestCase):
+class OrchestrationTests(SyntheticFilesystemCase):
     def invoke(self, *, cleanup_bad=False, mismatch=False, exit_code=0, bad_nonce=False, return_error=False):
         operations = []
         captured_dirs = []
@@ -470,7 +526,7 @@ class OrchestrationTests(unittest.TestCase):
                 self.assertIs(json.loads(output.read_text())["windows_goldens_modified"], expected)
 
 
-class ProvenanceTests(unittest.TestCase):
+class ProvenanceTests(SyntheticFilesystemCase):
     def test_rejects_dirty_sha_mismatch_and_ignored_untracked_project_sources(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()

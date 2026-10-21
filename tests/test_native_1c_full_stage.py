@@ -10,9 +10,11 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -32,6 +34,36 @@ def load_launcher(path):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def portable_fixture_bytes(path: Path, limit: int, *, allow_empty: bool = False) -> bytes:
+    """Read trusted offline fixtures, not native-container security evidence.
+
+    Windows host files do not promise the Linux descriptor/path metadata
+    equivalence required by secure_bytes. Keep that production gate unchanged;
+    Windows orchestration tests use this explicit bounded fixture adapter. Real
+    no-follow descriptor behavior remains covered by SecureEvidenceTests on
+    POSIX, including links, special files, hard links and concurrent mutation.
+    """
+    try:
+        if any(item.is_symlink() for item in (path, *path.parents)):
+            raise suite.FullError('artifact_missing')
+        before = path.lstat()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or not (0 if allow_empty else 1) <= before.st_size <= limit):
+            raise suite.FullError('artifact_missing')
+        with path.open('rb') as stream:
+            data = stream.read(limit + 1)
+        after = path.lstat()
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_mode,
+                                  value.st_nlink, value.st_size,
+                                  value.st_mtime_ns, value.st_ctime_ns)
+        if (identity(before) != identity(after) or len(data) != before.st_size
+                or len(data) > limit):
+            raise suite.FullError('artifact_missing')
+        return data
+    except (OSError, ValueError, OverflowError):
+        raise suite.FullError('artifact_missing') from None
 
 
 class StrictResultTests(unittest.TestCase):
@@ -138,11 +170,17 @@ class SecureEvidenceTests(unittest.TestCase):
 
 
 class FullSuiteHarness(unittest.TestCase):
+    use_fixture_reader = os.name == 'nt'
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.inputs = self.root / 'inputs'
+        if self.use_fixture_reader:
+            reader_patcher = mock.patch.object(suite, 'secure_bytes', new=portable_fixture_bytes)
+            reader_patcher.start()
+            self.addCleanup(reader_patcher.stop)
         for source, target in suite.INPUT_FILES.items():
             path = self.inputs / target
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -363,6 +401,61 @@ class FullSuiteHarness(unittest.TestCase):
             suite.write_report(path, result)
         with self.assertRaises(suite.FullError):
             suite.write_report(self.root / 'too-large.json', {'large': 'x' * suite.MAX_STAGE_REPORT})
+
+
+class PortableFixtureFullSuiteHarness(FullSuiteHarness):
+    """Exercise the Windows test adapter in every CI OS, without native calls."""
+    use_fixture_reader = True
+
+
+class PortableFixtureReaderTests(SecureEvidenceTests):
+    """Run the same finite-file/link contracts against the test-only adapter."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(suite, 'secure_bytes', new=portable_fixture_bytes)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_mutation_during_descriptor_read_is_rejected(self):
+        # The adapter intentionally uses a portable Python file reader, while
+        # the inherited original test exercises os.read in the Linux gate.
+        original = Path.open
+        path = self.file
+        class MutatingReader:
+            def __enter__(self):
+                self.stream = original(path, 'rb')
+                return self
+            def read(self, count):
+                data = self.stream.read(count)
+                with original(path, 'wb') as target:
+                    target.write(b'changed')
+                return data
+            def __exit__(self, *args):
+                self.stream.close()
+        with mock.patch.object(Path, 'open', return_value=MutatingReader()), self.assertRaises(suite.FullError):
+            suite.secure_bytes(self.file, 100)
+
+
+class FixtureBoundaryIsolationTests(unittest.TestCase):
+    def test_production_still_rejects_descriptor_path_metadata_disagreement(self):
+        # Simulate an OS-specific descriptor/path disagreement explicitly. This
+        # is a contract test, not a claim about a particular Windows stat field.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory).resolve() / 'fixture'
+            path.write_bytes(b'bounded fixture')
+            original = os.fstat
+            fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size',
+                      'st_mtime_ns', 'st_ctime_ns')
+            def descriptor_view(fd):
+                value = original(fd)
+                values = {name: getattr(value, name) for name in fields}
+                values['st_mode'] ^= stat.S_IXUSR
+                return SimpleNamespace(**values)
+            with mock.patch.object(suite.os, 'fstat', side_effect=descriptor_view):
+                with self.assertRaises(suite.FullError):
+                    suite.secure_bytes(path, 100)
+                self.assertEqual(portable_fixture_bytes(path, 100), b'bounded fixture')
 
 
 class Stage3IntegrationTests(unittest.TestCase):
