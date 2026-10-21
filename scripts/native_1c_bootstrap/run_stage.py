@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Inside-container stage two. All native evidence and diagnostics stay in tmpfs."""
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import uuid
+
+from inject_modules import DraftError, PROTOCOL, inject
+from evidence_gates import (bounded_bytes, read_marker, require_epf,
+                            require_marker_pair, require_reimported_modules,
+                            require_zero_result)
+
+ONEC = Path('/opt/1cv8t/x86_64/8.3.27.1508/1cv8t')
+ROOT = Path('/tmp/onec-smoke')
+INPUTS = Path('/smoke')
+EXPECTED_VERSION = '8.3.27.1508'
+EXPECTED_MESSAGES = ['native-smoke-v1', '42']
+STAGES = {'inject', 'load', 'redump', 'bootstrap', 'named_designer', 'verify',
+          'launcher_build', 'simple_epf', 'unknown'}
+KINDS = {'none', 'timeout', 'process_failed', 'invalid_dump_result', 'artifact_missing',
+         'metadata_rejected', 'module_mismatch', 'compile_error', 'permission_denied',
+         'hook_missing', 'marker_invalid', 'version_mismatch', 'output_mismatch',
+         'unexpected_failure', 'stale_evidence', 'unsupported_api'}
+FLAGS = {'modules_reimported', 'bootstrap_verified', 'named_designer_verified',
+         'named_user_verified', 'control_removed', 'launcher_built', 'simple_epf_passed',
+         'security_change_attempted'}
+
+
+class StageError(Exception):
+    def __init__(self, kind: str):
+        self.kind = kind
+
+
+def empty_report() -> dict:
+    return {'schema': 1, 'status': 'failed', 'failed_stage': 'inject',
+            'failure_kind': 'unexpected_failure', 'actual_version': None,
+            'version_source': 'not_measured', 'simple_output_sha256': None,
+            'security_settings_state': 'not_attempted',
+            **{flag: False for flag in FLAGS}}
+
+
+def absent(*paths: Path) -> None:
+    if any(path.exists() or path.is_symlink() for path in paths):
+        raise StageError('stale_evidence')
+
+
+def classify_native(paths: list[Path], fallback: str) -> str:
+    # Never return native text. This is diagnostic classification, not a pass gate.
+    for path in paths:
+        try:
+            data = bounded_bytes(path, 1_048_576)
+            text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig', errors='replace').casefold()
+        except (OSError, DraftError):
+            continue
+        if any(phrase in text for phrase in ('ошибка компиляции', 'ошибки компиляции', 'compilation error', 'syntax error', 'синтаксическая ошибка', 'переменная не определена', 'процедура или функция с указанным именем не определена')):
+            return 'compile_error'
+        if any(phrase in text for phrase in ('поле объекта не обнаружено', 'метод объекта не обнаружен', 'object field not found', 'object method not found')):
+            return 'unsupported_api'
+        if any(phrase in text for phrase in ('недостаточно прав', 'нарушение прав доступа', 'insufficient rights', 'access denied', 'permission denied')):
+            return 'permission_denied'
+    return fallback
+
+
+def process(command: list[str], directory: Path, console: Path, timeout: float = 120) -> None:
+    absent(console)
+    with console.open('xb') as log:
+        with subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
+                              stdout=log, stderr=subprocess.STDOUT,
+                              start_new_session=True) as child:
+            try:
+                code = child.wait(timeout=timeout)
+            except BaseException as error:
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                child.wait()
+                if isinstance(error, subprocess.TimeoutExpired):
+                    raise StageError('timeout') from None
+                raise
+    if code != 0:
+        raise StageError('process_failed')
+
+
+def command(mode: str, database: Path, user: str | None = None) -> list[str]:
+    args = [str(ONEC), mode, '/F', str(database)]
+    if user is not None:
+        args += ['/N', user]
+    return args + ['/AppAutoCheckVersion-', '/DisableStartupDialogs',
+                   '/DisableStartupMessages', '/L', 'ru']
+
+
+def batch(name: str, database: Path, evidence: Path, operation: list[str],
+          user: str | None = None) -> None:
+    result, log = evidence / (name + '.result'), evidence / (name + '.log')
+    absent(result, log)
+    process(command('DESIGNER', database, user) + operation +
+            ['/Out', str(log), '/DumpResult', str(result)], evidence,
+            evidence / (name + '-console.log'))
+    try:
+        require_zero_result(result, 0)
+    except (DraftError, OSError):
+        raise StageError('invalid_dump_result') from None
+
+
+def enterprise(stage: str, database: Path, evidence: Path, manifest: dict,
+               report: dict, user: str | None) -> None:
+    control = evidence / 'control.json'
+    markers = [evidence / (stage + '-' + hook + '.json') for hook in ('session', 'managed')]
+    log = evidence / (stage + '.log')
+    absent(control, log, *markers)
+    token = manifest[stage + '_token']
+    with control.open('x', encoding='utf-8') as target:
+        json.dump({'protocol': PROTOCOL, 'run_id': manifest['run_id'],
+                   'stage': stage, 'launch_token': token}, target)
+    try:
+        process(command('ENTERPRISE', database, user) +
+                ['/RunModeManagedApplication', '/C', token, '/Out', str(log)],
+                evidence, evidence / (stage + '-console.log'))
+        if not all(path.is_file() and not path.is_symlink() for path in markers):
+            raise StageError('hook_missing')
+        # Check the complete matching marker pair before exposing a numeric
+        # SystemInfo value, even when that measured value is unexpected.
+        try:
+            marker = read_marker(markers[1])
+            version = marker.get('actual_version')
+            if type(version) is not str or not re.fullmatch(r'[0-9]{1,4}(?:\.[0-9]{1,4}){3}', version):
+                raise DraftError('Invalid numeric runtime version')
+            require_marker_pair(evidence, stage, manifest['run_id'], manifest['user'],
+                                returncode=0, expected_version=version)
+        except (DraftError, OSError):
+            raise StageError('marker_invalid') from None
+        report['actual_version'] = version
+        report['version_source'] = 'SystemInfo.AppVersion'
+        if version != EXPECTED_VERSION:
+            raise StageError('version_mismatch')
+    finally:
+        control.unlink(missing_ok=True)
+
+
+def load_launcher():
+    spec = importlib.util.spec_from_file_location('native_smoke_launcher', INPUTS / 'launcher/test_launcher.py')
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def strict_simple_result(path: Path, output: Path) -> str:
+    value = read_marker(path)
+    if (set(value) != {'messages', 'error'} or type(value['messages']) is not list
+            or any(type(item) is not str for item in value['messages'])
+            or value['messages'] != EXPECTED_MESSAGES or value['error'] != ''):
+        raise StageError('output_mismatch')
+    expected = ''.join(item + '\n' for item in EXPECTED_MESSAGES).encode('utf-8')
+    if bounded_bytes(output, 1024) != expected:
+        raise StageError('output_mismatch')
+    return hashlib.sha256(expected).hexdigest()
+
+
+def run() -> dict:
+    report = empty_report()
+    stage = 'inject'
+    evidence = ROOT / ('stage2-' + uuid.uuid4().hex)
+    evidence.mkdir(mode=0o700)
+    database = ROOT / 'db'
+    user = 'NativeSmoke'
+    try:
+        try:
+            manifest = inject(ROOT / 'config', evidence / 'injected', run_id=uuid.uuid4().hex,
+                              user=user, evidence=str(evidence))
+        except (DraftError, OSError):
+            raise StageError('metadata_rejected') from None
+        stage = 'load'
+        batch(stage, database, evidence, ['/LoadConfigFromFiles', str(evidence / 'injected'), '/UpdateDBCfg'])
+        stage = 'redump'
+        redump = evidence / 'redump'
+        redump.mkdir()
+        batch(stage, database, evidence, ['/DumpConfigToFiles', str(redump), '-Format', 'Hierarchical'])
+        try:
+            require_reimported_modules(evidence / 'injected', redump)
+        except (DraftError, OSError):
+            raise StageError('module_mismatch') from None
+        report['modules_reimported'] = True
+        stage = 'bootstrap'
+        report['security_change_attempted'] = True
+        report['security_settings_state'] = 'unverified'
+        enterprise(stage, database, evidence, manifest, report, None)
+        report['bootstrap_verified'] = True
+        report['security_settings_state'] = 'verified'
+        stage = 'named_designer'
+        named = evidence / 'named-designer'
+        named.mkdir()
+        batch(stage, database, evidence, ['/DumpConfigToFiles', str(named), '-Format', 'Hierarchical'], user)
+        bounded_bytes(named / 'Configuration.xml', 1_048_576)
+        require_reimported_modules(evidence / 'injected', named)
+        report['named_designer_verified'] = True
+        stage = 'verify'
+        enterprise(stage, database, evidence, manifest, report, user)
+        report['named_user_verified'] = True
+        absent(evidence / 'control.json')
+        report['control_removed'] = True
+        stage = 'launcher_build'
+        launcher = load_launcher()
+        platform = launcher.Platform(ONEC, database, 120, user)
+        launcher_epf = evidence / 'Launcher.epf'
+        absent(launcher_epf, launcher_epf.with_suffix('.build-result.txt'))
+        launcher_sources = evidence / 'launcher-src'
+        absent(launcher_sources)
+        shutil.copytree(INPUTS / 'launcher/launcher_1c', launcher_sources)
+        launcher.build_epf(platform, launcher_sources / 'Launcher.xml', launcher_epf)
+        require_zero_result(launcher_epf.with_suffix('.build-result.txt'), 0)
+        require_epf(launcher_epf)
+        report['launcher_built'] = True
+        stage = 'simple_epf'
+        case = evidence / 'simple-case'
+        output = evidence / 'simple.out'
+        absent(case, output)
+        launcher.run_case(platform, INPUTS / 'bootstrap/simple_smoke.bsl', launcher_epf, case, output)
+        require_zero_result(case / 'TestModule.build-result.txt', 0)
+        require_epf(case / 'TestModule.epf')
+        report['simple_output_sha256'] = strict_simple_result(case / 'result.json', output)
+        report['simple_epf_passed'] = True
+        report.update(status='ok', failed_stage=None, failure_kind='none')
+    except Exception as error:
+        fallback = error.kind if isinstance(error, StageError) else 'unexpected_failure'
+        if isinstance(error, (DraftError, FileNotFoundError)):
+            fallback = 'artifact_missing'
+        # Existing launcher errors remain private; classify only known text and logs.
+        if error.__class__.__name__ == 'LaunchError':
+            fallback = 'timeout' if 'таймаут' in str(error).casefold() else 'process_failed'
+        logs = list(evidence.glob('*.log')) + list(evidence.glob('simple-case/*.log'))
+        report.update(failed_stage=stage, failure_kind=classify_native(logs, fallback))
+    return report
+
+
+def main() -> int:
+    # Only this bounded report is consumed by the shell. No tracebacks/raw errors.
+    try:
+        report = run()
+    except Exception:
+        report = empty_report()
+        # An unexpected exception could follow a persisted user write. Never
+        # downgrade uncertain mutation to "not_attempted" in the last-resort path.
+        report.update(failed_stage="unknown", security_change_attempted=True,
+                      security_settings_state="unverified")
+    target = ROOT / 'stage2-report.json'
+    with target.open('x', encoding='utf-8') as stream:
+        json.dump(report, stream, sort_keys=True)
+    return 0 if report['status'] == 'ok' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

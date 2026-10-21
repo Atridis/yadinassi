@@ -259,7 +259,7 @@ class BoundedProcessTests(unittest.TestCase):
 @unittest.skipUnless(sys.platform == "linux", "fake Bash probe requires Linux and GNU timeout")
 class FakeProbeTests(unittest.TestCase):
     # Exercise the real shell control flow with local, inert fake tools.
-    def run_probe(self, mode):
+    def run_probe(self, mode, *, bootstrap=False, stage2_value=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             bin_dir = root / "bin"
@@ -269,6 +269,17 @@ class FakeProbeTests(unittest.TestCase):
             source = smoke.PROBE.read_text().replace(
                 "/opt/1cv8t/x86_64/8.3.27.1508/1cv8t", str(native)
             ).replace("/tmp/onec-smoke", str(work)).replace("/tmp/.X11-unix", str(root / "x11"))
+            stage2_script = root / "fake_stage2.py"
+            if bootstrap:
+                source = source.replace("/smoke/bootstrap/run_stage.py", str(stage2_script))
+                if mode == "stage2_missing_report":
+                    stage2_script.write_text("raise SystemExit(1)\n")
+                else:
+                    stage2_script.write_text(
+                        "from pathlib import Path\n" +
+                        "Path(" + repr(str(work / "stage2-report.json")) + ").write_text(" +
+                        repr(json.dumps(stage2_value)) + ")\n" +
+                        "raise SystemExit(" + ("0" if stage2_value['status'] == 'ok' else "1") + ")\n")
             probe = root / "probe.sh"
             probe.write_text(source)
             def executable(name, body):
@@ -293,6 +304,8 @@ else:
     target = Path(args[args.index("/DumpConfigToFiles") + 1])
     (target / "Configuration.xml").write_text('<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20"><Configuration><Properties><Name/></Properties></Configuration></MetaDataObject>')
     result.write_text("1" if mode == "dump_failed" else "0")
+    if mode == "stage2_missing_report":
+        (target / "Configuration.xml").write_text("invalid native XML")
 """)
             executable("id", "#!/bin/sh\nprintf '1000\\n'\n")
             executable("ldd", py + "import os; print('libmissing => not found' if os.environ['MOCK_MODE'] == 'libraries_failed' else 'libc => /lib/libc.so')\n")
@@ -303,7 +316,7 @@ else:
             env = {"PATH": str(bin_dir) + ":/usr/bin:/bin", "HOME": str(root / "home"),
                    "XDG_RUNTIME_DIR": str(root / "runtime"), "DISPLAY": ":99",
                    "MOCK_MODE": mode, "MOCK_CALLS": str(root / "calls")}
-            result = subprocess.run(["/bin/bash", str(probe)], env=env,
+            result = subprocess.run(["/bin/bash", str(probe)] + (["--bootstrap-simple-epf"] if bootstrap else []), env=env,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
             self.assertEqual(result.stderr, b"")
             calls = (root / "calls").read_text().splitlines() if (root / "calls").exists() else []
@@ -317,6 +330,23 @@ else:
         self.assertTrue(report["libraries_resolved"])
         self.assertFalse(report["security_settings_changed"])
         self.assertIsNone(report["runtime_version"])
+
+    def test_stage2_shell_handoff_reports_validated_version_and_security(self):
+        code, report, calls = self.run_probe("ok", bootstrap=True, stage2_value=valid_stage2())
+        self.assertEqual(code, 0)
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["stage2"], valid_stage2())
+        self.assertEqual(report["runtime_version"], "8.3.27.1508")
+        self.assertIs(report["security_settings_changed"], True)
+        self.assertEqual(calls, ["CREATEINFOBASE", "DESIGNER"])
+
+    def test_missing_stage2_plus_bad_format_cannot_claim_unchanged_security(self):
+        code, report, _ = self.run_probe("stage2_missing_report", bootstrap=True)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(report["status"], "stage2_failed")
+        self.assertIsNone(report["stage2"])
+        with self.assertRaises(smoke.SmokeError):
+            smoke.validate_report(json.dumps(report).encode(), bootstrap=True)
 
     def test_missing_library_stops_before_native_invocation(self):
         code, report, calls = self.run_probe("libraries_failed")
@@ -334,6 +364,123 @@ else:
                 self.assertEqual(report["status"], mode)
                 self.assertEqual(calls, expected_calls)
                 self.assertFalse(report["configuration_dumped"])
+
+
+
+def valid_stage2():
+    return {"schema": 1, "status": "ok", "failed_stage": None, "failure_kind": "none",
+            "actual_version": "8.3.27.1508", "version_source": "SystemInfo.AppVersion",
+            "simple_output_sha256": smoke.SIMPLE_OUTPUT_SHA256,
+            "security_change_attempted": True, "security_settings_state": "verified",
+            **{key: True for key in smoke.STAGE_FLAGS}}
+
+
+def bootstrap_report():
+    data = valid_report()
+    data.update(stage2=valid_stage2(), runtime_version="8.3.27.1508",
+                runtime_version_source="SystemInfo.AppVersion", security_settings_changed=True)
+    return data
+
+
+class BootstrapReportTests(unittest.TestCase):
+    def test_checked_success_and_no_full_suite_claim(self):
+        data = bootstrap_report()
+        self.assertEqual(smoke.validate_report(json.dumps(data).encode(), bootstrap=True), data)
+        self.assertFalse(data['native_tests_completed'])
+
+    def test_refuses_downgrade_and_unknown_reports(self):
+        for data in (valid_report(), {**valid_report(), 'stage2': None}):
+            with self.assertRaises(smoke.SmokeError):
+                smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+        with self.assertRaises(smoke.SmokeError):
+            smoke.validate_report(json.dumps(bootstrap_report()).encode())
+
+    def test_stage2_schema_types_gate_order_version_and_digest(self):
+        edits = [lambda d: d.update(secret='PRIVATE'),
+                 lambda d: d.update(schema=True),
+                 lambda d: d.update(status='PRIVATE'),
+                 lambda d: d.update(failed_stage='PRIVATE'),
+                 lambda d: d.update(failure_kind='PRIVATE'),
+                 lambda d: d.update(simple_epf_passed=1),
+                 lambda d: d.update(modules_reimported=False),
+                 lambda d: d.update(actual_version='8.3.27.1508 PRIVATE'),
+                 lambda d: d.update(actual_version='8.3.26.1'),
+                 lambda d: d.update(version_source='path'),
+                 lambda d: d.update(security_change_attempted=False),
+                 lambda d: d.update(security_settings_state='not_attempted'),
+                 lambda d: d.update(simple_output_sha256='0' * 64)]
+        for edit in edits:
+            with self.subTest(edit=edit):
+                data = bootstrap_report()
+                edit(data['stage2'])
+                with self.assertRaises(smoke.SmokeError):
+                    smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+
+    def test_partial_security_change_is_unknown_not_false(self):
+        data = bootstrap_report()
+        data.update(status='stage2_failed', runtime_version=None,
+                    runtime_version_source='not_measured', security_settings_changed=None)
+        data['stage2'].update(status='failed', failed_stage='bootstrap', failure_kind='hook_missing',
+                              actual_version=None, version_source='not_measured',
+                              simple_output_sha256=None, security_settings_state='unverified',
+                              **{key: key == 'modules_reimported' for key in smoke.STAGE_FLAGS})
+        self.assertIsNone(smoke.validate_report(json.dumps(data).encode(), bootstrap=True)['security_settings_changed'])
+        data['security_settings_changed'] = False
+        with self.assertRaises(smoke.SmokeError):
+            smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+
+    def test_mismatched_version_cannot_claim_named_gate_verified(self):
+        data = bootstrap_report()
+        data.update(status="stage2_failed", runtime_version="8.3.26.1")
+        data["stage2"].update(status="failed", failed_stage="verify", failure_kind="version_mismatch",
+                              actual_version="8.3.26.1", simple_output_sha256=None,
+                              **{key: index < 3 for index, key in enumerate(smoke.STAGE_FLAGS)})
+        self.assertEqual(smoke.validate_report(json.dumps(data).encode(), bootstrap=True)["runtime_version"], "8.3.26.1")
+        data["stage2"]["named_user_verified"] = True
+        with self.assertRaises(smoke.SmokeError):
+            smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+
+    def test_host_uncertain_failure_does_not_claim_unchanged_security(self):
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / 'report.json'
+            for uncertain, expected in ((False, False), (True, None)):
+                with mock.patch.object(smoke, 'run_smoke', side_effect=smoke.SmokeError('container_timeout', security_uncertain=uncertain)), contextlib.redirect_stdout(io.StringIO()):
+                    code = smoke.main(['--execute-approved-image', '--bootstrap-simple-epf', '--output', str(output)])
+                self.assertEqual(code, 1)
+                self.assertIs(json.loads(output.read_text())['security_settings_changed'], expected)
+
+
+class BootstrapStagingTests(unittest.TestCase):
+    def test_stages_only_exact_trusted_files_and_preserves_bytes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'staged'
+            hashes = smoke.stage_inputs(root)
+            self.assertEqual(set(hashes), set(smoke.STAGED_FILES))
+            self.assertEqual({p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}, set(smoke.STAGED_FILES.values()))
+            for source, target in smoke.STAGED_FILES.items():
+                self.assertEqual((smoke.ROOT / source).read_bytes(), (root / target).read_bytes())
+            args = smoke.container_command(root, 'onec-smoke-test', bootstrap=True)
+            self.assertEqual(args.count('--mount'), 1)
+            self.assertTrue(args[args.index('--mount') + 1].endswith(',dst=/smoke,readonly'))
+            self.assertEqual(args[-1], '--bootstrap-simple-epf')
+            self.assertNotIn(str(smoke.ROOT), args)
+            (root / 'extra-private-file').write_text('not allowed')
+            with self.assertRaises(smoke.SmokeError):
+                smoke.container_command(root, 'onec-smoke-test', bootstrap=True)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX permission semantics')
+    def test_staged_tree_is_traversable_with_restrictive_umask(self):
+        with tempfile.TemporaryDirectory() as temp:
+            previous = os.umask(0o077)
+            try:
+                root = Path(temp) / 'staged'
+                smoke.stage_inputs(root)
+            finally:
+                os.umask(previous)
+            for path in [root, *root.rglob('*')]:
+                self.assertEqual(path.stat().st_mode & 0o777, 0o755 if path.is_dir() else 0o644)
 
 
 if __name__ == "__main__":

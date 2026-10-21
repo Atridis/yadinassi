@@ -1,105 +1,164 @@
-# Isolated native 1C capability smoke
+# Isolated native 1C bootstrap and simple EPF smoke
 
-This is a bounded first stage of the approved Linux training-image validation,
-not a completed native regression run. It does not replace Windows golden files,
-execute integration scenarios, create a test user, or change dangerous-action
-protection. A later stage must create and verify the disposable test user and run
-the native scenarios before automation can replace manual validation.
+This is a bounded validation of one approved Linux training image, not the full
+native regression suite. The first capability-only run established Python 3.10.12,
+non-root execution, dynamic-library resolution, authenticated display startup,
+empty database creation and hierarchical configuration export (schema 2.20).
+It did not establish the actual application version or user/bootstrap behavior.
+The stage-two code adds those gates and one fixed arithmetic/message EPF. Its
+mock tests are not native execution evidence.
 
-## Invocation and trust boundary
+## Invocation and unchanged trust boundary
 
-The temporary workflow `.github/workflows/native-1c-isolated-smoke.yml` runs only
-for source changes to that workflow or its two helpers pushed to the exact branch
-`codex/native-1c-isolated-smoke`, in `Atridis/yadinassi`, by `Atridis` (including the
-actor who retries it). There are no PR, fork, main-branch, dispatch, tag or
-arbitrary-input routes. This narrow push route was selected for the current
-approved task, not as permanent CI policy. Remove it after this validation; do not
-broaden it as a workaround for a failed run. A push of reviewed helper changes is
-itself an execution trigger and must remain within the approved scope.
+The temporary workflow `.github/workflows/native-1c-isolated-smoke.yml` still runs
+only for changes to the same workflow, its original two helpers or the exact
+`scripts/native_1c_bootstrap/**` input directory on the exact
+`codex/native-1c-isolated-smoke` branch, in `Atridis/yadinassi`, pushed and retried
+by `Atridis`. No PR, fork, main-branch, dispatch, tag or arbitrary-input trigger
+is added. The one additional path filter lets reviewed bootstrap-only fixes
+trigger another run without widening the branch or actor checks. Remove this temporary route after validation. A helper push triggers
+execution and must remain within the approved scope.
 
-The host helper requires `--execute-approved-image`. It has one hard-coded image:
+The workflow uses both explicit flags:
+
+```
+python3 scripts/native_1c_smoke.py --execute-approved-image --bootstrap-simple-epf --output native-smoke/report.json
+```
+
+Omitting `--bootstrap-simple-epf` retains the capability-only mode. Both use the
+same fixed image, without a caller-supplied tag or executable:
 
 ```
 ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728
 ```
 
-Registry access uses the job's read-only package token through stdin. The helper
-removes it from the inherited environment before Docker commands, deletes the
-entire temporary authentication directory after pulling, and creates a new empty
-Docker configuration before inspection and execution. Checkout credentials are
-not persisted. Neither a token nor the Docker socket is passed into the image.
+The job package token is used only by the host for registry login/pull via stdin.
+It is removed from the environment and its isolated authentication directory is
+deleted before image inspection/execution. Checkout credentials are not persisted.
+Neither a token nor the Docker socket is passed into the container.
 
-Execution uses an explicit nonzero numeric UID/GID `1000:1000`, independent of the
-image's configured user; this matches the supplied Ubuntu Dockerfile's first
-`useradd`. A permission mismatch fails rather than elevating privileges. Image
-architecture must be `linux/amd64` and the image must have no implicit volumes.
-The inherited entrypoint and healthcheck are disabled. The executable is
-`/opt/1cv8t/x86_64/8.3.27.1508/1cv8t`; the path is not runtime version evidence.
+Execution remains `linux/amd64`, numeric UID/GID `1000:1000`, no network, ports,
+host PID/IPC, host-writable mounts, inherited environment or implicit image
+volumes. The image entrypoint and healthcheck are disabled. The root filesystem
+is read-only; `/tmp` is a 1 GiB noexec/nosuid/nodev tmpfs, shared memory is private
+and limited to 128 MiB. Limits remain 2 GiB memory, 2 CPUs, 256 PIDs and 64 MiB
+per file, with all capabilities dropped and no-new-privileges enabled.
 
-The container has no network, published ports, host PID/IPC namespaces, host
-writable mounts, or inherited host environment. It gets one read-only probe file,
-a clean environment, read-only root, a 1 GiB noexec/nosuid/nodev `/tmp` tmpfs,
-128 MiB private shared memory, 2 GiB memory, 2 CPUs, 256 PIDs and bounded file sizes.
-All capabilities are dropped and `no-new-privileges` is enabled. Global execution
-is capped at 480 seconds, individual native calls at 120 seconds plus a 10-second
-kill grace, and the job at 20 minutes including image download. Cleanup is always
-attempted; an unverified removal is a failure, never a successful result.
+Stage two replaces the single probe-file mount with one read-only staged-inputs
+directory. Its exact 15-file allowlist contains only the shell probe, three stage
+Python helpers, two internal BSL modules, one fixed smoke scenario, and the existing
+Python launcher plus its seven template files. Files and directories are copied
+with explicit 0644/0755 modes so the non-root container can read them. Symlinks,
+special files, extra files/directories and oversized sources are rejected. No
+repository tree, `.git`, credentials, existing outputs or original test scenarios
+are mounted. Host-computed source SHA-256 values accompany the validated report.
 
-No packages are installed inside the running image. The probe checks Python 3.10+
-(the native launcher's minimum), the actual executable and its dynamic libraries.
-It starts `Xtigervnc` with an ephemeral Xauthority cookie, RFB TCP disabled
-(`-rfbport -1`), no RFB Unix socket, and X11 TCP disabled (`-nolisten tcp`). It does
-not disable X authentication or lower VNC security types. It creates one empty
-file database and asks native Designer for a hierarchical XML dump. Both process
-exit and bounded `/DumpResult` contents must confirm success; required output files
-must exist and be nonempty.
+No packages are installed in the image. The authenticated `Xtigervnc` uses a fresh
+Xauthority cookie, `-rfbport -1`, no RFB Unix socket and `-nolisten tcp`; X
+and VNC authentication are not disabled. Capability calls retain 120-second
+bounds plus a kill grace. Stage-two processes have 120-second bounds and process
+group termination; the entire stage-two container is limited to 900 seconds
+(capability-only mode remains 480 seconds). The workflow has a 30-minute limit
+including image download. Cleanup failure is never reported as success.
 
-## Report and provenance
+## Stage-two gates
 
-Only `native-smoke/report.json` is published, for seven days. Container stdout is
-bounded at 32 KiB, treated as untrusted JSON, and checked against exact fields,
-finite status values, primitive types, bounded numeric versions, fixed schema
-namespaces and known property names. Unknown fields, duplicate JSON keys,
-malformed output, false success and overclaims fail closed. Stderr is discarded.
-The host supplies `container_exit_code`; the image cannot supply that field.
+All database files, native XML, logs, generated EPFs, request files and markers
+remain in tmpfs. There is one fresh database and no concurrent 1C sessions.
 
-Native logs, database, generated XML, X cookie, binaries and image metadata such
-as environment/labels are never printed or uploaded. Native files remain in
-container tmpfs and vanish at cleanup. The report includes only fixed capability
-flags, native XML schema version/hash/count, presence of documented managed and
-session module files, and a fixed allowlist of recognized XML element names. It
-contains no native XML text, user names, machine-specific paths or UUIDs.
+1. Create an empty file database and export its native hierarchical metadata.
+   Require process success, fresh numeric-zero DumpResult and nonempty artifacts.
+2. Inspect the native configuration: managed default mode, no objects except
+   language metadata, no roles/default roles and no existing BSL modules. Copy
+   native bytes without rewriting UUIDs, schema or ConfigDumpInfo.xml. Add only
+   `Ext/SessionModule.bsl` and `Ext/ManagedApplicationModule.bsl`.
+3. Full LoadConfigFromFiles plus UpdateDBCfg, then re-dump and compare both modules,
+   allowing only UTF-8 BOM and line-ending differences. No guessed metadata or
+   incremental import is used.
+4. Start anonymous Enterprise under an exact per-run bootstrap token. The internal
+   session hook refuses nonanonymous startup or existing users. It creates the
+   one disposable `NativeSmoke` user, requires the user-scoped
+   `ЗащитаОтОпасныхДействий` property to be Boolean, sets it to false, and checks
+   persisted FindByName readback, standard authentication, exactly one user and
+   zero roles. It does not use an external EPF for bootstrap.
+5. Remove the control file. A separate Designer invocation with `/N NativeSmoke`
+   must successfully dump metadata and preserve the injected modules.
+6. A separate Enterprise `/N NativeSmoke` invocation must verify both the fresh
+   CurrentUser snapshot and persisted FindByName security state. Both bootstrap
+   and verification require fresh session and managed-hook markers with exact
+   protocol, run nonce, stage, identity, fields and primitive types. Managed hooks
+   obtain `SystemInfo.AppVersion`; anything other than `8.3.27.1508` fails.
+7. Remove the control file again. With no control file, the session hook does not
+   mutate users, and the managed hook ignores the launcher's normal JSON-path
+   `/C`. Build/run the unchanged launcher and TestModule templates under the named
+   user. The new scenario only reports `native-smoke-v1` and `6 * 7`. Require
+   zero DumpResult, both nonempty EPFs, fresh result JSON with exactly `messages`
+   and `error`, exact messages `["native-smoke-v1", "42"]`, empty error and exact
+   UTF-8/LF output bytes. No broad output normalization is accepted by the gate.
 
-`smoke_completed` means only capability checks plus empty database creation and
-native configuration export passed. `native_tests_completed` remains false.
-`runtime_version_verified` remains false, and `runtime_version` is null: no runtime
-version is inferred from the tag, binary path, or XML schema version. A subsequent
-bootstrap must obtain `SystemInfo.AppVersion` (Russian
-`СистемнаяИнформация.ВерсияПриложения`) from the actual Enterprise process, verify
-persisted user security flags in a fresh named-user session, and keep Linux
-results/provenance separate from legacy Windows golden files.
+The launcher's existing server-side external-processing creation behavior is
+unchanged. No new security bypass, conf.cfg setting, global protection mode,
+role-escalation fallback, password, real data or production database is added.
+
+Native compilation/API compatibility, module discovery on full import,
+zero-parameter startup-hook behavior and role-free named-user permissions must
+still be demonstrated by this run. Any compile failure, unsupported API, denied
+access, missing hook or modal timeout stops the stage. Do not add broad roles or
+weaken protections to turn a failure green. A retry after an attempted bootstrap
+requires a newly created disposable database, not another bootstrap against the
+partially modified one.
+
+## Bounded public evidence
+
+Only `native-smoke/report.json` is uploaded, with seven-day retention. Container
+stdout is capped at 32 KiB and validated as untrusted JSON with exact schemas,
+duplicate-key rejection, finite statuses, strict booleans, numeric versions,
+known metadata fields and SHA-256 values. Unknown fields or false/inconsistent
+success claims fail closed. Native text, paths, UUIDs, image labels/environment,
+X cookies, database, XML and logs are never published.
+
+A failed stage reports one finite stage and diagnostic kind, such as compile
+error, unsupported API, denied permission, timeout, missing hook, invalid marker,
+module mismatch or unexpected version. Native logs are read only inside tmpfs to
+classify fixed known phrases; arbitrary native error text never leaves it.
+These categories help diagnosis but are not substitutes for success gates.
+
+`security_change_attempted` and the finite security state distinguish no attempt,
+unverified partial execution and verified persisted mutation. The outer
+`security_settings_changed` is null when mutation is uncertain, including a
+container timeout or invalid/missing report after execution. It is not falsely
+reported as unchanged after a partially completed bootstrap.
+
+`simple_epf_completed` means this one deterministic scenario passed.
+`native_tests_completed` remains false: the broader integration suite is not run.
+Legacy Windows outputs, existing native observations, launcher and templates are
+not changed. `runtime_version_verified` requires the named-session gate, never a
+binary path/tag or XML schema inference. Image provenance is the approved training
+image; no separate runtime-edition detection is claimed. The report is not an
+attestation against a deliberately malicious image.
 
 ## Offline verification
 
-These commands do not pull or execute the image:
+These commands do not pull or execute Docker/native 1C:
 
 ```
-python -m unittest discover -s tests -p test_native_1c_smoke.py -v
+python -m unittest discover -s tests -p 'test_native_1c*.py' -v
 bash -n scripts/native_1c_smoke_probe.sh
 python integrational_tests/check_launcher.py
 python -m unittest discover -s tests -v
 ```
 
-Tests cover secret/environment separation, auth deletion before execution,
-login/pull failure, wrong architecture/implicit volume refusal, execution timeout,
-cleanup failure, symlink/directory mount refusal, output flooding, malformed and
-extra report fields, incorrect success claims and the exact trigger/artifact
-boundary. Real pipe timeout tests are Linux/macOS-only; structural and mocked
-checks run on Windows too. The inert fake-tool Bash probe tests are Linux-only
-(they use GNU `timeout`). Passing mocks is not evidence that native 1C ran.
+Coverage includes exact staging, restrictive host umask, containment, registry
+authentication separation, fresh markers, Boolean-versus-integer flags, anonymous
+identity, module-byte preservation, strict user/version/output gates, named
+Designer/Enterprise separation, partial security state and timeout/error paths.
+POSIX pipe tests and Linux shell tests have platform guards; mocked core gates
+run cross-platform. Synthetic XML fixtures are not native/loadable metadata.
 
 ## Primary references
 
-- [TigerVNC Xvnc options](https://tigervnc.org/doc/Xvnc.html), including `-rfbport -1`.
-- [1C 8.3.27 file-mode administrator guide](https://1c-dn.com/library/tutorials/1c_enterprise_administrator_guide_file_mode_8_3_27/), CREATEINFOBASE, DumpResult and hierarchical DumpConfigToFiles.
-- [1C 8.3.27 developer guide](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/), native dump module paths and SystemInfo.AppVersion.
+- [TigerVNC Xvnc options](https://tigervnc.org/doc/Xvnc.html).
+- [1C 8.3.27 administrator guide](https://1c-dn.com/library/tutorials/1c_enterprise_administrator_guide_file_mode_8_3_27/).
+- [1C 8.3.27 developer guide](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/).
+- [Session parameter initialization](https://1c-dn.com/library/using_session_parameters/).
+- [Protection-property rename and descriptor distinction](https://downloads.v8.1c.ru/content/Platform/8_3_13_1690/1cv8upd_8_3_13_1690.htm).

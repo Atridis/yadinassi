@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs only inside the separately approved, isolated, digest-pinned image.
-# No external processing, application startup code, or security-setting changes.
+# Stage two runs only with the explicit fixed --bootstrap-simple-epf argument.
 set -euo pipefail
 umask 077
 exec 2>/dev/null
@@ -13,6 +13,12 @@ display_started=false
 infobase_created=false
 configuration_dumped=false
 x_pid=''
+bootstrap=false
+if [ "$#" -eq 1 ] && [ "$1" = --bootstrap-simple-epf ]; then
+    bootstrap=true
+elif [ "$#" -ne 0 ]; then
+    exit 2
+fi
 
 finish() {
     result=$?
@@ -27,7 +33,7 @@ finish() {
         printf '{"schema":1,"status":"python_unsupported"}\n'
     else
         python3 - "$result" "$stage" "$libraries_resolved" "$display_started" \
-          "$infobase_created" "$configuration_dumped" <<'PY'
+          "$infobase_created" "$configuration_dumped" "$bootstrap" <<'PY'
 import hashlib
 import json
 import os
@@ -36,7 +42,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-code, stage, libraries, display, created, dumped = sys.argv[1:]
+code, stage, libraries, display, created, dumped, bootstrap = sys.argv[1:]
 report = {
     "schema": 1,
     "status": "ok" if code == "0" else stage + "_failed",
@@ -97,6 +103,29 @@ if dumped == "true":
     except (OSError, ValueError, ET.ParseError):
         report["status"] = "format_failed"
         report["configuration_format"] = None
+if bootstrap == "true":
+    report["stage2"] = None
+    path = Path("/tmp/onec-smoke/stage2-report.json")
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
+    if path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= 8192:
+        try:
+            stage2 = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs)
+            report["stage2"] = stage2
+            report["runtime_version"] = stage2["actual_version"]
+            report["runtime_version_source"] = stage2["version_source"]
+            report["security_settings_changed"] = {"not_attempted": False, "unverified": None, "verified": True}[stage2["security_settings_state"]]
+        except (OSError, ValueError, KeyError, TypeError):
+            report["status"] = "stage2_failed"
+    if stage in {"stage2", "complete"} and report["stage2"] is None:
+        # Even a simultaneous native-format failure cannot imply no mutation
+        # after stage two may have begun. The host rejects this to unknown.
+        report["status"] = "stage2_failed"
 print(json.dumps(report, sort_keys=True))
 PY
     fi
@@ -180,4 +209,9 @@ timeout --signal=TERM --kill-after=10s 120s "$ONEC" DESIGNER \
 check_result /tmp/onec-smoke/dump-result.txt
 [ -s /tmp/onec-smoke/config/Configuration.xml ]
 configuration_dumped=true
+if [ "$bootstrap" = true ]; then
+    stage=stage2
+    # All source inputs are host-allowlisted and read-only. All outputs stay tmpfs.
+    python3 /smoke/bootstrap/run_stage.py > /tmp/onec-smoke/stage2-console.log 2>&1
+fi
 stage=complete

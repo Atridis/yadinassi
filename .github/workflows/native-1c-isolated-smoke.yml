@@ -1,4 +1,4 @@
-name: Isolated native 1C capability smoke
+name: Isolated native 1C bootstrap smoke
 
 # Temporary, deliberately narrow route for this approved validation task.
 # Remove this push route after validation; do not broaden it to PR/main events.
@@ -10,6 +10,7 @@ on:
       - .github/workflows/native-1c-isolated-smoke.yml
       - scripts/native_1c_smoke.py
       - scripts/native_1c_smoke_probe.sh
+      - scripts/native_1c_bootstrap/**
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ jobs:
       github.actor == 'Atridis' &&
       github.triggering_actor == 'Atridis'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,12 +39,12 @@ jobs:
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_smoke.py --execute-approved-image --output native-smoke/report.json
-      - name: Upload only validated capability report
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --bootstrap-simple-epf --output native-smoke/report.json
+      - name: Upload only validated smoke report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: native-1c-capability-report
+          name: native-1c-bootstrap-report
           path: native-smoke/report.json
           if-no-files-found: error
           retention-days: 7
