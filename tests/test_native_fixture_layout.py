@@ -37,7 +37,9 @@ class HistoricalFixtureLayoutTests(unittest.TestCase):
 class RelocatedFingerprintTests(SyntheticFilesystemCase):
     def test_native_guard_protects_fixtures_not_disposable_launcher_results(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            # macOS /var is a symlink; fixtures must use their real directory,
+            # just like production and the other strict-reader tests.
+            root = Path(temporary).resolve()
             fixtures = root / "tests/fixtures/native_windows"
             fixtures.mkdir(parents=True)
             generated = root / "integrational_tests/output"
