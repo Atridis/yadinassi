@@ -11,10 +11,14 @@ result. Persisted security state and actual application version remain unverifie
 The subsequent diagnostic-only run identified our whole-property Boolean guard
 as the failure before protection assignment or user Write. The descriptor-gated
 retry then observed the actual descriptor type and inner Boolean, but failed on
-an unsupported `Количество` call during bootstrap. This candidate replaces only
-the role-collection Count check with fail-closed enumeration. Native commands,
-containment and measured descriptor guards remain unchanged. Mock tests are not
-evidence that role enumeration or later native stages have passed.
+an unsupported `Количество` call during bootstrap. After replacing the role
+Count check with fail-closed enumeration, [the next native run](https://github.com/Atridis/yadinassi/actions/runs/39524919916)
+failed with a runtime-error classification and matching session error marker.
+The available report did not retain a source location or method identifier, so
+its cause and persistence state are not established. This diagnostic-only
+candidate improves bounded context-method and stack-frame reporting without
+changing BSL, native commands, containment or success/security gates. Mock tests
+are not evidence that role enumeration or later native stages have passed.
 
 ## Invocation and unchanged trust boundary
 
@@ -126,8 +130,10 @@ then observed `UnsafeOperationProtectionDescription` and inner `Boolean`. Its
 matching session error identified unsupported `Количество`, but conflicting stack
 locations meant no source line was exported. The earlier GetUsers count had
 already succeeded; the role-collection Count check is therefore the likely
-remaining failing call, not a proven line-level diagnosis. This candidate uses
-strict enumeration instead. Native collection enumerability, persisted and fresh
+remaining failing call, not a proven line-level diagnosis. The subsequent retry
+used strict enumeration and reported a generic runtime-error classification
+instead; no specific API or line is inferred from that.
+Native collection enumerability, persisted and fresh
 security readbacks, role-free named-user permissions, actual platform version
 and simple EPF execution remain unverified. Any compile failure, unsupported API, denied
 access, missing hook or modal timeout stops the stage. Do not add broad roles or
@@ -160,11 +166,26 @@ process failure, timeout, invalid marker or module mismatch). A separate strict
   read inside tmpfs, including after a nonzero native exit. Rejected stale evidence
   is never used. UTF-16 and UTF-8 BOMs are decoded strictly; only no-BOM input tries
   strict UTF-8 followed by CP1251. Raw text is never returned.
-- Optional source locations require an exact Russian/English alias for the known
-  session or managed module and a line within its exact staged source. Optional BSL
-  identifiers must match an explicit finite allowlist and native error syntax.
-  Location and identifier must come from the same error line as the category;
-  unrelated frames, conflicting locations or ambiguous identifiers are omitted.
+- Optional single source locations require an exact Russian/English alias for
+  the known session or managed module and a line within its exact staged source.
+  Optional BSL identifiers must match an explicit finite allowlist and native
+  error syntax, including context-method failures. The exact English context
+  method name `Write` maps to the trusted source identifier `Записать`; arbitrary
+  method names are not exported. A single location comes from category-bearing
+  error lines; an identifier can also come from a recognized context-method
+  wrapper elsewhere in the same selected source. Thus a specific access or
+  authentication cause does not erase its known method wrapper. Conflicting
+  locations remain null, while a
+  unique observed identifier can survive stack-line ambiguity. This identifies
+  observed syntax, not a proven underlying reason for the failure.
+- `source_frames` contains at most four unique, validated module/line pairs in
+  first-observed order from the one diagnostic source named by `origin`, not a
+  union of unrelated logs. It can retain known stack frames on other lines even
+  when no single failure location is defensible. `source_frames_truncated` is
+  true only if additional distinct known frames were omitted. Unknown modules,
+  paths and out-of-range lines never appear. These are observed stack locations,
+  not an asserted call hierarchy or selected root cause. Success, stale-evidence
+  and conflicting-category reports cannot export frames.
 - Marker states are finite. `session_marker="ok"` or `managed_marker="ok"` means
   only that a matching identity envelope reports ok with empty error, not that
   the full user/security/version gate passed. Foreign, duplicate-key, nonfinite,
@@ -220,7 +241,8 @@ user/version/output gates, named
 Designer/Enterprise separation, partial security state and timeout/error paths.
 Diagnostic regressions cover nonzero error markers, UTF-16/UTF-8/CP1251, corrupt
 BOMs, same-line attribution, contradictory sources, stale evidence, bounded exit
-codes, malformed marker input and strict host-schema rejection.
+codes, context-method aliases, selected-source stack provenance, frame deduplication
+and truncation, malformed marker input and strict host-schema rejection.
 POSIX pipe tests and Linux shell tests have platform guards; mocked core gates
 run cross-platform. Synthetic XML fixtures are not native/loadable metadata.
 

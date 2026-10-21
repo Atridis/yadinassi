@@ -58,6 +58,10 @@ IDENTIFIER_PATTERNS = (
     r'procedure or function with the specified name is not defined)\s*\(([^()\r\n]{1,96})\)',
     r'<\?>\s*([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё_0-9]{0,95})',
 )
+CONTEXT_IDENTIFIER_PATTERN = re.compile(
+    r'(?:ошибка при вызове метода контекста|error calling context method)\s*\(([^()\r\n]{1,96})\)', re.I)
+CONTEXT_IDENTIFIER_ALIASES = {'Write': 'Записать'}
+MAX_SOURCE_FRAMES = 4
 LOCATION_PATTERN = re.compile(r'\{(' + '|'.join(map(re.escape, MODULE_ALIASES)) +
                               r')\(([0-9]{1,4})(?:,\s*[0-9]{1,4})?\)\}')
 
@@ -65,6 +69,7 @@ LOCATION_PATTERN = re.compile(r'\{(' + '|'.join(map(re.escape, MODULE_ALIASES)) 
 def empty_diagnostics() -> dict:
     return {'category': 'none', 'origin': 'none', 'module': None, 'line': None,
             'identifier': None, 'native_exit_code': None,
+            'source_frames': [], 'source_frames_truncated': False,
             'session_marker': 'not_checked', 'managed_marker': 'not_checked'}
 
 
@@ -91,6 +96,25 @@ def validate_diagnostics(value: object, *, success: bool = False, primary_kind: 
         raise ValueError('diagnostic location')
     if identifier is not None and (type(identifier) is not str or identifier not in IDENTIFIERS):
         raise ValueError('diagnostic identifier')
+    frames = value['source_frames']
+    if type(frames) is not list or len(frames) > MAX_SOURCE_FRAMES or type(value['source_frames_truncated']) is not bool:
+        raise ValueError('diagnostic source frames')
+    seen = set()
+    for frame in frames:
+        if (type(frame) is not dict or set(frame) != {'module', 'line'}
+                or type(frame['module']) is not str or frame['module'] not in SOURCE_LINE_LIMITS
+                or type(frame['line']) is not int or not 1 <= frame['line'] <= SOURCE_LINE_LIMITS[frame['module']]):
+            raise ValueError('diagnostic source frame')
+        key = (frame['module'], frame['line'])
+        if key in seen:
+            raise ValueError('duplicate diagnostic source frame')
+        seen.add(key)
+    if value['source_frames_truncated'] and len(frames) != MAX_SOURCE_FRAMES:
+        raise ValueError('diagnostic frame truncation')
+    if value['origin'] == 'none' and frames:
+        raise ValueError('unobserved diagnostic source frames')
+    if module is not None and not value['source_frames_truncated'] and (module, line) not in seen:
+        raise ValueError('single location absent from source frames')
     if value['origin'] == 'none' and any(item is not None for item in (module, line, identifier)):
         raise ValueError('diagnostic provenance')
     if value['category'] not in {'none', 'unknown', 'evidence_invalid', 'conflicting_evidence'} and value['origin'] == 'none':
@@ -207,18 +231,47 @@ def collect_protection_observation(evidence: Path, stage: str, manifest: dict) -
         return empty_protection_observation()
 
 
+def source_frames(text: str) -> tuple[list[dict], bool]:
+    # Preserve first-observed stack order, not a guessed error/call hierarchy.
+    seen = set()
+    frames = []
+    for match in LOCATION_PATTERN.finditer(text):
+        module, line = MODULE_ALIASES[match[1]], int(match[2])
+        if not 1 <= line <= SOURCE_LINE_LIMITS[module] or (module, line) in seen:
+            continue
+        seen.add((module, line))
+        if len(frames) == MAX_SOURCE_FRAMES:
+            return frames, True
+        frames.append({'module': module, 'line': line})
+    return frames, False
+
+
 def summarize_text(text: str) -> dict:
     lowered = text.casefold()
     categories = [key for key, phrases in PHRASES.items() if any(phrase in lowered for phrase in phrases)]
     # Generic context/runtime wrappers do not conflict with a more specific cause.
     specific = set(categories) - {'runtime_error', 'startup_failed'}
     category = next(iter(specific)) if len(specific) == 1 else 'conflicting_evidence' if len(specific) > 1 else categories[0] if categories else 'unknown'
-    # A location or identifier must belong to the SAME diagnostic line as
-    # the chosen category, not an unrelated stack frame elsewhere in the text.
+    # A single location or source-pointer identifier belongs to a category
+    # line, not an unrelated stack frame. Known context-method wrappers are
+    # separately accepted elsewhere in this same source below.
     relevant = [line for line in text.splitlines()
                 if category == 'unknown' or any(phrase in line.casefold()
                                                for phrase in PHRASES.get(category, ()))]
     details = set()
+    observed_identifiers = set()
+    unrecognized_context = False
+    # A known context method can wrap a more specific cause on another line
+    # of this same source. Retain it without reclassifying that underlying cause.
+    for record in text.splitlines():
+        for match in CONTEXT_IDENTIFIER_PATTERN.finditer(record):
+            token = match.group(1).strip()
+            token = CONTEXT_IDENTIFIER_ALIASES.get(token, token)
+            if token in IDENTIFIERS:
+                observed_identifiers.add(token)
+            else:
+                # Preserve ambiguity as a finite sentinel, never the unknown token.
+                unrecognized_context = True
     for record in relevant:
         locations = {(MODULE_ALIASES[match[1]], int(match[2])) for match in LOCATION_PATTERN.finditer(record)
                      if 1 <= int(match[2]) <= SOURCE_LINE_LIMITS[MODULE_ALIASES[match[1]]]}
@@ -227,14 +280,26 @@ def summarize_text(text: str) -> dict:
         identifiers = {match.group(1).strip() for pattern in IDENTIFIER_PATTERNS
                        for match in re.finditer(pattern, record, re.I)
                        if match.group(1).strip() in IDENTIFIERS}
+        for match in CONTEXT_IDENTIFIER_PATTERN.finditer(record):
+            token = match.group(1).strip()
+            token = CONTEXT_IDENTIFIER_ALIASES.get(token, token)
+            if token in IDENTIFIERS:
+                identifiers.add(token)
         # The source-pointer form is accepted only on a recognized error line.
+        if category != 'unknown':
+            observed_identifiers.update(identifiers)
         identifier = next(iter(identifiers)) if len(identifiers) == 1 and category != 'unknown' else None
         if module is not None or identifier is not None or frames:
             details.add((module, line, identifier))
     module, line, identifier = next(iter(details)) if len(details) == 1 else (None, None, None)
+    identifier = next(iter(observed_identifiers)) if len(observed_identifiers) == 1 and not unrecognized_context else None
+    frames, truncated = source_frames(text)
     if category == 'conflicting_evidence':
         module, line, identifier = None, None, None
-    return {'category': category, 'module': module, 'line': line, 'identifier': identifier}
+        frames, truncated = [], False
+    return {'category': category, 'module': module, 'line': line, 'identifier': identifier,
+            'source_frames': frames, 'source_frames_truncated': truncated,
+            '_identifier_candidates': sorted(observed_identifiers) + ([None] if unrecognized_context else [])}
 
 
 def stage_logs(evidence: Path, stage: str) -> list[Path]:
@@ -275,15 +340,17 @@ def collect_diagnostics(evidence: Path, stage: str, manifest: dict | None,
         elif meaningful:
             choices = [(origin, item) for origin, item in meaningful if not categories or item['category'] in categories]
             origin, item = choices[0]
-            result.update(item, origin=origin)
+            result.update({key: value for key, value in item.items() if key != '_identifier_candidates'}, origin=origin)
             detail_sets = {(candidate['module'], candidate['line'], candidate['identifier'])
                            for _, candidate in choices
                            if any(candidate[key] is not None for key in ('module', 'line', 'identifier'))}
             if len(detail_sets) > 1:
-                result.update(module=None, line=None, identifier=None)
-        elif any(item['module'] is not None or item['identifier'] is not None for _, item in candidates):
-            origin, item = next((origin, item) for origin, item in candidates if item['module'] is not None or item['identifier'] is not None)
-            result.update(item, origin=origin)
+                result.update(module=None, line=None)
+            identifiers = {identifier for _, candidate in choices for identifier in candidate['_identifier_candidates']}
+            result['identifier'] = item['identifier'] if identifiers == {item['identifier']} else None
+        elif any(item['module'] is not None or item['identifier'] is not None or item['source_frames'] for _, item in candidates):
+            origin, item = next((origin, item) for origin, item in candidates if item['module'] is not None or item['identifier'] is not None or item['source_frames'])
+            result.update({key: value for key, value in item.items() if key != '_identifier_candidates'}, origin=origin)
             detail_sets = {(candidate['module'], candidate['line'], candidate['identifier'])
                            for _, candidate in candidates
                            if any(candidate[key] is not None for key in ('module', 'line', 'identifier'))}

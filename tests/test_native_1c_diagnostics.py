@@ -116,7 +116,164 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(result['category'], 'unsupported_api')
         self.assertIsNone(result['module'])
         self.assertIsNone(result['line'])
-        self.assertIsNone(result['identifier'])
+        self.assertEqual(result['identifier'], 'ЗащитаОтОпасныхДействий')
+        self.assertEqual(result['source_frames'], [{'module': 'SessionModule', 'line': 74}])
+        self.assertEqual(result['origin'], 'session_marker')
+
+    def test_context_method_identifier_with_multiple_stack_frames(self):
+        for message in ('Ошибка при вызове метода контекста (Записать)',
+                        'Error calling context method (Write)',
+                        'Error calling context method (Записать)'):
+            text = '{МодульСеанса(80)}: ' + message + '\n{МодульСеанса(110)}: caller'
+            self.marker(error_marker(error=text))
+            value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+            self.assertEqual(value['category'], 'runtime_error')
+            self.assertEqual(value['identifier'], 'Записать')
+            self.assertEqual(value['source_frames'], [{'module': 'SessionModule', 'line': 80},
+                                                     {'module': 'SessionModule', 'line': 110}])
+            self.assertFalse(value['source_frames_truncated'])
+            self.assertNotIn('_identifier_candidates', value)
+            diag.validate_diagnostics(value, primary_kind='process_failed')
+
+    def test_context_identifier_does_not_require_choosing_an_ambiguous_line(self):
+        text = '{МодульСеанса(80)}: Ошибка при вызове метода контекста (Записать) {МодульСеанса(110)}'
+        self.marker(error_marker(error=text))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['identifier'], 'Записать')
+        self.assertIsNone(value['module'])
+        self.assertIsNone(value['line'])
+        self.assertEqual([f['line'] for f in value['source_frames']], [80, 110])
+
+    def test_context_wrapper_method_survives_specific_cause_on_another_line(self):
+        for wrapper, cause, category in (
+                ('Ошибка при вызове метода контекста (Записать)', 'Недостаточно прав', 'permission_denied'),
+                ('Error calling context method (Write)', 'Permission denied', 'permission_denied'),
+                ('Error calling context method (Write)', 'Authentication failed', 'authentication_failed')):
+            text = '{SessionModule(80)}: ' + wrapper + '\nПричина: ' + cause
+            self.marker(error_marker(error=text))
+            value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+            self.assertEqual(value['category'], category)
+            self.assertEqual(value['identifier'], 'Записать')
+            self.assertIsNone(value['line'])
+            self.assertEqual(value['source_frames'], [{'module': 'SessionModule', 'line': 80}])
+        self.marker(error_marker(error='Error calling context method (Write)\nError calling context method (Роли)\nPermission denied'))
+        self.assertIsNone(diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)['identifier'])
+
+    def test_context_identifier_requires_exact_known_token_and_syntax(self):
+        for token in ('PRIVATE', 'WriteSuffix', 'Write/private', 'ЗаписатьSuffix', 'Записать/private', 'write'):
+            value = diag.summarize_text('Error calling context method (' + token + ')')
+            self.assertIsNone(value['identifier'])
+            self.assertNotIn(token, str(value['_identifier_candidates']))
+        self.assertIsNone(diag.summarize_text('Variable not defined (Write)')['identifier'])
+        self.assertIsNone(diag.summarize_text('Write Записать')['identifier'])
+
+    def test_frame_list_deduplicates_aliases_preserves_order_and_caps_four(self):
+        text = '{SessionModule(8)} {МодульСеанса(8)} {ManagedApplicationModule(9)} {SessionModule(10)} {SessionModule(11)}'
+        frames, truncated = diag.source_frames(text)
+        self.assertEqual(frames, [{'module': 'SessionModule', 'line': 8},
+                                 {'module': 'ManagedApplicationModule', 'line': 9},
+                                 {'module': 'SessionModule', 'line': 10},
+                                 {'module': 'SessionModule', 'line': 11}])
+        self.assertFalse(truncated)
+        self.assertEqual(diag.source_frames(text + ' {SessionModule(12)}'), (frames, True))
+        self.assertEqual(diag.source_frames(text + ' {SessionModule(11)}'), (frames, False))
+
+    def test_unknown_paths_and_out_of_bounds_frames_are_not_exported(self):
+        text = '{/private/SessionModule(3)} {SecretModule(4)} {PrefixSessionModule(5)} {SessionModule(0)} ' + \
+               '{SessionModule(' + str(diag.SOURCE_LINE_LIMITS['SessionModule'] + 1) + ')} {SessionModule(True)}'
+        self.assertEqual(diag.source_frames(text), ([], False))
+        text += ' {МодульСеанса(6)}'
+        self.assertEqual(diag.source_frames(text), ([{'module': 'SessionModule', 'line': 6}], False))
+
+    def test_frame_list_keeps_selected_origin_not_foreign_log_locations(self):
+        self.marker(error_marker(error='{SessionModule(80)}: Error calling context method (Write)'))
+        (self.root / 'bootstrap.log').write_text('{SessionModule(100)}: Error calling context method (Write)', encoding='utf-8')
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['origin'], 'session_marker')
+        self.assertEqual(value['source_frames'], [{'module': 'SessionModule', 'line': 80}])
+        self.assertEqual(value['identifier'], 'Записать')
+        self.assertIsNone(value['line'])
+
+    def test_conflicting_context_identifiers_never_choose_one(self):
+        self.marker(error_marker(error='{SessionModule(80)}: Error calling context method (Write)'))
+        for other in ('Error calling context method (Роли)',
+                      'Error calling context method (Write)\nError calling context method (Роли)'):
+            (self.root / 'bootstrap.log').write_text(other, encoding='utf-8')
+            value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+            self.assertIsNone(value['identifier'])
+            self.assertEqual(value['source_frames'], [{'module': 'SessionModule', 'line': 80}])
+
+    def test_unrecognized_context_method_suppresses_known_method_without_export(self):
+        for token in ('PRIVATE', 'Write/private', 'WriteSuffix'):
+            text = 'Error calling context method (Write)\nError calling context method (' + token + ')'
+            value = diag.summarize_text(text)
+            self.assertIsNone(value['identifier'])
+            self.assertNotIn(token, str(value))
+            self.marker(error_marker(error='Error calling context method (Write)'))
+            (self.root / 'bootstrap.log').write_text('Error calling context method (' + token + ')', encoding='utf-8')
+            result = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+            self.assertIsNone(result['identifier'])
+            self.assertNotIn(token, json.dumps(result))
+
+    def test_identifier_from_another_source_is_not_attributed_to_preferred_marker(self):
+        self.marker(error_marker(error='{SessionModule(80)}: runtime error'))
+        (self.root / 'bootstrap.log').write_text('Error calling context method (Write)', encoding='utf-8')
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['origin'], 'session_marker')
+        self.assertIsNone(value['identifier'])
+
+    def test_ambiguous_unknown_stack_keeps_observed_frames_without_single_cause(self):
+        self.marker(error_marker(error='{SessionModule(80)} {SessionModule(81)} unknown'))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['category'], 'unknown')
+        self.assertEqual(value['origin'], 'session_marker')
+        self.assertEqual([f['line'] for f in value['source_frames']], [80, 81])
+        self.assertIsNone(value['module'])
+        self.assertIsNone(value['identifier'])
+
+    def test_conflicting_categories_export_no_frames(self):
+        self.marker(error_marker(error='{SessionModule(80)}: Object field not found (Роли)'))
+        (self.root / 'bootstrap.log').write_text('{SessionModule(100)}: No license found', encoding='utf-8')
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['category'], 'conflicting_evidence')
+        self.assertEqual(value['source_frames'], [])
+        self.assertFalse(value['source_frames_truncated'])
+
+    def test_host_rejects_invalid_frames_on_positive_then_failed_report(self):
+        edits = [lambda d: d.update(source_frames=None),
+                 lambda d: d.update(source_frames=[{'module': 'SessionModule', 'line': True}]),
+                 lambda d: d.update(source_frames=[{'module': 'SessionModule', 'line': 1.0}]),
+                 lambda d: d.update(source_frames=[{'module': 'PRIVATE', 'line': 1}]),
+                 lambda d: d.update(source_frames=[{'module': 'SessionModule', 'line': 0}]),
+                 lambda d: d.update(source_frames=[{'module': 'SessionModule', 'line': 1, 'extra': 'PRIVATE'}]),
+                 lambda d: d.update(source_frames=[{'module': 'SessionModule', 'line': diag.SOURCE_LINE_LIMITS['SessionModule'] + 1}]),
+                 lambda d: d.update(source_frames=[{'module': 'SessionModule', 'line': 1}] * 2),
+                 lambda d: d.update(source_frames=[{'module': 'SessionModule', 'line': i} for i in range(1, 6)]),
+                 lambda d: d.update(source_frames_truncated=1),
+                 lambda d: d.update(source_frames_truncated=True),
+                 lambda d: d.update(origin='none'),
+                 lambda d: d.update(module='SessionModule', line=99)]
+        self.marker(error_marker(error='{SessionModule(80)}: Error calling context method (Write)'))
+        valid = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        for edit in edits:
+            data = bootstrap_report()
+            data.update(status='stage2_failed', runtime_version=None, runtime_version_source='not_measured', security_settings_changed=None)
+            data['stage2'].update(status='failed', failed_stage='bootstrap', failure_kind='process_failed',
+                        actual_version=None, version_source='not_measured', simple_output_sha256=None,
+                        security_settings_state='unverified', protection_observation=diag.empty_protection_observation(),
+                        diagnostics=copy.deepcopy(valid),
+                        **{key: key == 'modules_reimported' for key in smoke.STAGE_FLAGS})
+            smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+            edit(data['stage2']['diagnostics'])
+            with self.subTest(diagnostic=data['stage2']['diagnostics']), self.assertRaises(smoke.SmokeError):
+                smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+
+    def test_success_and_stale_reports_cannot_export_frames(self):
+        self.marker(error_marker(error='{SessionModule(80)}: Error calling context method (Write)'))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        value['native_exit_code'] = None
+        with self.assertRaises(ValueError): diag.validate_diagnostics(value, success=True)
+        with self.assertRaises(ValueError): diag.validate_diagnostics(value, primary_kind='stale_evidence')
 
     def test_finite_license_authentication_training_and_startup_categories(self):
         samples = {'license_unavailable': 'Не обнаружен ключ защиты: PRIVATE',
