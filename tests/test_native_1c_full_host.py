@@ -354,16 +354,25 @@ class ComparisonTests(SyntheticFilesystemCase):
 
 @unittest.skipIf(os.name == "nt", "bounded POSIX pipe/process-group implementation used on Ubuntu Actions only")
 class ChildTests(unittest.TestCase):
-    def test_stderr_stdout_bounds_timeout_and_finite_errors(self):
+    def test_stderr_stdout_bounds_and_finite_errors(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             code, output, error = full.bounded_child([sys.executable, "-c", "import os; print(os.environ['YADINASSI_TIMEZONE'])"], root)
             self.assertEqual((code, output, error), (0, b"Etc/UTC\n", b""))
-            for script, keyword in (("print('PRIVATE'*100)", "interpreter_output_limit"),
-                                    ("import sys; sys.stderr.write('PRIVATE'*100)", "interpreter_output_limit"),
-                                    ("import time; time.sleep(30)", "interpreter_timeout")):
-                with self.assertRaisesRegex(full.FullError, "^" + keyword + "$"):
-                    full.bounded_child([sys.executable, "-c", script], root, seconds=.1, stdout_limit=64, stderr_limit=64)
+            # Overflow coverage must allow interpreter startup on loaded CI
+            # runners; the intentionally short deadline is tested separately.
+            # Delay past that short deadline to regress the original masking.
+            for script in ("import time; time.sleep(.25); print('PRIVATE'*100)",
+                           "import time, sys; time.sleep(.25); sys.stderr.write('PRIVATE'*100)"):
+                with self.subTest(script=script), self.assertRaisesRegex(full.FullError, "^interpreter_output_limit$"):
+                    full.bounded_child([sys.executable, "-c", script], root, seconds=10, stdout_limit=64, stderr_limit=64)
+
+    def test_timeout_has_its_own_short_deadline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            with self.assertRaisesRegex(full.FullError, "^interpreter_timeout$"):
+                full.bounded_child([sys.executable, "-c", "import time; time.sleep(30)"],
+                                   root, seconds=.1, stdout_limit=64, stderr_limit=64)
 
     def test_private_cache_prefix_ignores_tampered_repository_bytecode(self):
         import py_compile

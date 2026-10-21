@@ -125,3 +125,26 @@ the upload step requires it even when the comparison step exits unsuccessfully.
 
 Historical Windows goldens and `meta.md` are neither replaced nor deleted.
 The diagnostics artifact is separate evidence, not a new approved baseline.
+
+## Temporary targeted collection probes
+
+`collections.bsl` temporarily appends `target-probes.v1` after its unchanged
+historical body: 120 typed-map insertion permutations plus 24 small key variants,
+72 fill/include-list cases, and 96 table-sort observations (lengths 15–18, three
+insertion orders, both directions, secondary ID keys and repeated sorts). Raw
+map/fixed-map streams and readbacks, typed bindings, every target field after a
+fill error, and complete sorted ID sequences with row identity remain observable.
+No hash model, prevalidation policy, collation order or sort algorithm is assumed
+as a native expectation. Version and operating system changed together between
+the Windows and Linux captures, so neither alone explains a difference.
+
+The original 245,870 source bytes have SHA-256
+`70dfefabf9466e1d8d3e00e844f931a7b8f005ed110d74049e07fbfed8fbbc72`.
+The marked appendix adds no procedures, output files or artifact paths. Its
+coverage test executes all six complete sources under the existing 10-second
+per-case and 1 MiB/2 MiB output ceilings; this is VM coverage, not native evidence.
+Historical full-output/source-integrity checks deliberately remain unchanged and
+fail while the extra diagnostics are present. Neither comparator ignores the
+appendix. After capturing and reviewing actual native evidence, remove only the
+temporary probe appendix and its probe-specific tests/documentation; never
+replace or weaken the historical assertions or Windows goldens.

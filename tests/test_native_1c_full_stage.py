@@ -118,12 +118,24 @@ class StrictResultTests(unittest.TestCase):
 
 
 class SecureEvidenceTests(unittest.TestCase):
+    """Real descriptor boundary on POSIX; identical fixture contracts elsewhere.
+
+    The native executor is Linux. Windows descriptor/path stat equivalence is
+    not a supported execution guarantee and can vary even for an empty fixture.
+    Do not infer security coverage from a flaky positive on a foreign filesystem.
+    """
+    use_fixture_reader = os.name == 'nt'
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.file = self.root / 'data'
         self.file.write_bytes(b'abc')
+        if self.use_fixture_reader:
+            patcher = mock.patch.object(suite, 'secure_bytes', new=portable_fixture_bytes)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_finite_regular_file_empty_and_size(self):
         self.assertEqual(suite.secure_bytes(self.file, 3), b'abc')
@@ -155,13 +167,37 @@ class SecureEvidenceTests(unittest.TestCase):
             suite.secure_bytes(self.file, 3)
 
     def test_mutation_during_descriptor_read_is_rejected(self):
-        original = os.read
-        def read(descriptor, count):
-            data = original(descriptor, count)
-            self.file.write_bytes(b'changed')
-            return data
-        with mock.patch.object(suite.os, 'read', side_effect=read), self.assertRaises(suite.FullError):
-            suite.secure_bytes(self.file, 100)
+        mutations = []
+        if self.use_fixture_reader:
+            # Portable fixtures use Python's binary reader. Hook that API, not
+            # os.read, and prove the mutation happened rather than accepting an
+            # unrelated early failure as evidence that the guard worked.
+            original = Path.open
+            path = self.file
+            class MutatingReader:
+                def __enter__(self):
+                    self.stream = original(path, 'rb')
+                    return self
+                def read(self, count):
+                    data = self.stream.read(count)
+                    with original(path, 'wb') as target:
+                        target.write(b'changed')
+                    mutations.append(True)
+                    return data
+                def __exit__(self, *args):
+                    self.stream.close()
+            with mock.patch.object(Path, 'open', return_value=MutatingReader()), self.assertRaises(suite.FullError):
+                suite.secure_bytes(self.file, 100)
+        else:
+            original = os.read
+            def read(descriptor, count):
+                data = original(descriptor, count)
+                self.file.write_bytes(b'changed')
+                mutations.append(True)
+                return data
+            with mock.patch.object(suite.os, 'read', side_effect=read), self.assertRaises(suite.FullError):
+                suite.secure_bytes(self.file, 100)
+        self.assertTrue(mutations, 'Mutation guard must be reached, not rejected by an unrelated failure')
 
     def test_absent_rejects_preexisting_empty_file(self):
         self.file.write_bytes(b'')
@@ -409,52 +445,42 @@ class PortableFixtureFullSuiteHarness(FullSuiteHarness):
 
 
 class PortableFixtureReaderTests(SecureEvidenceTests):
-    """Run the same finite-file/link contracts against the test-only adapter."""
-
-    def setUp(self):
-        super().setUp()
-        patcher = mock.patch.object(suite, 'secure_bytes', new=portable_fixture_bytes)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_mutation_during_descriptor_read_is_rejected(self):
-        # The adapter intentionally uses a portable Python file reader, while
-        # the inherited original test exercises os.read in the Linux gate.
-        original = Path.open
-        path = self.file
-        class MutatingReader:
-            def __enter__(self):
-                self.stream = original(path, 'rb')
-                return self
-            def read(self, count):
-                data = self.stream.read(count)
-                with original(path, 'wb') as target:
-                    target.write(b'changed')
-                return data
-            def __exit__(self, *args):
-                self.stream.close()
-        with mock.patch.object(Path, 'open', return_value=MutatingReader()), self.assertRaises(suite.FullError):
-            suite.secure_bytes(self.file, 100)
+    """Exercise the portable contracts in every CI OS, including the read hook."""
+    use_fixture_reader = True
 
 
 class FixtureBoundaryIsolationTests(unittest.TestCase):
+    def test_production_accepts_explicit_matching_descriptor_identity(self):
+        # Exercise the real production algorithm on all operating systems with
+        # the POSIX descriptor/path identity contract supplied deliberately.
+        for payload in (b'bounded fixture', b''):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory).resolve() / 'fixture'
+                path.write_bytes(payload)
+                metadata = path.lstat()
+                with mock.patch.object(suite.os, 'fstat', return_value=metadata) as descriptor_stat:
+                    self.assertEqual(suite.secure_bytes(path, 100, allow_empty=True), payload)
+                    self.assertEqual(descriptor_stat.call_count, 2)
+
     def test_production_still_rejects_descriptor_path_metadata_disagreement(self):
         # Simulate an OS-specific descriptor/path disagreement explicitly. This
         # is a contract test, not a claim about a particular Windows stat field.
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory).resolve() / 'fixture'
             path.write_bytes(b'bounded fixture')
-            original = os.fstat
+            path_metadata = path.lstat()
             fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size',
                       'st_mtime_ns', 'st_ctime_ns')
             def descriptor_view(fd):
-                value = original(fd)
-                values = {name: getattr(value, name) for name in fields}
+                # Model descriptor metadata explicitly on every OS; the only
+                # disagreement is the executable-mode bit introduced below.
+                values = {name: getattr(path_metadata, name) for name in fields}
                 values['st_mode'] ^= stat.S_IXUSR
                 return SimpleNamespace(**values)
-            with mock.patch.object(suite.os, 'fstat', side_effect=descriptor_view):
+            with mock.patch.object(suite.os, 'fstat', side_effect=descriptor_view) as descriptor_stat:
                 with self.assertRaises(suite.FullError):
                     suite.secure_bytes(path, 100)
+                self.assertEqual(descriptor_stat.call_count, 2)
                 self.assertEqual(portable_fixture_bytes(path, 100), b'bounded fixture')
 
 
