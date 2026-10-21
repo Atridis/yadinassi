@@ -7,7 +7,7 @@ empty database creation and hierarchical configuration export (schema 2.20).
 It did not establish the actual application version or user/bootstrap behavior.
 The first stage-two native run confirmed full module import, database update and
 byte-identical re-export, then failed in anonymous bootstrap with a nonzero process
-result. Persisted security state and actual application version remain unverified.
+result. At that stage, persisted security state and actual version were unverified.
 The subsequent diagnostic-only run identified our whole-property Boolean guard
 as the failure before protection assignment or user Write. The descriptor-gated
 retry then observed the actual descriptor type and inner Boolean, but failed on
@@ -21,7 +21,7 @@ The descriptor checks and reject-first-role enumeration therefore reached Write.
 The subsequent finite cause projection retained the requirement that at least one
 user have administrative rights, consistent with the official first-user tutorial.
 
-This local candidate adds one explicitly named disposable administrative role,
+The bootstrap adds one explicitly named disposable administrative role,
 `NativeSmokeBootstrapAdministrator`, to the fresh native empty configuration and
 assigns exactly that role to the one bootstrap user. It is not a FullAccess role.
 The five explicit rights are `Administration`, its documented prerequisite
@@ -29,28 +29,36 @@ The five explicit rights are `Administration`, its documented prerequisite
 `InteractiveOpenExtDataProcessors`. These are a documentation-based bounded set
 for this workflow, not a runtime-proven mathematically minimal set. All three
 role-default flags are false; no default role, other right or additional object
-grant is permitted. Native execution of this role-bearing candidate remains
-unverified; offline mocks do not establish successful user Write, persisted/fresh
-security readbacks, actual application version or EPF execution.
+grant is permitted. The [role-bearing native run](https://github.com/Atridis/yadinassi/actions/runs/39559544886)
+passed on commit `ab8c3444a84eb503fd59ce2084732d90aa737989`: exact role/module
+redumps, user Write, persisted/fresh role and protection checks, named Designer,
+measured `SystemInfo.AppVersion` `8.3.27.1508`, launcher and simple EPF. All 16
+trusted input hashes matched. Offline mocks alone would not establish these facts.
+
+The separately gated [six-scenario full mode](native-1c-full-regression.md)
+reuses these prerequisites but keeps actual output payloads private and compares
+them outside the container under UTC. Bootstrap-only success is not full-suite
+success.
 
 ## Invocation and unchanged trust boundary
 
-The temporary workflow `.github/workflows/native-1c-isolated-smoke.yml` still runs
-only for changes to the same workflow, its original two helpers or the exact
-`scripts/native_1c_bootstrap/**` input directory on the exact
-`codex/native-1c-isolated-smoke` branch, in `Atridis/yadinassi`, pushed and retried
-by `Atridis`. No PR, fork, main-branch, dispatch, tag or arbitrary-input trigger
-is added. The one additional path filter lets reviewed bootstrap-only fixes
-trigger another run without widening the branch or actor checks. Remove this temporary route after validation. A helper push triggers
-execution and must remain within the approved scope.
+The temporary workflow `.github/workflows/native-1c-isolated-smoke.yml` runs only
+on the exact `codex/native-1c-isolated-smoke` branch, in `Atridis/yadinassi`, pushed
+and retried by `Atridis`. No PR, fork, main-branch, dispatch, tag or arbitrary-input
+trigger is added. Its fixed relevant source-path filters now include the separate
+full-suite helpers, six scenarios, launcher and interpreter. Remove this temporary
+route after validation. A matching source push triggers execution and must remain
+within the approved scope. The workflow selects the full mode documented
+[separately](native-1c-full-regression.md).
 
-The workflow uses both explicit flags:
+The original bootstrap-only mode remains available with both explicit flags:
 
 ```
 python3 scripts/native_1c_smoke.py --execute-approved-image --bootstrap-simple-epf --output native-smoke/report.json
 ```
 
-Omitting `--bootstrap-simple-epf` retains the capability-only mode. Both use the
+Omitting both `--bootstrap-simple-epf` and `--full-suite` retains capability-only
+mode. All modes use the
 same fixed image, without a caller-supplied tag or executable:
 
 ```
@@ -69,7 +77,7 @@ is read-only; `/tmp` is a 1 GiB noexec/nosuid/nodev tmpfs, shared memory is priv
 and limited to 128 MiB. Limits remain 2 GiB memory, 2 CPUs, 256 PIDs and 64 MiB
 per file, with all capabilities dropped and no-new-privileges enabled.
 
-Stage two replaces the single probe-file mount with one read-only staged-inputs
+Bootstrap-only stage two replaces the single probe-file mount with one read-only staged-inputs
 directory. Its exact 16-file allowlist contains only the shell probe, four stage
 Python helpers, two internal BSL modules, one fixed smoke scenario, and the existing
 Python launcher plus its seven template files. Files and directories are copied
@@ -83,8 +91,8 @@ Xauthority cookie, `-rfbport -1`, no RFB Unix socket and `-nolisten tcp`; X
 and VNC authentication are not disabled. Capability calls retain 120-second
 bounds plus a kill grace. Stage-two processes have 120-second bounds and process
 group termination; the entire stage-two container is limited to 900 seconds
-(capability-only mode remains 480 seconds). The workflow has a 30-minute limit
-including image download. Cleanup failure is never reported as success.
+(capability-only mode remains 480 seconds). The full-mode container/workflow
+ceilings are documented separately. Cleanup failure is never reported as success.
 
 ## Stage-two gates
 
@@ -165,10 +173,10 @@ already succeeded; the role-collection Count check is therefore the likely
 remaining failing call, not a proven line-level diagnosis. The subsequent retry
 used strict enumeration and reported a generic runtime-error classification
 instead; no specific API or line is inferred from that.
-The subsequent native Write location establishes that the old zero-role
-iteration completed; successful enumeration of an actual assigned role, persisted
-and fresh security readbacks, named-user permissions, actual platform version
-and simple EPF execution for this role-bearing candidate remain unverified. Any compile failure, unsupported API, denied
+The subsequent native Write location established that the old zero-role
+iteration completed. The successful role-bearing run cited above later verified
+populated role enumeration, persisted/fresh security readbacks, named-user
+permissions, actual version and simple EPF. Any compile failure, unsupported API, denied
 access, missing hook or modal timeout stops the stage. Do not add broad roles or
 weaken protections to turn a failure green. A retry after an attempted bootstrap
 requires a newly created disposable database, not another bootstrap against the
@@ -285,7 +293,8 @@ container timeout or invalid/missing report after execution. It is not falsely
 reported as unchanged after a partially completed bootstrap.
 
 `simple_epf_completed` means this one deterministic scenario passed.
-`native_tests_completed` remains false: the broader integration suite is not run.
+In bootstrap-only mode, `native_tests_completed` remains false: the broader suite
+is not run. Full mode requires its own six-case evidence and comparison gates.
 Legacy Windows outputs, existing native observations, launcher and templates are
 not changed. `runtime_version_verified` requires the named-session gate, never a
 binary path/tag or XML schema inference. Image provenance is the approved training

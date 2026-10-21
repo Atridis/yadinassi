@@ -26,11 +26,16 @@ PROBE = Path(__file__).with_name("native_1c_smoke_probe.sh")
 MAX_OUTPUT = 32_768
 MAX_RUNTIME = 480
 BOOTSTRAP_MAX_RUNTIME = 900
+FULL_MAX_RUNTIME = 2400
 ROOT = Path(__file__).resolve().parents[1]
 DIAGNOSTIC_SPEC = importlib.util.spec_from_file_location(
     "native_smoke_diagnostics", ROOT / "scripts/native_1c_bootstrap/diagnostics.py")
 DIAGNOSTICS = importlib.util.module_from_spec(DIAGNOSTIC_SPEC)
 DIAGNOSTIC_SPEC.loader.exec_module(DIAGNOSTICS)
+FULL_SPEC = importlib.util.spec_from_file_location(
+    "native_full_host", ROOT / "scripts/native_1c_full_host.py")
+FULL = importlib.util.module_from_spec(FULL_SPEC)
+FULL_SPEC.loader.exec_module(FULL)
 STAGED_FILES = {
     "scripts/native_1c_smoke_probe.sh": "probe.sh",
     **{f"scripts/native_1c_bootstrap/{name}": f"bootstrap/{name}" for name in (
@@ -41,6 +46,11 @@ STAGED_FILES = {
         "Launcher.xml", "Launcher/Ext/ObjectModule.bsl", "Launcher/Forms/Main.xml",
         "Launcher/Forms/Main/Ext/Form.xml", "Launcher/Forms/Main/Ext/Form/Module.bsl",
         "TestModule.xml", "TestModule/Ext/ObjectModule.bsl")},
+}
+FULL_STAGED_FILES = {
+    **STAGED_FILES,
+    "scripts/native_1c_bootstrap/full_suite.py": "bootstrap/full_suite.py",
+    **{f"integrational_tests/tests/{name}.bsl": f"scenarios/{name}.bsl" for name in FULL.SCENARIOS},
 }
 STAGE_FLAGS = ("modules_reimported", "bootstrap_verified", "named_designer_verified",
                "named_user_verified", "control_removed", "launcher_built", "simple_epf_passed")
@@ -68,9 +78,11 @@ KNOWN_ELEMENTS = {
 class SmokeError(Exception):
     """Only fixed, non-sensitive error codes may escape an external command."""
 
-    def __init__(self, code: str, *, security_uncertain: bool = False):
+    def __init__(self, code: str, *, security_uncertain: bool = False, validated_report=None, cleanup_error=None):
         super().__init__(code)
         self.security_uncertain = security_uncertain
+        self.validated_report = validated_report
+        self.cleanup_error = cleanup_error
 
 
 def docker_environment(config: Path) -> dict[str, str]:
@@ -135,11 +147,14 @@ def bounded_run(args: list[str], env: dict[str, str], seconds: int,
     return code, bytes(output)
 
 
-def stage_inputs(destination: Path) -> dict[str, str]:
+def stage_inputs(destination: Path, *, full_suite: bool = False) -> dict[str, str]:
+    if destination.is_symlink():
+        raise SmokeError("invalid_staged_inputs")
+    destination = destination.parent.resolve(strict=True) / destination.name
     destination.mkdir(mode=0o755)
     destination.chmod(0o755)
     digests = {}
-    for source_name, target_name in STAGED_FILES.items():
+    for source_name, target_name in (FULL_STAGED_FILES if full_suite else STAGED_FILES).items():
         source = ROOT / source_name
         if source.is_symlink() or any(parent.is_symlink() for parent in source.parents if parent != ROOT):
             raise SmokeError("invalid_staged_source")
@@ -147,21 +162,27 @@ def stage_inputs(destination: Path) -> dict[str, str]:
             raise SmokeError("invalid_staged_source")
         target = destination / target_name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(source.read_bytes())
+        try:
+            source_bytes = FULL.read_regular(source, 1_048_576, nonempty=True)
+        except FULL.FullError:
+            raise SmokeError("invalid_staged_source") from None
+        target.write_bytes(source_bytes)
         target.chmod(0o644)
         digests[source_name] = hashlib.sha256(target.read_bytes()).hexdigest()
     for directory in destination.rglob("*"):
         if directory.is_dir():
             directory.chmod(0o755)
-    validate_input_tree(destination)
+    validate_input_tree(destination, full_suite=full_suite)
     return digests
 
 
-def validate_input_tree(root: Path) -> None:
+def validate_input_tree(root: Path, *, full_suite: bool = False) -> None:
+    files = FULL_STAGED_FILES if full_suite else STAGED_FILES
     if root.is_symlink() or not root.is_dir():
         raise SmokeError("invalid_staged_inputs")
+    root = root.resolve(strict=True)
     actual = set()
-    allowed_directories = {parent.as_posix() for name in STAGED_FILES.values()
+    allowed_directories = {parent.as_posix() for name in files.values()
                            for parent in Path(name).parents if parent.as_posix() != "."}
     for path in root.rglob("*"):
         if path.is_symlink() or not (path.is_dir() or path.is_file()):
@@ -169,19 +190,28 @@ def validate_input_tree(root: Path) -> None:
         if path.is_dir() and path.relative_to(root).as_posix() not in allowed_directories:
             raise SmokeError("invalid_staged_inputs")
         if path.is_file():
+            try:
+                FULL.read_regular(path, 1_048_576, nonempty=True)
+            except FULL.FullError:
+                raise SmokeError("invalid_staged_inputs") from None
             actual.add(path.relative_to(root).as_posix())
-    if actual != set(STAGED_FILES.values()):
+    if actual != set(files.values()):
         raise SmokeError("invalid_staged_inputs")
 
 
-def container_command(probe: Path, name: str, *, bootstrap: bool = False) -> list[str]:
+def container_command(probe: Path, name: str, *, bootstrap: bool = False,
+                      full_suite: bool = False, nonce: str | None = None) -> list[str]:
+    if full_suite:
+        bootstrap = True
+        if type(nonce) is not str or not re.fullmatch(r"[0-9a-f]{32}", nonce):
+            raise SmokeError("invalid_invocation_nonce")
     if probe.is_symlink():
         raise SmokeError("invalid_probe_path")
     probe = probe.resolve(strict=True)
     if (not bootstrap and not probe.is_file()) or "," in str(probe):
         raise SmokeError("invalid_probe_path")
     if bootstrap:
-        validate_input_tree(probe)
+        validate_input_tree(probe, full_suite=full_suite)
     target = "/smoke" if bootstrap else "/smoke/probe.sh"
     return [
         "docker", "run", "--name", name, "--hostname", "onec-smoke",
@@ -199,7 +229,8 @@ def container_command(probe: Path, name: str, *, bootstrap: bool = False) -> lis
         "HOME=/tmp/home", "XDG_RUNTIME_DIR=/tmp/runtime", "DISPLAY=:99",
         "LANG=ru_RU.UTF-8", "LC_ALL=ru_RU.UTF-8", "TZ=Etc/UTC",
         "/bin/bash", "--noprofile", "--norc", "/smoke/probe.sh",
-    ] + (["--bootstrap-simple-epf"] if bootstrap else [])
+    ] + (["--full-suite", "--invocation-nonce", nonce] if full_suite else
+         ["--bootstrap-simple-epf"] if bootstrap else [])
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -285,11 +316,11 @@ def validate_stage2(data: object) -> dict:
     return data
 
 
-def validate_report(raw: bytes, *, bootstrap: bool = False) -> dict[str, object]:
+def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = False) -> dict[str, object]:
     try:
         if len(raw) > MAX_OUTPUT:
             raise ValueError("oversized")
-        data = json.loads(raw, object_pairs_hook=reject_duplicate_keys)
+        data = FULL.strict_json(raw, MAX_OUTPUT)
         if type(data) is not dict or type(data.get("schema")) is not int or data["schema"] != 1:
             raise ValueError("schema")
         if data in ({"schema": 1, "status": "python_missing"}, {"schema": 1, "status": "python_unsupported"}):
@@ -298,7 +329,9 @@ def validate_report(raw: bytes, *, bootstrap: bool = False) -> dict[str, object]
                                 "runtime_version_source", "configuration_format"}
         if bootstrap:
             expected.add("stage2")
-        if set(data) != expected or data["status"] not in STATUS:
+        if full_suite:
+            expected.add("stage3")
+        if set(data) != expected or data["status"] not in STATUS | ({"stage3_failed"} if full_suite else set()):
             raise ValueError("keys")
         if any(type(data[key]) is not bool for key in BOOL_KEYS - {"security_settings_changed"}):
             raise ValueError("boolean")
@@ -310,7 +343,7 @@ def validate_report(raw: bytes, *, bootstrap: bool = False) -> dict[str, object]
         security = (True if stage2["security_settings_state"] == "verified" else None
                     if stage2["security_settings_state"] == "unverified" else False) if stage2 else False
         if (data["runtime_version"] != version or data["runtime_version_source"] != source
-                or data["security_settings_changed"] is not security or data["native_tests_completed"]):
+                or data["security_settings_changed"] is not security or (data["native_tests_completed"] and not full_suite)):
             raise ValueError("invalid claim")
         if data["status"] == "ok" and bootstrap and (stage2 is None or stage2["status"] != "ok"):
             raise ValueError("stage2 missing")
@@ -346,59 +379,129 @@ def validate_report(raw: bytes, *, bootstrap: bool = False) -> dict[str, object]
         raise SmokeError("invalid_container_report") from None
 
 
-def run_smoke(temp_root: Path, *, bootstrap: bool = False) -> dict[str, object]:
-    # Remove the secret from the process environment before any Docker operation.
+def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False) -> dict[str, object]:
+    bootstrap = bootstrap or full_suite
+    # Remove the secret from the process environment before any external command.
     token = os.environ.pop("GHCR_TOKEN", "")
     actor = os.environ.pop("GHCR_USER", "")
     if not token or not re.fullmatch(r"[A-Za-z0-9-]{1,39}", actor):
         raise SmokeError("registry_credentials_missing")
     name = "onec-smoke-" + uuid.uuid4().hex
-    with tempfile.TemporaryDirectory(prefix="onec-smoke-", dir=temp_root) as work:
-        work = Path(work)
-        staged = work / "staged-inputs"
-        input_hashes = stage_inputs(staged) if bootstrap else None
-        auth = work / "registry-auth"
-        auth.mkdir(mode=0o700)
-        auth_env = docker_environment(auth)
-        try:
-            run_silent(["docker", "login", "ghcr.io", "--username", actor, "--password-stdin"], auth_env, 60, token.encode())
-            token = ""
-            run_silent(["docker", "pull", "--platform", "linux/amd64", IMAGE], auth_env, 600)
-        finally:
-            token = ""
-            # No logout command is needed: config is isolated, and deleting all
-            # files avoids contacting registries or invoking credential helpers.
-            shutil.rmtree(auth)
-        clean = work / "no-auth"
-        clean.mkdir(mode=0o700)
-        env = docker_environment(clean)
-        code, platform = bounded_run(["docker", "image", "inspect", "--format", "{{.Os}}/{{.Architecture}}|{{len .Config.Volumes}}", IMAGE], env, 30, 128)
-        if code != 0 or platform.strip() != b"linux/amd64|0":
-            raise SmokeError("unexpected_image_platform_or_volumes")
-        run_command = container_command(staged if bootstrap else PROBE, name, bootstrap=bootstrap)
-        try:
-            code, raw = bounded_run(run_command,
-                                    env, BOOTSTRAP_MAX_RUNTIME if bootstrap else MAX_RUNTIME)
-            report = validate_report(raw, bootstrap=bootstrap)
-            if code != 0 and report["status"] == "ok":
-                raise SmokeError("inconsistent_container_exit")
-            if not -64 <= code <= 255:
-                raise SmokeError("unexpected_container_exit_code")
-            if bootstrap:
-                report["trusted_input_sha256"] = input_hashes
-            report["container_exit_code"] = code  # Host-observed, never container-supplied.
-            return report
-        except SmokeError as error:
-            error.security_uncertain = bootstrap
-            raise
-        finally:
-            # docker run timeout/interrupt does not necessarily stop its container.
+    nonce = uuid.uuid4().hex if full_suite else None
+    baseline = FULL.windows_fingerprints(ROOT) if full_suite else None
+    provenance = FULL.repository_provenance(ROOT) if full_suite else None
+    interpreter = FULL.interpreter_provenance(ROOT) if full_suite else None
+    work_name = None
+    report = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="onec-smoke-", dir=temp_root) as work_name:
+            work = Path(work_name).resolve()
+            staged = work / "staged-inputs"
+            input_hashes = stage_inputs(staged, full_suite=full_suite) if bootstrap else None
+            module_hashes = ({case: FULL.digest(FULL.generated_module(
+                FULL.read_regular(staged / f"scenarios/{case}.bsl", FULL.MAX_FILE, nonempty=True)))
+                for case in FULL.SCENARIOS} if full_suite else None)
+            auth = work / "registry-auth"
+            auth.mkdir(mode=0o700)
+            auth_env = docker_environment(auth)
             try:
-                run_silent(["docker", "rm", "--force", name], env, 30)
-            except SmokeError:
-                # A failed cleanup must never be represented as a clean success.
-                # The ephemeral hosted runner/job timeout remains the backstop.
-                raise SmokeError("container_cleanup_unverified", security_uncertain=bootstrap) from None
+                run_silent(["docker", "login", "ghcr.io", "--username", actor, "--password-stdin"], auth_env, 60, token.encode())
+                token = ""
+                run_silent(["docker", "pull", "--platform", "linux/amd64", IMAGE], auth_env, 600)
+            finally:
+                token = ""
+                shutil.rmtree(auth)
+            clean = work / "no-auth"
+            clean.mkdir(mode=0o700)
+            env = docker_environment(clean)
+            code, platform = bounded_run(["docker", "image", "inspect", "--format", "{{.Os}}/{{.Architecture}}|{{len .Config.Volumes}}", IMAGE], env, 30, 128)
+            if code != 0 or platform.strip() != b"linux/amd64|0":
+                raise SmokeError("unexpected_image_platform_or_volumes")
+            run_command = container_command(staged if bootstrap else PROBE, name, bootstrap=bootstrap,
+                                            full_suite=full_suite, nonce=nonce)
+            payloads = {}
+            report = None
+            primary_error = None
+            cleanup_error = None
+            try:
+                runtime = FULL_MAX_RUNTIME if full_suite else BOOTSTRAP_MAX_RUNTIME if bootstrap else MAX_RUNTIME
+                if full_suite:
+                    code, raw = bounded_run(run_command, env, runtime, FULL.MAX_TRANSPORT)
+                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report)
+                    del raw
+                else:
+                    code, raw = bounded_run(run_command, env, runtime)
+                    report = validate_report(raw, bootstrap=bootstrap)
+                report["container_exit_code"] = code
+                if bootstrap:
+                    report["trusted_input_sha256"] = input_hashes
+                if code != 0 and report["status"] == "ok":
+                    raise SmokeError("inconsistent_container_exit")
+                if not -64 <= code <= 255:
+                    raise SmokeError("unexpected_container_exit_code")
+            except (SmokeError, FULL.FullError) as error:
+                primary_error = str(error)
+            finally:
+                try:
+                    run_silent(["docker", "rm", "--force", name], env, 30)
+                    if full_suite:
+                        cleanup_code, remaining = bounded_run(
+                            ["docker", "ps", "--all", "--filter", "name=^/" + name + "$", "--format", "{{.Names}}"],
+                            env, 30, 128)
+                        if cleanup_code != 0 or remaining.strip():
+                            raise SmokeError("container_cleanup_unverified")
+                except SmokeError:
+                    cleanup_error = "container_cleanup_unverified"
+            if full_suite and report is not None:
+                report.update(invocation_nonce=nonce, repository=provenance, interpreter=interpreter,
+                              configured_timezone="Etc/UTC", configured_native_locale="ru_RU",
+                              container_cleanup_verified=cleanup_error is None,
+                              native_cases_completed=all(case["status"] == "ok" for case in report["stage3"]["cases"]),
+                              native_transport_validated=bool(payloads) and primary_error is None,
+                              native_evidence_accepted=False,
+                              private_payloads_removed=False,
+                              comparison={"schema": 1, "status": "not_run", "cases": []})
+            if primary_error or cleanup_error:
+                payloads.clear()
+                raise SmokeError(primary_error or cleanup_error, security_uncertain=bootstrap,
+                                 validated_report=report if full_suite else None,
+                                 cleanup_error=cleanup_error if primary_error else None)
+            if full_suite:
+                try:
+                    if payloads:
+                        capture = FULL.quarantine_outputs(work, payloads)
+                        report["native_evidence_accepted"] = True
+                        payloads.clear()
+                        report["comparison"] = FULL.compare_outputs(ROOT, capture, report["stage3"], input_hashes)
+                    report["windows_goldens_unchanged"] = FULL.windows_fingerprints(ROOT) == baseline
+                    if not report["windows_goldens_unchanged"]:
+                        raise FULL.FullError("windows_goldens_changed")
+                    if FULL.interpreter_provenance(ROOT) != interpreter or FULL.repository_provenance(ROOT) != provenance:
+                        raise FULL.FullError("execution_provenance_changed")
+                except FULL.FullError as error:
+                    payloads.clear()
+                    raise SmokeError(str(error), security_uncertain=True, validated_report=report) from None
+    except SmokeError as error:
+        if full_suite and error.validated_report is not None and work_name is not None:
+            error.validated_report["private_payloads_removed"] = not Path(work_name).exists()
+            try:
+                error.validated_report["windows_goldens_unchanged"] = FULL.windows_fingerprints(ROOT) == baseline
+            except FULL.FullError:
+                error.validated_report["windows_goldens_unchanged"] = None
+        raise
+    except Exception as error:
+        original = error.__context__ if isinstance(error.__context__, SmokeError) else None
+        private_removed = work_name is not None and not Path(work_name).exists()
+        if full_suite and report is not None:
+            report["private_payloads_removed"] = private_removed
+        raise SmokeError(str(original) if original else "unexpected_host_failure",
+                         security_uncertain=bootstrap, validated_report=report if full_suite else None,
+                         cleanup_error="private_cleanup_unverified" if not private_removed else None) from None
+    if full_suite:
+        if Path(work_name).exists():
+            raise SmokeError("private_cleanup_unverified", security_uncertain=True)
+        report["private_payloads_removed"] = True
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -407,6 +510,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Explicitly execute the already approved, fixed custom image")
     parser.add_argument("--bootstrap-simple-epf", action="store_true",
                         help="Run internal user bootstrap and one fixed EPF after capabilities")
+    parser.add_argument("--full-suite", action="store_true",
+                        help="Run six approved native scenarios and compare privately on the host under UTC")
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
     report: dict[str, object] = {
@@ -415,8 +520,8 @@ def main(argv: list[str] | None = None) -> int:
         "security_settings_changed": False, "windows_goldens_modified": False,
     }
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf)
-        if args.bootstrap_simple_epf:
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite)
+        if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")
             report["runtime_version_verified"] = bool(stage2 and stage2["named_user_verified"]
@@ -424,20 +529,49 @@ def main(argv: list[str] | None = None) -> int:
             report["simple_epf_completed"] = bool(stage2 and stage2["simple_epf_passed"])
             report["security_settings_changed"] = report["probe"].get("security_settings_changed", False)
         success = report["probe"]["status"] == "ok"
-    except SmokeError as error:
+        if args.full_suite:
+            report["purpose"] = "isolated-six-scenario-utc-comparison"
+            report["native_tests_completed"] = report["probe"].get("native_tests_completed", False)
+            report["interpreter_comparison_completed"] = report["probe"]["comparison"]["status"] == "ok"
+            success = bool(success and report["interpreter_comparison_completed"]
+                           and report["probe"]["container_cleanup_verified"]
+                           and report["probe"]["private_payloads_removed"]
+                           and report["probe"]["windows_goldens_unchanged"])
+    except (SmokeError, FULL.FullError) as error:
         report["error"] = str(error)
-        if error.security_uncertain:
+        if getattr(error, "validated_report", None) is not None:
+            report["probe"] = error.validated_report
+        if getattr(error, "cleanup_error", None) is not None:
+            report["cleanup_error"] = error.cleanup_error
+        if getattr(error, "security_uncertain", args.full_suite):
             report["security_settings_changed"] = None
         success = False
     except Exception:
         # Never emit traceback/exception text that could contain external output.
         report["error"] = "unexpected_host_failure"
-        if args.bootstrap_simple_epf:
+        if args.bootstrap_simple_epf or args.full_suite:
             report["security_settings_changed"] = None
         success = False
+    if args.full_suite:
+        report["purpose"] = "isolated-six-scenario-utc-comparison"
+        probe = report.get("probe", {})
+        stage2 = probe.get("stage2")
+        report["native_cases_completed"] = probe.get("native_cases_completed", False)
+        report["native_tests_completed"] = report["native_cases_completed"]
+        report["native_evidence_accepted"] = probe.get("native_evidence_accepted", False)
+        report["windows_goldens_modified"] = (not probe["windows_goldens_unchanged"]
+            if type(probe.get("windows_goldens_unchanged")) is bool else None)
+        report["interpreter_comparison_completed"] = probe.get("comparison", {}).get("status") == "ok"
+        if stage2:
+            report["runtime_version_verified"] = bool(stage2["named_user_verified"] and stage2["actual_version"] == EXPECTED_VERSION)
+            report["simple_epf_completed"] = stage2["simple_epf_passed"]
+            report["security_settings_changed"] = probe["security_settings_changed"]
     report["smoke_completed"] = success
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    if len(rendered.encode("utf-8")) > MAX_OUTPUT:
+        rendered = json.dumps({"schema": 1, "error": "public_report_limit", "smoke_completed": False}) + "\n"
+        success = False
     args.output.write_text(rendered, encoding="utf-8")
     print(rendered, end="")
     return 0 if success else 1

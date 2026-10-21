@@ -164,7 +164,7 @@ def strict_simple_result(path: Path, output: Path) -> str:
     return hashlib.sha256(expected).hexdigest()
 
 
-def run() -> dict:
+def run(*, full_nonce: str | None = None) -> dict:
     report = empty_report()
     stage = 'inject'
     evidence = ROOT / ('stage2-' + uuid.uuid4().hex)
@@ -250,13 +250,31 @@ def run() -> dict:
             diagnostics = collect_diagnostics(evidence, stage, manifest,
                                               error.exit_code if isinstance(error, StageError) else None)
         report.update(failed_stage=stage, failure_kind=fallback, diagnostics=diagnostics)
+    if full_nonce is not None:
+        # Stage two keeps its exact legacy schema. Stage three starts only after
+        # every fresh bootstrap/security/version/simple-EPF gate has succeeded.
+        import full_suite
+        suite = full_suite.empty_report(full_nonce)
+        if report['status'] == 'ok' and all(report[flag] for flag in FLAGS):
+            suite = full_suite.run_suite(launcher, platform, launcher_epf,
+                                        ROOT / ('stage3-' + full_nonce), INPUTS, full_nonce)
+        full_suite.write_report(ROOT / 'stage3-report.json', suite)
     return report
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    # Fixed full-mode arguments only; the nonce never selects an arbitrary path.
+    arguments = [] if argv is None else argv
+    full_nonce = None
+    if arguments:
+        import full_suite
+        if (len(arguments) != 3 or arguments[:2] != ['--full-suite', '--invocation-nonce']
+                or not full_suite.valid_nonce(arguments[2])):
+            return 2
+        full_nonce = arguments[2]
     # Only this bounded report is consumed by the shell. No tracebacks/raw errors.
     try:
-        report = run()
+        report = run() if full_nonce is None else run(full_nonce=full_nonce)
     except Exception:
         report = empty_report()
         # An unexpected exception could follow a persisted user write. Never
@@ -266,8 +284,16 @@ def main() -> int:
     target = ROOT / 'stage2-report.json'
     with target.open('x', encoding='utf-8') as stream:
         json.dump(report, stream, sort_keys=True)
+    if full_nonce is not None:
+        try:
+            suite = full_suite.strict_json(full_suite.secure_bytes(
+                ROOT / 'stage3-report.json', full_suite.MAX_STAGE_REPORT))
+            if suite['status'] != 'ok':
+                return 1
+        except Exception:
+            return 1
     return 0 if report['status'] == 'ok' else 1
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

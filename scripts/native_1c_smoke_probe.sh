@@ -14,8 +14,14 @@ infobase_created=false
 configuration_dumped=false
 x_pid=''
 bootstrap=false
+full_suite=false
+invocation_nonce=''
 if [ "$#" -eq 1 ] && [ "$1" = --bootstrap-simple-epf ]; then
     bootstrap=true
+elif [ "$#" -eq 3 ] && [ "$1" = --full-suite ] && [ "$2" = --invocation-nonce ] && [[ "$3" =~ ^[0-9a-f]{32}$ ]]; then
+    bootstrap=true
+    full_suite=true
+    invocation_nonce=$3
 elif [ "$#" -ne 0 ]; then
     exit 2
 fi
@@ -33,7 +39,7 @@ finish() {
         printf '{"schema":1,"status":"python_unsupported"}\n'
     else
         python3 - "$result" "$stage" "$libraries_resolved" "$display_started" \
-          "$infobase_created" "$configuration_dumped" "$bootstrap" <<'PY'
+          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" <<'PY'
 import hashlib
 import json
 import os
@@ -42,7 +48,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-code, stage, libraries, display, created, dumped, bootstrap = sys.argv[1:]
+code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce = sys.argv[1:]
 report = {
     "schema": 1,
     "status": "ok" if code == "0" else stage + "_failed",
@@ -126,7 +132,34 @@ if bootstrap == "true":
         # Even a simultaneous native-format failure cannot imply no mutation
         # after stage two may have begun. The host rejects this to unknown.
         report["status"] = "stage2_failed"
-print(json.dumps(report, sort_keys=True))
+if full_mode == "true":
+    sys.path.insert(0, "/smoke/bootstrap")
+    import full_suite
+    suite = full_suite.empty_report(nonce)
+    try:
+        path = Path("/tmp/onec-smoke/stage3-report.json")
+        if path.exists() or path.is_symlink():
+            suite = full_suite.strict_json(full_suite.secure_bytes(path, full_suite.MAX_STAGE_REPORT))
+        elif (report.get("stage2") or {}).get("status") == "ok":
+            suite.update(status="failed", failure_kind="unexpected_failure")
+    except Exception:
+        suite = full_suite.empty_report(nonce)
+        suite.update(status="failed", failure_kind="export_failed")
+    report["stage3"] = suite
+    # A failed stage-three exit is not a failed bootstrap; preserve both outcomes.
+    if report.get("stage2") is not None and report["stage2"]["status"] == "ok":
+        if stage == "stage2" and code != "0":
+            report["status"] = "stage3_failed"
+        if suite["status"] != "ok" and report["status"] == "ok":
+            report["status"] = "stage3_failed"
+    report["native_tests_completed"] = report["status"] == "ok" and suite["status"] == "ok"
+    raw = full_suite.build_envelope(
+        report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
+        quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")))
+    sys.stdout.buffer.write(raw)
+    raise SystemExit(0 if report["status"] == "ok" else 1)
+else:
+    print(json.dumps(report, sort_keys=True))
 PY
     fi
     exit "$result"
@@ -212,6 +245,11 @@ configuration_dumped=true
 if [ "$bootstrap" = true ]; then
     stage=stage2
     # All source inputs are host-allowlisted and read-only. All outputs stay tmpfs.
-    python3 /smoke/bootstrap/run_stage.py > /tmp/onec-smoke/stage2-console.log 2>&1
+    if [ "$full_suite" = true ]; then
+        python3 /smoke/bootstrap/run_stage.py --full-suite --invocation-nonce "$invocation_nonce" \
+            > /tmp/onec-smoke/stage2-console.log 2>&1
+    else
+        python3 /smoke/bootstrap/run_stage.py > /tmp/onec-smoke/stage2-console.log 2>&1
+    fi
 fi
 stage=complete

@@ -1,4 +1,4 @@
-name: Isolated native 1C bootstrap smoke
+name: Isolated native 1C six-scenario comparison
 
 # Temporary, deliberately narrow route for this approved validation task.
 # Remove this push route after validation; do not broaden it to PR/main events.
@@ -9,6 +9,17 @@ on:
     paths:
       - .github/workflows/native-1c-isolated-smoke.yml
       - scripts/native_1c_smoke.py
+      - scripts/native_1c_full_host.py
+      - integrational_tests/tests/collections.bsl
+      - integrational_tests/tests/dates.bsl
+      - integrational_tests/tests/functions.bsl
+      - integrational_tests/tests/numbers.bsl
+      - integrational_tests/tests/strings.bsl
+      - integrational_tests/tests/values.bsl
+      - integrational_tests/test_launcher.py
+      - integrational_tests/launcher_1c/**
+      - yadinassi/**
+      - pyproject.toml
       - scripts/native_1c_smoke_probe.sh
       - scripts/native_1c_bootstrap/**
 
@@ -29,22 +40,27 @@ jobs:
       github.actor == 'Atridis' &&
       github.triggering_actor == 'Atridis'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+      - name: Install exact host interpreter dependencies
+        run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
       - name: Run approved digest with no network, ports or credentials
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_smoke.py --execute-approved-image --bootstrap-simple-epf --output native-smoke/report.json
-      - name: Upload only validated smoke report
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json
+      - name: Upload only validated finite comparison report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: native-1c-bootstrap-report
+          name: native-1c-full-summary
           path: native-smoke/report.json
           if-no-files-found: error
           retention-days: 7
