@@ -126,25 +126,57 @@ the upload step requires it even when the comparison step exits unsuccessfully.
 Historical Windows goldens and `meta.md` are neither replaced nor deleted.
 The diagnostics artifact is separate evidence, not a new approved baseline.
 
-## Temporary targeted collection probes
+## Temporary bounded map-family experiment
 
-`collections.bsl` temporarily appends `target-probes.v1` after its unchanged
-historical body: 120 typed-map insertion permutations plus 24 small key variants,
-72 fill/include-list cases, and 96 table-sort observations (lengths 15–18, three
-insertion orders, both directions, secondary ID keys and repeated sorts). Raw
-map/fixed-map streams and readbacks, typed bindings, every target field after a
-fill error, and complete sorted ID sequences with row identity remain observable.
-No hash model, prevalidation policy, collation order or sort algorithm is assumed
-as a native expectation. Version and operating system changed together between
-the Windows and Linux captures, so neither alone explains a difference.
+The first `target-probes.v1` appendix has been removed after its native capture
+at commit `66ba9dd9f6c96e41c2f4e25394846fe3aa2750b5`. Its data does not yet
+establish a general native map hash, growth, iteration or serialization contract.
+The second appendix, `target-map-family.v1`, is a bounded falsification experiment,
+not a fixture-shaped runtime rule, replacement golden, or claim of hash recovery.
 
-The original 245,870 source bytes have SHA-256
+The five independently typed base keys are U=Undefined, B=false, N=a number,
+S="0", and T=Type(Number); values are unique string IDs U/B/N/S/T. It observes:
+
+- 144 fixed-size cases: all 61 integers -30..30 plus -1.5, -0.5, 0.5, 1.5,
+  13.5, 26.5, 4294967295, 4294967296, 4294967297, 18446744073709551615 and
+  18446744073709551616, each inserted in NUBST and NBSTU order. Fraction and
+  boundary labels spell these out as `minus1p5` through `plus26p5`,
+  `u32-minus1`, `u32`, `u32-plus1`, `u64-minus1`, and `u64`.
+- Four growth histories: N=0 or -1, each in NUBST and NBSTU order. Numeric
+  filler keys 2..60 have independent IDs F2..F60 and grow each map from 5 to 64
+  entries. Direct For Each ID sequences are recorded after every insertion,
+  including the first four. Raw checkpoints are sizes 5, 13, 14, 29, 30, 59,
+  60 and 64, deliberately spanning candidate growth boundaries without assuming
+  that any particular bucket counts or hash arithmetic apply.
+- After growth, delete fillers in order 60..2 and capture the remaining five;
+  Clear the same object, record its empty count and reinsert the same five;
+  then create a fresh five-key map in the same order. Capture each final state
+  and direct iteration after every reinsertion. This preserves deletion,
+  allocation-history and Clear-vs-fresh contrasts instead of flattening them.
+
+Each of 188 checkpoints retains four exact internal streams: the mutable map,
+its readback, FixedMap(map), and the fixed readback. One compact summary reports
+all four direct For Each sequences, counts and type checks, plus typed lookup
+and entry-association checks against independent key and ID arrays. The raw
+streams remain byte-observable; the probe never sorts or normalizes native
+payloads. Coverage tests require complete unique labels and the correct typed
+bindings, but deliberately assert no iteration order or serialization order.
+
+This grid tests numeric sign/fraction/word-size and growth/history hypotheses;
+it does not cover every scalar or object-key family. A native capture must be
+reviewed before deciding whether a general mechanism is supported or what
+bounded experiment is needed next. Version and operating system changed together
+between the historical Windows and newer Linux captures, so neither alone
+explains a difference. No runtime/profile implementation is included here.
+
+The original 245,870 source bytes remain the complete prefix, with SHA-256
 `70dfefabf9466e1d8d3e00e844f931a7b8f005ed110d74049e07fbfed8fbbc72`.
-The marked appendix adds no procedures, output files or artifact paths. Its
-coverage test executes all six complete sources under the existing 10-second
-per-case and 1 MiB/2 MiB output ceilings; this is VM coverage, not native evidence.
-Historical full-output/source-integrity checks deliberately remain unchanged and
-fail while the extra diagnostics are present. Neither comparator ignores the
-appendix. After capturing and reviewing actual native evidence, remove only the
-temporary probe appendix and its probe-specific tests/documentation; never
-replace or weaken the historical assertions or Windows goldens.
+The marked appendix reuses existing helpers and adds no procedures, output
+files or artifact paths. Its coverage test executes all six complete sources
+under the unchanged 10-second per-case and 1 MiB/2 MiB output ceilings, with a
+stricter 750,000-byte collections VM guard. This is VM coverage, not native
+execution evidence. Historical full-output/source-integrity checks deliberately
+remain unchanged and fail while the diagnostic appendix is present. Neither
+comparator ignores the appendix. After actual native capture and review, remove
+only this temporary appendix and its dedicated test/documentation; never replace
+or weaken the historical assertions or Windows goldens.
