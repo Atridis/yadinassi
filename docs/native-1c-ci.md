@@ -63,7 +63,8 @@ as Linux results; removing them requires a separate dependent-test migration.
 
 ## Unchanged isolation and artifact scope
 
-The image digest, disposable administrative role, exact 23 read-only inputs,
+The image digest, disposable administrative role, legacy 23 read-only inputs
+(24 with the explicit client checkpoint below),
 resource/time bounds, readonly root and tmpfs data/logs remain unchanged. No
 container network, exposed ports, token, Docker socket or writable host mount is
 added. Authentication uses the existing short-lived job token on the host, with
@@ -100,3 +101,80 @@ References:
 - [Fork token permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#changing-the-permissions-in-a-forked-repository)
 - [PR merge-ref semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)
 - [Rerun identity and privileges](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs)
+
+### Opt-in managed-form client checkpoint
+
+`--client-probe` requires `--full-suite`. It adds exactly one trusted input,
+`scripts/native_1c_bootstrap/client_probe.bsl`, to the existing 23-file full-suite
+manifest. Without the flag, the legacy manifest and report schema remain
+unchanged. `--client-watchdog-check` additionally requires both `--client-probe`
+and `--full-suite`. The approved PR/main CI command explicitly enables both; when enabled,
+a missing, failed or incomplete client checkpoint cannot yield suite success or
+export the six-output artifact.
+
+After the unchanged six **server-object-module** scenarios succeed, the helper
+builds a distinct private `ClientProbe.epf`. It copies the reviewed Launcher XML
+and comment-only object module, replacing only the private managed-form module.
+The original Launcher, TestModule and six BSL scenarios are not edited. All probe
+helpers and `ПриОткрытии` are `&НаКлиенте`; no server invocation exists. The
+`#Если Клиент` compilation branch supplies the witness, and its non-client
+branch raises. The OnOpen handler itself computes arithmetic `42`, string
+`client-probe`, and array count/sum `3`/`6`. A literal context label without the
+verified source, form wiring and calculations is not accepted as client proof.
+
+Designer builds the EPF and re-dumps it through
+`/DumpExternalDataProcessorOrReportToFiles <root XML> <EPF>`, the platform's
+[documented external-processor dump route](https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/platform/services/core/runtimes/execution/impl/IRuntimeExecutionCommandOptions.html).
+The verifier requires the same managed DefaultForm/OnOpen wiring, no executable
+object-module body, and byte-exact form-module round-trip after only BOM/newline
+normalization. Source, generated module and re-dumped module hashes appear in
+the bounded report.
+
+Each invocation uses a fresh nonce and previously absent private request,
+entered and completed paths. Strict bounded JSON validation rejects duplicate
+or unknown keys, wrong nonce/context/phase/types/values, partial files, links,
+special files, oversized evidence and reversed marker modification order.
+Completion requires both records, expected values, clean process exit and
+native-process quiescence. A handled error record is not completion.
+The external 120-second process-group watchdog remains authoritative before
+OnOpen, during calculations and after a completed marker. No marker overrides
+a timeout or nonzero exit. A timeout is a timeout, **not proof of a modal dialog**.
+No dialog clicks, UI automation or added security rights are used. The fixed
+`stall` checkpoint mode deliberately loops after entered, without opening any
+modal window. `--client-watchdog-check` builds a separate private EPF invocation
+after the positive proof. It accepts only the expected 120-second timeout, a
+valid entered marker, no completed file (including no partial/error file), and
+verified quiescence. Missing entry, early exit, nonzero exit, a completed record
+or failed cleanup fails this negative assertion. This adds 120 seconds to the
+normal checkpoint but leaves the existing 2400-second outer budget unchanged.
+
+Before the first native invocation, after display startup, the harness records
+the permitted process identities in its isolated PID namespace. Only its own
+subsequent runner identity is admitted. PID plus kernel start time prevents
+PID reuse from disguising a new process; every process is counted, even
+non-dumpable or different-executable descendants. Missing/unreadable census
+evidence fails closed. A clean leader exit with lingering group members fails
+after a bounded grace period rather than becoming success through cleanup.
+Only the launched group is killed; escaped survivors cause failure and are
+left to the existing container teardown, never a broad same-user kill.
+
+The same fresh database and verified `NativeSmoke` warning-off bootstrap are
+used. The five role rights, pinned image, non-root execution, read-only root,
+network isolation, tmpfs, resource limits and cleanup are unchanged. Public
+artifacts remain the six `.out` files plus provenance; the existing finite
+report adds only fixed status/boolean/hash fields. Probe JSON, EPF, database,
+logs and screenshots are never exported. The existing 32 KiB report, 8 KiB
+stage report, 3 MiB transport, 1 MiB per output and 2 MiB aggregate caps remain.
+
+This checkpoint proves only this small client execution route. It does not
+relabel the six scenarios as native client parity, establish Windows behavior,
+or validate any actual modal interaction. Local synthetic tests do not replace
+a successful native checkpoint; native positive and deliberate-stall results
+must be reviewed before claiming the new route is verified.
+
+The durable client evidence is in the existing `native-1c-full-summary` artifact
+(`native-smoke/report.json`), bound to the invocation nonce, repository commit
+and tree, all 24 trusted input hashes and the measured `SystemInfo.AppVersion`.
+The separate `native-1c-six-scenario-outputs` artifact still has exactly seven
+members (six `.out` plus `provenance.json`); that legacy provenance describes
+only the six server scenarios and makes no client execution claim.

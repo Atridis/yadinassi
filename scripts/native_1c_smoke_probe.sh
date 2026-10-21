@@ -16,6 +16,21 @@ x_pid=''
 bootstrap=false
 full_suite=false
 invocation_nonce=''
+client_probe=false
+watchdog_check=false
+client_args=()
+if [ "$#" -eq 5 ] && [ "${5}" = --client-watchdog-check ] && [ "${4}" = --client-probe ]; then
+    watchdog_check=true
+    set -- "$1" "$2" "$3" "$4"
+fi
+if [ "$#" -eq 4 ] && [ "${4}" = --client-probe ]; then
+    client_probe=true
+    client_args=(--client-probe)
+    if [ "$watchdog_check" = true ]; then
+        client_args+=(--client-watchdog-check)
+    fi
+    set -- "$1" "$2" "$3"
+fi
 if [ "$#" -eq 1 ] && [ "$1" = --bootstrap-simple-epf ]; then
     bootstrap=true
 elif [ "$#" -eq 3 ] && [ "$1" = --full-suite ] && [ "$2" = --invocation-nonce ] && [[ "$3" =~ ^[0-9a-f]{32}$ ]]; then
@@ -39,7 +54,7 @@ finish() {
         printf '{"schema":1,"status":"python_unsupported"}\n'
     else
         python3 - "$result" "$stage" "$libraries_resolved" "$display_started" \
-          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" <<'PY'
+          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" <<'PY'
 import hashlib
 import json
 import os
@@ -48,7 +63,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce = sys.argv[1:]
+code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce, client_mode, watchdog_mode = sys.argv[1:]
 report = {
     "schema": 1,
     "status": "ok" if code == "0" else stage + "_failed",
@@ -135,7 +150,7 @@ if bootstrap == "true":
 if full_mode == "true":
     sys.path.insert(0, "/smoke/bootstrap")
     import full_suite
-    suite = full_suite.empty_report(nonce)
+    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true")
     try:
         path = Path("/tmp/onec-smoke/stage3-report.json")
         if path.exists() or path.is_symlink():
@@ -143,7 +158,7 @@ if full_mode == "true":
         elif (report.get("stage2") or {}).get("status") == "ok":
             suite.update(status="failed", failure_kind="unexpected_failure")
     except Exception:
-        suite = full_suite.empty_report(nonce)
+        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true")
         suite.update(status="failed", failure_kind="export_failed")
     report["stage3"] = suite
     # A failed stage-three exit is not a failed bootstrap; preserve both outcomes.
@@ -210,6 +225,25 @@ for attempt in {1..40}; do
 done
 [ "$display_started" = true ]
 
+# Before any native invocation, record only the already-running harness/display.
+# The census Python process excludes itself; run_stage later admits only its own PID.
+if [ "$client_probe" = true ]; then
+    python3 - "$invocation_nonce" <<'PYCLIENTBASELINE'
+import json
+import os
+from pathlib import Path
+import sys
+sys.path.insert(0, "/smoke/bootstrap")
+import full_suite
+path = Path("/tmp/onec-smoke/client-process-baseline.json")
+full_suite.absent(path)
+identities = sorted(identity for identity in full_suite.client_process_snapshot()
+                    if identity[0] != os.getpid())
+with path.open("x", encoding="utf-8") as stream:
+    json.dump({"schema": 1, "nonce": sys.argv[1], "processes": identities}, stream)
+PYCLIENTBASELINE
+fi
+
 check_result() {
     python3 - "$1" <<'PYRESULT'
 from pathlib import Path
@@ -246,7 +280,7 @@ if [ "$bootstrap" = true ]; then
     stage=stage2
     # All source inputs are host-allowlisted and read-only. All outputs stay tmpfs.
     if [ "$full_suite" = true ]; then
-        python3 /smoke/bootstrap/run_stage.py --full-suite --invocation-nonce "$invocation_nonce" \
+        python3 /smoke/bootstrap/run_stage.py --full-suite --invocation-nonce "$invocation_nonce" "${client_args[@]}" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     else
         python3 /smoke/bootstrap/run_stage.py > /tmp/onec-smoke/stage2-console.log 2>&1

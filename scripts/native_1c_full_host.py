@@ -191,8 +191,66 @@ def generated_module(source: bytes) -> bytes:
     return source.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n").encode("utf-8-sig")
 
 
-def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool):
-    if type(data) is not dict or set(data) != {"schema", "nonce", "status", "failure_kind", "failed_case", "input_sha256", "cases"}:
+CLIENT_SOURCE = "scripts/native_1c_bootstrap/client_probe.bsl"
+CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
+CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
+
+
+def validate_client_probe(data, source_hash, module_hash):
+    if (type(data) is not dict
+            or set(data) != CLIENT_FLAGS | CLIENT_HASHES | {"status", "failure_kind"}
+            or any(type(data[key]) is not bool for key in CLIENT_FLAGS)
+            or data["status"] not in {"not_started", "failed", "ok"}
+            or data["failure_kind"] not in FAILURES):
+        raise ValueError("client probe schema")
+    expected = {"source_sha256": source_hash, "module_sha256": module_hash,
+                "roundtrip_sha256": module_hash}
+    if any(data[key] not in (None, expected[key]) for key in CLIENT_HASHES):
+        raise ValueError("client probe identity")
+    if data["status"] == "ok":
+        if (data["failure_kind"] != "none" or not all(data[key] for key in CLIENT_FLAGS)
+                or any(data[key] != expected[key] for key in CLIENT_HASHES)):
+            raise ValueError("client probe completion")
+    elif data["status"] == "not_started":
+        if (data["failure_kind"] != "prerequisites_failed"
+                or any(data[key] for key in CLIENT_FLAGS)
+                or any(data[key] is not None for key in CLIENT_HASHES)):
+            raise ValueError("client probe unreached")
+    elif data["failure_kind"] in {"none", "prerequisites_failed"} or data["witness_verified"]:
+        raise ValueError("client probe failed")
+    return data
+
+
+
+def validate_client_watchdog(data, source_hash, module_hash):
+    if type(data) is not dict or type(data.get("timeout_verified")) is not bool:
+        raise ValueError("watchdog schema")
+    base = {key: value for key, value in data.items() if key != "timeout_verified"}
+    if data["timeout_verified"]:
+        expected = {"status": "ok", "failure_kind": "none", "source_sha256": source_hash,
+                    "module_sha256": module_hash, "roundtrip_sha256": module_hash,
+                    "entered": True, "completed": False, "process_exited": False,
+                    "quiet": True, "witness_verified": False}
+        if (set(base) != set(expected) or any(type(base[key]) is not type(value)
+                or base[key] != value for key, value in expected.items())):
+            raise ValueError("watchdog timeout proof")
+    else:
+        validate_client_probe(base, source_hash, module_hash)
+        if base["status"] == "ok":
+            raise ValueError("watchdog not verified")
+    return data
+
+
+def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False):
+    client_requested = CLIENT_SOURCE in input_hashes
+    expected_keys = {"schema", "nonce", "status", "failure_kind", "failed_case", "input_sha256", "cases"}
+    if watchdog_check:
+        if not client_requested:
+            raise ValueError("watchdog requires client")
+        expected_keys.add("client_watchdog")
+    if client_requested:
+        expected_keys.add("client_probe")
+    if type(data) is not dict or set(data) != expected_keys:
         raise ValueError("stage3 keys")
     if type(data["schema"]) is not int or data["schema"] != 1 or data["nonce"] != nonce:
         raise ValueError("stage3 identity")
@@ -206,6 +264,17 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
     cases = data["cases"]
     if type(cases) is not list or len(cases) != len(SCENARIOS):
         raise ValueError("cases")
+    client = (validate_client_probe(data["client_probe"], input_hashes[CLIENT_SOURCE],
+                                    module_hashes["client_probe"]) if client_requested else None)
+    watchdog = (validate_client_watchdog(data["client_watchdog"], input_hashes[CLIENT_SOURCE],
+                module_hashes["client_probe"]) if watchdog_check else None)
+    if watchdog is not None:
+        if client["status"] != "ok" and watchdog["status"] != "not_started":
+            raise ValueError("watchdog order")
+        if status == "ok" and watchdog["status"] != "ok":
+            raise ValueError("watchdog missing")
+        if status == "not_started" and watchdog["status"] != "not_started":
+            raise ValueError("watchdog unreached")
     seen_incomplete = False
     failed = []
     for name, case in zip(SCENARIOS, cases):
@@ -235,6 +304,13 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
         raise ValueError("aggregate")
     if data["input_sha256"] != input_hashes and any(case["status"] != "not_started" for case in cases):
         raise ValueError("inputs not established")
+    if client is not None:
+        if any(case["status"] != "ok" for case in cases) and client["status"] != "not_started":
+            raise ValueError("client probe order")
+        if status == "ok" and client["status"] != "ok":
+            raise ValueError("client probe missing")
+        if status == "not_started" and client["status"] != "not_started":
+            raise ValueError("client probe unreached")
     if status == "ok":
         if (not prerequisites or seen_incomplete or data["failure_kind"] != "none" or data["failed_case"] is not None):
             raise ValueError("success")
@@ -249,7 +325,7 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
     return data
 
 
-def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator):
+def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False):
     """Return validated report and exact bytes, never the unchecked envelope."""
     try:
         if not re.fullmatch(r"[0-9a-f]{32}", nonce):
@@ -264,7 +340,7 @@ def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes:
         report = report_validator(report_raw, bootstrap=True, full_suite=True)
         prerequisites = bool(report.get("stage2") and report["stage2"]["status"] == "ok")
         stage3 = validate_stage3(report["stage3"], nonce, input_hashes, module_hashes,
-                                 prerequisites=prerequisites)
+                                 prerequisites=prerequisites, watchdog_check=watchdog_check)
         if report["native_tests_completed"] is not (stage3["status"] == "ok"):
             raise ValueError("completion")
         if (report["status"] == "ok") is not (stage3["status"] == "ok"):

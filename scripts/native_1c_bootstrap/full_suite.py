@@ -60,10 +60,12 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str) -> dict:
-    if not valid_nonce(nonce):
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False) -> dict:
+    if not valid_nonce(nonce) or (watchdog_check and not client_probe):
         raise FullError('invalid_input')
-    return {'schema': 1, 'nonce': nonce, 'status': 'not_started',
+    return {**({'client_probe': empty_client_report()} if client_probe else {}),
+            **({'client_watchdog': empty_watchdog_report()} if watchdog_check else {}),
+            'schema': 1, 'nonce': nonce, 'status': 'not_started',
             'failure_kind': 'prerequisites_failed', 'failed_case': None,
             'input_sha256': {}, 'cases': [
                 {'name': name, 'status': 'not_started', 'source_sha256': None,
@@ -222,9 +224,9 @@ def generated_module(source: bytes) -> bytes:
         raise FullError('invalid_input') from None
 
 
-def input_hashes(inputs: Path) -> dict[str, str]:
+def input_hashes(inputs: Path, *, client_probe: bool = False) -> dict[str, str]:
     result = {}
-    for source, target in INPUT_FILES.items():
+    for source, target in {**INPUT_FILES, **({CLIENT_SOURCE: CLIENT_TARGET} if client_probe else {})}.items():
         result[source] = digest(secure_bytes(inputs / target, MAX_OUTPUT))
     return result
 
@@ -247,7 +249,8 @@ def _stop_group(child: subprocess.Popen) -> None:
         time.sleep(0.02)
 
 
-def run_process(command: list[str], directory: Path, log: Path, timeout: float) -> None:
+def run_process(command: list[str], directory: Path, log: Path, timeout: float,
+                *, require_clean_tree: bool = False) -> None:
     if os.name != 'posix' or timeout != 120:
         raise FullError('invalid_input')
     absent(log)
@@ -265,7 +268,20 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float) 
             except BaseException:
                 _stop_group(child)
                 raise
-            _stop_group(child)
+            if require_clean_tree:
+                # A zero-exit leader is not completion while descendants remain.
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        os.killpg(child.pid, 0)
+                    except ProcessLookupError:
+                        break
+                    if time.monotonic() >= deadline:
+                        _stop_group(child)
+                        raise FullError('process_failed')
+                    time.sleep(0.02)
+            else:
+                _stop_group(child)
     if code:
         raise FullError('process_failed')
     if '/DumpResult' in command:
@@ -280,13 +296,13 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float) 
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str) -> dict:
-    report = empty_report(nonce)
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check)
     report.update(status='failed', failure_kind='unexpected_failure')
     active = None
     old_reader, old_process, old_build = launcher.read_result, launcher.run_process, launcher.build_epf
     try:
-        report['input_sha256'] = input_hashes(inputs)
+        report['input_sha256'] = input_hashes(inputs, client_probe=client_probe)
         absent(root)
         root.mkdir(mode=0o700)
         if platform.timeout != 120 or platform.user != 'NativeSmoke' or platform.password is not None:
@@ -334,7 +350,19 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
                 raise FullError('output_limit')
             active.update(status='ok', output_sha256=digest(actual),
                           output_size=len(actual), message_count=len(messages))
-        if input_hashes(inputs) != report['input_sha256']:
+        active = None
+        report['failed_case'] = None
+        if client_probe:
+            report['client_probe'] = run_client_probe(platform, root / 'client-probe', inputs,
+                                                       nonce, report['input_sha256'])
+            if report['client_probe']['status'] != 'ok':
+                raise FullError(report['client_probe']['failure_kind'])
+        if watchdog_check:
+            report['client_watchdog'] = run_client_watchdog(
+                platform, root / 'client-watchdog', inputs, nonce, report['input_sha256'])
+            if report['client_watchdog']['status'] != 'ok':
+                raise FullError(report['client_watchdog']['failure_kind'])
+        if input_hashes(inputs, client_probe=client_probe) != report['input_sha256']:
             active = None
             report['failed_case'] = None
             raise FullError('invalid_input')
@@ -427,3 +455,226 @@ def build_envelope(report: dict, nonce: str, root: Path, *, quiet: bool) -> byte
     if len(raw) > MAX_TRANSPORT:
         raise FullError('export_failed')
     return raw
+
+
+CLIENT_SOURCE = 'scripts/native_1c_bootstrap/client_probe.bsl'
+CLIENT_TARGET = 'bootstrap/client_probe.bsl'
+CLIENT_MODULE = 'Launcher/Forms/Main/Ext/Form/Module.bsl'
+CLIENT_VALUES = [42, 'client-probe', 3, 6]
+CLIENT_FLAGS = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
+
+
+def empty_client_report() -> dict:
+    return {'status': 'not_started', 'failure_kind': 'prerequisites_failed',
+            'source_sha256': None, 'module_sha256': None, 'roundtrip_sha256': None,
+            **{key: False for key in CLIENT_FLAGS}}
+
+
+def client_marker(path: Path, nonce: str, phase: str) -> dict:
+    if not valid_nonce(nonce) or phase not in {'entered', 'completed'}:
+        raise FullError('invalid_input')
+    value = strict_json(secure_bytes(path, 2048), max_depth=3)
+    expected = [] if phase == 'entered' else CLIENT_VALUES
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != len(expected)
+            or any(type(a) is not type(b) or a != b for a, b in zip(value['values'], expected))):
+        raise FullError('invalid_result')
+    return value
+
+
+def client_wiring(root: Path) -> None:
+    """Check the actual re-dumped managed form, not a context label in JSON."""
+    import xml.etree.ElementTree as ET
+    try:
+        def elements(path, local):
+            tree = ET.fromstring(secure_bytes(root / path, MAX_OUTPUT))
+            return [node for node in tree.iter() if node.tag.rsplit('}', 1)[-1] == local]
+        defaults = elements('Launcher.xml', 'DefaultForm')
+        forms = elements('Launcher/Forms/Main.xml', 'FormType')
+        events = elements('Launcher/Forms/Main/Ext/Form.xml', 'Event')
+        if (len(defaults) != 1 or defaults[0].text != 'ExternalDataProcessor.Launcher.Form.Main'
+                or len(forms) != 1 or forms[0].text != 'Managed'
+                or len(events) != 1 or events[0].attrib != {'name': 'OnOpen'}
+                or events[0].text != 'ПриОткрытии'):
+            raise FullError('module_mismatch')
+        # No object-body fallback can perform the calculations.
+        body = secure_bytes(root / 'Launcher/Ext/ObjectModule.bsl', MAX_OUTPUT,
+                            allow_empty=True).decode('utf-8-sig')
+        if any(line.strip() and not line.lstrip().startswith('//') for line in body.splitlines()):
+            raise FullError('module_mismatch')
+    except (ET.ParseError, UnicodeError):
+        raise FullError('module_mismatch') from None
+
+
+def client_process_snapshot() -> set[tuple[int, str]]:
+    """Fail closed on new namespace processes, even setsid/non-dumpable children.
+
+    Snapshot identities are invocation-local and never exported. No process from
+    this census is killed; only the launched process group is cleanup-owned.
+    Container teardown owns any escaped descendant on failure.
+    """
+    if os.name != 'posix':
+        raise FullError('process_failed')
+    result = set()
+    try:
+        for directory in Path('/proc').iterdir():
+            if not directory.name.isdecimal():
+                continue
+            try:
+                # Do not use proc-directory ownership: non-dumpable children can
+                # appear root-owned despite retaining their original UID.
+                # comm may contain spaces/parentheses; field 22 is starttime.
+                raw = (directory / 'stat').read_text()
+                fields = raw[raw.rindex(')') + 2:].split()
+                result.add((int(directory.name), fields[19]))
+            except FileNotFoundError:
+                if directory.exists():
+                    raise FullError('process_failed')
+        return result
+    except (OSError, ValueError, IndexError):
+        raise FullError('process_failed') from None
+
+
+def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
+    """Use the census taken after X startup, before the first native invocation."""
+    value = strict_json(secure_bytes(Path('/tmp/onec-smoke/client-process-baseline.json'), 16384))
+    if (type(value) is not dict or set(value) != {'schema', 'nonce', 'processes'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or type(value['processes']) is not list
+            or not 1 <= len(value['processes']) <= 256):
+        raise FullError('invalid_result')
+    baseline = set()
+    for item in value['processes']:
+        if (type(item) is not list or len(item) != 2 or type(item[0]) is not int
+                or not 1 <= item[0] <= 4194304 or type(item[1]) is not str
+                or re.fullmatch(r'[0-9]{1,20}', item[1]) is None
+                or tuple(item) in baseline):
+            raise FullError('invalid_result')
+        baseline.add(tuple(item))
+    current = client_process_snapshot()
+    own = {identity for identity in current if identity[0] == os.getpid()}
+    if len(own) != 1 or not current <= baseline | own:
+        raise FullError('process_failed')
+    return baseline | own
+
+
+def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
+                     hashes: dict, *, stall: bool = False) -> dict:
+    """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
+    record = empty_client_report()
+    record.update(status='failed', failure_kind='unexpected_failure')
+    try:
+        if (not valid_nonce(nonce) or type(stall) is not bool or platform.timeout != 120
+                or platform.user != 'NativeSmoke' or platform.password is not None):
+            raise FullError('invalid_input')
+        baseline = client_process_baseline(nonce)
+        if not native_processes_quiet(platform.executable):
+            raise FullError('process_failed')
+        absent(root)
+        root.mkdir(mode=0o700)
+        source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
+        if digest(source) != hashes[CLIENT_SOURCE]:
+            raise FullError('invalid_input')
+        record['source_sha256'] = digest(source)
+        module = generated_module(source)
+        src = root / 'src'
+        src.mkdir()
+        # Only the verified launcher metadata is copied; no TestModule/server code.
+        for relative in ('Launcher.xml', 'Launcher/Ext/ObjectModule.bsl',
+                         'Launcher/Forms/Main.xml', 'Launcher/Forms/Main/Ext/Form.xml'):
+            origin = inputs / 'launcher/launcher_1c' / relative
+            raw = secure_bytes(origin, MAX_OUTPUT)
+            if digest(raw) != hashes['integrational_tests/launcher_1c/' + relative]:
+                raise FullError('invalid_input')
+            destination = src / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+        (src / CLIENT_MODULE).parent.mkdir(parents=True, exist_ok=True)
+        (src / CLIENT_MODULE).write_bytes(module)
+        client_wiring(src)
+        record['module_sha256'] = digest(secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT))
+        epf = root / 'ClientProbe.epf'
+        run_process(platform.command('DESIGNER') + [
+            '/LoadExternalDataProcessorOrReportFromFiles', str(src / 'Launcher.xml'), str(epf),
+            '/Out', str(root / 'build.log'), '/DumpResult', str(root / 'build.result')],
+            root, root / 'build-console.log', 120, require_clean_tree=True)
+        require_epf(epf)
+        if secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT) != module:
+            raise FullError('module_mismatch')
+        dumped = root / 'roundtrip'
+        dumped.mkdir()
+        run_process(platform.command('DESIGNER') + [
+            '/DumpExternalDataProcessorOrReportToFiles', str(dumped / 'Launcher.xml'), str(epf),
+            '/Out', str(root / 'dump.log'), '/DumpResult', str(root / 'dump.result')],
+            root, root / 'dump-console.log', 120, require_clean_tree=True)
+        actual = generated_module(secure_bytes(dumped / CLIENT_MODULE, MAX_OUTPUT))
+        if actual != module:
+            raise FullError('module_mismatch')
+        client_wiring(dumped)
+        record['roundtrip_sha256'] = digest(actual)
+        entered, completed = root / 'entered.json', root / 'completed.json'
+        request = root / 'request.json'
+        absent(entered, completed, request)
+        with request.open('x', encoding='utf-8') as stream:
+            json.dump({'nonce': nonce, 'entered': str(entered), 'completed': str(completed),
+                       'mode': 'stall' if stall else 'normal'}, stream)
+        try:
+            run_process(platform.command('ENTERPRISE') + [
+                '/RunModeManagedApplication', '/VL', 'ru_RU', '/Execute', str(epf),
+                '/C', str(request), '/Out', str(root / 'enterprise.log')],
+                root, root / 'enterprise-console.log', 120, require_clean_tree=True)
+            record['process_exited'] = True
+        finally:
+            record['quiet'] = (native_processes_quiet(platform.executable)
+                               and client_process_snapshot() <= baseline)
+            # Diagnostic phase only. A timeout/nonzero exit never becomes success.
+            for path, phase in ((entered, 'entered'), (completed, 'completed')):
+                try:
+                    client_marker(path, nonce, phase)
+                    record[phase] = True
+                except FullError:
+                    pass
+        client_marker(entered, nonce, 'entered')
+        client_marker(completed, nonce, 'completed')
+        if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
+            raise FullError('invalid_result')
+        if not record['quiet']:
+            raise FullError('process_failed')
+        if secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT) != module:
+            raise FullError('module_mismatch')
+        record.update(status='ok', failure_kind='none', witness_verified=True)
+    except Exception as error:
+        record['failure_kind'] = (error.kind if isinstance(error, FullError) else
+                                  'artifact_missing' if isinstance(error, (OSError, DraftError)) else
+                                  'unexpected_failure')
+    return record
+
+
+def empty_watchdog_report() -> dict:
+    return {**empty_client_report(), 'timeout_verified': False}
+
+
+def run_client_watchdog(platform, root: Path, inputs: Path, nonce: str, hashes: dict) -> dict:
+    record = {**run_client_probe(platform, root, inputs, nonce, hashes, stall=True),
+              'timeout_verified': False}
+    # This is a narrow negative assertion, never generic timeout acceptance.
+    try:
+        if (record['status'] != 'failed' or record['failure_kind'] != 'timeout'
+                or record['entered'] is not True or record['completed'] is not False
+                or record['process_exited'] is not False or record['quiet'] is not True
+                or record['witness_verified'] is not False
+                or record['source_sha256'] != hashes[CLIENT_SOURCE]
+                or record['module_sha256'] is None
+                or record['roundtrip_sha256'] != record['module_sha256']):
+            raise FullError('invalid_result')
+        # An error/partial/invalid terminal file is not the deliberate stall.
+        absent(root / 'completed.json')
+        client_marker(root / 'entered.json', nonce, 'entered')
+        record.update(status='ok', failure_kind='none', timeout_verified=True)
+    except FullError as error:
+        record.update(status='failed', failure_kind=error.kind, witness_verified=False)
+    return record
