@@ -9,9 +9,14 @@ import json
 import os
 from pathlib import Path
 import shutil
+import select
+import signal
+import stat
 import subprocess
+import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import test_native_1c_full_stage as stage_fixture
@@ -166,6 +171,7 @@ class ClientProbeHarness(unittest.TestCase):
                 mock.patch.object(suite, "native_processes_quiet", side_effect=lambda _: self.quiet if "enterprise" in self.events else True),
                 mock.patch.object(suite, "client_process_baseline", return_value=set()),
                 mock.patch.object(suite, "client_process_snapshot", return_value=set()),
+                mock.patch.object(suite, "require_session_bus", return_value=(2, "20")),
                 mock.patch.object(subprocess, "Popen", side_effect=AssertionError("Offline test must not launch native processes"))):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -320,6 +326,15 @@ class ClientProbeHarness(unittest.TestCase):
         with mock.patch.object(suite, "client_process_baseline", return_value={(987, "1000")}), \
                 mock.patch.object(suite, "client_process_snapshot", return_value=set()):
             self.assertEqual(self.run_probe()["status"], "ok")
+
+    def test_lost_owned_bus_after_valid_markers_is_not_success(self):
+        with mock.patch.object(suite, "require_session_bus", side_effect=suite.FullError("process_failed")):
+            result = self.run_probe()
+        self.assertEqual(result["failure_kind"], "process_failed")
+        self.assertTrue(result["process_exited"])
+        self.assertFalse(result["quiet"])
+        self.assertFalse(result["witness_verified"])
+        self.assertEqual(result["process_diagnostics"], process_diagnostics(stage="after_exit", reason="unverified"))
 
     def test_missing_entered_or_completed_never_claims_client_witness(self):
         for phases in ((), ("entered",), ("completed",)):
@@ -694,6 +709,7 @@ class ClientBaselineTests(unittest.TestCase):
         current = {(1, "10"), (2, "20"), (3, "30")} if current is None else current
         with mock.patch.object(suite, "secure_bytes", return_value=raw) as read, \
                 mock.patch.object(suite, "client_process_snapshot", return_value=current), \
+                mock.patch.object(suite, "require_session_bus", return_value=(2, "20")), \
                 mock.patch.object(suite.os, "getpid", return_value=3):
             result = suite.client_process_baseline(NONCE)
         read.assert_called_once_with(Path("/tmp/onec-smoke/client-process-baseline.json"), 16384)
@@ -701,7 +717,7 @@ class ClientBaselineTests(unittest.TestCase):
 
     def test_baseline_allows_only_exact_original_identities_plus_current_runner(self):
         self.assertEqual(self.validate(), {(1, "10"), (2, "20"), (3, "30")})
-        self.assertEqual(self.validate(current={(1, "10"), (3, "30")}), {(1, "10"), (2, "20"), (3, "30")})
+        self.assertEqual(self.validate(current={(2, "20"), (3, "30")}), {(1, "10"), (2, "20"), (3, "30")})
 
     def test_stale_process_reused_pid_missing_runner_or_ambiguous_runner_rejected(self):
         for current in ({(1, "10"), (2, "20"), (3, "30"), (4, "40")},
@@ -733,7 +749,21 @@ class ClientBaselineTests(unittest.TestCase):
 
     def test_snapshot_failure_cannot_be_treated_as_an_empty_baseline(self):
         with mock.patch.object(suite, "secure_bytes", return_value=json.dumps(self.baseline).encode()), \
+                mock.patch.object(suite, "require_session_bus", return_value=(2, "20")), \
                 mock.patch.object(suite, "client_process_snapshot", side_effect=suite.FullError("process_failed")), \
+                self.assertRaisesRegex(suite.FullError, "^process_failed$"):
+            suite.client_process_baseline(NONCE)
+
+    def test_owned_bus_must_be_in_original_baseline_not_admitted_as_a_new_exception(self):
+        changed = copy.deepcopy(self.baseline)
+        changed["processes"] = [[1, "10"]]
+        with self.assertRaisesRegex(suite.FullError, "^process_failed$"):
+            self.validate(changed)
+
+    def test_unavailable_or_replaced_owned_bus_cannot_be_ignored(self):
+        with mock.patch.object(suite, "secure_bytes", return_value=json.dumps(self.baseline).encode()), \
+                mock.patch.object(suite, "require_session_bus", side_effect=suite.FullError("process_failed")), \
+                mock.patch.object(suite, "client_process_snapshot", return_value={(1, "10"), (2, "20"), (3, "30")}), \
                 self.assertRaisesRegex(suite.FullError, "^process_failed$"):
             suite.client_process_baseline(NONCE)
 
@@ -1262,6 +1292,476 @@ class ClientSummaryTests(unittest.TestCase):
         self.assertTrue(report["native_cases_completed"])
         self.assertTrue(report["native_tests_completed"])
         self.assertEqual(report["purpose"], "isolated-six-scenario-utc-comparison")
+
+
+@unittest.skipUnless(os.name == "posix", "Linux owned session-bus process identity")
+class SessionBusProcessTests(unittest.TestCase):
+    def setUp(self):
+        self.pid, self.parent, self.started = 12345, 54321, "123456789"
+        self.state = "S"
+        self.real_parent = self.parent
+        self.real_started = self.started
+        self.uid_text = "Uid:\t" + "\t".join([str(os.geteuid())] * 4)
+        self.executable = "/usr/bin/dbus-daemon"
+
+    def process(self, *, pid=None, parent=None, started=None, read_error=None):
+        stat_file, status_file, executable = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+        stat_file.read_text.return_value = f"{self.pid} (dbus daemon (private)) " + " ".join(
+            [self.state, str(self.real_parent)] + ["0"] * 17 + [self.real_started])
+        status_file.read_text.return_value = "Name:\tdbus-daemon\n" + self.uid_text + "\n"
+        executable.readlink.return_value = self.executable
+        if read_error:
+            stat_file.read_text.side_effect = read_error
+        process, proc = mock.MagicMock(), mock.MagicMock()
+        process.__truediv__.side_effect = {"stat": stat_file, "status": status_file, "exe": executable}.__getitem__
+        proc.__truediv__.return_value = process
+        with mock.patch.object(suite, "Path", return_value=proc), mock.patch.object(suite.os, "getpid", return_value=42):
+            return suite.session_bus_process(self.pid if pid is None else pid,
+                self.parent if parent is None else parent, self.started if started is None else started)
+
+    def test_exact_real_uid_parent_executable_and_starttime_are_required(self):
+        self.assertEqual(self.process(), (self.pid, self.started))
+        for attribute, value in (("real_parent", self.parent + 1), ("real_started", "999"),
+                                 ("executable", "/usr/bin/dbus-launch"),
+                                 ("executable", "/PRIVATE/dbus-daemon"), ("state", "Z")):
+            original = getattr(self, attribute)
+            setattr(self, attribute, value)
+            with self.subTest(attribute=attribute), self.assertRaises(suite.FullError):
+                self.process()
+            setattr(self, attribute, original)
+
+    def test_each_real_effective_saved_filesystem_uid_must_match(self):
+        for index in range(4):
+            values = [str(os.geteuid())] * 4
+            values[index] = str(os.geteuid() + 1)
+            self.uid_text = "Uid:\t" + "\t".join(values)
+            with self.subTest(index=index), self.assertRaises(suite.FullError):
+                self.process()
+
+    def test_malformed_missing_or_incomplete_uid_line_is_not_vacuous_ownership(self):
+        for text in ("Uid:", "Uid:\t" + str(os.geteuid()), "Uid:\tPRIVATE", "Gid:\t0\t0\t0\t0",
+                     "Uid:\t" + "\t".join([str(os.geteuid())] * 5)):
+            self.uid_text = text
+            with self.subTest(text=text), self.assertRaises(suite.FullError):
+                self.process()
+
+    def test_invalid_pid_parent_unreadable_or_dead_process_fails_closed(self):
+        for arguments in ({"pid": True}, {"pid": 1}, {"pid": 42}, {"parent": False}, {"parent": 0}):
+            with self.subTest(arguments=arguments), self.assertRaises(suite.FullError):
+                self.process(**arguments)
+        for error in (FileNotFoundError(), PermissionError(), OSError("PRIVATE")):
+            with self.subTest(error=error), self.assertRaisesRegex(suite.FullError, "^process_failed$"):
+                self.process(read_error=error)
+
+    def test_starttime_is_bounded_decimal_not_arbitrary_proc_text(self):
+        for started in ("", "PRIVATE", "-1", "1" * 21):
+            self.real_started = started
+            with self.subTest(started=started), self.assertRaises(suite.FullError):
+                self.process(started=started)
+
+
+@unittest.skipUnless(os.name == "posix", "Linux private Unix socket and pidfd ownership")
+class SessionBusOwnershipTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        self.directory, self.owner, self.address = suite.session_bus_paths(self.root, NONCE)
+        self.directory.mkdir(mode=0o700)
+        self.socket_path = self.directory / "bus"
+        # Synthetic inode metadata: no local listener and no native execution.
+        # Live session-bus proof belongs to the separately approved native run.
+        self.socket_path.write_bytes(b"synthetic socket inode")
+        self.socket_inode = 1001
+        self.socket_device = None
+        self.socket_kind = True
+        original_lstat = Path.lstat
+        def fixture_lstat(path, *args, **kwargs):
+            info = original_lstat(path, *args, **kwargs)
+            if path == self.socket_path and self.socket_kind and stat.S_ISREG(info.st_mode):
+                fields = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+                fields.update(st_mode=stat.S_IFSOCK | 0o600, st_ino=self.socket_inode)
+                if self.socket_device is not None:
+                    fields["st_dev"] = self.socket_device
+                return SimpleNamespace(**fields)
+            return info
+        lstat_patch = mock.patch.object(Path, "lstat", new=fixture_lstat)
+        lstat_patch.start()
+        self.addCleanup(lstat_patch.stop)
+        (self.directory / "address").write_bytes((self.address + ",guid=" + "a" * 32 + "\n").encode())
+        self.pid, self.parent, self.started = 12345, 54321, "123456789"
+        self.identity = (self.pid, self.started)
+        patcher = mock.patch.object(suite, "session_bus_process", return_value=self.identity)
+        self.process = patcher.start()
+        self.addCleanup(patcher.stop)
+        environment = mock.patch.dict(suite.os.environ, {"DBUS_SESSION_BUS_ADDRESS": self.address})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def prepare(self):
+        return suite.prepare_session_bus(self.root, NONCE, self.pid, self.parent)
+
+    def stop(self, *, polls=None):
+        poll = mock.MagicMock()
+        if polls is None:
+            polls = ([(77, select.POLLIN)],)
+        poll.poll.side_effect = list(polls)
+        real_close = os.close
+        with mock.patch.object(suite.os, "pidfd_open", return_value=77) as opened, \
+                mock.patch.object(suite.signal, "pidfd_send_signal", create=True) as sent, \
+                mock.patch.object(select, "poll", return_value=poll), \
+                mock.patch.object(suite.os, "close", side_effect=lambda fd: None if fd == 77 else real_close(fd)) as close, \
+                mock.patch.object(suite.os, "kill", side_effect=AssertionError("No numeric PID fallback")), \
+                mock.patch.object(suite.os, "killpg", side_effect=AssertionError("No broad kill fallback")):
+            try:
+                suite.stop_session_bus(self.root, NONCE, self.pid, self.parent)
+                result = "ok"
+            except suite.FullError as error:
+                result = error.kind
+        return result, opened, sent, poll, close
+
+    def test_private_nonce_address_readiness_and_exact_owner_identity(self):
+        self.assertEqual(self.directory.name, "session-bus-" + NONCE)
+        self.assertEqual(self.address, "unix:path=" + str(self.socket_path))
+        self.prepare()
+        info = self.socket_path.lstat()
+        value = json.loads(self.owner.read_bytes())
+        self.assertEqual(value, {"schema": 1, "nonce": NONCE, "pid": self.pid, "parent": self.parent,
+            "started": self.started, "socket_device": str(info.st_dev), "socket_inode": str(info.st_ino)})
+        self.assertEqual(suite.require_session_bus(self.root, NONCE), self.identity)
+        self.process.assert_any_call(self.pid, self.parent, self.started)
+
+    def test_large_64bit_socket_identity_uses_canonical_strings_without_weakening_json(self):
+        self.socket_device, self.socket_inode = 2**63 + 1, 2**64 - 1
+        self.prepare()
+        value = json.loads(self.owner.read_bytes())
+        self.assertEqual(value["socket_device"], str(self.socket_device))
+        self.assertEqual(value["socket_inode"], str(self.socket_inode))
+        self.assertEqual(suite.require_session_bus(self.root, NONCE), self.identity)
+        with self.assertRaises(suite.FullError):
+            suite.strict_json(b'{"unrelated":12345678901234567890}')
+
+    def test_replaced_same_uid_socket_is_not_the_owned_socket(self):
+        self.prepare()
+        before = self.socket_path.lstat().st_ino
+        self.socket_path.unlink()
+        self.socket_path.write_bytes(b"replacement socket inode")
+        self.socket_inode += 1
+        self.assertNotEqual(self.socket_path.lstat().st_ino, before)
+        with self.assertRaises(suite.FullError):
+            suite.require_session_bus(self.root, NONCE)
+
+    def test_stale_owner_blocks_prepare_before_process_validation(self):
+        self.owner.write_bytes(b"PRIVATE")
+        with self.assertRaisesRegex(suite.FullError, "^stale_evidence$"):
+            self.prepare()
+        self.process.assert_not_called()
+
+    def test_unready_address_is_bounded_and_no_owner_is_written(self):
+        address = self.directory / "address"
+        address.unlink()
+        with mock.patch.object(suite.time, "monotonic", side_effect=[0, 6]), \
+                mock.patch.object(suite.time, "sleep") as sleep, \
+                self.assertRaisesRegex(suite.FullError, "^process_failed$"):
+            self.prepare()
+        sleep.assert_not_called()
+        self.assertFalse(self.owner.exists())
+
+    def test_early_exit_or_identity_change_before_readiness_creates_no_owner(self):
+        for effects in ([suite.FullError("process_failed")], [self.identity, suite.FullError("process_failed")]):
+            self.process.side_effect = effects
+            with self.subTest(effects=effects), self.assertRaises(suite.FullError):
+                self.prepare()
+            self.assertFalse(self.owner.exists())
+
+    def test_delayed_exec_is_bounded_and_never_admitted_before_strict_daemon_identity(self):
+        strict_calls = []
+        def identity(pid, parent, started=None, *, require_executable=True):
+            self.assertEqual((pid, parent), (self.pid, self.parent))
+            if started is not None:
+                self.assertEqual(started, self.started)
+            if require_executable:
+                strict_calls.append(True)
+                if len(strict_calls) == 1:
+                    self.assertFalse(self.owner.exists())
+                    raise suite.FullError("process_failed")
+            return self.identity
+        self.process.side_effect = identity
+        with mock.patch.object(suite.time, "monotonic", side_effect=[0, 1]), mock.patch.object(suite.time, "sleep") as sleep:
+            self.prepare()
+        self.assertEqual(len(strict_calls), 2)
+        sleep.assert_called_once_with(0.05)
+        self.assertTrue(self.owner.exists())
+
+    def test_never_execs_daemon_fails_at_deadline_without_owner(self):
+        def identity(pid, parent, started=None, *, require_executable=True):
+            if require_executable:
+                raise suite.FullError("process_failed")
+            return self.identity
+        self.process.side_effect = identity
+        with mock.patch.object(suite.time, "monotonic", side_effect=[0, 6]), self.assertRaises(suite.FullError):
+            self.prepare()
+        self.assertFalse(self.owner.exists())
+
+    def test_alternate_tcp_autolaunch_malformed_unicode_or_excessive_address_is_rejected(self):
+        expected = self.address + ",guid=" + "a" * 32 + "\n"
+        bad = [b"", b"tcp:host=127.0.0.1,port=1234\n", b"autolaunch:\n", b"unix:path=/run/dbus/system_bus_socket\n",
+               self.address.encode() + b"\n", expected.upper().encode(), (expected + "PRIVATE").encode(),
+               expected.replace("guid=", "guid=0").encode(), b"\xff", b"x" * 257]
+        for raw in bad:
+            (self.directory / "address").write_bytes(raw)
+            with self.subTest(raw=raw[:80]), mock.patch.object(suite.time, "monotonic", side_effect=[0, 6]), \
+                    self.assertRaises(suite.FullError):
+                self.prepare()
+            self.assertFalse(self.owner.exists())
+
+    def test_private_directory_mode_linked_address_and_non_socket_rejected(self):
+        self.directory.chmod(0o755)
+        with mock.patch.object(suite.time, "monotonic", side_effect=[0, 6]), self.assertRaises(suite.FullError):
+            self.prepare()
+        self.directory.chmod(0o700)
+        address = self.directory / "address"
+        address.rename(self.directory / "real-address")
+        address.symlink_to(self.directory / "real-address")
+        with mock.patch.object(suite.time, "monotonic", side_effect=[0, 6]), self.assertRaises(suite.FullError):
+            self.prepare()
+        address.unlink()
+        (self.directory / "real-address").rename(address)
+        self.socket_kind = False
+        self.socket_path.unlink()
+        self.socket_path.write_bytes(b"not a socket")
+        with mock.patch.object(suite.time, "monotonic", side_effect=[0, 6]), self.assertRaises(suite.FullError):
+            self.prepare()
+
+    def test_missing_or_host_system_environment_address_has_no_fallback(self):
+        self.prepare()
+        for address in ("", "autolaunch:", "unix:path=/run/dbus/system_bus_socket", "tcp:host=localhost"):
+            with self.subTest(address=address), mock.patch.dict(suite.os.environ, {"DBUS_SESSION_BUS_ADDRESS": address}), \
+                    self.assertRaises(suite.FullError):
+                suite.require_session_bus(self.root, NONCE)
+        with mock.patch.dict(suite.os.environ, {}, clear=True), self.assertRaises(suite.FullError):
+            suite.require_session_bus(self.root, NONCE)
+
+    def test_strict_owner_schema_types_nonce_identity_and_socket_fields(self):
+        self.prepare()
+        original = json.loads(self.owner.read_bytes())
+        edits = [lambda d: d.update(extra="PRIVATE"), lambda d: d.pop("schema"),
+                 lambda d: d.update(schema=True), lambda d: d.update(schema=2),
+                 lambda d: d.update(nonce="0" * 32), lambda d: d.update(pid=True),
+                 lambda d: d.update(parent=False), lambda d: d.update(started="PRIVATE"),
+                 lambda d: d.update(started="1" * 21), lambda d: d.update(socket_device=True),
+                 lambda d: d.update(socket_device=-1), lambda d: d.update(socket_inode=True),
+                 lambda d: d.update(socket_inode=0), lambda d: d.update(socket_inode=-1),
+                 lambda d: d.update(socket_device="-1"), lambda d: d.update(socket_device="00"),
+                 lambda d: d.update(socket_inode="0"), lambda d: d.update(socket_inode="01"),
+                 lambda d: d.update(socket_inode=str(2**64)), lambda d: d.update(socket_device=str(2**64)),
+                 lambda d: d.update(socket_device="1e2")]
+        for edit in edits:
+            value = copy.deepcopy(original)
+            edit(value)
+            self.owner.write_bytes(json.dumps(value).encode())
+            with self.subTest(value=value), self.assertRaises(suite.FullError):
+                suite.require_session_bus(self.root, NONCE)
+
+    def test_owner_symlink_hardlink_and_duplicate_keys_are_rejected(self):
+        self.prepare()
+        self.owner.rename(self.directory / "owner-real")
+        self.owner.symlink_to(self.directory / "owner-real")
+        with self.assertRaises(suite.FullError):
+            suite.require_session_bus(self.root, NONCE)
+        self.owner.unlink()
+        os.link(self.directory / "owner-real", self.owner)
+        with self.assertRaises(suite.FullError):
+            suite.require_session_bus(self.root, NONCE)
+        self.owner.unlink()
+        (self.directory / "owner-real").rename(self.owner)
+        raw = self.owner.read_bytes().replace(b'"schema": 1', b'"schema": 1, "schema": 1')
+        self.owner.write_bytes(raw)
+        with self.assertRaises(suite.FullError):
+            suite.require_session_bus(self.root, NONCE)
+
+    def test_cleanup_term_is_pidfd_bound_and_no_redundant_kill(self):
+        self.prepare()
+        result, opened, sent, poll, close = self.stop()
+        self.assertEqual(result, "ok")
+        opened.assert_called_once_with(self.pid)
+        sent.assert_called_once_with(77, signal.SIGTERM)
+        poll.register.assert_called_once_with(77, select.POLLIN)
+        poll.poll.assert_called_once_with(2000)
+        self.assertEqual(close.call_args_list.count(mock.call(77)), 1)
+
+    def test_cleanup_escalates_only_owned_pidfd_after_bounded_term_wait(self):
+        self.prepare()
+        result, _, sent, poll, close = self.stop(polls=([], [(77, select.POLLIN)]))
+        self.assertEqual(result, "ok")
+        self.assertEqual(sent.call_args_list, [mock.call(77, signal.SIGTERM), mock.call(77, signal.SIGKILL)])
+        self.assertEqual(poll.poll.call_args_list, [mock.call(2000), mock.call(2000)])
+        self.assertEqual(close.call_args_list.count(mock.call(77)), 1)
+
+    def test_cleanup_timeout_is_failure_never_unbounded_wait_or_signal_fallback(self):
+        self.prepare()
+        result, _, sent, poll, close = self.stop(polls=([], []))
+        self.assertEqual(result, "process_failed")
+        self.assertEqual(sent.call_count, 2)
+        self.assertEqual(poll.poll.call_count, 2)
+        self.assertEqual(close.call_args_list.count(mock.call(77)), 1)
+
+    def test_non_exit_poll_events_or_wrong_descriptor_never_prove_termination(self):
+        self.prepare()
+        for event in ([(77, select.POLLNVAL)], [(77, select.POLLERR)], [(78, select.POLLIN)]):
+            with self.subTest(event=event):
+                result, _, sent, poll, close = self.stop(polls=(event, event))
+                self.assertEqual(result, "process_failed")
+                self.assertEqual(sent.call_count, 2)
+                self.assertEqual(poll.poll.call_count, 2)
+                self.assertEqual(close.call_args_list.count(mock.call(77)), 1)
+
+    def test_missing_invalid_or_wrong_owner_signals_nothing(self):
+        for raw in (None, b"PRIVATE", b"[]", b"{}"):
+            if self.owner.exists():
+                self.owner.unlink()
+            if raw is not None:
+                self.owner.write_bytes(raw)
+            with self.subTest(raw=raw):
+                result, _, sent, _, _ = self.stop()
+                self.assertNotEqual(result, "ok")
+                sent.assert_not_called()
+
+    def test_changed_starttime_or_parent_identity_signals_nothing(self):
+        self.prepare()
+        self.process.side_effect = suite.FullError("process_failed")
+        result, _, sent, _, close = self.stop()
+        self.assertEqual(result, "process_failed")
+        sent.assert_not_called()
+        self.assertEqual(close.call_args_list.count(mock.call(77)), 1)
+
+    def test_unsupported_pidfd_api_has_no_numeric_or_broad_signal_fallback(self):
+        self.prepare()
+        with mock.patch.object(suite.os, "kill") as kill, mock.patch.object(suite.os, "killpg") as killpg, \
+                mock.patch.object(suite.os, "pidfd_open") as opened:
+            with mock.patch.object(suite.signal, "pidfd_send_signal", create=True):
+                del suite.signal.pidfd_send_signal
+                with self.assertRaises(suite.FullError):
+                    suite.stop_session_bus(self.root, NONCE, self.pid, self.parent)
+            opened.assert_not_called()
+        kill.assert_not_called()
+        killpg.assert_not_called()
+
+
+class FinalClientCensusTests(unittest.TestCase):
+    def census(self, current):
+        baseline = {(1, "10"), (2, "20"), (4, "40")}
+        with mock.patch.object(suite, "read_client_process_baseline", return_value=baseline) as read, \
+                mock.patch.object(suite, "session_bus_owner", return_value={"pid": 2, "started": "20"}), \
+                mock.patch.object(suite, "client_process_snapshot", return_value=current), \
+                mock.patch.object(suite.os, "getpid", return_value=3):
+            suite.final_client_process_census(NONCE)
+        read.assert_called_once_with(NONCE)
+
+    def test_original_baseline_survivors_and_exact_final_validator_are_the_only_admissions(self):
+        self.census({(1, "10"), (3, "30")})
+        self.census({(1, "10"), (3, "30"), (4, "40")})
+
+    def test_late_service_or_same_executable_replacement_cannot_be_newly_admitted(self):
+        for current in ({(1, "10"), (3, "30"), (5, "50")},
+                        {(1, "10"), (3, "30"), (2, "999")},
+                        {(1, "999"), (3, "30")}):
+            with self.subTest(current=current), self.assertRaises(suite.ClientProcessError) as caught:
+                self.census(current)
+            self.assertEqual(caught.exception.diagnostics["stage"], "after_exit")
+            self.assertEqual(caught.exception.diagnostics["reason"], "unexpected_processes")
+
+    def test_bus_still_present_missing_validator_or_ambiguous_validator_fails(self):
+        for current in ({(1, "10"), (2, "20"), (3, "30")}, {(1, "10")},
+                        {(1, "10"), (3, "30"), (3, "31")}):
+            with self.subTest(current=current), self.assertRaises(suite.FullError):
+                self.census(current)
+
+
+class ClientFinalReportEmitterTests(unittest.TestCase):
+    """Execute only the embedded Python renderer with synthetic private evidence."""
+    def emitter(self, *, watchdog=False, cleanup_failed=False):
+        envelope, inputs, modules = host_fixture.fixture()
+        inputs[suite.CLIENT_SOURCE] = "c" * 64
+        modules["client_probe"] = "d" * 64
+        client = {"status": "ok", "failure_kind": "none", "source_sha256": "c" * 64,
+            "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
+            "process_diagnostics": process_diagnostics(), **dict.fromkeys(suite.CLIENT_FLAGS, True)}
+        envelope["report"]["stage3"]["client_probe"] = client
+        if watchdog:
+            envelope["report"]["stage3"]["client_watchdog"] = {**copy.deepcopy(client), "completed": False,
+                "process_exited": False, "witness_verified": False, "timeout_verified": True}
+        script = smoke.PROBE.read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / "config").mkdir()
+            (root / "config/Configuration.xml").write_text(
+                '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">'
+                '<Configuration><Properties><Name/></Properties></Configuration></MetaDataObject>')
+            (root / "stage2-report.json").write_text(json.dumps(envelope["report"]["stage2"]))
+            (root / "stage3-report.json").write_text(json.dumps(envelope["report"]["stage3"]))
+            script = script.replace("/tmp/onec-smoke", str(root))
+            raw = io.BytesIO()
+            diagnostic = process_diagnostics(reason="unexpected_processes", classes={"other": 1})
+            arguments = ["emitter", "1" if cleanup_failed else "0", "stage2" if cleanup_failed else "complete",
+                         "true", "true", "true", "true", "true", "true", host_fixture.NONCE,
+                         "true", "true" if watchdog else "false", "true" if cleanup_failed else "false"]
+            reader = (mock.patch.object(suite, "secure_bytes", new=stage_fixture.portable_fixture_bytes)
+                      if os.name == "nt" else contextlib.nullcontext())
+            with reader, mock.patch.object(sys, "argv", arguments), mock.patch.object(sys, "path", sys.path.copy()), \
+                    mock.patch.object(sys, "stdout", SimpleNamespace(buffer=raw)), \
+                    mock.patch.object(suite.os, "geteuid", return_value=1000, create=True), \
+                    mock.patch.object(suite.os, "access", return_value=True), \
+                    mock.patch.object(suite, "native_processes_quiet", return_value=True), \
+                    mock.patch.object(suite, "final_client_process_census", side_effect=suite.ClientProcessError(diagnostic)), \
+                    mock.patch.object(subprocess, "Popen", side_effect=AssertionError("Renderer must not execute native code")), \
+                    self.assertRaises(SystemExit) as caught:
+                exec(compile(script, "offline-final-report-emitter", "exec"), {})
+            self.assertEqual(caught.exception.code, 1)
+        report, outputs = full.validate_envelope(raw.getvalue(), host_fixture.NONCE, inputs, modules,
+                                                 smoke.validate_report, watchdog_check=watchdog)
+        self.assertEqual(outputs, {})
+        self.assertFalse(report["native_tests_completed"])
+        self.assertEqual(report["status"], "stage3_failed")
+        self.assertEqual(report["stage3"]["status"], "failed")
+        self.assertEqual(report["stage2"]["status"], "ok")
+        last = report["stage3"]["client_watchdog" if watchdog else "client_probe"]
+        self.assertEqual(last["status"], "failed")
+        self.assertFalse(last["quiet"])
+        self.assertFalse(last["witness_verified"])
+        if watchdog:
+            self.assertFalse(last["timeout_verified"])
+        return report
+
+    def test_late_service_failure_report_remains_host_valid_in_positive_and_watchdog_modes(self):
+        for watchdog in (False, True):
+            with self.subTest(watchdog=watchdog):
+                report = self.emitter(watchdog=watchdog)
+                last = report["stage3"]["client_watchdog" if watchdog else "client_probe"]
+                self.assertEqual(last["process_diagnostics"]["unexpected_count"], 1)
+
+    def test_cleanup_failure_downgrades_suite_and_proof_flags_without_losing_bootstrap_evidence(self):
+        for watchdog in (False, True):
+            with self.subTest(watchdog=watchdog):
+                self.emitter(watchdog=watchdog, cleanup_failed=True)
+
+    def test_shell_owns_session_bus_before_baseline_and_reaps_before_display_and_export(self):
+        script = smoke.PROBE.read_text()
+        bus = script.index("/usr/bin/dbus-daemon --session --nofork --nopidfile --nosyslog")
+        baseline = script.index("<<'PYCLIENTBASELINE'")
+        first_native = script.index('"$ONEC" CREATEINFOBASE')
+        self.assertLess(script.rfind('if [ "$client_probe" = true ]; then', 0, bus), bus)
+        self.assertLess(bus, baseline)
+        self.assertLess(baseline, first_native)
+        self.assertIn('--address="$DBUS_SESSION_BUS_ADDRESS" --print-address=3', script)
+        finish = script.split("finish() {", 1)[1].split("trap finish EXIT", 1)[0]
+        self.assertLess(finish.index("full_suite.stop_session_bus("), finish.index('wait "$bus_pid"'))
+        self.assertLess(finish.index('wait "$bus_pid"'), finish.index('wait "$x_pid"'))
+        self.assertLess(finish.index('wait "$x_pid"'), finish.index("full_suite.final_client_process_census("))
+        self.assertLess(finish.index("full_suite.final_client_process_census("), finish.index("full_suite.build_envelope("))
+        self.assertNotIn('kill "$bus_pid"', finish)
+        for forbidden in ("dbus-launch --", "--config-file=", "killall", "pkill", "tcp:host"):
+            self.assertNotIn(forbidden, script)
 
 
 if __name__ == "__main__":

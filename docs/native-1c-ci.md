@@ -155,19 +155,33 @@ verified quiescence. Missing entry, early exit, nonzero exit, a completed record
 or failed cleanup fails this negative assertion. This adds 120 seconds to the
 normal checkpoint but leaves the existing 2400-second outer budget unchanged.
 
-Before the first native invocation, after display startup, the harness records
-the permitted process identities in its isolated PID namespace. Only its own
+Before the first native invocation, after display startup, client opt-in starts
+one explicitly owned `/usr/bin/dbus-daemon --session --nofork` child using the
+pinned image's existing session policy. Its nonce-private Unix socket lives in
+a new mode-0700 tmpfs directory; the exact address is exported without any
+host/system bus, TCP listener or autolaunch fallback. Bounded readiness checks
+verify UID, parent, executable, kernel start time, printed address and socket.
+Only then does the harness record the permitted process identities in its
+isolated PID namespace. The owned bus must remain live through both probes;
+service activation does not exempt any additional process from the census. Only its own
 subsequent runner identity is admitted. PID plus kernel start time prevents
 PID reuse from disguising a new process; every process is counted, even
 non-dumpable or different-executable descendants. Missing/unreadable census
 evidence fails closed. A clean leader exit with lingering group members fails
 after a bounded grace period rather than becoming success through cleanup.
-Only the launched group is killed; escaped survivors cause failure and are
-left to the existing container teardown, never a broad same-user kill.
+Only each launched native group is killed; escaped survivors cause failure and
+are left to the existing container teardown, never a broad same-user kill.
+At harness exit, the explicitly owned bus is pinned with a pidfd, identity
+checked, then stopped with TERM/KILL under a four-second total bound and reaped.
+Missing pidfd support, bus death/replacement or cleanup failure prevents success;
+there is no numeric-PID or process-name cleanup fallback. After bus teardown,
+a final census against the original baseline rejects late service activation
+before any output export.
 
 The same fresh database and verified `NativeSmoke` warning-off bootstrap are
 used. The five role rights, pinned image, non-root execution, read-only root,
-network isolation, tmpfs, resource limits and cleanup are unchanged. Public
+network isolation, tmpfs and resource limits are unchanged. The new bus lifecycle
+uses only the already isolated container and its private tmpfs. Public
 artifacts remain the six `.out` files plus provenance; the existing finite
 report adds only fixed status/boolean/hash fields and bounded process counts/classes. Probe JSON, EPF, database,
 logs and screenshots are never exported. The existing 32 KiB report, 8 KiB

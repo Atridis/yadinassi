@@ -579,7 +579,139 @@ def client_process_snapshot() -> set[tuple[int, str]]:
         raise FullError('process_failed') from None
 
 
-def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
+def session_bus_process(pid: int, parent: int, started: str | None = None,
+                        *, require_executable: bool = True) -> tuple[int, str]:
+    """Validate one explicitly launched direct child; never adopt by executable class."""
+    if (type(pid) is not int or type(parent) is not int or pid <= 1 or parent <= 0
+            or pid == os.getpid()):
+        raise FullError('process_failed')
+    try:
+        directory = Path('/proc') / str(pid)
+        raw = (directory / 'stat').read_text()
+        fields = raw[raw.rindex(')') + 2:].split()
+        uid_line = next(line for line in (directory / 'status').read_text().splitlines()
+                        if line.startswith('Uid:'))
+        uids = uid_line.split()[1:]
+        if (fields[0] == 'Z' or int(fields[1]) != parent or len(uids) != 4
+                or re.fullmatch(r'[0-9]{1,20}', fields[19]) is None
+                or any(int(uid) != os.geteuid() for uid in uids)
+                or (require_executable and str((directory / 'exe').readlink()) != '/usr/bin/dbus-daemon')
+                or (started is not None and fields[19] != started)):
+            raise FullError('process_failed')
+        return pid, fields[19]
+    except (OSError, ValueError, IndexError, StopIteration):
+        raise FullError('process_failed') from None
+
+
+def session_bus_paths(root: Path, nonce: str) -> tuple[Path, Path, str]:
+    if not valid_nonce(nonce):
+        raise FullError('invalid_input')
+    directory = root / ('session-bus-' + nonce)
+    address = 'unix:path=' + str(directory / 'bus')
+    return directory, directory / 'owner.json', address
+
+
+def prepare_session_bus(root: Path, nonce: str, pid: int, parent: int) -> None:
+    """Bounded readiness for our nofork child, using only private fixed paths."""
+    directory, owner, address = session_bus_paths(root, nonce)
+    absent(owner)
+    deadline = time.monotonic() + 5
+    # Pin identity before exec; executable readiness may lag fork scheduling.
+    # This never admits the pre-exec process to the baseline or owner record.
+    identity = session_bus_process(pid, parent, require_executable=False)
+    while True:
+        session_bus_process(pid, parent, identity[1], require_executable=False)
+        try:
+            session_bus_process(pid, parent, identity[1])
+            info = directory.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+                    or stat.S_IMODE(info.st_mode) != 0o700):
+                raise FullError('process_failed')
+            printed = secure_bytes(directory / 'address', 256).decode('ascii')
+            socket = (directory / 'bus').lstat()
+            if (re.fullmatch(re.escape(address) + r',guid=[0-9a-f]{32}\n', printed) is None
+                    or not stat.S_ISSOCK(socket.st_mode) or socket.st_uid != os.geteuid()):
+                raise FullError('process_failed')
+            break
+        except (OSError, UnicodeError, FullError):
+            if time.monotonic() >= deadline:
+                raise FullError('process_failed') from None
+            time.sleep(0.05)
+    with owner.open('x', encoding='utf-8') as stream:
+        json.dump({'schema': 1, 'nonce': nonce, 'pid': pid, 'started': identity[1],
+                   'parent': parent, 'socket_device': str(socket.st_dev),
+                   'socket_inode': str(socket.st_ino)}, stream)
+
+
+def session_bus_owner(root: Path, nonce: str) -> dict:
+    directory, owner, address = session_bus_paths(root, nonce)
+    value = strict_json(secure_bytes(owner, 1024))
+    if (type(value) is not dict or set(value) != {
+            'schema', 'nonce', 'pid', 'started', 'parent', 'socket_device', 'socket_inode'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or type(value['started']) is not str
+            or re.fullmatch(r'[0-9]{1,20}', value['started']) is None
+            or type(value['pid']) is not int or not 1 < value['pid'] <= 4194304
+            or type(value['parent']) is not int or not 0 < value['parent'] <= 4194304
+            or type(value['socket_device']) is not str
+            or re.fullmatch(r'(?:0|[1-9][0-9]{0,19})', value['socket_device']) is None
+            or not 0 <= int(value['socket_device']) < 2**64
+            or type(value['socket_inode']) is not str
+            or re.fullmatch(r'[1-9][0-9]{0,19}', value['socket_inode']) is None
+            or not 0 < int(value['socket_inode']) < 2**64):
+        raise FullError('process_failed')
+    return value
+
+
+def require_session_bus(root: Path, nonce: str) -> tuple[int, str]:
+    directory, owner, address = session_bus_paths(root, nonce)
+    value = session_bus_owner(root, nonce)
+    identity = session_bus_process(value['pid'], value['parent'], value['started'])
+    try:
+        info = directory.lstat()
+        socket = (directory / 'bus').lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o700 or not stat.S_ISSOCK(socket.st_mode)
+                or socket.st_uid != os.geteuid()
+                or (str(socket.st_dev), str(socket.st_ino)) != (value['socket_device'], value['socket_inode'])
+                or os.environ.get('DBUS_SESSION_BUS_ADDRESS') != address):
+            raise FullError('process_failed')
+    except OSError:
+        raise FullError('process_failed') from None
+    return identity
+
+
+def stop_session_bus(root: Path, nonce: str, pid: int, parent: int) -> None:
+    """Pin our exact child with pidfd; bounded cleanup cannot signal a reused PID."""
+    import select
+    directory, owner, address = session_bus_paths(root, nonce)
+    if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
+        raise FullError('process_failed')
+    value = session_bus_owner(root, nonce)
+    if value['pid'] != pid or value['parent'] != parent:
+        raise FullError('process_failed')
+    try:
+        fd = os.pidfd_open(pid)
+    except OSError:
+        raise FullError('process_failed') from None
+    try:
+        session_bus_process(pid, parent, value['started'])
+        poll = select.poll()
+        poll.register(fd, select.POLLIN)
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                signal.pidfd_send_signal(fd, sig)
+            except OSError:
+                raise FullError('process_failed') from None
+            events = poll.poll(2000)
+            if any(descriptor == fd and mask & select.POLLIN for descriptor, mask in events):
+                return
+        raise FullError('process_failed')
+    finally:
+        os.close(fd)
+
+
+def read_client_process_baseline(nonce: str) -> set[tuple[int, str]]:
     """Use the census taken after X startup, before the first native invocation."""
     value = strict_json(secure_bytes(Path('/tmp/onec-smoke/client-process-baseline.json'), 16384))
     if (type(value) is not dict or set(value) != {'schema', 'nonce', 'processes'}
@@ -595,6 +727,14 @@ def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
                 or tuple(item) in baseline):
             raise FullError('invalid_result')
         baseline.add(tuple(item))
+    return baseline
+
+
+def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
+    baseline = read_client_process_baseline(nonce)
+    bus = require_session_bus(Path('/tmp/onec-smoke'), nonce)
+    if bus not in baseline:
+        raise FullError('process_failed')
     current = client_process_snapshot()
     own = {identity for identity in current if identity[0] == os.getpid()}
     if len(own) != 1:
@@ -602,6 +742,30 @@ def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
     if not current <= baseline | own:
         raise ClientProcessError(unexpected_process_diagnostics(current - (baseline | own), 'baseline'))
     return baseline | own
+
+
+def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostics=None) -> None:
+    """Keep a final teardown/census failure valid, finite and non-exportable."""
+    suite.update(status='failed', failure_kind='process_failed')
+    last = suite['client_watchdog'] if watchdog_check else suite['client_probe']
+    last.update(status='failed', failure_kind='process_failed', quiet=False, witness_verified=False)
+    if watchdog_check:
+        last['timeout_verified'] = False
+    last['process_diagnostics'] = (diagnostics if diagnostics is not None else
+        dict(empty_process_diagnostics(), stage='after_exit', reason='unverified'))
+
+
+def final_client_process_census(nonce: str) -> None:
+    """After owned bus teardown, reject late service activation before export."""
+    baseline = read_client_process_baseline(nonce)
+    value = session_bus_owner(Path('/tmp/onec-smoke'), nonce)
+    current = client_process_snapshot()
+    own = {identity for identity in current if identity[0] == os.getpid()}
+    if len(own) != 1 or (value['pid'], value['started']) in current:
+        raise FullError('process_failed')
+    unexpected = current - (baseline | own)
+    if unexpected:
+        raise ClientProcessError(unexpected_process_diagnostics(unexpected, 'after_exit'))
 
 
 def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
@@ -679,6 +843,7 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             if survivors:
                 record['process_diagnostics'] = unexpected_process_diagnostics(survivors, 'after_exit')
             else:
+                require_session_bus(Path('/tmp/onec-smoke'), nonce)
                 record['process_diagnostics'].update(reason='native_not_quiet')
                 record['quiet'] = native_processes_quiet(platform.executable)
                 if record['quiet']:
