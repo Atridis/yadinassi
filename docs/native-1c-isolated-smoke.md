@@ -36,8 +36,9 @@ measured `SystemInfo.AppVersion` `8.3.27.1508`, launcher and simple EPF. All 16
 trusted input hashes matched. Offline mocks alone would not establish these facts.
 
 The separately gated [six-scenario full mode](native-1c-full-regression.md)
-reuses these prerequisites but keeps actual output payloads private and compares
-them outside the container under UTC. Bootstrap-only success is not full-suite
+reuses these prerequisites and compares actual output payloads outside the
+container under UTC. Payloads remain private by default; its separate, explicitly
+approved diagnostic export retains only six test outputs and bounded provenance. Bootstrap-only success is not full-suite
 success.
 
 ## Invocation and unchanged trust boundary
@@ -184,12 +185,16 @@ partially modified one.
 
 ## Bounded public evidence
 
-Only `native-smoke/report.json` is uploaded, with seven-day retention. Container
-stdout is capped at 32 KiB and validated as untrusted JSON with exact schemas,
+By default only `native-smoke/report.json` is uploaded, with seven-day retention.
+The separately documented full-mode `--export-native-outputs` opt-in adds exactly
+six native test outputs plus bounded provenance, also for seven days. In
+capability/bootstrap modes, container stdout is capped at 32 KiB and validated
+as untrusted JSON with exact schemas,
 duplicate-key rejection, finite statuses, strict booleans, numeric versions,
 known metadata fields and SHA-256 values. Unknown fields or false/inconsistent
-success claims fail closed. Native text, paths, UUIDs, image labels/environment,
-X cookies, database, XML and logs are never published.
+success claims fail closed. Raw service text, paths, UUIDs, image labels/environment,
+X cookies, database, XML and logs are never published. Approved full-mode test
+outputs are a separate, exact-byte diagnostic artifact, not service logs.
 
 A failed stage keeps its primary orchestration `failure_kind` (for example,
 process failure, timeout, invalid marker or module mismatch). A separate strict

@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -493,7 +494,56 @@ class BootstrapReportTests(unittest.TestCase):
                 self.assertIs(json.loads(output.read_text())['security_settings_changed'], expected)
 
 
+# The production host is Linux. Only Windows offline copied-fixture reads use
+# this static-file adapter; Linux retains the real descriptor no-follow gate.
+# Keep it local: full-host tests import this module, so importing their fixture
+# helper here would create a circular dependency.
+_USE_SYNTHETIC_STAGING_READER = os.name == "nt"
+
+
+def read_staging_fixture(path, limit, *, nonempty=False):
+    """Bound synthetic staging reads without claiming POSIX metadata on NTFS."""
+    try:
+        if any(parent.is_symlink() for parent in (path, *path.parents)):
+            raise ValueError("link")
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+            raise ValueError("file")
+        with path.open("rb") as source:
+            data = source.read(limit + 1)
+        after = path.lstat()
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+                                 info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        if (identity(before) != identity(after) or len(data) != before.st_size
+                or len(data) > limit or (nonempty and not data)):
+            raise ValueError("unstable")
+        return data
+    except (OSError, ValueError):
+        raise smoke.FULL.FullError("invalid_private_file") from None
+
+
 class BootstrapStagingTests(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        if _USE_SYNTHETIC_STAGING_READER:
+            patcher = mock.patch.object(smoke.FULL, "read_regular", side_effect=read_staging_fixture)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_static_fixture_adapter_preserves_bytes_and_rejects_bad_sizes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / "fixture.bsl"
+            path.write_bytes(b"x\r\n\x00\xff")
+            self.assertEqual(read_staging_fixture(path, 8), b"x\r\n\x00\xff")
+            with self.assertRaises(smoke.FULL.FullError):
+                read_staging_fixture(path, 2)
+            with self.assertRaises(smoke.FULL.FullError):
+                read_staging_fixture(path.parent, 8)
+            path.write_bytes(b"")
+            self.assertEqual(read_staging_fixture(path, 8), b"")
+            with self.assertRaises(smoke.FULL.FullError):
+                read_staging_fixture(path, 8, nonempty=True)
+
     def test_stages_only_exact_trusted_files_and_preserves_bytes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'staged'

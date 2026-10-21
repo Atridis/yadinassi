@@ -52,15 +52,31 @@ jobs:
       - name: Install exact host interpreter dependencies
         run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
       - name: Run approved digest with no network, ports or credentials
+        id: native
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json --export-native-outputs
       - name: Upload only validated finite comparison report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: native-1c-full-summary
           path: native-smoke/report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload explicitly approved exact native test outputs
+        if: always() && steps.native.outputs.native_outputs_ready == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-1c-six-scenario-outputs
+          path: |
+            native-smoke/native-outputs/collections.out
+            native-smoke/native-outputs/dates.out
+            native-smoke/native-outputs/functions.out
+            native-smoke/native-outputs/numbers.out
+            native-smoke/native-outputs/strings.out
+            native-smoke/native-outputs/values.out
+            native-smoke/native-outputs/provenance.json
           if-no-files-found: error
           retention-days: 7

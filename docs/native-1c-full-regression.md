@@ -10,7 +10,7 @@ extension are not native evidence; a successful full-mode report is required.
 
 ## Run contract
 
-The dedicated, repository/branch/actor-guarded workflow invokes:
+The default, summary-only invocation is:
 
 ```console
 python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json
@@ -53,10 +53,11 @@ canonical base64, lengths, hashes, nonce and all 23 host-known source hashes are
 validated. Failure envelopes carry no output payloads. No archives are extracted
 and no arbitrary container path is copied.
 
-The six accepted outputs exist only in a private temporary host directory for
-comparison. They are never uploaded or committed by this workflow. Raw native
-logs, `.err`, request/result JSON, bootstrap exception text, XML, EPFs and the
-database are also not published. Invalid evidence cannot become a successful
+By default the six accepted outputs exist only in a private temporary host
+directory for comparison and are removed afterward. The explicit diagnostic
+export described below is the only exception. Raw native logs, `.err`,
+request/result JSON, orchestration exception text, XML, EPFs and the database
+are never published. Invalid evidence cannot become a successful
 reference set. Cleanup failure prevents an overall success claim.
 
 ## UTC comparison and provenance
@@ -81,5 +82,46 @@ Their existing `Europe/Warsaw` replay tests are not repurposed as Linux/UTC
 evidence. Differences across versions/platforms are findings to investigate,
 never a reason to overwrite old goldens or silently normalize a mismatch.
 
-The workflow uploads only `native-smoke/report.json`. Publishing any genuine
-native `.out` capture would be a separate, explicitly scoped operation.
+## Explicitly approved diagnostic output artifact
+
+Without `--export-native-outputs`, only the finite summary is retained. The
+separate flag requires `--full-suite` and exports to one fixed directory,
+`native-smoke/native-outputs`; it accepts no arbitrary output path. The dedicated
+repository/branch/actor-guarded workflow explicitly opts in for the owner's
+approved diagnostic run. Remove that temporary opt-in with the validation route;
+do not broaden it to ordinary PR/main runs.
+
+The artifact `native-1c-six-scenario-outputs` has seven-day retention and exactly
+seven literal upload paths: `collections.out`, `dates.out`, `functions.out`,
+`numbers.out`, `strings.out`, `values.out`, and `provenance.json` inside that fixed
+directory. It does not upload directories, globs, archives or raw service logs.
+The six files are the exact validated native test outputs, including intentional
+scenario error-message strings. No redaction, normalization or interpreter-derived
+replacement is applied. Their limits remain 1 MiB each and 2 MiB combined.
+
+Only bounded, verified bytes survive in host memory while the private temporary
+directory is deleted. Export requires successful native execution and validated
+capture, verified container removal, unchanged historical Windows goldens,
+unchanged source/interpreter provenance, and completed private cleanup. A
+comparison mismatch still fails the overall gate but may retain this diagnostic
+artifact; an incomplete comparison or failed evidence/cleanup gate cannot.
+
+The 32 KiB-bounded provenance JSON contains only fixed/schema-checked fields:
+measured `SystemInfo.AppVersion`, pinned image digest, UTC/locale, invocation
+nonce, commit/tree and optional Actions run identity, interpreter/dependency
+provenance, per-case source/module/native-output hashes and sizes, and finite
+comparison/cleanup status. It contains no raw exception strings or other image,
+database, XML, EPF or credential contents.
+
+Export is Linux-only and creates a private sibling staging directory using
+exclusive descriptor-relative file operations. It refuses symlinks, hardlinked
+or special files, unexpected names, changed hashes and any preexisting target.
+Linux `renameat2(RENAME_NOREPLACE)` atomically exposes the complete directory,
+with no overwriting fallback. Visible directory identities are checked before
+and after promotion. The exact seven-file tree and hashes are checked again
+immediately before setting the Actions upload-ready signal. A failed export,
+changed path, partial write or stale preexisting directory cannot set that signal;
+the upload step requires it even when the comparison step exits unsuccessfully.
+
+Historical Windows goldens and `meta.md` are neither replaced nor deleted.
+The diagnostics artifact is separate evidence, not a new approved baseline.

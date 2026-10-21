@@ -2,7 +2,7 @@
 """Run the explicitly approved image once; emit only a validated public report.
 
 The image's stdout/stderr, environment, labels, database, binaries and native XML
-are never published. No runtime package install or host-writable mount is used.
+are never published. Exact test outputs require a separate explicit export opt-in. No runtime package install or host-writable mount is used.
 """
 from __future__ import annotations
 
@@ -379,7 +379,11 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
         raise SmokeError("invalid_container_report") from None
 
 
-def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False) -> dict[str, object]:
+def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
+              export_native_outputs: bool = False) -> dict[str, object]:
+    if export_native_outputs and not full_suite:
+        raise SmokeError("native_artifact_requires_full_suite")
+    retained_outputs = None
     bootstrap = bootstrap or full_suite
     # Remove the secret from the process environment before any external command.
     token = os.environ.pop("GHCR_TOKEN", "")
@@ -478,6 +482,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                         raise FULL.FullError("windows_goldens_changed")
                     if FULL.interpreter_provenance(ROOT) != interpreter or FULL.repository_provenance(ROOT) != provenance:
                         raise FULL.FullError("execution_provenance_changed")
+                    if export_native_outputs and report["native_evidence_accepted"]:
+                        retained_outputs = FULL.retain_output_bytes(capture, report["stage3"])
                 except FULL.FullError as error:
                     payloads.clear()
                     raise SmokeError(str(error), security_uncertain=True, validated_report=report) from None
@@ -501,6 +507,21 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
         if Path(work_name).exists():
             raise SmokeError("private_cleanup_unverified", security_uncertain=True)
         report["private_payloads_removed"] = True
+        if export_native_outputs:
+            report["native_output_artifact_ready"] = False
+            if retained_outputs is not None:
+                try:
+                    # Only bounded bytes survive in memory until private cleanup
+                    # has completed. No directory is exposed before these gates.
+                    files = FULL.output_artifact_files(retained_outputs, report, IMAGE)
+                    FULL.export_output_artifact(ROOT, files)
+                    report["native_output_artifact_sha256"] = {name: FULL.digest(data) for name, data in files.items()}
+                    report["native_output_artifact_ready"] = True
+                except FULL.FullError as error:
+                    raise SmokeError(str(error), validated_report=report,
+                                     cleanup_error=getattr(error, "cleanup_error", None)) from None
+                finally:
+                    retained_outputs.clear()
     return report
 
 
@@ -512,15 +533,19 @@ def main(argv: list[str] | None = None) -> int:
                         help="Run internal user bootstrap and one fixed EPF after capabilities")
     parser.add_argument("--full-suite", action="store_true",
                         help="Run six approved native scenarios and compare privately on the host under UTC")
+    parser.add_argument("--export-native-outputs", action="store_true",
+                        help="Explicitly retain six genuine outputs plus provenance at native-smoke/native-outputs")
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
+    if args.export_native_outputs and not args.full_suite:
+        parser.error("--export-native-outputs requires --full-suite")
     report: dict[str, object] = {
         "schema": 1, "image": IMAGE, "platform": "linux/amd64", "purpose": "empty-infobase-capability-smoke",
         "runtime_version_verified": False, "native_tests_completed": False,
         "security_settings_changed": False, "windows_goldens_modified": False,
     }
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite)
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs)
         if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")
@@ -569,11 +594,31 @@ def main(argv: list[str] | None = None) -> int:
     report["smoke_completed"] = success
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
-    if len(rendered.encode("utf-8")) > MAX_OUTPUT:
+    report_within_limit = len(rendered.encode("utf-8")) <= MAX_OUTPUT
+    if not report_within_limit:
         rendered = json.dumps({"schema": 1, "error": "public_report_limit", "smoke_completed": False}) + "\n"
         success = False
     args.output.write_text(rendered, encoding="utf-8")
+    if args.export_native_outputs and report_within_limit and report.get("probe", {}).get("native_output_artifact_ready") is True:
+        try:
+            FULL.verify_output_artifact(ROOT, report["probe"]["native_output_artifact_sha256"])
+        except FULL.FullError as error:
+            report["probe"]["native_output_artifact_ready"] = False
+            report["error"] = str(error)
+            report["smoke_completed"] = success = False
+            rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
+            report_within_limit = len(rendered.encode("utf-8")) <= MAX_OUTPUT
+            if not report_within_limit:
+                rendered = json.dumps({"schema": 1, "error": "public_report_limit", "smoke_completed": False}) + "\n"
+            args.output.write_text(rendered, encoding="utf-8")
     print(rendered, end="")
+    if args.export_native_outputs and report_within_limit and report.get("probe", {}).get("native_output_artifact_ready") is True:
+        # A mismatched comparison still exits 1, but the separately approved
+        # complete diagnostic artifact is eligible for upload. No stale-path test.
+        output_file = os.environ.get("GITHUB_OUTPUT")
+        if output_file:
+            with open(output_file, "a", encoding="utf-8") as stream:
+                stream.write("native_outputs_ready=true\n")
     return 0 if success else 1
 
 

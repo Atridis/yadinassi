@@ -1,7 +1,7 @@
 """Private, bounded six-scenario capture validation and UTC host comparison.
 
-Only finite metadata leaves this module. Native payloads live in an exclusive
-host temporary directory, never in the repository or the public report.
+By default only finite metadata leaves this module. An explicit opt-in may retain
+exactly six validated native outputs and bounded provenance after all cleanup gates.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 SCENARIOS = ("collections", "dates", "functions", "numbers", "strings", "values")
 SCHEMA = "native-1c-full-v1"
@@ -28,6 +29,8 @@ MAX_TOTAL = 2_097_152
 MAX_TRANSPORT = 3_145_728
 MAX_REPORT = 32_768
 MAX_STDERR = 65_536
+ARTIFACT_DIRECTORY = "native-smoke/native-outputs"
+ARTIFACT_FILES = tuple(name + ".out" for name in SCENARIOS) + ("provenance.json",)
 CASE_SECONDS = 10
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
 FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
@@ -464,3 +467,270 @@ def interpreter_provenance(root: Path) -> dict:
             "dependencies": dependencies, "source_file_count": len(hashes),
             "source_sha256": digest(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()),
             "comparison_driver_sha256": hashes["scripts/native_1c_full_host.py"]}
+
+
+
+def retain_output_bytes(capture: Path, stage3: dict) -> dict[str, bytes]:
+    """Retain only the six already validated captures, without transforming bytes."""
+    try:
+        if (capture.is_symlink() or not capture.is_dir()
+                or set(path.name for path in capture.iterdir()) != set(ARTIFACT_FILES[:-1])
+                or stage3["status"] != "ok"
+                or [case["name"] for case in stage3["cases"]] != list(SCENARIOS)):
+            raise ValueError("coverage")
+        result = {}
+        for name, case in zip(SCENARIOS, stage3["cases"]):
+            payload = read_regular(capture / (name + ".out"), MAX_FILE)
+            if (case["status"] != "ok" or len(payload) != case["output_size"]
+                    or digest(payload) != case["output_sha256"]):
+                raise ValueError("identity")
+            result[name + ".out"] = payload
+        if sum(map(len, result.values())) > MAX_TOTAL:
+            raise ValueError("aggregate")
+        return result
+    except (OSError, KeyError, TypeError, ValueError, FullError):
+        raise FullError("native_artifact_capture_invalid") from None
+
+
+def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) -> dict[str, bytes]:
+    """Rebuild a finite allowlisted manifest; never copy logs or exception strings."""
+    try:
+        if (list(payloads) != list(ARTIFACT_FILES[:-1])
+                or any(type(value) is not bytes or len(value) > MAX_FILE for value in payloads.values())
+                or sum(map(len, payloads.values())) > MAX_TOTAL
+                or any(report[key] is not True for key in ("native_evidence_accepted",
+                    "native_transport_validated", "native_cases_completed", "container_cleanup_verified",
+                    "private_payloads_removed", "windows_goldens_unchanged"))
+                or report["status"] != "ok" or report["container_exit_code"] != 0
+                or report["runtime_version_source"] != "SystemInfo.AppVersion"
+                or report["runtime_version"] != "8.3.27.1508"
+                or report["configured_timezone"] != "Etc/UTC"
+                or report["configured_native_locale"] != "ru_RU"
+                or not re.fullmatch(r"[0-9a-f]{32}", report["invocation_nonce"])
+                or not re.fullmatch(r"ghcr\.io/atridis/onec-ubuntu22@sha256:[0-9a-f]{64}", image)):
+            raise ValueError("gates")
+        repository = report["repository"]
+        if (set(repository) - {"commit", "tree", "github_run_id", "github_run_attempt"}
+                or any(not re.fullmatch(r"[0-9a-f]{40}", repository[key]) for key in ("commit", "tree"))
+                or any(not re.fullmatch(r"[0-9]{1,20}", repository[key])
+                       for key in set(repository) - {"commit", "tree"})):
+            raise ValueError("repository")
+        interpreter = report["interpreter"]
+        if (set(interpreter) != {"python_version", "dependencies", "source_file_count",
+                               "source_sha256", "comparison_driver_sha256"}
+                or not re.fullmatch(r"[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}", interpreter["python_version"])
+                or interpreter["dependencies"] != DEPENDENCIES
+                or not is_int(interpreter["source_file_count"], 512)
+                or interpreter["source_file_count"] == 0
+                or not is_digest(interpreter["source_sha256"])
+                or not is_digest(interpreter["comparison_driver_sha256"])):
+            raise ValueError("interpreter")
+        stage3 = report["stage3"]
+        comparison = report["comparison"]
+        if (stage3["status"] != "ok" or stage3["nonce"] != report["invocation_nonce"]
+                or [case["name"] for case in stage3["cases"]] != list(SCENARIOS)
+                or [case["name"] for case in comparison["cases"]] != list(SCENARIOS)
+                or comparison["status"] not in {"ok", "failed"}):
+            raise ValueError("coverage")
+        cases = []
+        for name, native, compared in zip(SCENARIOS, stage3["cases"], comparison["cases"]):
+            payload = payloads[name + ".out"]
+            if (native["status"] != "ok" or native["output_sha256"] != digest(payload)
+                    or native["output_size"] != len(payload)
+                    or not is_digest(native["source_sha256"]) or not is_digest(native["module_sha256"])
+                    or native["source_sha256"] != stage3["input_sha256"][f"integrational_tests/tests/{name}.bsl"]
+                    or not is_int(native["message_count"], 32_768)
+                    or compared["status"] not in {"matched", "mismatched"}
+                    or compared["native_sha256"] != native["output_sha256"]
+                    or compared["native_size"] != native["output_size"]
+                    or not is_digest(compared["interpreter_sha256"])
+                    or not is_int(compared["interpreter_size"], MAX_FILE)
+                    or (compared["status"] == "matched") != (compared["interpreter_sha256"] == native["output_sha256"]
+                        and compared["interpreter_size"] == native["output_size"])):
+                raise ValueError("case")
+            cases.append({"name": name, "file": name + ".out",
+                          **{key: native[key] for key in ("source_sha256", "module_sha256",
+                              "output_sha256", "output_size", "message_count")},
+                          "comparison_status": compared["status"],
+                          "interpreter_sha256": compared["interpreter_sha256"],
+                          "interpreter_size": compared["interpreter_size"]})
+        if (comparison["status"] == "ok") != all(case["comparison_status"] == "matched" for case in cases):
+            raise ValueError("comparison")
+        metadata = {"schema": "native-1c-outputs-v1", "image": image, "platform": "linux/amd64",
+                    "runtime_version": report["runtime_version"], "runtime_version_source": "SystemInfo.AppVersion",
+                    "invocation_nonce": report["invocation_nonce"], "repository": repository,
+                    "interpreter": interpreter, "configured_timezone": "Etc/UTC", "configured_native_locale": "ru_RU",
+                    "container_cleanup_verified": True, "private_payloads_removed": True,
+                    "windows_goldens_unchanged": True, "comparison_status": comparison["status"], "cases": cases}
+        raw = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        if len(raw) > MAX_REPORT:
+            raise ValueError("limit")
+        return {**payloads, "provenance.json": raw}
+    except (KeyError, TypeError, ValueError, UnicodeError):
+        raise FullError("native_artifact_evidence_invalid") from None
+
+
+def _artifact_directory(path: Path) -> int:
+    """Pin every directory without following any symlink, including ancestors."""
+    directory = os.open(path.absolute().anchor, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.absolute().parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        return directory
+    except BaseException:
+        os.close(directory)
+        raise
+
+
+def _verify_artifact_directory(path: Path, descriptor: int) -> None:
+    visible = _artifact_directory(path)
+    try:
+        expected, actual = os.fstat(descriptor), os.fstat(visible)
+        if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
+            raise FullError("native_artifact_directory_changed")
+    finally:
+        os.close(visible)
+
+
+def _rename_artifact_exclusive(parent: int, source: str, destination: str) -> None:
+    # POSIX rename replaces empty destinations. Linux RENAME_NOREPLACE instead
+    # atomically refuses *any* existing target, even one raced into place.
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(libc, "renameat2", None)
+    if rename is None:
+        raise FullError("native_artifact_atomic_rename_unavailable")
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(parent, source.encode("ascii"), parent, destination.encode("ascii"), 1) != 0:
+        raise FullError("native_artifact_promotion_failed")
+
+
+def export_output_artifact(root: Path, files: dict[str, bytes]) -> None:
+    """Publish one complete directory atomically; Linux only, no replace fallback."""
+    if (not sys.platform.startswith("linux") or list(files) != list(ARTIFACT_FILES)
+            or any(type(value) is not bytes for value in files.values())
+            or any(len(files[name]) > MAX_FILE for name in ARTIFACT_FILES[:-1])
+            or sum(len(files[name]) for name in ARTIFACT_FILES[:-1]) > MAX_TOTAL
+            or not 0 < len(files["provenance.json"]) <= MAX_REPORT):
+        raise FullError("native_artifact_export_invalid")
+    root_fd = parent_fd = stage_fd = None
+    staging = ".native-outputs-" + uuid.uuid4().hex
+    created = promoted = False
+    failure = None
+    cleanup_failed = False
+    try:
+        root_fd = _artifact_directory(root)
+        try:
+            os.mkdir("native-smoke", mode=0o700, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+        parent_fd = os.open("native-smoke", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        # Early refusal is useful; the atomic rename below also closes the race.
+        try:
+            os.stat("native-outputs", dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            raise FullError("native_artifact_target_exists")
+        os.mkdir(staging, mode=0o700, dir_fd=parent_fd)
+        created = True
+        stage_fd = os.open(staging, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        for name in ARTIFACT_FILES:
+            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=stage_fd)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(files[name])
+                stream.flush()
+                os.fsync(stream.fileno())
+                os.fchmod(stream.fileno(), 0o400)
+        if set(os.listdir(stage_fd)) != set(ARTIFACT_FILES):
+            raise FullError("native_artifact_files_invalid")
+        for name in ARTIFACT_FILES:
+            if read_regular(root / "native-smoke" / staging / name, MAX_REPORT if name == "provenance.json" else MAX_FILE) != files[name]:
+                raise FullError("native_artifact_files_invalid")
+        os.fsync(stage_fd)
+        _verify_artifact_directory(root, root_fd)
+        _verify_artifact_directory(root / "native-smoke", parent_fd)
+        _verify_artifact_directory(root / "native-smoke" / staging, stage_fd)
+        _rename_artifact_exclusive(parent_fd, staging, "native-outputs")
+        promoted = True
+        # Actions opens visible paths later, not our descriptors. A swapped
+        # ancestor or staging path must never produce the upload-ready signal.
+        _verify_artifact_directory(root, root_fd)
+        _verify_artifact_directory(root / "native-smoke", parent_fd)
+        _verify_artifact_directory(root / ARTIFACT_DIRECTORY, stage_fd)
+        if set(os.listdir(stage_fd)) != set(ARTIFACT_FILES):
+            raise FullError("native_artifact_files_invalid")
+        for name in ARTIFACT_FILES:
+            if read_regular(root / ARTIFACT_DIRECTORY / name, MAX_REPORT if name == "provenance.json" else MAX_FILE) != files[name]:
+                raise FullError("native_artifact_files_invalid")
+        _verify_artifact_directory(root / "native-smoke", parent_fd)
+        _verify_artifact_directory(root / ARTIFACT_DIRECTORY, stage_fd)
+    except OSError:
+        failure = FullError("native_artifact_export_failed")
+    except BaseException as error:
+        failure = error
+    finally:
+        try:
+            if failure is not None and created and stage_fd is not None:
+                # Remove only our pinned directory's fixed files, never a
+                # replacement directory reached through a changed visible path.
+                for name in ARTIFACT_FILES:
+                    try:
+                        os.unlink(name, dir_fd=stage_fd)
+                    except FileNotFoundError:
+                        pass
+                    except OSError:
+                        cleanup_failed = True
+                try:
+                    selected = "native-outputs" if promoted else staging
+                    visible = os.stat(selected, dir_fd=parent_fd, follow_symlinks=False)
+                    pinned = os.fstat(stage_fd)
+                    if (visible.st_dev, visible.st_ino) != (pinned.st_dev, pinned.st_ino):
+                        cleanup_failed = True
+                    else:
+                        os.rmdir(selected, dir_fd=parent_fd)
+                except OSError:
+                    cleanup_failed = True
+        finally:
+            for descriptor in (stage_fd, parent_fd, root_fd):
+                if descriptor is not None:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        cleanup_failed = True
+    if cleanup_failed:
+        if failure is None:
+            failure = FullError("native_artifact_cleanup_unverified")
+        failure.cleanup_error = "native_artifact_cleanup_unverified"
+    if failure is not None:
+        raise failure from None
+
+
+def verify_output_artifact(root: Path, expected_hashes: dict[str, str]) -> None:
+    """Recheck the exact visible upload tree immediately before signaling readiness."""
+    directory = None
+    try:
+        if set(expected_hashes) != set(ARTIFACT_FILES) or not all(is_digest(value) for value in expected_hashes.values()):
+            raise ValueError("hashes")
+        target = root / ARTIFACT_DIRECTORY
+        directory = _artifact_directory(target)
+        if set(os.listdir(directory)) != set(ARTIFACT_FILES):
+            raise ValueError("coverage")
+        total = 0
+        for name in ARTIFACT_FILES:
+            raw = read_regular(target / name, MAX_REPORT if name == "provenance.json" else MAX_FILE)
+            if digest(raw) != expected_hashes[name]:
+                raise ValueError("identity")
+            if name != "provenance.json":
+                total += len(raw)
+        if total > MAX_TOTAL or set(os.listdir(directory)) != set(ARTIFACT_FILES):
+            raise ValueError("aggregate or coverage")
+        _verify_artifact_directory(target, directory)
+    except (OSError, ValueError, TypeError, FullError):
+        raise FullError("native_artifact_final_verification_failed") from None
+    finally:
+        if directory is not None:
+            os.close(directory)
