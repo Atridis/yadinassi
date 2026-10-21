@@ -60,13 +60,14 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False) -> dict:
-    if not valid_nonce(nonce) or ((watchdog_check or client_dates or client_values) and not client_probe):
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False) -> dict:
+    if not valid_nonce(nonce) or ((watchdog_check or client_dates or client_values or client_collections) and not client_probe):
         raise FullError('invalid_input')
     return {**({'client_probe': empty_client_report()} if client_probe else {}),
             **({'client_watchdog': empty_watchdog_report()} if watchdog_check else {}),
             **({'client_dates': empty_dates_report()} if client_dates else {}),
             **({'client_values': empty_values_report()} if client_values else {}),
+            **({'client_collections': empty_collections_report()} if client_collections else {}),
             'schema': 1, 'nonce': nonce, 'status': 'not_started',
             'failure_kind': 'prerequisites_failed', 'failed_case': None,
             'input_sha256': {}, 'cases': [
@@ -298,8 +299,8 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float,
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False) -> dict:
-    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values)
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections)
     report.update(status='failed', failure_kind='unexpected_failure')
     active = None
     old_reader, old_process, old_build = launcher.read_result, launcher.run_process, launcher.build_epf
@@ -371,6 +372,12 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
                 values_output=root / 'values.out')
             if report['client_values']['status'] != 'ok':
                 raise FullError(report['client_values']['failure_kind'])
+        if client_collections:
+            report['client_collections'] = run_client_probe(
+                platform, root / 'client-collections', inputs, nonce, report['input_sha256'],
+                collections_output=root / 'collections.out')
+            if report['client_collections']['status'] != 'ok':
+                raise FullError(report['client_collections']['failure_kind'])
         if watchdog_check:
             report['client_watchdog'] = run_client_watchdog(
                 platform, root / 'client-watchdog', inputs, nonce, report['input_sha256'])
@@ -398,7 +405,71 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
     return report
 
 
+# Schema 2 is a stage-wire encoding only. Named evidence remains the internal
+# representation, including all failure and process proof fields.
+CLIENT_WIRE_RECORDS = ('client_probe', 'client_dates', 'client_values',
+                       'client_collections', 'client_watchdog')
+CLIENT_WIRE_HASHES = ('source_sha256', 'module_sha256', 'roundtrip_sha256')
+CLIENT_WIRE_PROOF = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
+
+
+def decode_stage_wire(data: dict) -> dict:
+    if type(data) is not dict or type(data.get('schema')) is not int or data['schema'] not in (1, 2):
+        raise FullError('invalid_result')
+    named = set(CLIENT_WIRE_HASHES + CLIENT_WIRE_PROOF)
+    if data['schema'] == 1:
+        if any(type(data.get(key)) is dict and {'hashes', 'proof'} & set(data[key])
+               for key in CLIENT_WIRE_RECORDS):
+            raise FullError('invalid_result')
+        return data
+    if 'client_collections' not in data:
+        raise FullError('invalid_result')
+    if len(json.dumps(data, separators=(',', ':'), allow_nan=False).encode()) > MAX_STAGE_REPORT:
+        raise FullError('export_failed')
+    result = {**data, 'schema': 1}
+    for key in CLIENT_WIRE_RECORDS:
+        if key not in data:
+            continue
+        record = data[key]
+        if (type(record) is not dict or not {'hashes', 'proof'} <= set(record)
+                or named & set(record)):
+            raise FullError('invalid_result')
+        hashes, proof = record['hashes'], record['proof']
+        if (type(hashes) is not list or len(hashes) != 3
+                or any(value is not None and (type(value) is not str or re.fullmatch(r'[0-9a-f]{64}', value) is None) for value in hashes)
+                or type(proof) is not list or len(proof) != 5
+                or any(type(value) is not bool for value in proof)):
+            raise FullError('invalid_result')
+        result[key] = {**{name: value for name, value in record.items() if name not in {'hashes', 'proof'}},
+                       **dict(zip(CLIENT_WIRE_HASHES, hashes)), **dict(zip(CLIENT_WIRE_PROOF, proof))}
+    return result
+
+
+def encode_stage_wire(report: dict) -> dict:
+    if type(report) is not dict or type(report.get('schema')) is not int or report['schema'] != 1:
+        raise FullError('invalid_result')
+    # The previous opt-in combinations retain their exact existing wire format.
+    if 'client_collections' not in report:
+        return decode_stage_wire(report)
+    result = {**report, 'schema': 2}
+    named = set(CLIENT_WIRE_HASHES + CLIENT_WIRE_PROOF)
+    for key in CLIENT_WIRE_RECORDS:
+        if key not in report:
+            continue
+        record = report[key]
+        if (type(record) is not dict or not named <= set(record)
+                or {'hashes', 'proof'} & set(record)):
+            raise FullError('invalid_result')
+        result[key] = {**{name: value for name, value in record.items() if name not in named},
+                       'hashes': [record[name] for name in CLIENT_WIRE_HASHES],
+                       'proof': [record[name] for name in CLIENT_WIRE_PROOF]}
+    if decode_stage_wire(result) != report:
+        raise FullError('invalid_result')
+    return result
+
+
 def write_report(path: Path, report: dict) -> None:
+    report = encode_stage_wire(report)
     data = json.dumps(report, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
     if len(data) > MAX_STAGE_REPORT:
         raise FullError('export_failed')
@@ -463,7 +534,8 @@ def build_envelope(report: dict, nonce: str, root: Path, *, quiet: bool) -> byte
             report.update(status='stage3_failed', native_tests_completed=False)
     if len(json.dumps(report, separators=(',', ':'), allow_nan=False).encode('utf-8')) > MAX_REPORT:
         raise FullError('export_failed')
-    raw = json.dumps({'schema': WIRE_SCHEMA, 'nonce': nonce, 'report': report,
+    wire_report = {**report, 'stage3': encode_stage_wire(stage)}
+    raw = json.dumps({'schema': WIRE_SCHEMA, 'nonce': nonce, 'report': wire_report,
                       'outputs': outputs}, sort_keys=True, separators=(',', ':'),
                      allow_nan=False).encode('utf-8') + b'\n'
     if len(raw) > MAX_TRANSPORT:
@@ -767,6 +839,7 @@ def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostic
     """Keep a final teardown/census failure valid, finite and non-exportable."""
     suite.update(status='failed', failure_kind='process_failed')
     last = (suite['client_watchdog'] if watchdog_check else
+            suite['client_collections'] if 'client_collections' in suite else
             suite['client_values'] if 'client_values' in suite else
             suite['client_dates'] if 'client_dates' in suite else suite['client_probe'])
     if 'output_sha256' in last:
@@ -793,18 +866,22 @@ def final_client_process_census(nonce: str) -> None:
 
 def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                      hashes: dict, *, stall: bool = False, dates_output: Path | None = None,
-                     values_output: Path | None = None) -> dict:
+                     values_output: Path | None = None, collections_output: Path | None = None) -> dict:
     """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
-    parity_output = values_output if values_output is not None else dates_output
-    record = (empty_values_report() if values_output is not None else
+    parity_output = (collections_output if collections_output is not None else
+                     values_output if values_output is not None else dates_output)
+    record = (empty_collections_report() if collections_output is not None else
+              empty_values_report() if values_output is not None else
               empty_dates_report() if dates_output is not None else empty_client_report())
-    marker_reader = (client_values_marker if values_output is not None else
+    marker_reader = (client_collections_marker if collections_output is not None else
+                     client_values_marker if values_output is not None else
                      client_dates_marker if dates_output is not None else client_marker)
     record.update(status='failed', failure_kind='unexpected_failure')
     try:
         if (not valid_nonce(nonce) or type(stall) is not bool
                 or (parity_output is not None and stall)
-                or (dates_output is not None and values_output is not None) or platform.timeout != 120
+                or (sum(value is not None for value in (dates_output, values_output, collections_output)) > 1)
+                or platform.timeout != 120
                 or platform.user != 'NativeSmoke' or platform.password is not None):
             raise FullError('invalid_input')
         record['process_diagnostics'].update(stage='baseline', reason='unverified')
@@ -818,7 +895,13 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
         if digest(source) != hashes[CLIENT_SOURCE]:
             raise FullError('invalid_input')
-        if values_output is not None:
+        if collections_output is not None:
+            collections_source = secure_bytes(inputs / 'scenarios/collections.bsl', MAX_OUTPUT)
+            if digest(collections_source) != hashes['integrational_tests/tests/collections.bsl']:
+                raise FullError('invalid_input')
+            record['source_sha256'] = digest(collections_source)
+            module = client_collections_module(collections_source, source)
+        elif values_output is not None:
             values_source = secure_bytes(inputs / 'scenarios/values.bsl', MAX_OUTPUT)
             if digest(values_source) != hashes['integrational_tests/tests/values.bsl']:
                 raise FullError('invalid_input')
@@ -910,6 +993,18 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             client_output = serialize_messages(completion['values'])
             server_output = secure_bytes(parity_output, MAX_OUTPUT, allow_empty=True)
             if client_output != server_output:
+                if collections_output is not None:
+                    # Only finite metadata leaves the private comparison. The
+                    # unchanged server messages must reproduce this exact output
+                    # before ordinal diagnostics can be trusted. Diagnostics never
+                    # relax the strict byte comparison or enable payload export.
+                    try:
+                        server_messages, _ = read_native_result(
+                            collections_output.parent / 'collections-case/result.json')
+                        record['mismatch'] = collections_mismatch(
+                            completion['values'], server_messages, server_output)
+                    except (FullError, OSError):
+                        pass  # The original mismatch still fails closed.
                 raise FullError('output_mismatch')
             record.update(output_sha256=digest(client_output), output_size=len(client_output),
                           message_count=len(completion['values']))
@@ -1260,6 +1355,450 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
         raise FullError('invalid_input')
     value = strict_json(secure_bytes(path, MAX_RESULT), max_depth=3)
     expected_count = 0 if phase == 'entered' else CLIENT_VALUES_MESSAGE_COUNT
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != expected_count
+            or any(type(item) is not str for item in value['values'])):
+        raise FullError('invalid_result')
+    try:
+        if sum(len(item.encode('utf-8')) for item in value['values']) > MAX_OUTPUT:
+            raise FullError('output_limit')
+        serialize_messages(value['values'])
+    except UnicodeError:
+        raise FullError('invalid_result') from None
+    return value
+
+
+# This is a deliberately source-specific adapter, not a general BSL rewriter.
+CLIENT_COLLECTIONS_SOURCE_SHA256 = 'f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a'
+CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 797
+
+
+def empty_collections_report() -> dict:
+    return {**empty_client_report(), 'output_sha256': None, 'output_size': None,
+            'message_count': None, 'mismatch': None}
+
+
+def collections_mismatch(client: list[str], server: list[str], server_output: bytes) -> dict:
+    """Bounded diagnostics for unequal full outputs; never raw native messages."""
+    if (type(client) is not list or type(server) is not list
+            or len(client) != CLIENT_COLLECTIONS_MESSAGE_COUNT
+            or len(server) != CLIENT_COLLECTIONS_MESSAGE_COUNT
+            or any(type(item) is not str for item in client + server)
+            or type(server_output) is not bytes
+            or serialize_messages(server) != server_output):
+        raise FullError('invalid_result')
+    client_output = serialize_messages(client)
+    if client_output == server_output:
+        raise FullError('invalid_result')
+    differences = []
+    first_client = first_server = None
+    for ordinal, (client_message, server_message) in enumerate(zip(client, server), 1):
+        left, right = serialize_messages([client_message]), serialize_messages([server_message])
+        if left != right:
+            differences.append(ordinal)
+            if first_client is None:
+                first_client, first_server = left, right
+    if not differences:
+        raise FullError('invalid_result')
+    return {'count': len(differences), 'first': differences[0],
+            'ordinals': differences[:16], 'client_sha256': digest(first_client),
+            'server_sha256': digest(first_server), 'client_size': len(first_client),
+            'server_size': len(first_server)}
+
+
+def client_collections_module(source: bytes, template: bytes) -> bytes:
+    """Wrap the complete pinned collections source in the pinned managed-client form.
+
+    All 112 original helpers remain in their original order with client directives.
+    Only the 15 verified message-call identifiers change, and the complete module
+    body moves into a client procedure. Four explicit helper-local declarations
+    preserve source-local bindings against the managed form's Object/Items names.
+    Expressions, conversions and error paths stay byte-identical. No server
+    trampoline or reference collections are added.
+    """
+    if (digest(source) != CLIENT_COLLECTIONS_SOURCE_SHA256
+            or digest(template) != CLIENT_COLLECTIONS_TEMPLATE_SHA256):
+        raise FullError('invalid_input')
+    original = generated_module(source).decode('utf-8-sig')
+    harness = generated_module(template).decode('utf-8-sig')
+    lines = original.splitlines(keepends=True)
+    # Check exact declarations, helper endings, body boundary and call sites.
+    # Raw hashes above also pin all expression strings and protected branches.
+    declarations = {
+        6: 'Процедура ПроверитьУдалениеЗаГраницей(Знач Метка)\n',
+        39: 'Процедура ПроверитьЗаполнениеСвойств(Знач Метка)\n',
+        71: 'Процедура ПоказатьСоставМассива(Знач Метка, Знач Массив)\n',
+        80: 'Процедура ПроверитьЗаполненность(Знач Метка, Знач Значение)\n',
+        89: 'Процедура Показать(Знач Метка, Знач Значение)\n',
+        94: 'Процедура ПоказатьВнутреннее(Знач Метка, Знач Значение, Восстановлено = Неопределено)\n',
+        124: 'Процедура ПоказатьВосстановленныеСсылки(Знач Метка, Знач Пара)\n',
+        143: 'Процедура ПоказатьБулево(Знач Метка, Знач Значение)\n',
+        148: 'Процедура ПоказатьВнутренниеСсылки(Знач Метка, Знач Первое, Знач ТакоеЖе)\n',
+        164: 'Процедура ПолучитьПозиции(Знач Заказ, Результат)\n',
+        168: 'Процедура ДобавитьПозицию(Знач Позиции)\n',
+        175: 'Функция РезультатРавенства(Знач Левое, Знач Правое)\n',
+        183: 'Процедура ПоказатьПоиск(Знач Метка, Знач Значения, Знач Искомое)\n',
+        191: 'Функция ПрочитатьКлюч(Знач Словарь, Знач Ключ)\n',
+        200: 'Процедура ИсследоватьФиксированное(Знач Метка, Знач Первое, Знач ТакоеЖе, Знач Другое)\n',
+        264: 'Функция ЗначенияОперацийТаблицы(Знач Текст)\n',
+        268: 'Функция СсылкаПослеОперации(Знач Таблица, Знач СтрокаТаблицы)\n',
+        284: 'Функция СортировкаТаблицыПробы(Знач Набор, Знач Порядок, Знач Сравнение = "omitted")\n',
+        337: 'Функция СверткаТаблицыПробы(Знач Набор, Знач Группы, Знач Суммы = "omitted")\n',
+        417: 'Функция НаблюдениеУдаленнойСтроки(Знач Таблица, Знач Удаленная, Знач Первая)\n',
+        439: 'Функция УдаленнаяПослеСверткиПробы(Знач Групп, Знач Действие)\n',
+        460: 'Функция ПорядокИтоговСверткиПробы(Знач Сценарий)\n',
+        487: 'Функция КомпактноеЗначениеТаблицы(Знач Значение)\n',
+        510: 'Процедура ДобавитьПоляВыводаТаблицы(СтрокиВывода, Знач Путь, Знач Значение)\n',
+        520: 'Функция КонструкторТаблицыПробы(Знач Объект)\n',
+        524: 'Процедура НаблюдатьТаблицы(Знач Метка, Знач Выражение)\n',
+        548: 'Функция НоваяТаблицаПробы()\n',
+        562: 'Функция ПоляКолонкиПробы(Знач Колонка)\n',
+        567: 'Функция ПоляСтрокиПробы(Знач СтрокаТаблицы)\n',
+        575: 'Функция ПоляТаблицыПробы(Знач Таблица)\n',
+        587: 'Функция ВидОбъектаТаблицы(Знач Объект)\n',
+        611: 'Функция КодекТаблицыПробы(Знач Объект)\n',
+        652: 'Функция ОбъектТаблицыПробы(Знач ИмяОбъекта)\n',
+        667: 'Функция ЧтениеТаблицыПробы(Знач Выражение)\n',
+        681: 'Функция ИзменениеТаблицыПробы(Знач Сценарий)\n',
+        850: 'Функция ТипизированнаяТаблицаПробы(Знач Описание, Знач Значение)\n',
+        863: 'Функция СвязиТаблицыПробы(Знач Сценарий)\n',
+        953: 'Функция ТаблицаИндексовПробы()\n',
+        964: 'Функция ПоляИндексаПробы(Знач Индекс)\n',
+        970: 'Функция ПоляИндексовПробы(Знач Индексы)\n',
+        976: 'Функция ПоискИндексовПробы(Знач Таблица, Знач Ссылка)\n',
+        989: 'Функция КонструкторИндексовПробы(Знач Вид)\n',
+        1000: 'Функция КодекИндексовПробы(Знач Вид)\n',
+        1046: 'Функция ОшибкиИндексовПробы(Знач Действие)\n',
+        1078: 'Функция ИндексыТаблицыПробы(Знач Сценарий, Знач Список = "Key")\n',
+        1202: 'Функция ДопТаблицаИндексов()\n',
+        1212: 'Функция ДопИдентификаторыИндексов(Знач СтрокиТаблицы)\n',
+        1218: 'Функция ДопПервыйИндексПоиска(Знач Таблица, Знач Вид = "key")\n',
+        1228: 'Функция ДопПоискИндексов(Знач Таблица, Знач Вид = "edit")\n',
+        1252: 'Функция ДопПорядокИндексов(Знач Вид)\n',
+        1290: 'Функция ДопВыборИндекса()\n',
+        1319: 'Функция ДопСоставКопииИндексов(Знач Таблица)\n',
+        1334: 'Функция ДопКопииИндексов()\n',
+        1367: 'Функция ДопУдаленныйИндекс(Знач Индексы, Знач Сохраненный)\n',
+        1377: 'Функция ДопСвязиИндексов()\n',
+        1413: 'Функция НовыйСписокПробы(Знач Вид = "base")\n',
+        1422: 'Функция ПоляЭлементаСписка(Знач Элемент)\n',
+        1430: 'Функция ПоляСпискаПробы(Знач Список)\n',
+        1449: 'Функция ОтветСпискаПробы(Знач Ответ, Знач Сохраненный)\n',
+        1459: 'Функция ДействиеСпискаПробы(Знач Команда, Знач Вид = "base")\n',
+        1481: 'Функция СерияСпискаПробы(Знач Команды, Знач Вид = "base")\n',
+        1489: 'Функция ИдентичностьСпискаПробы()\n',
+        1519: 'Функция ПоискЗначенияСпискаПробы()\n',
+        1562: 'Функция СвязиСпискаПробы(Знач Вид)\n',
+        1601: 'Функция КопированиеСпискаПробы(Знач Вид)\n',
+        1644: 'Функция ИдентификаторыСпискаПробы(Знач Список)\n',
+        1665: 'Функция КодекСпискаПробы(Знач Вид)\n',
+        1721: 'Функция ВозвращенныеЭлементыСпискаПробы()\n',
+        1741: 'Функция ЧужойСдвигСпискаПробы()\n',
+        1776: 'Функция ПорядокСортировкиСписка(Знач Список, Знач Исходные)\n',
+        1797: 'Функция НаборСортировкиСписка(Знач Вид)\n',
+        1844: 'Функция ДействиеСортировкиСписка(Знач Вид, Знач Команда)\n',
+        1871: 'Функция СерияСортировкиСписка(Знач Вид, Знач Команды)\n',
+        1879: 'Функция ТипНаправленияСортировкиПробы()\n',
+        1899: 'Функция КодекНаправленияСортировкиПробы(Знач Направление, Знач СТипом = Ложь)\n',
+        1926: 'Функция ПозицияСсылкиКопииСписка(Знач Список, Знач Элемент)\n',
+        1937: 'Функция РазмерыКопииСписка(Знач Список, Знач Копия)\n',
+        1944: 'Функция СнимокКопированияСписка(Знач Список)\n',
+        1981: 'Функция ДобавлениеПослеКопииСписка(Знач Список, Знач Представление)\n',
+        1993: 'Функция ИсторияКопированияСписка(Знач Вид)\n',
+        2080: 'Функция РезультатТекстаСписка(Знач Значение)\n',
+        2087: 'Функция СнимокТекстаСписка(Знач Список)\n',
+        2107: 'Функция ОдинТекстСписка(Знач Значение, Знач Вид = "value")\n',
+        2118: 'Функция ПустыеТекстыСписка()\n',
+        2134: 'Функция СкалярныеТекстыСписка(Знач Вид)\n',
+        2160: 'Функция СоставныеТекстыСписка()\n',
+        2179: 'Функция ЗагруженныеТекстыСписка()\n',
+        2192: 'Функция ЖивыеТекстыСписка()\n',
+        2221: 'Функция ПоляКэшаСписка(Знач Список)\n',
+        2235: 'Функция ПолеИнициализацииКэша(Знач Элемент, Знач Вид, Знач Значение)\n',
+        2243: 'Функция ИнициализацияКэшаСписка(Знач Вид, Знач Чтение)\n',
+        2266: 'Функция НачалоКэшаСписка()\n',
+        2276: 'Функция ПоменятьПервыйКэшСписка(Знач Список, Знач Значение, Знач Представление)\n',
+        2284: 'Функция ДействиеКэшаСписка(Знач Вид)\n',
+        2325: 'Функция ИзмененияКэшаСписка(Знач Группа)\n',
+        2335: 'Функция ПустойКэшСписка()\n',
+        2354: 'Функция КопияКэшаСписка()\n',
+        2388: 'Функция ПустойРезультатКэшаСписка(Знач Вид)\n',
+        2407: 'Функция ПустыеРезультатыКэшаСписка()\n',
+        2415: 'Функция КороткаяСортировкаКэшаСписка(Знач ПоПредставлению)\n',
+        2437: 'Функция КороткиеСортировкиКэшаСписка()\n',
+        2446: 'Процедура ЗаписатьСсылкуСписка(Поле, Знач Новое, Знач Журнал)\n',
+        2452: 'Процедура ЗаписатьЗначениеСписка(Знач Поле, Знач Новое, Знач Журнал)\n',
+        2458: 'Функция ЖиваяСсылкаСписка(Поле, Знач Элемент, Знач Журнал)\n',
+        2465: 'Процедура ДвеСсылкиСписка(Первое, Второе, Знач Журнал)\n',
+        2472: 'Процедура ОшибкаПослеСсылкиСписка(Поле, Знач Журнал)\n',
+        2478: 'Функция ПолучательСсылкиСписка(Знач Список, Знач Журнал)\n',
+        2483: 'Функция ИндексСсылкиСписка(Знач Журнал)\n',
+        2488: 'Функция ПозднийАргументСписка(Знач Журнал)\n',
+        2493: 'Процедура ПерестроитьСсылкуСписка(Поле, Знач Список, Знач Элемент, Знач Журнал)\n',
+        2504: 'Функция ВозвратСсылкиСписка(Поле, Знач Журнал)\n',
+        2510: 'Функция ПробаСсылкиСписка(Знач Случай)\n',
+    }
+    endings = {
+        34: 'КонецПроцедуры\n',
+        68: 'КонецПроцедуры\n',
+        77: 'КонецПроцедуры\n',
+        87: 'КонецПроцедуры\n',
+        91: 'КонецПроцедуры\n',
+        120: 'КонецПроцедуры\n',
+        141: 'КонецПроцедуры\n',
+        145: 'КонецПроцедуры\n',
+        162: 'КонецПроцедуры\n',
+        166: 'КонецПроцедуры\n',
+        171: 'КонецПроцедуры\n',
+        181: 'КонецФункции\n',
+        189: 'КонецПроцедуры\n',
+        198: 'КонецФункции\n',
+        257: 'КонецПроцедуры\n',
+        266: 'КонецФункции\n',
+        282: 'КонецФункции\n',
+        335: 'КонецФункции\n',
+        415: 'КонецФункции\n',
+        437: 'КонецФункции\n',
+        458: 'КонецФункции\n',
+        479: 'КонецФункции\n',
+        507: 'КонецФункции\n',
+        518: 'КонецПроцедуры\n',
+        522: 'КонецФункции\n',
+        546: 'КонецПроцедуры\n',
+        559: 'КонецФункции\n',
+        565: 'КонецФункции\n',
+        573: 'КонецФункции\n',
+        585: 'КонецФункции\n',
+        608: 'КонецФункции\n',
+        650: 'КонецФункции\n',
+        665: 'КонецФункции\n',
+        677: 'КонецФункции\n',
+        848: 'КонецФункции\n',
+        861: 'КонецФункции\n',
+        946: 'КонецФункции\n',
+        962: 'КонецФункции\n',
+        968: 'КонецФункции\n',
+        974: 'КонецФункции\n',
+        986: 'КонецФункции\n',
+        998: 'КонецФункции\n',
+        1043: 'КонецФункции\n',
+        1076: 'КонецФункции\n',
+        1197: 'КонецФункции\n',
+        1210: 'КонецФункции\n',
+        1216: 'КонецФункции\n',
+        1226: 'КонецФункции\n',
+        1250: 'КонецФункции\n',
+        1288: 'КонецФункции\n',
+        1317: 'КонецФункции\n',
+        1332: 'КонецФункции\n',
+        1365: 'КонецФункции\n',
+        1375: 'КонецФункции\n',
+        1408: 'КонецФункции\n',
+        1420: 'КонецФункции\n',
+        1428: 'КонецФункции\n',
+        1447: 'КонецФункции\n',
+        1456: 'КонецФункции\n',
+        1479: 'КонецФункции\n',
+        1487: 'КонецФункции\n',
+        1517: 'КонецФункции\n',
+        1560: 'КонецФункции\n',
+        1599: 'КонецФункции\n',
+        1642: 'КонецФункции\n',
+        1663: 'КонецФункции\n',
+        1717: 'КонецФункции\n',
+        1739: 'КонецФункции\n',
+        1771: 'КонецФункции\n',
+        1795: 'КонецФункции\n',
+        1842: 'КонецФункции\n',
+        1869: 'КонецФункции\n',
+        1877: 'КонецФункции\n',
+        1897: 'КонецФункции\n',
+        1920: 'КонецФункции\n',
+        1935: 'КонецФункции\n',
+        1942: 'КонецФункции\n',
+        1979: 'КонецФункции\n',
+        1991: 'КонецФункции\n',
+        2074: 'КонецФункции\n',
+        2085: 'КонецФункции\n',
+        2105: 'КонецФункции\n',
+        2116: 'КонецФункции\n',
+        2132: 'КонецФункции\n',
+        2158: 'КонецФункции\n',
+        2177: 'КонецФункции\n',
+        2190: 'КонецФункции\n',
+        2216: 'КонецФункции\n',
+        2233: 'КонецФункции\n',
+        2241: 'КонецФункции\n',
+        2264: 'КонецФункции\n',
+        2274: 'КонецФункции\n',
+        2282: 'КонецФункции\n',
+        2323: 'КонецФункции\n',
+        2333: 'КонецФункции\n',
+        2352: 'КонецФункции\n',
+        2384: 'КонецФункции\n',
+        2405: 'КонецФункции\n',
+        2413: 'КонецФункции\n',
+        2435: 'КонецФункции\n',
+        2442: 'КонецФункции\n',
+        2450: 'КонецПроцедуры\n',
+        2456: 'КонецПроцедуры\n',
+        2463: 'КонецФункции\n',
+        2470: 'КонецПроцедуры\n',
+        2476: 'КонецПроцедуры\n',
+        2481: 'КонецФункции\n',
+        2486: 'КонецФункции\n',
+        2491: 'КонецФункции\n',
+        2502: 'КонецПроцедуры\n',
+        2508: 'КонецФункции\n',
+        2614: 'КонецФункции\n',
+    }
+    sites = {
+        90: '    Сообщить(Метка + ": [" + Строка(Значение) + "]");\n',
+        528: '        Сообщить("table." + Метка + ": [error]");\n',
+        539: '            Сообщить(СтрСоединить(СтрокиВывода, Символ(10)));\n',
+        541: '            Сообщить("table." + Метка + ": [" + КомпактноеЗначениеТаблицы(Результат) + "]");\n',
+        544: '        Сообщить("table." + Метка + ": [serialize-error]");\n',
+        3442: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
+        3480: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
+        3530: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
+        3560: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
+        3573: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
+        3584: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
+        3592: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
+        3597: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
+        3620: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
+        3622: 'Сообщить("table.checkpoint.complete: [ok]");\n',
+    }
+    regions = {
+        3: '#Область ВспомогательныеПроцедуры\n',
+        173: '#Region FixedCollectionProbes\n',
+        259: '#EndRegion\n',
+        260: '#КонецОбласти\n',
+        2617: '#Область МассивыИСтруктуры\n',
+        2776: '#КонецОбласти\n',
+        2778: '#Область СоответствиеИТипы\n',
+        2837: '#КонецОбласти\n',
+        2839: '#Область СнимкиИОбратныеКопии\n',
+        2912: '#КонецОбласти\n',
+        2914: '#Область ВложенныеМассивы\n',
+        2963: '#КонецОбласти\n',
+        2965: '#Область РавенствоИсточникиИКлючи\n',
+        3025: '#КонецОбласти\n',
+        3028: '#Область ВнутренняяСериализация\n',
+        3126: '#КонецОбласти\n',
+    }
+    body_start = 2617
+    capture = 'КоллекцииКлиентЗахват'
+    reserved = (capture, 'КоллекцииКлиентСообщения',
+                'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
+    if (len(lines) != 3623
+            or any(lines[i] != text for i, text in declarations.items())
+            or any(lines[i] != text for i, text in endings.items())
+            or any(lines[i] != text for i, text in sites.items())
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*(?:Процедура|Функция)\s', line)) != tuple(declarations)
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Конец(?:Процедуры|Функции)\b', line)) != tuple(endings)
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Сообщить\(', line)) != tuple(sites)
+            or lines[body_start] != '#Область МассивыИСтруктуры\n'
+            or lines[body_start - 1] != '\n'
+            or lines[body_start - 2] != '// End ValueList field reference helpers.\n'
+            or lines[1] != 'Перем Выход;\n'
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Перем\s', line)) != (1,)
+            or {i: line for i, line in enumerate(lines)
+                if re.match(r'^\s*#', line)} != regions
+            or any(re.match(r'^\s*&', line) for line in lines)
+            or re.search(r'(?i)(?<!\w)Выход(?!\w)', harness) is not None
+            or any(name.casefold() in text.casefold()
+                   for name in reserved for text in (original, harness))):
+        raise FullError('invalid_input')
+    # ObjectModule implicit locals must remain locals in a managed FormModule:
+    # bare Object binds its main attribute, and Items binds the form item tree.
+    # These four source-pinned helpers have assignments, not parameters, for the
+    # colliding names. Do not rename identifiers or alter dynamic expression text.
+    local_declarations = {
+        989: '    Перем Объект;\n',   # КонструкторИндексовПробы
+        1000: '    Перем Объект;\n',  # КодекИндексовПробы
+        1430: '    Перем Элементы;\n',  # ПоляСпискаПробы
+        1665: '    Перем Объект;\n',  # КодекСпискаПробы
+    }
+    adapted = lines.copy()
+    adapted[1] = ''  # Relocated to the form-module declaration prefix, not a local.
+    for i in sites:
+        adapted[i] = adapted[i].replace('Сообщить(', capture + '(', 1)
+    for i in declarations:
+        adapted[i] = '&НаКлиенте\n' + adapted[i]
+    for i, declaration in local_declarations.items():
+        adapted[i] += declaration
+    # Inverse reconstruction is a runtime check, not disabled by Python -O.
+    restored = adapted.copy()
+    restored[1] = lines[1]
+    for i, declaration in local_declarations.items():
+        restored[i] = restored[i].removesuffix(declaration)
+    for i in declarations:
+        restored[i] = restored[i].removeprefix('&НаКлиенте\n')
+    for i in sites:
+        restored[i] = restored[i].replace(capture + '(', 'Сообщить(', 1)
+    if ''.join(restored) != original:
+        raise FullError('invalid_input')
+    fixed = re.search(r'&НаКлиенте\nФункция ВычислитьПробу\(\)\n.*?\nКонецФункции\n',
+                      harness, flags=re.DOTALL)
+    if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
+        raise FullError('invalid_input')
+    # Client-only, non-exported form variables. Four UTF-8 bytes per character
+    # plus one LF per message conservatively bounds capture; the verifier also
+    # enforces the exact serialized UTF-8 byte and private JSON-envelope caps.
+    budget = (MAX_OUTPUT - CLIENT_COLLECTIONS_MESSAGE_COUNT) // 4
+    variables = ('&НаКлиенте\nПерем Выход;\n'
+                 '&НаКлиенте\nПерем КоллекцииКлиентСообщения;\n'
+                 '&НаКлиенте\nПерем КоллекцииКлиентСимволы;\n\n')
+    wrapper = f'''&НаКлиенте
+Процедура КоллекцииКлиентЗахват(Знач Текст)
+    Если ТипЗнч(Текст) <> Тип("Строка") Тогда
+        ВызватьИсключение "client-collections-type";
+    КонецЕсли;
+    Если КоллекцииКлиентСообщения.Количество() >= {CLIENT_COLLECTIONS_MESSAGE_COUNT}
+        Или КоллекцииКлиентСимволы + СтрДлина(Текст) > {budget} Тогда
+        ВызватьИсключение "client-collections-limit";
+    КонецЕсли;
+    КоллекцииКлиентСимволы = КоллекцииКлиентСимволы + СтрДлина(Текст);
+    КоллекцииКлиентСообщения.Добавить(Текст);
+КонецПроцедуры
+
+'''
+    wrapper += ''.join(adapted[:body_start])
+    wrapper += '&НаКлиенте\nПроцедура КоллекцииКлиентВыполнить()\n'
+    wrapper += ''.join(adapted[body_start:])
+    wrapper += 'КонецПроцедуры\n\n'
+    wrapper += '''&НаКлиенте
+Функция ВычислитьПробу()
+    КоллекцииКлиентСообщения = Новый Массив;
+    КоллекцииКлиентСимволы = 0;
+    КоллекцииКлиентВыполнить();
+    Возврат КоллекцииКлиентСообщения;
+КонецФункции
+'''
+    result = variables + harness[:fixed.start()] + wrapper + harness[fixed.end():]
+    return generated_module(result.encode('utf-8'))
+
+
+def client_collections_marker(path: Path, nonce: str, phase: str) -> dict:
+    """Validate full collections evidence without predicting or filtering its output.
+
+    This checks shape, not collections semantics. Only a downstream full-byte
+    comparison with this run's independent native collections.out proves parity.
+    """
+    if not valid_nonce(nonce) or phase not in {'entered', 'completed'}:
+        raise FullError('invalid_input')
+    value = strict_json(secure_bytes(path, MAX_RESULT), max_depth=3)
+    expected_count = 0 if phase == 'entered' else CLIENT_COLLECTIONS_MESSAGE_COUNT
     if (type(value) is not dict
             or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
             or type(value['schema']) is not int or value['schema'] != 1

@@ -244,6 +244,7 @@ def validate_client_probe(data, source_hash, module_hash):
 
 
 CLIENT_OUTPUT_KEYS = {"output_sha256", "output_size", "message_count"}
+COLLECTIONS_SOURCE = "integrational_tests/tests/collections.bsl"
 DATES_SOURCE = "integrational_tests/tests/dates.bsl"
 VALUES_SOURCE = "integrational_tests/tests/values.bsl"
 VALUES_SOURCE_SHA256 = "7b0790763d2169c80f7475fc19af78e66475e3f4fc2ed8f23b00eb000c8b7e20"
@@ -286,6 +287,53 @@ def validate_client_values(data, source_hash, module_hash, server_case):
     return data
 
 
+def validate_client_collections(data, source_hash, module_hash, server_case):
+    """Bind the client witness to this invocation's server collections evidence."""
+    if (source_hash != COLLECTIONS_SOURCE_SHA256
+            or type(data) is not dict or not CLIENT_OUTPUT_KEYS <= set(data)):
+        raise ValueError("client collections schema")
+    base = {key: value for key, value in data.items() if key not in CLIENT_OUTPUT_KEYS | {"mismatch"}}
+    validate_client_probe(base, source_hash, module_hash)
+    if data["status"] == "ok":
+        if (server_case["status"] != "ok"
+                or not is_digest(data["output_sha256"])
+                or not is_int(data["output_size"], MAX_FILE)
+                or type(data["message_count"]) is not int or data["message_count"] != 797
+                or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
+            raise ValueError("client collections output identity")
+    elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):
+        raise ValueError("client collections incomplete output")
+    mismatch = data.get("mismatch")
+    if mismatch is not None:
+        # Diagnostic metadata is never evidence of acceptance. It is only valid
+        # after a complete, identity-bound client run failed the exact byte gate.
+        if (data["status"] != "failed" or data["failure_kind"] != "output_mismatch"
+                or any(data[key] is not True for key in ("entered", "completed", "process_exited", "quiet"))
+                or data["witness_verified"] is not False
+                or data["source_sha256"] != source_hash or data["module_sha256"] != module_hash
+                or data["roundtrip_sha256"] != module_hash
+                or data["process_diagnostics"]["stage"] != "after_exit"
+                or data["process_diagnostics"]["reason"] != "none"
+                or server_case["status"] != "ok" or server_case["source_sha256"] != source_hash
+                or type(server_case["message_count"]) is not int or server_case["message_count"] != 797):
+            raise ValueError("client collections mismatch context")
+        keys = {"count", "first", "ordinals", "client_sha256", "server_sha256", "client_size", "server_size"}
+        if (type(mismatch) is not dict or set(mismatch) != keys
+                or not is_int(mismatch["count"], 797) or mismatch["count"] < 1
+                or not is_int(mismatch["first"], 797) or mismatch["first"] < 1
+                or mismatch["count"] > 798 - mismatch["first"]
+                or not is_digest(mismatch["client_sha256"]) or not is_digest(mismatch["server_sha256"])
+                or mismatch["client_sha256"] == mismatch["server_sha256"]
+                or any(not is_int(mismatch[key], MAX_FILE) or mismatch[key] < 1
+                       for key in ("client_size", "server_size"))
+                or type(mismatch["ordinals"]) is not list
+                or len(mismatch["ordinals"]) != min(mismatch["count"], 16)
+                or any(not is_int(value, 797) or value < 1 for value in mismatch["ordinals"])
+                or mismatch["ordinals"] != sorted(set(mismatch["ordinals"]))
+                or mismatch["ordinals"][0] != mismatch["first"]
+                or mismatch["count"] - len(mismatch["ordinals"]) > 797 - mismatch["ordinals"][-1]):
+            raise ValueError("client collections mismatch schema")
+    return data
 
 
 def validate_client_watchdog(data, source_hash, module_hash):
@@ -311,9 +359,58 @@ def validate_client_watchdog(data, source_hash, module_hash):
     return data
 
 
-def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False):
+CLIENT_WIRE_HASHES = ("source_sha256", "module_sha256", "roundtrip_sha256")
+CLIENT_WIRE_PROOF = ("entered", "completed", "process_exited", "quiet", "witness_verified")
+CLIENT_WIRE_RECORDS = ("client_probe", "client_dates", "client_values", "client_collections", "client_watchdog")
+MAX_STAGE_REPORT = 8192
+
+
+def decode_stage3_wire(data):
+    """Decode lossless schema-2 wire only; public evidence retains named schema 1.
+
+    Schema 1 is the legacy named representation. Schema 2 requires *every*
+    present client record to be compact, never an ambiguous per-record hybrid.
+    The ordinary validators below bind array positions to independently generated
+    identities and verify all proof values, including failed/unreached records.
+    """
+    if type(data) is not dict or type(data.get("schema")) is not int or data["schema"] not in (1, 2):
+        raise ValueError("stage wire schema")
+    if data["schema"] == 1:
+        if any(type(data.get(key)) is dict and {"hashes", "proof"} & set(data[key])
+               for key in CLIENT_WIRE_RECORDS):
+            raise ValueError("stage wire hybrid")
+        return data
+    if "client_collections" not in data:
+        raise ValueError("stage wire collections required")
+    if len(json.dumps(data, separators=(",", ":"), ensure_ascii=True).encode()) > MAX_STAGE_REPORT:
+        raise ValueError("stage wire limit")
+    result = {**data, "schema": 1}
+    for key in CLIENT_WIRE_RECORDS:
+        if key not in data:
+            continue
+        record = data[key]
+        if (type(record) is not dict or not {"hashes", "proof"} <= set(record)
+                or (CLIENT_HASHES | CLIENT_FLAGS) & set(record)):
+            raise ValueError("stage wire record")
+        hashes, proof = record["hashes"], record["proof"]
+        if (type(hashes) is not list or len(hashes) != 3
+                or any(value is not None and not is_digest(value) for value in hashes)
+                or type(proof) is not list or len(proof) != 5
+                or any(type(value) is not bool for value in proof)):
+            raise ValueError("stage wire arrays")
+        result[key] = {**{name: value for name, value in record.items() if name not in {"hashes", "proof"}},
+                       **dict(zip(CLIENT_WIRE_HASHES, hashes)), **dict(zip(CLIENT_WIRE_PROOF, proof))}
+    return result
+
+
+def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False):
+    data = decode_stage3_wire(data)
     client_requested = CLIENT_SOURCE in input_hashes
     expected_keys = {"schema", "nonce", "status", "failure_kind", "failed_case", "input_sha256", "cases"}
+    if client_collections:
+        if not client_requested:
+            raise ValueError("client collections requires client")
+        expected_keys.add("client_collections")
     if client_values:
         if not client_requested:
             raise ValueError("client values requires client")
@@ -413,6 +510,21 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
             raise ValueError("client values missing")
         if status == "not_started" and values["status"] != "not_started":
             raise ValueError("client values unreached")
+    if client_collections:
+        collections = validate_client_collections(data["client_collections"], input_hashes[COLLECTIONS_SOURCE],
+                    module_hashes["client_collections"], cases[SCENARIOS.index("collections")])
+        if client["status"] != "ok" and collections["status"] != "not_started":
+            raise ValueError("client collections order")
+        if client_dates and dates["status"] != "ok" and collections["status"] != "not_started":
+            raise ValueError("client dates collections order")
+        if client_values and values["status"] != "ok" and collections["status"] != "not_started":
+            raise ValueError("client values collections order")
+        if watchdog is not None and collections["status"] != "ok" and watchdog["status"] != "not_started":
+            raise ValueError("client collections watchdog order")
+        if status == "ok" and collections["status"] != "ok":
+            raise ValueError("client collections missing")
+        if status == "not_started" and collections["status"] != "not_started":
+            raise ValueError("client collections unreached")
     if status == "ok":
         if (not prerequisites or seen_incomplete or data["failure_kind"] != "none" or data["failed_case"] is not None):
             raise ValueError("success")
@@ -427,7 +539,7 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
     return data
 
 
-def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False):
+def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False):
     """Return validated report and exact bytes, never the unchecked envelope."""
     try:
         if not re.fullmatch(r"[0-9a-f]{32}", nonce):
@@ -442,7 +554,10 @@ def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes:
         report = report_validator(report_raw, bootstrap=True, full_suite=True)
         prerequisites = bool(report.get("stage2") and report["stage2"]["status"] == "ok")
         stage3 = validate_stage3(report["stage3"], nonce, input_hashes, module_hashes,
-                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values)
+                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections)
+        report["stage3"] = stage3
+        if len(json.dumps(report, separators=(",", ":"), ensure_ascii=True).encode()) > MAX_REPORT:
+            raise ValueError("expanded report limit")
         if report["native_tests_completed"] is not (stage3["status"] == "ok"):
             raise ValueError("completion")
         if (report["status"] == "ok") is not (stage3["status"] == "ok"):

@@ -251,3 +251,35 @@ only the six server scenarios and makes no client execution claim.
 Failure diagnostics expose only fixed process-check stage/reason and bounded
 counts/classes. They never expose process identifiers, start times, executable
 paths, command lines or logs, and cannot override a failed process gate.
+
+`--client-collections-parity` independently opts into the entire `collections.bsl`
+scenario and requires `--full-suite` plus `--client-probe`. CI enables it after
+values parity and before the controlled watchdog checkpoint. Its hash-pinned
+adapter preserves all 112 helpers, the module-global `Выход`, 16 region directives,
+and the complete body. Only 15 verified `Сообщить` identifiers are replaced by
+bounded string capture; existing conversions and helper-local dynamic execution
+remain intact. Four source-pinned helper-local declarations preserve `Объект`
+and `Элементы` as locals, preventing accidental binding to the managed form's
+Object attribute and Items collection. Identifiers and dynamic expression text
+are not renamed. Inverse reconstruction removes only these exact additions and
+must recover the original source exactly.
+
+All 797 messages are compared as complete UTF-8/LF bytes with this run's fresh
+server `collections.out`. API availability, localized errors, message order and
+Map order differences fail this client/server checkpoint; the eight existing
+interpreter/server Map exceptions do not apply. No historical output hash is a
+parity oracle. Raw client messages remain private. The same 24 staged inputs,
+six public server outputs and provenance, isolation and nonce/round-trip/process
+proofs remain required. A strict collections mismatch can include only finite
+metadata in the existing report: differing-message count, first ordinal, earliest
+16 differing ordinals, and hashes/sizes of the first differing serialized message.
+The private server message array must reproduce the same fresh server output
+before ordinal metadata is emitted. No raw client messages are exported, no new
+artifact is added, and mismatch diagnostics never enable success or exceptions.
+
+Schema 2 exists only on the compact stage wire transport;
+legacy schema 1 remains supported when collections is not selected. Compaction
+losslessly groups the three source/module/round-trip hashes and five proof
+booleans; host reports restore the existing named schema-1 evidence fields.
+Malformed, mixed or ambiguous wire records fail closed. The 8,192-byte stage and 32,768-byte full-report caps
+are unchanged. Offline tests are not evidence of execution or parity on real 1C.
