@@ -42,6 +42,210 @@ class DiagnosticTests(unittest.TestCase):
         path.write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
         return path
 
+    def test_rendered_projection_full_limit_inputs_finish_within_bounded_timeout(self):
+        source = """
+import importlib.util
+spec = importlib.util.spec_from_file_location('diagnostics_bounded', __import__('sys').argv[1])
+diag = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(diag)
+for text in ('x' * 65536, 'x-' * 32768, 'x.' * 32768, '!' * 65536,
+             'x' * 65000 + '@password', 'x' * 65000 + '/password', '"' + 'x' * 65000):
+    value = diag.rendered_context(text, 'session_marker')
+    assert len(value['head']) + len(value['tail']) <= 64
+    assert 'password' not in value['head'] + value['tail']
+"""
+        result = subprocess.run([sys.executable, '-c', source, str(HELPERS / 'diagnostics.py')],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+
+    def test_rendered_projection_preserves_bilingual_requirement_and_negation(self):
+        samples = {
+            'Первый пользователь должен иметь права администрирования. Нельзя записать без роли.':
+                ['first', 'user', 'must', 'unknown', 'rights', 'administration', 'sentence_end', 'cannot', 'write', 'without', 'role', 'sentence_end'],
+            'At least one user must have administrative rights; no roles.':
+                ['at_least', 'one', 'user', 'must', 'has', 'administrative', 'rights', 'clause_break', 'no', 'role', 'sentence_end'],
+            'Последнего пользователя с административными правами нельзя удалить.':
+                ['last', 'user', 'unknown', 'administrative', 'rights', 'cannot', 'delete', 'sentence_end'],
+            'May can может': ['unknown'],
+            'ни одного пользователя': ['none', 'user'],
+            'ни роли': ['not', 'role'],
+        }
+        for text, expected in samples.items():
+            with self.subTest(text=text):
+                value = diag.rendered_context(text, 'session_marker')
+                self.assertEqual(value['head'], expected)
+                self.assertFalse(value['omitted_middle'])
+                self.assertEqual(value['tail'], [])
+
+    def test_rendered_projection_preserves_contractions_not_quotes(self):
+        for token in ("isn't", "aren't", "wasn't", "weren't", "don't", "doesn't", "didn't",
+                      "hasn't", "haven't", "hadn't", "won't", "wouldn't", "shouldn't", "mustn't", "needn't"):
+            for text in (token, token.replace("'", '’')):
+                self.assertEqual(diag.rendered_context(text, 'session_marker')['head'], ['not'])
+        for text in ("can't", "couldn't", 'can’t', 'couldn’t'):
+            self.assertEqual(diag.rendered_context(text, 'session_marker')['head'], ['cannot'])
+
+    def test_rendered_projection_masks_opaque_values_before_vocabulary(self):
+        samples = ['"Administrator password"', "'license password'", '«first user»',
+                   '“first user”', '‘first user’', '’first user’', '`first user`',
+                   '"first user', '/license/password', 'C:\\license\\password',
+                   '\\\\license\\password', '../license/password', 'license/password',
+                   'https://license.invalid/password', 'password@license.invalid',
+                   'user=Administrator', 'username: Administrator', 'Пользователь: Администратор',
+                   'User.Password', '{SessionModule(80)}', '"license\\"password"']
+        for text in samples:
+            with self.subTest(text=text):
+                self.assertEqual(diag.rendered_context(text, 'session_marker')['head'], ['redacted'])
+
+    def test_rendered_projection_masks_sensitive_labeled_and_authorization_values(self):
+        labels = ('password', 'passwd', 'pwd', 'passphrase', 'token', 'access_token',
+                  'refresh-token', 'secret', 'client_secret', 'credential', 'credentials',
+                  'api_key', 'api-key', 'api key', 'authorization', 'cookie', 'пароль',
+                  'токен', 'секрет', 'учетные данные', 'учётные данные', 'ключ API')
+        for label in labels:
+            for separator in (':', '='):
+                text = label + separator + ' administrative,password;license first user'
+                with self.subTest(text=text):
+                    self.assertEqual(diag.rendered_context(text, 'session_marker')['head'], ['redacted'])
+        for text in ('Bearer administrative,password;license', 'Basic password license'):
+            self.assertEqual(diag.rendered_context(text, 'session_marker')['head'], ['redacted'])
+        self.assertEqual(diag.rendered_context('Password: secret\nnot administrator', 'session_marker')['head'],
+                         ['redacted', 'line_break', 'not', 'administrator'])
+
+    def test_rendered_projection_rejects_substrings_mixed_scripts_and_unknown_text(self):
+        for text in ('adminSecret', 'administratorSecret', 'licenseSecret', 'password_SECRET',
+                     'license-secret', 'pаssword', 'адministrative', 'SECRET42', '123456789'):
+            with self.subTest(text=text):
+                self.assertEqual(diag.rendered_context(text, 'session_marker')['head'], ['unknown'])
+        self.assertEqual(diag.rendered_context('not PRIVATE PASSWORD_SECRET password', 'session_marker')['head'],
+                         ['not', 'unknown', 'password'])
+
+    def test_rendered_projection_boundaries_and_tail_cover_full_bounded_text(self):
+        value = diag.rendered_context('user\nnot; role.\npassword', 'session_marker')
+        self.assertEqual(value['head'], ['user', 'line_break', 'not', 'clause_break', 'role',
+                                         'sentence_end', 'line_break', 'password'])
+        for size in (32, 64, 65, 1000):
+            tokens = ['user'] * size + ['not', 'administrator']
+            value = diag.rendered_context(' '.join(tokens), 'session_marker')
+            self.assertLessEqual(len(value['head']) + len(value['tail']), 64)
+            if len(tokens) <= 64:
+                self.assertEqual(value['head'], tokens)
+                self.assertFalse(value['omitted_middle'])
+            else:
+                self.assertEqual(value['head'], tokens[:32])
+                self.assertEqual(value['tail'], tokens[-32:])
+                self.assertTrue(value['omitted_middle'])
+
+    def test_rendered_projection_keeps_final_private_cause_at_near_marker_limit(self):
+        self.marker(error_marker(error='user ' * 12000 + '\nnot administrative rights'))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        context = value['rendered_context']
+        self.assertEqual(context['origin'], 'session_marker')
+        self.assertTrue(context['omitted_middle'])
+        self.assertEqual(context['tail'][-4:], ['line_break', 'not', 'administrative', 'rights'])
+        self.assertLess(len(json.dumps(value).encode()), 8192)
+
+    def test_rendered_projection_has_independent_matching_marker_origin(self):
+        self.marker(error_marker(error='Error calling context method (Write)\nFirst user must have administrative rights.'))
+        (self.root / 'bootstrap.log').write_text('No license found', encoding='utf-8')
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual((value['category'], value['origin']), ('license_unavailable', 'native_log'))
+        self.assertEqual(value['rendered_context']['origin'], 'session_marker')
+        self.assertIn('first', value['rendered_context']['head'])
+        self.assertNotIn('license', value['rendered_context']['head'])
+        self.marker(error_marker(error='Object field not found (Роли)\nFirst user must have administrative rights.'))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual((value['category'], value['origin']), ('conflicting_evidence', 'none'))
+        self.assertEqual(value['rendered_context']['origin'], 'session_marker')
+        diag.validate_diagnostics(value, primary_kind='process_failed')
+
+    def test_rendered_projection_prefers_session_then_managed_never_invalid_markers(self):
+        self.marker(error_marker(hook='managed', error='password required'), hook='managed')
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['rendered_context']['origin'], 'managed_marker')
+        self.marker(error_marker(error='not role'))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['rendered_context']['head'], ['not', 'role'])
+        self.marker(error_marker(run_id='FOREIGN', error='first user'))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['rendered_context']['origin'], 'managed_marker')
+        self.marker(error_marker(hook='managed', error='first user', status='ok'), hook='managed')
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        self.assertEqual(value['rendered_context'], diag.empty_rendered_context())
+
+    def test_rendered_projection_empty_and_log_only_do_not_claim_marker(self):
+        for text in ('', ' \r\n\t'):
+            self.assertEqual(diag.rendered_context(text, 'session_marker'), diag.empty_rendered_context())
+            self.marker(error_marker(error=text))
+            (self.root / 'bootstrap.log').write_text('First user must have administrator rights', encoding='utf-8')
+            self.assertEqual(diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)['rendered_context'],
+                             diag.empty_rendered_context())
+
+    def test_host_rejects_rendered_context_after_positive_failed_report(self):
+        self.marker(error_marker(error='First user must have administrative rights.'))
+        valid = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        edits = [lambda c: c.update(extra='PRIVATE'), lambda c: c.update(origin='native_log'),
+                 lambda c: c.update(origin='none'), lambda c: c.update(origin='managed_marker'),
+                 lambda c: c.update(representation='Cause'), lambda c: c.update(representation=[]),
+                 lambda c: c.update(head=['PRIVATE']), lambda c: c.update(head=[True]),
+                 lambda c: c.update(head=[{}]), lambda c: c.update(head=['user'] * 65),
+                 lambda c: c.update(head='user'), lambda c: c.update(head=[]),
+                 lambda c: c.update(tail=['user']), lambda c: c.update(tail=None),
+                 lambda c: c.update(omitted_middle=0), lambda c: c.update(omitted_middle=True)]
+        for edit in edits:
+            data = bootstrap_report()
+            data.update(status='stage2_failed', runtime_version=None, runtime_version_source='not_measured', security_settings_changed=None)
+            data['stage2'].update(status='failed', failed_stage='bootstrap', failure_kind='process_failed',
+                actual_version=None, version_source='not_measured', simple_output_sha256=None,
+                security_settings_state='unverified', protection_observation=diag.empty_protection_observation(),
+                diagnostics=copy.deepcopy(valid), **{key: key == 'modules_reimported' for key in smoke.STAGE_FLAGS})
+            smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+            edit(data['stage2']['diagnostics']['rendered_context'])
+            with self.subTest(context=data['stage2']['diagnostics']['rendered_context']), self.assertRaises(smoke.SmokeError):
+                smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+        value = diag.empty_diagnostics()
+        value['rendered_context']['omitted_middle'] = 0
+        with self.assertRaises(ValueError): diag.validate_diagnostics(value)
+
+    def test_rendered_context_cannot_appear_on_success_or_stale_failure(self):
+        self.marker(error_marker(error='First user must have administrative rights'))
+        value = diag.collect_diagnostics(self.root, 'bootstrap', MANIFEST, 1)
+        value['native_exit_code'] = None
+        with self.assertRaises(ValueError): diag.validate_diagnostics(value, success=True)
+        with self.assertRaises(ValueError): diag.validate_diagnostics(value, primary_kind='stale_evidence')
+
+    def test_serialized_worst_case_projection_fits_unchanged_stage_and_host_caps(self):
+        # Conservative field-by-field upper bound; combinations need not be a
+        # reachable success/failure state. ASCII JSON matches both actual writers.
+        longest = lambda values: max(values, key=lambda value: len(json.dumps(value)))
+        context = {'origin': 'managed_marker', 'representation': 'detailed_error_text',
+                   'head': [longest(diag.CONTEXT_TOKENS)] * 64, 'tail': [], 'omitted_middle': False}
+        value = diag.empty_diagnostics()
+        value.update(category=longest(diag.CATEGORIES), origin='managed_marker',
+                     module='ManagedApplicationModule', line=9999,
+                     identifier=longest(diag.IDENTIFIERS), native_exit_code=-64,
+                     source_frames=[{'module': 'ManagedApplicationModule', 'line': 9999}] * 4,
+                     source_frames_truncated=False, rendered_context=context,
+                     session_marker=longest(diag.MARKER_STATES), managed_marker=longest(diag.MARKER_STATES))
+        data = bootstrap_report()
+        data['stage2'].update(status='failed', failed_stage=longest(smoke.STAGES),
+                             failure_kind=longest(smoke.FAILURE_KINDS), actual_version='9999.9999.9999.9999',
+                             security_settings_state='not_attempted', security_change_attempted=False, diagnostics=value,
+                             **{key: False for key in smoke.STAGE_FLAGS})
+        data['stage2']['protection_observation']['stage'] = 'bootstrap'
+        stage_size = len(json.dumps(data['stage2'], sort_keys=True).encode())
+        self.assertLess(stage_size, 8192)
+        # Explicit upper bound for every remaining bounded outer field. Known
+        # elements may repeat under the existing schema, so use the longest.
+        data.update(status=longest(smoke.STATUS), python_version='99.99.999',
+                    runtime_version='9999.9999.9999.9999', runtime_version_source='SystemInfo.AppVersion',
+                    **{key: False for key in smoke.BOOL_KEYS})
+        data['configuration_format'].update(schema_version='99.999.999.999', element_count=4096,
+            known_elements=[longest(smoke.KNOWN_ELEMENTS)] * len(smoke.KNOWN_ELEMENTS))
+        self.assertLess(len(json.dumps(data, sort_keys=True).encode()) + 1, smoke.MAX_OUTPUT)
+        self.assertIn('<= 8192', smoke.PROBE.read_text())
+        self.assertEqual(smoke.MAX_OUTPUT, 32768)
+
     def test_source_limits_equal_trusted_bsl_sources(self):
         for name, limit in diag.SOURCE_LINE_LIMITS.items():
             self.assertEqual(len((HELPERS / 'modules' / (name + '.bsl')).read_text(encoding='utf-8-sig').splitlines()), limit)

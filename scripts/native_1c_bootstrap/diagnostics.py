@@ -66,10 +66,172 @@ LOCATION_PATTERN = re.compile(r'\{(' + '|'.join(map(re.escape, MODULE_ALIASES)) 
                               r')\(([0-9]{1,4})(?:,\s*[0-9]{1,4})?\)\}')
 
 
+# Exact reviewed-language vocabulary. No stemming or arbitrary source tokens.
+CONTEXT_WORDS = {
+    'not': "not|не|ни|isn't|aren't|wasn't|weren't|don't|doesn't|didn't|hasn't|haven't|hadn't|won't|wouldn't|shouldn't|mustn't|needn't",
+    'no': 'no|нет',
+    'without': 'without|без',
+    'cannot': "cannot|can't|couldn't|нельзя|невозможно|невозможен|невозможна",
+    'must': 'must|должен|должна|должно|должны|необходимо',
+    'required': 'required|requires|require|требуется|требуются|требует|необходим|необходима|необходимы|обязательно',
+    'forbidden': 'forbidden|prohibited|запрещено|запрещен|запрещена',
+    'allowed': 'allowed|permitted|разрешено|разрешен|разрешена',
+    'only': 'only|только',
+    'at_least': 'at least|хотя бы|как минимум',
+    'one': 'one|один|одна|одно|одного|одной|одним|одному',
+    'first': 'first|первый|первая|первого|первой|первым',
+    'last': 'last|последний|последняя|последнего|последней|последним',
+    'all': 'all|все|всех|всеми',
+    'none': 'none|ни одного',
+    'empty': 'empty|пустой|пустая|пустое|пустым|пустого',
+    'has': 'has|have|having|имеет|имеют|имеющего|имеющий|имеющими|имеющих',
+    'user': 'user|users|пользователь|пользователя|пользователю|пользователем|пользователи|пользователей|пользователями|пользователе',
+    'infobase': 'infobase|информационная база|информационной базы|информационной базе|информационную базу',
+    'role': 'role|roles|роль|роли|ролью|ролей|ролями',
+    'administrative': 'administrative|административный|административная|административные|административных|административными|административного|административным',
+    'administration': 'administration|администрирование|администрирования|администрированием',
+    'administrator': 'administrator|administrators|администратор|администратора|администратору|администратором|администраторов',
+    'rights': 'right|rights|права|прав|правами|право',
+    'configuration': 'configuration|конфигурация|конфигурации|конфигурацию',
+    'designer': 'designer|конфигуратор|конфигуратора|конфигураторе',
+    'enterprise': 'enterprise|предприятие|предприятия',
+    'authentication': 'authentication|аутентификация|аутентификации|аутентификацию|аутентификацией',
+    'standard': 'standard|стандартная|стандартной|стандартную|стандартный',
+    'operating_system': 'operating system|операционная система|операционной системы|операционной системой',
+    'password': 'password|passwords|пароль|пароля|паролю|паролем|пароли|паролей',
+    'length': 'length|длина|длины|длине|длину',
+    'complexity': 'complexity|сложность|сложности',
+    'reuse': 'reuse|reused|повторное использование|повторного использования',
+    'compromised': 'compromised|скомпрометирован|скомпрометированного|скомпрометированный',
+    'protection': 'protection|защита|защиты|защиту|защитой',
+    'dangerous': 'dangerous|опасные|опасных|опасными',
+    'actions': 'action|actions|действие|действия|действий|действиями',
+    'transaction': 'transaction|transactions|транзакция|транзакции|транзакцию|транзакций',
+    'active': 'active|активная|активной|активную|активный',
+    'read_only': 'read-only|read only|только для чтения',
+    'license': 'license|licence|licenses|лицензия|лицензии|лицензию|лицензий',
+    'duplicate': 'duplicate|дублируется|дублирование|дублирования',
+    'exists': 'exists|exist|existing|существует|существуют|существующий|существующего',
+    'missing': 'missing|absent|отсутствует|отсутствуют|отсутствие|отсутствия',
+    'assigned': 'assigned|назначен|назначена|назначены|назначенных',
+    'write': 'write|writing|written|записать|записи|запись|записан|записана',
+    'create': 'create|creating|created|создать|создание|создания|создан|создана|создании',
+    'delete': 'delete|deleting|deleted|удалить|удаление|удаления|удален|удалена',
+    'modify': 'modify|change|changing|изменить|изменение|изменения|изменен|изменена',
+    'access': 'access|доступ|доступа|доступом',
+    'insufficient': 'insufficient|недостаточно|недостаточный|недостаточными',
+    'enabled': 'enabled|включен|включена|включено',
+    'disabled': 'disabled|выключен|выключена|отключен|отключена|отключено',
+    'unavailable': 'unavailable|недоступен|недоступна|недоступно',
+    'error': 'error|ошибка|ошибки|ошибке',
+    'save': 'save|saving|saved|сохранить|сохранение|сохранения|сохранен|сохранена',
+}
+
+MAX_CONTEXT_TOKENS = 64
+CONTEXT_SENTINELS = frozenset({'unknown', 'redacted', 'line_break', 'sentence_end', 'clause_break'})
+CONTEXT_TOKENS = frozenset(CONTEXT_WORDS) | CONTEXT_SENTINELS
+CONTEXT_LITERALS = {literal: token for token, words in CONTEXT_WORDS.items()
+                    for literal in words.split('|')}
+# Opaque values are masked BEFORE vocabulary matching. Neither their contents
+# nor their lengths are returned. Unknown unquoted words are also never returned.
+CONTEXT_OPAQUE = re.compile(
+    # Sensitive field labels consume the whole line, including punctuation in
+    # the value. This intentionally overredacts technical-looking secret text.
+    r'(?<![\w.-])(?:password|passwd|pwd|passphrase|token|access[ _-]?token|'
+    r'refresh[ _-]?token|secret|client[ _-]?secret|credentials?|api[ _-]?key|'
+    r'authorization|cookie|пароль|токен|секрет|уч[её]тные[ \t]+данные|ключ[ \t]+api)'
+    r'[ \t]*[:=][^\r\n]*|(?<!\w)(?:bearer|basic)[ \t]+[^\r\n]*|'
+    r'"(?:\\.|[^"\\])*(?:"|$)|'
+    r"(?<!\w)'(?:\\.|[^'\\])*(?:'|$)|"
+    r'(?<!\w)’[^’]*(?:’|$)|`[^`]*(?:`|$)|«[^»]*(?:»|$)|“[^”]*(?:”|$)|‘[^’]*(?:’|$)|'
+    r'\{[^{}\r\n]*\}|'
+    r'(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*://[^\s]+|(?<![^\s<>"\x27])[^\s<>"\x27@]+@[^\s<>"\x27]+|'
+    r'\b(?:user\s+name|username|name|user|имя\s+пользователя|имя|пользователь|'
+    r'database|infobase|база)\s*:\s*[^,;\r\n]+|'
+    r'\b\w+\s*=\s*[^,;\r\n]+|'
+    r'(?:[A-Za-z]:[\\/]|\\\\|(?:\.{1,2}|~)/|/)[^\s,;]+|'
+    r'(?<![\w.-])[\w.-]+[/\\][^\s,;]+|(?<![\w.])\w+(?:\.\w+)+', re.I)
+CONTEXT_LEXEMES = re.compile(r"\r\n|\r|\n|[^\W]+(?:[-'’][^\W]+)*|[^\s]", re.UNICODE)
+
+
+def empty_rendered_context() -> dict:
+    return {'origin': 'none', 'representation': 'none', 'head': [], 'tail': [],
+            'omitted_middle': False}
+
+
+def validate_rendered_context(value: object, markers: dict) -> dict:
+    if type(value) is not dict or set(value) != set(empty_rendered_context()):
+        raise ValueError('rendered context keys')
+    if value == empty_rendered_context():
+        # Equality alone would accept 0 as False; check this even for empty form.
+        if type(value['omitted_middle']) is not bool:
+            raise ValueError('rendered context omission')
+        return value
+    if (type(value['origin']) is not str or value['origin'] not in {'session_marker', 'managed_marker'}
+            or markers[value['origin']] != 'error'
+            or value['representation'] != 'detailed_error_text'
+            or type(value['omitted_middle']) is not bool):
+        raise ValueError('rendered context provenance')
+    for key in ('head', 'tail'):
+        if (type(value[key]) is not list or len(value[key]) > MAX_CONTEXT_TOKENS
+                or any(type(token) is not str or token not in CONTEXT_TOKENS for token in value[key])):
+            raise ValueError('rendered context vocabulary')
+    if value['omitted_middle']:
+        if len(value['head']) != MAX_CONTEXT_TOKENS // 2 or len(value['tail']) != MAX_CONTEXT_TOKENS // 2:
+            raise ValueError('rendered context truncated shape')
+    elif not value['head'] or value['tail']:
+        raise ValueError('rendered context full shape')
+    return value
+
+
+def rendered_context(text: str, origin: str) -> dict:
+    """Project complete bounded private text, NOT an ErrorInfo.Cause hierarchy."""
+    if not text.strip():
+        return empty_rendered_context()
+    pieces = []
+    start = 0
+    for match in CONTEXT_OPAQUE.finditer(text):
+        pieces.extend(CONTEXT_LEXEMES.findall(text[start:match.start()].casefold()))
+        pieces.append(None)  # Internal opaque sentinel; never parse its contents.
+        start = match.end()
+    pieces.extend(CONTEXT_LEXEMES.findall(text[start:].casefold()))
+    tokens = []
+    index = 0
+    while index < len(pieces):
+        piece = pieces[index]
+        consumed = 1
+        if piece is None:
+            token = 'redacted'
+        elif piece in {'\r', '\n', '\r\n'}:
+            token = 'line_break'
+        elif piece in {'.', '!', '?'}:
+            token = 'sentence_end'
+        elif piece in {',', ';', ':'}:
+            token = 'clause_break'
+        else:
+            token = 'unknown'
+            for width in (3, 2, 1):
+                parts = pieces[index:index + width]
+                if len(parts) == width and all(type(part) is str for part in parts):
+                    literal = ' '.join(parts).replace('’', "'")
+                    if literal in CONTEXT_LITERALS:
+                        token, consumed = CONTEXT_LITERALS[literal], width
+                        break
+        if token not in {'unknown', 'redacted'} or not tokens or tokens[-1] != token:
+            tokens.append(token)
+        index += consumed
+    omitted = len(tokens) > MAX_CONTEXT_TOKENS
+    return {'origin': origin, 'representation': 'detailed_error_text',
+            'head': tokens[:MAX_CONTEXT_TOKENS // 2] if omitted else tokens,
+            'tail': tokens[-MAX_CONTEXT_TOKENS // 2:] if omitted else [],
+            'omitted_middle': omitted}
+
+
 def empty_diagnostics() -> dict:
     return {'category': 'none', 'origin': 'none', 'module': None, 'line': None,
             'identifier': None, 'native_exit_code': None,
             'source_frames': [], 'source_frames_truncated': False,
+            'rendered_context': empty_rendered_context(),
             'session_marker': 'not_checked', 'managed_marker': 'not_checked'}
 
 
@@ -84,6 +246,7 @@ def validate_diagnostics(value: object, *, success: bool = False, primary_kind: 
                          ('session_marker', MARKER_STATES), ('managed_marker', MARKER_STATES)):
         if type(value[key]) is not str or value[key] not in allowed:
             raise ValueError('diagnostic enum')
+    validate_rendered_context(value['rendered_context'], value)
     code = value['native_exit_code']
     if code is not None and (bounded_exit_code(code) is None or primary_kind != 'process_failed'):
         raise ValueError('diagnostic exit code')
@@ -325,6 +488,8 @@ def collect_diagnostics(evidence: Path, stage: str, manifest: dict | None,
                 state, text = marker_error(evidence / (stage + '-' + hook + '.json'), stage, hook, manifest)
                 result[hook + '_marker'] = state
                 if text:
+                    if result['rendered_context']['origin'] == 'none':
+                        result['rendered_context'] = rendered_context(text, hook + '_marker')
                     candidates.append((hook + '_marker', summarize_text(text)))
         for path in stage_logs(evidence, stage):
             try:

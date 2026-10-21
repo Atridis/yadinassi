@@ -14,11 +14,15 @@ retry then observed the actual descriptor type and inner Boolean, but failed on
 an unsupported `Количество` call during bootstrap. After replacing the role
 Count check with fail-closed enumeration, [the next native run](https://github.com/Atridis/yadinassi/actions/runs/39524919916)
 failed with a runtime-error classification and matching session error marker.
-The available report did not retain a source location or method identifier, so
-its cause and persistence state are not established. This diagnostic-only
-candidate improves bounded context-method and stack-frame reporting without
-changing BSL, native commands, containment or success/security gates. Mock tests
-are not evidence that role enumeration or later native stages have passed.
+That report did not retain a source location or method identifier. The following
+[context diagnostic run](https://github.com/Atridis/yadinassi/actions/runs/39526355692)
+retained `Записать` and `SessionModule` line 80, the actual user `Write()` call.
+The descriptor checks and reject-first-role enumeration therefore reached Write,
+but the native rejection reason and persisted state remain unknown. This
+parser-only candidate projects finite technical words from the existing private
+matching-marker detailed error, without changing BSL, native commands, containment
+or success/security gates. Mock tests do not establish persisted/fresh security
+readbacks, the application version or EPF execution.
 
 ## Invocation and unchanged trust boundary
 
@@ -192,6 +196,38 @@ process failure, timeout, invalid marker or module mismatch). A separate strict
   malformed, oversized or deeply nested marker input cannot supply details or
   overwrite the primary failure. Success reports have empty diagnostics.
 
+- `rendered_context` is an independent, lossy projection of the entire existing
+  bounded `DetailedErrorDescription` string from a valid matching error marker.
+  It prefers the session marker, otherwise the managed marker; its own `origin`
+  must name a marker whose state is `error`, even when the top category came from
+  a native log or reports a conflict. It never reads a log as marker context.
+  `representation="detailed_error_text"` does not assert an `ErrorInfo.Cause`
+  hierarchy, an exact cause or a reconstructed sentence. The official 8.3.27
+  developer guide §31.3.3 describes the current error at the beginning and initial
+  cause at the end of detailed error text, motivating preservation of both ends.
+- The projection scans the whole private string, not a raw-text prefix. It emits
+  only an exact finite Russian/English vocabulary, preserving technical terms,
+  negation and requirements in lexical order. No unverified first-administrator
+  reason template is inferred. Terms such as transaction, role or license are
+  observations, not proof that they caused the rejection. Quoted values, paths,
+  URLs, email addresses, named/assigned values, sensitive password/token/key labels
+  and authorization values, dotted identifiers and source-frame
+  spans become `redacted` before vocabulary matching. Other unknown words become
+  `unknown`; adjacent identical unknown/redacted tokens are collapsed. Boundaries
+  become `line_break`, `sentence_end` or `clause_break`. This deliberately loses
+  opaque text, including technical words inside a quoted role or user name.
+  Sensitive labeled values and Bearer/Basic forms redact the remainder of their
+  line, even if it resembles an informative technical sentence.
+- `head` and `tail` contain at most 64 finite tokens combined. If the projected
+  stream fits, all tokens are in `head`, `tail` is empty and `omitted_middle` is
+  false. Otherwise the first 32 and last 32 tokens are retained and
+  `omitted_middle` is true. Empty/whitespace-only errors, invalid markers, success
+  and stale evidence cannot supply context. The unchanged 65,536-byte private
+  marker, 8,192-byte stage report and 32,768-byte host report limits still apply;
+  tests bound both worst-case serialization and full-limit parsing time. No raw
+  descriptions, exception codes, arbitrary identifiers or new native API fields
+  are exported. Both BSL modules and their exception handling remain unchanged.
+
 The host independently validates diagnostic keys, types, enums, source bounds,
 identifiers, provenance and consistency with the failed stage. No native errors,
 paths, usernames, UUIDs, raw source fragments or unknown identifiers are exported.
@@ -242,7 +278,9 @@ Designer/Enterprise separation, partial security state and timeout/error paths.
 Diagnostic regressions cover nonzero error markers, UTF-16/UTF-8/CP1251, corrupt
 BOMs, same-line attribution, contradictory sources, stale evidence, bounded exit
 codes, context-method aliases, selected-source stack provenance, frame deduplication
-and truncation, malformed marker input and strict host-schema rejection.
+and truncation, finite bilingual context with negation, opaque-value masking,
+whole-input head/tail bounds, adversarial parser timing, unchanged serialized-size
+caps, malformed marker input and strict host-schema rejection.
 POSIX pipe tests and Linux shell tests have platform guards; mocked core gates
 run cross-platform. Synthetic XML fixtures are not native/loadable metadata.
 
