@@ -229,6 +229,10 @@ def validate_stage2(data: object) -> dict:
         raise ValueError("stage2 failure")
     if data["security_settings_state"] not in {"not_attempted", "unverified", "verified"}:
         raise ValueError("security state")
+    # Role loading is already a potential security mutation. Unknown outcomes
+    # must remain conservative; only rejection before native load is unchanged.
+    if data["security_change_attempted"] is not (data["failed_stage"] != "inject"):
+        raise ValueError("security attempt disagrees with reached native stage")
     expected_security = "verified" if data["bootstrap_verified"] else "unverified" if data["security_change_attempted"] else "not_attempted"
     if data["security_settings_state"] != expected_security or (data["bootstrap_verified"] and not data["security_change_attempted"]):
         raise ValueError("security claim")

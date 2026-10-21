@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -7,8 +8,11 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/native_1c_bootstrap"))
-from inject_modules import DraftError, MODULES, PROTOCOL, bsl_string, hashes, inject, inspect_native_dump
-from evidence_gates import require_epf, require_marker_pair, require_reimported_modules, require_zero_result
+from inject_modules import (DraftError, MODULES, PROTOCOL, ROLE_NAME, ROLE_RIGHTS, ROLE_FILES,
+                            add_role_reference, bsl_string, hashes, inject, inspect_native_dump,
+                            inspect_disposable_role)
+from evidence_gates import (require_epf, require_marker_pair, require_reimported_modules,
+                            require_reimported_metadata, require_zero_result)
 
 RUN = "1234567890abcdef1234567890abcdef"
 USER = "NativeSmoke"
@@ -34,13 +38,19 @@ class DraftTest(unittest.TestCase):
         path = self.source / "Configuration.xml"
         path.write_text(path.read_text().replace(old, new))
 
-    def test_transform_preserves_all_original_bytes_and_only_adds_two_modules(self):
+    def test_transform_preserves_native_bytes_except_exact_role_reference(self):
         before = hashes(self.source)
         manifest = self.inject()
         self.assertEqual(before, hashes(self.source))
-        self.assertEqual(set(hashes(self.output)) - set(before), {"Ext/" + n for n in MODULES})
+        self.assertEqual(set(hashes(self.output)) - set(before), {"Ext/" + n for n in MODULES} | set(ROLE_FILES))
         for name, digest in before.items():
-            self.assertEqual(digest, hashes(self.output)[name])
+            if name != "Configuration.xml":
+                self.assertEqual(digest, hashes(self.output)[name])
+        original = (self.source / "Configuration.xml").read_bytes()
+        self.assertEqual((self.output / "Configuration.xml").read_bytes(),
+                         original.replace(b"<ChildObjects>", ("<ChildObjects><Role>" + ROLE_NAME + "</Role>").encode()))
+        self.assertEqual(manifest["injected_role"]["rights"], sorted(ROLE_RIGHTS))
+        inspect_disposable_role(self.output)
         self.assertEqual(manifest["native"]["format_version"], "2.20")
         self.assertIs(manifest["native_runtime_tested"], False)
         for name in MODULES:
@@ -50,12 +60,20 @@ class DraftTest(unittest.TestCase):
 
     def test_retains_actual_format_instead_of_forcing_version(self):
         self.replace_xml('version="2.20"', 'version="2.21"')
-        self.assertEqual(self.inject()["native"]["format_version"], "2.21")
+        self.assertEqual(inspect_native_dump(self.source)["format_version"], "2.21")
+        original = hashes(self.source)
+        with self.assertRaises(DraftError): self.inject()
+        self.assertEqual(hashes(self.source), original)
+        self.assertFalse(self.output.exists())
 
     def test_namespace_prefix_is_not_assumed(self):
         xml = self.source / "Configuration.xml"
-        xml.write_text(xml.read_text().replace('xmlns="', 'xmlns:m="').replace("<MetaDataObject", "<m:MetaDataObject").replace("</MetaDataObject", "</m:MetaDataObject"))
+        text = xml.read_text().replace('xmlns="', 'xmlns:m="')
+        xml.write_text(re.sub(r"<(\/?)([A-Za-z][A-Za-z0-9]*)(?=[\s/>])", r"<\1m:\2", text))
         self.assertEqual(inspect_native_dump(self.source)["default_run_mode"], "ManagedApplication")
+        self.inject()
+        self.assertIn(("<m:Role>" + ROLE_NAME + "</m:Role>").encode(),
+                      (self.output / "Configuration.xml").read_bytes())
 
     def test_reject_nonmanaged_without_rewriting(self):
         self.replace_xml("ManagedApplication", "OrdinaryApplication")
@@ -130,6 +148,149 @@ class DraftTest(unittest.TestCase):
         (redump / "Ext/SessionModule.bsl").write_text("// lost module")
         with self.assertRaises(DraftError): require_reimported_modules(self.output, redump)
 
+    def test_empty_child_objects_is_expanded_without_other_byte_changes(self):
+        self.replace_xml("<ChildObjects><Language>Russian</Language></ChildObjects>", "<ChildObjects />")
+        original = (self.source / "Configuration.xml").read_bytes()
+        self.inject()
+        self.assertEqual((self.output / "Configuration.xml").read_bytes(),
+                         original.replace(b"<ChildObjects />", ("<ChildObjects ><Role>" + ROLE_NAME + "</Role></ChildObjects>").encode()))
+
+    def test_byte_insertion_ignores_comment_decoys_and_preserves_bom_crlf(self):
+        path = self.source / "Configuration.xml"
+        text = path.read_text().replace("<!-- SYNTHETIC", "<!-- <ChildObjects/> decoy -->\n<!-- SYNTHETIC")
+        path.write_bytes(text.replace("\n", "\r\n").encode("utf-8-sig"))
+        original = path.read_bytes()
+        self.inject()
+        self.assertEqual((self.output / "Configuration.xml").read_bytes(),
+                         original.replace(b"<ChildObjects>", ("<ChildObjects><Role>" + ROLE_NAME + "</Role>").encode()))
+
+    def test_role_uuid_is_new_without_changing_native_identity(self):
+        self.inject()
+        first = (self.output / ROLE_FILES[0]).read_bytes()
+        self.output = self.root / "second"
+        self.inject()
+        self.assertNotEqual(first, (self.output / ROLE_FILES[0]).read_bytes())
+        source_uuid = inspect_native_dump(self.source)["configuration_uuid"]
+        self.assertIn(source_uuid.encode(), (self.output / "Configuration.xml").read_bytes())
+        self.assertNotIn(source_uuid.encode(), (self.output / ROLE_FILES[0]).read_bytes())
+
+    def test_strict_metadata_roundtrip_and_rights_rejection(self):
+        self.inject()
+        redump = self.root / "redump"
+        shutil.copytree(self.output, redump)
+        require_reimported_metadata(self.output, redump)
+        mutations = [
+            (ROLE_FILES[1], "<setForNewObjects>false", "<setForNewObjects>true"),
+            (ROLE_FILES[1], "<setForAttributesByDefault>false", "<setForAttributesByDefault>true"),
+            (ROLE_FILES[1], "<independentRightsOfChildObjects>false", "<independentRightsOfChildObjects>true"),
+            (ROLE_FILES[1], "<name>ThickClient</name>", "<name>ThinClient</name>"),
+            (ROLE_FILES[1], "<name>ThickClient</name>", "<name>Administration</name>"),
+            (ROLE_FILES[1], "<value>true</value>", "<value>false</value>"),
+            (ROLE_FILES[1], "Configuration.DisposableFixture", "Configuration.Other"),
+            (ROLE_FILES[1], "</object>", "<right><name>FullAccess</name><value>true</value></right></object>"),
+            (ROLE_FILES[1], "</Rights>", "<object><name>Catalog.Any</name></object></Rights>"),
+            (ROLE_FILES[1], "</Rights>", "<restrictions/></Rights>"),
+            (ROLE_FILES[0], "<Name>" + ROLE_NAME, "<Name>Other"),
+            ("Configuration.xml", "<DefaultRoles/>", "<DefaultRoles><Item>" + ROLE_NAME + "</Item></DefaultRoles>"),
+            ("Configuration.xml", "<Language>Russian</Language>", "<Language>English</Language>"),
+            ("Configuration.xml", "bd3814ed-1b7c-4f56-96b3-620fc5e32c44", "bd3814ed-1b7c-4f56-96b3-620fc5e32c45"),
+            ("Configuration.xml", "</ChildObjects>", "<Role>Other</Role></ChildObjects>"),
+        ]
+        for name, before, after in mutations:
+            with self.subTest(name=name, after=after):
+                path = redump / name
+                original = path.read_bytes()
+                text = original.decode("utf-8-sig")
+                self.assertIn(before, text)
+                path.write_text(text.replace(before, after), encoding="utf-8")
+                with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+                path.write_bytes(original)
+        for name in ("Roles/Unexpected.xml", "Ext/Unexpected.bsl", "Unexpected.xml"):
+            path = redump / name
+            path.write_text("unexpected")
+            with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+            path.unlink()
+        unexpected = redump / "UnexpectedEmptyDirectory"
+        unexpected.mkdir()
+        with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+        unexpected.rmdir()
+        for name in ROLE_FILES:
+            path = redump / name
+            original = path.read_bytes()
+            path.unlink()
+            with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+            path.write_bytes(original)
+
+    def test_role_xml_guards_reject_unreviewed_structure_and_excessive_input(self):
+        self.inject()
+        redump = self.root / "redump"
+        shutil.copytree(self.output, redump)
+        for name, mutate in (
+            (ROLE_FILES[1], lambda text: text.replace('version="2.20"', 'version="2.21"')),
+            (ROLE_FILES[1], lambda text: text.replace('xsi:type="Rights"', 'xsi:type="Other"')),
+            (ROLE_FILES[1], lambda text: text.replace('xmlns="http://v8.1c.ru/8.2/roles"', 'xmlns="https://unexpected.invalid/roles"')),
+            (ROLE_FILES[1], lambda text: text.replace('<object>', '<object unexpected="true">')),
+            (ROLE_FILES[1], lambda text: text.replace('<right>', '<right unexpected="true">')),
+            (ROLE_FILES[1], lambda text: text.replace('<name>ThickClient</name>', '<name>ThickClient<extra/></name>')),
+            (ROLE_FILES[1], lambda text: text.replace('</Rights>', 'opaque mixed text</Rights>')),
+            (ROLE_FILES[1], lambda text: '<!DOCTYPE Rights [<!ENTITY x "true">]>' + text),
+            (ROLE_FILES[0], lambda text: text.replace('<Synonym/>', '<Synonym>Unexpected</Synonym>')),
+            (ROLE_FILES[0], lambda text: text.replace('uuid="', 'unexpected="true" uuid="')),
+            (ROLE_FILES[0], lambda text: re.sub(r'uuid="[^"]+"', 'uuid="invalid"', text)),
+            (ROLE_FILES[0], lambda text: re.sub(r'uuid="[^"]+"', 'uuid="bd3814ed-1b7c-4f56-96b3-620fc5e32c44"', text)),
+            (ROLE_FILES[0], lambda text: text.replace('</Properties>', '<ChildObjects/></Properties>')),
+            (ROLE_FILES[0], lambda text: text + ' ' * 1_048_576),
+        ):
+            with self.subTest(name=name, mutate=mutate):
+                path = redump / name
+                original = path.read_bytes()
+                path.write_text(mutate(original.decode('utf-8-sig')), encoding='utf-8')
+                with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+                path.write_bytes(original)
+
+    @unittest.skipIf(os.name == "nt", "Creating Windows symlinks may need extra privileges")
+    def test_metadata_roundtrip_rejects_indirect_role_files(self):
+        self.inject()
+        redump = self.root / "redump"
+        shutil.copytree(self.output, redump)
+        path = redump / ROLE_FILES[1]
+        path.unlink()
+        path.symlink_to(self.output / ROLE_FILES[1])
+        with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+
+    def test_language_file_and_role_uuid_cannot_change_on_native_roundtrip(self):
+        language = self.source / "Languages"
+        language.mkdir()
+        (language / "Russian.xml").write_text('<Language uuid="original"><Name>Russian</Name></Language>')
+        self.inject()
+        redump = self.root / "redump"
+        shutil.copytree(self.output, redump)
+        require_reimported_metadata(self.output, redump)
+        path = redump / 'Languages/Russian.xml'
+        original = path.read_bytes()
+        path.write_text('<Language uuid="altered"><Name>Russian</Name></Language>')
+        with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+        path.write_bytes(original)
+        path = redump / ROLE_FILES[0]
+        text = path.read_text(encoding='utf-8-sig')
+        path.write_text(re.sub(r'uuid="[^"]+"', 'uuid="bd3814ed-1b7c-4f56-96b3-620fc5e32c46"', text))
+        with self.assertRaises(DraftError): require_reimported_metadata(self.output, redump)
+
+    def test_metadata_roundtrip_allows_only_nonsemantic_serialization_changes(self):
+        self.inject()
+        redump = self.root / "redump"
+        shutil.copytree(self.output, redump)
+        for path in redump.rglob("*.xml"):
+            if path.name == "ConfigDumpInfo.xml":
+                path.write_bytes(b"new native bookkeeping")
+            else:
+                path.write_bytes(path.read_text(encoding="utf-8-sig").replace("\n", "\r\n").encode("utf-8-sig"))
+        config = redump / "Configuration.xml"
+        text = config.read_text(encoding="utf-8-sig")
+        role = "<Role>" + ROLE_NAME + "</Role>"
+        config.write_text(text.replace(role, "").replace("</ChildObjects>", role + "</ChildObjects>"))
+        require_reimported_metadata(self.output, redump)
+
     def test_dump_result_and_epf_are_independent_required_gates(self):
         result = self.root / "result.txt"
         for data in (b"0\n", "0\r\n".encode("utf-16")):
@@ -157,9 +318,11 @@ class DraftTest(unittest.TestCase):
                       observed_warning_type="Boolean",
                       persisted_warning=False, standard_authentication=True,
                       current_user_at_start=USER if stage == "verify" else "",
-                      current_protection_verified=stage == "verify")
+                      current_protection_verified=stage == "verify", persisted_roles=[ROLE_NAME])
         if stage == "verify": server.update(current_protection_type="UnsafeOperationProtectionDescription",
-                                               current_warning_type="Boolean", current_warning=False)
+                                               current_warning_type="Boolean", current_warning=False,
+                                               current_roles=[ROLE_NAME])
+        else: server["assigned_roles"] = [ROLE_NAME]
         client = dict(common, hook="managed", actual_version="8.3.27.1508", server_hook_verified=True)
         self.write_markers(server, client, stage)
         return server, client
@@ -240,18 +403,37 @@ class DraftTest(unittest.TestCase):
         self.write_markers(server, client, "bootstrap")
         with self.assertRaises(DraftError): self.verify("bootstrap")
 
-    def test_zero_role_guard_enumerates_and_rejects_first_role_without_mutation(self):
+    def test_singleton_role_guard_enumerates_without_unsupported_count(self):
         self.inject()
         source = (self.output / "Ext/SessionModule.bsl").read_text(encoding="utf-8-sig")
-        helper = source.split('Процедура NativeПроверитьПользователя(Пользователь)', 1)[1].split('КонецПроцедуры', 1)[0]
-        self.assertIn('    Для Каждого Роль Из Пользователь.Роли Цикл\n        ВызватьИсключение "Native verify: unexpected user roles; do not broaden permissions";\n    КонецЦикла;', helper)
+        helper = source.split('Функция NativeПроверитьПользователя(Пользователь)', 1)[1].split('КонецФункции', 1)[0]
+        self.assertIn('Для Каждого Роль Из Пользователь.Роли Цикл', helper)
+        self.assertIn('Если Не Пользователь.Роли.Содержит(Метаданные.Роли.' + ROLE_NAME + ') Тогда', helper)
+        self.assertIn('Если КоличествоРолей <> 0 Тогда', helper)
+        self.assertLess(helper.index('Если КоличествоРолей <> 1 Тогда'), helper.index('ПроверенныеРоли.Добавить('))
+        self.assertIn('Если КоличествоРолей <> 1 Тогда', helper)
         self.assertNotIn('Пользователь.Роли.Количество()', source)
-        self.assertEqual(source.count('Пользователь.Роли'), 1)
+        self.assertEqual(source.count('Пользователь.Роли.Добавить('), 1)
         self.assertNotIn('Попытка', helper)
         self.assertNotIn('Исключение\n', helper)
-        # The same fail-closed helper covers assigned, persisted and fresh users.
-        for name in ('Пользователь', 'Сохраненный', 'Текущий'):
-            self.assertIn('NativeПроверитьПользователя(' + name + ');', source)
+        for name, field in (('Пользователь', 'assigned_roles'), ('Сохраненный', 'persisted_roles'), ('Текущий', 'current_roles')):
+            self.assertIn('Результат.Вставить("' + field + '", NativeПроверитьПользователя(' + name + '));', source)
+        self.assertLess(source.index('Пользователи.Количество() <> 0'), source.index('Пользователь.Роли.Добавить('))
+        self.assertLess(source.index('"assigned_roles"'), source.index('Пользователь.Записать();'))
+
+    def test_every_role_marker_requires_exact_singleton_identity(self):
+        for stage in ("bootstrap", "verify"):
+            for field in ("persisted_roles", "assigned_roles" if stage == "bootstrap" else "current_roles"):
+                for value in ([], ["FullAccess"], [ROLE_NAME, ROLE_NAME], [ROLE_NAME, "Other"], ROLE_NAME, True, None):
+                    with self.subTest(stage=stage, field=field, value=value):
+                        server, client = self.markers(stage)
+                        server[field] = value
+                        self.write_markers(server, client, stage)
+                        with self.assertRaises(DraftError): self.verify(stage)
+                server, client = self.markers(stage)
+                del server[field]
+                self.write_markers(server, client, stage)
+                with self.assertRaises(DraftError): self.verify(stage)
 
     def test_source_checks_actual_shape_before_narrow_assignment_and_all_readbacks(self):
         self.inject()
@@ -261,19 +443,19 @@ class DraftTest(unittest.TestCase):
                     'Если ТипЗнч(Защита.ПредупреждатьОбОпасныхДействиях) <> Тип("Булево") Тогда',
                     'Защита.ПредупреждатьОбОпасныхДействиях = Ложь;',
                     'Пользователь.ЗащитаОтОпасныхДействий = Защита;',
-                    'NativeПроверитьПользователя(Пользователь);', 'Пользователь.Записать();']
+                    'Результат.Вставить("assigned_roles", NativeПроверитьПользователя(Пользователь));', 'Пользователь.Записать();']
         positions = [source.index(item) for item in sequence]
         self.assertEqual(positions, sorted(positions))
         self.assertEqual(source.count('Защита.ПредупреждатьОбОпасныхДействиях = Ложь;'), 1)
         self.assertNotIn('Новый ОписаниеЗащитыОтОпасныхДействий', source)
         self.assertNotIn('Пользователь.ЗащитаОтОпасныхДействий = Ложь;', source)
         for name in ('Текущий', 'Сохраненный'):
-            self.assertIn('NativeПроверитьПользователя(' + name + ');', source)
+            self.assertIn('NativeПроверитьПользователя(' + name + '));', source)
             self.assertIn(name + '.ЗащитаОтОпасныхДействий.ПредупреждатьОбОпасныхДействиях', source)
-        helper = source[source.index('Процедура NativeПроверитьПользователя'):]
+        helper = source[source.index('Функция NativeПроверитьПользователя'):]
         for check in (sequence[1], sequence[2], 'Если Защита.ПредупреждатьОбОпасныхДействиях <> Ложь Тогда'):
             self.assertIn(check, helper)
-        observation = source[source.index('Функция NativeНаблюдатьЗащиту'):source.index('Процедура NativeПроверитьПользователя')]
+        observation = source[source.index('Функция NativeНаблюдатьЗащиту'):source.index('Функция NativeПроверитьПользователя')]
         self.assertNotIn(' = Ложь;', observation)
         self.assertNotIn('.Записать()', observation)
 

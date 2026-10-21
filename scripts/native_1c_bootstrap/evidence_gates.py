@@ -9,7 +9,8 @@ import json
 import re
 from pathlib import Path
 
-from inject_modules import DraftError, MODULES, PROTOCOL
+from inject_modules import (DraftError, MODULES, PROTOCOL, ROLE_NAME, ROLE_FILES,
+                            inspect_disposable_role, read_xml, xml_signature)
 
 
 def bounded_bytes(path: Path, limit: int = 65536) -> bytes:
@@ -73,9 +74,11 @@ def require_marker_pair(root: Path, stage: str, run_id: str, user: str,
         if any(marker.get(key) != value for key, value in expected.items()):
             raise DraftError(f"Wrong identity/stage or unsuccessful {hook} marker")
     common_keys = {"protocol", "run_id", "stage", "hook", "user", "status", "error"}
-    session_keys = common_keys | {"persisted_user", "persisted_protection_type", "persisted_warning_type", "persisted_warning", "standard_authentication", "users_before", "users_after", "current_user_at_start", "current_protection_verified", "observed_protection_type", "observed_warning_type"}
+    session_keys = common_keys | {"persisted_user", "persisted_protection_type", "persisted_warning_type", "persisted_warning", "standard_authentication", "users_before", "users_after", "current_user_at_start", "current_protection_verified", "observed_protection_type", "observed_warning_type", "persisted_roles"}
     if stage == "verify":
-        session_keys.update({"current_protection_type", "current_warning_type", "current_warning"})
+        session_keys.update({"current_protection_type", "current_warning_type", "current_warning", "current_roles"})
+    else:
+        session_keys.add("assigned_roles")
     if set(session) != session_keys or set(managed) != common_keys | {"actual_version", "server_hook_verified"}:
         raise DraftError("Unexpected marker fields")
     if (session.get("observed_protection_type") != "UnsafeOperationProtectionDescription"
@@ -86,6 +89,10 @@ def require_marker_pair(root: Path, stage: str, run_id: str, user: str,
             or session.get("persisted_warning") is not False
             or session.get("standard_authentication") is not True):
         raise DraftError("Persisted user descriptor / Boolean warning false / standard authentication not proven")
+    role_fields = ("persisted_roles", "assigned_roles" if stage == "bootstrap" else "current_roles")
+    if any(type(session.get(key)) is not list or session[key] != [ROLE_NAME]
+           for key in role_fields):
+        raise DraftError("Exact singleton disposable administrative role not proven")
     for key, count in (("users_before", 0 if stage == "bootstrap" else 1), ("users_after", 1)):
         if type(session.get(key)) is not int or session[key] != count:
             raise DraftError("Unexpected user count")
@@ -119,3 +126,36 @@ def require_reimported_modules(injected: Path, redumped: Path) -> None:
         actual = actual_path.read_text(encoding="utf-8-sig")
         if actual != expected:
             raise DraftError(f"Reimport changed module content: {name}")
+
+
+def require_reimported_metadata(injected: Path, redumped: Path) -> None:
+    """Native roundtrip must preserve the exact isolated metadata/security scope."""
+    trees = []
+    for root in (injected, redumped):
+        if root.is_symlink() or not root.is_dir():
+            raise DraftError("Metadata tree is absent or indirect")
+        paths = {}
+        for path in root.rglob("*"):
+            if path.is_symlink() or not (path.is_file() or path.is_dir()):
+                raise DraftError("Unexpected metadata filesystem entry")
+            paths[path.relative_to(root).as_posix()] = "file" if path.is_file() else "directory"
+        trees.append(paths)
+        inspect_disposable_role(root)
+    if trees[0] != trees[1]:
+        raise DraftError("Native reimport added or removed metadata entries")
+    for name in sorted(trees[0]):
+        if trees[0][name] == "directory":
+            continue
+        # Native dump bookkeeping changes after a real import. It is neither
+        # imported configuration content nor permission evidence.
+        if name == "ConfigDumpInfo.xml" or name in {"Ext/" + value for value in MODULES}:
+            continue
+        if name == ROLE_FILES[1]:
+            # Exact allowlist validated above; native right ordering is immaterial.
+            continue
+        expected, actual = injected / name, redumped / name
+        if expected.suffix.lower() == ".xml":
+            if xml_signature(read_xml(expected)[1]) != xml_signature(read_xml(actual)[1]):
+                raise DraftError("Reimport changed original or disposable role metadata")
+        elif bounded_bytes(expected, 1_048_576) != bounded_bytes(actual, 1_048_576):
+            raise DraftError("Reimport changed an original native file")

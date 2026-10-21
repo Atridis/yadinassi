@@ -76,7 +76,9 @@
             // Preserve every other descriptor setting; do not construct default protection.
             Защита.ПредупреждатьОбОпасныхДействиях = Ложь;
             Пользователь.ЗащитаОтОпасныхДействий = Защита;
-            NativeПроверитьПользователя(Пользователь);
+            // One explicit role, only on this fresh zero-user disposable bootstrap.
+            Пользователь.Роли.Добавить(Метаданные.Роли.NativeSmokeBootstrapAdministrator);
+            Результат.Вставить("assigned_roles", NativeПроверитьПользователя(Пользователь));
             Пользователь.Записать();
             // CurrentUser() remains the startup snapshot; do not claim it was changed.
             Результат.Вставить("current_protection_verified", Ложь);
@@ -85,7 +87,7 @@
                 ВызватьИсключение "Native verify: expected exactly one disposable user";
             КонецЕсли;
             Защита = NativeНаблюдатьЗащиту(Текущий, Результат);
-            NativeПроверитьПользователя(Текущий);
+            Результат.Вставить("current_roles", NativeПроверитьПользователя(Текущий));
             Результат.Вставить("current_protection_verified", Истина);
             Результат.Вставить("current_protection_type", "UnsafeOperationProtectionDescription");
             Результат.Вставить("current_warning_type", "Boolean");
@@ -93,7 +95,7 @@
         КонецЕсли;
 
         Сохраненный = ПользователиИнформационнойБазы.НайтиПоИмени(@@USER@@);
-        NativeПроверитьПользователя(Сохраненный);
+        Результат.Вставить("persisted_roles", NativeПроверитьПользователя(Сохраненный));
         Результат.Вставить("persisted_user", Сохраненный.Имя);
         Результат.Вставить("persisted_protection_type", "UnsafeOperationProtectionDescription");
         Результат.Вставить("persisted_warning_type", "Boolean");
@@ -140,7 +142,7 @@
 КонецФункции
 
 
-Процедура NativeПроверитьПользователя(Пользователь)
+Функция NativeПроверитьПользователя(Пользователь)
     Если Пользователь = Неопределено Тогда
         ВызватьИсключение "Native verify: expected user is absent";
     КонецЕсли;
@@ -160,10 +162,23 @@
     Если Пользователь.АутентификацияСтандартная <> Истина Тогда
         ВызватьИсключение "Native verify: standard authentication is not enabled";
     КонецЕсли;
+    Если Не Пользователь.Роли.Содержит(Метаданные.Роли.NativeSmokeBootstrapAdministrator) Тогда
+        ВызватьИсключение "Native verify: required administrative role is absent";
+    КонецЕсли;
+    ПроверенныеРоли = Новый Массив;
+    КоличествоРолей = 0;
     Для Каждого Роль Из Пользователь.Роли Цикл
-        ВызватьИсключение "Native verify: unexpected user roles; do not broaden permissions";
+        Если КоличествоРолей <> 0 Тогда
+            ВызватьИсключение "Native verify: unexpected user roles; do not broaden permissions";
+        КонецЕсли;
+        КоличествоРолей = КоличествоРолей + 1;
     КонецЦикла;
-КонецПроцедуры
+    Если КоличествоРолей <> 1 Тогда
+        ВызватьИсключение "Native verify: exact singleton administrative role required";
+    КонецЕсли;
+    ПроверенныеРоли.Добавить(@@ROLE@@);
+    Возврат ПроверенныеРоли;
+КонецФункции
 
 
 Функция NativeПрочитатьJSON(Путь)

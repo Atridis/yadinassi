@@ -1,7 +1,7 @@
 """Offline controller tests. Synthetic evidence is never a native 1C result.
 
 The real stage controller, evidence gates, and EPF launcher execute here, but
-injection and every process boundary are mocked. No Docker, 1C, or network is
+synthetic metadata replaces the native dump and every process boundary is mocked. No Docker, 1C, or network is
 needed, including on Windows. Process-group behavior is tested separately with
 Linux-only mocks rather than starting or killing real processes.
 """
@@ -26,6 +26,9 @@ HELPERS = REPOSITORY / "scripts/native_1c_bootstrap"
 # run_stage deliberately imports its colocated, script-style helpers.
 if str(HELPERS) not in sys.path:
     sys.path.insert(0, str(HELPERS))
+
+
+from inject_modules import ROLE_NAME, ROLE_FILES, inject as inject_fixture
 
 
 def load_controller():
@@ -87,6 +90,7 @@ class Stage2Harness(unittest.TestCase):
         self.marker_overrides = {}
         self.raw_markers = {}
         self.reimport_changes = set()
+        self.metadata_changes = {}
         self.logs = {}
         self.artifacts_missing = set()
         self.simple_result = {"messages": ["native-smoke-v1", "42"], "error": ""}
@@ -122,18 +126,8 @@ class Stage2Harness(unittest.TestCase):
         self.assertEqual(user, "NativeSmoke")
         self.evidence = Path(evidence)
         self.assertEqual(destination, self.evidence / "injected")
-        shutil.copytree(source, destination)
-        (destination / "Ext").mkdir()
-        # Synthetic module bytes test round-trip equality, not BSL correctness.
-        for name in ("SessionModule.bsl", "ManagedApplicationModule.bsl"):
-            (destination / "Ext" / name).write_text(
-                "// offline fixture " + run_id + "\n", encoding="utf-8"
-            )
-        self.manifest = {
-            "protocol": self.module.PROTOCOL, "run_id": run_id, "user": user,
-            "bootstrap_token": "native-bootstrap:" + run_id,
-            "verify_token": "native-verify:" + run_id,
-        }
+        self.manifest = inject_fixture(source, destination, run_id=run_id, user=user, evidence=evidence)
+        # Synthetic fixture XML and no native calls; this is not a native result.
         return self.manifest
 
     def marker(self, stage, hook):
@@ -151,11 +145,13 @@ class Stage2Harness(unittest.TestCase):
                 observed_warning_type="Boolean",
                 persisted_warning=False, standard_authentication=True,
                 current_user_at_start="" if stage == "bootstrap" else "NativeSmoke",
-                current_protection_verified=stage == "verify",
+                current_protection_verified=stage == "verify", persisted_roles=[ROLE_NAME],
             )
             if stage == "verify":
                 marker.update(current_protection_type="UnsafeOperationProtectionDescription",
-                              current_warning_type="Boolean", current_warning=False)
+                              current_warning_type="Boolean", current_warning=False, current_roles=[ROLE_NAME])
+            else:
+                marker["assigned_roles"] = [ROLE_NAME]
         else:
             marker.update(actual_version="8.3.27.1508", server_hook_verified=True)
         marker.update(self.marker_overrides.get((stage, hook), {}))
@@ -212,6 +208,10 @@ class Stage2Harness(unittest.TestCase):
             shutil.copytree(self.evidence / "injected", target, dirs_exist_ok=True)
             if stage in self.reimport_changes:
                 (target / "Ext/SessionModule.bsl").write_text("// changed\n", encoding="utf-8")
+            if stage in self.metadata_changes:
+                name, old, new = self.metadata_changes[stage]
+                path = target / name
+                path.write_text(path.read_text(encoding="utf-8-sig").replace(old, new), encoding="utf-8")
         elif stage in {"bootstrap", "verify"}:
             for hook in ("session", "managed"):
                 key = stage, hook
@@ -305,15 +305,15 @@ class Stage2FlowTests(Stage2Harness):
         self.assert_failed(report, "load", "process_failed")
         self.assertEqual(self.events, ["inject", "load"])
         self.assertFalse(report["modules_reimported"])
-        self.assertFalse(report["security_change_attempted"])
-        self.assertEqual(report["security_settings_state"], "not_attempted")
+        self.assertTrue(report["security_change_attempted"])
+        self.assertEqual(report["security_settings_state"], "unverified")
 
     def test_load_missing_dumpresult_stops_even_when_process_succeeds(self):
         self.dump_results["load"] = None
         report = self.module.run()
         self.assert_failed(report, "load", "invalid_dump_result")
         self.assertEqual(self.events, ["inject", "load"])
-        self.assertFalse(report["security_change_attempted"])
+        self.assertTrue(report["security_change_attempted"])
 
     def test_load_nonzero_dumpresult_stops_even_when_process_succeeds(self):
         self.dump_results["load"] = b"1\n"
@@ -321,14 +321,14 @@ class Stage2FlowTests(Stage2Harness):
         self.assert_failed(report, "load", "invalid_dump_result")
         self.assertEqual(self.events, ["inject", "load"])
 
-    def test_reimport_mismatch_stops_before_security_change(self):
+    def test_reimport_mismatch_stops_before_user_creation(self):
         self.reimport_changes.add("redump")
         report = self.module.run()
         self.assert_failed(report, "redump", "module_mismatch")
         self.assertEqual(self.events, SUCCESS_EVENTS[:3])
         self.assertFalse(report["modules_reimported"])
-        self.assertFalse(report["security_change_attempted"])
-        self.assertEqual(report["security_settings_state"], "not_attempted")
+        self.assertTrue(report["security_change_attempted"])
+        self.assertEqual(report["security_settings_state"], "unverified")
 
     def test_bootstrap_timeout_is_attempted_but_not_verified_and_cleans_control(self):
         self.failures["bootstrap"] = "timeout"
@@ -442,6 +442,37 @@ class Stage2FlowTests(Stage2Harness):
         self.assertEqual(self.events, SUCCESS_EVENTS[:5])
         self.assertFalse(report["named_designer_verified"])
         self.assertFalse(report["named_user_verified"])
+
+    def test_named_metadata_permission_change_stops_verification(self):
+        self.metadata_changes["named_designer"] = (ROLE_FILES[1], "<name>ThickClient</name>", "<name>ThinClient</name>")
+        report = self.module.run()
+        self.assert_failed(report, "named_designer", "module_mismatch")
+        self.assertEqual(self.events, SUCCESS_EVENTS[:5])
+        self.assertFalse(report["named_designer_verified"])
+        self.assertFalse(report["named_user_verified"])
+
+    def test_initial_metadata_permission_change_stops_before_user_creation(self):
+        self.metadata_changes["redump"] = (ROLE_FILES[1], "<setForNewObjects>false", "<setForNewObjects>true")
+        report = self.module.run()
+        self.assert_failed(report, "redump", "module_mismatch")
+        self.assertEqual(self.events, SUCCESS_EVENTS[:3])
+        self.assertTrue(report["security_change_attempted"])
+        self.assertEqual(report["security_settings_state"], "unverified")
+        self.assertFalse(report["bootstrap_verified"])
+
+    def test_assigned_role_marker_is_required_before_bootstrap_success(self):
+        self.marker_overrides["bootstrap", "session"] = {"assigned_roles": []}
+        report = self.module.run()
+        self.assert_failed(report, "bootstrap", "marker_invalid")
+        self.assertFalse(report["bootstrap_verified"])
+        self.assertEqual(report["security_settings_state"], "unverified")
+
+    def test_fresh_role_marker_is_required_before_epf_execution(self):
+        self.marker_overrides["verify", "session"] = {"current_roles": [ROLE_NAME, "Other"]}
+        report = self.module.run()
+        self.assert_failed(report, "verify", "marker_invalid")
+        self.assertFalse(report["named_user_verified"])
+        self.assertFalse(report["launcher_built"])
 
     def test_named_verify_cannot_pass_with_incorrect_current_user(self):
         self.marker_overrides["verify", "session"] = {"current_user_at_start": "SomeoneElse"}

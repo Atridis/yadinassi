@@ -432,6 +432,44 @@ class BootstrapReportTests(unittest.TestCase):
         with self.assertRaises(smoke.SmokeError):
             smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
 
+    def test_every_loaded_or_unknown_failure_cannot_claim_unchanged_security(self):
+        for stage in ("load", "redump", "bootstrap", "unknown"):
+            with self.subTest(stage=stage):
+                data = bootstrap_report()
+                data.update(status="stage2_failed", runtime_version=None,
+                            runtime_version_source="not_measured", security_settings_changed=None)
+                data["stage2"].update(status="failed", failed_stage=stage, failure_kind="process_failed",
+                    actual_version=None, version_source="not_measured", simple_output_sha256=None,
+                    security_change_attempted=True, security_settings_state="unverified",
+                    protection_observation=smoke.DIAGNOSTICS.empty_protection_observation(),
+                    **{key: stage == "bootstrap" and key == "modules_reimported" for key in smoke.STAGE_FLAGS})
+                smoke.validate_stage2(data["stage2"])
+                self.assertIsNone(smoke.validate_report(json.dumps(data).encode(), bootstrap=True)["security_settings_changed"])
+                # Independently reject both a direct false outer claim and a
+                # self-consistent but dishonest inner/outer 'not attempted'.
+                data["security_settings_changed"] = False
+                with self.assertRaises(smoke.SmokeError):
+                    smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+                data["stage2"].update(security_change_attempted=False, security_settings_state="not_attempted")
+                with self.assertRaises(ValueError): smoke.validate_stage2(data["stage2"])
+                with self.assertRaises(smoke.SmokeError):
+                    smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+
+    def test_injection_rejection_is_the_only_unchanged_stage2_state(self):
+        data = bootstrap_report()
+        data.update(status="stage2_failed", runtime_version=None,
+                    runtime_version_source="not_measured", security_settings_changed=False)
+        data["stage2"].update(status="failed", failed_stage="inject", failure_kind="metadata_rejected",
+            actual_version=None, version_source="not_measured", simple_output_sha256=None,
+            security_change_attempted=False, security_settings_state="not_attempted",
+            protection_observation=smoke.DIAGNOSTICS.empty_protection_observation(),
+            **{key: False for key in smoke.STAGE_FLAGS})
+        self.assertFalse(smoke.validate_report(json.dumps(data).encode(), bootstrap=True)["security_settings_changed"])
+        data["stage2"].update(security_change_attempted=True, security_settings_state="unverified")
+        data["security_settings_changed"] = None
+        with self.assertRaises(ValueError): smoke.validate_stage2(data["stage2"])
+        with self.assertRaises(smoke.SmokeError): smoke.validate_report(json.dumps(data).encode(), bootstrap=True)
+
     def test_mismatched_version_cannot_claim_named_gate_verified(self):
         data = bootstrap_report()
         data.update(status="stage2_failed", runtime_version="8.3.26.1")

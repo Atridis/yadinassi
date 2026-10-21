@@ -12,7 +12,7 @@ CATEGORIES = frozenset({'none', 'unknown', 'compile_error', 'runtime_error',
 ORIGINS = frozenset({'none', 'native_log', 'session_marker', 'managed_marker'})
 MARKER_STATES = frozenset({'not_checked', 'absent', 'invalid', 'ok', 'error'})
 # Must match the trusted BSL sources; tests verify these exact limits.
-SOURCE_LINE_LIMITS = {'SessionModule': 187, 'ManagedApplicationModule': 89}
+SOURCE_LINE_LIMITS = {'SessionModule': 202, 'ManagedApplicationModule': 89}
 MODULE_ALIASES = {'МодульСеанса': 'SessionModule', 'SessionModule': 'SessionModule',
                   'МодульУправляемогоПриложения': 'ManagedApplicationModule',
                   'ManagedApplicationModule': 'ManagedApplicationModule'}

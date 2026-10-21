@@ -18,7 +18,7 @@ from diagnostics import (bounded_exit_code, collect_diagnostics, empty_diagnosti
                          collect_protection_observation, empty_protection_observation)
 from inject_modules import DraftError, PROTOCOL, inject
 from evidence_gates import (bounded_bytes, read_marker, require_epf,
-                            require_marker_pair, require_reimported_modules,
+                            require_marker_pair, require_reimported_modules, require_reimported_metadata,
                             require_zero_result)
 
 ONEC = Path('/opt/1cv8t/x86_64/8.3.27.1508/1cv8t')
@@ -179,19 +179,21 @@ def run() -> dict:
         except (DraftError, OSError):
             raise StageError('metadata_rejected') from None
         stage = 'load'
+        # Loading role metadata can itself change the disposable security state.
+        report['security_change_attempted'] = True
+        report['security_settings_state'] = 'unverified'
         batch(stage, database, evidence, ['/LoadConfigFromFiles', str(evidence / 'injected'), '/UpdateDBCfg'])
         stage = 'redump'
         redump = evidence / 'redump'
         redump.mkdir()
         batch(stage, database, evidence, ['/DumpConfigToFiles', str(redump), '-Format', 'Hierarchical'])
         try:
+            require_reimported_metadata(evidence / 'injected', redump)
             require_reimported_modules(evidence / 'injected', redump)
         except (DraftError, OSError):
             raise StageError('module_mismatch') from None
         report['modules_reimported'] = True
         stage = 'bootstrap'
-        report['security_change_attempted'] = True
-        report['security_settings_state'] = 'unverified'
         enterprise(stage, database, evidence, manifest, report, None)
         report['bootstrap_verified'] = True
         report['security_settings_state'] = 'verified'
@@ -199,8 +201,11 @@ def run() -> dict:
         named = evidence / 'named-designer'
         named.mkdir()
         batch(stage, database, evidence, ['/DumpConfigToFiles', str(named), '-Format', 'Hierarchical'], user)
-        bounded_bytes(named / 'Configuration.xml', 1_048_576)
-        require_reimported_modules(evidence / 'injected', named)
+        try:
+            require_reimported_metadata(evidence / 'injected', named)
+            require_reimported_modules(evidence / 'injected', named)
+        except (DraftError, OSError):
+            raise StageError('module_mismatch') from None
         report['named_designer_verified'] = True
         stage = 'verify'
         enterprise(stage, database, evidence, manifest, report, user)

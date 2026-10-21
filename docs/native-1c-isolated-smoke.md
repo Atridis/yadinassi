@@ -17,12 +17,21 @@ failed with a runtime-error classification and matching session error marker.
 That report did not retain a source location or method identifier. The following
 [context diagnostic run](https://github.com/Atridis/yadinassi/actions/runs/39526355692)
 retained `Записать` and `SessionModule` line 80, the actual user `Write()` call.
-The descriptor checks and reject-first-role enumeration therefore reached Write,
-but the native rejection reason and persisted state remain unknown. This
-parser-only candidate projects finite technical words from the existing private
-matching-marker detailed error, without changing BSL, native commands, containment
-or success/security gates. Mock tests do not establish persisted/fresh security
-readbacks, the application version or EPF execution.
+The descriptor checks and reject-first-role enumeration therefore reached Write.
+The subsequent finite cause projection retained the requirement that at least one
+user have administrative rights, consistent with the official first-user tutorial.
+
+This local candidate adds one explicitly named disposable administrative role,
+`NativeSmokeBootstrapAdministrator`, to the fresh native empty configuration and
+assigns exactly that role to the one bootstrap user. It is not a FullAccess role.
+The five explicit rights are `Administration`, its documented prerequisite
+`DataAdministration`, `ThickClient`, `MainWindowModeNormal`, and
+`InteractiveOpenExtDataProcessors`. These are a documentation-based bounded set
+for this workflow, not a runtime-proven mathematically minimal set. All three
+role-default flags are false; no default role, other right or additional object
+grant is permitted. Native execution of this role-bearing candidate remains
+unverified; offline mocks do not establish successful user Write, persisted/fresh
+security readbacks, actual application version or EPF execution.
 
 ## Invocation and unchanged trust boundary
 
@@ -86,11 +95,21 @@ remain in tmpfs. There is one fresh database and no concurrent 1C sessions.
    Require process success, fresh numeric-zero DumpResult and nonempty artifacts.
 2. Inspect the native configuration: managed default mode, no objects except
    language metadata, no roles/default roles and no existing BSL modules. Copy
-   native bytes without rewriting UUIDs, schema or ConfigDumpInfo.xml. Add only
-   `Ext/SessionModule.bsl` and `Ext/ManagedApplicationModule.bsl`.
-3. Full LoadConfigFromFiles plus UpdateDBCfg, then re-dump and compare both modules,
-   allowing only UTF-8 BOM and line-ending differences. No guessed metadata or
-   incremental import is used.
+   original native bytes, including ConfigDumpInfo.xml. Insert only the exact
+   role reference into the original Configuration.xml ChildObjects element,
+   without XML reserialization or changes to existing UUIDs, namespace, version,
+   language metadata or default roles. Generate a fresh UUID only for the new
+   role. Add its two XML files and the two existing internal BSL modules.
+   The reviewed role serialization is format 2.20; an unknown native format is
+   rejected rather than rewritten or assumed compatible.
+3. Full LoadConfigFromFiles plus UpdateDBCfg, then re-dump. Require exact role
+   identity and the five explicit rights, all defaults false, no other roles,
+   defaults, rights, objects or files, and unchanged original configuration and
+   language XML semantics. Only insignificant XML formatting, ChildObjects/right
+   order and native ConfigDumpInfo.xml bookkeeping may differ. Both BSL modules
+   must match, allowing only UTF-8 BOM and line-ending differences. No guessed
+   metadata shape or incremental import is used. Source-code specimens establish
+   serialization structure, not native runtime success on this image.
 4. Start anonymous Enterprise under an exact per-run bootstrap token. The internal
    session hook refuses nonanonymous startup or existing users. It creates the
    one disposable `NativeSmoke` user, observes the actual user-scoped
@@ -98,18 +117,25 @@ remain in tmpfs. There is one fresh database and no concurrent 1C sessions.
    exactly `ОписаниеЗащитыОтОпасныхДействий` and its
    `ПредупреждатьОбОпасныхДействиях` field is actually Boolean. It changes only
    that existing descriptor's warning flag to false, assigns the descriptor back,
-   checks the assigned state, and writes the user. It checks persisted FindByName
-   descriptor type and nested Boolean false, standard authentication, exactly
-   one user and zero roles. The common user-check helper enumerates the role
-   collection and rejects the first element; it never adds, removes or ignores
-   roles. Unsupported enumeration also fails startup, with no fallback. No new
+   checks the assigned state, assigns only the known disposable role, verifies
+   its exact singleton identity by enumeration, and writes the user. It checks
+   persisted FindByName descriptor type and nested Boolean false, standard
+   authentication, exactly one user and the same singleton role. The common
+   user-check helper requires Contains(the known metadata role), then enumerates
+   and uses a scalar counter to reject any second role, never unsupported
+   roles.Count or an unmeasured per-element metadata equality assumption. Missing, duplicate or extra
+   roles fail before Write or at either readback; unsupported enumeration also
+   fails with no fallback. No new
    descriptor resets other settings, and no initial warning value is assumed.
    It does not use an external EPF for bootstrap.
 5. Remove the control file. A separate Designer invocation with `/N NativeSmoke`
-   must successfully dump metadata and preserve the injected modules.
+   must successfully dump metadata and preserve both the injected modules and
+   the complete restricted metadata/rights scope under the same strict gates.
 6. A separate Enterprise `/N NativeSmoke` invocation must verify both the fresh
    CurrentUser snapshot and persisted FindByName security state, including the
-   same exact descriptor type and nested Boolean false. Both bootstrap
+   same exact descriptor type, nested Boolean false and singleton role. Private
+   markers must contain exact assigned/persisted/current singleton role arrays,
+   where applicable; the host does not publish role metadata. Both bootstrap
    and verification require fresh session and managed-hook markers with exact
    protocol, run nonce, stage, identity, fields and primitive types. Managed hooks
    obtain `SystemInfo.AppVersion`; anything other than `8.3.27.1508` fails.
@@ -124,6 +150,8 @@ remain in tmpfs. There is one fresh database and no concurrent 1C sessions.
 The launcher's existing server-side external-processing creation behavior is
 unchanged. No new security bypass, conf.cfg setting, global protection mode,
 role-escalation fallback, password, real data or production database is added.
+The sole explicit administrative role is limited to this disposable tmpfs base;
+its rights are never added to a real database, existing user or global setting.
 
 Module discovery on full import has been demonstrated by byte-identical native
 re-export. [The diagnostic run](https://github.com/Atridis/yadinassi/actions/runs/39522764403)
@@ -137,9 +165,10 @@ already succeeded; the role-collection Count check is therefore the likely
 remaining failing call, not a proven line-level diagnosis. The subsequent retry
 used strict enumeration and reported a generic runtime-error classification
 instead; no specific API or line is inferred from that.
-Native collection enumerability, persisted and fresh
-security readbacks, role-free named-user permissions, actual platform version
-and simple EPF execution remain unverified. Any compile failure, unsupported API, denied
+The subsequent native Write location establishes that the old zero-role
+iteration completed; successful enumeration of an actual assigned role, persisted
+and fresh security readbacks, named-user permissions, actual platform version
+and simple EPF execution for this role-bearing candidate remain unverified. Any compile failure, unsupported API, denied
 access, missing hook or modal timeout stops the stage. Do not add broad roles or
 weaken protections to turn a failure green. A retry after an attempted bootstrap
 requires a newly created disposable database, not another bootstrap against the
@@ -226,7 +255,8 @@ process failure, timeout, invalid marker or module mismatch). A separate strict
   marker, 8,192-byte stage report and 32,768-byte host report limits still apply;
   tests bound both worst-case serialization and full-limit parsing time. No raw
   descriptions, exception codes, arbitrary identifiers or new native API fields
-  are exported. Both BSL modules and their exception handling remain unchanged.
+  are exported. Exception handling remains unchanged; the exact trusted-source
+line limit follows the reviewed session module, not a widened text/JSON cap.
 
 The host independently validates diagnostic keys, types, enums, source bounds,
 identifiers, provenance and consistency with the failed stage. No native errors,
@@ -244,7 +274,12 @@ An observation alone never means settings were changed or verified. The strict
 marker schema rejects the former whole-property-Boolean fixture shape.
 
 `security_change_attempted` and the finite security state distinguish no attempt,
-unverified partial execution and verified persisted mutation. The outer
+unverified partial execution and verified persisted mutation. The attempted flag
+is set before LoadConfigFromFiles because loading role metadata can itself alter
+the disposable security state, even when subsequent user creation never runs.
+The independent host gate rejects a false no-attempt claim for load, redump,
+bootstrap or any later/unknown stage; only an injection rejection can report
+unchanged security. The outer
 `security_settings_changed` is null when mutation is uncertain, including a
 container timeout or invalid/missing report after execution. It is not falsely
 reported as unchanged after a partially completed bootstrap.
@@ -270,8 +305,10 @@ python -m unittest discover -s tests -v
 
 Coverage includes exact staging, restrictive host umask, containment, registry
 authentication separation, fresh markers, Boolean-versus-integer flags, anonymous
-identity, module-byte preservation, reject-first-element role enumeration,
-descriptor and nested-Boolean guards, legacy
+identity, exact source-byte preservation except the single role reference,
+module-byte preservation, singleton role enumeration and assigned/persisted/fresh
+role arrays, strict metadata/UUID/default/right gates before user creation and
+before fresh verification, descriptor and nested-Boolean guards, legacy
 Boolean-schema rejection, read-only finite type observations, strict
 user/version/output gates, named
 Designer/Enterprise separation, partial security state and timeout/error paths.
@@ -291,3 +328,9 @@ run cross-platform. Synthetic XML fixtures are not native/loadable metadata.
 - [1C 8.3.27 developer guide](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/).
 - [Session parameter initialization](https://1c-dn.com/library/using_session_parameters/).
 - [Protection-property rename and descriptor distinction](https://downloads.v8.1c.ru/content/Platform/8_3_13_1690/1cv8upd_8_3_13_1690.htm).
+
+- [First-user administrative-role requirement](https://kb.1ci.com/1C_Enterprise_Platform/Tutorials/1C_Enterprise_Platform_Training_Course_-_Senior_Application_Developer_Level/Module_3._Access_rights/Episode_1._Playing_roles/?language=en).
+- [1C 8.3.27 rights names and prerequisites, Appendix 5](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/#appendix-5-access-rights-description).
+- [Primary-source 2.20 Role XML structural specimen](https://github.com/1Ci-Company/Jet-TR/blob/3f4949d0a5f921309b1b3bae3889910ec063e84a/cf/Roles/FullAccess.xml).
+- [Adjacent 2.20 Rights XML structural specimen](https://github.com/1Ci-Company/Jet-TR/blob/3f4949d0a5f921309b1b3bae3889910ec063e84a/cf/Roles/FullAccess/Ext/Rights.xml). Its broad grants and true defaults are deliberately not copied.
+- [Official code using InfoBaseUser.Roles.Add with a known metadata role](https://github.com/1C-Company/dt-demo-configuration/blob/1f4b6288a2b22eb11c32b3b2360820e38b66545b/DemoConfDT/src/CommonModules/БотСервер/Module.bsl).
