@@ -6,6 +6,14 @@ coverage maps and timezone replay details are kept here separately. The dated
 sections record the progression of the evidence; later checkpoints supersede
 earlier pending statuses.
 
+## Separate automated Linux capture
+
+[The isolated six-scenario workflow](native-1c-full-regression.md) creates a fresh
+Linux/UTC native capture and compares its exact bytes with a separate interpreter
+run. Only finite summaries/hashes are public; capture bytes and native logs are
+not uploaded. This does not replace the owner-confirmed Windows fixtures below.
+A bootstrap/simple-EPF success alone does not establish six-scenario parity.
+
 ## XML checkpoint timezone (2026-10-19)
 
 Owner-confirmed `Get-TimeZone` output for the XML checkpoint run:

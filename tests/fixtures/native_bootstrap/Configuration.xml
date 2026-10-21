@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC UNIT-TEST FIXTURE, not a loadable or native-generated configuration. -->
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">
+  <Configuration uuid="bd3814ed-1b7c-4f56-96b3-620fc5e32c44">
+    <InternalInfo><OpaqueNativeData>preserve this verbatim</OpaqueNativeData></InternalInfo>
+    <Properties>
+      <Name>DisposableFixture</Name>
+      <DefaultRunMode>ManagedApplication</DefaultRunMode>
+      <DefaultRoles/>
+    </Properties>
+    <ChildObjects><Language>Russian</Language></ChildObjects>
+  </Configuration>
+</MetaDataObject>
