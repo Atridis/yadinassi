@@ -1197,3 +1197,28 @@ all 21 directly observed Windows cache cases and with no observed platform
 conflict. The new Windows cases are not claimed to have been natively verified.
 No saved Windows output is extended, replaced or relabeled; future supported
 PR/main runs independently regenerate the complete current Linux oracle.
+
+### ValueList item field references: native-first checkpoint
+
+The next bounded checkpoint adds 20 caught-marker observations for the existing
+`Value/Значение`, `Presentation/Представление` and `Check/Пометка` fields passed
+to user routines. It covers RU/EN names, `Val` controls, immediate two-way alias
+visibility, duplicate/nested forwarding, partial writes before exceptions,
+existing scalar conversions, invalid writes, once-only index/Get receivers,
+reorder/deletion while the list remains alive, warmed string caches, argument
+failure timing and function return values. Root/`&НаКлиенте` routing will be tested
+locally with the implementation, because the native harness uses an object module where managed-form
+compilation directives are not supported. It does not enable the
+runtime feature before measuring native results.
+
+The full current collections source has 797 message records. Its reviewed
+SHA256 is `f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a`.
+The existing Map-order relation still applies only to its eight old ordinals;
+every added observation requires exact equality. A red parity verdict during
+this checkpoint is expected while the explicit runtime guard remains, but
+native completion and all six output files plus provenance are still required.
+No Windows native claim follows from the pending Linux run. Historical replay
+removes only the newly delimited blocks in addition to previously excluded
+later blocks and retains the exact historical full-source/output hashes.
+Picture, formatted strings, constraints, UI, standalone decoded IDs, released
+owners and other collection semantics remain outside this work.

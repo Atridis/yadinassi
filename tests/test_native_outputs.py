@@ -38,6 +38,7 @@ def normalize_newlines(text: str) -> str:
 
 from scripts.native_historical_replay import (
     historical_collections_source, git_blob, FINAL_PROBE_BLOCKS,
+    FIELD_REFERENCE_BLOCKS, without_field_reference_probes,
     HISTORICAL_COLLECTIONS_BLOB, HISTORICAL_COLLECTIONS_OUTPUT_BLOB,
 )
 
@@ -289,15 +290,36 @@ class HistoricalCollectionsBindingTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     historical_collections_source(source, output)
 
+    def test_only_field_reference_blocks_restore_previous_complete_source(self):
+        previous = without_field_reference_probes(self.source.decode("utf-8")).encode("utf-8")
+        self.assertEqual(git_blob(previous), "041eec9bd8ee0cd37242c91dee58ae38f0a818aa")
+        self.assertEqual(len(previous), 275072)
+        # Keep the previous final cache probes; this is not a prefix replay.
+        self.assertIn(b'table.list.string-cache.final.complete', previous)
+        for start, end in FIELD_REFERENCE_BLOCKS:
+            self.assertIn(start.encode(), self.source)
+            self.assertIn(end.encode(), self.source)
+            self.assertNotIn(start.encode(), previous)
+            self.assertNotIn(end.encode(), previous)
+        replay = historical_collections_source(self.source, self.output)
+        for start, end in FIELD_REFERENCE_BLOCKS:
+            self.assertNotIn(start.encode(), replay)
+            self.assertNotIn(end.encode(), replay)
+
     def test_missing_duplicated_or_reordered_boundaries_fail_closed(self):
-        start, end = FINAL_PROBE_BLOCKS[0]
-        for source in (self.source.replace(start.encode(), b''),
-                       self.source + start.encode(),
-                       self.source.replace(end.encode(), b''),
-                       self.source.replace(start.encode(), b'__SWAP__').replace(
-                           end.encode(), start.encode()).replace(b'__SWAP__', end.encode())):
-            with self.assertRaises(ValueError):
-                historical_collections_source(source, self.output)
+        for start, end in (*FINAL_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS):
+            mutations = (
+                self.source.replace(start.encode(), b''),
+                self.source + start.encode(),
+                self.source.replace(end.encode(), b''),
+                self.source + end.encode(),
+                self.source.replace(start.encode(), b'__SWAP__').replace(
+                    end.encode(), start.encode()).replace(b'__SWAP__', end.encode()),
+            )
+            for index, source in enumerate(mutations):
+                with self.subTest(start=start, mutation=index):
+                    with self.assertRaises(ValueError):
+                        historical_collections_source(source, self.output)
 
 
     def test_mutation_controls_work_with_crlf_checkout(self):
@@ -309,6 +331,7 @@ class HistoricalCollectionsBindingTests(unittest.TestCase):
             return data
         names = (
             'test_full_historical_source_and_all_output_bytes_are_bound',
+            'test_only_field_reference_blocks_restore_previous_complete_source',
             'test_changed_historical_source_or_output_fails_closed',
             'test_missing_duplicated_or_reordered_boundaries_fail_closed',
         )

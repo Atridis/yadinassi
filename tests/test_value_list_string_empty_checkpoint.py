@@ -1,4 +1,5 @@
 """Final empty-result probes: competing synthetic caches, not native answers."""
+from scripts.native_historical_replay import FIELD_REFERENCE_BLOCKS, without_field_reference_probes
 from collections import Counter
 from decimal import Decimal
 import gc
@@ -53,7 +54,7 @@ def observations():
 class ValueListStringEmptyCheckpointTests(unittest.TestCase):
     def test_only_new_blocks_removed_restore_source_and_native_output_stays_untouched(self):
         text = source()
-        for start, end in (HELPERS, BODY):
+        for start, end in (*FIELD_REFERENCE_BLOCKS, HELPERS, BODY):
             self.assertEqual(text.count(start), 1)
             self.assertEqual(text.count(end), 1)
             before, rest = text.split(start, 1)
@@ -78,7 +79,7 @@ class ValueListStringEmptyCheckpointTests(unittest.TestCase):
             self.assertLess(len(call.arguments[1].value), 100)
             parse('Result = ' + call.arguments[1].value)
         self.assertEqual(source().count(FINAL), 1)
-        self.assertTrue(source().endswith(BODY[1] + 'Сообщить("table.checkpoint.complete: [ok]");\n'))
+        self.assertTrue(without_field_reference_probes(source()).endswith(BODY[1] + 'Сообщить("table.checkpoint.complete: [ok]");\n'))
         started = False
         for node in parse(source()):
             if isinstance(node, ast.Routine):
