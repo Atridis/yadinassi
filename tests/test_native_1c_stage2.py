@@ -126,7 +126,11 @@ class Stage2Harness(unittest.TestCase):
         self.assertEqual(user, "NativeSmoke")
         self.evidence = Path(evidence)
         self.assertEqual(destination, self.evidence / "injected")
-        self.manifest = inject_fixture(source, destination, run_id=run_id, user=user, evidence=evidence)
+        # Only the rendered BSL literal represents a Linux container path. The
+        # harness filesystem paths above remain native to Windows/macOS/Linux.
+        # No rendered BSL executes in these offline tests.
+        self.manifest = inject_fixture(source, destination, run_id=run_id, user=user,
+                                       evidence="/tmp/native-offline/" + run_id)
         # Synthetic fixture XML and no native calls; this is not a native result.
         return self.manifest
 
@@ -255,6 +259,15 @@ class Stage2Harness(unittest.TestCase):
 
 
 class Stage2FlowTests(Stage2Harness):
+    def test_injected_evidence_literal_is_container_posix_on_every_host(self):
+        report = self.module.run()
+        self.assertEqual(report["status"], "ok")
+        expected = "/tmp/native-offline/" + self.manifest["run_id"]
+        self.assertEqual(self.manifest["evidence_root"], expected)
+        self.assertEqual(self.manifest["request_path"], expected + "/control.json")
+        self.assertNotEqual(str(self.evidence), expected)
+        self.assertTrue((self.evidence / "injected/Ext/SessionModule.bsl").is_file())
+
     def test_complete_flow_has_exact_report_and_no_control_at_named_designer_or_epfs(self):
         report = self.module.run()
         self.assert_report_schema(report)
