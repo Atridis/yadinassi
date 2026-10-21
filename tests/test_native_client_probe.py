@@ -1744,7 +1744,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
                 self.assertEqual(actual, expected)
                 self.assertTrue(any(value.startswith(root) for value in actual))
 
-    def emitter(self, *, watchdog=False, cleanup_failed=False):
+    def emitter(self, *, watchdog=False, dates=False, values=False, cleanup_failed=False):
         envelope, inputs, modules = host_fixture.fixture()
         inputs[suite.CLIENT_SOURCE] = "c" * 64
         modules["client_probe"] = "d" * 64
@@ -1752,6 +1752,21 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
             "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
             "process_diagnostics": process_diagnostics(), **dict.fromkeys(suite.CLIENT_FLAGS, True)}
         envelope["report"]["stage3"]["client_probe"] = client
+        for scenario, enabled, count, module_hash in (("dates", dates, 100, "e" * 64),
+                                                       ("values", values, 261, "f" * 64)):
+            if not enabled:
+                continue
+            case = envelope["report"]["stage3"]["cases"][full.SCENARIOS.index(scenario)]
+            source = f"integrational_tests/tests/{scenario}.bsl"
+            if scenario == "values":
+                inputs[source] = full.VALUES_SOURCE_SHA256
+                case["source_sha256"] = inputs[source]
+            case["message_count"] = count
+            modules["client_" + scenario] = module_hash
+            envelope["report"]["stage3"]["client_" + scenario] = {
+                **copy.deepcopy(client), "source_sha256": inputs[source],
+                "module_sha256": module_hash, "roundtrip_sha256": module_hash,
+                **{key: case[key] for key in ("output_sha256", "output_size", "message_count")}}
         if watchdog:
             envelope["report"]["stage3"]["client_watchdog"] = {**copy.deepcopy(client), "completed": False,
                 "process_exited": False, "witness_verified": False, "timeout_verified": True}
@@ -1764,13 +1779,14 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
                 '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">'
                 '<Configuration><Properties><Name/></Properties></Configuration></MetaDataObject>')
             (root / "stage2-report.json").write_text(json.dumps(envelope["report"]["stage2"]))
-            (root / "stage3-report.json").write_text(json.dumps(envelope["report"]["stage3"]))
+            (root / "stage3-report.json").write_text(json.dumps(envelope["report"]["stage3"], separators=(",", ":")))
             script = relocate_emitter_source(script, root)
             raw = io.BytesIO()
             diagnostic = process_diagnostics(reason="unexpected_processes", classes={"other": 1})
             arguments = ["emitter", "1" if cleanup_failed else "0", "stage2" if cleanup_failed else "complete",
                          "true", "true", "true", "true", "true", "true", host_fixture.NONCE,
-                         "true", "true" if watchdog else "false", "false", "true" if cleanup_failed else "false"]
+                         "true", "true" if watchdog else "false", "true" if dates else "false",
+                         "true" if values else "false", "true" if cleanup_failed else "false"]
             reader = (mock.patch.object(suite, "secure_bytes", new=stage_fixture.portable_fixture_bytes)
                       if os.name == "nt" else contextlib.nullcontext())
             with reader, mock.patch.object(sys, "argv", arguments), mock.patch.object(sys, "path", sys.path.copy()), \
@@ -1784,13 +1800,14 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
                 exec(compile(script, "offline-final-report-emitter", "exec"), {})
             self.assertEqual(caught.exception.code, 1)
         report, outputs = full.validate_envelope(raw.getvalue(), host_fixture.NONCE, inputs, modules,
-                                                 smoke.validate_report, watchdog_check=watchdog)
+                                                 smoke.validate_report, watchdog_check=watchdog, client_dates=dates, client_values=values)
         self.assertEqual(outputs, {})
         self.assertFalse(report["native_tests_completed"])
         self.assertEqual(report["status"], "stage3_failed")
         self.assertEqual(report["stage3"]["status"], "failed")
         self.assertEqual(report["stage2"]["status"], "ok")
-        last = report["stage3"]["client_watchdog" if watchdog else "client_probe"]
+        last = report["stage3"]["client_watchdog" if watchdog else
+                                "client_values" if values else "client_dates" if dates else "client_probe"]
         self.assertEqual(last["status"], "failed")
         self.assertFalse(last["quiet"])
         self.assertFalse(last["witness_verified"])
@@ -1809,6 +1826,23 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
         for watchdog in (False, True):
             with self.subTest(watchdog=watchdog):
                 self.emitter(watchdog=watchdog, cleanup_failed=True)
+
+    def test_parity_teardown_failures_preserve_prior_proofs_but_never_export(self):
+        for watchdog in (False, True):
+            for dates in (False, True):
+                for cleanup_failed in (False, True):
+                    with self.subTest(watchdog=watchdog, dates=dates, cleanup_failed=cleanup_failed):
+                        report = self.emitter(watchdog=watchdog, dates=dates, values=True,
+                                              cleanup_failed=cleanup_failed)
+                        stage = report["stage3"]
+                        self.assertEqual(stage["client_probe"]["status"], "ok")
+                        if dates:
+                            self.assertEqual(stage["client_dates"]["status"], "ok")
+                        if watchdog:
+                            self.assertEqual(stage["client_values"]["status"], "ok")
+                        else:
+                            for key in ("output_sha256", "output_size", "message_count"):
+                                self.assertIsNone(stage["client_values"][key])
 
     def test_shell_owns_session_bus_before_baseline_and_reaps_before_display_and_export(self):
         script = smoke.PROBE.read_text()

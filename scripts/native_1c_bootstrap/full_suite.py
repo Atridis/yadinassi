@@ -60,12 +60,13 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False) -> dict:
-    if not valid_nonce(nonce) or ((watchdog_check or client_dates) and not client_probe):
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False) -> dict:
+    if not valid_nonce(nonce) or ((watchdog_check or client_dates or client_values) and not client_probe):
         raise FullError('invalid_input')
     return {**({'client_probe': empty_client_report()} if client_probe else {}),
             **({'client_watchdog': empty_watchdog_report()} if watchdog_check else {}),
             **({'client_dates': empty_dates_report()} if client_dates else {}),
+            **({'client_values': empty_values_report()} if client_values else {}),
             'schema': 1, 'nonce': nonce, 'status': 'not_started',
             'failure_kind': 'prerequisites_failed', 'failed_case': None,
             'input_sha256': {}, 'cases': [
@@ -297,8 +298,8 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float,
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False) -> dict:
-    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates)
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values)
     report.update(status='failed', failure_kind='unexpected_failure')
     active = None
     old_reader, old_process, old_build = launcher.read_result, launcher.run_process, launcher.build_epf
@@ -364,6 +365,12 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
                 dates_output=root / 'dates.out')
             if report['client_dates']['status'] != 'ok':
                 raise FullError(report['client_dates']['failure_kind'])
+        if client_values:
+            report['client_values'] = run_client_probe(
+                platform, root / 'client-values', inputs, nonce, report['input_sha256'],
+                values_output=root / 'values.out')
+            if report['client_values']['status'] != 'ok':
+                raise FullError(report['client_values']['failure_kind'])
         if watchdog_check:
             report['client_watchdog'] = run_client_watchdog(
                 platform, root / 'client-watchdog', inputs, nonce, report['input_sha256'])
@@ -760,6 +767,7 @@ def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostic
     """Keep a final teardown/census failure valid, finite and non-exportable."""
     suite.update(status='failed', failure_kind='process_failed')
     last = (suite['client_watchdog'] if watchdog_check else
+            suite['client_values'] if 'client_values' in suite else
             suite['client_dates'] if 'client_dates' in suite else suite['client_probe'])
     if 'output_sha256' in last:
         last.update(output_sha256=None, output_size=None, message_count=None)
@@ -784,14 +792,19 @@ def final_client_process_census(nonce: str) -> None:
 
 
 def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
-                     hashes: dict, *, stall: bool = False, dates_output: Path | None = None) -> dict:
+                     hashes: dict, *, stall: bool = False, dates_output: Path | None = None,
+                     values_output: Path | None = None) -> dict:
     """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
-    record = empty_dates_report() if dates_output is not None else empty_client_report()
-    marker_reader = client_dates_marker if dates_output is not None else client_marker
+    parity_output = values_output if values_output is not None else dates_output
+    record = (empty_values_report() if values_output is not None else
+              empty_dates_report() if dates_output is not None else empty_client_report())
+    marker_reader = (client_values_marker if values_output is not None else
+                     client_dates_marker if dates_output is not None else client_marker)
     record.update(status='failed', failure_kind='unexpected_failure')
     try:
         if (not valid_nonce(nonce) or type(stall) is not bool
-                or (dates_output is not None and stall) or platform.timeout != 120
+                or (parity_output is not None and stall)
+                or (dates_output is not None and values_output is not None) or platform.timeout != 120
                 or platform.user != 'NativeSmoke' or platform.password is not None):
             raise FullError('invalid_input')
         record['process_diagnostics'].update(stage='baseline', reason='unverified')
@@ -805,7 +818,13 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
         if digest(source) != hashes[CLIENT_SOURCE]:
             raise FullError('invalid_input')
-        if dates_output is not None:
+        if values_output is not None:
+            values_source = secure_bytes(inputs / 'scenarios/values.bsl', MAX_OUTPUT)
+            if digest(values_source) != hashes['integrational_tests/tests/values.bsl']:
+                raise FullError('invalid_input')
+            record['source_sha256'] = digest(values_source)
+            module = client_values_module(values_source, source)
+        elif dates_output is not None:
             dates_source = secure_bytes(inputs / 'scenarios/dates.bsl', MAX_OUTPUT)
             if digest(dates_source) != hashes['integrational_tests/tests/dates.bsl']:
                 raise FullError('invalid_input')
@@ -887,9 +906,9 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             raise FullError('process_failed')
         if secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT) != module:
             raise FullError('module_mismatch')
-        if dates_output is not None:
+        if parity_output is not None:
             client_output = serialize_messages(completion['values'])
-            server_output = secure_bytes(dates_output, MAX_OUTPUT, allow_empty=True)
+            server_output = secure_bytes(parity_output, MAX_OUTPUT, allow_empty=True)
             if client_output != server_output:
                 raise FullError('output_mismatch')
             record.update(output_sha256=digest(client_output), output_size=len(client_output),
@@ -1028,6 +1047,219 @@ def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
     # Retain the existing private result envelope limit, including JSON escapes.
     value = strict_json(secure_bytes(path, MAX_RESULT), max_depth=3)
     expected_count = 0 if phase == 'entered' else CLIENT_DATES_MESSAGE_COUNT
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != expected_count
+            or any(type(item) is not str for item in value['values'])):
+        raise FullError('invalid_result')
+    try:
+        if sum(len(item.encode('utf-8')) for item in value['values']) > MAX_OUTPUT:
+            raise FullError('output_limit')
+        serialize_messages(value['values'])
+    except UnicodeError:
+        raise FullError('invalid_result') from None
+    return value
+# This is a deliberately source-specific adapter, not a general BSL rewriter.
+CLIENT_VALUES_SOURCE_SHA256 = '7b0790763d2169c80f7475fc19af78e66475e3f4fc2ed8f23b00eb000c8b7e20'
+CLIENT_VALUES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
+CLIENT_VALUES_MESSAGE_COUNT = 261
+
+
+def empty_values_report() -> dict:
+    return {**empty_client_report(), 'output_sha256': None, 'output_size': None,
+            'message_count': None}
+
+
+def client_values_module(source: bytes, template: bytes) -> bytes:
+    """Wrap the complete pinned values source in the pinned managed-client form.
+
+    All 33 original helpers remain in their original order with client directives.
+    Only the 16 verified message-call identifiers change, and the complete module
+    body moves into a client procedure. Expressions, conversions and error paths
+    stay byte-identical. No server trampoline or reference values are added.
+    """
+    if (digest(source) != CLIENT_VALUES_SOURCE_SHA256
+            or digest(template) != CLIENT_VALUES_TEMPLATE_SHA256):
+        raise FullError('invalid_input')
+    original = generated_module(source).decode('utf-8-sig')
+    harness = generated_module(template).decode('utf-8-sig')
+    lines = original.splitlines(keepends=True)
+    # Check exact declarations, helper endings, body boundary and call sites.
+    # Raw hashes above also pin all expression strings and protected branches.
+    declarations = {
+        3: 'Процедура НаблюдатьNull(Знач Метка, Знач Выражение)\n',
+        19: 'Функция ВложенныйNull(Знач Значение)\n',
+        27: 'Функция ПоискNull(Знач Значение)\n',
+        35: 'Функция КлючNull(Знач Значение)\n',
+        49: 'Процедура НаблюдатьXML(Знач Метка, Знач Выражение)\n',
+        64: 'Функция ПрочитатьДатуXML(Знач Текст)\n',
+        71: 'Функция КругXML(Знач Значение)\n',
+        80: 'Функция КодыXML(Знач Текст)\n',
+        89: 'Функция УправляющиеXML()\n',
+        96: 'Функция ГраницыXML()\n',
+        102: 'Функция ОчисткаXML(Знач Текст, Знач Версия)\n',
+        115: 'Функция ПолеКомпактногоДополнения(Знач Значение)\n',
+        122: 'Функция ПоляКомпактногоДополнения(Знач Значение, Знач Путь)\n',
+        143: 'Процедура НаблюдатьДополнениеТипов(Знач Метка, Знач Выражение)\n',
+        158: 'Функция СодержитТипДополнения(Знач Описание, Знач ПроверяемыйТип)\n',
+        163: 'Функция УмолчаниеТипаДополнения(Знач Описание)\n',
+        169: 'Функция СвойстваТипаДополнения(Знач Описание)\n',
+        174: 'Функция КоличествоМассиваДополнения(Знач Массив)\n',
+        178: 'Функция КвалификаторыОписанияДополнения(Знач Описание)\n',
+        199: 'Функция УмолчанияКвалификаторовДополнения(Знач Пустое, Знач Скалярное)\n',
+        208: 'Функция ПолеКомпактныхТипов(Знач Значение)\n',
+        215: 'Функция ПоляКомпактныхТипов(Знач Значение, Знач Путь)\n',
+        236: 'Процедура НаблюдатьТипы(Знач Метка, Знач Выражение)\n',
+        253: 'Функция СнимокТипов(Знач Значение)\n',
+        288: 'Функция СвойстваЧислаТипов(Знач Значение)\n',
+        295: 'Функция СвойстваДлиныТипов(Знач Значение)\n',
+        300: 'Функция СвойстваДатыТипов(Знач Значение)\n',
+        305: 'Функция СвойстваОписанияТипов(Знач Значение)\n',
+        311: 'Функция МассивТиповПробы()\n',
+        319: 'Функция НезависимостьТипов(Знач Значение)\n',
+        327: 'Функция ПриведениеТипов(Знач Описание, Знач Значение)\n',
+        337: 'Функция ПоляОбъектаТипов(Знач Значение)\n',
+        349: 'Функция ЗаписьСвойстваТипов(Знач Значение, Знач Действие)\n',
+    }
+    endings = {
+        16: 'КонецПроцедуры\n',
+        25: 'КонецФункции\n',
+        33: 'КонецФункции\n',
+        44: 'КонецФункции\n',
+        62: 'КонецПроцедуры\n',
+        69: 'КонецФункции\n',
+        78: 'КонецФункции\n',
+        87: 'КонецФункции\n',
+        94: 'КонецФункции\n',
+        100: 'КонецФункции\n',
+        109: 'КонецФункции\n',
+        120: 'КонецФункции\n',
+        139: 'КонецФункции\n',
+        156: 'КонецПроцедуры\n',
+        161: 'КонецФункции\n',
+        167: 'КонецФункции\n',
+        172: 'КонецФункции\n',
+        176: 'КонецФункции\n',
+        197: 'КонецФункции\n',
+        202: 'КонецФункции\n',
+        213: 'КонецФункции\n',
+        232: 'КонецФункции\n',
+        249: 'КонецПроцедуры\n',
+        286: 'КонецФункции\n',
+        293: 'КонецФункции\n',
+        298: 'КонецФункции\n',
+        303: 'КонецФункции\n',
+        309: 'КонецФункции\n',
+        317: 'КонецФункции\n',
+        325: 'КонецФункции\n',
+        335: 'КонецФункции\n',
+        346: 'КонецФункции\n',
+        354: 'КонецФункции\n',
+    }
+    sites = {
+        7: '        Сообщить("null." + Метка + ": [error]");\n',
+        12: '        Сообщить("null." + Метка + ": [" + Запись + "]");\n',
+        14: '        Сообщить("null." + Метка + ": [serialize-error]");\n',
+        53: '        Сообщить("xml." + Метка + ": [error]");\n',
+        58: '        Сообщить("xml." + Метка + ": [" + Запись + "]");\n',
+        60: '        Сообщить("xml." + Метка + ": [serialize-error]");\n',
+        147: '        Сообщить("types-extra." + Метка + ": [error]");\n',
+        152: '        Сообщить("types-extra." + Метка + ": [" + Запись + "]");\n',
+        154: '        Сообщить("types-extra." + Метка + ": [serialize-error]");\n',
+        240: '        Сообщить("types." + Метка + ": [error]");\n',
+        245: '        Сообщить("types." + Метка + ": [" + Запись + "]");\n',
+        247: '        Сообщить("types." + Метка + ": [serialize-error]");\n',
+        406: 'Сообщить("null.checkpoint.complete: [ok]");\n',
+        485: 'Сообщить("xml.checkpoint.complete: [ok]");\n',
+        622: 'Сообщить("types.checkpoint.complete: [ok]");\n',
+        650: 'Сообщить("types-extra.checkpoint.complete: [ok]");\n',
+    }
+    body_start = 357
+    capture = 'ЗначенияКлиентЗахват'
+    reserved = (capture, 'ЗначенияКлиентСообщения',
+                'ЗначенияКлиентСимволы', 'ЗначенияКлиентВыполнить')
+    if (len(lines) != 651
+            or any(lines[i] != text for i, text in declarations.items())
+            or any(lines[i] != text for i, text in endings.items())
+            or any(lines[i] != text for i, text in sites.items())
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*(?:Процедура|Функция)\s', line)) != tuple(declarations)
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Конец(?:Процедуры|Функции)\b', line)) != tuple(endings)
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Сообщить\(', line)) != tuple(sites)
+            or lines[body_start] != 'НаблюдатьNull("literal.upper", "NULL");\n'
+            or lines[body_start - 1] != '// Значение, тип и настоящий прямой/обратный кодек.\n'
+            or any(re.match(r'^\s*[&#]', line) for line in lines)
+            or any(name.casefold() in text.casefold()
+                   for name in reserved for text in (original, harness))):
+        raise FullError('invalid_input')
+    adapted = lines.copy()
+    for i in sites:
+        adapted[i] = adapted[i].replace('Сообщить(', capture + '(', 1)
+    for i in declarations:
+        adapted[i] = '&НаКлиенте\n' + adapted[i]
+    # Inverse reconstruction is a runtime check, not disabled by Python -O.
+    restored = adapted.copy()
+    for i in declarations:
+        restored[i] = restored[i].removeprefix('&НаКлиенте\n')
+    for i in sites:
+        restored[i] = restored[i].replace(capture + '(', 'Сообщить(', 1)
+    if ''.join(restored) != original:
+        raise FullError('invalid_input')
+    fixed = re.search(r'&НаКлиенте\nФункция ВычислитьПробу\(\)\n.*?\nКонецФункции\n',
+                      harness, flags=re.DOTALL)
+    if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
+        raise FullError('invalid_input')
+    # Client-only, non-exported form variables. Four UTF-8 bytes per character
+    # plus one LF per message conservatively bounds capture; the verifier also
+    # enforces the exact serialized UTF-8 byte and private JSON-envelope caps.
+    budget = (MAX_OUTPUT - CLIENT_VALUES_MESSAGE_COUNT) // 4
+    variables = ('&НаКлиенте\nПерем ЗначенияКлиентСообщения;\n'
+                 '&НаКлиенте\nПерем ЗначенияКлиентСимволы;\n\n')
+    wrapper = f'''&НаКлиенте
+Процедура ЗначенияКлиентЗахват(Знач Текст)
+    Если ТипЗнч(Текст) <> Тип("Строка") Тогда
+        ВызватьИсключение "client-values-type";
+    КонецЕсли;
+    Если ЗначенияКлиентСообщения.Количество() >= {CLIENT_VALUES_MESSAGE_COUNT}
+        Или ЗначенияКлиентСимволы + СтрДлина(Текст) > {budget} Тогда
+        ВызватьИсключение "client-values-limit";
+    КонецЕсли;
+    ЗначенияКлиентСимволы = ЗначенияКлиентСимволы + СтрДлина(Текст);
+    ЗначенияКлиентСообщения.Добавить(Текст);
+КонецПроцедуры
+
+'''
+    wrapper += ''.join(adapted[:body_start])
+    wrapper += '&НаКлиенте\nПроцедура ЗначенияКлиентВыполнить()\n'
+    wrapper += ''.join(adapted[body_start:])
+    wrapper += 'КонецПроцедуры\n\n'
+    wrapper += '''&НаКлиенте
+Функция ВычислитьПробу()
+    ЗначенияКлиентСообщения = Новый Массив;
+    ЗначенияКлиентСимволы = 0;
+    ЗначенияКлиентВыполнить();
+    Возврат ЗначенияКлиентСообщения;
+КонецФункции
+'''
+    result = variables + harness[:fixed.start()] + wrapper + harness[fixed.end():]
+    return generated_module(result.encode('utf-8'))
+
+
+def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
+    """Validate full values evidence without predicting or filtering its output.
+
+    This checks shape, not values semantics. Only a downstream full-byte
+    comparison with this run's independent native values.out proves parity.
+    """
+    if not valid_nonce(nonce) or phase not in {'entered', 'completed'}:
+        raise FullError('invalid_input')
+    value = strict_json(secure_bytes(path, MAX_RESULT), max_depth=3)
+    expected_count = 0 if phase == 'entered' else CLIENT_VALUES_MESSAGE_COUNT
     if (type(value) is not dict
             or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
             or type(value['schema']) is not int or value['schema'] != 1

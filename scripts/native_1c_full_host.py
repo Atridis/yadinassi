@@ -245,6 +245,8 @@ def validate_client_probe(data, source_hash, module_hash):
 
 CLIENT_OUTPUT_KEYS = {"output_sha256", "output_size", "message_count"}
 DATES_SOURCE = "integrational_tests/tests/dates.bsl"
+VALUES_SOURCE = "integrational_tests/tests/values.bsl"
+VALUES_SOURCE_SHA256 = "7b0790763d2169c80f7475fc19af78e66475e3f4fc2ed8f23b00eb000c8b7e20"
 
 
 def validate_client_dates(data, source_hash, module_hash, server_case):
@@ -263,6 +265,26 @@ def validate_client_dates(data, source_hash, module_hash, server_case):
     elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):
         raise ValueError("client dates incomplete output")
     return data
+
+
+def validate_client_values(data, source_hash, module_hash, server_case):
+    """Bind the client witness to this invocation's server values evidence."""
+    if (source_hash != VALUES_SOURCE_SHA256
+            or type(data) is not dict or not CLIENT_OUTPUT_KEYS <= set(data)):
+        raise ValueError("client values schema")
+    base = {key: value for key, value in data.items() if key not in CLIENT_OUTPUT_KEYS}
+    validate_client_probe(base, source_hash, module_hash)
+    if data["status"] == "ok":
+        if (server_case["status"] != "ok"
+                or not is_digest(data["output_sha256"])
+                or not is_int(data["output_size"], MAX_FILE)
+                or type(data["message_count"]) is not int or data["message_count"] != 261
+                or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
+            raise ValueError("client values output identity")
+    elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):
+        raise ValueError("client values incomplete output")
+    return data
+
 
 
 
@@ -289,9 +311,13 @@ def validate_client_watchdog(data, source_hash, module_hash):
     return data
 
 
-def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False):
+def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False):
     client_requested = CLIENT_SOURCE in input_hashes
     expected_keys = {"schema", "nonce", "status", "failure_kind", "failed_case", "input_sha256", "cases"}
+    if client_values:
+        if not client_requested:
+            raise ValueError("client values requires client")
+        expected_keys.add("client_values")
     if client_dates:
         if not client_requested:
             raise ValueError("client dates requires client")
@@ -374,6 +400,19 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
             raise ValueError("client dates missing")
         if status == "not_started" and dates["status"] != "not_started":
             raise ValueError("client dates unreached")
+    if client_values:
+        values = validate_client_values(data["client_values"], input_hashes[VALUES_SOURCE],
+                                        module_hashes["client_values"], cases[SCENARIOS.index("values")])
+        if client["status"] != "ok" and values["status"] != "not_started":
+            raise ValueError("client values order")
+        if client_dates and dates["status"] != "ok" and values["status"] != "not_started":
+            raise ValueError("client dates values order")
+        if watchdog is not None and values["status"] != "ok" and watchdog["status"] != "not_started":
+            raise ValueError("client values watchdog order")
+        if status == "ok" and values["status"] != "ok":
+            raise ValueError("client values missing")
+        if status == "not_started" and values["status"] != "not_started":
+            raise ValueError("client values unreached")
     if status == "ok":
         if (not prerequisites or seen_incomplete or data["failure_kind"] != "none" or data["failed_case"] is not None):
             raise ValueError("success")
@@ -388,7 +427,7 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
     return data
 
 
-def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False):
+def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False):
     """Return validated report and exact bytes, never the unchecked envelope."""
     try:
         if not re.fullmatch(r"[0-9a-f]{32}", nonce):
@@ -403,7 +442,7 @@ def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes:
         report = report_validator(report_raw, bootstrap=True, full_suite=True)
         prerequisites = bool(report.get("stage2") and report["stage2"]["status"] == "ok")
         stage3 = validate_stage3(report["stage3"], nonce, input_hashes, module_hashes,
-                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates)
+                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values)
         if report["native_tests_completed"] is not (stage3["status"] == "ok"):
             raise ValueError("completion")
         if (report["status"] == "ok") is not (stage3["status"] == "ok"):
