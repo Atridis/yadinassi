@@ -1,7 +1,8 @@
 # Isolated native 1C bootstrap and simple EPF smoke
 
-This is a bounded validation of one approved Linux training image, not the full
-native regression suite. The first capability-only run established Python 3.10.12,
+This page documents the bounded bootstrap validation of one approved Linux
+training image. The full automatic regression route is described separately below.
+The first capability-only run established Python 3.10.12,
 non-root execution, dynamic-library resolution, authenticated display startup,
 empty database creation and hierarchical configuration export (schema 2.20).
 It did not establish the actual application version or user/bootstrap behavior.
@@ -43,14 +44,13 @@ success.
 
 ## Invocation and unchanged trust boundary
 
-The temporary workflow `.github/workflows/native-1c-isolated-smoke.yml` runs only
-on the exact `codex/native-1c-isolated-smoke` branch, in `Atridis/yadinassi`, pushed
-and retried by `Atridis`. No PR, fork, main-branch, dispatch, tag or arbitrary-input
-trigger is added. Its fixed relevant source-path filters now include the separate
-full-suite helpers, six scenarios, launcher and interpreter. Remove this temporary
-route after validation. A matching source push triggers execution and must remain
-within the approved scope. The workflow selects the full mode documented
-[separately](native-1c-full-regression.md).
+The workflow `.github/workflows/native-1c-isolated-smoke.yml` now selects full
+mode for trusted owner same-repository PRs into `main` and owner pushes to `main`.
+The former experimental branch/path-filter route is removed. Tags, releases,
+forks, other actors and arbitrary inputs are not added. Admission, merge-SHA
+binding and the fail-closed final check are documented in
+[automatic trusted CI](native-1c-ci.md), including the accepted package-privacy
+caveat. This changes routing, not bootstrap rights or container isolation.
 
 The original bootstrap-only mode remains available with both explicit flags:
 

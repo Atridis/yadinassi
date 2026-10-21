@@ -4,9 +4,11 @@ The owner's private training image is
 `ghcr.io/atridis/onec-ubuntu22:8.3.27.1508`. The owner identifies its training
 executable as `1cv8t`, rather than the production edition's `1cv8`.
 
-This first stage only checks package access and image metadata. It does not run
+The metadata preflight described below only checks package access and image metadata. It does not run
 any process from the image, create a database, build an EPF, or claim native test
-success. Existing Windows reference outputs remain unchanged.
+success. The subsequent [automatic trusted CI](native-1c-ci.md) now performs
+fresh real six-scenario runs for owner same-repository PRs and main. Existing
+Windows reference outputs remain unchanged.
 
 The current checked-in build files use Ubuntu 22.04 and explicitly install
 `tigervnc-tools`. The entrypoint accepts either `tigervncpasswd` or `vncpasswd`,
@@ -25,7 +27,11 @@ repository code, accepts no image or ref input, and pulls only the fixed image
 above on an ephemeral Ubuntu runner.
 
 In the package's settings, **Manage Actions access** must grant
-`Atridis/yadinassi` **Read** access. The package can remain private. The workflow
+`Atridis/yadinassi` **Read** access. The package visibility can remain private,
+but GitHub warns that granting a public repository access can also expose it to
+fork workflows. The owner accepted that risk for this training image; YAML guards
+are not a confidentiality boundary. See [the trust model](native-1c-ci.md).
+The workflow
 uses its short-lived `GITHUB_TOKEN` with `packages: read`, not a personal access
 token or a new repository secret. No write permission is requested.
 
@@ -61,9 +67,11 @@ python integrational_tests/check_launcher.py
 
 These are Python protocol tests and do not execute real 1C.
 
-## Required next-stage evidence
+## Native-stage evidence requirements
 
-Before replacing manual native runs, verify a digest-pinned image can:
+The [full native runner](native-1c-full-regression.md) implements the following
+requirements. Historical preflight/bootstrap success alone does not satisfy them:
+
 
 1. Provide the claimed training platform version, executable, license mode,
    Python 3.10+ and a working headless graphical display.
