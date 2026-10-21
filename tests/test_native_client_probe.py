@@ -1,6 +1,7 @@
 """Offline client-probe contracts. Synthetic fixtures are never native evidence."""
 from __future__ import annotations
 
+import ast
 import contextlib
 import copy
 import importlib.util
@@ -15,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import tokenize
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -47,6 +49,19 @@ def marker(phase, *, nonce=NONCE):
 
 def write_marker(path, phase):
     path.write_bytes(json.dumps(marker(phase), separators=(",", ":")).encode())
+
+
+def relocate_emitter_source(script, root):
+    """Rewrite complete Python path literals, never interpolate raw path text."""
+    prefix = "/tmp/onec-smoke"
+    tokens = []
+    for token in tokenize.generate_tokens(io.StringIO(script).readline):
+        if token.type == tokenize.STRING:
+            value = ast.literal_eval(token.string)
+            if type(value) is str and (value == prefix or value.startswith(prefix + "/")):
+                token = token._replace(string=repr(str(root) + value[len(prefix):]))
+        tokens.append(token)
+    return tokenize.untokenize(tokens)
 
 
 class ClientMarkerTests(unittest.TestCase):
@@ -1407,7 +1422,7 @@ class SessionBusOwnershipTests(unittest.TestCase):
             polls = ([(77, select.POLLIN)],)
         poll.poll.side_effect = list(polls)
         real_close = os.close
-        with mock.patch.object(suite.os, "pidfd_open", return_value=77) as opened, \
+        with mock.patch.object(suite.os, "pidfd_open", return_value=77, create=True) as opened, \
                 mock.patch.object(suite.signal, "pidfd_send_signal", create=True) as sent, \
                 mock.patch.object(select, "poll", return_value=poll), \
                 mock.patch.object(suite.os, "close", side_effect=lambda fd: None if fd == 77 else real_close(fd)) as close, \
@@ -1637,15 +1652,46 @@ class SessionBusOwnershipTests(unittest.TestCase):
 
     def test_unsupported_pidfd_api_has_no_numeric_or_broad_signal_fallback(self):
         self.prepare()
-        with mock.patch.object(suite.os, "kill") as kill, mock.patch.object(suite.os, "killpg") as killpg, \
-                mock.patch.object(suite.os, "pidfd_open") as opened:
-            with mock.patch.object(suite.signal, "pidfd_send_signal", create=True):
-                del suite.signal.pidfd_send_signal
-                with self.assertRaises(suite.FullError):
+        # Clone module attributes so absent-API tests never delete or restore
+        # real process APIs, including on hosts where neither API exists.
+        original_os, original_signal = suite.os, suite.signal
+        for missing in ("pidfd_open", "pidfd_send_signal", "both"):
+            fake_os = SimpleNamespace(**vars(original_os))
+            fake_signal = SimpleNamespace(**vars(original_signal))
+            opened, sent = mock.Mock(), mock.Mock()
+            fake_os.pidfd_open, fake_signal.pidfd_send_signal = opened, sent
+            fake_os.kill, fake_os.killpg = mock.Mock(), mock.Mock()
+            if missing in ("pidfd_open", "both"):
+                del fake_os.pidfd_open
+            if missing in ("pidfd_send_signal", "both"):
+                del fake_signal.pidfd_send_signal
+            with self.subTest(missing=missing), mock.patch.object(suite, "os", fake_os), \
+                    mock.patch.object(suite, "signal", fake_signal):
+                with self.assertRaisesRegex(suite.FullError, "^process_failed$"):
                     suite.stop_session_bus(self.root, NONCE, self.pid, self.parent)
             opened.assert_not_called()
-        kill.assert_not_called()
-        killpg.assert_not_called()
+            sent.assert_not_called()
+            fake_os.kill.assert_not_called()
+            fake_os.killpg.assert_not_called()
+        self.assertIs(suite.os, original_os)
+        self.assertIs(suite.signal, original_signal)
+
+    def test_cleanup_mocks_support_absent_pidfd_apis_and_leave_them_absent(self):
+        self.prepare()
+        original_os, original_signal = suite.os, suite.signal
+        fake_os = SimpleNamespace(**{key: value for key, value in vars(original_os).items()
+                                    if key != "pidfd_open"})
+        fake_signal = SimpleNamespace(**{key: value for key, value in vars(original_signal).items()
+                                        if key != "pidfd_send_signal"})
+        with mock.patch.object(suite, "os", fake_os), mock.patch.object(suite, "signal", fake_signal):
+            result, opened, sent, _, _ = self.stop()
+            self.assertEqual(result, "ok")
+            opened.assert_called_once_with(self.pid)
+            sent.assert_called_once_with(77, signal.SIGTERM)
+            self.assertFalse(hasattr(fake_os, "pidfd_open"))
+            self.assertFalse(hasattr(fake_signal, "pidfd_send_signal"))
+        self.assertIs(suite.os, original_os)
+        self.assertIs(suite.signal, original_signal)
 
 
 class FinalClientCensusTests(unittest.TestCase):
@@ -1680,6 +1726,24 @@ class FinalClientCensusTests(unittest.TestCase):
 
 class ClientFinalReportEmitterTests(unittest.TestCase):
     """Execute only the embedded Python renderer with synthetic private evidence."""
+    def test_relocated_emitter_compiles_windows_non_ascii_and_quoted_path_literals(self):
+        script = smoke.PROBE.read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        original = [node.value for node in ast.walk(ast.parse(script))
+                    if isinstance(node, ast.Constant) and type(node.value) is str]
+        for root in (r"C:\Users\runneradmin\AppData\Local\Temp\probe",
+                     r"C:\Users\Проверка\café\O'Brien\probe",
+                     'D:\\Users\\"quoted"\\日本語\\probe'):
+            with self.subTest(root=root):
+                relocated = relocate_emitter_source(script, root)
+                compile(relocated, "offline-windows-report-emitter", "exec")
+                actual = [node.value for node in ast.walk(ast.parse(relocated))
+                          if isinstance(node, ast.Constant) and type(node.value) is str]
+                expected = [root + value[len("/tmp/onec-smoke"):] if
+                            value == "/tmp/onec-smoke" or value.startswith("/tmp/onec-smoke/")
+                            else value for value in original]
+                self.assertEqual(actual, expected)
+                self.assertTrue(any(value.startswith(root) for value in actual))
+
     def emitter(self, *, watchdog=False, cleanup_failed=False):
         envelope, inputs, modules = host_fixture.fixture()
         inputs[suite.CLIENT_SOURCE] = "c" * 64
@@ -1693,14 +1757,15 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
                 "process_exited": False, "witness_verified": False, "timeout_verified": True}
         script = smoke.PROBE.read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
+            root = Path(temporary).resolve() / "café-Проверка"
+            root.mkdir()
             (root / "config").mkdir()
             (root / "config/Configuration.xml").write_text(
                 '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">'
                 '<Configuration><Properties><Name/></Properties></Configuration></MetaDataObject>')
             (root / "stage2-report.json").write_text(json.dumps(envelope["report"]["stage2"]))
             (root / "stage3-report.json").write_text(json.dumps(envelope["report"]["stage3"]))
-            script = script.replace("/tmp/onec-smoke", str(root))
+            script = relocate_emitter_source(script, root)
             raw = io.BytesIO()
             diagnostic = process_diagnostics(reason="unexpected_processes", classes={"other": 1})
             arguments = ["emitter", "1" if cleanup_failed else "0", "stage2" if cleanup_failed else "complete",
