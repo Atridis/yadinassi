@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -26,10 +27,14 @@ MAX_OUTPUT = 32_768
 MAX_RUNTIME = 480
 BOOTSTRAP_MAX_RUNTIME = 900
 ROOT = Path(__file__).resolve().parents[1]
+DIAGNOSTIC_SPEC = importlib.util.spec_from_file_location(
+    "native_smoke_diagnostics", ROOT / "scripts/native_1c_bootstrap/diagnostics.py")
+DIAGNOSTICS = importlib.util.module_from_spec(DIAGNOSTIC_SPEC)
+DIAGNOSTIC_SPEC.loader.exec_module(DIAGNOSTICS)
 STAGED_FILES = {
     "scripts/native_1c_smoke_probe.sh": "probe.sh",
     **{f"scripts/native_1c_bootstrap/{name}": f"bootstrap/{name}" for name in (
-        "run_stage.py", "inject_modules.py", "evidence_gates.py", "simple_smoke.bsl",
+        "run_stage.py", "inject_modules.py", "evidence_gates.py", "diagnostics.py", "simple_smoke.bsl",
         "modules/SessionModule.bsl", "modules/ManagedApplicationModule.bsl")},
     "integrational_tests/test_launcher.py": "launcher/test_launcher.py",
     **{f"integrational_tests/launcher_1c/{name}": f"launcher/launcher_1c/{name}" for name in (
@@ -209,10 +214,15 @@ def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
 def validate_stage2(data: object) -> dict:
     if type(data) is not dict or set(data) != set(STAGE_FLAGS) | {
         "schema", "status", "failed_stage", "failure_kind", "actual_version", "version_source",
-        "simple_output_sha256", "security_change_attempted", "security_settings_state"}:
+        "simple_output_sha256", "security_change_attempted", "security_settings_state", "diagnostics"}:
         raise ValueError("stage2 keys")
     if type(data["schema"]) is not int or data["schema"] != 1 or data["status"] not in {"ok", "failed"}:
         raise ValueError("stage2 status")
+    DIAGNOSTICS.validate_diagnostics(data["diagnostics"], success=data["status"] == "ok",
+                                     primary_kind=data["failure_kind"])
+    if data["failed_stage"] not in {"bootstrap", "verify"} and any(
+            data["diagnostics"][key] != "not_checked" for key in ("session_marker", "managed_marker")):
+        raise ValueError("diagnostic marker stage")
     if any(type(data[key]) is not bool for key in (*STAGE_FLAGS, "security_change_attempted")):
         raise ValueError("stage2 flag")
     if data["failure_kind"] not in FAILURE_KINDS or data["failed_stage"] not in STAGES | {None}:

@@ -5,8 +5,12 @@ native regression suite. The first capability-only run established Python 3.10.1
 non-root execution, dynamic-library resolution, authenticated display startup,
 empty database creation and hierarchical configuration export (schema 2.20).
 It did not establish the actual application version or user/bootstrap behavior.
-The stage-two code adds those gates and one fixed arithmetic/message EPF. Its
-mock tests are not native execution evidence.
+The first stage-two native run confirmed full module import, database update and
+byte-identical re-export, then failed in anonymous bootstrap with a nonzero process
+result. Persisted security state and actual application version remain unverified.
+The diagnostic-only revision described below does not change BSL, native commands
+or security settings and does not claim a fix. Its mock tests are not native
+execution evidence.
 
 ## Invocation and unchanged trust boundary
 
@@ -45,7 +49,7 @@ and limited to 128 MiB. Limits remain 2 GiB memory, 2 CPUs, 256 PIDs and 64 MiB
 per file, with all capabilities dropped and no-new-privileges enabled.
 
 Stage two replaces the single probe-file mount with one read-only staged-inputs
-directory. Its exact 15-file allowlist contains only the shell probe, three stage
+directory. Its exact 16-file allowlist contains only the shell probe, four stage
 Python helpers, two internal BSL modules, one fixed smoke scenario, and the existing
 Python launcher plus its seven template files. Files and directories are copied
 with explicit 0644/0755 modes so the non-root container can read them. Symlinks,
@@ -100,9 +104,10 @@ The launcher's existing server-side external-processing creation behavior is
 unchanged. No new security bypass, conf.cfg setting, global protection mode,
 role-escalation fallback, password, real data or production database is added.
 
-Native compilation/API compatibility, module discovery on full import,
-zero-parameter startup-hook behavior and role-free named-user permissions must
-still be demonstrated by this run. Any compile failure, unsupported API, denied
+Module discovery on full import has been demonstrated by byte-identical native
+re-export. Native compilation/API compatibility, zero-parameter startup-hook
+behavior and role-free named-user permissions still require successful runtime
+evidence. Any compile failure, unsupported API, denied
 access, missing hook or modal timeout stops the stage. Do not add broad roles or
 weaken protections to turn a failure green. A retry after an attempted bootstrap
 requires a newly created disposable database, not another bootstrap against the
@@ -117,11 +122,36 @@ known metadata fields and SHA-256 values. Unknown fields or false/inconsistent
 success claims fail closed. Native text, paths, UUIDs, image labels/environment,
 X cookies, database, XML and logs are never published.
 
-A failed stage reports one finite stage and diagnostic kind, such as compile
-error, unsupported API, denied permission, timeout, missing hook, invalid marker,
-module mismatch or unexpected version. Native logs are read only inside tmpfs to
-classify fixed known phrases; arbitrary native error text never leaves it.
-These categories help diagnosis but are not substitutes for success gates.
+A failed stage keeps its primary orchestration `failure_kind` (for example,
+process failure, timeout, invalid marker or module mismatch). A separate strict
+`diagnostics` object cannot replace that failure or set any positive gate:
+
+- `native_exit_code` is the directly observed, nonzero code of the failing native
+  process, limited to -64 through 255. It is null for timeout termination, missing
+  evidence or failures behind the unchanged launcher API; no code is inferred
+  from exception text or a prior successful process.
+- `category` and `origin` are finite, lossy observations from known phrases, not
+  a proven root cause. Categories include compilation/runtime/API errors, denied
+  access, authentication/license/training restrictions, startup failure, invalid
+  evidence, conflicting evidence and unknown. No automatic workaround follows.
+- Only current failing-stage logs and matching session/managed error markers are
+  read inside tmpfs, including after a nonzero native exit. Rejected stale evidence
+  is never used. UTF-16 and UTF-8 BOMs are decoded strictly; only no-BOM input tries
+  strict UTF-8 followed by CP1251. Raw text is never returned.
+- Optional source locations require an exact Russian/English alias for the known
+  session or managed module and a line within its unchanged source. Optional BSL
+  identifiers must match an explicit finite allowlist and native error syntax.
+  Location and identifier must come from the same error line as the category;
+  unrelated frames, conflicting locations or ambiguous identifiers are omitted.
+- Marker states are finite. `session_marker="ok"` or `managed_marker="ok"` means
+  only that a matching identity envelope reports ok with empty error, not that
+  the full user/security/version gate passed. Foreign, duplicate-key, nonfinite,
+  malformed, oversized or deeply nested marker input cannot supply details or
+  overwrite the primary failure. Success reports have empty diagnostics.
+
+The host independently validates diagnostic keys, types, enums, source bounds,
+identifiers, provenance and consistency with the failed stage. No native errors,
+paths, usernames, UUIDs, raw source fragments or unknown identifiers are exported.
 
 `security_change_attempted` and the finite security state distinguish no attempt,
 unverified partial execution and verified persisted mutation. The outer
@@ -152,6 +182,9 @@ Coverage includes exact staging, restrictive host umask, containment, registry
 authentication separation, fresh markers, Boolean-versus-integer flags, anonymous
 identity, module-byte preservation, strict user/version/output gates, named
 Designer/Enterprise separation, partial security state and timeout/error paths.
+Diagnostic regressions cover nonzero error markers, UTF-16/UTF-8/CP1251, corrupt
+BOMs, same-line attribution, contradictory sources, stale evidence, bounded exit
+codes, malformed marker input and strict host-schema rejection.
 POSIX pipe tests and Linux shell tests have platform guards; mocked core gates
 run cross-platform. Synthetic XML fixtures are not native/loadable metadata.
 

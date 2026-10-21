@@ -372,6 +372,7 @@ def valid_stage2():
             "actual_version": "8.3.27.1508", "version_source": "SystemInfo.AppVersion",
             "simple_output_sha256": smoke.SIMPLE_OUTPUT_SHA256,
             "security_change_attempted": True, "security_settings_state": "verified",
+            "diagnostics": smoke.DIAGNOSTICS.empty_diagnostics(),
             **{key: True for key in smoke.STAGE_FLAGS}}
 
 

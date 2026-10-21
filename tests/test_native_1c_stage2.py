@@ -44,7 +44,7 @@ REPORT_FLAGS = {
 }
 REPORT_KEYS = REPORT_FLAGS | {
     "schema", "status", "failed_stage", "failure_kind", "actual_version",
-    "version_source", "simple_output_sha256", "security_settings_state",
+    "version_source", "simple_output_sha256", "security_settings_state", "diagnostics",
 }
 SUCCESS_EVENTS = [
     "inject", "load", "redump", "bootstrap", "named_designer", "verify",
@@ -259,7 +259,7 @@ class Stage2FlowTests(Stage2Harness):
             "failure_kind": "none", "actual_version": "8.3.27.1508",
             "version_source": "SystemInfo.AppVersion",
             "simple_output_sha256": hashlib.sha256(EXPECTED_OUTPUT).hexdigest(),
-            "security_settings_state": "verified",
+            "security_settings_state": "verified", "diagnostics": self.module.empty_diagnostics(),
             **dict.fromkeys(REPORT_FLAGS, True),
         })
         self.assertEqual(self.events, SUCCESS_EVENTS)
@@ -504,7 +504,8 @@ class Stage2FlowTests(Stage2Harness):
         self.failures["load"] = "process_failed"
         self.logs["load"] = "Ошибка компиляции: private source and credentials must stay local"
         report = self.module.run()
-        self.assert_failed(report, "load", "compile_error")
+        self.assert_failed(report, "load", "process_failed")
+        self.assertEqual(report["diagnostics"]["category"], "compile_error")
         self.assertNotIn("private source", json.dumps(report))
         self.assertEqual(self.events, SUCCESS_EVENTS[:2])
 
@@ -512,7 +513,8 @@ class Stage2FlowTests(Stage2Harness):
         self.failures["named_designer"] = "process_failed"
         self.logs["named_designer"] = "Access denied: private directory"
         report = self.module.run()
-        self.assert_failed(report, "named_designer", "permission_denied")
+        self.assert_failed(report, "named_designer", "process_failed")
+        self.assertEqual(report["diagnostics"]["category"], "permission_denied")
         self.assertNotIn("private directory", json.dumps(report))
 
     def test_unique_evidence_directories_are_not_reused_across_runs(self):
@@ -561,7 +563,7 @@ class Stage2UnitTests(unittest.TestCase):
             "schema": 1, "status": "failed", "failed_stage": "inject",
             "failure_kind": "unexpected_failure", "actual_version": None,
             "version_source": "not_measured", "simple_output_sha256": None,
-            "security_settings_state": "not_attempted",
+            "security_settings_state": "not_attempted", "diagnostics": self.module.empty_diagnostics(),
             **dict.fromkeys(REPORT_FLAGS, False),
         })
 

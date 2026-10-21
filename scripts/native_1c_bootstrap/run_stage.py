@@ -14,6 +14,7 @@ import subprocess
 import sys
 import uuid
 
+from diagnostics import bounded_exit_code, collect_diagnostics, empty_diagnostics
 from inject_modules import DraftError, PROTOCOL, inject
 from evidence_gates import (bounded_bytes, read_marker, require_epf,
                             require_marker_pair, require_reimported_modules,
@@ -36,38 +37,22 @@ FLAGS = {'modules_reimported', 'bootstrap_verified', 'named_designer_verified',
 
 
 class StageError(Exception):
-    def __init__(self, kind: str):
+    def __init__(self, kind: str, exit_code: int | None = None):
         self.kind = kind
+        self.exit_code = bounded_exit_code(exit_code)
 
 
 def empty_report() -> dict:
     return {'schema': 1, 'status': 'failed', 'failed_stage': 'inject',
             'failure_kind': 'unexpected_failure', 'actual_version': None,
             'version_source': 'not_measured', 'simple_output_sha256': None,
-            'security_settings_state': 'not_attempted',
+            'security_settings_state': 'not_attempted', 'diagnostics': empty_diagnostics(),
             **{flag: False for flag in FLAGS}}
 
 
 def absent(*paths: Path) -> None:
     if any(path.exists() or path.is_symlink() for path in paths):
         raise StageError('stale_evidence')
-
-
-def classify_native(paths: list[Path], fallback: str) -> str:
-    # Never return native text. This is diagnostic classification, not a pass gate.
-    for path in paths:
-        try:
-            data = bounded_bytes(path, 1_048_576)
-            text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig', errors='replace').casefold()
-        except (OSError, DraftError):
-            continue
-        if any(phrase in text for phrase in ('ошибка компиляции', 'ошибки компиляции', 'compilation error', 'syntax error', 'синтаксическая ошибка', 'переменная не определена', 'процедура или функция с указанным именем не определена')):
-            return 'compile_error'
-        if any(phrase in text for phrase in ('поле объекта не обнаружено', 'метод объекта не обнаружен', 'object field not found', 'object method not found')):
-            return 'unsupported_api'
-        if any(phrase in text for phrase in ('недостаточно прав', 'нарушение прав доступа', 'insufficient rights', 'access denied', 'permission denied')):
-            return 'permission_denied'
-    return fallback
 
 
 def process(command: list[str], directory: Path, console: Path, timeout: float = 120) -> None:
@@ -88,7 +73,7 @@ def process(command: list[str], directory: Path, console: Path, timeout: float =
                     raise StageError('timeout') from None
                 raise
     if code != 0:
-        raise StageError('process_failed')
+        raise StageError('process_failed', exit_code=code)
 
 
 def command(mode: str, database: Path, user: str | None = None) -> list[str]:
@@ -174,6 +159,7 @@ def run() -> dict:
     evidence.mkdir(mode=0o700)
     database = ROOT / 'db'
     user = 'NativeSmoke'
+    manifest = None
     try:
         try:
             manifest = inject(ROOT / 'config', evidence / 'injected', run_id=uuid.uuid4().hex,
@@ -238,8 +224,15 @@ def run() -> dict:
         # Existing launcher errors remain private; classify only known text and logs.
         if error.__class__.__name__ == 'LaunchError':
             fallback = 'timeout' if 'таймаут' in str(error).casefold() else 'process_failed'
-        logs = list(evidence.glob('*.log')) + list(evidence.glob('simple-case/*.log'))
-        report.update(failed_stage=stage, failure_kind=classify_native(logs, fallback))
+        # Keep the primary orchestration failure authoritative. Diagnostics are
+        # independent, lossy observations and cannot change any success gate.
+        if fallback == 'stale_evidence':
+            # Rejected pre-existing evidence cannot describe this process.
+            diagnostics = empty_diagnostics()
+        else:
+            diagnostics = collect_diagnostics(evidence, stage, manifest,
+                                              error.exit_code if isinstance(error, StageError) else None)
+        report.update(failed_stage=stage, failure_kind=fallback, diagnostics=diagnostics)
     return report
 
 
