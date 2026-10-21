@@ -1197,3 +1197,65 @@ all 21 directly observed Windows cache cases and with no observed platform
 conflict. The new Windows cases are not claimed to have been natively verified.
 No saved Windows output is extended, replaced or relabeled; future supported
 PR/main runs independently regenerate the complete current Linux oracle.
+
+### ValueList item field references: native-first checkpoint
+
+The next bounded checkpoint adds 20 caught-marker observations for the existing
+`Value/Значение`, `Presentation/Представление` and `Check/Пометка` fields passed
+to user routines. It covers RU/EN names, `Val` controls, immediate two-way alias
+visibility, duplicate/nested forwarding, partial writes before exceptions,
+existing scalar conversions, invalid writes, once-only index/Get receivers,
+reorder/deletion while the list remains alive, warmed string caches, argument
+failure timing and function return values. Root/`&НаКлиенте` routing is checked
+locally with the implementation, because the native harness uses an object module where managed-form
+compilation directives are not supported. It does not enable the
+runtime feature before measuring native results.
+
+The full current collections source has 797 message records. Its reviewed
+SHA256 is `f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a`.
+The existing Map-order relation still applies only to its eight old ordinals;
+every added observation requires exact equality. A red parity verdict during
+this checkpoint is expected while the explicit runtime guard remains, but
+native completion and all six output files plus provenance are still required.
+No Windows native claim follows from this Linux measurement. Historical replay
+removes only the newly delimited blocks in addition to previously excluded
+later blocks and retains the exact historical full-source/output hashes.
+Picture, formatted strings, constraints, UI, standalone decoded IDs, released
+owners and other collection semantics remain outside this work.
+
+
+Measured capture: [run 39613596830](https://github.com/Atridis/yadinassi/actions/runs/39613596830),
+PR #74 head `da45d5a2d32226fca8cce82e9ebd018567701e40`, synthetic merge
+`37629ede2efec05b759db69b8f804bf179396253`, tree
+`e5edf610125fd16f9c9e23afb0349f100846a828`. The verified runtime was
+`8.3.27.1508` from `SystemInfo.AppVersion`, Linux/amd64, approved digest
+`sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728`.
+Native execution completed all six current scenarios. The seven-entry artifact
+had SHA256 `206005a4312878613ef5c4f777586fc7b7ce44efa989da3ff7f2a4e68201eb3e`;
+`collections.out` SHA256 was
+`6b12b688fd53914e285b5376e9d0370dd5557013de4d8c7d0fa727264a24f22d`, with 797 records.
+The ordered merge parents, all 23 staged input hashes, generated module hashes,
+output hashes/sizes, provenance, pinned interpreter dependencies and cleanup
+were checked before using the observations. The checkpoint parity verdict was
+red because the deliberately retained guard differed, not because native
+execution failed. It is measurement evidence, not a final readiness pass.
+
+The observations establish live storage rather than copy-out: the alias sees
+`21` inside the callee and reads `22` after direct field mutation; duplicate and
+nested parameters see `31/32`. Assignment `41` survives a raised exception.
+Presentation and Check conversion are already visible through the parameter
+inside the callee. Failed Check conversion preserves its old value after an
+earlier successful Value assignment. Both computed receivers and indices run
+once per argument. Reorder and deletion do not retarget the item; deletion
+changes GetID from `0` to `-1`. A warmed list string remains `old; second`, while
+the item and fresh copy render `fresh` and `fresh; second`. Missing property and
+invalid receiver stop before later arguments/callee entry. Val controls leave
+all three caller fields unchanged. These literal observations back the runtime
+regression tests; no generated interpreter output is stored as a native oracle.
+
+The implementation reuses the existing field getters/setters behind exact-type,
+field-name and live-owner guards. It does not alter conversions, IDs, caches,
+serialized graphs or supported collection types. Unmeasured standalone and
+released-owner references remain catchably unsupported. Applying the measured
+behavior to the common runtime is an explicit compatibility inference; native
+client-form execution and historical Windows measurements are not claimed.

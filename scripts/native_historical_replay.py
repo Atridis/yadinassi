@@ -1,7 +1,7 @@
 """Source-bound complete Windows replay; live CI runs full current source."""
 import hashlib
 
-# Windows capture 4a3f55f8 predates only the final two discriminator groups.
+# Windows capture 4a3f55f8 predates the final cache and field-reference probes.
 # Keep its entire source and output coverage; never truncate observed output.
 HISTORICAL_COLLECTIONS_BLOB = "137dca5e4b6a47ea083a0dfe989e07c22d91a9e6"
 HISTORICAL_COLLECTIONS_OUTPUT_BLOB = "97e90791a4011bd7f6ef2922533f92f698557cbd"
@@ -11,6 +11,25 @@ FINAL_PROBE_BLOCKS = (
     ("// Начало заключительных наблюдений пустой строки кэша списка.\n",
      "// Конец заключительных наблюдений пустой строки кэша списка.\n"),
 )
+
+
+FIELD_REFERENCE_BLOCKS = (
+    ("// Begin ValueList field reference helpers.\n",
+     "// End ValueList field reference helpers.\n\n"),
+    ("// Begin ValueList field reference observations.\n",
+     "// End ValueList field reference observations.\n"),
+)
+
+
+def without_field_reference_probes(text):
+    """Remove only the pending additions; callers retain historical hash binding."""
+    for start, end in FIELD_REFERENCE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError("field reference probe boundaries changed")
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    return text
 
 
 def git_blob(data):
@@ -27,7 +46,7 @@ def historical_collections_source(source, output):
     output = output.replace(b"\r\n", b"\n")
     if git_blob(output) != HISTORICAL_COLLECTIONS_OUTPUT_BLOB:
         raise ValueError("historical collections output binding changed")
-    text = source.decode("utf-8-sig")
+    text = without_field_reference_probes(source.decode("utf-8-sig"))
     for start, end in FINAL_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError("historical collections probe boundaries changed")

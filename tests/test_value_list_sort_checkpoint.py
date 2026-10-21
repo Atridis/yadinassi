@@ -3,6 +3,7 @@
 Synthetic sorting deliberately reverses the receiver. No synthetic stream is
 saved as native output. Full native gates still read the whole scenario.
 """
+from scripts.native_historical_replay import FIELD_REFERENCE_BLOCKS
 from contextlib import ExitStack
 import hashlib
 from pathlib import Path
@@ -30,6 +31,7 @@ def source():
 
 def strip_probe(text):
     for start, end in (
+        *FIELD_REFERENCE_BLOCKS,
         ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
         ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),

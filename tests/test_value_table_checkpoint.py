@@ -1,4 +1,5 @@
 """Compact native checkpoint confirmed by owner commit f28dcc51a6b631cb4a8a3526dfcdc57172efbfc6."""
+from scripts.native_historical_replay import FIELD_REFERENCE_BLOCKS
 from dataclasses import fields, is_dataclass
 import hashlib
 from pathlib import Path
@@ -26,6 +27,7 @@ def parts():
     # Isolate this already owner-confirmed checkpoint from the next native
     # checkpoint. Complete source/native comparisons below remain strict.
     for start, end in (
+        *FIELD_REFERENCE_BLOCKS,
         ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
         ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
