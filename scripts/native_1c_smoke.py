@@ -218,7 +218,11 @@ def client_dates_module_hash(staged: Path) -> str:
                 name, staged / "bootstrap" / (name + ".py"))
             module = importlib.util.module_from_spec(spec)
             sys.modules[name] = module
-            spec.loader.exec_module(module)
+            # Loading directly from bounded bytes deliberately bypasses importlib's
+            # bytecode cache writer: staged inputs must remain the exact allowlist.
+            path = staged / "bootstrap" / (name + ".py")
+            code = FULL.read_regular(path, FULL.MAX_FILE, nonempty=True)
+            exec(compile(code, str(path), "exec"), module.__dict__)
         source = FULL.read_regular(staged / "scenarios/dates.bsl", FULL.MAX_FILE, nonempty=True)
         template = FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)
         return FULL.digest(module.client_dates_module(source, template))

@@ -14,10 +14,20 @@ from unittest import mock
 
 from test_native_1c_smoke import smoke
 from test_native_1c_stage2 import load_controller
-from test_native_1c_full_stage import suite, NONCE
+from test_native_1c_full_stage import suite, NONCE, portable_fixture_bytes
+from test_native_1c_full_host import read_synthetic_file
 
 
 class ClientDatesOptionTests(unittest.TestCase):
+    def setUp(self):
+        if os.name == 'nt':
+            # NTFS fixtures do not emulate Linux descriptor metadata equality.
+            # Keep real native readers unchanged; reuse existing bounded fixtures.
+            for patcher in (mock.patch.object(smoke.FULL, 'read_regular', new=read_synthetic_file),
+                            mock.patch.object(suite, 'secure_bytes', new=portable_fixture_bytes)):
+                patcher.start()
+                self.addCleanup(patcher.stop)
+
     def test_api_prerequisites_fail_before_side_effects(self):
         for full, client in ((False, False), (True, False), (False, True)):
             with self.subTest(full=full, client=client):
@@ -38,7 +48,7 @@ class ClientDatesOptionTests(unittest.TestCase):
 
     def test_command_changes_only_explicit_option(self):
         with tempfile.TemporaryDirectory() as directory:
-            staged = Path(directory) / 'inputs'
+            staged = Path(directory).resolve() / 'inputs'
             hashes = smoke.stage_inputs(staged, full_suite=True, client_probe=True)
             self.assertEqual(len(hashes), 24)
             for watchdog in (False, True):
@@ -50,7 +60,7 @@ class ClientDatesOptionTests(unittest.TestCase):
 
     def test_generated_hash_uses_staged_inputs_and_restores_imports(self):
         with tempfile.TemporaryDirectory() as directory:
-            staged = Path(directory) / 'inputs'
+            staged = Path(directory).resolve() / 'inputs'
             smoke.stage_inputs(staged, full_suite=True, client_probe=True)
             names = ('inject_modules', 'evidence_gates', 'full_suite')
             before = {name: sys.modules.get(name) for name in names}
@@ -65,12 +75,17 @@ class ClientDatesOptionTests(unittest.TestCase):
                 (staged / 'scenarios/dates.bsl').read_bytes(),
                 (staged / 'bootstrap/client_probe.bsl').read_bytes()))
             self.assertEqual(smoke.client_dates_module_hash(staged), expected)
+            smoke.validate_input_tree(staged, full_suite=True, client_probe=True)
+            self.assertFalse(list(staged.rglob('__pycache__')))
+            command = smoke.container_command(staged, 'test', full_suite=True,
+                client_probe=True, watchdog_check=True, client_dates=True, nonce=NONCE)
+            self.assertEqual(command[-1], '--client-dates-parity')
             for name in names:
                 self.assertIs(sys.modules.get(name), before[name])
 
     def test_imports_restored_after_invalid_staged_source(self):
         with tempfile.TemporaryDirectory() as directory:
-            staged = Path(directory) / 'inputs'
+            staged = Path(directory).resolve() / 'inputs'
             smoke.stage_inputs(staged, full_suite=True, client_probe=True)
             path = staged / 'scenarios/dates.bsl'
             path.chmod(0o600)
@@ -78,6 +93,21 @@ class ClientDatesOptionTests(unittest.TestCase):
             before = {name: sys.modules.get(name) for name in ('inject_modules', 'evidence_gates', 'full_suite')}
             with self.assertRaises(Exception):
                 smoke.client_dates_module_hash(staged)
+            smoke.validate_input_tree(staged, full_suite=True, client_probe=True)
+            self.assertFalse(list(staged.rglob('__pycache__')))
+            for name, module in before.items():
+                self.assertIs(sys.modules.get(name), module)
+
+    def test_compile_failure_keeps_exact_tree_and_restores_imports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            staged = Path(directory).resolve() / 'inputs'
+            smoke.stage_inputs(staged, full_suite=True, client_probe=True)
+            (staged / 'bootstrap/full_suite.py').write_bytes(b'def broken(')
+            before = {name: sys.modules.get(name) for name in ('inject_modules', 'evidence_gates', 'full_suite')}
+            with self.assertRaises(SyntaxError):
+                smoke.client_dates_module_hash(staged)
+            smoke.validate_input_tree(staged, full_suite=True, client_probe=True)
+            self.assertFalse(list(staged.rglob('__pycache__')))
             for name, module in before.items():
                 self.assertIs(sys.modules.get(name), module)
 
@@ -85,7 +115,7 @@ class ClientDatesOptionTests(unittest.TestCase):
         for watchdog in (False, True):
             controller = load_controller()
             with tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 (root / 'stage3-report.json').write_text('{"status":"ok"}')
                 report = controller.empty_report()
                 report['status'] = 'ok'
@@ -108,7 +138,7 @@ class ClientDatesOptionTests(unittest.TestCase):
                 self.assertEqual(controller.main(args), 2)
                 run.assert_not_called()
 
-    @unittest.skipUnless(shutil.which('bash'), 'requires Bash for shell parser only')
+    @unittest.skipUnless(os.name != 'nt' and shutil.which('bash'), 'requires POSIX Bash, not Windows WSL launcher')
     def test_shell_parser_keeps_flags_and_rejects_bad_shapes(self):
         # Execute only argument parsing, never the probe or any native command.
         prefix = smoke.PROBE.read_text().split('\nfinish() {', 1)[0]
