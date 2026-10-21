@@ -266,7 +266,14 @@ Map order differences fail this client/server checkpoint; the eight existing
 interpreter/server Map exceptions do not apply. No historical output hash is a
 parity oracle. Raw client messages remain private. The same 24 staged inputs,
 six public server outputs and provenance, isolation and nonce/round-trip/process
-proofs remain required. Schema 2 exists only on the compact stage wire transport;
+proofs remain required. A strict collections mismatch can include only finite
+metadata in the existing report: differing-message count, first ordinal, earliest
+16 differing ordinals, and hashes/sizes of the first differing serialized message.
+The private server message array must reproduce the same fresh server output
+before ordinal metadata is emitted. No raw client messages are exported, no new
+artifact is added, and mismatch diagnostics never enable success or exceptions.
+
+Schema 2 exists only on the compact stage wire transport;
 legacy schema 1 remains supported when collections is not selected. Compaction
 losslessly groups the three source/module/round-trip hashes and five proof
 booleans; host reports restore the existing named schema-1 evidence fields.

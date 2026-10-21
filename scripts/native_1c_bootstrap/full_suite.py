@@ -993,6 +993,18 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             client_output = serialize_messages(completion['values'])
             server_output = secure_bytes(parity_output, MAX_OUTPUT, allow_empty=True)
             if client_output != server_output:
+                if collections_output is not None:
+                    # Only finite metadata leaves the private comparison. The
+                    # unchanged server messages must reproduce this exact output
+                    # before ordinal diagnostics can be trusted. Diagnostics never
+                    # relax the strict byte comparison or enable payload export.
+                    try:
+                        server_messages, _ = read_native_result(
+                            collections_output.parent / 'collections-case/result.json')
+                        record['mismatch'] = collections_mismatch(
+                            completion['values'], server_messages, server_output)
+                    except (FullError, OSError):
+                        pass  # The original mismatch still fails closed.
                 raise FullError('output_mismatch')
             record.update(output_sha256=digest(client_output), output_size=len(client_output),
                           message_count=len(completion['values']))
@@ -1368,7 +1380,35 @@ CLIENT_COLLECTIONS_MESSAGE_COUNT = 797
 
 def empty_collections_report() -> dict:
     return {**empty_client_report(), 'output_sha256': None, 'output_size': None,
-            'message_count': None}
+            'message_count': None, 'mismatch': None}
+
+
+def collections_mismatch(client: list[str], server: list[str], server_output: bytes) -> dict:
+    """Bounded diagnostics for unequal full outputs; never raw native messages."""
+    if (type(client) is not list or type(server) is not list
+            or len(client) != CLIENT_COLLECTIONS_MESSAGE_COUNT
+            or len(server) != CLIENT_COLLECTIONS_MESSAGE_COUNT
+            or any(type(item) is not str for item in client + server)
+            or type(server_output) is not bytes
+            or serialize_messages(server) != server_output):
+        raise FullError('invalid_result')
+    client_output = serialize_messages(client)
+    if client_output == server_output:
+        raise FullError('invalid_result')
+    differences = []
+    first_client = first_server = None
+    for ordinal, (client_message, server_message) in enumerate(zip(client, server), 1):
+        left, right = serialize_messages([client_message]), serialize_messages([server_message])
+        if left != right:
+            differences.append(ordinal)
+            if first_client is None:
+                first_client, first_server = left, right
+    if not differences:
+        raise FullError('invalid_result')
+    return {'count': len(differences), 'first': differences[0],
+            'ordinals': differences[:16], 'client_sha256': digest(first_client),
+            'server_sha256': digest(first_server), 'client_size': len(first_client),
+            'server_size': len(first_server)}
 
 
 def client_collections_module(source: bytes, template: bytes) -> bytes:

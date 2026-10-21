@@ -12,6 +12,51 @@ suite = probe.suite
 NONCE = probe.NONCE
 
 
+class CollectionsMismatchMetadataTests(unittest.TestCase):
+    def test_all_messages_differ_caps_ordinals_without_message_text(self):
+        server, client = ['server'] * 797, ['PRIVATE'] * 797
+        data = suite.collections_mismatch(client, server, suite.serialize_messages(server))
+        self.assertEqual(data['count'], 797)
+        self.assertEqual(data['first'], 1)
+        self.assertEqual(data['ordinals'], list(range(1, 17)))
+        self.assertEqual(set(data), {'count', 'first', 'ordinals', 'client_sha256',
+                                     'server_sha256', 'client_size', 'server_size'})
+        self.assertNotIn('PRIVATE', json.dumps(data))
+
+    def test_multiline_and_unicode_use_serialized_message_not_line_positions(self):
+        server = [''] * 797
+        server[400] = 'абв\r\nг\rд'
+        client = server.copy()
+        client[400] += '😀'
+        data = suite.collections_mismatch(client, server, suite.serialize_messages(server))
+        self.assertEqual(data['ordinals'], [401])
+        self.assertEqual(data['client_size'] - data['server_size'], 4)
+        self.assertEqual(data['server_sha256'], suite.digest('абв\nг\nд\n'.encode()))
+
+    def test_existing_newline_serialization_does_not_create_false_differences(self):
+        server = ['same'] * 797
+        server[0] = 'a\r\nb'
+        client = server.copy()
+        client[0] = 'a\nb'
+        client[796] = 'different'
+        data = suite.collections_mismatch(client, server, suite.serialize_messages(server))
+        self.assertEqual(data['ordinals'], [797])
+        self.assertEqual(data['count'], 1)
+
+    def test_unbound_or_equal_outputs_reject_localization(self):
+        server, client = ['same'] * 797, ['different'] * 797
+        for left, right, output in (
+                (server, server, suite.serialize_messages(server)),
+                (client, server, b'not this server output'),
+                (client[:-1], server, suite.serialize_messages(server)),
+                (client, server[:-1], suite.serialize_messages(server[:-1])),
+                (client, server, 'not bytes'),
+                ([1] * 797, server, suite.serialize_messages(server)),
+                (client, [True] * 797, b'')):
+            with self.subTest(left=type(left), right=type(right)), self.assertRaises(suite.FullError):
+                suite.collections_mismatch(left, right, output)
+
+
 class CollectionsExecutionTests(unittest.TestCase):
     argument = staticmethod(probe.ClientProbeHarness.argument)
     reset = probe.ClientProbeHarness.reset
@@ -28,6 +73,9 @@ class CollectionsExecutionTests(unittest.TestCase):
         self.messages[4] = 'multiline: [a\nb\r\nc]\n'
         self.output = self.root / 'collections.out'
         self.output.write_bytes(suite.serialize_messages(self.messages))
+        server_result = self.root / 'collections-case/result.json'
+        server_result.parent.mkdir()
+        server_result.write_text(json.dumps({'messages': self.messages, 'error': ''}), encoding='utf-8')
         self.transform = None
 
     def fake_native(self, command, directory, log, timeout, *, require_clean_tree=False):
@@ -78,6 +126,33 @@ class CollectionsExecutionTests(unittest.TestCase):
             self.assertIn(result['failure_kind'], {'invalid_result', 'output_mismatch'})
             self.assertIsNone(result['output_sha256'])
             self.reset()
+
+    def test_exact_mismatch_has_only_bounded_ordinals_hashes_and_sizes(self):
+        def mutate(marker):
+            marker['values'][4] += 'DIFFERENT-PRIVATE-TEXT'
+            marker['values'][796] += 'DIFFERENT-PRIVATE-TEXT'
+        self.transform = mutate
+        result = self.run_collections()
+        self.assertEqual(result['failure_kind'], 'output_mismatch')
+        self.assertFalse(result['witness_verified'])
+        self.assertIsNone(result['output_sha256'])
+        mismatch = result['mismatch']
+        self.assertEqual(mismatch['count'], 2)
+        self.assertEqual(mismatch['first'], 5)
+        self.assertEqual(mismatch['ordinals'], [5, 797])
+        expected = suite.serialize_messages([self.messages[4]])
+        self.assertEqual(mismatch['server_sha256'], suite.digest(expected))
+        self.assertEqual(mismatch['server_size'], len(expected))
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        self.assertNotEqual(mismatch['client_sha256'], mismatch['server_sha256'])
+
+    def test_diagnostic_source_not_matching_fresh_output_stays_plain_failure(self):
+        (self.root / 'collections-case/result.json').write_text('{}')
+        self.transform = lambda marker: marker['values'].__setitem__(4, 'changed')
+        result = self.run_collections()
+        self.assertEqual(result['failure_kind'], 'output_mismatch')
+        self.assertIsNone(result['mismatch'])
+        self.assertFalse(result['witness_verified'])
 
     def test_server_trailing_bytes_fail_without_rewriting_oracle(self):
         original = self.output.read_bytes() + b'\n'

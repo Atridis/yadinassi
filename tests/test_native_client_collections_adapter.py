@@ -280,9 +280,9 @@ class ClientCollectionsMarkerTests(unittest.TestCase):
         self.path.write_text(json.dumps(record), encoding='utf-8')
         return suite.client_collections_marker(self.path, NONCE, phase)
 
-    def test_empty_report_matches_dates_shape_with_independent_mutable_diagnostics(self):
+    def test_empty_report_adds_finite_mismatch_with_independent_mutable_diagnostics(self):
         first = suite.empty_collections_report()
-        self.assertEqual(first, suite.empty_dates_report())
+        self.assertEqual(first, {**suite.empty_dates_report(), 'mismatch': None})
         self.assertEqual(first['status'], 'not_started')
         self.assertIsNone(first['output_sha256'])
         self.assertIsNone(first['output_size'])

@@ -292,7 +292,7 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
     if (source_hash != COLLECTIONS_SOURCE_SHA256
             or type(data) is not dict or not CLIENT_OUTPUT_KEYS <= set(data)):
         raise ValueError("client collections schema")
-    base = {key: value for key, value in data.items() if key not in CLIENT_OUTPUT_KEYS}
+    base = {key: value for key, value in data.items() if key not in CLIENT_OUTPUT_KEYS | {"mismatch"}}
     validate_client_probe(base, source_hash, module_hash)
     if data["status"] == "ok":
         if (server_case["status"] != "ok"
@@ -303,6 +303,36 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
             raise ValueError("client collections output identity")
     elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):
         raise ValueError("client collections incomplete output")
+    mismatch = data.get("mismatch")
+    if mismatch is not None:
+        # Diagnostic metadata is never evidence of acceptance. It is only valid
+        # after a complete, identity-bound client run failed the exact byte gate.
+        if (data["status"] != "failed" or data["failure_kind"] != "output_mismatch"
+                or any(data[key] is not True for key in ("entered", "completed", "process_exited", "quiet"))
+                or data["witness_verified"] is not False
+                or data["source_sha256"] != source_hash or data["module_sha256"] != module_hash
+                or data["roundtrip_sha256"] != module_hash
+                or data["process_diagnostics"]["stage"] != "after_exit"
+                or data["process_diagnostics"]["reason"] != "none"
+                or server_case["status"] != "ok" or server_case["source_sha256"] != source_hash
+                or type(server_case["message_count"]) is not int or server_case["message_count"] != 797):
+            raise ValueError("client collections mismatch context")
+        keys = {"count", "first", "ordinals", "client_sha256", "server_sha256", "client_size", "server_size"}
+        if (type(mismatch) is not dict or set(mismatch) != keys
+                or not is_int(mismatch["count"], 797) or mismatch["count"] < 1
+                or not is_int(mismatch["first"], 797) or mismatch["first"] < 1
+                or mismatch["count"] > 798 - mismatch["first"]
+                or not is_digest(mismatch["client_sha256"]) or not is_digest(mismatch["server_sha256"])
+                or mismatch["client_sha256"] == mismatch["server_sha256"]
+                or any(not is_int(mismatch[key], MAX_FILE) or mismatch[key] < 1
+                       for key in ("client_size", "server_size"))
+                or type(mismatch["ordinals"]) is not list
+                or len(mismatch["ordinals"]) != min(mismatch["count"], 16)
+                or any(not is_int(value, 797) or value < 1 for value in mismatch["ordinals"])
+                or mismatch["ordinals"] != sorted(set(mismatch["ordinals"]))
+                or mismatch["ordinals"][0] != mismatch["first"]
+                or mismatch["count"] - len(mismatch["ordinals"]) > 797 - mismatch["ordinals"][-1]):
+            raise ValueError("client collections mismatch schema")
     return data
 
 
