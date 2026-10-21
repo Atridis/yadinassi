@@ -456,7 +456,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(binding, native.index("actions/setup-python@"))
         self.assertLess(binding, native.index("GHCR_TOKEN:"))
         self.assertIn("run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2", native)
-        self.assertIn("run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1", native)
+        self.assertIn("run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-watchdog-check --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1", native)
 
     def test_exact_artifact_paths_gates_and_retention_are_unchanged(self):
         native = workflow_job("smoke")

@@ -60,10 +60,12 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str) -> dict:
-    if not valid_nonce(nonce):
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False) -> dict:
+    if not valid_nonce(nonce) or (watchdog_check and not client_probe):
         raise FullError('invalid_input')
-    return {'schema': 1, 'nonce': nonce, 'status': 'not_started',
+    return {**({'client_probe': empty_client_report()} if client_probe else {}),
+            **({'client_watchdog': empty_watchdog_report()} if watchdog_check else {}),
+            'schema': 1, 'nonce': nonce, 'status': 'not_started',
             'failure_kind': 'prerequisites_failed', 'failed_case': None,
             'input_sha256': {}, 'cases': [
                 {'name': name, 'status': 'not_started', 'source_sha256': None,
@@ -222,9 +224,9 @@ def generated_module(source: bytes) -> bytes:
         raise FullError('invalid_input') from None
 
 
-def input_hashes(inputs: Path) -> dict[str, str]:
+def input_hashes(inputs: Path, *, client_probe: bool = False) -> dict[str, str]:
     result = {}
-    for source, target in INPUT_FILES.items():
+    for source, target in {**INPUT_FILES, **({CLIENT_SOURCE: CLIENT_TARGET} if client_probe else {})}.items():
         result[source] = digest(secure_bytes(inputs / target, MAX_OUTPUT))
     return result
 
@@ -247,7 +249,8 @@ def _stop_group(child: subprocess.Popen) -> None:
         time.sleep(0.02)
 
 
-def run_process(command: list[str], directory: Path, log: Path, timeout: float) -> None:
+def run_process(command: list[str], directory: Path, log: Path, timeout: float,
+                *, require_clean_tree: bool = False) -> None:
     if os.name != 'posix' or timeout != 120:
         raise FullError('invalid_input')
     absent(log)
@@ -265,7 +268,20 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float) 
             except BaseException:
                 _stop_group(child)
                 raise
-            _stop_group(child)
+            if require_clean_tree:
+                # A zero-exit leader is not completion while descendants remain.
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        os.killpg(child.pid, 0)
+                    except ProcessLookupError:
+                        break
+                    if time.monotonic() >= deadline:
+                        _stop_group(child)
+                        raise FullError('process_failed')
+                    time.sleep(0.02)
+            else:
+                _stop_group(child)
     if code:
         raise FullError('process_failed')
     if '/DumpResult' in command:
@@ -280,13 +296,13 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float) 
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str) -> dict:
-    report = empty_report(nonce)
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check)
     report.update(status='failed', failure_kind='unexpected_failure')
     active = None
     old_reader, old_process, old_build = launcher.read_result, launcher.run_process, launcher.build_epf
     try:
-        report['input_sha256'] = input_hashes(inputs)
+        report['input_sha256'] = input_hashes(inputs, client_probe=client_probe)
         absent(root)
         root.mkdir(mode=0o700)
         if platform.timeout != 120 or platform.user != 'NativeSmoke' or platform.password is not None:
@@ -334,7 +350,19 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
                 raise FullError('output_limit')
             active.update(status='ok', output_sha256=digest(actual),
                           output_size=len(actual), message_count=len(messages))
-        if input_hashes(inputs) != report['input_sha256']:
+        active = None
+        report['failed_case'] = None
+        if client_probe:
+            report['client_probe'] = run_client_probe(platform, root / 'client-probe', inputs,
+                                                       nonce, report['input_sha256'])
+            if report['client_probe']['status'] != 'ok':
+                raise FullError(report['client_probe']['failure_kind'])
+        if watchdog_check:
+            report['client_watchdog'] = run_client_watchdog(
+                platform, root / 'client-watchdog', inputs, nonce, report['input_sha256'])
+            if report['client_watchdog']['status'] != 'ok':
+                raise FullError(report['client_watchdog']['failure_kind'])
+        if input_hashes(inputs, client_probe=client_probe) != report['input_sha256']:
             active = None
             report['failed_case'] = None
             raise FullError('invalid_input')
@@ -427,3 +455,445 @@ def build_envelope(report: dict, nonce: str, root: Path, *, quiet: bool) -> byte
     if len(raw) > MAX_TRANSPORT:
         raise FullError('export_failed')
     return raw
+
+
+CLIENT_SOURCE = 'scripts/native_1c_bootstrap/client_probe.bsl'
+CLIENT_TARGET = 'bootstrap/client_probe.bsl'
+CLIENT_MODULE = 'Launcher/Forms/Main/Ext/Form/Module.bsl'
+CLIENT_VALUES = [42, 'client-probe', 3, 6]
+CLIENT_FLAGS = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
+PROCESS_CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
+
+
+def empty_process_diagnostics() -> dict:
+    return {'stage': 'not_checked', 'reason': 'none', 'unexpected_count': 0,
+            'zombie_count': 0, 'classes': {key: 0 for key in PROCESS_CLASSES}}
+
+
+class ClientProcessError(FullError):
+    def __init__(self, diagnostics):
+        super().__init__('process_failed')
+        self.diagnostics = diagnostics
+
+
+def unexpected_process_diagnostics(identities, stage):
+    result = empty_process_diagnostics()
+    result.update(stage=stage, reason='unexpected_processes', unexpected_count=len(identities))
+    if len(identities) > 256:
+        raise FullError('process_failed')
+    names = {'/opt/1cv8t/x86_64/8.3.27.1508/1cv8t': 'native',
+             '/opt/1cv8t/x86_64/8.3.27.1508/1cv8': 'native',
+             '/usr/bin/Xtigervnc': 'display', '/usr/bin/Xvfb': 'display',
+             '/usr/bin/dbus-daemon': 'session_bus', '/usr/bin/dbus-launch': 'session_bus',
+             '/usr/bin/bash': 'shell', '/usr/bin/dash': 'shell', '/bin/bash': 'shell',
+             '/usr/bin/python3.10': 'python'}
+    for pid, started in identities:
+        directory = Path('/proc') / str(pid)
+        category = 'unreadable'
+        try:
+            raw = (directory / 'stat').read_text()
+            fields = raw[raw.rindex(')') + 2:].split()
+            if fields[19] != started:
+                raise ValueError
+            result['zombie_count'] += fields[0] == 'Z'
+            category = names.get(str((directory / 'exe').readlink()), 'other')
+        except (OSError, ValueError, IndexError):
+            pass
+        result['classes'][category] += 1
+    return result
+
+
+def empty_client_report() -> dict:
+    return {'status': 'not_started', 'failure_kind': 'prerequisites_failed',
+            'process_diagnostics': empty_process_diagnostics(),
+            'source_sha256': None, 'module_sha256': None, 'roundtrip_sha256': None,
+            **{key: False for key in CLIENT_FLAGS}}
+
+
+def client_marker(path: Path, nonce: str, phase: str) -> dict:
+    if not valid_nonce(nonce) or phase not in {'entered', 'completed'}:
+        raise FullError('invalid_input')
+    value = strict_json(secure_bytes(path, 2048), max_depth=3)
+    expected = [] if phase == 'entered' else CLIENT_VALUES
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != len(expected)
+            or any(type(a) is not type(b) or a != b for a, b in zip(value['values'], expected))):
+        raise FullError('invalid_result')
+    return value
+
+
+def client_wiring(root: Path) -> None:
+    """Check the actual re-dumped managed form, not a context label in JSON."""
+    import xml.etree.ElementTree as ET
+    try:
+        def elements(path, local):
+            tree = ET.fromstring(secure_bytes(root / path, MAX_OUTPUT))
+            return [node for node in tree.iter() if node.tag.rsplit('}', 1)[-1] == local]
+        defaults = elements('Launcher.xml', 'DefaultForm')
+        forms = elements('Launcher/Forms/Main.xml', 'FormType')
+        events = elements('Launcher/Forms/Main/Ext/Form.xml', 'Event')
+        if (len(defaults) != 1 or defaults[0].text != 'ExternalDataProcessor.Launcher.Form.Main'
+                or len(forms) != 1 or forms[0].text != 'Managed'
+                or len(events) != 1 or events[0].attrib != {'name': 'OnOpen'}
+                or events[0].text != 'ПриОткрытии'):
+            raise FullError('module_mismatch')
+        # No object-body fallback can perform the calculations.
+        body = secure_bytes(root / 'Launcher/Ext/ObjectModule.bsl', MAX_OUTPUT,
+                            allow_empty=True).decode('utf-8-sig')
+        if any(line.strip() and not line.lstrip().startswith('//') for line in body.splitlines()):
+            raise FullError('module_mismatch')
+    except (ET.ParseError, UnicodeError):
+        raise FullError('module_mismatch') from None
+
+
+def client_process_snapshot() -> set[tuple[int, str]]:
+    """Fail closed on new namespace processes, even setsid/non-dumpable children.
+
+    Snapshot identities are invocation-local and never exported. No process from
+    this census is killed; only the launched process group is cleanup-owned.
+    Container teardown owns any escaped descendant on failure.
+    """
+    if os.name != 'posix':
+        raise FullError('process_failed')
+    result = set()
+    try:
+        for directory in Path('/proc').iterdir():
+            if not directory.name.isdecimal():
+                continue
+            try:
+                # Do not use proc-directory ownership: non-dumpable children can
+                # appear root-owned despite retaining their original UID.
+                # comm may contain spaces/parentheses; field 22 is starttime.
+                raw = (directory / 'stat').read_text()
+                fields = raw[raw.rindex(')') + 2:].split()
+                result.add((int(directory.name), fields[19]))
+            except FileNotFoundError:
+                if directory.exists():
+                    raise FullError('process_failed')
+        return result
+    except (OSError, ValueError, IndexError):
+        raise FullError('process_failed') from None
+
+
+def session_bus_process(pid: int, parent: int, started: str | None = None,
+                        *, require_executable: bool = True) -> tuple[int, str]:
+    """Validate one explicitly launched direct child; never adopt by executable class."""
+    if (type(pid) is not int or type(parent) is not int or pid <= 1 or parent <= 0
+            or pid == os.getpid()):
+        raise FullError('process_failed')
+    try:
+        directory = Path('/proc') / str(pid)
+        raw = (directory / 'stat').read_text()
+        fields = raw[raw.rindex(')') + 2:].split()
+        uid_line = next(line for line in (directory / 'status').read_text().splitlines()
+                        if line.startswith('Uid:'))
+        uids = uid_line.split()[1:]
+        if (fields[0] == 'Z' or int(fields[1]) != parent or len(uids) != 4
+                or re.fullmatch(r'[0-9]{1,20}', fields[19]) is None
+                or any(int(uid) != os.geteuid() for uid in uids)
+                or (require_executable and str((directory / 'exe').readlink()) != '/usr/bin/dbus-daemon')
+                or (started is not None and fields[19] != started)):
+            raise FullError('process_failed')
+        return pid, fields[19]
+    except (OSError, ValueError, IndexError, StopIteration):
+        raise FullError('process_failed') from None
+
+
+def session_bus_paths(root: Path, nonce: str) -> tuple[Path, Path, str]:
+    if not valid_nonce(nonce):
+        raise FullError('invalid_input')
+    directory = root / ('session-bus-' + nonce)
+    address = 'unix:path=' + str(directory / 'bus')
+    return directory, directory / 'owner.json', address
+
+
+def prepare_session_bus(root: Path, nonce: str, pid: int, parent: int) -> None:
+    """Bounded readiness for our nofork child, using only private fixed paths."""
+    directory, owner, address = session_bus_paths(root, nonce)
+    absent(owner)
+    deadline = time.monotonic() + 5
+    # Pin identity before exec; executable readiness may lag fork scheduling.
+    # This never admits the pre-exec process to the baseline or owner record.
+    identity = session_bus_process(pid, parent, require_executable=False)
+    while True:
+        session_bus_process(pid, parent, identity[1], require_executable=False)
+        try:
+            session_bus_process(pid, parent, identity[1])
+            info = directory.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+                    or stat.S_IMODE(info.st_mode) != 0o700):
+                raise FullError('process_failed')
+            printed = secure_bytes(directory / 'address', 256).decode('ascii')
+            socket = (directory / 'bus').lstat()
+            if (re.fullmatch(re.escape(address) + r',guid=[0-9a-f]{32}\n', printed) is None
+                    or not stat.S_ISSOCK(socket.st_mode) or socket.st_uid != os.geteuid()):
+                raise FullError('process_failed')
+            break
+        except (OSError, UnicodeError, FullError):
+            if time.monotonic() >= deadline:
+                raise FullError('process_failed') from None
+            time.sleep(0.05)
+    with owner.open('x', encoding='utf-8') as stream:
+        json.dump({'schema': 1, 'nonce': nonce, 'pid': pid, 'started': identity[1],
+                   'parent': parent, 'socket_device': str(socket.st_dev),
+                   'socket_inode': str(socket.st_ino)}, stream)
+
+
+def session_bus_owner(root: Path, nonce: str) -> dict:
+    directory, owner, address = session_bus_paths(root, nonce)
+    value = strict_json(secure_bytes(owner, 1024))
+    if (type(value) is not dict or set(value) != {
+            'schema', 'nonce', 'pid', 'started', 'parent', 'socket_device', 'socket_inode'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or type(value['started']) is not str
+            or re.fullmatch(r'[0-9]{1,20}', value['started']) is None
+            or type(value['pid']) is not int or not 1 < value['pid'] <= 4194304
+            or type(value['parent']) is not int or not 0 < value['parent'] <= 4194304
+            or type(value['socket_device']) is not str
+            or re.fullmatch(r'(?:0|[1-9][0-9]{0,19})', value['socket_device']) is None
+            or not 0 <= int(value['socket_device']) < 2**64
+            or type(value['socket_inode']) is not str
+            or re.fullmatch(r'[1-9][0-9]{0,19}', value['socket_inode']) is None
+            or not 0 < int(value['socket_inode']) < 2**64):
+        raise FullError('process_failed')
+    return value
+
+
+def require_session_bus(root: Path, nonce: str) -> tuple[int, str]:
+    directory, owner, address = session_bus_paths(root, nonce)
+    value = session_bus_owner(root, nonce)
+    identity = session_bus_process(value['pid'], value['parent'], value['started'])
+    try:
+        info = directory.lstat()
+        socket = (directory / 'bus').lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o700 or not stat.S_ISSOCK(socket.st_mode)
+                or socket.st_uid != os.geteuid()
+                or (str(socket.st_dev), str(socket.st_ino)) != (value['socket_device'], value['socket_inode'])
+                or os.environ.get('DBUS_SESSION_BUS_ADDRESS') != address):
+            raise FullError('process_failed')
+    except OSError:
+        raise FullError('process_failed') from None
+    return identity
+
+
+def stop_session_bus(root: Path, nonce: str, pid: int, parent: int) -> None:
+    """Pin our exact child with pidfd; bounded cleanup cannot signal a reused PID."""
+    import select
+    directory, owner, address = session_bus_paths(root, nonce)
+    if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
+        raise FullError('process_failed')
+    value = session_bus_owner(root, nonce)
+    if value['pid'] != pid or value['parent'] != parent:
+        raise FullError('process_failed')
+    try:
+        fd = os.pidfd_open(pid)
+    except OSError:
+        raise FullError('process_failed') from None
+    try:
+        session_bus_process(pid, parent, value['started'])
+        poll = select.poll()
+        poll.register(fd, select.POLLIN)
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                signal.pidfd_send_signal(fd, sig)
+            except OSError:
+                raise FullError('process_failed') from None
+            events = poll.poll(2000)
+            if any(descriptor == fd and mask & select.POLLIN for descriptor, mask in events):
+                return
+        raise FullError('process_failed')
+    finally:
+        os.close(fd)
+
+
+def read_client_process_baseline(nonce: str) -> set[tuple[int, str]]:
+    """Use the census taken after X startup, before the first native invocation."""
+    value = strict_json(secure_bytes(Path('/tmp/onec-smoke/client-process-baseline.json'), 16384))
+    if (type(value) is not dict or set(value) != {'schema', 'nonce', 'processes'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or type(value['processes']) is not list
+            or not 1 <= len(value['processes']) <= 256):
+        raise FullError('invalid_result')
+    baseline = set()
+    for item in value['processes']:
+        if (type(item) is not list or len(item) != 2 or type(item[0]) is not int
+                or not 1 <= item[0] <= 4194304 or type(item[1]) is not str
+                or re.fullmatch(r'[0-9]{1,20}', item[1]) is None
+                or tuple(item) in baseline):
+            raise FullError('invalid_result')
+        baseline.add(tuple(item))
+    return baseline
+
+
+def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
+    baseline = read_client_process_baseline(nonce)
+    bus = require_session_bus(Path('/tmp/onec-smoke'), nonce)
+    if bus not in baseline:
+        raise FullError('process_failed')
+    current = client_process_snapshot()
+    own = {identity for identity in current if identity[0] == os.getpid()}
+    if len(own) != 1:
+        raise FullError('process_failed')
+    if not current <= baseline | own:
+        raise ClientProcessError(unexpected_process_diagnostics(current - (baseline | own), 'baseline'))
+    return baseline | own
+
+
+def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostics=None) -> None:
+    """Keep a final teardown/census failure valid, finite and non-exportable."""
+    suite.update(status='failed', failure_kind='process_failed')
+    last = suite['client_watchdog'] if watchdog_check else suite['client_probe']
+    last.update(status='failed', failure_kind='process_failed', quiet=False, witness_verified=False)
+    if watchdog_check:
+        last['timeout_verified'] = False
+    last['process_diagnostics'] = (diagnostics if diagnostics is not None else
+        dict(empty_process_diagnostics(), stage='after_exit', reason='unverified'))
+
+
+def final_client_process_census(nonce: str) -> None:
+    """After owned bus teardown, reject late service activation before export."""
+    baseline = read_client_process_baseline(nonce)
+    value = session_bus_owner(Path('/tmp/onec-smoke'), nonce)
+    current = client_process_snapshot()
+    own = {identity for identity in current if identity[0] == os.getpid()}
+    if len(own) != 1 or (value['pid'], value['started']) in current:
+        raise FullError('process_failed')
+    unexpected = current - (baseline | own)
+    if unexpected:
+        raise ClientProcessError(unexpected_process_diagnostics(unexpected, 'after_exit'))
+
+
+def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
+                     hashes: dict, *, stall: bool = False) -> dict:
+    """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
+    record = empty_client_report()
+    record.update(status='failed', failure_kind='unexpected_failure')
+    try:
+        if (not valid_nonce(nonce) or type(stall) is not bool or platform.timeout != 120
+                or platform.user != 'NativeSmoke' or platform.password is not None):
+            raise FullError('invalid_input')
+        record['process_diagnostics'].update(stage='baseline', reason='unverified')
+        baseline = client_process_baseline(nonce)
+        record['process_diagnostics'].update(stage='before_probe', reason='native_not_quiet')
+        if not native_processes_quiet(platform.executable):
+            raise FullError('process_failed')
+        record['process_diagnostics'].update(reason='none')
+        absent(root)
+        root.mkdir(mode=0o700)
+        source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
+        if digest(source) != hashes[CLIENT_SOURCE]:
+            raise FullError('invalid_input')
+        record['source_sha256'] = digest(source)
+        module = generated_module(source)
+        src = root / 'src'
+        src.mkdir()
+        # Only the verified launcher metadata is copied; no TestModule/server code.
+        for relative in ('Launcher.xml', 'Launcher/Ext/ObjectModule.bsl',
+                         'Launcher/Forms/Main.xml', 'Launcher/Forms/Main/Ext/Form.xml'):
+            origin = inputs / 'launcher/launcher_1c' / relative
+            raw = secure_bytes(origin, MAX_OUTPUT)
+            if digest(raw) != hashes['integrational_tests/launcher_1c/' + relative]:
+                raise FullError('invalid_input')
+            destination = src / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+        (src / CLIENT_MODULE).parent.mkdir(parents=True, exist_ok=True)
+        (src / CLIENT_MODULE).write_bytes(module)
+        client_wiring(src)
+        record['module_sha256'] = digest(secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT))
+        epf = root / 'ClientProbe.epf'
+        run_process(platform.command('DESIGNER') + [
+            '/LoadExternalDataProcessorOrReportFromFiles', str(src / 'Launcher.xml'), str(epf),
+            '/Out', str(root / 'build.log'), '/DumpResult', str(root / 'build.result')],
+            root, root / 'build-console.log', 120, require_clean_tree=True)
+        require_epf(epf)
+        if secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT) != module:
+            raise FullError('module_mismatch')
+        dumped = root / 'roundtrip'
+        dumped.mkdir()
+        run_process(platform.command('DESIGNER') + [
+            '/DumpExternalDataProcessorOrReportToFiles', str(dumped / 'Launcher.xml'), str(epf),
+            '/Out', str(root / 'dump.log'), '/DumpResult', str(root / 'dump.result')],
+            root, root / 'dump-console.log', 120, require_clean_tree=True)
+        actual = generated_module(secure_bytes(dumped / CLIENT_MODULE, MAX_OUTPUT))
+        if actual != module:
+            raise FullError('module_mismatch')
+        client_wiring(dumped)
+        record['roundtrip_sha256'] = digest(actual)
+        entered, completed = root / 'entered.json', root / 'completed.json'
+        request = root / 'request.json'
+        absent(entered, completed, request)
+        with request.open('x', encoding='utf-8') as stream:
+            json.dump({'nonce': nonce, 'entered': str(entered), 'completed': str(completed),
+                       'mode': 'stall' if stall else 'normal'}, stream)
+        try:
+            run_process(platform.command('ENTERPRISE') + [
+                '/RunModeManagedApplication', '/VL', 'ru_RU', '/Execute', str(epf),
+                '/C', str(request), '/Out', str(root / 'enterprise.log')],
+                root, root / 'enterprise-console.log', 120, require_clean_tree=True)
+            record['process_exited'] = True
+        finally:
+            record['process_diagnostics'].update(stage='after_exit', reason='unverified')
+            survivors = client_process_snapshot() - baseline
+            if survivors:
+                record['process_diagnostics'] = unexpected_process_diagnostics(survivors, 'after_exit')
+            else:
+                require_session_bus(Path('/tmp/onec-smoke'), nonce)
+                record['process_diagnostics'].update(reason='native_not_quiet')
+                record['quiet'] = native_processes_quiet(platform.executable)
+                if record['quiet']:
+                    record['process_diagnostics'].update(reason='none')
+            # Diagnostic phase only. A timeout/nonzero exit never becomes success.
+            for path, phase in ((entered, 'entered'), (completed, 'completed')):
+                try:
+                    client_marker(path, nonce, phase)
+                    record[phase] = True
+                except FullError:
+                    pass
+        client_marker(entered, nonce, 'entered')
+        client_marker(completed, nonce, 'completed')
+        if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
+            raise FullError('invalid_result')
+        if not record['quiet']:
+            raise FullError('process_failed')
+        if secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT) != module:
+            raise FullError('module_mismatch')
+        record.update(status='ok', failure_kind='none', witness_verified=True)
+    except Exception as error:
+        if isinstance(error, ClientProcessError):
+            record['process_diagnostics'] = error.diagnostics
+        record['failure_kind'] = (error.kind if isinstance(error, FullError) else
+                                  'artifact_missing' if isinstance(error, (OSError, DraftError)) else
+                                  'unexpected_failure')
+    return record
+
+
+def empty_watchdog_report() -> dict:
+    return {**empty_client_report(), 'timeout_verified': False}
+
+
+def run_client_watchdog(platform, root: Path, inputs: Path, nonce: str, hashes: dict) -> dict:
+    record = {**run_client_probe(platform, root, inputs, nonce, hashes, stall=True),
+              'timeout_verified': False}
+    # This is a narrow negative assertion, never generic timeout acceptance.
+    try:
+        if (record['status'] != 'failed' or record['failure_kind'] != 'timeout'
+                or record['entered'] is not True or record['completed'] is not False
+                or record['process_exited'] is not False or record['quiet'] is not True
+                or record['witness_verified'] is not False
+                or record['source_sha256'] != hashes[CLIENT_SOURCE]
+                or record['module_sha256'] is None
+                or record['roundtrip_sha256'] != record['module_sha256']):
+            raise FullError('invalid_result')
+        # An error/partial/invalid terminal file is not the deliberate stall.
+        absent(root / 'completed.json')
+        client_marker(root / 'entered.json', nonce, 'entered')
+        record.update(status='ok', failure_kind='none', timeout_verified=True)
+    except FullError as error:
+        record.update(status='failed', failure_kind=error.kind, witness_verified=False)
+    return record

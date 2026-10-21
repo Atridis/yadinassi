@@ -13,9 +13,26 @@ display_started=false
 infobase_created=false
 configuration_dumped=false
 x_pid=''
+bus_pid=''
+bus_cleanup_failed=false
 bootstrap=false
 full_suite=false
 invocation_nonce=''
+client_probe=false
+watchdog_check=false
+client_args=()
+if [ "$#" -eq 5 ] && [ "${5}" = --client-watchdog-check ] && [ "${4}" = --client-probe ]; then
+    watchdog_check=true
+    set -- "$1" "$2" "$3" "$4"
+fi
+if [ "$#" -eq 4 ] && [ "${4}" = --client-probe ]; then
+    client_probe=true
+    client_args=(--client-probe)
+    if [ "$watchdog_check" = true ]; then
+        client_args+=(--client-watchdog-check)
+    fi
+    set -- "$1" "$2" "$3"
+fi
 if [ "$#" -eq 1 ] && [ "$1" = --bootstrap-simple-epf ]; then
     bootstrap=true
 elif [ "$#" -eq 3 ] && [ "$1" = --full-suite ] && [ "$2" = --invocation-nonce ] && [[ "$3" =~ ^[0-9a-f]{32}$ ]]; then
@@ -29,6 +46,23 @@ fi
 finish() {
     result=$?
     trap - EXIT
+    if [ -n "$bus_pid" ]; then
+        if python3 - "$invocation_nonce" "$bus_pid" "$$" <<'PYSTOPBUS'
+import sys
+from pathlib import Path
+sys.path.insert(0, "/smoke/bootstrap")
+import full_suite
+full_suite.stop_session_bus(Path("/tmp/onec-smoke"), sys.argv[1], int(sys.argv[2]), int(sys.argv[3]))
+PYSTOPBUS
+        then
+            # The pidfd confirmed termination; wait only reaps this direct child.
+            wait "$bus_pid" 2>/dev/null || true
+        else
+            result=1
+            stage=stage2
+            bus_cleanup_failed=true
+        fi
+    fi
     if [ -n "$x_pid" ]; then
         kill "$x_pid" 2>/dev/null || true
         wait "$x_pid" 2>/dev/null || true
@@ -39,7 +73,7 @@ finish() {
         printf '{"schema":1,"status":"python_unsupported"}\n'
     else
         python3 - "$result" "$stage" "$libraries_resolved" "$display_started" \
-          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" <<'PY'
+          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" "$bus_cleanup_failed" <<'PY'
 import hashlib
 import json
 import os
@@ -48,7 +82,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce = sys.argv[1:]
+code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce, client_mode, watchdog_mode, bus_cleanup_failed = sys.argv[1:]
 report = {
     "schema": 1,
     "status": "ok" if code == "0" else stage + "_failed",
@@ -135,7 +169,7 @@ if bootstrap == "true":
 if full_mode == "true":
     sys.path.insert(0, "/smoke/bootstrap")
     import full_suite
-    suite = full_suite.empty_report(nonce)
+    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true")
     try:
         path = Path("/tmp/onec-smoke/stage3-report.json")
         if path.exists() or path.is_symlink():
@@ -143,7 +177,7 @@ if full_mode == "true":
         elif (report.get("stage2") or {}).get("status") == "ok":
             suite.update(status="failed", failure_kind="unexpected_failure")
     except Exception:
-        suite = full_suite.empty_report(nonce)
+        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true")
         suite.update(status="failed", failure_kind="export_failed")
     report["stage3"] = suite
     # A failed stage-three exit is not a failed bootstrap; preserve both outcomes.
@@ -152,6 +186,16 @@ if full_mode == "true":
             report["status"] = "stage3_failed"
         if suite["status"] != "ok" and report["status"] == "ok":
             report["status"] = "stage3_failed"
+    if client_mode == "true" and report["status"] == "ok" and suite["status"] == "ok":
+        try:
+            full_suite.final_client_process_census(nonce)
+        except full_suite.FullError as exc:
+            report["status"] = "stage3_failed"
+            full_suite.fail_client_process_checkpoint(suite, watchdog_mode == "true",
+                exc.diagnostics if isinstance(exc, full_suite.ClientProcessError) else None)
+    if client_mode == "true" and bus_cleanup_failed == "true" and suite["status"] == "ok":
+        report["status"] = "stage3_failed"
+        full_suite.fail_client_process_checkpoint(suite, watchdog_mode == "true")
     report["native_tests_completed"] = report["status"] == "ok" and suite["status"] == "ok"
     raw = full_suite.build_envelope(
         report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
@@ -210,6 +254,50 @@ for attempt in {1..40}; do
 done
 [ "$display_started" = true ]
 
+# Own one private session bus before native code can autolaunch detached helpers.
+# Preserve the pinned image's existing session policy. No host bus, TCP listener,
+# address fallback, shell-evaluated output or executable-class exemption is used.
+if [ "$client_probe" = true ]; then
+    [ -x /usr/bin/dbus-daemon ]
+    python3 -c 'import os, signal; assert hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"); fd = os.pidfd_open(os.getpid()); os.close(fd)'
+    bus_dir="/tmp/onec-smoke/session-bus-$invocation_nonce"
+    mkdir -m 700 "$bus_dir"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$bus_dir/bus"
+    /usr/bin/dbus-daemon --session --nofork --nopidfile --nosyslog \
+        --address="$DBUS_SESSION_BUS_ADDRESS" --print-address=3 \
+        3> "$bus_dir/address" > "$bus_dir/console.log" 2>&1 &
+    bus_pid=$!
+    python3 - "$invocation_nonce" "$bus_pid" "$$" <<'PYPREPAREBUS'
+import sys
+from pathlib import Path
+sys.path.insert(0, "/smoke/bootstrap")
+import full_suite
+full_suite.prepare_session_bus(Path("/tmp/onec-smoke"), sys.argv[1], int(sys.argv[2]), int(sys.argv[3]))
+PYPREPAREBUS
+fi
+
+# Before any native invocation, record only the already-running harness/display/bus.
+# The census Python process excludes itself; run_stage later admits only its own PID.
+if [ "$client_probe" = true ]; then
+    python3 - "$invocation_nonce" <<'PYCLIENTBASELINE'
+import json
+import os
+from pathlib import Path
+import sys
+sys.path.insert(0, "/smoke/bootstrap")
+import full_suite
+path = Path("/tmp/onec-smoke/client-process-baseline.json")
+full_suite.absent(path)
+bus = full_suite.require_session_bus(Path("/tmp/onec-smoke"), sys.argv[1])
+identities = sorted(identity for identity in full_suite.client_process_snapshot()
+                    if identity[0] != os.getpid())
+if bus not in identities:
+    raise full_suite.FullError("process_failed")
+with path.open("x", encoding="utf-8") as stream:
+    json.dump({"schema": 1, "nonce": sys.argv[1], "processes": identities}, stream)
+PYCLIENTBASELINE
+fi
+
 check_result() {
     python3 - "$1" <<'PYRESULT'
 from pathlib import Path
@@ -246,7 +334,7 @@ if [ "$bootstrap" = true ]; then
     stage=stage2
     # All source inputs are host-allowlisted and read-only. All outputs stay tmpfs.
     if [ "$full_suite" = true ]; then
-        python3 /smoke/bootstrap/run_stage.py --full-suite --invocation-nonce "$invocation_nonce" \
+        python3 /smoke/bootstrap/run_stage.py --full-suite --invocation-nonce "$invocation_nonce" "${client_args[@]}" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     else
         python3 /smoke/bootstrap/run_stage.py > /tmp/onec-smoke/stage2-console.log 2>&1

@@ -147,14 +147,22 @@ def bounded_run(args: list[str], env: dict[str, str], seconds: int,
     return code, bytes(output)
 
 
-def stage_inputs(destination: Path, *, full_suite: bool = False) -> dict[str, str]:
+def staged_files(full_suite: bool, client_probe: bool) -> dict:
+    if client_probe and not full_suite:
+        raise SmokeError("client_probe_requires_full_suite")
+    return {**(FULL_STAGED_FILES if full_suite else STAGED_FILES),
+            **({"scripts/native_1c_bootstrap/client_probe.bsl": "bootstrap/client_probe.bsl"}
+               if client_probe else {})}
+
+
+def stage_inputs(destination: Path, *, full_suite: bool = False, client_probe: bool = False) -> dict[str, str]:
     if destination.is_symlink():
         raise SmokeError("invalid_staged_inputs")
     destination = destination.parent.resolve(strict=True) / destination.name
     destination.mkdir(mode=0o755)
     destination.chmod(0o755)
     digests = {}
-    for source_name, target_name in (FULL_STAGED_FILES if full_suite else STAGED_FILES).items():
+    for source_name, target_name in staged_files(full_suite, client_probe).items():
         source = ROOT / source_name
         if source.is_symlink() or any(parent.is_symlink() for parent in source.parents if parent != ROOT):
             raise SmokeError("invalid_staged_source")
@@ -172,12 +180,12 @@ def stage_inputs(destination: Path, *, full_suite: bool = False) -> dict[str, st
     for directory in destination.rglob("*"):
         if directory.is_dir():
             directory.chmod(0o755)
-    validate_input_tree(destination, full_suite=full_suite)
+    validate_input_tree(destination, full_suite=full_suite, client_probe=client_probe)
     return digests
 
 
-def validate_input_tree(root: Path, *, full_suite: bool = False) -> None:
-    files = FULL_STAGED_FILES if full_suite else STAGED_FILES
+def validate_input_tree(root: Path, *, full_suite: bool = False, client_probe: bool = False) -> None:
+    files = staged_files(full_suite, client_probe)
     if root.is_symlink() or not root.is_dir():
         raise SmokeError("invalid_staged_inputs")
     root = root.resolve(strict=True)
@@ -200,7 +208,11 @@ def validate_input_tree(root: Path, *, full_suite: bool = False) -> None:
 
 
 def container_command(probe: Path, name: str, *, bootstrap: bool = False,
-                      full_suite: bool = False, nonce: str | None = None) -> list[str]:
+                      full_suite: bool = False, nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False) -> list[str]:
+    if watchdog_check and not client_probe:
+        raise SmokeError("watchdog_check_requires_client_probe")
+    if client_probe and not full_suite:
+        raise SmokeError("client_probe_requires_full_suite")
     if full_suite:
         bootstrap = True
         if type(nonce) is not str or not re.fullmatch(r"[0-9a-f]{32}", nonce):
@@ -211,7 +223,7 @@ def container_command(probe: Path, name: str, *, bootstrap: bool = False,
     if (not bootstrap and not probe.is_file()) or "," in str(probe):
         raise SmokeError("invalid_probe_path")
     if bootstrap:
-        validate_input_tree(probe, full_suite=full_suite)
+        validate_input_tree(probe, full_suite=full_suite, client_probe=client_probe)
     target = "/smoke" if bootstrap else "/smoke/probe.sh"
     return [
         "docker", "run", "--name", name, "--hostname", "onec-smoke",
@@ -230,7 +242,7 @@ def container_command(probe: Path, name: str, *, bootstrap: bool = False,
         "LANG=ru_RU.UTF-8", "LC_ALL=ru_RU.UTF-8", "TZ=Etc/UTC",
         "/bin/bash", "--noprofile", "--norc", "/smoke/probe.sh",
     ] + (["--full-suite", "--invocation-nonce", nonce] if full_suite else
-         ["--bootstrap-simple-epf"] if bootstrap else [])
+         ["--bootstrap-simple-epf"] if bootstrap else []) + (["--client-probe"] if client_probe else []) + (["--client-watchdog-check"] if watchdog_check else [])
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -381,7 +393,11 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
 
 def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
               export_native_outputs: bool = False, native_target: str = FULL.WINDOWS_TARGET,
-              comparison_mode: str = FULL.BYTE_EXACT) -> dict[str, object]:
+              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False) -> dict[str, object]:
+    if watchdog_check and not client_probe:
+        raise SmokeError("watchdog_check_requires_client_probe")
+    if client_probe and not full_suite:
+        raise SmokeError("client_probe_requires_full_suite")
     if export_native_outputs and not full_suite:
         raise SmokeError("native_artifact_requires_full_suite")
     FULL.validate_comparison_options(native_target, comparison_mode)
@@ -405,10 +421,13 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
         with tempfile.TemporaryDirectory(prefix="onec-smoke-", dir=temp_root) as work_name:
             work = Path(work_name).resolve()
             staged = work / "staged-inputs"
-            input_hashes = stage_inputs(staged, full_suite=full_suite) if bootstrap else None
+            input_hashes = stage_inputs(staged, full_suite=full_suite, client_probe=client_probe) if bootstrap else None
             module_hashes = ({case: FULL.digest(FULL.generated_module(
                 FULL.read_regular(staged / f"scenarios/{case}.bsl", FULL.MAX_FILE, nonempty=True)))
                 for case in FULL.SCENARIOS} if full_suite else None)
+            if client_probe:
+                module_hashes["client_probe"] = FULL.digest(FULL.generated_module(
+                    FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)))
             auth = work / "registry-auth"
             auth.mkdir(mode=0o700)
             auth_env = docker_environment(auth)
@@ -426,7 +445,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
             if code != 0 or platform.strip() != b"linux/amd64|0":
                 raise SmokeError("unexpected_image_platform_or_volumes")
             run_command = container_command(staged if bootstrap else PROBE, name, bootstrap=bootstrap,
-                                            full_suite=full_suite, nonce=nonce)
+                                            full_suite=full_suite, nonce=nonce, client_probe=client_probe, watchdog_check=watchdog_check)
             payloads = {}
             report = None
             primary_error = None
@@ -435,7 +454,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 runtime = FULL_MAX_RUNTIME if full_suite else BOOTSTRAP_MAX_RUNTIME if bootstrap else MAX_RUNTIME
                 if full_suite:
                     code, raw = bounded_run(run_command, env, runtime, FULL.MAX_TRANSPORT)
-                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report)
+                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report, watchdog_check=watchdog_check)
                     del raw
                 else:
                     code, raw = bounded_run(run_command, env, runtime)
@@ -541,6 +560,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="Run internal user bootstrap and one fixed EPF after capabilities")
     parser.add_argument("--full-suite", action="store_true",
                         help="Run six approved native scenarios and compare privately on the host under UTC")
+    parser.add_argument("--client-watchdog-check", action="store_true",
+                        help="Require a controlled client stall to time out and clean up")
+    parser.add_argument("--client-probe", action="store_true",
+                        help="Also require fresh managed-form client-only execution proof")
     parser.add_argument("--export-native-outputs", action="store_true",
                         help="Explicitly retain six genuine outputs plus provenance at native-smoke/native-outputs")
     parser.add_argument("--native-target", choices=(FULL.WINDOWS_TARGET, FULL.LINUX_TARGET),
@@ -549,6 +572,10 @@ def main(argv: list[str] | None = None) -> int:
                         default=FULL.BYTE_EXACT, help="Raw-byte comparison or the reviewed, source-bound typed Map contract")
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
+    if args.client_watchdog_check and not args.client_probe:
+        parser.error("--client-watchdog-check requires --client-probe and --full-suite")
+    if args.client_probe and not args.full_suite:
+        parser.error("--client-probe requires --full-suite")
     if args.export_native_outputs and not args.full_suite:
         parser.error("--export-native-outputs requires --full-suite")
     try:
@@ -564,7 +591,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     artifact_evidence_validated = False
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode)
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check)
         if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")
@@ -585,7 +612,9 @@ def main(argv: list[str] | None = None) -> int:
                     probe.get(key) is True for key in ("native_evidence_accepted", "native_transport_validated",
                         "native_cases_completed", "container_cleanup_verified", "private_payloads_removed",
                         "windows_goldens_unchanged")))
-            report["purpose"] = "isolated-six-scenario-utc-comparison"
+            report["purpose"] = ("isolated-six-scenario-client-watchdog-proof" if args.client_watchdog_check else
+                                 "isolated-six-scenario-client-proof" if args.client_probe else
+                                 "isolated-six-scenario-utc-comparison")
             report["native_tests_completed"] = report["probe"].get("native_tests_completed", False)
             report["interpreter_comparison_completed"] = report["probe"]["comparison"]["status"] == "ok"
             report["interpreter_acceptance_completed"] = report["probe"]["comparison"].get("acceptance_status") == "accepted"
@@ -607,11 +636,14 @@ def main(argv: list[str] | None = None) -> int:
             report["security_settings_changed"] = None
         success = False
     if args.full_suite:
-        report["purpose"] = "isolated-six-scenario-utc-comparison"
+        report["purpose"] = ("isolated-six-scenario-client-watchdog-proof" if args.client_watchdog_check else
+                             "isolated-six-scenario-client-proof" if args.client_probe else
+                             "isolated-six-scenario-utc-comparison")
         probe = report.get("probe", {})
         stage2 = probe.get("stage2")
         report["native_cases_completed"] = probe.get("native_cases_completed", False)
-        report["native_tests_completed"] = report["native_cases_completed"]
+        report["native_tests_completed"] = (probe.get("native_tests_completed", False)
+                                             if args.client_probe else report["native_cases_completed"])
         report["native_evidence_accepted"] = probe.get("native_evidence_accepted", False)
         report["windows_goldens_modified"] = (not probe["windows_goldens_unchanged"]
             if type(probe.get("windows_goldens_unchanged")) is bool else None)
