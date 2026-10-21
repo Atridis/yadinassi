@@ -1416,8 +1416,10 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
 
     All 112 original helpers remain in their original order with client directives.
     Only the 15 verified message-call identifiers change, and the complete module
-    body moves into a client procedure. Expressions, conversions and error paths
-    stay byte-identical. No server trampoline or reference collections are added.
+    body moves into a client procedure. Four explicit helper-local declarations
+    preserve source-local bindings against the managed form's Object/Items names.
+    Expressions, conversions and error paths stay byte-identical. No server
+    trampoline or reference collections are added.
     """
     if (digest(source) != CLIENT_COLLECTIONS_SOURCE_SHA256
             or digest(template) != CLIENT_COLLECTIONS_TEMPLATE_SHA256):
@@ -1717,15 +1719,29 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
             or any(name.casefold() in text.casefold()
                    for name in reserved for text in (original, harness))):
         raise FullError('invalid_input')
+    # ObjectModule implicit locals must remain locals in a managed FormModule:
+    # bare Object binds its main attribute, and Items binds the form item tree.
+    # These four source-pinned helpers have assignments, not parameters, for the
+    # colliding names. Do not rename identifiers or alter dynamic expression text.
+    local_declarations = {
+        989: '    Перем Объект;\n',   # КонструкторИндексовПробы
+        1000: '    Перем Объект;\n',  # КодекИндексовПробы
+        1430: '    Перем Элементы;\n',  # ПоляСпискаПробы
+        1665: '    Перем Объект;\n',  # КодекСпискаПробы
+    }
     adapted = lines.copy()
     adapted[1] = ''  # Relocated to the form-module declaration prefix, not a local.
     for i in sites:
         adapted[i] = adapted[i].replace('Сообщить(', capture + '(', 1)
     for i in declarations:
         adapted[i] = '&НаКлиенте\n' + adapted[i]
+    for i, declaration in local_declarations.items():
+        adapted[i] += declaration
     # Inverse reconstruction is a runtime check, not disabled by Python -O.
     restored = adapted.copy()
     restored[1] = lines[1]
+    for i, declaration in local_declarations.items():
+        restored[i] = restored[i].removesuffix(declaration)
     for i in declarations:
         restored[i] = restored[i].removeprefix('&НаКлиенте\n')
     for i in sites:

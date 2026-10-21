@@ -258,7 +258,11 @@ values parity and before the controlled watchdog checkpoint. Its hash-pinned
 adapter preserves all 112 helpers, the module-global `Выход`, 16 region directives,
 and the complete body. Only 15 verified `Сообщить` identifiers are replaced by
 bounded string capture; existing conversions and helper-local dynamic execution
-remain intact. Inverse reconstruction must recover the original source exactly.
+remain intact. Four source-pinned helper-local declarations preserve `Объект`
+and `Элементы` as locals, preventing accidental binding to the managed form's
+Object attribute and Items collection. Identifiers and dynamic expression text
+are not renamed. Inverse reconstruction removes only these exact additions and
+must recover the original source exactly.
 
 All 797 messages are compared as complete UTF-8/LF bytes with this run's fresh
 server `collections.out`. API availability, localized errors, message order and

@@ -20,6 +20,12 @@ DECLARATIONS = (6, 39, 71, 80, 89, 94, 124, 143, 148, 164, 168, 175, 183, 191, 2
 SITES = (90, 528, 539, 541, 544, 3442, 3480, 3530, 3560, 3573, 3584, 3592, 3597, 3620, 3622)
 CAPTURE = 'КоллекцииКлиентЗахват'
 VARIABLES = ('Выход', 'КоллекцииКлиентСообщения', 'КоллекцииКлиентСимволы')
+LOCAL_DECLARATIONS = {
+    'Функция КонструкторИндексовПробы(Знач Вид)\n': '    Перем Объект;\n',
+    'Функция КодекИндексовПробы(Знач Вид)\n': '    Перем Объект;\n',
+    'Функция ПоляСпискаПробы(Знач Список)\n': '    Перем Элементы;\n',
+    'Функция КодекСпискаПробы(Знач Вид)\n': '    Перем Объект;\n',
+}
 
 
 def interpreter_module(module: str) -> str:
@@ -171,6 +177,9 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
         self.assertEqual(restored.count('&НаКлиенте\n'), len(DECLARATIONS) + 1)
         self.assertEqual(restored.count(CAPTURE + '('), len(SITES))
         restored = restored.replace('&НаКлиенте\n', '')
+        for helper, declaration in LOCAL_DECLARATIONS.items():
+            self.assertEqual(restored.count(helper + declaration), 1)
+            restored = restored.replace(helper + declaration, helper, 1)
         restored = restored.replace('Процедура КоллекцииКлиентВыполнить()\n', '')
         restored = restored.replace(CAPTURE + '(', 'Сообщить(')
         first, rest = restored.split('\n', 1)
@@ -201,6 +210,45 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
         self.assertIn('Возврат КоллекцииКлиентСообщения;', module)
         self.assertEqual(module.count('ВычислитьПробу();'), 1)
         self.assertEqual(module.count(CAPTURE + '('), len(SITES) + 1)
+
+    def test_only_four_pinned_helper_locals_shadow_form_context(self):
+        module = self.module()
+        self.assertEqual(module.count('    Перем Объект;\n'), 3)
+        self.assertEqual(module.count('    Перем Элементы;\n'), 1)
+        for helper, declaration in LOCAL_DECLARATIONS.items():
+            self.assertEqual(module.count('&НаКлиенте\n' + helper + declaration), 1)
+            self.assertEqual(self.source.decode().count(helper), 1)
+            self.assertNotIn(helper + declaration, self.source.decode())
+        self.assertNotIn('    Перем Выход;', module)
+        self.assertNotIn('Перем Объект;\n&НаКлиенте', module)
+
+    def test_form_context_globals_are_not_overwritten_by_source_helpers(self):
+        expected = []
+        Interpreter(output=expected.append).execute(self.source.decode())
+        vm = Interpreter(output=lambda _: self.fail('adapter leaked a native message'))
+        vm.execute('Перем Объект; Перем Элементы; '
+                   'Объект = "form-object-sentinel"; Элементы = "form-items-sentinel";')
+        vm.execute(interpreter_module(self.module()))
+        captured = list(vm.execute('ВычислитьПробу()'))
+        self.assertEqual(captured, expected)
+        self.assertEqual(len(captured), 797)
+        self.assertEqual(vm.execute('Объект'), 'form-object-sentinel')
+        self.assertEqual(vm.execute('Элементы'), 'form-items-sentinel')
+
+    def test_missing_hygiene_reproduces_ambient_name_binding_leak(self):
+        # Offline control models writable form names, not native read-only errors.
+        # Removing only the four additions must make the two collisions visible.
+        module = self.module()
+        for helper, declaration in LOCAL_DECLARATIONS.items():
+            module = module.replace(helper + declaration, helper, 1)
+        vm = Interpreter(output=lambda _: self.fail('control leaked a message'))
+        vm.execute('Перем Объект; Перем Элементы; '
+                   'Объект = "form-object-sentinel"; Элементы = "form-items-sentinel";')
+        vm.execute(interpreter_module(module))
+        vm.execute('КодекИндексовПробы("empty")')
+        vm.execute('ПоляСпискаПробы(Новый СписокЗначений)')
+        self.assertNotEqual(vm.execute('Объект'), 'form-object-sentinel')
+        self.assertNotEqual(vm.execute('Элементы'), 'form-items-sentinel')
 
     def test_witness_writer_and_onopen_are_byte_unchanged(self):
         module = self.module()
