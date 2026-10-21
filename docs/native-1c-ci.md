@@ -137,6 +137,29 @@ expected error observations do not establish that those APIs succeeded.
 No runtime budget, mount, network policy, capability or bootstrap right is
 expanded by this option.
 
+`--client-values-parity` independently opts into the complete `values.bsl`
+checkpoint and requires `--full-suite` plus `--client-probe`. The isolated CI
+command enables it alongside dates and the watchdog: the unchanged six server
+scenarios run first, followed by the fixed client probe, dates parity, values
+parity and the deliberate watchdog checkpoint. The same 24 trusted inputs,
+six public server outputs and provenance are retained. Raw client values
+markers stay private; only finite validation metadata enters the report.
+
+The values adapter pins the original source and template, preserves all 33
+helpers and the entire top-level body, and replaces only the 16 verified
+`Сообщить` call identifiers with bounded string capture. It adds no `Строка`
+conversion and checks inverse source reconstruction. All 261 messages (40 Null,
+62 XML, 132 types, 23 types-extra observations and four completion markers)
+are compared byte-for-byte with this run's fresh server `values.out`, including
+order, multiline content and trailing bytes. No historical output hash is used
+as the parity oracle. Context differences in Null, XML or type-qualifier APIs
+must fail the checkpoint rather than be normalized or accepted as map-order
+exceptions. Existing expected-error observations still do not establish API
+success. The same nonce, module/EPF round-trip, on-open client invocation,
+process/session-bus census and bounded watchdog checks apply; neither summary
+nor full-report limits are increased. Local adapter and synthetic-marker tests
+are not a real-1C parity result.
+
 This is a logical execution-context test in the explicitly launched file-mode
 thick client, not proof of a separate physical server process. File mode can
 also support other client types; no universal thick-client claim is made.
