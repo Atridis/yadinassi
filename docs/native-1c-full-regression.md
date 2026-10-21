@@ -19,7 +19,7 @@ The default, summary-only and byte-exact invocation is:
 python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json
 ```
 
-The dedicated approved Docker workflow selects the measured target and Map
+The approved [automatic trusted CI](native-1c-ci.md) workflow selects the measured target and Map
 comparison contract explicitly:
 
 ```console
@@ -106,10 +106,11 @@ never a reason to overwrite old goldens or silently normalize a mismatch.
 
 Without `--export-native-outputs`, only the finite summary is retained. The
 separate flag requires `--full-suite` and exports to one fixed directory,
-`native-smoke/native-outputs`; it accepts no arbitrary output path. The dedicated
-repository/branch/actor-guarded workflow explicitly opts in for the owner's
-approved diagnostic run. Remove that temporary opt-in with the validation route;
-do not broaden it to ordinary PR/main runs.
+`native-smoke/native-outputs`; it accepts no arbitrary output path. The owner
+explicitly approved retaining this same bounded artifact for automatic owner
+same-repository PR/main runs. The [trusted route](native-1c-ci.md) opts in without
+adding files, recipients, retention or a new comparison contract. Other events
+are excluded; this is not a package-privacy guarantee.
 
 The artifact `native-1c-six-scenario-outputs` has seven-day retention and exactly
 seven literal upload paths: `collections.out`, `dates.out`, `functions.out`,

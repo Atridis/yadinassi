@@ -155,16 +155,26 @@ class IsolationTests(unittest.TestCase):
 
     def test_workflow_trigger_permissions_artifact_are_narrow(self):
         text = (ROOT / ".github/workflows/native-1c-isolated-smoke.yml").read_text()
-        self.assertIn("github.ref == 'refs/heads/codex/native-1c-isolated-smoke'", text)
+        self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("github.actor == 'Atridis'", text)
+        self.assertIn("github.actor_id == '30860798'", text)
         self.assertIn("github.triggering_actor == 'Atridis'", text)
         self.assertIn("github.repository == 'Atridis/yadinassi'", text)
+        self.assertIn("github.repository_id == '359770628'", text)
+        self.assertIn("github.repository_owner_id == '30860798'", text)
         self.assertIn("github.event_name == 'push'", text)
-        self.assertNotIn("workflow_dispatch:", text)
-        self.assertNotIn("pull_request:", text)
-        self.assertNotIn("write", text)
+        self.assertIn("github.event_name == 'pull_request'", text)
+        self.assertIn("types: [opened, synchronize, reopened]", text)
+        for forbidden in ("workflow_dispatch:", "workflow_call:", "pull_request_target:",
+                          "workflow_run:", "paths:", "paths-ignore:", "tags:", "write"):
+            self.assertNotIn(forbidden, text)
+        self.assertEqual(text.count("contents: read"), 1)
+        self.assertEqual(text.count("packages: read"), 1)
+        self.assertIn("needs.eligibility.result == 'success'", text)
+        self.assertIn("needs: [eligibility, smoke]", text)
         self.assertIn("persist-credentials: false", text)
         self.assertIn("ref: ${{ github.sha }}", text)
+        self.assertIn("fetch-depth: 2", text)
         self.assertIn("path: native-smoke/report.json", text)
         self.assertNotIn("path: native-smoke/\n", text)
 
