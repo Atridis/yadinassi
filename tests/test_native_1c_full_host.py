@@ -276,7 +276,7 @@ class StagingTests(SyntheticFilesystemCase):
     def test_workflow_only_finite_report_exact_host_deps_and_existing_scope(self):
         text = (smoke.ROOT / ".github/workflows/native-1c-isolated-smoke.yml").read_text()
         self.assertIn("timeout-minutes: 60", text)
-        self.assertIn("--full-suite --client-probe --client-watchdog-check --output native-smoke/report.json", text)
+        self.assertIn("--full-suite --client-probe --client-watchdog-check --client-dates-parity --output native-smoke/report.json", text)
         self.assertIn("path: native-smoke/report.json", text)
         self.assertNotIn("path: native-smoke/\n", text)
         self.assertNotIn("tee", text)

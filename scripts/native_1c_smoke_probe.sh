@@ -20,7 +20,12 @@ full_suite=false
 invocation_nonce=''
 client_probe=false
 watchdog_check=false
+client_dates=false
 client_args=()
+if { [ "$#" -eq 5 ] || [ "$#" -eq 6 ]; } && [ "${!#}" = --client-dates-parity ] && [ "${4}" = --client-probe ]; then
+    client_dates=true
+    set -- "${@:1:$(($# - 1))}"
+fi
 if [ "$#" -eq 5 ] && [ "${5}" = --client-watchdog-check ] && [ "${4}" = --client-probe ]; then
     watchdog_check=true
     set -- "$1" "$2" "$3" "$4"
@@ -30,6 +35,9 @@ if [ "$#" -eq 4 ] && [ "${4}" = --client-probe ]; then
     client_args=(--client-probe)
     if [ "$watchdog_check" = true ]; then
         client_args+=(--client-watchdog-check)
+    fi
+    if [ "$client_dates" = true ]; then
+        client_args+=(--client-dates-parity)
     fi
     set -- "$1" "$2" "$3"
 fi
@@ -73,7 +81,7 @@ PYSTOPBUS
         printf '{"schema":1,"status":"python_unsupported"}\n'
     else
         python3 - "$result" "$stage" "$libraries_resolved" "$display_started" \
-          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" "$bus_cleanup_failed" <<'PY'
+          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" "$client_dates" "$bus_cleanup_failed" <<'PY'
 import hashlib
 import json
 import os
@@ -82,7 +90,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce, client_mode, watchdog_mode, bus_cleanup_failed = sys.argv[1:]
+code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce, client_mode, watchdog_mode, dates_mode, bus_cleanup_failed = sys.argv[1:]
 report = {
     "schema": 1,
     "status": "ok" if code == "0" else stage + "_failed",
@@ -169,7 +177,7 @@ if bootstrap == "true":
 if full_mode == "true":
     sys.path.insert(0, "/smoke/bootstrap")
     import full_suite
-    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true")
+    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true")
     try:
         path = Path("/tmp/onec-smoke/stage3-report.json")
         if path.exists() or path.is_symlink():
@@ -177,7 +185,7 @@ if full_mode == "true":
         elif (report.get("stage2") or {}).get("status") == "ok":
             suite.update(status="failed", failure_kind="unexpected_failure")
     except Exception:
-        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true")
+        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true")
         suite.update(status="failed", failure_kind="export_failed")
     report["stage3"] = suite
     # A failed stage-three exit is not a failed bootstrap; preserve both outcomes.

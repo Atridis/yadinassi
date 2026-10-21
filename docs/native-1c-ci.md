@@ -112,6 +112,31 @@ and `--full-suite`. The approved PR/main CI command explicitly enables both; whe
 a missing, failed or incomplete client checkpoint cannot yield suite success or
 export the six-output artifact.
 
+`--client-dates-parity` is a separate opt-in requiring both `--full-suite`
+and `--client-probe`; it also works with `--client-watchdog-check`. The isolated
+CI job opts in explicitly. It reuses the already staged `dates.bsl`
+and client-probe template, so the trusted manifest remains exactly 24 files.
+The host hashes the generated client dates module from those staged inputs.
+The private client dates result must match the server dates result byte-for-byte;
+missing or invalid parity evidence cannot pass an opted-in run. Its finite
+report records validation metadata only; raw client dates output stays private.
+The public artifact still contains only the same six scenario outputs and
+provenance. A fresh successful native run is required before accepting this
+checkpoint; local synthetic fixtures do not establish native parity.
+
+The adapter is pinned to the complete original dates source and template. It
+preserves both helpers, all expressions, exception branches and execution order,
+and changes only five verified `Сообщить` identifiers to an explicitly scoped
+string capture. It performs no additional `Строка` conversion. All 100 messages
+(98 observations plus two checkpoints), including multiline values, are serialized
+with the existing UTF-8/LF rules and compared in full against the fresh server
+`dates.out`, without prefix filtering or map-order relaxation. The inverse adapter
+must recover the original normalized source exactly. This proves expression/result
+parity with explicit string capture, not unchanged client `Сообщить` UI behavior;
+expected error observations do not establish that those APIs succeeded.
+No runtime budget, mount, network policy, capability or bootstrap right is
+expanded by this option.
+
 This is a logical execution-context test in the explicitly launched file-mode
 thick client, not proof of a separate physical server process. File mode can
 also support other client types; no universal thick-client claim is made.
