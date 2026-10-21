@@ -24,7 +24,15 @@ NONCE = stage_fixture.NONCE
 ROOT = stage_fixture.REPOSITORY
 CLIENT_KEYS = {"status", "failure_kind", "source_sha256", "module_sha256",
                "roundtrip_sha256", "entered", "completed", "process_exited",
-               "quiet", "witness_verified"}
+               "quiet", "witness_verified", "process_diagnostics"}
+PROCESS_CLASSES = ("native", "display", "session_bus", "shell", "python", "other", "unreadable")
+
+
+def process_diagnostics(*, stage="after_exit", reason="none", classes=None, zombie_count=0):
+    counts = dict.fromkeys(PROCESS_CLASSES, 0)
+    counts.update(classes or {})
+    return {"stage": stage, "reason": reason, "unexpected_count": sum(counts.values()),
+            "zombie_count": zombie_count, "classes": counts}
 
 
 def marker(phase, *, nonce=NONCE):
@@ -216,6 +224,7 @@ class ClientProbeHarness(unittest.TestCase):
         module = suite.generated_module(source)
         result = self.run_probe()
         self.assertEqual(result, {"status": "ok", "failure_kind": "none",
+            "process_diagnostics": process_diagnostics(),
             "source_sha256": suite.digest(source), "module_sha256": suite.digest(module),
             "roundtrip_sha256": suite.digest(module), **dict.fromkeys(suite.CLIENT_FLAGS, True)})
         self.assertEqual(self.events, ["build", "dump", "enterprise"])
@@ -272,6 +281,26 @@ class ClientProbeHarness(unittest.TestCase):
         with mock.patch.object(suite, "native_processes_quiet", return_value=False):
             result = self.run_probe()
         self.assertEqual(result["failure_kind"], "process_failed")
+        self.assertEqual(self.events, [])
+        self.assertEqual(result["process_diagnostics"], process_diagnostics(stage="before_probe", reason="native_not_quiet"))
+        self.assertIsNone(result["source_sha256"])
+
+    def test_baseline_rejection_exposes_only_fixed_diagnostics_before_source_hashing(self):
+        diagnostic = process_diagnostics(stage="baseline", reason="unexpected_processes", classes={"session_bus": 1})
+        with mock.patch.object(suite, "client_process_baseline", side_effect=suite.ClientProcessError(diagnostic)):
+            result = self.run_probe()
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failure_kind"], "process_failed")
+        self.assertEqual(result["process_diagnostics"], diagnostic)
+        self.assertTrue(all(result[key] is None for key in ("source_sha256", "module_sha256", "roundtrip_sha256")))
+        self.assertTrue(all(result[key] is False for key in suite.CLIENT_FLAGS))
+        self.assertEqual(self.events, [])
+
+    def test_uninspectable_baseline_remains_unverified_without_inventing_counts(self):
+        with mock.patch.object(suite, "client_process_baseline", side_effect=suite.FullError("process_failed")):
+            result = self.run_probe()
+        self.assertEqual(result["failure_kind"], "process_failed")
+        self.assertEqual(result["process_diagnostics"], process_diagnostics(stage="baseline", reason="unverified"))
         self.assertEqual(self.events, [])
 
     def test_new_same_user_process_or_reused_pid_blocks_success(self):
@@ -532,6 +561,7 @@ class ClientWatchdogTests(unittest.TestCase):
         source = (self.inputs / suite.CLIENT_TARGET).read_bytes()
         module_hash = suite.digest(suite.generated_module(source))
         self.assertEqual(result, {"status": "ok", "failure_kind": "none",
+            "process_diagnostics": process_diagnostics(),
             "source_sha256": suite.digest(source), "module_sha256": module_hash,
             "roundtrip_sha256": module_hash, "entered": True, "completed": False,
             "process_exited": False, "quiet": True, "witness_verified": False,
@@ -708,12 +738,112 @@ class ClientBaselineTests(unittest.TestCase):
             suite.client_process_baseline(NONCE)
 
 
+class ClientProcessDiagnosticsTests(unittest.TestCase):
+    def test_default_is_exact_finite_schema_and_independent_per_record(self):
+        expected = process_diagnostics(stage="not_checked")
+        self.assertEqual(suite.empty_process_diagnostics(), expected)
+        self.assertEqual(tuple(suite.PROCESS_CLASSES), PROCESS_CLASSES)
+        first, second = suite.empty_client_report(), suite.empty_client_report()
+        first["process_diagnostics"]["classes"]["native"] = 5
+        self.assertEqual(second["process_diagnostics"], expected)
+        self.assertEqual(full.validate_process_diagnostics(expected), expected)
+
+    def test_allowed_reason_stage_and_boundary_counts_roundtrip(self):
+        for value in (process_diagnostics(stage="not_checked"),
+                      process_diagnostics(stage="baseline", reason="unverified"),
+                      process_diagnostics(stage="before_probe", reason="native_not_quiet"),
+                      process_diagnostics(),
+                      process_diagnostics(stage="baseline", reason="unexpected_processes",
+                                          classes={"unreadable": 256}, zombie_count=256)):
+            with self.subTest(value=value):
+                self.assertEqual(full.validate_process_diagnostics(value), value)
+
+    def test_unknown_fields_enums_wrong_types_bounds_and_inconsistent_counts_fail_closed(self):
+        edits = [lambda d: d.update(pid=12345), lambda d: d.update(command_line="PRIVATE"),
+                 lambda d: d.pop("classes"), lambda d: d.update(stage="PRIVATE"),
+                 lambda d: d.update(stage=[]), lambda d: d.update(reason="PRIVATE"),
+                 lambda d: d.update(reason=[]), lambda d: d.update(unexpected_count=True),
+                 lambda d: d.update(unexpected_count=-1), lambda d: d.update(unexpected_count=257),
+                 lambda d: d.update(unexpected_count=1), lambda d: d.update(zombie_count=True),
+                 lambda d: d.update(zombie_count=-1), lambda d: d.update(zombie_count=1),
+                 lambda d: d.update(zombie_count=257), lambda d: d.update(classes=[]),
+                 lambda d: d["classes"].pop("other"), lambda d: d["classes"].update(PRIVATE=0),
+                 lambda d: d["classes"].update(native=True), lambda d: d["classes"].update(native=-1),
+                 lambda d: d["classes"].update(native=257), lambda d: d["classes"].update(native=1),
+                 lambda d: d.update(classes={**d["classes"], "native": 1}, unexpected_count=1)]
+        envelope, inputs, modules = host_fixture.fixture()
+        inputs[suite.CLIENT_SOURCE] = "c" * 64
+        modules["client_probe"] = "d" * 64
+        record = suite.empty_client_report()
+        record.update(status="failed", failure_kind="process_failed")
+        envelope["report"]["stage3"].update(status="failed", failure_kind="process_failed", client_probe=record)
+        envelope["report"].update(status="stage3_failed", native_tests_completed=False)
+        envelope["outputs"] = []
+        for index, edit in enumerate(edits):
+            changed = copy.deepcopy(envelope)
+            edit(changed["report"]["stage3"]["client_probe"]["process_diagnostics"])
+            with self.subTest(index=index), self.assertRaisesRegex(full.FullError, "^invalid_full_envelope$"):
+                host_fixture.validate(changed, inputs, modules)
+
+    def test_classification_exports_counts_only_not_pids_names_paths_or_starttimes(self):
+        entries = [(11111, "native", "/opt/1cv8t/x86_64/8.3.27.1508/1cv8t", "S"),
+                   (11112, "display", "/usr/bin/Xtigervnc", "S"),
+                   (11113, "session_bus", "/usr/bin/dbus-daemon", "S"),
+                   (11114, "shell", "/bin/bash", "S"),
+                   (11115, "python", "/usr/bin/python3.10", "S"),
+                   (11116, "other", "/PRIVATE/unknown-executable", "S"),
+                   (11117, "other", "/PRIVATE/deleted (deleted)", "Z"),
+                   (11118, "unreadable", None, "Z")]
+        processes = {}
+        for pid, _, executable, state in entries:
+            process, stat_file, executable_file = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+            stat_file.read_text.return_value = f"{pid} (PRIVATE command (with) spaces) " + " ".join([state] + ["0"] * 18 + ["987654321"])
+            if executable is None:
+                executable_file.readlink.side_effect = PermissionError("PRIVATE")
+            else:
+                # Exact Linux /proc text, not the host OS's Path normalization.
+                executable_file.readlink.return_value = executable
+            process.__truediv__.side_effect = lambda name, stat_file=stat_file, executable_file=executable_file: stat_file if name == "stat" else executable_file
+            processes[str(pid)] = process
+        proc = mock.MagicMock()
+        proc.__truediv__.side_effect = processes.__getitem__
+        with mock.patch.object(suite, "Path", return_value=proc):
+            diagnostic = suite.unexpected_process_diagnostics({(pid, "987654321") for pid, *_ in entries}, "baseline")
+        expected = process_diagnostics(stage="baseline", reason="unexpected_processes",
+            classes={"native": 1, "display": 1, "session_bus": 1, "shell": 1, "python": 1, "other": 2, "unreadable": 1},
+            zombie_count=2)
+        self.assertEqual(diagnostic, expected)
+        self.assertEqual(full.validate_process_diagnostics(diagnostic), diagnostic)
+        rendered = json.dumps(diagnostic)
+        for private in ("PRIVATE", "/usr/", "/opt/", "11111", "987654321", "command"):
+            self.assertNotIn(private, rendered)
+
+    def test_reused_identity_and_unreadable_stat_are_unreadable_not_invented_classes(self):
+        proc, process = mock.MagicMock(), mock.MagicMock()
+        proc.__truediv__.return_value = process
+        stat_file = process.__truediv__.return_value
+        with mock.patch.object(suite, "Path", return_value=proc):
+            for raw in ("123 (x) " + " ".join(["S"] + ["0"] * 18 + ["new-start"]), "PRIVATE"):
+                stat_file.read_text.return_value = raw
+                result = suite.unexpected_process_diagnostics({(123, "old-start")}, "after_exit")
+                self.assertEqual(result, process_diagnostics(stage="after_exit", reason="unexpected_processes", classes={"unreadable": 1}))
+            stat_file.read_text.side_effect = FileNotFoundError()
+            result = suite.unexpected_process_diagnostics({(123, "old-start")}, "after_exit")
+            self.assertEqual(result["classes"]["unreadable"], 1)
+
+    def test_more_than_256_unexpected_processes_fail_before_inspection(self):
+        with mock.patch.object(suite, "Path") as path, self.assertRaisesRegex(suite.FullError, "^process_failed$"):
+            suite.unexpected_process_diagnostics({(number, "1") for number in range(1, 258)}, "baseline")
+        path.assert_not_called()
+
+
 class ClientHostContractTests(unittest.TestCase):
     def setUp(self):
         self.envelope, self.inputs, self.modules = host_fixture.fixture()
         self.inputs[suite.CLIENT_SOURCE] = "c" * 64
         self.modules["client_probe"] = "d" * 64
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": "c" * 64,
+                       "process_diagnostics": process_diagnostics(),
                        "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
                        **dict.fromkeys(suite.CLIENT_FLAGS, True)}
         self.envelope["report"]["stage3"]["client_probe"] = self.client
@@ -790,6 +920,21 @@ class ClientHostContractTests(unittest.TestCase):
         self.envelope["report"]["stage3"]["client_probe"] = not_started
         with self.assertRaises(full.FullError):
             self.validate()
+
+    def test_positive_success_requires_verified_after_exit_process_diagnostics(self):
+        diagnostics = [process_diagnostics(stage="not_checked"), process_diagnostics(stage="baseline"),
+                       process_diagnostics(stage="before_probe"),
+                       process_diagnostics(reason="unverified"), process_diagnostics(reason="native_not_quiet"),
+                       process_diagnostics(reason="unexpected_processes", classes={"other": 1})]
+        for diagnostic in diagnostics:
+            changed = copy.deepcopy(self.envelope)
+            changed["report"]["stage3"]["client_probe"]["process_diagnostics"] = diagnostic
+            with self.subTest(diagnostic=diagnostic), self.assertRaises(full.FullError):
+                self.validate(changed)
+        record = suite.empty_client_report()
+        record["process_diagnostics"] = process_diagnostics()
+        with self.assertRaises(ValueError):
+            full.validate_client_probe(record, "c" * 64, "d" * 64)
 
     def test_client_cannot_start_before_all_six_native_cases_complete(self):
         stage = suite.empty_report(host_fixture.NONCE, client_probe=True)
@@ -883,6 +1028,16 @@ class ClientWatchdogHostTests(unittest.TestCase):
         with self.assertRaises(full.FullError):
             self.validate()
 
+    def test_accepted_watchdog_requires_verified_after_exit_process_diagnostics(self):
+        for diagnostic in (process_diagnostics(stage="not_checked"), process_diagnostics(stage="baseline"),
+                           process_diagnostics(reason="unverified"),
+                           process_diagnostics(reason="native_not_quiet"),
+                           process_diagnostics(reason="unexpected_processes", classes={"session_bus": 1})):
+            changed = copy.deepcopy(self.envelope)
+            changed["report"]["stage3"]["client_watchdog"]["process_diagnostics"] = diagnostic
+            with self.subTest(diagnostic=diagnostic), self.assertRaises(full.FullError):
+                self.validate(changed)
+
 
 class ClientSuiteIntegrationTests(unittest.TestCase):
     """Reuse scenario fixtures without inheriting and rerunning their test suite."""
@@ -897,6 +1052,7 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
         source = path.read_bytes()
         module = suite.generated_module(source)
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": suite.digest(source),
+                       "process_diagnostics": process_diagnostics(),
                        "module_sha256": suite.digest(module), "roundtrip_sha256": suite.digest(module),
                        **dict.fromkeys(suite.CLIENT_FLAGS, True)}
 
@@ -1012,6 +1168,100 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
         self.assertIsNone(result["failed_case"])
         report = {"status": "stage3_failed", "native_tests_completed": False, "stage3": result}
         self.assertEqual(json.loads(suite.build_envelope(report, NONCE, self.work, quiet=True))["outputs"], [])
+
+
+class ClientSummaryTests(unittest.TestCase):
+    """Public summary must not promote six-case success over a failed client gate."""
+    def probe(self, *, client=True, watchdog=False, completed=False):
+        report = host_fixture.fixture()[0]["report"]
+        report.update(status="ok" if completed else "stage3_failed", native_tests_completed=completed,
+            native_cases_completed=True, native_evidence_accepted=False, native_transport_validated=False,
+            private_payloads_removed=True, container_cleanup_verified=True, windows_goldens_unchanged=True,
+            native_target=full.WINDOWS_TARGET, comparison_mode=full.BYTE_EXACT,
+            comparison={"schema": 2, "status": "not_run", "acceptance_status": "not_run",
+                        "native_target": full.WINDOWS_TARGET, "comparison_mode": full.BYTE_EXACT, "cases": []})
+        stage = report["stage3"]
+        stage.update(status="ok" if completed else "failed", failure_kind="none" if completed else "process_failed")
+        if client:
+            record = suite.empty_client_report()
+            record.update(status="failed", failure_kind="process_failed",
+                          process_diagnostics=process_diagnostics(stage="before_probe", reason="native_not_quiet"))
+            if completed:
+                record.update(status="ok", failure_kind="none", source_sha256="c" * 64,
+                              module_sha256="d" * 64, roundtrip_sha256="d" * 64,
+                              process_diagnostics=process_diagnostics(),
+                              **dict.fromkeys(suite.CLIENT_FLAGS, True))
+            stage["client_probe"] = record
+        if watchdog:
+            record = suite.empty_watchdog_report()
+            if completed:
+                record.update(status="ok", failure_kind="none", source_sha256="c" * 64,
+                              module_sha256="d" * 64, roundtrip_sha256="d" * 64,
+                              process_diagnostics=process_diagnostics(),
+                              entered=True, quiet=True, timeout_verified=True)
+            stage["client_watchdog"] = record
+        return report
+
+    def invoke(self, *, client=True, watchdog=False, completed=False, raised=False, missing_report=False):
+        probe = self.probe(client=client, watchdog=watchdog, completed=completed)
+        arguments = ["--execute-approved-image", "--full-suite"]
+        if client:
+            arguments.append("--client-probe")
+        if watchdog:
+            arguments.append("--client-watchdog-check")
+        error = smoke.SmokeError("container_cleanup_unverified", validated_report=None if missing_report else probe)
+        with tempfile.TemporaryDirectory() as temporary, contextlib.redirect_stdout(io.StringIO()) as stdout, \
+                mock.patch.object(smoke, "run_smoke", side_effect=error if raised else None, return_value=probe):
+            path = Path(temporary) / "report.json"
+            code = smoke.main(arguments + ["--output", str(path)])
+            report = json.loads(path.read_bytes())
+            self.assertEqual(json.loads(stdout.getvalue()), report)
+        return code, report
+
+    def test_client_failure_after_six_cases_never_claims_all_native_tests_completed(self):
+        for raised in (False, True):
+            with self.subTest(raised=raised):
+                code, report = self.invoke(raised=raised)
+                self.assertEqual(code, 1)
+                self.assertTrue(report["native_cases_completed"])
+                self.assertFalse(report["native_tests_completed"])
+                self.assertFalse(report["smoke_completed"])
+                self.assertEqual(report["purpose"], "isolated-six-scenario-client-proof")
+
+    def test_watchdog_failure_preserves_its_purpose_and_incomplete_gate(self):
+        for raised in (False, True):
+            with self.subTest(raised=raised):
+                code, report = self.invoke(watchdog=True, raised=raised)
+                self.assertEqual(code, 1)
+                self.assertTrue(report["native_cases_completed"])
+                self.assertFalse(report["native_tests_completed"])
+                self.assertFalse(report["interpreter_comparison_completed"])
+                self.assertEqual(report["purpose"], "isolated-six-scenario-client-watchdog-proof")
+
+    def test_early_failure_without_validated_report_still_preserves_requested_purpose(self):
+        for watchdog in (False, True):
+            with self.subTest(watchdog=watchdog):
+                code, report = self.invoke(watchdog=watchdog, raised=True, missing_report=True)
+                self.assertEqual(code, 1)
+                self.assertFalse(report["native_cases_completed"])
+                self.assertFalse(report["native_tests_completed"])
+                self.assertEqual(report["purpose"], "isolated-six-scenario-client-watchdog-proof" if watchdog else
+                                                    "isolated-six-scenario-client-proof")
+
+    def test_complete_requested_native_gate_can_be_reported_without_claiming_comparison(self):
+        for watchdog in (False, True):
+            with self.subTest(watchdog=watchdog):
+                _, report = self.invoke(watchdog=watchdog, completed=True)
+                self.assertTrue(report["native_cases_completed"])
+                self.assertTrue(report["native_tests_completed"])
+                self.assertFalse(report["interpreter_comparison_completed"])
+                self.assertFalse(report["smoke_completed"])
+
+    def test_legacy_mode_retains_six_case_completion_meaning_and_purpose(self):
+        _, report = self.invoke(client=False)
+        self.assertTrue(report["native_cases_completed"])
+        self.assertTrue(report["native_tests_completed"])
+        self.assertEqual(report["purpose"], "isolated-six-scenario-utc-comparison")
 
 
 if __name__ == "__main__":

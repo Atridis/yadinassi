@@ -636,11 +636,14 @@ def main(argv: list[str] | None = None) -> int:
             report["security_settings_changed"] = None
         success = False
     if args.full_suite:
-        report["purpose"] = "isolated-six-scenario-utc-comparison"
+        report["purpose"] = ("isolated-six-scenario-client-watchdog-proof" if args.client_watchdog_check else
+                             "isolated-six-scenario-client-proof" if args.client_probe else
+                             "isolated-six-scenario-utc-comparison")
         probe = report.get("probe", {})
         stage2 = probe.get("stage2")
         report["native_cases_completed"] = probe.get("native_cases_completed", False)
-        report["native_tests_completed"] = report["native_cases_completed"]
+        report["native_tests_completed"] = (probe.get("native_tests_completed", False)
+                                             if args.client_probe else report["native_cases_completed"])
         report["native_evidence_accepted"] = probe.get("native_evidence_accepted", False)
         report["windows_goldens_modified"] = (not probe["windows_goldens_unchanged"]
             if type(probe.get("windows_goldens_unchanged")) is bool else None)

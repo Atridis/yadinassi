@@ -196,23 +196,44 @@ CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_veri
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
 
+
+def validate_process_diagnostics(value):
+    classes = {"native", "display", "session_bus", "shell", "python", "other", "unreadable"}
+    if (type(value) is not dict
+            or set(value) != {"stage", "reason", "unexpected_count", "zombie_count", "classes"}
+            or value["stage"] not in {"not_checked", "baseline", "before_probe", "after_exit"}
+            or value["reason"] not in {"none", "unverified", "native_not_quiet", "unexpected_processes"}
+            or not is_int(value["unexpected_count"], 256) or not is_int(value["zombie_count"], 256)
+            or value["zombie_count"] > value["unexpected_count"]
+            or type(value["classes"]) is not dict or set(value["classes"]) != classes
+            or any(not is_int(count, 256) for count in value["classes"].values())
+            or sum(value["classes"].values()) != value["unexpected_count"]):
+        raise ValueError("process diagnostics")
+    if value["reason"] != "unexpected_processes" and value["unexpected_count"] != 0:
+        raise ValueError("process diagnostic reason")
+    return value
+
+
 def validate_client_probe(data, source_hash, module_hash):
     if (type(data) is not dict
-            or set(data) != CLIENT_FLAGS | CLIENT_HASHES | {"status", "failure_kind"}
+            or set(data) != CLIENT_FLAGS | CLIENT_HASHES | {"status", "failure_kind", "process_diagnostics"}
             or any(type(data[key]) is not bool for key in CLIENT_FLAGS)
             or data["status"] not in {"not_started", "failed", "ok"}
             or data["failure_kind"] not in FAILURES):
         raise ValueError("client probe schema")
+    diagnostic = validate_process_diagnostics(data["process_diagnostics"])
     expected = {"source_sha256": source_hash, "module_sha256": module_hash,
                 "roundtrip_sha256": module_hash}
     if any(data[key] not in (None, expected[key]) for key in CLIENT_HASHES):
         raise ValueError("client probe identity")
     if data["status"] == "ok":
-        if (data["failure_kind"] != "none" or not all(data[key] for key in CLIENT_FLAGS)
+        if (diagnostic["stage"] != "after_exit" or diagnostic["reason"] != "none"
+                or data["failure_kind"] != "none" or not all(data[key] for key in CLIENT_FLAGS)
                 or any(data[key] != expected[key] for key in CLIENT_HASHES)):
             raise ValueError("client probe completion")
     elif data["status"] == "not_started":
-        if (data["failure_kind"] != "prerequisites_failed"
+        if (diagnostic["stage"] != "not_checked" or diagnostic["reason"] != "none"
+                or data["failure_kind"] != "prerequisites_failed"
                 or any(data[key] for key in CLIENT_FLAGS)
                 or any(data[key] is not None for key in CLIENT_HASHES)):
             raise ValueError("client probe unreached")
@@ -227,7 +248,11 @@ def validate_client_watchdog(data, source_hash, module_hash):
         raise ValueError("watchdog schema")
     base = {key: value for key, value in data.items() if key != "timeout_verified"}
     if data["timeout_verified"]:
-        expected = {"status": "ok", "failure_kind": "none", "source_sha256": source_hash,
+        diagnostic = validate_process_diagnostics(base.get("process_diagnostics"))
+        if diagnostic["stage"] != "after_exit" or diagnostic["reason"] != "none":
+            raise ValueError("watchdog process diagnostics")
+        expected = {"process_diagnostics": diagnostic,
+                    "status": "ok", "failure_kind": "none", "source_sha256": source_hash,
                     "module_sha256": module_hash, "roundtrip_sha256": module_hash,
                     "entered": True, "completed": False, "process_exited": False,
                     "quiet": True, "witness_verified": False}

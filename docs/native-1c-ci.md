@@ -112,13 +112,20 @@ and `--full-suite`. The approved PR/main CI command explicitly enables both; whe
 a missing, failed or incomplete client checkpoint cannot yield suite success or
 export the six-output artifact.
 
-After the unchanged six **server-object-module** scenarios succeed, the helper
+This is a logical execution-context test in the explicitly launched file-mode
+thick client, not proof of a separate physical server process. File mode can
+also support other client types; no universal thick-client claim is made.
+
+After the unchanged six **server-object-module context** scenarios succeed, the helper
 builds a distinct private `ClientProbe.epf`. It copies the reviewed Launcher XML
 and comment-only object module, replacing only the private managed-form module.
 The original Launcher, TestModule and six BSL scenarios are not edited. All probe
 helpers and `ПриОткрытии` are `&НаКлиенте`; no server invocation exists. The
-`#Если Клиент` compilation branch supplies the witness, and its non-client
-branch raises. The OnOpen handler itself computes arithmetic `42`, string
+`#Если Клиент` branch is only a compatibility assertion: in file-mode thick
+client both client/server preprocessor symbols can be defined. It is not a
+discriminating context witness. The route evidence is the verified managed-form
+OnOpen handler and its directly called `&НаКлиенте` helpers, with no server
+transition. The OnOpen handler itself computes arithmetic `42`, string
 `client-probe`, and array count/sum `3`/`6`. A literal context label without the
 verified source, form wiring and calculations is not accepted as client proof.
 
@@ -162,7 +169,7 @@ The same fresh database and verified `NativeSmoke` warning-off bootstrap are
 used. The five role rights, pinned image, non-root execution, read-only root,
 network isolation, tmpfs, resource limits and cleanup are unchanged. Public
 artifacts remain the six `.out` files plus provenance; the existing finite
-report adds only fixed status/boolean/hash fields. Probe JSON, EPF, database,
+report adds only fixed status/boolean/hash fields and bounded process counts/classes. Probe JSON, EPF, database,
 logs and screenshots are never exported. The existing 32 KiB report, 8 KiB
 stage report, 3 MiB transport, 1 MiB per output and 2 MiB aggregate caps remain.
 
@@ -178,3 +185,7 @@ and tree, all 24 trusted input hashes and the measured `SystemInfo.AppVersion`.
 The separate `native-1c-six-scenario-outputs` artifact still has exactly seven
 members (six `.out` plus `provenance.json`); that legacy provenance describes
 only the six server scenarios and makes no client execution claim.
+
+Failure diagnostics expose only fixed process-check stage/reason and bounded
+counts/classes. They never expose process identifiers, start times, executable
+paths, command lines or logs, and cannot override a failed process gate.

@@ -462,10 +462,50 @@ CLIENT_TARGET = 'bootstrap/client_probe.bsl'
 CLIENT_MODULE = 'Launcher/Forms/Main/Ext/Form/Module.bsl'
 CLIENT_VALUES = [42, 'client-probe', 3, 6]
 CLIENT_FLAGS = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
+PROCESS_CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
+
+
+def empty_process_diagnostics() -> dict:
+    return {'stage': 'not_checked', 'reason': 'none', 'unexpected_count': 0,
+            'zombie_count': 0, 'classes': {key: 0 for key in PROCESS_CLASSES}}
+
+
+class ClientProcessError(FullError):
+    def __init__(self, diagnostics):
+        super().__init__('process_failed')
+        self.diagnostics = diagnostics
+
+
+def unexpected_process_diagnostics(identities, stage):
+    result = empty_process_diagnostics()
+    result.update(stage=stage, reason='unexpected_processes', unexpected_count=len(identities))
+    if len(identities) > 256:
+        raise FullError('process_failed')
+    names = {'/opt/1cv8t/x86_64/8.3.27.1508/1cv8t': 'native',
+             '/opt/1cv8t/x86_64/8.3.27.1508/1cv8': 'native',
+             '/usr/bin/Xtigervnc': 'display', '/usr/bin/Xvfb': 'display',
+             '/usr/bin/dbus-daemon': 'session_bus', '/usr/bin/dbus-launch': 'session_bus',
+             '/usr/bin/bash': 'shell', '/usr/bin/dash': 'shell', '/bin/bash': 'shell',
+             '/usr/bin/python3.10': 'python'}
+    for pid, started in identities:
+        directory = Path('/proc') / str(pid)
+        category = 'unreadable'
+        try:
+            raw = (directory / 'stat').read_text()
+            fields = raw[raw.rindex(')') + 2:].split()
+            if fields[19] != started:
+                raise ValueError
+            result['zombie_count'] += fields[0] == 'Z'
+            category = names.get(str((directory / 'exe').readlink()), 'other')
+        except (OSError, ValueError, IndexError):
+            pass
+        result['classes'][category] += 1
+    return result
 
 
 def empty_client_report() -> dict:
     return {'status': 'not_started', 'failure_kind': 'prerequisites_failed',
+            'process_diagnostics': empty_process_diagnostics(),
             'source_sha256': None, 'module_sha256': None, 'roundtrip_sha256': None,
             **{key: False for key in CLIENT_FLAGS}}
 
@@ -557,8 +597,10 @@ def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
         baseline.add(tuple(item))
     current = client_process_snapshot()
     own = {identity for identity in current if identity[0] == os.getpid()}
-    if len(own) != 1 or not current <= baseline | own:
+    if len(own) != 1:
         raise FullError('process_failed')
+    if not current <= baseline | own:
+        raise ClientProcessError(unexpected_process_diagnostics(current - (baseline | own), 'baseline'))
     return baseline | own
 
 
@@ -571,9 +613,12 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         if (not valid_nonce(nonce) or type(stall) is not bool or platform.timeout != 120
                 or platform.user != 'NativeSmoke' or platform.password is not None):
             raise FullError('invalid_input')
+        record['process_diagnostics'].update(stage='baseline', reason='unverified')
         baseline = client_process_baseline(nonce)
+        record['process_diagnostics'].update(stage='before_probe', reason='native_not_quiet')
         if not native_processes_quiet(platform.executable):
             raise FullError('process_failed')
+        record['process_diagnostics'].update(reason='none')
         absent(root)
         root.mkdir(mode=0o700)
         source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
@@ -629,8 +674,15 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                 root, root / 'enterprise-console.log', 120, require_clean_tree=True)
             record['process_exited'] = True
         finally:
-            record['quiet'] = (native_processes_quiet(platform.executable)
-                               and client_process_snapshot() <= baseline)
+            record['process_diagnostics'].update(stage='after_exit', reason='unverified')
+            survivors = client_process_snapshot() - baseline
+            if survivors:
+                record['process_diagnostics'] = unexpected_process_diagnostics(survivors, 'after_exit')
+            else:
+                record['process_diagnostics'].update(reason='native_not_quiet')
+                record['quiet'] = native_processes_quiet(platform.executable)
+                if record['quiet']:
+                    record['process_diagnostics'].update(reason='none')
             # Diagnostic phase only. A timeout/nonzero exit never becomes success.
             for path, phase in ((entered, 'entered'), (completed, 'completed')):
                 try:
@@ -648,6 +700,8 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             raise FullError('module_mismatch')
         record.update(status='ok', failure_kind='none', witness_verified=True)
     except Exception as error:
+        if isinstance(error, ClientProcessError):
+            record['process_diagnostics'] = error.diagnostics
         record['failure_kind'] = (error.kind if isinstance(error, FullError) else
                                   'artifact_missing' if isinstance(error, (OSError, DraftError)) else
                                   'unexpected_failure')
