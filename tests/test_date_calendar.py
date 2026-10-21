@@ -36,7 +36,7 @@ from yadinassi.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/dates.bsl'
-NATIVE = ROOT / 'integrational_tests/output/dates.out'
+NATIVE = ROOT / 'tests/fixtures/native_windows/dates.out'
 FINAL = 'date.calendar.checkpoint.complete: [ok]'
 BASE = '20240229123456'
 PERIODS = (

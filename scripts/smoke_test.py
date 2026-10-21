@@ -1601,7 +1601,7 @@ def check_null(executable: str, *, directory: Path, env: dict) -> None:
     program = null_checkpoint_source(
         (ROOT / "integrational_tests/tests/values.bsl").read_text(encoding="utf-8-sig"))
     expected = null_checkpoint_output(
-        (ROOT / "integrational_tests/output/values.out").read_text(encoding="utf-8-sig"))
+        (ROOT / "tests/fixtures/native_windows/values.out").read_text(encoding="utf-8-sig"))
     source = directory / 'СпециальныеЗначения.bsl'
     source.write_text(program, encoding='utf-8-sig')
     cases = [([flag, program], None) for flag in ('-c', '-с', '--command')]
@@ -1753,7 +1753,7 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
     directory.mkdir()
     environment = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
     for name in ('functions', 'strings', 'collections', 'numbers', 'dates', 'values'):
-        output = ROOT / 'integrational_tests/output' / (name + '.out')
+        output = ROOT / 'tests/fixtures/native_windows' / (name + '.out')
         if output.with_suffix('.err').exists():
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
@@ -1815,7 +1815,7 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
     # Source preservation is separate from semantic parity; execute the full file.
     _, command_program = split_type_supplement(program)
-    output = ROOT / 'integrational_tests/output/values.out'
+    output = ROOT / 'tests/fixtures/native_windows/values.out'
     if output.with_suffix('.err').exists():
         raise AssertionError('Native error file exists: values')
     expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
@@ -1885,7 +1885,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
     """Every owner collections byte in full modes; bounded exact command sample."""
     directory.mkdir()
     source_path = ROOT / 'integrational_tests/tests/collections.bsl'
-    output_path = ROOT / 'integrational_tests/output/collections.out'
+    output_path = ROOT / 'tests/fixtures/native_windows/collections.out'
     if output_path.with_suffix('.err').exists():
         raise AssertionError('Native error file exists: collections')
     program = source_path.read_text(encoding='utf-8-sig')

@@ -30,7 +30,7 @@ def sample():
 class ValueListCodecBoundaryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.output = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
+        cls.output = (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
 
     def native(self, name):
         return read_observation(extract_payload(self.output, 'table.list.codec.' + name))

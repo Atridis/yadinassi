@@ -44,6 +44,7 @@ from scripts.native_historical_replay import (
 
 class NativeOutputTests(unittest.TestCase):
     native_root = ROOT
+    fixture_root = ROOT.parent / "tests/fixtures/native_windows"
     maxDiff = None
 
     def test_native_outputs(self):
@@ -56,7 +57,7 @@ class NativeOutputTests(unittest.TestCase):
                 self.compare_script(script)
 
     def compare_script(self, script: Path) -> None:
-        expected_path = self.native_root / "output" / (script.stem + ".out")
+        expected_path = self.fixture_root / (script.stem + ".out")
         error_path = expected_path.with_suffix(".err")
         if error_path.exists():
             self.fail(f"Нативный запуск завершился ошибкой: {error_path}. "
@@ -131,6 +132,7 @@ class NativeOutputRunnerTests(unittest.TestCase):
     def run_comparison(self):
         case = NativeOutputTests("test_native_outputs")
         case.native_root = self.root
+        case.fixture_root = self.root / "output"
         stream = io.StringIO()
         result = unittest.TextTestRunner(stream=stream, verbosity=2).run(case)
         return result, stream.getvalue()
@@ -263,7 +265,7 @@ class HistoricalCollectionsBindingTests(unittest.TestCase):
         # Canonical mutation inputs keep the negative controls effective on CRLF checkouts.
         # The explicit CRLF transport case below still exercises production normalization.
         self.source = (ROOT / 'tests/collections.bsl').read_bytes().replace(b'\r\n', b'\n')
-        self.output = (ROOT / 'output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        self.output = (ROOT.parent / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
 
     def test_full_historical_source_and_all_output_bytes_are_bound(self):
         replay = historical_collections_source(self.source, self.output)
@@ -302,7 +304,7 @@ class HistoricalCollectionsBindingTests(unittest.TestCase):
         original = Path.read_bytes
         def crlf_bytes(path):
             data = original(path)
-            if path in (ROOT / 'tests/collections.bsl', ROOT / 'output/collections.out'):
+            if path in (ROOT / 'tests/collections.bsl', ROOT.parent / 'tests/fixtures/native_windows/collections.out'):
                 return data.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
             return data
         names = (

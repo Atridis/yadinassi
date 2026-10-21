@@ -574,7 +574,7 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
 
 
 def windows_fingerprints(root: Path) -> dict[str, str]:
-    names = [f"integrational_tests/output/{name}.out" for name in SCENARIOS] + ["integrational_tests/meta.md"]
+    names = [f"tests/fixtures/native_windows/{name}.out" for name in SCENARIOS] + ["integrational_tests/meta.md"]
     return {name: digest(read_regular(root / name, MAX_FILE, nonempty=True)) for name in names}
 
 

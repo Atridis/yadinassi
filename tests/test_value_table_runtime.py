@@ -80,7 +80,7 @@ class ValueTableRuntimeTests(unittest.TestCase):
 
     def test_bounded_compact_command_matches_fresh_owner_output(self):
         program = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
-        expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
+        expected = (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
         program, expected = table_command_checkpoint(program, expected)
         output = []
         Interpreter(output=output.append).execute(program)

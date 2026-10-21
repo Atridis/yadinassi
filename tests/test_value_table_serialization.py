@@ -21,7 +21,7 @@ from yadinassi.value_tables import BSLValueTable
 from yadinassi.values import BSLArray
 
 
-OUTPUT = Path(__file__).resolve().parents[1] / 'integrational_tests/output/collections.out'
+OUTPUT = Path(__file__).resolve().parents[1] / 'tests/fixtures/native_windows/collections.out'
 
 
 def array(*items):

@@ -17,7 +17,7 @@ class NumericRadixTests(unittest.TestCase):
     def test_native_checkpoint_numeric_output_exact(self):
         output = []
         Interpreter(output=output.append).execute((ROOT / 'integrational_tests/tests/numbers.bsl').read_text(encoding='utf-8-sig'))
-        expected = (ROOT / 'integrational_tests/output/numbers.out').read_text(encoding='utf-8-sig').splitlines()
+        expected = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_text(encoding='utf-8-sig').splitlines()
         self.assertEqual(output, expected)
 
     def test_native_fixture_reads_do_not_depend_on_default_encoding(self):

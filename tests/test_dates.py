@@ -33,7 +33,7 @@ from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal,
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/dates.bsl'
-NATIVE = ROOT / 'integrational_tests/output/dates.out'
+NATIVE = ROOT / 'tests/fixtures/native_windows/dates.out'
 DATE_UUID = 'aae38c48-a877-411c-a6d3-fbaa1f83c4bd'
 DATE_PAYLOAD = '{"D",20240229123456}'
 BASE_TEXT = '20240229123456'

@@ -20,7 +20,7 @@ PAIRS = (('ascii-case', 'aBc', 'AbC', 0), ('less', 'a', 'b', -1),
 class StringCompareTests(unittest.TestCase):
     def test_native_cases_aliases_and_reverse(self):
         output = (Path(__file__).resolve().parents[1] /
-                  'integrational_tests/output/strings.out').read_text(encoding='utf-8')
+                  'tests/fixtures/native_windows/strings.out').read_text(encoding='utf-8')
         vm = Interpreter()
         for label, first, second, expected in PAIRS:
             self.assertIn(f'compare.{label}: [{{"N",{expected}}}]\n', output)

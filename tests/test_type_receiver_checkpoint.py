@@ -124,7 +124,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
 
     def test_owner_output_is_byte_preserved(self):
         # Only transport CRLF is normalized, as in the strict native comparator.
-        data = (ROOT / 'integrational_tests/output/values.out').read_bytes().replace(b'\r\n', b'\n')
+        data = (ROOT / 'tests/fixtures/native_windows/values.out').read_bytes().replace(b'\r\n', b'\n')
         marker = b'types.checkpoint.complete: [ok]\n'
         self.assertEqual(data.count(marker), 1)
         original = data.split(marker)[0] + marker
@@ -145,7 +145,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
                   if line.startswith(b'types-extra.')]
         self.assertEqual(labels, ['types-extra.' + label for label in expressions()]
                          + ['types-extra.checkpoint.complete'])
-        self.assertFalse((ROOT / 'integrational_tests/output/values.err').exists())
+        self.assertFalse((ROOT / 'tests/fixtures/native_windows/values.err').exists())
 
     def test_observer_recovers_after_each_error(self):
         output = []

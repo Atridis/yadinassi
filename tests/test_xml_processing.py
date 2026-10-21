@@ -231,7 +231,7 @@ class XMLStringProcessingManagerTests(unittest.TestCase):
             (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig'))
         actual = {line.split(': [', 1)[0]: line for line in output
                   if line.startswith(('xml.manager.', 'xml.clean.'))}
-        native = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        native = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
         expected = {match.group(1): match.group(0).rstrip()
                     for match in re.finditer(r'(?ms)^(xml\.(?:manager|clean)\.[^:]+): \[.*?(?=^xml\.|\Z)', native)}
         self.assertEqual(len(expected), 13)

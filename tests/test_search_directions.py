@@ -408,7 +408,7 @@ class SearchDirectionNativeEvidenceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        lines = (ROOT / 'integrational_tests/output/strings.out').read_text(
+        lines = (ROOT / 'tests/fixtures/native_windows/strings.out').read_text(
             encoding='utf-8-sig').splitlines()
         cls.records = {}
         for line in lines:

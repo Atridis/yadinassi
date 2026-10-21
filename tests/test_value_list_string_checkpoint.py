@@ -165,18 +165,18 @@ class ValueListStringCheckpointTests(unittest.TestCase):
             'strings.out': 'a1ecb5458c3eb10b0df52cd9ae241994a2e4f462',
             'values.out': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
         }.items():
-            data = (ROOT / 'integrational_tests/output' / name).read_bytes()
+            data = (ROOT / 'tests/fixtures/native_windows' / name).read_bytes()
             self.assertEqual(blob(data.replace(b'\r\n', b'\n')), expected)
         self.assertEqual(blob((ROOT / 'integrational_tests/meta.md').read_bytes().replace(b'\r\n', b'\n')),
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
-        self.assertEqual(list((ROOT / 'integrational_tests/output').glob('*.err')), [])
-        self.assertIn(FINAL, (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8'))
+        self.assertEqual(list((ROOT / 'tests/fixtures/native_windows').glob('*.err')), [])
+        self.assertIn(FINAL, (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8'))
         self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text(encoding='utf-8'))
 
     def test_complete_owner_string_evidence_and_live_cache_boundary(self):
         # Owner Atridis commit 87723a25f22d359bb72163e184a871d6448930d1.
         # Only checkout line-ending transport is normalized, not native text.
-        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        data = (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(blob(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         # Isolate the first String run; full native comparisons stay complete.
         data = data.split(b'table.list.string-cache.initialize:', 1)[0] + b'table.checkpoint.complete: [ok]\n'

@@ -71,7 +71,7 @@ class IndexProbeTests(unittest.TestCase):
                   'numbers': 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13',
                   'strings': 'a1ecb5458c3eb10b0df52cd9ae241994a2e4f462'}
         for name, expected in hashes.items():
-            data = (ROOT / f'integrational_tests/output/{name}.out').read_bytes().replace(b'\r\n', b'\n')
+            data = (ROOT / f'tests/fixtures/native_windows/{name}.out').read_bytes().replace(b'\r\n', b'\n')
             self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(), expected)
         self.assertEqual((ROOT / 'integrational_tests/meta.md').read_text(encoding='utf-8'),
                          '1c-version: 8.3.27.2342\nos: Windows\ninfobase-mode: файловая база\n'
@@ -79,7 +79,7 @@ class IndexProbeTests(unittest.TestCase):
                          'compatibility-mode: НеУказан\n')
 
     def test_owner_addition_preserves_exact_historical_output(self):
-        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        data = (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
         before, tail = data.split(b'table.indexes.identity:', 1)
         self.assertTrue(tail.endswith(b'table.checkpoint.complete: [ok]\n'))
         before_extra, extra = data.split(b'table.indexes.extra.edit-order:', 1)
@@ -118,11 +118,11 @@ class IndexProbeTests(unittest.TestCase):
         output = []
         Interpreter(output=output.append).execute(historical_collections_source(
             SOURCE.read_bytes(),
-            (ROOT / 'integrational_tests/output/collections.out').read_bytes()).decode('utf-8-sig'))
+            (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes()).decode('utf-8-sig'))
         records = [line for line in output if line.startswith('table.indexes.')
                    and not line.startswith('table.indexes.checkpoint.')]
         self.assertEqual(len(records), 40)
-        expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
+        expected = (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
         self.assertEqual('\n'.join(output) + '\n', expected)
         self.assertEqual([line.split(':', 1)[0] for line in records],
                          ['table.' + call.arguments[0].value for call in observations()])

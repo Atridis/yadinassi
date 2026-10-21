@@ -10,3 +10,7 @@ dist/
 .idea/
 .DS_Store
 integrational_tests/.work/
+
+# Native launcher output is disposable; historical Windows evidence is in tests/fixtures.
+/integrational_tests/output/*
+!/integrational_tests/output/.gitkeep

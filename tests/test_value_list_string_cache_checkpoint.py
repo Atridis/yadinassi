@@ -199,7 +199,7 @@ class ValueListStringCacheCheckpointTests(unittest.TestCase):
             text = before + after
         self.assertEqual(blob(('\ufeff' + text).encode()),
                          'eb8e11cbd332225cfbdeb19ac4b203691ad45662')
-        native = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        native = (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(blob(native),
                          '97e90791a4011bd7f6ef2922533f92f698557cbd')
         self.assertEqual(len(native), 200954)

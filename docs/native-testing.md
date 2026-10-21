@@ -6,6 +6,12 @@ coverage maps and timezone replay details are kept here separately. The dated
 sections record the progression of the evidence; later checkpoints supersede
 earlier pending statuses.
 
+The historical Windows capture files now live in
+[tests/fixtures/native_windows](../tests/fixtures/native_windows), unchanged.
+References below to `integrational_tests/output` describe their original capture
+locations and commits. That directory is now an ignored runtime destination,
+retained with `.gitkeep`; it is not the source for offline regression checks.
+
 ## Separate automated Linux capture
 
 [The isolated six-scenario workflow](native-1c-full-regression.md) creates a fresh

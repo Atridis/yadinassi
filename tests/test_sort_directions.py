@@ -363,7 +363,7 @@ class SortDirectionNativeEvidenceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.output = (ROOT / 'integrational_tests/output/collections.out').read_text(
+        cls.output = (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(
             encoding='utf-8-sig')
         cls.helpers = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(
             encoding='utf-8-sig').split('#Область МассивыИСтруктуры', 1)[0]

@@ -27,7 +27,7 @@ from yadinassi.values import (
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
-NATIVE = ROOT / 'integrational_tests/output/values.out'
+NATIVE = ROOT / 'tests/fixtures/native_windows/values.out'
 TYPE_RECORD = '{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}'
 
 

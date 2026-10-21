@@ -52,7 +52,7 @@ class MathPrecisionCheckpointTests(unittest.TestCase):
         self.assertEqual(self.outputs()[0], output)
 
     def test_owner_observation_labels_and_marker_preserved(self):
-        owner = (ROOT / 'integrational_tests/output/numbers.out').read_text(
+        owner = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_text(
             encoding='utf-8-sig').splitlines()
         prefix = owner[:owner.index(PREVIOUS) + 1]
         self.assertEqual(len(prefix), 331)

@@ -77,7 +77,7 @@ class ValueTableOperationsCheckpointTests(unittest.TestCase):
             ('collections', '97e90791a4011bd7f6ef2922533f92f698557cbd'),
             ('values', '016f30d6f3bdb1a814e86a70e3bcf424383a0d27'),
         ):
-            data = canonical_output_bytes((ROOT / f'integrational_tests/output/{name}.out').read_bytes())
+            data = canonical_output_bytes((ROOT / f'tests/fixtures/native_windows/{name}.out').read_bytes())
             self.assertEqual(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(), expected)
 
     def test_owner_output_integrity_accepts_crlf_and_preserves_escapes(self):

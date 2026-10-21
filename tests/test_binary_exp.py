@@ -94,7 +94,7 @@ Try Exp(709.78271289338398); Except Message("overflow"); EndTry;
     def test_complete_native_scenario_with_host_exp_disabled(self):
         from yadinassi import Interpreter
         root = Path(__file__).resolve().parents[1] / 'integrational_tests'
-        expected = (root / 'output/numbers.out').read_text(encoding='utf-8-sig').splitlines()
+        expected = (root.parent / 'tests/fixtures/native_windows/numbers.out').read_text(encoding='utf-8-sig').splitlines()
         source = (root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig')
         for replacement in ({'return_value': 0.0}, {'side_effect': OverflowError}):
             with self.subTest(replacement=replacement), patch('math.exp', **replacement) as host:

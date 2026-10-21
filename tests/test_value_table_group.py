@@ -219,7 +219,7 @@ class NativeGroupByTests(unittest.TestCase):
     def test_all_38_native_observations(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
-        native = (root / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
+        native = (root / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
         records = dict(re.findall(r'^(table\.ops\.group\.[^:]+): (\[\n.*?^\])', native,
                                   re.MULTILINE | re.DOTALL))
         output = []

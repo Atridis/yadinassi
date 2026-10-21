@@ -140,11 +140,11 @@ class DateCheckpointTests(unittest.TestCase):
         self.assertTrue(source().rstrip().endswith('Сообщить("' + FINAL + '");'))
 
     def test_execution_does_not_write_goldens_or_metadata(self):
-        paths = [path for path in (ROOT / 'integrational_tests/output').rglob('*') if path.is_file()]
+        paths = [path for path in (ROOT / 'tests/fixtures/native_windows').rglob('*') if path.is_file()]
         paths.append(ROOT / 'integrational_tests/meta.md')
         before = {path: path.read_bytes() for path in paths}
         Interpreter(output=lambda message: None).execute(source())
-        after_paths = [path for path in (ROOT / 'integrational_tests/output').rglob('*') if path.is_file()]
+        after_paths = [path for path in (ROOT / 'tests/fixtures/native_windows').rglob('*') if path.is_file()]
         after_paths.append(ROOT / 'integrational_tests/meta.md')
         self.assertEqual(before, {path: path.read_bytes() for path in after_paths})
 
@@ -264,10 +264,10 @@ class DateCalendarCheckpointTests(unittest.TestCase):
         self.assertTrue(text.rstrip().endswith('Сообщить("' + self.FINAL + '");'))
         self.assertNotRegex(text, r'\b(?:Пока|Для|Перейти|Выполнить|ОписаниеОшибки|ТекущаяДата|CurrentDate)\b')
         self.assertNotRegex(text[len(source()):], r'\b(?:Процедура|Функция)\b')
-        raw = (ROOT / 'integrational_tests/output/dates.out').read_bytes()
+        raw = (ROOT / 'tests/fixtures/native_windows/dates.out').read_bytes()
         before = hashlib.sha256(raw).hexdigest()
         Interpreter(output=lambda message: None).execute(text)
-        self.assertEqual(hashlib.sha256((ROOT / 'integrational_tests/output/dates.out').read_bytes()).hexdigest(), before)
+        self.assertEqual(hashlib.sha256((ROOT / 'tests/fixtures/native_windows/dates.out').read_bytes()).hexdigest(), before)
 
 
 if __name__ == '__main__':
