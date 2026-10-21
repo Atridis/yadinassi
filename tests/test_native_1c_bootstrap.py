@@ -240,6 +240,19 @@ class DraftTest(unittest.TestCase):
         self.write_markers(server, client, "bootstrap")
         with self.assertRaises(DraftError): self.verify("bootstrap")
 
+    def test_zero_role_guard_enumerates_and_rejects_first_role_without_mutation(self):
+        self.inject()
+        source = (self.output / "Ext/SessionModule.bsl").read_text(encoding="utf-8-sig")
+        helper = source.split('Процедура NativeПроверитьПользователя(Пользователь)', 1)[1].split('КонецПроцедуры', 1)[0]
+        self.assertIn('    Для Каждого Роль Из Пользователь.Роли Цикл\n        ВызватьИсключение "Native verify: unexpected user roles; do not broaden permissions";\n    КонецЦикла;', helper)
+        self.assertNotIn('Пользователь.Роли.Количество()', source)
+        self.assertEqual(source.count('Пользователь.Роли'), 1)
+        self.assertNotIn('Попытка', helper)
+        self.assertNotIn('Исключение\n', helper)
+        # The same fail-closed helper covers assigned, persisted and fresh users.
+        for name in ('Пользователь', 'Сохраненный', 'Текущий'):
+            self.assertIn('NativeПроверитьПользователя(' + name + ');', source)
+
     def test_source_checks_actual_shape_before_narrow_assignment_and_all_readbacks(self):
         self.inject()
         source = (self.output / "Ext/SessionModule.bsl").read_text(encoding="utf-8-sig")

@@ -9,10 +9,12 @@ The first stage-two native run confirmed full module import, database update and
 byte-identical re-export, then failed in anonymous bootstrap with a nonzero process
 result. Persisted security state and actual application version remain unverified.
 The subsequent diagnostic-only run identified our whole-property Boolean guard
-as the failure before protection assignment or user Write. This candidate changes
-that BSL guard and its narrow warning update to a runtime-checked descriptor
-hypothesis, while keeping native commands and containment unchanged. Mock tests
-are not evidence that the corrected contract or later native stages have passed.
+as the failure before protection assignment or user Write. The descriptor-gated
+retry then observed the actual descriptor type and inner Boolean, but failed on
+an unsupported `Количество` call during bootstrap. This candidate replaces only
+the role-collection Count check with fail-closed enumeration. Native commands,
+containment and measured descriptor guards remain unchanged. Mock tests are not
+evidence that role enumeration or later native stages have passed.
 
 ## Invocation and unchanged trust boundary
 
@@ -90,8 +92,11 @@ remain in tmpfs. There is one fresh database and no concurrent 1C sessions.
    that existing descriptor's warning flag to false, assigns the descriptor back,
    checks the assigned state, and writes the user. It checks persisted FindByName
    descriptor type and nested Boolean false, standard authentication, exactly
-   one user and zero roles. No new descriptor resets other settings, and no
-   initial warning value is assumed. It does not use an external EPF for bootstrap.
+   one user and zero roles. The common user-check helper enumerates the role
+   collection and rejects the first element; it never adds, removes or ignores
+   roles. Unsupported enumeration also fails startup, with no fallback. No new
+   descriptor resets other settings, and no initial warning value is assumed.
+   It does not use an external EPF for bootstrap.
 5. Remove the control file. A separate Designer invocation with `/N NativeSmoke`
    must successfully dump metadata and preserve the injected modules.
 6. A separate Enterprise `/N NativeSmoke` invocation must verify both the fresh
@@ -116,12 +121,15 @@ Module discovery on full import has been demonstrated by byte-identical native
 re-export. [The diagnostic run](https://github.com/Atridis/yadinassi/actions/runs/39522764403)
 reached the internal session hook and rejected the previous whole-property
 Boolean assumption before assigning protection or writing the user. It did not
-establish the actual property type. The descriptor relationship above is a
-fail-closed runtime hypothesis, not a claim that the exact API contract has been
-verified by public documentation or by the earlier run. The next run must observe
-that shape before mutation and then prove persisted and fresh-session readbacks.
-Role-free named-user permissions, actual platform version and simple EPF execution
-remain unverified. Any compile failure, unsupported API, denied
+establish the actual property type. [The descriptor-gated retry](https://github.com/Atridis/yadinassi/actions/runs/39524243345)
+then observed `UnsafeOperationProtectionDescription` and inner `Boolean`. Its
+matching session error identified unsupported `Количество`, but conflicting stack
+locations meant no source line was exported. The earlier GetUsers count had
+already succeeded; the role-collection Count check is therefore the likely
+remaining failing call, not a proven line-level diagnosis. This candidate uses
+strict enumeration instead. Native collection enumerability, persisted and fresh
+security readbacks, role-free named-user permissions, actual platform version
+and simple EPF execution remain unverified. Any compile failure, unsupported API, denied
 access, missing hook or modal timeout stops the stage. Do not add broad roles or
 weaken protections to turn a failure green. A retry after an attempted bootstrap
 requires a newly created disposable database, not another bootstrap against the
@@ -205,7 +213,8 @@ python -m unittest discover -s tests -v
 
 Coverage includes exact staging, restrictive host umask, containment, registry
 authentication separation, fresh markers, Boolean-versus-integer flags, anonymous
-identity, module-byte preservation, descriptor and nested-Boolean guards, legacy
+identity, module-byte preservation, reject-first-element role enumeration,
+descriptor and nested-Boolean guards, legacy
 Boolean-schema rejection, read-only finite type observations, strict
 user/version/output gates, named
 Designer/Enterprise separation, partial security state and timeout/error paths.
