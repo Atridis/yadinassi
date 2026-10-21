@@ -133,17 +133,15 @@ class ValueListRuntimeTests(unittest.TestCase):
             with self.assertRaises(BSLError):
                 self.vm.execute(code)
 
-    def test_unobserved_property_reference_arguments_are_catchably_bounded(self):
+    def test_observed_property_reference_arguments_enter_callee(self):
         self.vm.execute('Var entered; entered = False; '
                         'Procedure ReadReference(x) entered = True; EndProcedure '
                         'Procedure ReadValue(Val x) Message(x); EndProcedure')
         for field in ("Value", "Presentation", "Check"):
-            self.vm.execute(f'Try ReadReference(first.{field}); Except '
-                            'Message(Find(ErrorDescription(), "пока не поддерживается") > 0); EndTry;')
-            self.assertIs(self.vm.execute('entered'), False)
-        self.assertEqual(self.output, ["Да", "Да", "Да"])
+            self.vm.execute(f'entered = False; ReadReference(first.{field});')
+            self.assertIs(self.vm.execute('entered'), True)
         self.vm.execute('ReadValue(first.Value);')
-        self.assertEqual(self.output[-1], "10")
+        self.assertEqual(self.output, ["10"])
         self.assertEqual(self.vm.execute('first.Value'), Decimal(10))
 
 

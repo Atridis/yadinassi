@@ -1962,6 +1962,43 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
             raise AssertionError(f'Failed imported fixed-GMT conversion {path!r}: {result!r}')
 
 
+def check_value_list_references(executable, *, directory, env):
+    """Native PR74 field behavior across entry modes; client routing is local QA."""
+    directory.mkdir()
+    code = '\n'.join([
+        'Procedure SetRef(field, Val value) field = value; EndProcedure',
+        'Procedure SetVal(Val field) field = 99; EndProcedure',
+        '&AtClient',
+        'Function Live(field, Val item)',
+        'field = 21; Message(item.Value); item.Value = 22; Return field;',
+        'EndFunction',
+        'Procedure Two(first, second) first = 31; Message(second); SetRef(second, 32); Message(first); EndProcedure',
+        'Procedure Fail(field) field = 41; Raise "probe"; EndProcedure',
+        'owner = New ValueList; item = owner.Add(10, "old", False);',
+        'SetVal(item.Значение); Message(item.Value);',
+        'Message(Live(item.Value, item));',
+        'Two(item.Значение, item.Value);',
+        'Try Fail(item.Value); Except Message(item.Value); EndTry;',
+        'SetRef(item.Представление, 123); Message(item.Presentation);',
+        'SetRef(item.Пометка, 1); Message(item.Check);',
+        'Try SetRef(item.Check, New Array); Except Message(item.Check); EndTry;',
+        'owner.Delete(item); SetRef(item.Value, 62); Message(item.Value); Message(item.GetID());',
+    ]) + '\n'
+    expected = '10\n21\n22\n31\n32\n41\n123\nДа\nДа\n62\n-1\n'
+    source = directory / 'СсылкиПолейСписка.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed ValueList references {arguments!r}: {result!r}')
+    print('Binary ValueList field references passed: live aliases, Val, duplicate/nested '
+          'forwarding, partial writes, conversion, detached fields, client routing, '
+          'BOM file, command flags, stdin and console')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -1985,6 +2022,7 @@ def main() -> None:
         check_null(executable, directory=Path(temporary) / "null", env=env)
         check_xml_checkpoint(executable, directory=Path(temporary) / "xml-checkpoint", env=env)
         check_table_checkpoint(executable, directory=Path(temporary) / "table-checkpoint", env=env)
+        check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)

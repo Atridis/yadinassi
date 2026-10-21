@@ -629,8 +629,12 @@ class Interpreter:
         if isinstance(node, ast.Attribute):
             owner = self.visit(node.object)
             if type(owner) is BSLValueListItem:
-                raise TypeError("Передача свойства элемента списка значений по ссылке "
-                                "пока не поддерживается в Yadinassi")
+                # Native PR74: a field is live storage, not a copy-out temporary.
+                # Resolve the item once; its existing setters retain conversion,
+                # identity and string-cache behavior, including after deletion.
+                owner.reference_get_member(node.name)
+                return _Reference(lambda: owner.reference_get_member(node.name),
+                                  lambda value: owner.reference_set_member(node.name, value))
             if not isinstance(owner, (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTableColumn)):
                 raise TypeError("Передача свойства по ссылке поддерживается только для структуры, строки или колонки таблицы")
             # Bind the receiver once and validate existence before entering the

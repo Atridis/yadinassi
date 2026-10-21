@@ -188,6 +188,23 @@ class BSLValueListItem(BSLObject):
         else:
             super().set_member(name, value)
 
+    def _check_reference_member(self, name):
+        # Only these six names were measured as routine-reference storage.
+        # Keep the weak owner: references must not silently extend its lifetime.
+        if name.casefold() not in {"value", "значение", "presentation", "представление",
+                                   "check", "пометка"}:
+            _unsupported("передача этого свойства элемента по ссылке")
+        if self._decoded_standalone or self._owner_ref() is None:
+            _unsupported("передача свойства элемента без живого списка по ссылке")
+
+    def reference_get_member(self, name):
+        self._check_reference_member(name)
+        return self.get_member(name)
+
+    def reference_set_member(self, name, value):
+        self._check_reference_member(name)
+        self.set_member(name, value)
+
     def get_method(self, name):
         if name.casefold() in {"getid", "получитьидентификатор"}:
             return HostFunction(name, self.get_id)
