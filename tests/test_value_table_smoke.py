@@ -18,7 +18,7 @@ class ValueTableSmokeTests(unittest.TestCase):
     def setUpClass(cls):
         cls.program = (smoke_test.ROOT / 'integrational_tests/tests/collections.bsl').read_text(
             encoding='utf-8-sig')
-        cls.owner_bytes = (smoke_test.ROOT / 'integrational_tests/output/collections.out').read_bytes()
+        cls.owner_bytes = (smoke_test.ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes()
         cls.replay = smoke_test.historical_collections_source(
             ('\ufeff' + cls.program).encode(), cls.owner_bytes).decode('utf-8-sig')
         cls.expected = cls.owner_bytes.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
@@ -32,7 +32,7 @@ class ValueTableSmokeTests(unittest.TestCase):
         self.directory.parent.mkdir()
         tests = self.root / 'integrational_tests/tests'
         tests.mkdir(parents=True)
-        output = self.root / 'integrational_tests/output'
+        output = self.root / 'tests/fixtures/native_windows'
         output.mkdir(parents=True)
         (tests / 'collections.bsl').write_text(self.program, encoding='utf-8-sig')
         self.output = output / 'collections.out'

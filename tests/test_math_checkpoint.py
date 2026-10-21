@@ -60,7 +60,7 @@ class MathCheckpointTests(unittest.TestCase):
                                     'Tan', 'ASin', 'ACos', 'ATan', 'Pow'})
 
     def test_existing_native_output_is_exact_prefix(self):
-        native = normalize((ROOT / 'integrational_tests/output/numbers.out').read_text(
+        native = normalize((ROOT / 'tests/fixtures/native_windows/numbers.out').read_text(
             encoding='utf-8-sig')).splitlines()
         native_prefix = native[:native.index(PREVIOUS) + 1]
         self.assertEqual(self.outputs()[0], native_prefix)

@@ -126,7 +126,7 @@ class ValueTableCheckpointTests(unittest.TestCase):
         # Transport-normalized source; no legacy procedure or statement changed.
         self.assertEqual(hashlib.sha256(old.encode()).hexdigest(),
                          '97d7928e7c59828f916f88d4f31632e2c9bcd8f1ab57786f81ee18978246dfc1')
-        output = ROOT / 'integrational_tests/output/collections.out'
+        output = ROOT / 'tests/fixtures/native_windows/collections.out'
         evidence = output.read_bytes().replace(b'\r\n', b'\n')
         # Owner-confirmed operations form a separate checkpoint. Preserve this
         # original 2394-line core exactly; full native gates below remain whole.
@@ -202,9 +202,9 @@ class ValueTableCheckpointTests(unittest.TestCase):
         messages = []
         Interpreter(output=messages.append).execute(historical_collections_source(
             SOURCE.read_bytes(),
-            (ROOT / 'integrational_tests/output/collections.out').read_bytes()).decode('utf-8-sig'))
+            (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes()).decode('utf-8-sig'))
         actual = '\n'.join(messages) + '\n'
-        expected = (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8-sig')
+        expected = (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
         self.assertEqual(actual.replace('\r\n', '\n').replace('\r', '\n'), expected)
         self.assertEqual(messages[-1], FINAL)
         import re

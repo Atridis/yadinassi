@@ -56,7 +56,9 @@ remain separate. See [the full comparison contract](native-1c-full-regression.md
 
 The registry image can use infrastructure caching, but native outputs are never
 cached as an oracle. Historical Windows `8.3.27.2342` outputs remain unchanged for
-offline/default-target and frozen-build regression checks. They are not relabeled
+offline/default-target and frozen-build regression checks in
+`tests/fixtures/native_windows`. The launcher destination `integrational_tests/output`
+is disposable and ignored except for its tracked `.gitkeep`. They are not relabeled
 as Linux results; removing them requires a separate dependent-test migration.
 
 ## Unchanged isolation and artifact scope

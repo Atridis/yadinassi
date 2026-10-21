@@ -76,7 +76,9 @@ python -m yadinassi basic.bsl
 python integrational_tests/test_launcher.py --bd "C:\Bases\TestBase" --path-1c "C:\Program Files\1cv8\8.3.27.1859\bin"
 ```
 
-Вывод сохраняется в `integrational_tests/output/<имя теста>.out`.
+Вывод сохраняется в `integrational_tests/output/<имя теста>.out`; новые результаты
+игнорируются Git. Исторические Windows-данные для регрессионных проверок находятся
+в [tests/fixtures/native_windows](tests/fixtures/native_windows).
 Каталог `integrational_tests` содержит самостоятельный генератор эталонного
 вывода на 1С. Его Python-проверки запускаются отдельно командой
 `python integrational_tests/check_launcher.py`.
@@ -130,7 +132,7 @@ Workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) работ
 эталонов для этих событий не нужна. Форки исключены из этой проверки, отсутствие
 нативного результата не считается успехом. Порядок пар Соответствия имеет
 отдельный согласованный контракт, остальные результаты строгие. Старые Windows
-outputs пока сохранены; теги и публикация релизов этим новым workflow не охвачены.
+fixtures сохранены отдельно в `tests/fixtures/native_windows`; теги и публикация релизов этим новым workflow не охвачены.
 
 При push тега `v*`, после успешного завершения всех четырех сборок, workflow
 создает GitHub Release с четырьмя архивами и `SHA256SUMS`. Используется встроенный

@@ -156,7 +156,7 @@ class ValueListSortCheckpointTests(unittest.TestCase):
             'values.out': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
         }
         for name, expected_hash in expected.items():
-            self.assertEqual(blob((ROOT / 'integrational_tests/output' / name).read_bytes().replace(b'\r\n', b'\n')), expected_hash)
+            self.assertEqual(blob((ROOT / 'tests/fixtures/native_windows' / name).read_bytes().replace(b'\r\n', b'\n')), expected_hash)
         # Git's Windows checkout may transport text with CRLF. Only line
         # endings are normalized; metadata field content remains exact.
         self.assertEqual(metadata_blob((ROOT / 'integrational_tests/meta.md').read_bytes()),
@@ -166,7 +166,7 @@ class ValueListSortCheckpointTests(unittest.TestCase):
     def test_complete_owner_evidence_preserves_every_prior_byte(self):
         # Owner Atridis commit 317262725bf3507a6b66dd1f2d962d822806d338.
         # Only Git checkout line-ending transport is normalized.
-        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        data = (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(blob(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         # Isolate the historical sort block; full-native comparisons remain exact.
         data = data.split(b'table.list.copy.fresh-empty:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
@@ -186,7 +186,7 @@ class ValueListSortCheckpointTests(unittest.TestCase):
                                      b'table.checkpoint.complete: [ok]\n'))
         for marker in (b'[iteration-error]', b'[serialize-error]', b'[limit]', b'[result-error]'):
             self.assertNotIn(marker, tail)
-        self.assertEqual(list((ROOT / 'integrational_tests/output').glob('*.err')), [])
+        self.assertEqual(list((ROOT / 'tests/fixtures/native_windows').glob('*.err')), [])
 
     def test_metadata_transport_preserves_content_check(self):
         data = (ROOT / 'integrational_tests/meta.md').read_bytes().replace(b'\r\n', b'\n')

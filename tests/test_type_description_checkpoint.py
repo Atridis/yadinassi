@@ -193,7 +193,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         from yadinassi.serialization import value_to_string_internal
         from yadinassi.values import BSLType
         # Exact fields of the genuine compact owner record, not generated goldens.
-        native = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        native = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
         records = re.findall(r'^types\.number\.default\.en: \[(.*)\]$', native, re.MULTILINE)
         self.assertEqual(len(records), 1)
         expected_write = '{"#",f6f6ce00-392c-49ed-8c6e-4e0295fd4051}'
@@ -236,7 +236,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         import re
         output = []
         Interpreter(output=output.append).execute(helpers() + BODY + source().split(BODY, 1)[1])
-        expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
         expected = expected.split('xml.checkpoint.complete: [ok]\n', 1)[1]
         expected = expected.split('types.checkpoint.complete: [ok]\n', 1)[0] + FINAL + '\n'
         native_labels = re.findall(r'^types\.([a-z0-9.-]+): \[', expected, re.M)
@@ -294,7 +294,7 @@ class SupplementalTypesGateTests(unittest.TestCase):
         _, supplement = split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))
         output = []
         Interpreter(output=output.append).execute(supplement)
-        expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
         expected = expected.split('types.checkpoint.complete: [ok]\n', 1)[1]
         actual = native_outputs.normalize_newlines('\n'.join(output) + '\n')
         self.assertEqual(actual, expected)
@@ -306,7 +306,7 @@ class StrictNativeGateTests(unittest.TestCase):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
         # Reviewed migration preserves every captured output byte and binds the
         # complete historical source; live Docker compares all current cases.
-        self.assertEqual(hashlib.sha256(actual).hexdigest(), 'ef6ed3ca6211390c33962127a2e65e19928337a0c4ad991a95d0d8ff0d9aecad')
+        self.assertEqual(hashlib.sha256(actual).hexdigest(), '2f6375d6776b146616954cdbf2e61c083fd4c640bd2d909816041732fac47c7a')
 
     def test_frozen_full_native_comparator_has_reviewed_historical_replay(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')
@@ -314,10 +314,10 @@ class StrictNativeGateTests(unittest.TestCase):
                  + text.split('def check_saved_native_outputs(', 1)[1]
                  .split('def check_timezone_configuration(', 1)[0])
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
-                         "e9ee8ad13bfdaac35780e4a3509a874fcd410e8eb05d1b892a2181573262ee62")
+                         "63fb4713233fc70d25b0534d8d0f4c56d843e0b60edbe13f7879585311dad1cf")
 
     def test_frozen_full_modes_and_bounded_command_aliases(self):
-        expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8-sig')
+        expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
         full_source = SOURCE.read_text(encoding='utf-8-sig')
         _, command_source = split_type_supplement(full_source)
         marker = 'types.checkpoint.complete: [ok]\n'
@@ -384,6 +384,7 @@ class StrictNativeGateTests(unittest.TestCase):
                     expected.write_text('confirmed\n', encoding='utf-8')
                     case = native_outputs.NativeOutputTests('test_native_outputs')
                     case.native_root = base
+                    case.fixture_root = base / 'output'
                     with self.assertRaises(AssertionError):
                         case.compare_script(script)
 

@@ -66,7 +66,7 @@ class NativeDivisionValueTests(unittest.TestCase):
     """Read native values as Decimals, independently of numeric presentation."""
 
     def test_all_saved_native_quotients_are_actual_decimal_values(self):
-        lines = (ROOT / 'integrational_tests/output/numbers.out').read_text(
+        lines = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_text(
             encoding='utf-8-sig').splitlines()
         observed = {}
         for line in lines:

@@ -150,18 +150,18 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
             'strings.out': 'a1ecb5458c3eb10b0df52cd9ae241994a2e4f462',
             'values.out': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
         }.items():
-            data = (ROOT / 'integrational_tests/output' / name).read_bytes()
+            data = (ROOT / 'tests/fixtures/native_windows' / name).read_bytes()
             self.assertEqual(blob(data.replace(b'\r\n', b'\n')), expected)
         self.assertEqual(blob((ROOT / 'integrational_tests/meta.md').read_bytes().replace(b'\r\n', b'\n')),
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
-        self.assertEqual(list((ROOT / 'integrational_tests/output').glob('*.err')), [])
+        self.assertEqual(list((ROOT / 'tests/fixtures/native_windows').glob('*.err')), [])
         self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text())
-        self.assertIn(FINAL, (ROOT / 'integrational_tests/output/collections.out').read_text(encoding='utf-8'))
+        self.assertIn(FINAL, (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8'))
 
     def test_complete_owner_evidence_preserves_every_prior_byte(self):
         # Owner Atridis commit 0601200672edcc1cd5ab6703d0ef47e958329846.
         # Normalize Git checkout line endings only, never any native content.
-        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        data = (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(blob(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         # Isolate historical Copy evidence; full comparators use the entire file.
         data = data.split(b'table.list.string.empty:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
@@ -193,7 +193,7 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
             return original(path, encoding=encoding or 'cp1252', errors=errors)
         with patch.object(Path, 'read_text', legacy_read):
             self.test_exact_base_and_protected_native_evidence()
-        self.assertIn((ROOT / 'integrational_tests/output/collections.out', 'utf-8'), reads)
+        self.assertIn((ROOT / 'tests/fixtures/native_windows/collections.out', 'utf-8'), reads)
 
     def test_fixed_unique_records_and_declarations_before_statements(self):
         calls = observations()

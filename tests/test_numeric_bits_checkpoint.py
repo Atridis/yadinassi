@@ -74,7 +74,7 @@ class NumericBitsCheckpointTests(unittest.TestCase):
 
     def test_existing_native_prefixes_are_unchanged(self):
         for name, (marker, _, _) in SCENARIOS.items():
-            native = normalize((ROOT / 'integrational_tests/output' / (name + '.out')).read_text(
+            native = normalize((ROOT / 'tests/fixtures/native_windows' / (name + '.out')).read_text(
                 encoding='utf-8-sig')).splitlines()
             native_prefix = native[:native.index(marker) + 1]
             actual_prefix, _ = self.output_parts(name)

@@ -17,7 +17,7 @@ class NumericHelperTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / 'integrational_tests'
         output = []
         Interpreter(output=output.append).execute((root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig'))
-        expected = (root / 'output/numbers.out').read_text(encoding='utf-8').splitlines()
+        expected = (root.parent / 'tests/fixtures/native_windows/numbers.out').read_text(encoding='utf-8').splitlines()
         self.assertEqual(output, expected)
 
     def test_integer_part_bilingual_and_toward_zero(self):

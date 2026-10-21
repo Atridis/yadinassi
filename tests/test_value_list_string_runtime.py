@@ -23,7 +23,7 @@ from yadinassi.values import BSLArray, NULL, to_string
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "integrational_tests/tests/collections.bsl"
-OUTPUT = ROOT / "integrational_tests/output/collections.out"
+OUTPUT = ROOT / "tests/fixtures/native_windows/collections.out"
 
 # Genuine Docker evidence, not expectations synthesized from this interpreter.
 # https://github.com/Atridis/yadinassi/actions/runs/39591770740

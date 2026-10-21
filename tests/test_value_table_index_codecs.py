@@ -19,7 +19,7 @@ from yadinassi.value_tables import BSLCollectionIndex, BSLCollectionIndexes, BSL
 from yadinassi.values import BSLArray, BSLType, equal, to_string
 
 
-OUTPUT = Path(__file__).resolve().parents[1] / 'integrational_tests/output/collections.out'
+OUTPUT = Path(__file__).resolve().parents[1] / 'tests/fixtures/native_windows/collections.out'
 COLLECTION_UUID = '3a461c5c-0a17-430a-ae05-90890129a7da'
 INDEX_UUID = '4523f487-9cd3-4779-89f5-92023e88037b'
 TABLE_UUID = 'acf6192e-81ca-46ef-93a6-5a6968b78663'

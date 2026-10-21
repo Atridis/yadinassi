@@ -77,7 +77,7 @@ class XMLCheckpointTests(unittest.TestCase):
         output = []
         Interpreter(output=output.append).execute(source())
         self.assertEqual(output[40], 'null.checkpoint.complete: [ok]')
-        expected = (ROOT / 'integrational_tests/output/values.out').read_text(encoding='utf-8')
+        expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8')
         # The output can later gain native XML records; only this known block is compared.
         marker = 'null.checkpoint.complete: [ok]\n'
         self.assertEqual(expected.count(marker), 1)
@@ -297,11 +297,11 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertNotIn('\x00', source())
 
     def test_execution_does_not_write_native_outputs_or_metadata(self):
-        paths = list((ROOT / 'integrational_tests/output').rglob('*'))
+        paths = list((ROOT / 'tests/fixtures/native_windows').rglob('*'))
         paths += [ROOT / 'integrational_tests/meta.md', ROOT / 'tests/fixtures/basic.out']
         before = {p: p.read_bytes() for p in paths if p.is_file()}
         Interpreter(output=lambda message: None).execute(source())
-        after_paths = list((ROOT / 'integrational_tests/output').rglob('*'))
+        after_paths = list((ROOT / 'tests/fixtures/native_windows').rglob('*'))
         after_paths += [ROOT / 'integrational_tests/meta.md', ROOT / 'tests/fixtures/basic.out']
         self.assertEqual(before, {p: p.read_bytes() for p in after_paths if p.is_file()})
 

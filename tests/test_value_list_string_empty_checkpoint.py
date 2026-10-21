@@ -61,7 +61,7 @@ class ValueListStringEmptyCheckpointTests(unittest.TestCase):
             text = before + after
         self.assertEqual(blob(('\ufeff' + text).encode()),
                          '137dca5e4b6a47ea083a0dfe989e07c22d91a9e6')
-        native = (cache.ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        native = (cache.ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(blob(native), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         self.assertEqual((len(native), len(native.splitlines())), (200954, 4579))
         for marker in (FINAL, 'list.string-cache.empty-result', 'list.string-cache.short-sorts'):

@@ -60,7 +60,7 @@ def list_family_samples():
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "integrational_tests" / "output"
+OUTPUT = ROOT / "tests/fixtures/native_windows"
 FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
 ARRAY_GUID = "51e7a0d2-530b-11d4-b98a-008048da3034"
 TYPE_GUIDS = {

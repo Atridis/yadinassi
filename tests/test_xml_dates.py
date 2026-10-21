@@ -29,7 +29,7 @@ from yadinassi.xml_values import xml_string, xml_value
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
-NATIVE = ROOT / 'integrational_tests/output/values.out'
+NATIVE = ROOT / 'tests/fixtures/native_windows/values.out'
 BASE = '2024-02-29T12:34:56'
 UNIX_EPOCH = datetime(1970, 1, 1)
 

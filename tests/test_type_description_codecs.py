@@ -31,7 +31,7 @@ from yadinassi.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NATIVE = ROOT / 'integrational_tests/output/values.out'
+NATIVE = ROOT / 'tests/fixtures/native_windows/values.out'
 GUID = 'f5c65050-3bbb-11d5-b988-0050bae0a95d'
 
 

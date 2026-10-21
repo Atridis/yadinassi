@@ -155,11 +155,11 @@ class NullCheckpointTests(unittest.TestCase):
         self.assertTrue(source().rstrip().endswith('Сообщить("' + FINAL + '");'))
 
     def test_local_execution_preserves_owner_outputs_and_metadata(self):
-        paths = list((ROOT / 'integrational_tests/output').rglob('*'))
+        paths = list((ROOT / 'tests/fixtures/native_windows').rglob('*'))
         paths += [ROOT / 'integrational_tests/meta.md', ROOT / 'tests/fixtures/basic.out']
         before = {p: p.read_bytes() for p in paths if p.is_file()}
         Interpreter(output=lambda message: None).execute(source())
-        paths = list((ROOT / 'integrational_tests/output').rglob('*'))
+        paths = list((ROOT / 'tests/fixtures/native_windows').rglob('*'))
         paths += [ROOT / 'integrational_tests/meta.md', ROOT / 'tests/fixtures/basic.out']
         self.assertEqual(before, {p: p.read_bytes() for p in paths if p.is_file()})
 

@@ -44,7 +44,7 @@ class NativeValueListSortTests(unittest.TestCase):
         observations = source.split("// Начало наблюдений сортировки списка.\n", 1)[1]
         observations = observations.split("// Конец наблюдений сортировки списка.\n", 1)[0]
         vm.execute(observations)
-        expected = (ROOT / "integrational_tests/output/collections.out").read_text(encoding="utf-8")
+        expected = (ROOT / "tests/fixtures/native_windows/collections.out").read_text(encoding="utf-8")
         start = expected.index("table.list.sort.enum.identity:")
         end = expected.index("table.list.sort.checkpoint.complete: [ok]", start)
         end += len("table.list.sort.checkpoint.complete: [ok]\n")

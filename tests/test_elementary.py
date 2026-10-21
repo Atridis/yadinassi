@@ -13,7 +13,7 @@ class ElementaryTests(unittest.TestCase):
         actual = []
         Interpreter(output=actual.append).execute(
             (root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig'))
-        self.assertEqual(actual, (root / 'output/numbers.out').read_text(
+        self.assertEqual(actual, (root.parent / 'tests/fixtures/native_windows/numbers.out').read_text(
             encoding='utf-8-sig').splitlines())
 
     def test_all_names_are_case_insensitive(self):

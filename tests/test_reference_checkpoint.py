@@ -34,7 +34,7 @@ class ReferenceCheckpointTests(unittest.TestCase):
     def test_local_run_preserves_native_prefix_and_reaches_sentinel(self):
         output = []
         Interpreter(output=output.append).execute(SCRIPT.read_text(encoding='utf-8'))
-        native = (ROOT / 'integrational_tests/output/functions.out').read_text(encoding='utf-8-sig')
+        native = (ROOT / 'tests/fixtures/native_windows/functions.out').read_text(encoding='utf-8-sig')
         native_lines = native.splitlines()
         boundary = native_lines.index('execute.checkpoint.complete: [ok]') + 1
         prefix = native_lines[:boundary]

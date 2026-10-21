@@ -434,7 +434,7 @@ class ValueListCheckpointTests(unittest.TestCase):
                          '1c1e516847eca80e53cda3f218c5490418a241bf')
 
     def test_genuine_owner_addition_preserves_previous_output_and_native_presentations(self):
-        data = (ROOT / 'integrational_tests/output/collections.out').read_bytes().replace(b'\r\n', b'\n')
+        data = (ROOT / 'tests/fixtures/native_windows/collections.out').read_bytes().replace(b'\r\n', b'\n')
         # Isolate the historical core evidence, not the full-native comparator.
         self.assertEqual(blob_hash(data), '97e90791a4011bd7f6ef2922533f92f698557cbd')
         data = data.split(b'table.list.copy.fresh-empty:', 1)[0] + b'table.checkpoint.complete: [ok]\n'
@@ -470,7 +470,7 @@ class ValueListCheckpointTests(unittest.TestCase):
             'values': '016f30d6f3bdb1a814e86a70e3bcf424383a0d27',
         }
         for name, expected in hashes.items():
-            data = (ROOT / f'integrational_tests/output/{name}.out').read_bytes()
+            data = (ROOT / f'tests/fixtures/native_windows/{name}.out').read_bytes()
             self.assertEqual(blob_hash(data.replace(b'\r\n', b'\n')), expected)
         self.assertEqual((ROOT / 'integrational_tests/meta.md').read_text(encoding='utf-8'),
                          '1c-version: 8.3.27.2342\nos: Windows\ninfobase-mode: файловая база\n'

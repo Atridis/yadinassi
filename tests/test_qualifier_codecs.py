@@ -31,7 +31,7 @@ from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal,
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NATIVE = ROOT / 'integrational_tests/output/values.out'
+NATIVE = ROOT / 'tests/fixtures/native_windows/values.out'
 TYPE_IDS = {
     BSLType.NUMBER_QUALIFIERS: 'f6f6ce00-392c-49ed-8c6e-4e0295fd4051',
     BSLType.STRING_QUALIFIERS: 'a5e1773c-a947-455a-a2f7-c51736d3f2de',
