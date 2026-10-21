@@ -1,7 +1,10 @@
-"""Bounded native-backed ValueTable.Sort (Windows 8.3.27.2342, ru_RU).
+"""Bounded native-backed ValueTable.Sort with explicit empirical targets.
 
-The 24 owner observations establish stable sorting, scalar type order and the
-Array/Structure/Type object family. Other object codes and mixed scalar/object
+The 24 Windows 8.3.27.2342 owner observations establish stable sorting, scalar
+type order and the Array/Structure/Type object family. That remains the default.
+The explicit linux-8.3.27.1508 target uses a deterministic introsort model that
+matches its measured tie orders; see native_target_sort for the evidence limits.
+Other object codes and mixed scalar/object
 order remain deferred. A separately pinned official UCA6 DUCET matches both
 locale checkpoints; this is an empirical fit, not proof of the native algorithm.
 The accepted alphabet remains bounded to ASCII alphanumerics, Russian letters,
@@ -13,6 +16,8 @@ as well as CompareValues instances, remain deferred. Budgets are local limits.
 from decimal import Decimal
 
 from .value_table_collation import caseless_string_key, MAX_STRING_LENGTH
+from .native_targets import LINUX_8_3_27_1508, current_native_target
+from .native_target_sort import introsort
 from .dates import BSLDate
 from .structures import BSLStructure
 from .values import BSLArray, BSLType, NULL
@@ -73,7 +78,7 @@ def _value_key(value, budget):
 
 
 def sort_table(table, columns, comparator=None):
-    """Validate all keys before committing a stable, identity-preserving order."""
+    """Validate every key before committing an identity-preserving target order."""
     columns = _text(columns)
     if len(columns) > _MAX_SORT_TEXT:
         raise ValueError("Сортировка: превышен предел списка колонок Yadinassi")
@@ -117,6 +122,18 @@ def sort_table(table, columns, comparator=None):
             column_keys[row] = key
         keys.append((column_keys, descending))
     rows = list(table.rows)
-    for column_keys, descending in reversed(keys):
-        rows.sort(key=column_keys.__getitem__, reverse=descending)
+    if current_native_target() == LINUX_8_3_27_1508:
+        # One complete comparator is essential: unstable independent column
+        # passes would lose the explicitly requested secondary-key order.
+        def less(left, right):
+            for column_keys, descending in keys:
+                a, b = column_keys[left], column_keys[right]
+                if a != b:
+                    return a > b if descending else a < b
+            return False
+
+        introsort(rows, less)
+    else:
+        for column_keys, descending in reversed(keys):
+            rows.sort(key=column_keys.__getitem__, reverse=descending)
     table.rows[:] = rows

@@ -306,7 +306,8 @@ class ComparisonTests(SyntheticFilesystemCase):
     def test_fresh_real_source_path_complete_bytes_and_no_normalization(self):
         calls = []
         def runner(args, cwd):
-            calls.append(args[-1])
+            calls.append(args[-2])
+            self.assertEqual(args[-1], full.WINDOWS_TARGET)
             self.assertIn("-I", args)
             self.assertIn("-B", args)
             self.assertTrue(any(value.startswith("pycache_prefix=") for value in args))
@@ -381,7 +382,7 @@ class ChildTests(unittest.TestCase):
             package = root / "yadinassi"
             package.mkdir()
             module = package / "__init__.py"
-            template = 'class Interpreter:\n def __init__(self, output): self.output = output\n def execute(self, *args): self.output("%s")\n'
+            template = 'class Interpreter:\n def __init__(self, output, **options): self.output = output\n def execute(self, *args): self.output("%s")\n'
             module.write_text(template % "POISON")
             before = module.stat()
             py_compile.compile(str(module), doraise=True)
@@ -407,7 +408,7 @@ class ChildTests(unittest.TestCase):
             root = Path(temporary).resolve()
             package = root / "yadinassi"
             package.mkdir()
-            (package / "__init__.py").write_text('class Interpreter:\n def __init__(self, output): self.output = output\n def execute(self, *args):\n  import decimal\n  self.output(getattr(decimal, "CHECK", "SOURCE"))\n')
+            (package / "__init__.py").write_text('class Interpreter:\n def __init__(self, output, **options): self.output = output\n def execute(self, *args):\n  import decimal\n  self.output(getattr(decimal, "CHECK", "SOURCE"))\n')
             shadow = root / "shadow-source.py"
             shadow.write_text('CHECK = "POISON"\n')
             py_compile.compile(str(shadow), cfile=str(root / "decimal.pyc"), doraise=True)
@@ -452,11 +453,13 @@ class OrchestrationTests(SyntheticFilesystemCase):
             data["nonce"] = "0" * 32 if bad_nonce else nonce
             data["report"]["stage3"]["nonce"] = nonce
             return exit_code, encode(data)
-        def compare(root, capture, stage3, inputs):
+        real_compare = full.compare_outputs
+        def compare(root, capture, stage3, inputs, **kwargs):
             captured_dirs.append(capture)
             self.assertEqual(operations[-1], "ps")
             self.assertTrue(capture.is_dir())
-            return {"schema":1, "status":"failed" if mismatch else "ok", "cases":[]}
+            return real_compare(root, capture, stage3, inputs,
+                runner=lambda *args: (0, b"different\n" if mismatch else b" PRIVATE synthetic output \n\n", b""), **kwargs)
         with tempfile.TemporaryDirectory() as temporary, mock.patch.dict(os.environ, {"GHCR_USER":"Atridis", "GHCR_TOKEN":"PRIVATE-TOKEN"}), \
                 mock.patch.object(smoke, "run_silent", side_effect=silent), mock.patch.object(smoke, "bounded_run", side_effect=bounded), \
                 mock.patch.object(full, "repository_provenance", return_value={"commit":"c"*40,"tree":"d"*40}), \
@@ -568,6 +571,125 @@ class ProvenanceTests(SyntheticFilesystemCase):
         with mock.patch.object(full.importlib.metadata, "version", return_value="PRIVATE WRONG VERSION"):
             with self.assertRaisesRegex(full.FullError, "^interpreter_dependency_invalid$"):
                 full.interpreter_provenance(smoke.ROOT)
+
+
+class SemanticComparisonTests(ComparisonTests):
+    """Fake verifier verdicts isolate host gates; verifier tests cover real payloads."""
+    def setUp(self):
+        super().setUp()
+        source = smoke.ROOT / "integrational_tests/tests/collections.bsl"
+        (self.root / "integrational_tests/tests/collections.bsl").write_bytes(source.read_bytes())
+        self.inputs["integrational_tests/tests/collections.bsl"] = full.COLLECTIONS_SOURCE_SHA256
+        self.stage3 = fixture(self.payload, input_hashes=self.inputs)[0]["report"]["stage3"]
+        self.context = bootstrap_report()
+        self.context.update(stage3=self.stage3, invocation_nonce=NONCE, container_exit_code=0,
+            image=smoke.IMAGE, platform="linux/amd64", native_target=full.LINUX_TARGET,
+            comparison_mode=full.MAP_MODE, trusted_input_sha256=self.inputs,
+            configured_timezone="Etc/UTC", configured_native_locale="ru_RU",
+            container_cleanup_verified=True, native_cases_completed=True,
+            native_transport_validated=True, native_evidence_accepted=True)
+        self.contract = full.map_contract()
+
+    def verdict(self, *, equal=False):
+        return {"profile":full.MAP_MODE, "status":"equivalent", "records":758,
+                "byte_equal_records":758 if equal else 757,
+                "accepted_labels":[] if equal else [self.contract.ELIGIBLE_LABELS[0]], "reason":"none"}
+
+    def semantic_compare(self, *, verdict=None, equal=False, other_diff=False, context=None):
+        calls = []
+        def runner(args, cwd):
+            self.assertEqual(args[-1], full.LINUX_TARGET)
+            calls.append(Path(args[-2]).stem)
+            different = (calls[-1] == "collections" and not equal) or (calls[-1] == "dates" and other_diff)
+            return 0, self.payload + b"x" if different else self.payload, b""
+        verifier = mock.Mock(return_value=self.verdict(equal=equal) if verdict is None else verdict)
+        self.contract.compare_collections = verifier
+        with mock.patch.object(full, "map_contract", return_value=self.contract):
+            result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
+                runner=runner, native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
+                runtime_evidence=self.context if context is None else context)
+        return result, verifier, calls
+
+    def test_semantic_acceptance_keeps_raw_mismatch_and_explicit_target(self):
+        before = full.read_regular(self.capture / "collections.out", full.MAX_FILE)
+        result, verifier, calls = self.semantic_compare()
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["acceptance_status"], "accepted")
+        case = result["cases"][0]
+        self.assertEqual(case["status"], "mismatched")
+        self.assertIsNotNone(case["mismatch"])
+        self.assertNotEqual(case["native_sha256"], case["interpreter_sha256"])
+        self.assertEqual(case["semantic"], self.verdict())
+        verifier.assert_called_once_with(self.payload, self.payload + b"x", full.COLLECTIONS_SOURCE_SHA256)
+        self.assertEqual(calls, list(full.SCENARIOS))
+        self.assertEqual(full.read_regular(self.capture / "collections.out", full.MAX_FILE), before)
+        self.assertTrue(all(case["semantic"] is None for case in result["cases"][1:]))
+
+    def test_byte_identical_payload_still_requires_full_semantic_validation(self):
+        rejected = {"profile":full.MAP_MODE, "status":"rejected", "records":0,
+                    "byte_equal_records":0, "accepted_labels":[], "reason":"unsupported_payload"}
+        result, verifier, _ = self.semantic_compare(verdict=rejected, equal=True)
+        verifier.assert_called_once()
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["acceptance_status"], "rejected")
+        self.assertEqual(result["cases"][0]["status"], "matched")
+
+    def test_all_other_five_outputs_remain_byte_strict(self):
+        result, _, _ = self.semantic_compare(other_diff=True)
+        self.assertEqual(result["acceptance_status"], "rejected")
+        self.assertEqual(result["cases"][1]["status"], "mismatched")
+        self.assertIsNone(result["cases"][1]["semantic"])
+        self.assertEqual(result["cases"][1]["acceptance_status"], "rejected")
+
+    def test_unknown_options_and_stale_context_cannot_run_verifier(self):
+        for target, mode in ((full.WINDOWS_TARGET,full.MAP_MODE), ("auto",full.BYTE_EXACT),
+                             (full.LINUX_TARGET,"typed-map-order-v2"), (None,full.BYTE_EXACT)):
+            with self.subTest(target=target, mode=mode), self.assertRaises(full.FullError):
+                full.compare_outputs(self.root,self.capture,self.stage3,self.inputs,
+                                     native_target=target, comparison_mode=mode)
+        edits = [lambda r:r.update(configured_timezone="Europe/Warsaw"),
+            lambda r:r.pop("configured_native_locale"), lambda r:r.update(configured_native_locale="en_US"),
+            lambda r:r.update(runtime_version="8.3.27.2342"),
+            lambda r:r.update(runtime_version_source="image_label"), lambda r:r.update(platform="windows/amd64"),
+            lambda r:r.update(image=smoke.IMAGE[:-1]+"0"), lambda r:r.update(native_target=full.WINDOWS_TARGET),
+            lambda r:r.update(comparison_mode=full.BYTE_EXACT), lambda r:r.update(container_exit_code=1),
+            lambda r:r.update(container_cleanup_verified=False), lambda r:r.update(native_transport_validated=False),
+            lambda r:r.update(native_evidence_accepted=False), lambda r:r.update(native_cases_completed=False),
+            lambda r:r.update(invocation_nonce="0"*32), lambda r:r.update(trusted_input_sha256={}),
+            lambda r:r["stage2"].update(actual_version="8.3.27.2342"),
+            lambda r:r["stage2"].update(named_user_verified=False),
+            lambda r:r["stage3"]["cases"][0].update(source_sha256="a"*64),
+            lambda r:r["stage3"]["input_sha256"].update({"integrational_tests/tests/collections.bsl":"a"*64}),
+            lambda r:r["stage3"]["cases"][1].update(output_size=999)]
+        for edit in edits:
+            context = copy.deepcopy(self.context); edit(context)
+            with self.subTest(edit=edit), self.assertRaisesRegex(full.FullError,"^semantic_context_invalid$"):
+                self.semantic_compare(context=context)
+
+    def test_malformed_semantic_claims_fail_closed(self):
+        edits = [lambda v:v.update(extra="PRIVATE"), lambda v:v.pop("profile"),
+            lambda v:v.update(profile="typed-map-order-v2"), lambda v:v.update(status=[]),
+            lambda v:v.update(records=True), lambda v:v.update(records=757),
+            lambda v:v.update(byte_equal_records=758), lambda v:v.update(accepted_labels=[]),
+            lambda v:v.update(accepted_labels=["PRIVATE"]), lambda v:v.update(reason="PRIVATE"),
+            lambda v:v.update(reason=[]), lambda v:v.update(status="rejected", reason="typed_difference")]
+        for edit in edits:
+            verdict=self.verdict(); edit(verdict)
+            with self.subTest(edit=edit), self.assertRaisesRegex(full.FullError,"^semantic_result_invalid$"):
+                self.semantic_compare(verdict=verdict)
+
+    def test_comparison_schema_and_aggregate_claims_cannot_disagree(self):
+        result, _, _ = self.semantic_compare()
+        edits = [lambda r:r.update(extra="PRIVATE"),lambda r:r.update(schema=1),
+            lambda r:r.pop("acceptance_status"),lambda r:r.update(acceptance_status="rejected"),
+            lambda r:r.update(status="ok"),lambda r:r.update(native_target=full.WINDOWS_TARGET),
+            lambda r:r["cases"][0].update(status="matched"),lambda r:r["cases"][0].update(semantic=None),
+            lambda r:r["cases"][0].update(mismatch=None),lambda r:r["cases"][0].update(acceptance_status="rejected"),
+            lambda r:r["cases"][1].update(semantic=self.verdict()),lambda r:r["cases"].pop()]
+        for edit in edits:
+            changed=copy.deepcopy(result);edit(changed)
+            with self.subTest(edit=edit),self.assertRaisesRegex(full.FullError,"^comparison_evidence_invalid$"):
+                full.validate_comparison(changed,self.stage3,full.LINUX_TARGET,full.MAP_MODE)
 
 
 if __name__ == "__main__":

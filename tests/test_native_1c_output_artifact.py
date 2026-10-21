@@ -21,13 +21,20 @@ def accepted_report(*, mismatch=False):
     report.update(invocation_nonce=NONCE, container_exit_code=0,
         repository={"commit":"c"*40, "tree":"d"*40, "github_run_id":"123", "github_run_attempt":"1"},
         interpreter={"python_version":"3.12.10", "dependencies":dict(full.DEPENDENCIES),
-            "source_file_count":33, "source_sha256":"e"*64, "comparison_driver_sha256":"f"*64},
+            "source_file_count":33, "source_sha256":"e"*64, "comparison_driver_sha256":"f"*64, "map_contract_sha256":"1"*64},
         configured_timezone="Etc/UTC", configured_native_locale="ru_RU",
+        native_target=full.WINDOWS_TARGET, comparison_mode=full.BYTE_EXACT,
+        image=smoke.IMAGE, platform="linux/amd64", trusted_input_sha256=inputs,
         container_cleanup_verified=True, native_cases_completed=True,
         native_transport_validated=True, native_evidence_accepted=True,
         private_payloads_removed=True, windows_goldens_unchanged=True,
-        comparison={"schema":1, "status":"failed" if mismatch else "ok", "cases":[
+        comparison={"schema":2, "configured_timezone":"Etc/UTC", "configured_locale":"C.UTF-8",
+            "native_target":full.WINDOWS_TARGET, "comparison_mode":full.BYTE_EXACT,
+            "status":"failed" if mismatch else "ok", "acceptance_status":"rejected" if mismatch else "accepted", "cases":[
             {"name":name, "status":"mismatched" if mismatch and index == 0 else "matched",
+             "failure_kind":"none", "semantic":None,
+             "acceptance_status":"rejected" if mismatch and index == 0 else "accepted",
+             "mismatch":full.mismatch_metadata(PAYLOAD, b"x"*len(PAYLOAD)) if mismatch and index == 0 else None,
              "native_size":len(PAYLOAD), "native_sha256":full.digest(PAYLOAD),
              "interpreter_size":len(PAYLOAD),
              "interpreter_sha256":"0"*64 if mismatch and index == 0 else full.digest(PAYLOAD)}
@@ -88,6 +95,15 @@ class ManifestTests(SyntheticFilesystemCase):
         for edit in edits:
             report = accepted_report(); edit(report)
             with self.subTest(edit=edit), self.assertRaisesRegex(full.FullError, '^native_artifact_evidence_invalid$'): artifact_files(report)
+
+    def test_empty_capture_boolean_sizes_are_not_integer_evidence(self):
+        report=accepted_report()
+        for native,compared in zip(report["stage3"]["cases"],report["comparison"]["cases"]):
+            native.update(output_size=False,output_sha256=full.digest(b""),message_count=0)
+            compared.update(native_size=False,native_sha256=full.digest(b""),
+                            interpreter_size=0,interpreter_sha256=full.digest(b""))
+        with self.assertRaisesRegex(full.FullError,"^native_artifact_evidence_invalid$"):
+            full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1],b""),report,smoke.IMAGE)
 
     def test_capture_rechecks_exact_names_hashes_sizes_and_limits(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -215,7 +231,7 @@ class OrchestrationTests(SyntheticFilesystemCase):
             modules={name:full.digest(full.generated_module((directory/f"scenarios/{name}.bsl").read_bytes())) for name in full.SCENARIOS}
             data=fixture(PAYLOAD,input_hashes=inputs,modules=modules)[0]; data["nonce"]=data["report"]["stage3"]["nonce"]=args[-1]
             return 0,encode(data)
-        def compare(root,capture,stage3,inputs):
+        def compare(root,capture,stage3,inputs,**kwargs):
             self.assertEqual(operations[-1],"ps"); self.assertTrue(capture.is_dir())
             if tamper:
                 path=capture/"collections.out"; path.chmod(0o600); path.write_bytes(b"changed")
@@ -303,6 +319,136 @@ class OrchestrationTests(SyntheticFilesystemCase):
         block=section.split("path: |\n",1)[1].split("          if-no-files-found:",1)[0]
         self.assertEqual([line.strip() for line in block.splitlines()],[full.ARTIFACT_DIRECTORY+"/"+name for name in full.ARTIFACT_FILES])
         self.assertNotIn("*",block)
+
+
+def semantic_report(*, equal=False):
+    report = accepted_report(mismatch=not equal)
+    report.update(native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE)
+    source_key = "integrational_tests/tests/collections.bsl"
+    report["stage3"]["input_sha256"][source_key] = full.COLLECTIONS_SOURCE_SHA256
+    report["stage3"]["cases"][0]["source_sha256"] = full.COLLECTIONS_SOURCE_SHA256
+    report["trusted_input_sha256"] = dict(report["stage3"]["input_sha256"])
+    comparison = report["comparison"]
+    comparison.update(native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
+                      acceptance_status="accepted")
+    comparison["cases"][0].update(acceptance_status="accepted", semantic={
+        "status":"equivalent", "profile":full.MAP_MODE, "records":758,
+        "byte_equal_records":758 if equal else 757,
+        "accepted_labels":[] if equal else [full.map_contract().ELIGIBLE_LABELS[0]], "reason":"none"})
+    return report
+
+
+class SemanticManifestTests(SyntheticFilesystemCase):
+    def test_typed_manifest_records_acceptance_without_relabeling_raw_difference(self):
+        report=semantic_report()
+        files=artifact_files(report)
+        manifest=json.loads(files["provenance.json"])
+        self.assertEqual(tuple(files),full.ARTIFACT_FILES)
+        self.assertEqual(manifest["schema"],"native-1c-outputs-v2")
+        self.assertEqual(manifest["native_target"],full.LINUX_TARGET)
+        self.assertEqual(manifest["comparison_mode"],full.MAP_MODE)
+        self.assertEqual(manifest["acceptance_status"],"accepted")
+        self.assertEqual(manifest["comparison_status"],"failed")
+        self.assertEqual(manifest["cases"][0]["comparison_status"],"mismatched")
+        self.assertEqual(manifest["cases"][0]["mismatch"],report["comparison"]["cases"][0]["mismatch"])
+        self.assertEqual(manifest["interpreter"]["map_contract_sha256"],report["interpreter"]["map_contract_sha256"])
+        self.assertEqual(files["collections.out"],PAYLOAD)
+        self.assertTrue(all(case["semantic"] is None for case in manifest["cases"][1:]))
+
+    def test_manifest_rejects_missing_inconsistent_stale_and_unbounded_claims(self):
+        edits=[lambda r:r.pop("comparison_mode"),lambda r:r.update(native_target=full.WINDOWS_TARGET),
+            lambda r:r.update(comparison_mode="typed-map-order-v2"),lambda r:r.update(platform="linux/arm64"),
+            lambda r:r.update(image=smoke.IMAGE[:-1]+"0"),lambda r:r.update(runtime_version="8.3.27.2342"),
+            lambda r:r["stage2"].update(actual_version="8.3.27.2342"),
+            lambda r:r["interpreter"].pop("map_contract_sha256"),lambda r:r["interpreter"].update(map_contract_sha256="PRIVATE"),
+            lambda r:r["comparison"].pop("acceptance_status"),lambda r:r["comparison"].update(acceptance_status="rejected"),
+            lambda r:r["comparison"]["cases"][0].pop("semantic"),lambda r:r["comparison"]["cases"][0].update(semantic=None),
+            lambda r:r["comparison"]["cases"][0]["semantic"].update(records=757),
+            lambda r:r["comparison"]["cases"][0]["semantic"].update(accepted_labels=["PRIVATE"]),
+            lambda r:r["comparison"]["cases"][0]["semantic"].update(extra="PRIVATE"),
+            lambda r:r["comparison"]["cases"][1].update(semantic=r["comparison"]["cases"][0]["semantic"]),
+            lambda r:r["comparison"]["cases"][0].update(mismatch=None),
+            lambda r:r["stage3"]["input_sha256"].update({"integrational_tests/tests/collections.bsl":"a"*64}),
+            lambda r:r.update(container_cleanup_verified=False),lambda r:r.update(private_payloads_removed=False),
+            lambda r:r.update(native_transport_validated=False)]
+        for edit in edits:
+            report=semantic_report();edit(report)
+            with self.subTest(edit=edit),self.assertRaisesRegex(full.FullError,"^native_artifact_evidence_invalid$"):
+                artifact_files(report)
+
+    def test_typed_main_success_reports_raw_mismatch_and_separate_acceptance(self):
+        report=semantic_report()
+        with tempfile.TemporaryDirectory() as temporary:
+            output=Path(temporary)/"report.json"
+            with mock.patch.object(smoke,"run_smoke",return_value=report),contextlib.redirect_stdout(io.StringIO()):
+                code=smoke.main(["--execute-approved-image","--full-suite","--native-target",full.LINUX_TARGET,
+                                 "--comparison-mode",full.MAP_MODE,"--output",str(output)])
+            public=json.loads(output.read_text())
+        self.assertEqual(code,0)
+        self.assertTrue(public["smoke_completed"])
+        self.assertTrue(public["interpreter_acceptance_completed"])
+        self.assertFalse(public["interpreter_comparison_completed"])
+        self.assertEqual(public["probe"]["comparison"]["status"],"failed")
+
+    def test_main_rejects_unvalidated_or_cleanup_failed_semantic_acceptance(self):
+        for mutate in (lambda r:r["comparison"]["cases"][0].update(semantic=None),
+                       lambda r:r.update(container_cleanup_verified=False),
+                       lambda r:r.update(private_payloads_removed=False),
+                       lambda r:r["comparison"].update(comparison_mode=full.BYTE_EXACT)):
+            report=semantic_report();mutate(report)
+            with tempfile.TemporaryDirectory() as temporary:
+                output=Path(temporary)/"report.json"
+                with mock.patch.object(smoke,"run_smoke",return_value=report),contextlib.redirect_stdout(io.StringIO()):
+                    code=smoke.main(["--execute-approved-image","--full-suite","--native-target",full.LINUX_TARGET,
+                                    "--comparison-mode",full.MAP_MODE,"--output",str(output)])
+                public=json.loads(output.read_text())
+            self.assertEqual(code,1)
+            self.assertFalse(public["smoke_completed"])
+            self.assertFalse(public["interpreter_acceptance_completed"])
+
+    def test_main_requires_exact_postcleanup_booleans_not_truthy_values(self):
+        for key in ("private_payloads_removed","windows_goldens_unchanged"):
+            for value in (1,"false",None):
+                report=semantic_report();report[key]=value
+                with tempfile.TemporaryDirectory() as temporary:
+                    output=Path(temporary)/"report.json"
+                    with mock.patch.object(smoke,"run_smoke",return_value=report),contextlib.redirect_stdout(io.StringIO()):
+                        code=smoke.main(["--execute-approved-image","--full-suite","--native-target",full.LINUX_TARGET,
+                            "--comparison-mode",full.MAP_MODE,"--output",str(output)])
+                    public=json.loads(output.read_text())
+                with self.subTest(key=key,value=value):
+                    self.assertEqual(code,1)
+                    self.assertFalse(public["smoke_completed"])
+                    self.assertFalse(public["interpreter_acceptance_completed"])
+
+    def test_invalid_semantic_claim_cannot_keep_artifact_ready_signal(self):
+        for mutate in (lambda r:r["comparison"]["cases"][0].update(semantic=None),
+                       lambda r:r.update(private_payloads_removed=False)):
+            report=semantic_report();report["native_output_artifact_ready"]=True;mutate(report)
+            with tempfile.TemporaryDirectory() as temporary:
+                output=Path(temporary)/"report.json";ready=Path(temporary)/"ready"
+                with mock.patch.object(smoke,"run_smoke",return_value=report), \
+                        mock.patch.object(full,"verify_output_artifact") as verify, \
+                        mock.patch.dict(os.environ,{"GITHUB_OUTPUT":str(ready)}),contextlib.redirect_stdout(io.StringIO()):
+                    code=smoke.main(["--execute-approved-image","--full-suite","--export-native-outputs",
+                        "--native-target",full.LINUX_TARGET,"--comparison-mode",full.MAP_MODE,"--output",str(output)])
+                self.assertEqual(code,1)
+                self.assertFalse(json.loads(output.read_text())["probe"]["native_output_artifact_ready"])
+                self.assertFalse(ready.exists());verify.assert_not_called()
+
+    def test_cli_defaults_remain_windows_byte_exact_and_invalid_combination_never_runs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(smoke,"run_smoke",return_value=accepted_report()) as run,contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(smoke.main(["--execute-approved-image","--full-suite","--output",str(Path(temporary)/"report.json")]),0)
+            self.assertEqual(run.call_args.kwargs["native_target"],full.WINDOWS_TARGET)
+            self.assertEqual(run.call_args.kwargs["comparison_mode"],full.BYTE_EXACT)
+        for args in (["--full-suite","--comparison-mode",full.MAP_MODE],
+                     ["--native-target",full.LINUX_TARGET],
+                     ["--full-suite","--native-target","auto"],
+                     ["--full-suite","--comparison-mode","typed-map-order-v2"]):
+            with mock.patch.object(smoke,"run_smoke") as run,contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):
+                smoke.main(["--execute-approved-image",*args])
+            run.assert_not_called()
 
 
 if __name__ == "__main__": unittest.main()

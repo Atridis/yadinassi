@@ -10,6 +10,7 @@ on:
       - .github/workflows/native-1c-isolated-smoke.yml
       - scripts/native_1c_smoke.py
       - scripts/native_1c_full_host.py
+      - scripts/native_1c_map_contract.py
       - integrational_tests/tests/collections.bsl
       - integrational_tests/tests/dates.bsl
       - integrational_tests/tests/functions.bsl
@@ -56,7 +57,7 @@ jobs:
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json --export-native-outputs
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1
       - name: Upload only validated finite comparison report
         if: always()
         uses: actions/upload-artifact@v7

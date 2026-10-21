@@ -9,6 +9,7 @@ import base64
 import binascii
 import hashlib
 import importlib.metadata
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,12 @@ MAX_REPORT = 32_768
 MAX_STDERR = 65_536
 ARTIFACT_DIRECTORY = "native-smoke/native-outputs"
 ARTIFACT_FILES = tuple(name + ".out" for name in SCENARIOS) + ("provenance.json",)
+WINDOWS_TARGET = "windows-8.3.27.2342"
+LINUX_TARGET = "linux-8.3.27.1508"
+BYTE_EXACT = "byte_exact"
+MAP_MODE = "typed-map-order-v1"
+APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
+COLLECTIONS_SOURCE_SHA256 = "70dfefabf9466e1d8d3e00e844f931a7b8f005ed110d74049e07fbfed8fbbc72"
 CASE_SECONDS = 10
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
 FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
@@ -57,7 +64,8 @@ def emit(message):
     sys.stdout.buffer.write((message + "\n").encode("utf-8"))
 
 source = Path(sys.argv[2])
-Interpreter(output=emit).execute(source.read_text(encoding="utf-8-sig"), str(source))
+options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
+Interpreter(output=emit, **options).execute(source.read_text(encoding="utf-8-sig"), str(source))
 '''
 
 
@@ -374,7 +382,146 @@ def mismatch_metadata(expected: bytes, actual: bytes) -> dict:
             "native_line_count": expected.count(b"\n"), "interpreter_line_count": actual.count(b"\n")}
 
 
-def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict, *, runner=bounded_child) -> dict:
+def validate_comparison_options(native_target: str, comparison_mode: str) -> None:
+    if (type(native_target) is not str or native_target not in {WINDOWS_TARGET, LINUX_TARGET}
+            or type(comparison_mode) is not str or comparison_mode not in {BYTE_EXACT, MAP_MODE}
+            or (comparison_mode == MAP_MODE and native_target != LINUX_TARGET)):
+        raise FullError("comparison_configuration_invalid")
+
+
+def validate_semantic_context(report: dict, image: str) -> None:
+    """Only this measured native checkpoint may use the reviewed semantic contract."""
+    try:
+        stage2, stage3 = report["stage2"], report["stage3"]
+        if (image != APPROVED_IMAGE or report["image"] != image or report["platform"] != "linux/amd64"
+                or report["native_target"] != LINUX_TARGET or report["comparison_mode"] != MAP_MODE
+                or report["configured_timezone"] != "Etc/UTC" or report["configured_native_locale"] != "ru_RU"
+                or report["status"] != "ok" or report["container_exit_code"] != 0
+                or report["runtime_version"] != "8.3.27.1508"
+                or report["runtime_version_source"] != "SystemInfo.AppVersion"
+                or stage2["status"] != "ok" or stage2["actual_version"] != "8.3.27.1508"
+                or stage2["version_source"] != "SystemInfo.AppVersion"
+                or stage2["named_user_verified"] is not True
+                or stage3["status"] != "ok" or stage3["nonce"] != report["invocation_nonce"]
+                or not re.fullmatch(r"[0-9a-f]{32}", report["invocation_nonce"])
+                or stage3["input_sha256"]["integrational_tests/tests/collections.bsl"] != COLLECTIONS_SOURCE_SHA256
+                or stage3["cases"][0]["source_sha256"] != COLLECTIONS_SOURCE_SHA256
+                or report["trusted_input_sha256"] != stage3["input_sha256"]
+                or any(report[key] is not True for key in ("container_cleanup_verified",
+                    "native_cases_completed", "native_transport_validated", "native_evidence_accepted"))):
+            raise ValueError("semantic context")
+    except (KeyError, TypeError, ValueError, IndexError):
+        raise FullError("semantic_context_invalid") from None
+
+
+def map_contract():
+    # Compile the checked helper source directly, ignoring any repository bytecode.
+    path = Path(__file__).with_name("native_1c_map_contract.py")
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_1c_map_contract", path))
+    exec(compile(read_regular(path, 4 * MAX_FILE, nonempty=True), str(path), "exec"), module.__dict__)
+    return module
+
+
+def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
+    contract = map_contract()
+    if type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}:
+        raise FullError("semantic_result_invalid")
+    if (type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}
+            or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != MAP_MODE
+            or type(result["reason"]) is not str or result["reason"] not in contract.REASONS
+            or not is_int(result["records"], 758) or not is_int(result["byte_equal_records"], result["records"])
+            or type(result["accepted_labels"]) is not list
+            or any(type(label) is not str or label not in contract.ELIGIBLE_LABELS for label in result["accepted_labels"])
+            or len(set(result["accepted_labels"])) != len(result["accepted_labels"])):
+        raise FullError("semantic_result_invalid")
+    if result["status"] == "equivalent":
+        if (result["reason"] != "none" or result["records"] != 758
+                or result["byte_equal_records"] + len(result["accepted_labels"]) != 758
+                or raw_matched != (result["byte_equal_records"] == 758)):
+            raise FullError("semantic_result_invalid")
+    elif (result["reason"] == "none" or result["records"] != 0
+            or result["byte_equal_records"] != 0 or result["accepted_labels"]):
+        raise FullError("semantic_result_invalid")
+    if result["accepted_labels"] != [label for label in contract.ELIGIBLE_LABELS if label in result["accepted_labels"]]:
+        raise FullError("semantic_result_invalid")
+
+
+def validate_comparison(comparison: dict, stage3: dict, native_target: str, comparison_mode: str) -> None:
+    """Validate both raw evidence and separately named acceptance, never conflate them."""
+    validate_comparison_options(native_target, comparison_mode)
+    try:
+        if (type(comparison) is not dict or set(comparison) != {"schema", "configured_timezone", "configured_locale",
+                "native_target", "comparison_mode", "status", "acceptance_status", "cases"}
+                or type(comparison["schema"]) is not int or comparison["schema"] != 2
+                or comparison["configured_timezone"] != "Etc/UTC" or comparison["configured_locale"] != "C.UTF-8"
+                or comparison["native_target"] != native_target or comparison["comparison_mode"] != comparison_mode
+                or comparison["status"] not in {"ok", "failed"}
+                or comparison["acceptance_status"] not in {"accepted", "rejected"}
+                or type(comparison["cases"]) is not list or len(comparison["cases"]) != len(SCENARIOS)
+                or type(stage3["cases"]) is not list or len(stage3["cases"]) != len(SCENARIOS)):
+            raise ValueError("comparison")
+        for name, native, case in zip(SCENARIOS, stage3["cases"], comparison["cases"]):
+            if (type(case) is not dict or set(case) != {"name", "status", "failure_kind", "native_size", "native_sha256",
+                    "interpreter_size", "interpreter_sha256", "mismatch", "acceptance_status", "semantic"}
+                    or case["name"] != name or native["name"] != name
+                    or not is_int(case["native_size"], MAX_FILE) or not is_int(native["output_size"], MAX_FILE)
+                    or not is_digest(case["native_sha256"]) or not is_digest(native["output_sha256"])
+                    or case["native_size"] != native["output_size"] or case["native_sha256"] != native["output_sha256"]
+                    or case["status"] not in {"matched", "mismatched", "error", "timeout"}
+                    or case["acceptance_status"] not in {"accepted", "rejected"}):
+                raise ValueError("case")
+            if case["status"] in {"error", "timeout"}:
+                if (case["acceptance_status"] != "rejected" or case["semantic"] is not None
+                        or case["mismatch"] is not None or case["interpreter_size"] is not None
+                        or case["interpreter_sha256"] is not None
+                        or case["failure_kind"] not in {"source_changed", "native_capture_changed", "invalid_private_file",
+                            "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed"}
+                        or (case["status"] == "timeout") != (case["failure_kind"] == "interpreter_timeout")):
+                    raise ValueError("failure")
+                continue
+            matched = case["status"] == "matched"
+            if (case["failure_kind"] != "none" or not is_digest(case["interpreter_sha256"])
+                    or not is_int(case["interpreter_size"], MAX_FILE)
+                    or matched != (case["interpreter_sha256"] == case["native_sha256"] and case["interpreter_size"] == case["native_size"])):
+                raise ValueError("raw")
+            if matched:
+                if case["mismatch"] is not None:
+                    raise ValueError("mismatch")
+            else:
+                mismatch = case["mismatch"]
+                if (type(mismatch) is not dict or set(mismatch) != {"different_byte_positions", "first_mismatch_byte",
+                        "first_mismatch_native_line", "native_line_count", "interpreter_line_count"}
+                        or any(not is_int(value, MAX_FILE + 1) for value in mismatch.values())
+                        or not 1 <= mismatch["different_byte_positions"] <= max(case["native_size"], case["interpreter_size"])
+                        or mismatch["first_mismatch_byte"] > min(case["native_size"], case["interpreter_size"])
+                        or not 1 <= mismatch["first_mismatch_native_line"] <= mismatch["native_line_count"] + 1):
+                    raise ValueError("mismatch")
+            semantic = case["semantic"]
+            if comparison_mode == MAP_MODE and name == "collections":
+                if native["source_sha256"] != COLLECTIONS_SOURCE_SHA256:
+                    raise ValueError("source")
+                validate_semantic_result(semantic, raw_matched=matched)
+                accepted = semantic["status"] == "equivalent"
+            else:
+                if semantic is not None:
+                    raise ValueError("unexpected semantic")
+                accepted = matched
+            if (case["acceptance_status"] == "accepted") != accepted:
+                raise ValueError("acceptance")
+        if ((comparison["status"] == "ok") != all(case["status"] == "matched" for case in comparison["cases"])
+                or (comparison["acceptance_status"] == "accepted") != all(case["acceptance_status"] == "accepted" for case in comparison["cases"])):
+            raise ValueError("aggregate")
+    except (KeyError, TypeError, ValueError, FullError):
+        raise FullError("comparison_evidence_invalid") from None
+
+
+def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict, *, runner=bounded_child,
+                    native_target=WINDOWS_TARGET, comparison_mode=BYTE_EXACT, runtime_evidence=None) -> dict:
+    validate_comparison_options(native_target, comparison_mode)
+    if comparison_mode == MAP_MODE:
+        validate_semantic_context(runtime_evidence, APPROVED_IMAGE)
+        if runtime_evidence["stage3"] != stage3 or runtime_evidence["trusted_input_sha256"] != input_hashes:
+            raise FullError("semantic_context_invalid")
     if (stage3.get("status") != "ok" or len(stage3.get("cases", [])) != len(SCENARIOS)
             or [case.get("name") for case in stage3["cases"]] != list(SCENARIOS)
             or any(case.get("status") != "ok" for case in stage3["cases"])):
@@ -383,7 +530,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
     for name, case in zip(SCENARIOS, stage3["cases"]):
         record = {"name": name, "status": "error", "failure_kind": "none",
                   "native_size": case["output_size"], "native_sha256": case["output_sha256"],
-                  "interpreter_size": None, "interpreter_sha256": None, "mismatch": None}
+                  "interpreter_size": None, "interpreter_sha256": None, "mismatch": None,
+                  "acceptance_status": "rejected", "semantic": None}
         try:
             source = root / f"integrational_tests/tests/{name}.bsl"
             if digest(read_regular(source, MAX_FILE, nonempty=True)) != input_hashes[f"integrational_tests/tests/{name}.bsl"]:
@@ -395,19 +543,34 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
             # provenance. Use a new empty private cache prefix and never write it.
             with tempfile.TemporaryDirectory(prefix="interpreter-cache-", dir=capture.parent) as cache:
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-                                              "-c", EXECUTE_SCRIPT, str(root), str(source)], root)
+                                              "-c", EXECUTE_SCRIPT, str(root), str(source), native_target], root)
             if code != 0 or stderr:
                 raise FullError("interpreter_failed")
             record.update(interpreter_size=len(actual), interpreter_sha256=digest(actual))
             record["status"] = "matched" if actual == expected else "mismatched"
             if actual != expected:
                 record["mismatch"] = mismatch_metadata(expected, actual)
+            if name == "collections" and comparison_mode == MAP_MODE:
+                result = map_contract().compare_collections(expected, actual, case["source_sha256"])
+                validate_semantic_result(result, raw_matched=actual == expected)
+                record["semantic"] = result
+                accepted = result["status"] == "equivalent"
+            else:
+                accepted = actual == expected
+            record["acceptance_status"] = "accepted" if accepted else "rejected"
         except FullError as error:
+            if str(error) == "semantic_result_invalid":
+                raise
             record["failure_kind"] = str(error)
             record["status"] = "timeout" if str(error) == "interpreter_timeout" else "error"
         records.append(record)
-    return {"schema": 1, "configured_timezone": "Etc/UTC", "configured_locale": "C.UTF-8",
-            "status": "ok" if all(case["status"] == "matched" for case in records) else "failed", "cases": records}
+    result = {"schema": 2, "configured_timezone": "Etc/UTC", "configured_locale": "C.UTF-8",
+              "native_target": native_target, "comparison_mode": comparison_mode,
+              "status": "ok" if all(case["status"] == "matched" for case in records) else "failed",
+              "acceptance_status": "accepted" if all(case["acceptance_status"] == "accepted" for case in records) else "rejected",
+              "cases": records}
+    validate_comparison(result, stage3, native_target, comparison_mode)
+    return result
 
 
 def windows_fingerprints(root: Path) -> dict[str, str]:
@@ -450,7 +613,8 @@ def interpreter_provenance(root: Path) -> dict:
                     if not path.is_dir() and "__pycache__" not in path.parts])
     if any(path.suffix not in {".py", ".txt"} for path in files):
         raise FullError("unexpected_interpreter_source")
-    files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py"]
+    files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
+              root / "scripts/native_1c_map_contract.py"]
     if not files or len(files) > 512:
         raise FullError("interpreter_provenance_invalid")
     hashes = {path.relative_to(root).as_posix(): digest(read_regular(path, 4 * MAX_FILE, nonempty=True)) for path in files}
@@ -466,7 +630,8 @@ def interpreter_provenance(root: Path) -> dict:
     return {"python_version": ".".join(map(str, sys.version_info[:3])),
             "dependencies": dependencies, "source_file_count": len(hashes),
             "source_sha256": digest(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()),
-            "comparison_driver_sha256": hashes["scripts/native_1c_full_host.py"]}
+            "comparison_driver_sha256": hashes["scripts/native_1c_full_host.py"],
+            "map_contract_sha256": hashes["scripts/native_1c_map_contract.py"]}
 
 
 
@@ -517,16 +682,21 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
             raise ValueError("repository")
         interpreter = report["interpreter"]
         if (set(interpreter) != {"python_version", "dependencies", "source_file_count",
-                               "source_sha256", "comparison_driver_sha256"}
+                               "source_sha256", "comparison_driver_sha256", "map_contract_sha256"}
                 or not re.fullmatch(r"[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}", interpreter["python_version"])
                 or interpreter["dependencies"] != DEPENDENCIES
                 or not is_int(interpreter["source_file_count"], 512)
                 or interpreter["source_file_count"] == 0
                 or not is_digest(interpreter["source_sha256"])
-                or not is_digest(interpreter["comparison_driver_sha256"])):
+                or not is_digest(interpreter["comparison_driver_sha256"])
+                or not is_digest(interpreter["map_contract_sha256"])):
             raise ValueError("interpreter")
         stage3 = report["stage3"]
         comparison = report["comparison"]
+        native_target, comparison_mode = report["native_target"], report["comparison_mode"]
+        validate_comparison(comparison, stage3, native_target, comparison_mode)
+        if comparison_mode == MAP_MODE:
+            validate_semantic_context(report, image)
         if (stage3["status"] != "ok" or stage3["nonce"] != report["invocation_nonce"]
                 or [case["name"] for case in stage3["cases"]] != list(SCENARIOS)
                 or [case["name"] for case in comparison["cases"]] != list(SCENARIOS)
@@ -553,20 +723,25 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
                               "output_sha256", "output_size", "message_count")},
                           "comparison_status": compared["status"],
                           "interpreter_sha256": compared["interpreter_sha256"],
-                          "interpreter_size": compared["interpreter_size"]})
+                          "interpreter_size": compared["interpreter_size"],
+                          "mismatch": compared["mismatch"],
+                          "acceptance_status": compared["acceptance_status"],
+                          "semantic": compared["semantic"]})
         if (comparison["status"] == "ok") != all(case["comparison_status"] == "matched" for case in cases):
             raise ValueError("comparison")
-        metadata = {"schema": "native-1c-outputs-v1", "image": image, "platform": "linux/amd64",
+        metadata = {"schema": "native-1c-outputs-v2", "image": image, "platform": "linux/amd64",
                     "runtime_version": report["runtime_version"], "runtime_version_source": "SystemInfo.AppVersion",
                     "invocation_nonce": report["invocation_nonce"], "repository": repository,
                     "interpreter": interpreter, "configured_timezone": "Etc/UTC", "configured_native_locale": "ru_RU",
                     "container_cleanup_verified": True, "private_payloads_removed": True,
-                    "windows_goldens_unchanged": True, "comparison_status": comparison["status"], "cases": cases}
+                    "windows_goldens_unchanged": True, "comparison_status": comparison["status"],
+                    "native_target": native_target, "comparison_mode": comparison_mode,
+                    "acceptance_status": comparison["acceptance_status"], "cases": cases}
         raw = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
         if len(raw) > MAX_REPORT:
             raise ValueError("limit")
         return {**payloads, "provenance.json": raw}
-    except (KeyError, TypeError, ValueError, UnicodeError):
+    except (KeyError, TypeError, ValueError, UnicodeError, FullError):
         raise FullError("native_artifact_evidence_invalid") from None
 
 

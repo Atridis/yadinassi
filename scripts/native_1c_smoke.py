@@ -380,9 +380,13 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
 
 
 def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
-              export_native_outputs: bool = False) -> dict[str, object]:
+              export_native_outputs: bool = False, native_target: str = FULL.WINDOWS_TARGET,
+              comparison_mode: str = FULL.BYTE_EXACT) -> dict[str, object]:
     if export_native_outputs and not full_suite:
         raise SmokeError("native_artifact_requires_full_suite")
+    FULL.validate_comparison_options(native_target, comparison_mode)
+    if not full_suite and (native_target != FULL.WINDOWS_TARGET or comparison_mode != FULL.BYTE_EXACT):
+        raise SmokeError("comparison_requires_full_suite")
     retained_outputs = None
     bootstrap = bootstrap or full_suite
     # Remove the secret from the process environment before any external command.
@@ -458,13 +462,16 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                     cleanup_error = "container_cleanup_unverified"
             if full_suite and report is not None:
                 report.update(invocation_nonce=nonce, repository=provenance, interpreter=interpreter,
+                              image=IMAGE, platform="linux/amd64",
+                              native_target=native_target, comparison_mode=comparison_mode,
                               configured_timezone="Etc/UTC", configured_native_locale="ru_RU",
                               container_cleanup_verified=cleanup_error is None,
                               native_cases_completed=all(case["status"] == "ok" for case in report["stage3"]["cases"]),
                               native_transport_validated=bool(payloads) and primary_error is None,
                               native_evidence_accepted=False,
                               private_payloads_removed=False,
-                              comparison={"schema": 1, "status": "not_run", "cases": []})
+                              comparison={"schema": 2, "status": "not_run", "acceptance_status": "not_run",
+                                          "native_target": native_target, "comparison_mode": comparison_mode, "cases": []})
             if primary_error or cleanup_error:
                 payloads.clear()
                 raise SmokeError(primary_error or cleanup_error, security_uncertain=bootstrap,
@@ -476,7 +483,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                         capture = FULL.quarantine_outputs(work, payloads)
                         report["native_evidence_accepted"] = True
                         payloads.clear()
-                        report["comparison"] = FULL.compare_outputs(ROOT, capture, report["stage3"], input_hashes)
+                        report["comparison"] = FULL.compare_outputs(ROOT, capture, report["stage3"], input_hashes,
+                            native_target=native_target, comparison_mode=comparison_mode, runtime_evidence=report)
                     report["windows_goldens_unchanged"] = FULL.windows_fingerprints(ROOT) == baseline
                     if not report["windows_goldens_unchanged"]:
                         raise FULL.FullError("windows_goldens_changed")
@@ -535,17 +543,28 @@ def main(argv: list[str] | None = None) -> int:
                         help="Run six approved native scenarios and compare privately on the host under UTC")
     parser.add_argument("--export-native-outputs", action="store_true",
                         help="Explicitly retain six genuine outputs plus provenance at native-smoke/native-outputs")
+    parser.add_argument("--native-target", choices=(FULL.WINDOWS_TARGET, FULL.LINUX_TARGET),
+                        default=FULL.WINDOWS_TARGET, help="Explicit host interpreter native checkpoint, never auto-detected")
+    parser.add_argument("--comparison-mode", choices=(FULL.BYTE_EXACT, FULL.MAP_MODE),
+                        default=FULL.BYTE_EXACT, help="Raw-byte comparison or the reviewed, source-bound typed Map contract")
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
     if args.export_native_outputs and not args.full_suite:
         parser.error("--export-native-outputs requires --full-suite")
+    try:
+        FULL.validate_comparison_options(args.native_target, args.comparison_mode)
+    except FULL.FullError:
+        parser.error("typed-map-order-v1 requires --native-target linux-8.3.27.1508")
+    if not args.full_suite and (args.native_target != FULL.WINDOWS_TARGET or args.comparison_mode != FULL.BYTE_EXACT):
+        parser.error("comparison options require --full-suite")
     report: dict[str, object] = {
         "schema": 1, "image": IMAGE, "platform": "linux/amd64", "purpose": "empty-infobase-capability-smoke",
         "runtime_version_verified": False, "native_tests_completed": False,
         "security_settings_changed": False, "windows_goldens_modified": False,
     }
+    artifact_evidence_validated = False
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs)
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode)
         if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")
@@ -555,13 +574,23 @@ def main(argv: list[str] | None = None) -> int:
             report["security_settings_changed"] = report["probe"].get("security_settings_changed", False)
         success = report["probe"]["status"] == "ok"
         if args.full_suite:
+            probe = report["probe"]
+            if probe["native_target"] != args.native_target or probe["comparison_mode"] != args.comparison_mode:
+                raise FULL.FullError("comparison_configuration_invalid")
+            if probe["comparison"]["status"] != "not_run":
+                FULL.validate_comparison(probe["comparison"], probe["stage3"], args.native_target, args.comparison_mode)
+                if args.comparison_mode == FULL.MAP_MODE:
+                    FULL.validate_semantic_context(probe, IMAGE)
+                artifact_evidence_validated = bool(probe["status"] == "ok" and all(
+                    probe.get(key) is True for key in ("native_evidence_accepted", "native_transport_validated",
+                        "native_cases_completed", "container_cleanup_verified", "private_payloads_removed",
+                        "windows_goldens_unchanged")))
             report["purpose"] = "isolated-six-scenario-utc-comparison"
             report["native_tests_completed"] = report["probe"].get("native_tests_completed", False)
             report["interpreter_comparison_completed"] = report["probe"]["comparison"]["status"] == "ok"
-            success = bool(success and report["interpreter_comparison_completed"]
-                           and report["probe"]["container_cleanup_verified"]
-                           and report["probe"]["private_payloads_removed"]
-                           and report["probe"]["windows_goldens_unchanged"])
+            report["interpreter_acceptance_completed"] = report["probe"]["comparison"].get("acceptance_status") == "accepted"
+            success = bool(success and report["interpreter_acceptance_completed"]
+                           and artifact_evidence_validated)
     except (SmokeError, FULL.FullError) as error:
         report["error"] = str(error)
         if getattr(error, "validated_report", None) is not None:
@@ -587,10 +616,15 @@ def main(argv: list[str] | None = None) -> int:
         report["windows_goldens_modified"] = (not probe["windows_goldens_unchanged"]
             if type(probe.get("windows_goldens_unchanged")) is bool else None)
         report["interpreter_comparison_completed"] = probe.get("comparison", {}).get("status") == "ok"
+        report["native_target"] = args.native_target
+        report["comparison_mode"] = args.comparison_mode
+        report["interpreter_acceptance_completed"] = bool(success and probe.get("comparison", {}).get("acceptance_status") == "accepted")
         if stage2:
             report["runtime_version_verified"] = bool(stage2["named_user_verified"] and stage2["actual_version"] == EXPECTED_VERSION)
             report["simple_epf_completed"] = stage2["simple_epf_passed"]
             report["security_settings_changed"] = probe["security_settings_changed"]
+    if args.full_suite and report.get("probe", {}).get("native_output_artifact_ready") is True and not artifact_evidence_validated:
+        report["probe"]["native_output_artifact_ready"] = False
     report["smoke_completed"] = success
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -613,8 +647,9 @@ def main(argv: list[str] | None = None) -> int:
             args.output.write_text(rendered, encoding="utf-8")
     print(rendered, end="")
     if args.export_native_outputs and report_within_limit and report.get("probe", {}).get("native_output_artifact_ready") is True:
-        # A mismatched comparison still exits 1, but the separately approved
-        # complete diagnostic artifact is eligible for upload. No stale-path test.
+        # Raw mismatches remain visible; only the explicit typed contract can
+        # accept eligible Map-order differences. Complete diagnostic captures
+        # may still export on rejection. No stale-path test.
         output_file = os.environ.get("GITHUB_OUTPUT")
         if output_file:
             with open(output_file, "a", encoding="utf-8") as stream:

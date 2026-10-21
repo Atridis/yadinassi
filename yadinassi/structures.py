@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from .native_targets import LINUX_8_3_27_1508, current_native_target
 from .strings import trim_all
 from .values import BSLFixedCollection, BSLObject, HostFunction, Reference
 
@@ -178,17 +179,20 @@ def fill_property_values(target: object, source: object,
         # Native 1C accepts this target without changing its immutable values.
         return
 
-    def selected_names(value: str):
-        for name in value.split(","):
+    def selected_names(value: str, *, reverse: bool = False):
+        names = value.split(",")
+        for name in reversed(names) if reverse else names:
             # Empty tokens and whitespace normalization need native evidence.
             if not name or name != trim_all(name):
                 raise ValueError("Пустые имена или пробелы в списках свойств пока не поддерживаются")
             yield name, _key(name)
 
     if properties is not None:
-        # Resolve and copy each name in sequence, not in a validation pass:
-        # native 1C keeps earlier assignments when a later property is missing.
-        for name, key in selected_names(properties):
+        # Resolve and copy lazily, not in a validation pass: assignments survive
+        # a later missing property. Linux 8.3.27.1508 probes traverse INCLUDE
+        # right to left; the historical Windows checkpoint stays left to right.
+        reverse = current_native_target() == LINUX_8_3_27_1508
+        for name, key in selected_names(properties, reverse=reverse):
             if key not in target._items or key not in source._items:
                 raise ValueError(f"Свойство структуры не найдено: {name}")
             target._items[key] = target._items[key][0], source._items[key][1]
