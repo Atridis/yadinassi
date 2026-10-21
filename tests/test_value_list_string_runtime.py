@@ -1,10 +1,15 @@
 """Item/list string and lazy-cache observations from owner 87723a25/4a3f55f8.
 
+The final five cases were measured on Linux 8.3.27.1508, not Windows
+8.3.27.2342. Applying their cache mechanism to the shared runtime is an
+inference; the earlier Windows observations remain independently replayed.
+
 Native records are read, never generated or replaced. Resource and host-boundary
 tests describe Yadinassi limits, not additional native 1C observations.
 """
 
 from decimal import Decimal as D
+import hashlib
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -19,6 +24,52 @@ from yadinassi.values import BSLArray, NULL, to_string
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "integrational_tests/tests/collections.bsl"
 OUTPUT = ROOT / "integrational_tests/output/collections.out"
+
+# Genuine Docker evidence, not expectations synthesized from this interpreter.
+# https://github.com/Atridis/yadinassi/actions/runs/39591770740
+# Synthetic merge 5f2add07d8fe47b1ad75eb56cb493d3a8f9cce39, tree
+# 2429435d2fdc3ccc0082882a4d3359e6092abe54, PR head
+# 49243b22b54c53a15f8bc7be0b80dc6ef3dc0a57.
+# Complete collections.out SHA256:
+# e0b9443ec4dddbe1e91956232435a02f4cd8d3ec69b3593e479eae1848d357bb
+FINAL_LINUX_SOURCE_SHA256 = (
+    "908ccf338cff45f07182fbfa376e2d5045d3ed9248b0f216f6ac09cb97faf0e6")
+
+
+def final_linux_observations():
+    """Literal fields/texts from the five recorded cases, with repeated shapes."""
+    def snapshot(value, presentation, *, separated=False):
+        rows = [[value, presentation, False, D(0)]]
+        if separated:
+            rows.append(["", "", False, D(1)])
+        return {"Count": D(len(rows)), "Items": rows}
+
+    empty = {}
+    for name, text in (("Value", ""), ("Cleared", ""), ("Separated", "; ")):
+        separated = name == "Separated"
+        empty[name] = {
+            "Prepare": "ok", "Before": snapshot("", "", separated=separated),
+            "Warm": {"Status": "ok", "Text": text}, "ValueStatus": "ok",
+            "ValueState": snapshot("A", "", separated=separated),
+            "ValueText": {"Status": "ok", "Text": text},
+            "PresentationStatus": "ok",
+            "PresentationState": snapshot("A", "B", separated=separated),
+            "PresentationText": {"Status": "ok", "Text": text},
+            "ItemAfter": {"Status": "ok", "Text": "B"},
+        }
+    sorts = {}
+    for name in ("Value", "Presentation"):
+        sorts[name] = {
+            "Prepare": "ok", "Initial": snapshot(D(7), "start"),
+            "Warm": {"Status": "ok", "Text": "start"},
+            "PendingStatus": "ok", "Before": snapshot(D(7), "pending"),
+            "Status": "ok", "AfterAction": snapshot(D(7), "pending"),
+            "BetweenStatus": "ok", "Between": snapshot(D(7), "between"),
+            "First": {"Status": "ok", "Text": "start"},
+            "AfterStatus": "ok", "After": snapshot(D(7), "after"),
+            "Second": {"Status": "ok", "Text": "start"},
+        }
+    return {"empty-result": empty, "short-sorts": sorts}
 
 
 def plain(value):
@@ -187,6 +238,28 @@ class NativeValueListStringRuntimeTests(unittest.TestCase):
         self.assert_text(copied, record["Second"])
 
 
+class LinuxFinalValueListStringTests(unittest.TestCase):
+    def test_final_source_groups_match_recorded_linux_fields_and_texts(self):
+        source_bytes = SOURCE.read_bytes().replace(b"\r\n", b"\n")
+        self.assertEqual(hashlib.sha256(source_bytes).hexdigest(),
+                         FINAL_LINUX_SOURCE_SHA256)
+        source = source_bytes.decode("utf-8-sig")
+        output = []
+        vm = Interpreter(output.append, native_target="linux-8.3.27.1508")
+        vm.execute(source.split("#Область МассивыИСтруктуры", 1)[0])
+        start = "// Начало заключительных наблюдений пустой строки кэша списка.\n"
+        end = "// Конец заключительных наблюдений пустой строки кэша списка.\n"
+        vm.execute(source.split(start, 1)[1].split(end, 1)[0])
+        self.assertEqual(len(output), 3)
+        self.assertEqual(output[-1], "table.list.string-cache.final.complete: [ok]")
+        text = "\n".join(output) + "\n"
+        for group, expected in final_linux_observations().items():
+            with self.subTest(group=group):
+                actual = plain(read_observation(extract_payload(
+                    text, "table.list.string-cache." + group), compact=True))
+                self.assertEqual(actual, expected)
+
+
 class ValueListStringBoundaryTests(unittest.TestCase):
     def test_actual_join_budget_includes_fallbacks_and_exact_separators(self):
         cases = (
@@ -328,36 +401,108 @@ class ValueListStringBoundaryTests(unittest.TestCase):
         self.assertEqual(owner.count(), D(1))
         self.assertEqual(item.get_id(), D(0))
 
-    def test_pending_empty_result_discriminator_is_explicitly_guarded(self):
+    def test_empty_results_remain_cached_until_structural_change(self):
+        for name, expected in (("Value", ""), ("Cleared", ""), ("Separated", "; ")):
+            with self.subTest(name=name):
+                owner = BSLValueList()
+                item = owner.add("", "label" if name == "Cleared" else "")
+                if name == "Cleared":
+                    item.set_member("Presentation", "")
+                if name == "Separated":
+                    owner.add("")
+                self.assertEqual(str(owner), expected)
+                cached = owner._text_cache
+                item.set_member("Value", "A")
+                self.assertEqual(str(owner), expected)
+                item.set_member("Presentation", "B")
+                self.assertEqual(str(owner), expected)
+                self.assertIs(owner._text_cache, cached)
+                self.assertEqual(str(item), "B")
+                owner.add("new")
+                self.assertEqual(str(owner), "B; ; new" if name == "Separated" else "B; new")
+                owner.clear()
+                self.assertEqual(str(owner), "")
+                owner.load_values(array())
+                self.assertEqual(str(owner), "")
+
+    def test_warm_empty_cache_never_renders_changed_fields(self):
         owner = BSLValueList()
         item = owner.add("")
         self.assertEqual(str(owner), "")
-        self.assertEqual(str(owner), "")
-        item.set_member("Value", "now nonempty")
-        with self.assertRaisesRegex(ValueError, "пока не поддерживается"):
-            str(owner)
-        owner.add("new")
-        self.assertEqual(str(owner), "now nonempty; new")
-        owner.clear()
-        self.assertEqual(str(owner), "")
-        owner.load_values(array())
-        self.assertEqual(str(owner), "")
+        item.set_member("Value", BSLArray())
+        cached = owner._text_cache
+        with patch.object(value_lists, "_MAX_TEXT", 0), patch.object(
+                BSLValueListItem, "__str__", side_effect=AssertionError("warm render")):
+            self.assertEqual(str(owner), "")
+        self.assertIs(owner._text_cache, cached)
 
-    def test_pending_warm_singleton_sort_discriminator_is_guarded(self):
+    def test_successful_singleton_sorts_preserve_warm_text_and_revision_policy(self):
         for method in ("sort_by_value", "sort_by_presentation"):
             with self.subTest(method=method):
                 owner = BSLValueList()
-                item = owner.add(D(7), "first")
+                item = owner.add(D(7), "start")
                 getattr(owner, method)()
-                self.assertEqual(str(owner), "first")
+                self.assertIsNone(owner._text_cache)
+                self.assertEqual(str(owner), "start")
                 item.set_member("Presentation", "pending")
+                iterator = iter(owner)
+                revision = owner._revision
+                fields = state(owner)
                 getattr(owner, method)()
+                self.assertEqual(owner._revision, revision + 1)
+                self.assertEqual(state(owner), fields)
+                self.assertEqual(owner._text_cache, (owner._revision, "start"))
+                with self.assertRaisesRegex(ValueError, "активного обхода"):
+                    next(iterator)
                 item.set_member("Presentation", "between")
-                with self.assertRaisesRegex(ValueError, "пока не поддерживается"):
-                    str(owner)
-                self.assertEqual(str(item), "between")
+                self.assertEqual(str(owner), "start")
+                item.set_member("Presentation", "after")
+                self.assertEqual(str(owner), "start")
+                self.assertEqual(str(item), "after")
+                getattr(owner, method)()
+                with patch.object(value_lists, "_MAX_TEXT", 4):
+                    with self.assertRaisesRegex(ValueError, "предел ресурсов"):
+                        str(owner)
                 owner.add(D(8), "new")
-                self.assertEqual(str(owner), "between; new")
+                self.assertEqual(str(owner), "after; new")
+
+    def test_singleton_sorts_do_not_revive_stale_caches_or_prime_cold_ones(self):
+        for method in ("sort_by_value", "sort_by_presentation"):
+            with self.subTest(method=method):
+                owner = BSLValueList()
+                item = owner.add(D(7), "old")
+                owner.add(D(8), "removed")
+                self.assertEqual(str(owner), "old; removed")
+                owner.delete(D(1))
+                stale = owner._text_cache
+                item.set_member("Presentation", "current")
+                getattr(owner, method)()
+                self.assertIs(owner._text_cache, stale)
+                self.assertNotEqual(owner._text_cache[0], owner._revision)
+                self.assertEqual(str(owner), "current")
+
+    def test_singleton_sort_failed_validation_preserves_cache_and_iterator(self):
+        for method in ("sort_by_value", "sort_by_presentation"):
+            with self.subTest(method=method):
+                owner = BSLValueList()
+                item = owner.add(D(7), "old")
+                self.assertEqual(str(owner), "old")
+                cached = owner._text_cache
+                revision, iterator = owner._revision, iter(owner)
+                with self.assertRaises(TypeError):
+                    getattr(owner, method)("invalid")
+                if method == "sort_by_value":
+                    item.set_member("Value", D("1e1000000000"))
+                else:
+                    item.set_member("Presentation", "outside\nalphabet")
+                fields = state(owner)
+                with self.assertRaises(ValueError):
+                    getattr(owner, method)()
+                self.assertEqual(state(owner), fields)
+                self.assertIs(owner._text_cache, cached)
+                self.assertEqual(owner._revision, revision)
+                self.assertIs(next(iterator), item)
+                self.assertEqual(str(owner), "old")
 
     def test_local_failed_mutations_preserve_valid_cache_and_id_state(self):
         owner = BSLValueList()

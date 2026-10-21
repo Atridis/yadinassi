@@ -1146,3 +1146,48 @@ Its 776 framed records retain precisely the same eight source-bound Map-order
 exceptions at their original ordinals. All 18 added String/cache records are
 strict. Source binding and record cardinality are updated together; arbitrary
 source changes or omitted/extra output records still fail closed.
+
+### Fresh final discriminator: Linux 8.3.27.1508
+
+[Automatic run 39591770740](https://github.com/Atridis/yadinassi/actions/runs/39591770740)
+executed all six scenarios at synthetic merge
+`5f2add07d8fe47b1ad75eb56cb493d3a8f9cce39`, tree
+`2429435d2fdc3ccc0082882a4d3359e6092abe54`, with ordered parents main
+`46aa731186d7b524c8a140c5f8e10c4fad53d18f` and PR head
+`49243b22b54c53a15f8bc7be0b80dc6ef3dc0a57`.
+The pinned image reported real version `8.3.27.1508` under UTC/ru_RU.
+All 23 trusted inputs, six source/module/output identities, invocation nonce,
+cleanup, interpreter fingerprint and seven-file artifact were verified.
+The collections capture contains 776 records / 4,677 lines / 205,168 bytes,
+SHA-256 `e0b9443ec4dddbe1e91956232435a02f4cd8d3ec69b3593e479eae1848d357bb`.
+Artifact ZIP SHA-256 is
+`ce49f0243d896cb90f3884c4a16180370e3d3d76a14743e082c5de7186776eba`.
+The provenance file SHA-256 is
+`262e12767e5c2787b8107291671e670d898bfcb11988222a0b5103b454e27208`.
+
+The two final groups provide five cases and 18 successful conversions:
+
+- `empty-result.Value` and `Cleared`: warm, value-mutated and presentation-mutated
+  list text are all empty. The terminal item text is `B`.
+- `empty-result.Separated`: all three list texts remain `; `, including its exact
+  trailing space. The terminal item text is `B`.
+- `short-sorts.Value` and `Presentation`: warm, first post-sort and second
+  post-sort list texts all remain `start`, while field snapshots progress through
+  `pending`, `between` and `after`. Successful singleton sorts preserve warmed
+  text, unlike the independently observed three-item sort invalidation.
+
+Thus empty text is a real cache hit, and singleton sorting preserves the cache.
+The initial checkpoint's required native verdict intentionally failed: its two
+unsupported guards differed from these newly measured cases. The only other raw
+differences were the eight already-permitted Map-order records. Native execution
+itself completed successfully for all six scenarios. That red checkpoint run is
+valid observation evidence, not a successful interpreter-parity gate; a fresh
+run of the completed implementation must pass before readiness.
+
+These final five cases were measured on Linux training 8.3.27.1508, not on the
+historical Windows 8.3.27.2342 target. Applying the same bounded cache mechanism
+in the common runtime is an explicit compatibility inference, consistent with
+all 21 directly observed Windows cache cases and with no observed platform
+conflict. The new Windows cases are not claimed to have been natively verified.
+No saved Windows output is extended, replaced or relabeled; future supported
+PR/main runs independently regenerate the complete current Linux oracle.

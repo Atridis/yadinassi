@@ -211,21 +211,12 @@ class BSLValueList(BSLObject):
         cached = self._text_cache
         if cached is not None and cached[0] == self._revision:
             text = cached[1]
-            if text is None:
-                _unsupported("строка после сортировки прогретого одноэлементного списка")
-            if not text and self.items:
-                # A genuine empty text cache versus an empty-string sentinel
-                # still awaits the narrow native field-only discriminator.
-                if (len(self.items) != 1
-                        or type(self.items[0]) is not BSLValueListItem
-                        or str(self.items[0])):
-                    _unsupported("повторная строка пустого элемента после изменения полей")
             if len(text) > _MAX_TEXT:
                 _budget()
             return text
-        # The observed structural operations and both sorts advance _revision;
-        # item fields, FillChecks, zero Move and failed mutations do not. Defer
-        # rendering until conversion, and never publish a partial/failed cache.
+        # Structural operations and sorts advance _revision; _sort carries a
+        # valid singleton cache forward. Fields, FillChecks, zero Move and failed
+        # mutations preserve it. Never publish a partial/failed render.
         parts, size = [], 0
         for item in self.items:
             if type(item) is not BSLValueListItem:
@@ -398,9 +389,10 @@ class BSLValueList(BSLObject):
                            and cached[0] == self._revision)
         sort_list(self, direction, by_presentation=by_presentation)
         if singleton_cache:
-            # Three-item no-order-change sorts invalidate natively. A singleton
-            # may short-circuit; keep this distinction explicit until observed.
-            self._text_cache = (self._revision, None)
+            # The Linux 8.3.27.1508 discriminator preserves singleton text for
+            # both sorts. Keep the existing local revision/iteration policy;
+            # only carry a valid cache across the successfully completed sort.
+            self._text_cache = (self._revision, cached[1])
 
     def get_member(self, name):
         key = name.casefold()

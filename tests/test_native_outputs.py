@@ -260,8 +260,10 @@ class NativeOutputRunnerTests(unittest.TestCase):
 
 class HistoricalCollectionsBindingTests(unittest.TestCase):
     def setUp(self):
-        self.source = (ROOT / 'tests/collections.bsl').read_bytes()
-        self.output = (ROOT / 'output/collections.out').read_bytes()
+        # Canonical mutation inputs keep the negative controls effective on CRLF checkouts.
+        # The explicit CRLF transport case below still exercises production normalization.
+        self.source = (ROOT / 'tests/collections.bsl').read_bytes().replace(b'\r\n', b'\n')
+        self.output = (ROOT / 'output/collections.out').read_bytes().replace(b'\r\n', b'\n')
 
     def test_full_historical_source_and_all_output_bytes_are_bound(self):
         replay = historical_collections_source(self.source, self.output)
@@ -294,6 +296,25 @@ class HistoricalCollectionsBindingTests(unittest.TestCase):
                            end.encode(), start.encode()).replace(b'__SWAP__', end.encode())):
             with self.assertRaises(ValueError):
                 historical_collections_source(source, self.output)
+
+
+    def test_mutation_controls_work_with_crlf_checkout(self):
+        original = Path.read_bytes
+        def crlf_bytes(path):
+            data = original(path)
+            if path in (ROOT / 'tests/collections.bsl', ROOT / 'output/collections.out'):
+                return data.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+            return data
+        names = (
+            'test_full_historical_source_and_all_output_bytes_are_bound',
+            'test_changed_historical_source_or_output_fails_closed',
+            'test_missing_duplicated_or_reordered_boundaries_fail_closed',
+        )
+        suite = unittest.TestSuite(type(self)(name) for name in names)
+        stream = io.StringIO()
+        with patch.object(Path, 'read_bytes', crlf_bytes):
+            result = unittest.TextTestRunner(stream=stream).run(suite)
+        self.assertTrue(result.wasSuccessful(), stream.getvalue())
 
 
 if __name__ == "__main__":
