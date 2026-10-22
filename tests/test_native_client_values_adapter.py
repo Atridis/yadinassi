@@ -15,12 +15,9 @@ import test_native_1c_full_stage as fixtures
 suite = fixtures.suite
 ROOT = fixtures.REPOSITORY
 NONCE = fixtures.NONCE
-COUNT = 261
-DECLARATIONS = (3, 19, 27, 35, 49, 64, 71, 80, 89, 96, 102, 115, 122,
-                143, 158, 163, 169, 174, 178, 199, 208, 215, 236, 253,
-                288, 295, 300, 305, 311, 319, 327, 337, 349)
-SITES = (7, 12, 14, 53, 58, 60, 147, 152, 154, 240, 245, 247,
-         406, 485, 622, 650)
+COUNT = 361
+DECLARATIONS = (3, 19, 27, 35, 49, 64, 71, 80, 89, 96, 102, 115, 122, 143, 158, 163, 169, 174, 178, 199, 208, 215, 236, 253, 288, 295, 300, 305, 311, 319, 327, 337, 349, 358, 368, 376, 387, 403, 407)
+SITES = (7, 12, 14, 53, 58, 60, 147, 152, 154, 240, 245, 247, 362, 364, 475, 554, 691, 719, 779, 821)
 CAPTURE = 'ЗначенияКлиентЗахват'
 VARIABLES = ('ЗначенияКлиентСообщения', 'ЗначенияКлиентСимволы')
 
@@ -62,7 +59,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
 
     def test_source_template_and_message_count_are_pinned(self):
         self.assertEqual(suite.digest(self.source),
-                         '7b0790763d2169c80f7475fc19af78e66475e3f4fc2ed8f23b00eb000c8b7e20')
+                         '5fd00b472332044f4bae4c12973bcc66c074b27f7c98fe58b21b149088166fff')
         self.assertEqual(suite.digest(self.template),
                          '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328')
         self.assertEqual(suite.digest(self.source), suite.CLIENT_VALUES_SOURCE_SHA256)
@@ -75,11 +72,11 @@ class ClientValuesAdapterTests(unittest.TestCase):
     def test_raw_source_tampering_is_rejected_without_normalization(self):
         lines = self.source.splitlines(keepends=True)
         swapped = lines.copy()
-        swapped[357], swapped[358] = swapped[358], swapped[357]
+        swapped[426], swapped[427] = swapped[427], swapped[426]
         removed_helper = lines[:19] + lines[26:]
         mutants = [
-            b''.join(lines[:357] + lines[358:]),
-            b''.join(lines[:357] + [lines[357]] + lines[357:]),
+            b''.join(lines[:426] + lines[427:]),
+            b''.join(lines[:426] + [lines[426]] + lines[426:]),
             b''.join(swapped), b''.join(removed_helper),
             b''.join(lines[:19] + lines[19:26] + lines[19:]),
             self.source + b'\n', self.source[:-1],
@@ -119,7 +116,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
         replacements = [(3, lines[3].replace('НаблюдатьNull'.encode(), b'ObserveNull')),
                         (16, 'КонецФункции\n'.encode()),
                         (7, lines[7].replace(b'[error]', b'[changed]')),
-                        (357, lines[358]),
+                        (426, lines[427]),
                         (0, '&НаКлиенте\n'.encode()),
                         (0, '&НаСервере\n'.encode()),
                         (0, '#Если Сервер Тогда\n'.encode())]
@@ -140,7 +137,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
                 with self.assertRaisesRegex(suite.FullError, '^invalid_input$'):
                     suite.client_values_module(self.source, template)
 
-    def test_reverse_generated_source_preserves_all_651_lines_and_expressions(self):
+    def test_reverse_generated_source_preserves_all_824_lines_and_expressions(self):
         module = self.module()
         start = module.index('// Нативный checkpoint специальных значений: Null.')
         end = module.index('\nКонецПроцедуры\n\n&НаКлиенте\nФункция ВычислитьПробу()', start)
@@ -152,7 +149,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
         restored = restored.replace('Процедура ЗначенияКлиентВыполнить()\n', '')
         restored = restored.replace(CAPTURE + '(', 'Сообщить(') + '\n'
         self.assertEqual(restored.encode(), self.source)
-        self.assertEqual(len(restored.splitlines()), 651)
+        self.assertEqual(len(restored.splitlines()), 824)
         self.assertEqual(tuple(i for i, line in enumerate(restored.splitlines())
                                if re.match(r'^(Процедура|Функция) ', line)), DECLARATIONS)
         self.assertEqual(tuple(i for i, line in enumerate(restored.splitlines())
@@ -161,7 +158,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
     def test_all_declarations_and_calls_are_direct_client_only_without_new_conversion(self):
         module = self.module()
         declarations = re.findall(r'^([^\n]+)\n((?:Процедура|Функция|Перем) [^\n]+)', module, re.M)
-        self.assertEqual(len(declarations), 41)
+        self.assertEqual(len(declarations), 47)
         self.assertTrue(all(directive == '&НаКлиенте' for directive, _ in declarations))
         self.assertNotIn('&НаСервере', module)
         self.assertNotIn('Сообщить(', module)
@@ -169,7 +166,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
             self.assertEqual(re.findall(conversion, module),
                              re.findall(conversion, self.source.decode()))
         self.assertIn('ЗначенияКлиентСообщения.Добавить(Текст);', module)
-        self.assertIn('ЗначенияКлиентСообщения.Количество() >= 261', module)
+        self.assertIn('ЗначенияКлиентСообщения.Количество() >= 361', module)
         self.assertIn(f'> {(suite.MAX_OUTPUT - COUNT) // 4}', module)
         self.assertIn('ЗначенияКлиентВыполнить();', module)
         self.assertIn('Возврат ЗначенияКлиентСообщения;', module)

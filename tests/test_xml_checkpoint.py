@@ -17,10 +17,16 @@ NULL_BODY = '// Значение, тип и настоящий прямой/об
 FINAL = 'xml.checkpoint.complete: [ok]'
 
 
+def historical_source():
+    from scripts.native_historical_replay import historical_values_source
+    output = ROOT / 'tests/fixtures/native_windows/values.out'
+    return historical_values_source(SOURCE.read_bytes(), output.read_bytes()).decode('utf-8')
+
+
 def source():
     # Test the unchanged XML block independently of later pending themes.
     from scripts.smoke_test import pending_types_checkpoint
-    return pending_types_checkpoint(SOURCE.read_text(encoding='utf-8-sig'))[0]
+    return pending_types_checkpoint(historical_source())[0]
 
 
 def helpers():
