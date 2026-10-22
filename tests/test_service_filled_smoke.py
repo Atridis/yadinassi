@@ -1,4 +1,5 @@
-"""Synthetic transport tests, never native ValueIsFilled expectations."""
+"""Transport and exact replay checks for the audited native service fixture."""
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,9 +17,9 @@ class ServiceFilledSmokeTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name) / 'capture'
         self.old = 'opaque previous records\nincluding embedded\nnewlines\n'
-        self.records = [f'types-extra.service-filled.{label}.{lang}: [error]'
-                        for label, _ in CASES for lang in ('ru', 'en')]
-        self.records.append('types-extra.service-filled.checkpoint.complete: [ok]')
+        self.records = json.loads((smoke_test.ROOT / 'tests/fixtures/service_filled_linux.json')
+                                  .read_text(encoding='utf-8'))['records']
+
 
     def invoke(self, records=None, old=None, tail=''):
         records = self.records if records is None else records
@@ -29,17 +30,21 @@ class ServiceFilledSmokeTests(unittest.TestCase):
             smoke_test.check_service_filled_checkpoint('binary', directory=self.directory, env={'PATH': 'test'})
         return run
 
-    def test_both_entire_sources_execute_and_native_errors_are_valid(self):
+    def test_both_entire_sources_execute_and_match_measured_fixture(self):
         run = self.invoke()
         complete = (smoke_test.ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
         self.assertEqual(run.call_count, 2)
         self.assertEqual(run.call_args_list[0].kwargs['input'], without_service_filled_probes(complete))
         self.assertEqual(run.call_args_list[1].kwargs['input'], complete)
 
-    def test_boolean_success_does_not_require_any_guessed_default(self):
+    def test_changed_boolean_or_error_rejects_every_measured_call(self):
         for index in range(24):
-            self.records[index] = self.records[index].replace('[error]', '[value={"B",' + str(index % 2) + '}]')
-        self.invoke()
+            for bad in ('[error]', '[value={"B",' + ('0' if self.records[index].endswith('1}]') else '1') + '}]'):
+                records = self.records.copy()
+                records[index] = records[index].split(': ', 1)[0] + ': ' + bad
+                with self.subTest(index=index, bad=bad), self.assertRaises(AssertionError):
+                    self.invoke(records)
+                self.directory.rmdir()
 
     def test_missing_duplicate_reordered_and_extra_records_fail(self):
         changes = [self.records[:i] + self.records[i + 1:] for i in range(25)]
@@ -54,7 +59,7 @@ class ServiceFilledSmokeTests(unittest.TestCase):
         for value in ('[serialize-error]', '[value={"N",1}]', '[error: locale text]',
                       '[value={"B",2}]', '[error]\t', '[error]\r', '[error]\u2028'):
             records = self.records.copy()
-            records[0] = records[0].replace('[error]', value)
+            records[0] = records[0].split(': ', 1)[0] + ': ' + value
             with self.subTest(value=value), self.assertRaises(AssertionError):
                 self.invoke(records)
             self.directory.rmdir()

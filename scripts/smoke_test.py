@@ -629,7 +629,7 @@ saved = "old";
 VALUE_FILLED_OUTPUT = ('Да\nНет\nНет\nДа\nНет\nДа\nНет\nДа\nДа\nНет\nДа\nНет\nДа\n'
                        'Булево\n{"B",0}\nДа\n')
 VALUE_FILLED_FAILURES = (
-    ('ValueIsFilled(Type("Number"))',
+    ('ValueIsFilled(Type("Boolean"))',
      'ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi'),
 )
 for _expression, _message in VALUE_FILLED_FAILURES:
@@ -1178,7 +1178,7 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
 
 
 def check_service_filled_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
-    """Check instrumentation and exact prior output, never guess native defaults."""
+    """Check exact prior output and the independently measured native suffix."""
     directory = directory.resolve()
     directory.mkdir()
     complete = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
@@ -1206,7 +1206,12 @@ def check_service_filled_checkpoint(executable: str, *, directory: Path, env: di
             or any(item.split(': ', 1)[1] not in ('[error]', '[value={"B",0}]', '[value={"B",1}]')
                    for item in records[:-1])):
         raise AssertionError('Invalid service filled checkpoint records')
-    print('Binary service ValueIsFilled instrumentation passed; native semantics remain independent')
+    fixture = json.loads((ROOT / 'tests/fixtures/service_filled_linux.json').read_text(encoding='utf-8'))
+    if hashlib.sha256(complete.encode('utf-8')).hexdigest() != fixture['source_sha256']:
+        raise AssertionError('Service filled fixture source mismatch')
+    if records != fixture['records']:
+        raise AssertionError('Service filled native observations differ')
+    print('Binary service ValueIsFilled native observations passed')
 
 
 def check_characters(executable: str, *, directory: Path, env: dict) -> None:

@@ -401,13 +401,15 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
         send(">>> ", 'filled = ЗначениеЗаполнено(False);\n')
         send(">>> ", 'Message("filled-result=" + ValueToStringInternal(filled));\n')
         send(">>> ", 'Try\n')
-        send("... ", 'ValueIsFilled(Type("Number"));\n')
+        send("... ", 'ValueIsFilled(Type("Boolean"));\n')
         send("... ", 'Except\n')
         send("... ", 'Message("filled-caught");\n')
         send("... ", 'EndTry;\n')
-        send(">>> ", 'filled = ValueIsFilled(Type("Number"));\n')
+        send(">>> ", 'filled = ValueIsFilled(Type("Boolean"));\n')
         send(">>> ", 'Message("filled-preserved=" + ValueToStringInternal(filled));\n')
         send(">>> ", 'Message("filled-empty=" + ValueToStringInternal(ValueIsFilled(New Array)));\n')
+        send(">>> ", 'Message("service-filled-namespace=" + ValueToStringInternal(ValueIsFilled(RoundMode)));\n')
+        send(">>> ", 'Message("service-filled-default=" + ValueToStringInternal(ЗначениеЗаполнено(New NumberQualifiers)));\n')
         send(">>> ", 'optional = New Array; optional.Добавить(); optional.Insert(0);\n')
         send(">>> ", 'Message("array-default-count=" + optional.Count());\n')
         send(">>> ", 'Try\n')
@@ -646,6 +648,7 @@ def check_console(command: list[str], *, cwd, env=None) -> str:
                                ("goto-count=3", 1), ("goto-recovered=3", 1),
                                ('filled-result={"B",1}', 1), ('filled-caught', 1),
                                ('filled-preserved={"B",1}', 1), ('filled-empty={"B",0}', 1),
+                               ('service-filled-namespace={"B",1}', 1), ('service-filled-default={"B",0}', 1),
                                ('lines-result=Я😀', 1), ('lines-caught', 1),
                                ('lines-preserved=Я😀', 1), ('lines-count=2', 1),
                                ('template-result=x0/%x', 1), ('template-caught', 1),
