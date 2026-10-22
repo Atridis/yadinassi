@@ -32,6 +32,30 @@ def without_field_reference_probes(text):
     return text
 
 
+DESCRIPTOR_MAP_PROBE_BLOCKS = (
+    ('// Begin descriptor Map-key checkpoint helpers.\n',
+     '// End descriptor Map-key checkpoint helpers.\n\n'),
+    ('// Begin descriptor Map-key checkpoint observations.\n',
+     '// End descriptor Map-key checkpoint observations.\n'),
+)
+
+
+def without_descriptor_map_probes(text):
+    """Restore every byte of the native-verified 797-message source."""
+    for start, end in DESCRIPTOR_MAP_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('descriptor map probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8')
+    if not raw.startswith(b'\xef\xbb\xbf'):
+        raw = b'\xef\xbb\xbf' + raw
+    if hashlib.sha256(raw).hexdigest() != 'f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a':
+        raise ValueError('descriptor map baseline source binding changed')
+    return text
+
+
 def git_blob(data):
     return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 
@@ -46,7 +70,7 @@ def historical_collections_source(source, output):
     output = output.replace(b"\r\n", b"\n")
     if git_blob(output) != HISTORICAL_COLLECTIONS_OUTPUT_BLOB:
         raise ValueError("historical collections output binding changed")
-    text = without_field_reference_probes(source.decode("utf-8-sig"))
+    text = without_field_reference_probes(without_descriptor_map_probes(source.decode("utf-8-sig")))
     for start, end in FINAL_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError("historical collections probe boundaries changed")

@@ -12,6 +12,7 @@ and are not Windows observations. Root / &НаКлиенте parity and defensiv
 released-owner and standalone-decoded boundaries are LOCAL tests, not additional
 native client or native lifetime evidence.
 """
+from scripts.native_historical_replay import without_descriptor_map_probes
 from decimal import Decimal as D
 import gc
 import hashlib
@@ -286,7 +287,7 @@ def plain(value):
 
 class NativeValueListReferenceTests(unittest.TestCase):
     def test_actual_bsl_helpers_match_all_twenty_native_records(self):
-        source_bytes = (ROOT / 'integrational_tests/tests/collections.bsl').read_bytes()
+        source_bytes = without_descriptor_map_probes((ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8')).encode('utf-8')
         self.assertEqual(hashlib.sha256(source_bytes.replace(b'\r\n', b'\n')).hexdigest(),
                          SOURCE_SHA256)
         source = source_bytes.decode('utf-8-sig')

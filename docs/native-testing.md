@@ -1501,3 +1501,46 @@ No generic Python truthiness, equality, length or iteration hook determines a
 service value result. Existing primitive and collection semantics are unchanged.
 The source-only statements above describe the original measurement checkpoint;
 local runtime tests now compare the genuine fixture rather than invent defaults.
+
+### Descriptor keys in Map / FixedMap: audited scalar subset
+
+The collections scenario now appends 31 observations after the unchanged 797
+messages (828 total). Native-first PR85 run
+[39815192778](https://github.com/Atridis/yadinassi/actions/runs/39815192778)
+was independently audited against source tree
+`056986f9981dcbd192bde693673c9e69917c41c7`. Its strict managed-client and server
+witnesses establish value-based keys for the bounded immutable scalar
+TypeDescription subset: equivalent descriptions replace and delete one entry,
+while distinct types or qualifiers remain separate. Fixed snapshots and mutable
+copies keep their values isolated. Missing fixed indexing throws; Get returns
+Undefined. All six codec histories successfully retain descriptor keys and
+resolve equivalent descriptions after readback. This is measured native
+behavior, not an inference from the interpreter's pre-existing equality.
+Other collection/host keys continue to use identity. No new descriptor types,
+qualifiers, codec formats or resource budgets are introduced.
+
+Eight pairs are observed: the same object; distinct empty and Number descriptors;
+reordered Number/String; a copied Number descriptor; Number versus String;
+Number(5,2) versus Number(5,1); and String(4,Fixed) versus String(4,Variable).
+Each has a separate equality observation, mutable-map history, and FixedMap plus
+Map(FixedMap) history. Histories independently name and catch each operation:
+insert, count, Get, index read/write, replacement and deletion; fixed/copy cases
+also measure equivalent-key lookups and isolation after changing the source and
+copy. Scalar sentinels 101/202/303/404/505 disambiguate values without iteration.
+Setup failure, equality failure and individual operation errors stay distinct.
+
+Six small codec histories supplement this matrix: a single descriptor key, two
+unequal descriptor keys, and duplicate-equal insertion, each mutable and fixed.
+They retain raw payload text, restored type/count and both Get/index lookups.
+When insertion is rejected, its explicit error and source count remain visible;
+a later successful empty-map codec is not evidence of descriptor-key support.
+The two-entry raw payload remains strict and receives no map-order exception.
+
+Helpers are inserted at one marked boundary and observations appended at one
+marked boundary. Removing exactly those additions reconstructs the original
+collections source byte-for-byte. Existing values (402), numbers (421), dates
+(185), fixture bytes and the 24-path staged-input set remain unchanged. The managed
+client adapter is still source-bound and reversible; client/server output must
+match strictly. The eight historical map-order exceptions do not expand.
+Offline tests exercise LF and CRLF checkout canonicalization only in test
+fixtures; production source pins continue to hash exact bytes.

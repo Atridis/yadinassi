@@ -1,4 +1,4 @@
-"""BSL maps: typed scalar keys and identity keys for collection/host objects."""
+"""BSL maps: typed scalar/schema keys and identity keys for collection/host objects."""
 
 from decimal import Decimal
 
@@ -16,7 +16,10 @@ def _key(value: object) -> tuple[type, object]:
     # reused while the entry exists.
     kind = type(value)
     if kind is BSLTypeDescription:
-        raise TypeError("ОписаниеТипов как ключ соответствия пока не поддерживается в Yadinassi")
+        # Native descriptor-key histories establish value-based lookup,
+        # replacement and deletion, including reordered types and qualifiers.
+        # The bounded scalar schema is immutable; subclasses remain identity keys.
+        return kind, value
     if kind is BSLDate:
         value.require_known()
         return kind, value.ticks

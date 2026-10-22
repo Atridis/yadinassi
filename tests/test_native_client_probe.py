@@ -1754,7 +1754,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
         envelope["report"]["stage3"]["client_probe"] = client
         for scenario, enabled, count, module_hash in (("dates", dates, 185, "e" * 64),
                                                        ("values", values, 402, "f" * 64),
-                                                       ("collections", collections, 797, "9" * 64),
+                                                       ("collections", collections, 828, "9" * 64),
                                                        ("numbers", numbers, 421, "8" * 64)):
             if not enabled:
                 continue

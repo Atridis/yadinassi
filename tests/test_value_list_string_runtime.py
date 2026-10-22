@@ -7,7 +7,7 @@ inference; the earlier Windows observations remain independently replayed.
 Native records are read, never generated or replaced. Resource and host-boundary
 tests describe Yadinassi limits, not additional native 1C observations.
 """
-from scripts.native_historical_replay import without_field_reference_probes
+from scripts.native_historical_replay import without_field_reference_probes, without_descriptor_map_probes
 
 from decimal import Decimal as D
 import hashlib
@@ -243,7 +243,7 @@ class LinuxFinalValueListStringTests(unittest.TestCase):
     def test_final_source_groups_match_recorded_linux_fields_and_texts(self):
         source_bytes = SOURCE.read_bytes().replace(b"\r\n", b"\n")
         # The Linux capture predates only these new, unconfirmed probes.
-        source_bytes = without_field_reference_probes(source_bytes.decode("utf-8")).encode("utf-8")
+        source_bytes = without_field_reference_probes(without_descriptor_map_probes(source_bytes.decode("utf-8"))).encode("utf-8")
         self.assertEqual(hashlib.sha256(source_bytes).hexdigest(),
                          FINAL_LINUX_SOURCE_SHA256)
         source = source_bytes.decode("utf-8-sig")

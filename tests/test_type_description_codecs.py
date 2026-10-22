@@ -274,25 +274,29 @@ class TypeDescriptionCodecPolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'предел ресурсов Yadinassi'):
                 read(frame('{"Pattern",' + entry + '}'))
 
-    def test_description_map_keys_are_explicitly_unsupported_without_native_evidence(self):
+    def test_scalar_description_map_keys_preserve_value_lookup_through_codecs(self):
+        # Native run 39815192778 measured descriptor keys in mutable/fixed maps.
+        # Exact native payloads and the full matrix live in the runtime tests.
         value = BSLTypeDescription('Number')
         mapping = BSLMap()
-        for operation in (lambda: mapping.insert(value, 'value'), lambda: mapping.get(value),
-                          lambda: mapping.delete(value)):
-            with self.assertRaisesRegex(TypeError, 'пока не поддерживается'):
-                operation()
-        # Host-side corruption must not bypass the writer's same explicit policy.
-        mapping._items[(object, id(value))] = (value, 'value')
+        mapping.insert(value, 'value')
+        equivalent = BSLTypeDescription('Number')
+        self.assertEqual(mapping.get(equivalent), 'value')
         for original in (mapping, BSLFixedMap(mapping)):
-            with self.assertRaisesRegex(TypeError, 'пока не поддерживается'):
-                write(original)
-        # A handcrafted key stream is rejected by the same map policy. Values
-        # remain supported, including when represented by the identical frame.
+            restored = read(write(original))
+            self.assertIs(type(restored), type(original))
+            self.assertEqual(restored.get(equivalent), 'value')
+            self.assertEqual(len(restored._items), 1)
+        # The same supported descriptor grammar applies in a key position.
         for kind in (BSLType.MAP, BSLType.FIXED_MAP):
             payload = ('{"#",' + serialization._TYPE_IDS[kind] + ',{1,{' + write(value) +
                        ',{"S","value"}}}}')
-            with self.assertRaisesRegex(ValueError, FORMAT_ERROR):
-                read(payload)
+            restored = read(payload)
+            self.assertIs(type_of(restored), kind)
+            self.assertEqual(restored.get(equivalent), 'value')
+        mapping.delete(equivalent)
+        self.assertIsNone(mapping.get(value))
+        self.assertEqual(len(mapping._items), 0)
 
     def test_truncations_are_catchable_without_poisoning_the_next_read(self):
         for tags in ((), ('L',), ('S', 'N'), ('B', 'S', 'D', 'N')):
