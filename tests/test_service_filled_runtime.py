@@ -9,6 +9,7 @@ from contextlib import ExitStack
 from decimal import Decimal, Inexact, Rounded, localcontext
 import hashlib
 import json
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -73,7 +74,9 @@ class ServiceFilledNativeRuntimeTests(unittest.TestCase):
                          'https://github.com/Atridis/yadinassi/actions/runs/39796997071')
         self.assertEqual(self.native['platform'], 'Linux 1C 8.3.27.1508')
         self.assertEqual(self.native['contexts'], ['server', 'managed-client'])
-        source = (ROOT / 'integrational_tests/tests/values.bsl').read_bytes()
+        # Git checkouts may use CRLF; bind canonical UTF-8 source text, just as
+        # the existing historical fixture checks do. Native byte pins stay intact.
+        source = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8').encode('utf-8')
         self.assertEqual(hashlib.sha256(source).hexdigest(), self.native['source_sha256'])
         output = []
         Interpreter(output.append).execute(source.decode('utf-8'))
@@ -87,6 +90,17 @@ class ServiceFilledNativeRuntimeTests(unittest.TestCase):
         self.assertEqual(list(self.expected),
                          [f'{label}.{language}' for label, _ in CASES
                           for language in ('ru', 'en')])
+
+    def test_source_fixture_binding_accepts_lf_and_crlf_checkouts(self):
+        source = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+        for newline in ('\n', '\r\n'):
+            with self.subTest(newline=repr(newline)), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                path = root / 'integrational_tests/tests/values.bsl'
+                path.parent.mkdir(parents=True)
+                path.write_bytes(source.replace('\n', newline).encode('utf-8'))
+                with patch(__name__ + '.ROOT', root):
+                    self.test_native_provenance_source_hash_and_complete_402_message_suffix()
 
     def test_every_native_case_via_both_aliases_and_direct_runtime_value(self):
         for label, expression in CASES:
