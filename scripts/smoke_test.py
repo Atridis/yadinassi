@@ -2,6 +2,7 @@
 
 import os
 import hashlib
+import json
 from datetime import datetime, timezone
 import re
 import time
@@ -1100,6 +1101,59 @@ def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> N
           'serialization, BOM file, command flags, stdin and console recovery')
 
 
+def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> None:
+    """Native-measured scalar projections, never raw control output."""
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ПространствоСимволов.bsl'
+    members = (('ВК', 'CR', 13), ('ВТаб', 'VTab', 11), ('НПП', 'NBSp', 160),
+               ('ПС', 'LF', 10), ('ПФ', 'FF', 12), ('Таб', 'Tab', 9))
+    program, expected = '', ''
+    for ru, en, code in members:
+        for namespace, member in (('Символы', ru), ('cHaRs', en.swapcase())):
+            expression = namespace + '.' + member
+            program += f'Message(CharCode({expression}));\n'
+            program += f'Try {expression} = "changed"; Except Message(CharCode({expression})); EndTry;\n'
+            indexed = f'{namespace}["{member}"]'
+            program += f'Message(CharCode({indexed}));\n'
+            program += f'Try {indexed} = "changed"; Except Message(CharCode({indexed})); EndTry;\n'
+            expected += f'{code}\n{code}\n{code}\n{code}\n'
+    program += 'Message(CharCode(Eval("Chars.LF")));\n'
+    expected += '10\n'
+    for expression in ('Chars.Missing', 'Chars[0]', 'Chars["Missing"]', 'Chars.LF()', 'Chars()'):
+        program += f'Try value = {expression}; Except Message(1); EndTry;\n'
+        expected += '1\n'
+    source.write_text(program, encoding='utf-8-sig')
+    cases = [([flag, program], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], program), ([], program + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed Chars namespace {arguments!r}: {result!r}')
+    result = subprocess.run([executable], input='Chars\nMessage(42);\n/exit\n',
+                            capture_output=True, encoding='utf-8', cwd=directory.parent,
+                            env=env, timeout=30)
+    if (result.returncode != 1 or result.stdout != '42\n'
+            or 'пока не поддерживается' not in result.stderr or 'Traceback' in result.stderr):
+        raise AssertionError(f'Failed unsupported namespace REPL recovery: {result!r}')
+    # Compare every native-measured Chars record in the complete values source.
+    # The old 261 observations have their own exact-source historical replay.
+    fixture = json.loads((ROOT / 'tests/fixtures/chars_namespace_linux.json').read_text(encoding='utf-8'))
+    complete = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+    if hashlib.sha256(complete.encode()).hexdigest() != fixture['source_sha256']:
+        raise AssertionError('Chars checkpoint source identity changed')
+    result = subprocess.run([executable, '-'], input=complete, capture_output=True,
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+    boundary = 'types-extra.checkpoint.complete: [ok]\n'
+    expected_suffix = '\n'.join(fixture['records']) + '\n'
+    if (result.returncode != 0 or result.stderr or result.stdout.count(boundary) != 1
+            or result.stdout.split(boundary)[1] != expected_suffix):
+        raise AssertionError(f'Failed complete native Chars checkpoint: {result!r}')
+    print('Binary Chars namespace passed: bilingual readonly constants, codepoint projections, '
+          'Eval, BOM file, command flags, stdin and console')
+
+
 def check_characters(executable: str, *, directory: Path, env: dict) -> None:
     """UTF-16 character construction, lookup and serialization in the binary."""
     directory = directory.resolve()
@@ -2039,6 +2093,7 @@ def main() -> None:
         check_string_template(executable, directory=Path(temporary) / "templates", env=env)
         check_string_boundaries(executable, directory=Path(temporary) / "boundaries", env=env)
         check_characters(executable, directory=Path(temporary) / "characters", env=env)
+        check_chars_namespace(executable, directory=Path(temporary) / "chars-namespace", env=env)
         check_rounding(executable, directory=Path(temporary) / "rounding", env=env)
         check_numeric_boolean_comparisons(executable, directory=Path(temporary) / "comparisons", env=env)
         check_goto(executable, directory=Path(temporary) / "goto", env=env)

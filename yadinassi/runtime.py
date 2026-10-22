@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import ast, bits, clocks, date_time_conversions, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
+from .chars import BSLChars, CHARS
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
@@ -331,6 +332,8 @@ class Interpreter:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
+        if name in ("символы", "chars"):
+            return CHARS
         if name in ("допустимыйзнак", "allowedsign"):
             return ALLOWED_SIGNS
         if name in ("допустимаядлина", "allowedlength"):
@@ -430,6 +433,8 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = self.visit(node.object)
+        if type(value) is BSLChars:
+            return value.get_index(self.visit(node.index))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
         index = self.visit(node.index)
@@ -703,6 +708,9 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, self.visit(node.value))
             else:
+                if type(value) is BSLChars:
+                    value.set_index(self.visit(node.target.index), self.visit(node.value))
+                    return
                 if not isinstance(value, _COLLECTIONS):
                     raise TypeError("Индексирование поддерживается только для коллекций")
                 index = self.visit(node.target.index)
