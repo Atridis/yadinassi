@@ -1223,9 +1223,9 @@ def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
         raise FullError('invalid_result') from None
     return value
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_VALUES_SOURCE_SHA256 = '09277b567be373c16772a7b7c2b2d9372873c655f54b59874da533b32f6d1622'
+CLIENT_VALUES_SOURCE_SHA256 = '5fd00b472332044f4bae4c12973bcc66c074b27f7c98fe58b21b149088166fff'
 CLIENT_VALUES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_VALUES_MESSAGE_COUNT = 320
+CLIENT_VALUES_MESSAGE_COUNT = 361
 
 
 def empty_values_report() -> dict:
@@ -1236,8 +1236,8 @@ def empty_values_report() -> dict:
 def client_values_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned values source in the pinned managed-client form.
 
-    All 38 helpers (33 original and five bounded Chars helpers) remain in their original order with client directives.
-    Only the 19 verified message-call identifiers change, and the complete module
+    All 39 helpers (33 original and six bounded Chars helpers) remain in their original order with client directives.
+    Only the 20 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Expressions, conversions and error paths
     stay byte-identical. No server trampoline or reference values are added.
     """
@@ -1288,6 +1288,7 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         376: 'Функция КругСимвола(Знач Значение, Знач ЧерезXML)\n',
         387: 'Функция ЗаписьСимвола(Знач Пространство, Знач Поле)\n',
         403: 'Функция ПолучательСимволов(Знач Пространство)\n',
+        407: 'Функция ЗаписьИндексаСимвола(Знач Пространство, Знач Поле)\n',
     }
     endings = {
         16: 'КонецПроцедуры\n',
@@ -1328,6 +1329,7 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         385: 'КонецФункции\n',
         401: 'КонецФункции\n',
         405: 'КонецФункции\n',
+        421: 'КонецФункции\n',
     }
     sites = {
         7: '        Сообщить("null." + Метка + ": [error]");\n',
@@ -1344,17 +1346,18 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         247: '        Сообщить("types." + Метка + ": [serialize-error]");\n',
         362: '        Сообщить("chars." + Метка + ": [" + Запись + "]");\n',
         364: '        Сообщить("chars." + Метка + ": [error]");\n',
-        458: 'Сообщить("null.checkpoint.complete: [ok]");\n',
-        537: 'Сообщить("xml.checkpoint.complete: [ok]");\n',
-        674: 'Сообщить("types.checkpoint.complete: [ok]");\n',
-        702: 'Сообщить("types-extra.checkpoint.complete: [ok]");\n',
-        762: 'Сообщить("chars.checkpoint.complete: [ok]");\n',
+        475: 'Сообщить("null.checkpoint.complete: [ok]");\n',
+        554: 'Сообщить("xml.checkpoint.complete: [ok]");\n',
+        691: 'Сообщить("types.checkpoint.complete: [ok]");\n',
+        719: 'Сообщить("types-extra.checkpoint.complete: [ok]");\n',
+        779: 'Сообщить("chars.checkpoint.complete: [ok]");\n',
+        821: 'Сообщить("chars.index.checkpoint.complete: [ok]");\n',
     }
-    body_start = 409
+    body_start = 426
     capture = 'ЗначенияКлиентЗахват'
     reserved = (capture, 'ЗначенияКлиентСообщения',
                 'ЗначенияКлиентСимволы', 'ЗначенияКлиентВыполнить')
-    if (len(lines) != 764
+    if (len(lines) != 824
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())

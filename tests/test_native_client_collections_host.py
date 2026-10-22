@@ -311,7 +311,7 @@ class ClientCollectionsHostTests(unittest.TestCase):
         stage = self.envelope["report"]["stage3"]
         server = stage["cases"][full.SCENARIOS.index("values")]
         self.inputs[full.VALUES_SOURCE] = full.VALUES_SOURCE_SHA256
-        server.update(source_sha256=full.VALUES_SOURCE_SHA256, message_count=320)
+        server.update(source_sha256=full.VALUES_SOURCE_SHA256, message_count=361)
         self.modules["client_values"] = "9" * 64
         record = {**copy.deepcopy(self.client), "source_sha256": full.VALUES_SOURCE_SHA256,
                   "module_sha256": "9" * 64, "roundtrip_sha256": "9" * 64,
@@ -416,7 +416,7 @@ class ClientCollectionsHostTests(unittest.TestCase):
                                      "python": 26, "other": 26, "unreadable": 26}, zombie_count=256))
         for case in stage["cases"]:
             case.update(output_size=209715, message_count=32768)
-        for name, count in (("dates", 100), ("values", 320), ("collections", 797)):
+        for name, count in (("dates", 100), ("values", 361), ("collections", 797)):
             case = stage["cases"][full.SCENARIOS.index(name)]
             case.update(message_count=count)
             stage["client_" + name].update(message_count=count, output_size=209715)

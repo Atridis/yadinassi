@@ -13,7 +13,7 @@ from yadinassi.parser import parse, parse_expression
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
 OUTPUT = ROOT / 'tests/fixtures/native_windows/values.out'
-SOURCE_SHA256 = '09277b567be373c16772a7b7c2b2d9372873c655f54b59874da533b32f6d1622'
+SOURCE_SHA256 = '5fd00b472332044f4bae4c12973bcc66c074b27f7c98fe58b21b149088166fff'
 
 
 class CharsCheckpointTests(unittest.TestCase):
@@ -31,6 +31,7 @@ class CharsCheckpointTests(unittest.TestCase):
         self.assertEqual(restored.decode(), without_chars_probes(text))
         self.assertNotIn('chars.', restored.decode())
         self.assertEqual(len(restored.splitlines()), 651)
+        self.assertEqual(len(restored), 57351)
 
     def test_changed_original_source_output_or_boundaries_fail_closed(self):
         raw, output = SOURCE.read_bytes(), OUTPUT.read_bytes()
@@ -62,11 +63,14 @@ class CharsCheckpointTests(unittest.TestCase):
                 self.assertNotRegex(expression, r'[\r\n]')
                 parse_expression(expression)
                 expressions[label] = expression
-        self.assertEqual(len(expressions), 58)
+        self.assertEqual(len(expressions), 98)
         for member in ('cr', 'vtab', 'nbsp', 'lf', 'ff', 'tab'):
             for language in ('ru', 'en'):
                 for operation in ('member', 'write'):
                     self.assertIn(f'{operation}.{member}.{language}', expressions)
+            for language in ('ru', 'en'):
+                for operation in ('read', 'case', 'write'):
+                    self.assertIn(f'index.{operation}.{member}.{language}', expressions)
             for operation in ('alias', 'case', 'codec', 'xml'):
                 self.assertIn(f'{operation}.{member}', expressions)
 
@@ -95,10 +99,28 @@ class CharsCheckpointTests(unittest.TestCase):
         Interpreter(original.append).execute(historical_values_source(raw, OUTPUT.read_bytes()).decode())
         Interpreter(current.append).execute(raw.decode())
         self.assertEqual(len(original), 261)
-        self.assertEqual(len(current), 320)
+        self.assertEqual(len(current), 361)
         # Instrumentation only. Native CI separately compares every current record.
         self.assertEqual(current[:261], original)
-        self.assertEqual(current[-1], 'chars.checkpoint.complete: [ok]')
+        self.assertEqual(current[319], 'chars.checkpoint.complete: [ok]')
+        self.assertEqual(current[-1], 'chars.index.checkpoint.complete: [ok]')
+        # Removing only the supplemental helper/observations restores the exact
+        # native-verified 320-record source, not an interpreter-derived oracle.
+        baseline = raw.decode()
+        for start, end in (('// Begin Chars indexed write helper.\n',
+                            '// End Chars indexed write helper.\n'),
+                           ('// Begin Chars index supplement.\n',
+                            '// End Chars index supplement.\n')):
+            self.assertEqual(baseline.count(start), 1)
+            self.assertEqual(baseline.count(end), 1)
+            a, b = baseline.index(start), baseline.index(end) + len(end)
+            baseline = baseline[:a] + baseline[b:]
+        self.assertEqual(hashlib.sha256(baseline.encode()).hexdigest(),
+                         '09277b567be373c16772a7b7c2b2d9372873c655f54b59874da533b32f6d1622')
+        previous = []
+        Interpreter(previous.append).execute(baseline)
+        self.assertEqual(len(previous), 320)
+        self.assertEqual(current[:320], previous)
         self.assertTrue(all(x.startswith('chars.') for x in current[261:]))
         self.assertTrue(all(not any(ord(c) < 32 for c in x) for x in current[261:]))
 

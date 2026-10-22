@@ -247,7 +247,7 @@ CLIENT_OUTPUT_KEYS = {"output_sha256", "output_size", "message_count"}
 COLLECTIONS_SOURCE = "integrational_tests/tests/collections.bsl"
 DATES_SOURCE = "integrational_tests/tests/dates.bsl"
 VALUES_SOURCE = "integrational_tests/tests/values.bsl"
-VALUES_SOURCE_SHA256 = "09277b567be373c16772a7b7c2b2d9372873c655f54b59874da533b32f6d1622"
+VALUES_SOURCE_SHA256 = "5fd00b472332044f4bae4c12973bcc66c074b27f7c98fe58b21b149088166fff"
 
 
 def validate_client_dates(data, source_hash, module_hash, server_case):
@@ -279,7 +279,7 @@ def validate_client_values(data, source_hash, module_hash, server_case):
         if (server_case["status"] != "ok"
                 or not is_digest(data["output_sha256"])
                 or not is_int(data["output_size"], MAX_FILE)
-                or type(data["message_count"]) is not int or data["message_count"] != 320
+                or type(data["message_count"]) is not int or data["message_count"] != 361
                 or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
             raise ValueError("client values output identity")
     elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):

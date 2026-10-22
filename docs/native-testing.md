@@ -1284,8 +1284,23 @@ original source Git blob `5b7f3976c2d6de30930c83063079d7e2e41317e5` and the
 complete normalized capture blob `016f30d6f3bdb1a814e86a70e3bcf424383a0d27`.
 It compares the entire old output, not a current-output prefix. Focused old XML
 and type tests use that same source-bound reconstruction. Fresh native CI and
-client-values parity execute and compare the entire current 320-message source.
-The client adapter is rebound to the exact source, all 38 declarations, 19
+client-values parity execute and compare the entire current 361-message source.
+The client adapter is rebound to the exact source, all 39 declarations, 20
 message sites, and inverse reconstruction; no source statement is omitted.
 Image, role, isolation, staged-input set, artifact surface and finite-report
-limits are unchanged. Native evidence and runtime implementation are pending.
+limits are unchanged. Indexed supplement native evidence and runtime implementation are pending.
+
+
+The bounded Chars indexing supplement appends 40 observations and one marker
+AFTER `chars.checkpoint.complete`, preserving every original 320 record in order.
+It checks all twelve RU/EN string keys, their mixed-case spellings, twelve
+indexed writes with rejection/unchanged-state projections, and unknown string
+and numeric keys through both namespace spellings. The write helper receives
+namespace/member strings and uses Eval/Execute, not a namespace receiver.
+Only numeric/Boolean compact projections are emitted, never raw controls.
+The original 59 Chars records are mandatory, not a filtered legacy suffix.
+Supplement removal reconstructs the exact native-verified 320-record source;
+removing the existing two Chars blocks still reconstructs the 57,351-byte
+historical source. All six historical captures remain untouched. Synthetic
+wire tests mutate every Chars record to require strict native comparison;
+they do not predict the pending native indexed-read/write results.
