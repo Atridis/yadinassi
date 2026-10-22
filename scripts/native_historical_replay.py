@@ -228,6 +228,8 @@ EXTENDED_EXCEPTION_PROBE_BLOCKS = (
 
 def without_extended_exception_probes(text):
     """Restore the exact complete source of all 88 historical function records."""
+    if any(boundary in text for pair in EXCEPTION_CONTEXT_PROBE_BLOCKS for boundary in pair):
+        text = without_exception_context_probes(text)
     for start, end in EXTENDED_EXCEPTION_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError('extended exception probe boundaries changed')
@@ -246,3 +248,25 @@ def historical_functions_source(source, output):
     if git_blob(output) != HISTORICAL_FUNCTIONS_OUTPUT_BLOB:
         raise ValueError('historical functions output binding changed')
     return without_extended_exception_probes(source.decode('utf-8')).encode('utf-8')
+
+
+EXCEPTION_CONTEXT_BASE_BLOB = '540d0fa68f212cef2963da7e1e59565a0a56edb6'
+EXCEPTION_CONTEXT_PROBE_BLOCKS = (
+    ('// Begin exception context checkpoint helpers.\n',
+     '// End exception context checkpoint helpers.\n\n'),
+    ('// Begin exception context checkpoint observations.\n',
+     '// End exception context checkpoint observations.\n'),
+)
+
+
+def without_exception_context_probes(text):
+    """Restore the exact 111-record source native-audited on PR88, not its output."""
+    for start, end in EXCEPTION_CONTEXT_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('exception context probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if git_blob(text.encode('utf-8')) != EXCEPTION_CONTEXT_BASE_BLOB:
+        raise ValueError('exception context baseline source binding changed')
+    return text

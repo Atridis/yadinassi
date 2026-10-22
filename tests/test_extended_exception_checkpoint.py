@@ -7,7 +7,7 @@ import unittest
 from scripts.native_historical_replay import (
     EXTENDED_EXCEPTION_PROBE_BLOCKS, HISTORICAL_FUNCTIONS_BLOB,
     HISTORICAL_FUNCTIONS_OUTPUT_BLOB, git_blob, historical_functions_source,
-    without_extended_exception_probes,
+    without_extended_exception_probes, without_exception_context_probes,
 )
 from yadinassi import Interpreter, ast
 from yadinassi.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508
@@ -32,7 +32,8 @@ UNCHANGED_SCENARIOS = {
 class ExtendedExceptionCheckpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+        cls.source = without_exception_context_probes(
+            (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8'))
         cls.original = without_extended_exception_probes(cls.source)
         cls.native = (ROOT / 'tests/fixtures/native_windows/functions.out').read_bytes()
 

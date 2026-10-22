@@ -407,6 +407,37 @@
 КонецПроцедуры
 // End extended exception checkpoint helpers.
 
+// Begin exception context checkpoint helpers.
+// Пары различаются только Eval и вложенной успешной Попыткой вокруг захвата.
+// Скаляр внутри обработчика отделяет пустой захват от последующего изменения.
+Функция СнимокКонтекстаОшибки(Знач Инфо)
+    Возврат "type=" + ПолеРасширеннойОшибки(Инфо, "TypeOf(Инфо) = Type(""ErrorInfo"")")
+        + ";description=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = ""exception-context""")
+        + ";description-empty=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = """"")
+        + ";cause-undefined=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause = Undefined")
+        + ";all=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.AllErrors)")
+        + ";runtime=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptRuntimeError)")
+        + ";compile=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptCompileError)")
+        + ";raised=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ExceptionRaisedFromScript)")
+        + ";configuration=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ConfigurationError)")
+        + ";other=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.OtherError)");
+КонецФункции
+
+Процедура ПроверитьКонтекстОшибки(Знач Метка, Знач Код)
+    Инфо = Неопределено;
+    Внутри = Неопределено;
+    Статус = "not-captured";
+    Попытка
+        Выполнить(Код);
+    Исключение
+        Статус = "execute-error";
+    КонецПопытки;
+    Сообщить("exception-context." + Метка + ": [" + Статус
+        + ";inside=" + ЗначениеВСтрокуВнутр(Внутри)
+        + ";" + СнимокКонтекстаОшибки(Инфо) + "]");
+КонецПроцедуры
+// End exception context checkpoint helpers.
+
 Показать(Сложить(2, 3));
 
 Попытка
@@ -547,3 +578,10 @@
 ПроверитьСостояниеИнформацииОбОшибке();
 Сообщить("exception.checkpoint.complete: [ok]");
 // End extended exception checkpoint observations.
+// Begin exception context checkpoint observations.
+ПроверитьКонтекстОшибки("direct", "Try Raise ""exception-context""; Except Инфо = ErrorInfo(); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; EndTry;");
+ПроверитьКонтекстОшибки("eval", "Try Raise ""exception-context""; Except Инфо = Eval(""ErrorInfo()""); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; EndTry;");
+ПроверитьКонтекстОшибки("direct-nested-try", "Try Raise ""exception-context""; Except Try Инфо = ErrorInfo(); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; Except Статус = ""capture-error""; EndTry; EndTry;");
+ПроверитьКонтекстОшибки("eval-nested-try", "Try Raise ""exception-context""; Except Try Инфо = Eval(""ErrorInfo()""); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; Except Статус = ""capture-error""; EndTry; EndTry;");
+ПроверитьКонтекстОшибки("outside-empty", "Инфо = ErrorInfo(); Внутри = Инфо.Description = """"; Статус = ""captured"";");
+// End exception context checkpoint observations.

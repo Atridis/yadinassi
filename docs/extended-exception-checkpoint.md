@@ -94,3 +94,49 @@ describes ErrorInfo fields and category queries. The
 [official exception-raising standard](https://its.1c.ru/db/content/v8std/src/400/200/i8100790.htm)
 provides Russian category and method spellings. These sources motivate the
 probes; they do not determine the native observations in advance.
+
+## Focused context follow-up after PR88
+
+The original 111-message source was audited in native run `39840847760` for
+PR88, published head `be068c8324fe00f79cea069c6863d8034db3e302`, source SHA256
+`b8c1141049f3a604addcdb7e967e045a7a9e6d72258fccb68167417a622dedca`.
+Direct ErrorInfo values captured inside Execute remained readable after the
+handler. However, the original cause setup and handler-state capture combined
+Eval(ErrorInfo()) with a nested successful Try. Their empty saved descriptions
+cannot establish which construct changes the visible context, and do not prove
+that saved ErrorInfo objects become invalid after leaving a handler.
+
+This follow-up adds exactly five records after the unchanged 111-message prefix,
+for 116 functions messages in total. No old helper or observation is edited:
+
+1. Direct ErrorInfo capture in the exception handler.
+2. Eval(ErrorInfo()) capture at the same location.
+3. Direct capture inside a nested Try around that capture.
+4. Eval capture inside that same nested Try.
+5. Direct ErrorInfo capture outside any exception handler.
+
+Each paired case immediately saves a scalar Description comparison after the
+capture, before leaving the nested Try or handler. It then independently reads
+the saved object after the handlers. Comparing the inside scalar with the later
+Description distinguishes an initially empty capture from any subsequent
+change; neither outcome is assumed. No helper call or extra handler precedes
+the capture within the tested handler, apart from the deliberate nested Try in
+cases 3 and 4. A surrounding static handler catches unsupported bootstrap APIs
+without replacing the saved value. All new syntax/API use stays inside guarded
+Execute/Eval strings, so the pre-feature runtime still completes the scenario.
+
+The post-handler snapshots expose ErrorInfo type, the controlled Description,
+an explicitly empty Description check, Cause = Undefined, and all six already
+used category membership bits. The outside control also saves its empty
+Description comparison immediately. No additional category/error cases, source
+locations or full platform stacks are introduced. There is no new completion
+record: `exception-context.outside-empty` is the fifth and final appended record.
+
+The new exact inverse restores source Git blob
+`540d0fa68f212cef2963da7e1e59565a0a56edb6`, preserving every byte of the native-audited
+111-record source. Both frozen comparison routes continue through the existing
+exact 88-record source/output binding; neither comparator text nor its reviewed
+hash pins change. Native execution receives all 116 records. All six fixtures,
+24 manifest inputs, six outputs and the other scenario/witness counts remain
+unchanged. These five new observations require a fresh native run before being
+used to change runtime semantics.
