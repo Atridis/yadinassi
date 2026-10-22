@@ -1151,8 +1151,11 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
     if (result.returncode != 0 or result.stderr or result.stdout.count(boundary) != 1
             or result.stdout.split(boundary)[1] != expected_suffix):
         raise AssertionError(f'Failed complete native Chars checkpoint: {result!r}')
+    fixed_fixture = json.loads((ROOT / 'tests/fixtures/fixed_string_default_linux.json').read_text(encoding='utf-8'))
+    if hashlib.sha256(complete.encode()).hexdigest() != fixed_fixture['source_sha256']:
+        raise AssertionError('Fixed String checkpoint source identity changed')
     # Execute the entire current source too, preserving all previous bytes and
-    # every added record. New fixed-default values are not a native oracle yet.
+    # every added record against the independently measured PR82 fixture.
     current = subprocess.run([executable, '-'], input=complete, capture_output=True,
                              encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
     suffix = current.stdout[len(result.stdout):]
@@ -1166,7 +1169,8 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
             or suffix != '\n'.join(records) + '\n'
             or [item.split(' ', 1)[0] for item in records] != labels
             or any(any(ord(c) < 32 for c in item) for item in records)
-            or records[-1] != 'types-extra.fixed-default.checkpoint.complete: [ok]'):
+            or records[-1] != 'types-extra.fixed-default.checkpoint.complete: [ok]'
+            or records != fixed_fixture['records']):
         raise AssertionError(f'Failed current fixed String checkpoint capture: {current!r}')
     print('Binary Chars namespace passed: bilingual readonly constants, codepoint projections, '
           'Eval, BOM file, command flags, stdin and console')

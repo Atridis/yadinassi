@@ -2,7 +2,8 @@
 
 These unit assertions transcribe observed values, not fabricated native golden
 streams. Constructors/copy qualifiers additionally follow the official object
-reference. Fixed-string defaults and ambiguous union conversions remain guarded.
+reference. Ambiguous union conversions remain guarded; fixed String defaults
+have dedicated native-backed tests.
 """
 
 from dataclasses import FrozenInstanceError
@@ -340,9 +341,7 @@ class DescriptionAdjustmentTests(unittest.TestCase):
         self.assertEqual(TD('Date', None, None, DQ(BSLDateFractions.TIME)).adjust_value(), BSLDate(0))
         self.assertEqual(TD('String', None, SQ(D(4))).adjust_value(), '')
 
-    def test_unmeasured_fixed_string_defaults_and_ambiguous_coercions_are_explicit(self):
-        with self.assertRaisesRegex(ValueError, 'пока не поддерживается'):
-            TD('String', None, SQ(D(4), BSLAllowedLength.FIXED)).adjust_value()
+    def test_unmeasured_ambiguous_coercions_remain_explicit(self):
         for names, value in (('Number,Date', True), ('String,Number', None),
                              ('Date,Boolean', '20240229'), ('Boolean', 'unknown'),
                              ('Date', None), ('Number', NULL)):

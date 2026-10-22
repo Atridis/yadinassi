@@ -1,7 +1,7 @@
 """Frozen-smoke orchestration contracts, not additional native 1C evidence.
 
-Subprocess responses are synthetic except for the unchanged native Chars fixture.
-The new fixed String payloads deliberately have no predicted native values.
+Subprocess responses use synthetic earlier output plus native-backed suffixes.
+The fixed String and Chars records are copied from native artifact fixtures.
 """
 import hashlib
 import json
@@ -29,10 +29,10 @@ class FixedStringSmokeTests(unittest.TestCase):
         # entire opaque prefix, not a guessed physical-line or record count.
         cls.old_output = ('synthetic earlier observation: [line one\nline two]\n'
                           + cls.boundary + '\n'.join(cls.fixture['records']) + '\n')
-        cls.new_records = [f'types-extra.fixed-default.{case}.{argument}: [error]'
-                           for case in ('fixed1', 'fixed4', 'fixed0', 'variable4', 'restored4')
-                           for argument in ('omitted', 'undefined', 'empty')]
-        cls.new_records.append('types-extra.fixed-default.checkpoint.complete: [ok]')
+        cls.fixed_fixture = json.loads(
+            (smoke_test.ROOT / 'tests/fixtures/fixed_string_default_linux.json').read_text(
+                encoding='utf-8'))
+        cls.new_records = cls.fixed_fixture['records']
         cls.new_suffix = '\n'.join(cls.new_records) + '\n'
         cls.current_output = cls.old_output + cls.new_suffix
         cls.member_output = ''.join(f'{code}\n' * 8 for code in (13, 11, 160, 10, 12, 9))
@@ -50,6 +50,8 @@ class FixedStringSmokeTests(unittest.TestCase):
         fixture_directory.mkdir(parents=True)
         self.fixture_path = fixture_directory / 'chars_namespace_linux.json'
         self.fixture_path.write_text(json.dumps(self.fixture), encoding='utf-8')
+        (fixture_directory / 'fixed_string_default_linux.json').write_text(
+            json.dumps(self.fixed_fixture), encoding='utf-8')
         self.invocation = 0
         self.executable = str(self.root / 'dist/Yadinassi.exe')
         self.env = {'PATH': 'synthetic', 'PYTHONIOENCODING': 'utf-8'}
@@ -155,13 +157,29 @@ class FixedStringSmokeTests(unittest.TestCase):
     def test_raw_controls_unicode_separators_and_noncanonical_framing_are_rejected(self):
         for control in ('\x00', '\t', '\r', '\v', '\f', '\x1c', '\x85', '\u2028', '\u2029'):
             changed = self.new_records.copy()
-            changed[0] = changed[0].replace('[error]', '[a' + control + 'b]')
+            changed[0] += control + 'changed'
             with self.subTest(control=repr(control)):
                 self.reject_current(self.old_output + '\n'.join(changed) + '\n')
         for suffix in (self.new_suffix[:-1], self.new_suffix + '\n',
                        self.new_suffix.replace('\n', '\r\n')):
             with self.subTest(framing=repr(suffix[-80:])):
                 self.reject_current(self.old_output + suffix)
+
+    def test_every_measured_fixed_payload_remains_exact(self):
+        for index in range(16):
+            changed = self.new_records.copy()
+            changed[index] += 'changed'
+            with self.subTest(record=index):
+                self.reject_current(self.old_output + '\n'.join(changed) + '\n')
+
+    def test_wrong_fixed_fixture_source_hash_rejected(self):
+        changed = {**self.fixed_fixture, 'source_sha256': '0' * 64}
+        (self.root / 'tests/fixtures/fixed_string_default_linux.json').write_text(
+            json.dumps(changed), encoding='utf-8')
+        with patch.object(smoke_test.subprocess, 'run', side_effect=self.results()) as run:
+            with self.assertRaisesRegex(AssertionError, 'Fixed String checkpoint source identity'):
+                self.invoke()
+            self.assertEqual(run.call_count, 8)
 
     def test_checkpoint_exit_failures_and_stderr_are_never_accepted(self):
         for index in (7, 8):
