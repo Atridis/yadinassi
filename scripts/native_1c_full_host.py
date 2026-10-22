@@ -288,7 +288,7 @@ def validate_client_values(data, source_hash, module_hash, server_case):
 
 
 NUMBERS_SOURCE = "integrational_tests/tests/numbers.bsl"
-NUMBERS_SOURCE_SHA256 = '72837cfab6a37506e22408c8b7e620fe8582e9c63214d09e85bb087b1c2a7d86'
+NUMBERS_SOURCE_SHA256 = '65075fff9adc854a317c74821052a9f9afa2b064d5fbb55b21dbab1ecb87556d'
 
 def validate_client_numbers(data, source_hash, module_hash, server_case):
     """Bind the client witness to this invocation's server numbers evidence."""
@@ -302,7 +302,7 @@ def validate_client_numbers(data, source_hash, module_hash, server_case):
         if (data["conversion_verified"] is not True or server_case["status"] != "ok"
                 or not is_digest(data["output_sha256"])
                 or not is_int(data["output_size"], MAX_FILE)
-                or type(data["message_count"]) is not int or data["message_count"] != 350
+                or type(data["message_count"]) is not int or data["message_count"] != 421
                 or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
             raise ValueError("client numbers output identity")
     elif data["conversion_verified"] or any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):

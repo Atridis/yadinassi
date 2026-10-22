@@ -4,6 +4,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
+from scripts.native_historical_replay import historical_numbers_source
 from yadinassi import BSLError, Interpreter
 from yadinassi.numbers import number_from_binary_string, number_from_hex_string
 
@@ -16,7 +17,9 @@ class NumericRadixTests(unittest.TestCase):
 
     def test_native_checkpoint_numeric_output_exact(self):
         output = []
-        Interpreter(output=output.append).execute((ROOT / 'integrational_tests/tests/numbers.bsl').read_text(encoding='utf-8-sig'))
+        source = (ROOT / 'integrational_tests/tests/numbers.bsl').read_text(encoding='utf-8-sig')
+        native = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_bytes()
+        Interpreter(output=output.append).execute(historical_numbers_source(source.encode('utf-8'), native).decode('utf-8-sig'))
         expected = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_text(encoding='utf-8-sig').splitlines()
         self.assertEqual(output, expected)
 

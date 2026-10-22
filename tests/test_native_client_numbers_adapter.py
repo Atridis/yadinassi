@@ -12,7 +12,7 @@ import test_native_1c_full_stage as fixtures
 suite = fixtures.suite
 ROOT = fixtures.REPOSITORY
 NONCE = fixtures.NONCE
-COUNT = 350
+COUNT = 421
 DECLARATIONS = (2, 11, 20, 29, 45, 54, 76, 102, 110, 118, 141, 149, 162, 177, 182, 199, 208, 225, 235)
 SITES = (178, 304, 305, 306)
 CAPTURE = 'ЧислаКлиентЗахват'
@@ -38,7 +38,7 @@ class ClientNumbersAdapterTests(unittest.TestCase):
         return vm
 
     def test_source_template_count_and_raw_site_are_pinned(self):
-        self.assertEqual(suite.digest(self.source), '72837cfab6a37506e22408c8b7e620fe8582e9c63214d09e85bb087b1c2a7d86')
+        self.assertEqual(suite.digest(self.source), '65075fff9adc854a317c74821052a9f9afa2b064d5fbb55b21dbab1ecb87556d')
         self.assertEqual(suite.digest(self.template), '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328')
         self.assertEqual(suite.CLIENT_NUMBERS_MESSAGE_COUNT, COUNT)
         self.assertEqual(suite.CLIENT_NUMBERS_RAW_ORDINAL, 30)
@@ -56,7 +56,7 @@ class ClientNumbersAdapterTests(unittest.TestCase):
         restored = restored.replace('&НаКлиенте\n', '').replace('Процедура ЧислаКлиентВыполнить()\n', '')
         restored = restored.replace(CAPTURE + '(', 'Сообщить(').replace('ЧислаКлиентЧисло(', 'Сообщить(') + '\n'
         self.assertEqual(restored.encode(), self.source)
-        self.assertEqual(len(restored.splitlines()), 659)
+        self.assertEqual(len(restored.splitlines()), 735)
         self.assertEqual(tuple(i for i, line in enumerate(restored.splitlines()) if re.match(r'^(Процедура|Функция) ', line)), DECLARATIONS)
         self.assertEqual(tuple(i for i, line in enumerate(restored.splitlines()) if re.match(r'^\s*Сообщить\(', line)), SITES)
 

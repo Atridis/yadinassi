@@ -288,8 +288,8 @@ are unchanged. Offline tests are not evidence of execution or parity on real 1C.
 `--client-numbers-parity` independently adds the complete unchanged `numbers.bsl`
 scenario after collections and before the negative watchdog. It requires the
 full suite and fixed client probe. The adapter pins the source SHA-256
-`72837cfab6a37506e22408c8b7e620fe8582e9c63214d09e85bb087b1c2a7d86`,
-template, 659 source lines, 19 helper declarations/endings, body boundary and
+`65075fff9adc854a317c74821052a9f9afa2b064d5fbb55b21dbab1ecb87556d`,
+template, 735 source lines, 19 helper declarations/endings, body boundary and
 four message-call sites. Inverse reconstruction restores every source byte;
 helpers and dynamic evaluation retain their local scopes. No server trampoline,
 interpreter-produced expected text, historical fixture or omitted case is used.
@@ -302,7 +302,7 @@ messages, then applies the platform's native `Строка`. Other numbers, Bool
 Undefined, Null and strings are rejected there; all non-strings are rejected by
 the ordinary capture routine. This is intentionally not generic coercion.
 
-The native run must compare all 350 serialized client messages byte-for-byte
+The native run must compare all 421 serialized client messages byte-for-byte
 against the fresh same-run server `numbers.out`. It also reads the unchanged
 server launcher's private `numbers-case/result.json`, verifies that its full
 message array reproduces those exact server bytes, and checks the pinned
@@ -329,3 +329,10 @@ under the stage cap; tests also cover numbers without the other parity modes.
 The 24 staged inputs, six server outputs plus provenance, fixed image/network/
 role isolation, client witness, fresh nonce, roundtrip, 120-second watchdog,
 process census and cleanup gates remain unchanged. Client output stays private.
+
+The exact-half division source-only suffix adds 70 independent math expressions
+and one completion marker, without extending the four original message sites.
+The pinned count is now 421; ordinal 30 remains the only raw numeric literal.
+Source-only local results are not native rounding evidence. The historical
+numbers replay uses the exact original 350-message source/output blobs, while
+live CI retains every current expression and its independently captured result.

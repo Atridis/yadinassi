@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
+    from .native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
 else:
-    from native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
+    from native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1834,8 +1834,8 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
-        if name in ('collections', 'dates'):
-            reconstruct = historical_dates_source if name == 'dates' else historical_collections_source
+        if name in ('collections', 'dates', 'numbers'):
+            reconstruct = {'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
             replay = directory / (name + '-historical.bsl')
             replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
@@ -2067,6 +2067,36 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
     print('Binary fixed-GMT fractions passed: native 185 messages, four fractions, both directions and aliases, CLI and recovery')
 
 
+def check_division_tie_checkpoint(executable, *, directory, env):
+    """Execute full source, preserve native prefix; do not predict new values."""
+    directory.mkdir()
+    source = (ROOT / 'integrational_tests/tests/numbers.bsl').read_bytes().replace(b'\r\n', b'\n')
+    native = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_bytes()
+    historical_numbers_source(source, native)  # Bind both complete identities.
+    expected = native.decode('utf-8-sig').replace('\r\n', '\n').replace('\r', '\n')
+    text = source.decode('utf-8')
+    addition = text.split('// Begin exact division half-tie observations.\n', 1)[1]
+    labels = re.findall(r'^ПроверитьМатематику\("([^"]+)", ', addition, re.MULTILINE)
+    if len(labels) != 70 or len(set(labels)) != 70:
+        raise AssertionError('Division tie source labels changed')
+    # Stdin avoids Windows command-line limits and exercises every current probe.
+    result = subprocess.run([executable, '-'], input=text, capture_output=True,
+                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+    if result.returncode or result.stderr or not result.stdout.startswith(expected):
+        raise AssertionError(f'Failed current division tie checkpoint prefix: {result!r}')
+    suffix = result.stdout[len(expected):]
+    lines = suffix.split('\n')
+    if (len(lines) != 72 or lines[-1] != ''
+            or lines[-2] != 'division-tie.checkpoint.complete: [ok]'):
+        raise AssertionError('Failed current division tie checkpoint framing')
+    for label, line in zip(labels, lines[:-2]):
+        # Internal Number/Boolean payloads or explicitly isolated errors only.
+        pattern = re.escape('math.' + label) + r': \[(?:error|serialize-error|\{"N",-?[0-9]+(?:\.[0-9]+)?\}|\{"B",[01]\})\]'
+        if re.fullmatch(pattern, line) is None:
+            raise AssertionError('Failed current division tie checkpoint record: ' + label)
+    print('Binary division tie checkpoint: all 421 records, original 350 unchanged; no new native expectations')
+
+
 def check_value_list_references(executable, *, directory, env):
     """Native PR74 field behavior across entry modes; client routing is local QA."""
     directory.mkdir()
@@ -2130,6 +2160,7 @@ def main() -> None:
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
+        check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
         check_eval(executable, directory=Path(temporary) / "eval", env=env)
         check_string_parity(executable, directory=Path(temporary) / "string-parity", env=env)

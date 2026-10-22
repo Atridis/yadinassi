@@ -24,7 +24,7 @@ class NumbersExecutionTests(unittest.TestCase):
                 path = self.inputs / name
                 path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n'))
             self.hashes = suite.input_hashes(self.inputs, client_probe=True)
-        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(350)]
+        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(421)]
         self.messages[4] = 'multiline: [a\nb\r\nc]\n'
         self.messages[27:32] = ['present.string: [native-text]', 'present.concat: [native-text]',
                                 'present.direct.next:', 'native-text', 'numbers.complete: [ok]']
@@ -59,7 +59,7 @@ class NumbersExecutionTests(unittest.TestCase):
     def test_full_exact_output_and_multiline_preserved(self):
         result = self.run_numbers()
         self.assertEqual(result['status'], 'ok', result)
-        self.assertEqual(result['message_count'], 350)
+        self.assertEqual(result['message_count'], 421)
         self.assertTrue(result['conversion_verified'])
         self.assertEqual(result['output_sha256'], suite.digest(self.output.read_bytes()))
         self.assertEqual(result['output_size'], len(self.output.read_bytes()))
