@@ -158,11 +158,19 @@ class NativeTargetFillTests(unittest.TestCase):
             ('target, source, Undefined, "Missing"', 'Отсутствующие исключаемые свойства пока не поддерживаются'),
         ]
         for name in TARGETS:
-            vm = interpreter(name)
-            vm.execute('target = New Structure("First,Last", 1, 2); '
-                       'source = New Structure("First,Last", 10, 20);')
             for args, message in cases:
                 with self.subTest(name=name, args=args):
+                    # Isolate each observation, including newly measured successes.
+                    vm = interpreter(name)
+                    vm.execute('target = New Structure("First,Last", 1, 2); '
+                               'source = New Structure("First,Last", 10, 20);')
+                    if name == LINUX_8_3_27_1508 and args in (
+                            'target, source, ""', 'target, source, " First"'):
+                        vm.execute(f'FillPropertyValues({args});')
+                        expected_first = 1 if args.endswith('""') else 10
+                        self.assertEqual(vm.execute('target.First'), Decimal(expected_first))
+                        self.assertEqual(vm.execute('target.Last'), Decimal(2))
+                        continue
                     with self.assertRaises(BSLRuntimeError) as caught:
                         vm.execute(f'FillPropertyValues({args});')
                     self.assertEqual(caught.exception.message, message)
@@ -171,7 +179,7 @@ class NativeTargetFillTests(unittest.TestCase):
 
     def test_malformed_tokens_still_fail_lazily_in_selected_traversal_order(self):
         for name, malformed, position in product(
-                TARGETS, ('', ' First', 'Last ', 'bad-name'), range(3)):
+                TARGETS, ('', ' First', 'Last ', ' ', 'bad-name'), range(3)):
             with self.subTest(name=name, malformed=malformed, position=position):
                 vm = interpreter(name)
                 vm.execute('target = New Structure("First,Last", 1, 2); '
@@ -179,6 +187,13 @@ class NativeTargetFillTests(unittest.TestCase):
                 names = ['First', 'Last']
                 names.insert(position, malformed)
                 vm.variables['selection'] = ','.join(names)
+                # Native PR86 accepts raw empties and surrounding ASCII spaces
+                # only on Linux INCLUDE; whitespace-only remains an error.
+                if name == LINUX_8_3_27_1508 and malformed in ('', ' First', 'Last '):
+                    vm.execute('FillPropertyValues(target, source, selection);')
+                    self.assertEqual(vm.execute('target.First'), Decimal(10))
+                    self.assertEqual(vm.execute('target.Last'), Decimal(20))
+                    continue
                 with self.assertRaises(BSLRuntimeError) as caught:
                     vm.execute('FillPropertyValues(target, source, selection);')
                 message = ('Недопустимое имя свойства структуры: bad-name'

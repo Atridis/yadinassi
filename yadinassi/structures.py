@@ -182,7 +182,14 @@ def fill_property_values(target: object, source: object,
     def selected_names(value: str, *, reverse: bool = False):
         names = value.split(",")
         for name in reversed(names) if reverse else names:
-            # Empty tokens and whitespace normalization need native evidence.
+            # Only Linux INCLUDE has measured empty-token/ASCII-space behavior.
+            # Skip raw empties, not whitespace-only tokens; keep validation lazy.
+            if reverse:
+                if name == "":
+                    continue
+                name = name.strip(" ")
+            # Windows INCLUDE, EXCLUDE and unmeasured Unicode whitespace retain
+            # the conservative guard. A normalized empty token remains an error.
             if not name or name != trim_all(name):
                 raise ValueError("Пустые имена или пробелы в списках свойств пока не поддерживаются")
             yield name, _key(name)
