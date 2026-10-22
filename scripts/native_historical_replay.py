@@ -279,6 +279,8 @@ EXPORTED_VARIABLE_PROBE_BLOCKS = (('// Begin exported variable checkpoint declar
 
 def without_exported_variable_probes(text):
     """Exact prior 116-record source, never a native-output truncation."""
+    if any(boundary in text for pair in EXPORTED_CONTEXT_PROBE_BLOCKS for boundary in pair):
+        text = without_exported_context_probes(text)
     for start, end in EXPORTED_VARIABLE_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError('exported variable probe boundaries changed')
@@ -287,4 +289,26 @@ def without_exported_variable_probes(text):
         text = before + after
     if git_blob(text.encode('utf-8')) != EXPORTED_VARIABLE_BASE_BLOB:
         raise ValueError('exported variable baseline source binding changed')
+    return text
+
+
+EXPORTED_CONTEXT_BASE_BLOB = '0c0cfae158f10fec2343992fbbc7642cd5ced6bc'
+EXPORTED_CONTEXT_PROBE_BLOCKS = (
+    ('// Begin exported variable discriminator helpers.\n',
+     '// End exported variable discriminator helpers.\n\n'),
+    ('// Begin exported variable discriminator observations.\n',
+     '// End exported variable discriminator observations.\n'),
+)
+
+
+def without_exported_context_probes(text):
+    """Restore the complete native-audited PR89 131-record source, not output."""
+    for start, end in EXPORTED_CONTEXT_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('exported context probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if git_blob(text.encode('utf-8')) != EXPORTED_CONTEXT_BASE_BLOB:
+        raise ValueError('exported context baseline source binding changed')
     return text

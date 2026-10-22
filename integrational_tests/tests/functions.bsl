@@ -7,6 +7,42 @@ Var ExportProbePrivate, ExportProbeValue Export, ExportProbeOther Export;
 Перем МодульноеВычисления;
 Перем СчетчикСсылок;
 
+// Begin exported variable discriminator helpers.
+Procedure ObserveExportContext(Val Label, Val Mode, Val Code)
+    Result = Undefined;
+    Status = "ok";
+    ErrorKind = "none";
+    NamedMember = False;
+    ExportProbeValue = 11;
+    Try
+        If Mode = 1 Then
+            Result = ThisObject.ExportProbeValue;
+        ElsIf Mode = 2 Then
+            ThisObject.ExportProbeValue = 31;
+            Result = ExportProbeRead();
+        ElsIf Mode = 3 Then
+            Result = ThisObject.ExportProbeRead();
+        Else
+            Execute(Code);
+        EndIf;
+    Except
+        Status = "error";
+        Description = ErrorInfo().Description;
+        ErrorKind = "other";
+        If StrFind(Description, "Поле объекта не обнаружено") > 0 Then
+            ErrorKind = "field-missing";
+        ElsIf StrFind(Description, "Метод объекта не обнаружен") > 0 Then
+            ErrorKind = "method-missing";
+        EndIf;
+        NamedMember = StrFind(Lower(Description), "exportprobe") > 0;
+    EndTry;
+    Message("export-context." + Label + ": [" + Status + ";kind=" + ErrorKind
+        + ";named=" + ValueToStringInternal(NamedMember)
+        + ";result=" + ValueToStringInternal(Result)
+        + ";value=" + ValueToStringInternal(ExportProbeValue) + "]");
+EndProcedure
+// End exported variable discriminator helpers.
+
 // Begin exported variable checkpoint helpers.
 Function ExportProbeRead() Export
     Return ExportProbeValue;
@@ -652,3 +688,10 @@ ObserveExportProbe("value-parameter", "Result = ExportProbeVal(ThisObject.Export
 ObserveExportProbe("reference-after-error", "ExportProbeFail(ThisObject.ExportProbeValue);");
 ObserveExportProbe("collection-shared", "ThisObject.ExportProbeArray.Add(47); Result = ExportProbeArray.Count();");
 // End exported variable checkpoint observations.
+// Begin exported variable discriminator observations.
+ObserveExportContext("static-read", 1, "");
+ObserveExportContext("static-write", 2, "");
+ObserveExportContext("static-routine", 3, "");
+ObserveExportContext("execute-read", 0, "Result = ThisObject.ExportProbeValue;");
+ObserveExportContext("execute-routine", 0, "Result = ThisObject.ExportProbeRead();");
+// End exported variable discriminator observations.

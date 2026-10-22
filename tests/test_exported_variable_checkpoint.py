@@ -7,7 +7,7 @@ import unittest
 
 from scripts.native_historical_replay import (
     EXPORTED_VARIABLE_BASE_BLOB, EXPORTED_VARIABLE_PROBE_BLOCKS,
-    git_blob, without_exported_variable_probes,
+    git_blob, without_exported_variable_probes, without_exported_context_probes,
 )
 from yadinassi import BSLError, Interpreter, ast
 from yadinassi.parser import parse
@@ -24,7 +24,8 @@ LABELS = ('object-context', 'initial-undefined', 'read', 'write-routine-read',
 class ExportedVariableCheckpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+        cls.source = without_exported_context_probes(
+            (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8'))
         cls.previous = without_exported_variable_probes(cls.source)
 
     def test_exact_inverse_and_real_negative_mutations_for_both_checkout_endings(self):

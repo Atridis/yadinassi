@@ -1,13 +1,14 @@
 # Exported module variables: local design and checkpoint
 
-Status: LOCAL ONLY, not a semantic implementation or native evidence. Base is the
-293-file PR88 runtime candidate, tree 78f1ec219f6a396b6e6ce24b3bbecfdced7577f8;
-manifest SHA256 5ff52fe5298219e422861f840ca78962d32386f63038ac12fc49bc848b936346.
-The reviewed one-file CRLF test correction is also incorporated verbatim: tree
-d93a7c0e1418a5549e394216f679757b47cdcaab, manifest SHA256
-9ff0f114efbe038c98e63df74666ad407fd387ba5a0b359a42d16edd1f59a048.
-Remote PR88 was independently read at 315c4063299ad7f7642e0bef6528bd3b3b2d080e,
-Draft/open, main 6ddfa0d14e897353cf6ec349e3a402f5500c5323. Rebind after merge.
+Status: parser bootstrap published as Draft PR89, head
+412582452f765839d2b99fdae1705cef067dcafe, tree
+b362aa69ee4eff0313c48ec36ed6f49c82b63a77, based on merged main
+7ca49d6725100f30afc5a24c14fb23e2cf7cfd3c. The present discriminator is local only.
+Native run 39856163175 captured all 131 records on Linux 8.3.27.1508 and passed
+independent evidence-integrity audit, but NOT exported-variable semantic parity.
+ThisObject existed; every exported-field access failed. Internal routine writes
+and local shadowing worked. Thus export visibility, initial Undefined, references,
+Val, exception writeback and collection sharing remain unmeasured.
 
 ## Bounded architecture
 
@@ -47,8 +48,9 @@ Current launcher creates an external-processing object from the complete source.
 Its object module initialization already runs all functions.bsl observations.
 Use ThisObject/ЭтотОбъект property syntax inside guarded Execute strings, with
 static declarations at the beginning and helper routines before executable code.
-No launcher modification, database module, new native input, native-only branch,
-or fabricated expected output is necessary. The first test explicitly records
+This initial checkpoint made no launcher modification, database module, new
+native input, native-only branch, or fabricated expected output. It did not
+establish a usable public field context during object initialization. The first test explicitly records
 whether the object-context bootstrap works. Property operations then record
 success/value or a simple error marker, never source paths or diagnostics.
 
@@ -105,3 +107,25 @@ is permitted. Imported module namespaces remain non-values under their existing
 contract. The concrete self-receiver representation, unsupported value operations
 and property-reference behavior require independent design review after the
 native observations. The present checkpoint makes no runtime change.
+
+
+## Static versus Execute discriminator
+
+Five additional guarded observations compare static field read/write, static
+exported routine call, Execute field read and Execute exported routine call during
+the same initialization phase. ErrorInfo().Description is inspected only to emit
+fixed `field-missing`, `method-missing`, `other` or `none` classifications and a
+boolean indicating the controlled member-name prefix. No raw description, path,
+stack or object presentation is emitted. This diagnoses the core access route,
+not native error-message parity. Runtime remains unchanged and fail-closed.
+
+An exact inverse restores the entire audited 131-record source, blob
+0c0cfae158f10fec2343992fbbc7642cd5ced6bc, SHA256
+fe5334993790244908376e2768545b271a36b1a1a63cbf05452ce8be4b79d40c.
+The prior116 and prior88 inverses remain exact. All six full outputs and 24 trusted
+input bindings are unchanged in shape. Only functions.bsl changes a native input.
+
+If static access works but Execute access fails, investigate the dynamic execution
+context. If both fail, a separately reviewed explicit invocation after Create
+returns is needed before drawing lifecycle conclusions. This local source-only
+discriminator does not change the launcher or invent that post-create result.
