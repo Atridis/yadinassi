@@ -3,6 +3,7 @@ from decimal import Decimal, Inexact, Rounded, ROUND_UP, localcontext
 from pathlib import Path
 import unittest
 
+from scripts.native_historical_replay import historical_numbers_source
 from yadinassi import BSLError, Interpreter
 from yadinassi import elementary
 
@@ -12,7 +13,8 @@ class ElementaryTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / 'integrational_tests'
         actual = []
         Interpreter(output=actual.append).execute(
-            (root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig'))
+            historical_numbers_source((root / 'tests/numbers.bsl').read_bytes(),
+                (root.parent / 'tests/fixtures/native_windows/numbers.out').read_bytes()).decode('utf-8-sig'))
         self.assertEqual(actual, (root.parent / 'tests/fixtures/native_windows/numbers.out').read_text(
             encoding='utf-8-sig').splitlines())
 

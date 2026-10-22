@@ -1755,7 +1755,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
         for scenario, enabled, count, module_hash in (("dates", dates, 185, "e" * 64),
                                                        ("values", values, 377, "f" * 64),
                                                        ("collections", collections, 797, "9" * 64),
-                                                       ("numbers", numbers, 350, "8" * 64)):
+                                                       ("numbers", numbers, 421, "8" * 64)):
             if not enabled:
                 continue
             case = envelope["report"]["stage3"]["cases"][full.SCENARIOS.index(scenario)]

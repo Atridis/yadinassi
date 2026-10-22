@@ -197,7 +197,7 @@ class ClientNumbersOptionTests(unittest.TestCase):
         self.assertEqual(suite.MAX_TOTAL, 2_097_152)
         self.assertEqual(suite.MAX_REPORT, 32_768)
         self.assertEqual(suite.MAX_TRANSPORT, 3_145_728)
-        self.assertEqual(suite.CLIENT_NUMBERS_MESSAGE_COUNT, 350)
+        self.assertEqual(suite.CLIENT_NUMBERS_MESSAGE_COUNT, 421)
 
     def test_adapter_selector_rejects_arbitrary_paths_before_reads(self):
         with mock.patch.object(smoke.FULL, 'read_regular') as read:

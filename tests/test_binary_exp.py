@@ -5,6 +5,8 @@ import importlib
 import math
 from pathlib import Path
 import unittest
+
+from scripts.native_historical_replay import historical_numbers_source
 from unittest.mock import patch
 
 from yadinassi.binary_exp import binary_exp
@@ -95,7 +97,8 @@ Try Exp(709.78271289338398); Except Message("overflow"); EndTry;
         from yadinassi import Interpreter
         root = Path(__file__).resolve().parents[1] / 'integrational_tests'
         expected = (root.parent / 'tests/fixtures/native_windows/numbers.out').read_text(encoding='utf-8-sig').splitlines()
-        source = (root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig')
+        source = historical_numbers_source((root / 'tests/numbers.bsl').read_bytes(),
+            (root.parent / 'tests/fixtures/native_windows/numbers.out').read_bytes()).decode('utf-8-sig')
         for replacement in ({'return_value': 0.0}, {'side_effect': OverflowError}):
             with self.subTest(replacement=replacement), patch('math.exp', **replacement) as host:
                 output = []

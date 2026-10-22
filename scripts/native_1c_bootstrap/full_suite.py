@@ -1901,9 +1901,9 @@ def client_collections_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # All four call sites and the sole non-string literal are pinned, not generalized.
-CLIENT_NUMBERS_SOURCE_SHA256 = '72837cfab6a37506e22408c8b7e620fe8582e9c63214d09e85bb087b1c2a7d86'
+CLIENT_NUMBERS_SOURCE_SHA256 = '65075fff9adc854a317c74821052a9f9afa2b064d5fbb55b21dbab1ecb87556d'
 CLIENT_NUMBERS_TEMPLATE_SHA256 = CLIENT_VALUES_TEMPLATE_SHA256
-CLIENT_NUMBERS_MESSAGE_COUNT = 350
+CLIENT_NUMBERS_MESSAGE_COUNT = 421
 CLIENT_NUMBERS_RAW_ORDINAL = 30  # Zero-based; source line 307, Number literal 1234.5.
 
 
@@ -2003,7 +2003,7 @@ def client_numbers_module(source: bytes, template: bytes) -> bytes:
     capture = 'ЧислаКлиентЗахват'
     reserved = (capture, 'ЧислаКлиентСообщения',
                 'ЧислаКлиентСимволы', 'ЧислаКлиентВыполнить', 'ЧислаКлиентЧисло')
-    if (len(lines) != 659
+    if (len(lines) != 735
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())

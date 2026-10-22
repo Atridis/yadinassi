@@ -123,3 +123,21 @@ def historical_dates_source(source: bytes, output: bytes) -> bytes:
     if git_blob(historical) != HISTORICAL_DATES_BLOB:
         raise ValueError('Historical dates reconstruction mismatch')
     return historical
+
+
+# Windows numbers capture predates the exact-half division source-only suffix.
+HISTORICAL_NUMBERS_BLOB = 'abc35547f3603ce67e958a127aeb2f3bb42acca3'
+CURRENT_NUMBERS_BLOB = '25931bcb4a9636c6fcf22b16cb9023a243708751'
+HISTORICAL_NUMBERS_OUTPUT_BLOB = 'ab5000e748f5b8652a920ddcb2fc85eab8cf7e13'
+
+
+def historical_numbers_source(source: bytes, output: bytes) -> bytes:
+    """Replay all 350 captured observations against their exact original source."""
+    source = source.replace(b'\r\n', b'\n')
+    output = output.replace(b'\r\n', b'\n')
+    if git_blob(source) != CURRENT_NUMBERS_BLOB or git_blob(output) != HISTORICAL_NUMBERS_OUTPUT_BLOB:
+        raise ValueError('Historical numbers source/output identity mismatch')
+    historical = source[:42360]
+    if git_blob(historical) != HISTORICAL_NUMBERS_BLOB:
+        raise ValueError('Historical numbers reconstruction mismatch')
+    return historical

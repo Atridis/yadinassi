@@ -81,9 +81,9 @@ class IntegralPowerTests(unittest.TestCase):
             positive = integral_power(Decimal(base), Decimal(exponent))
             self.assertEqual(integral_power(Decimal(base), Decimal(-exponent)),
                              divide(Decimal(1), positive))
-        # Existing division intentionally does not infer native exact-tie rules.
-        with self.assertRaisesRegex(ValueError, 'точная половина'):
-            integral_power(Decimal(2), Decimal(-28))
+        # Reciprocal powers were measured separately in native PR83.
+        self.assertEqual(integral_power(Decimal(2), Decimal(-28)),
+                         Decimal('0.000000003725290298461914063'))
 
     def test_digit_budget_boundaries_are_exact(self):
         for base, exponent, expected in [

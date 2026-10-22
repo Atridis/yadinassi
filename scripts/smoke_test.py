@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
+    from .native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
 else:
-    from native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
+    from native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -276,18 +276,18 @@ DIVISION_EXAMPLES = [
     ('Number("123456789012345678901234567890.123456789") / 7',
      '17\u00a0636\u00a0684\u00a0144\u00a0620\u00a0811\u00a0271\u00a0604\u00a0938\u00a0270,'
      '017636684142857142857142857142857143'),
+    # Native PR83 exact-half measurements, also exercised through all CLI routes.
+    ('1 / 268435456', '0,000000003725290298461914063'),
+    ('-1 / 268435456', '-0,000000003725290298461914063'),
+    ('3 / -268435456', '-0,000000011175870895385742188'),
+    ('-3 / -268435456', '0,000000011175870895385742188'),
     ('stored', '0,142857142857142857142857143'),
     ('stored / 3', '0,047619047619047619047619047666666666666666666666666667'),
 ]
-DIVISION_TIE = 'Деление: точная половина на границе округления пока не поддерживается в Yadinassi'
 DIVISION_LIMIT = 'Деление: превышен предел ресурсов Yadinassi (4096 десятичных разрядов)'
 DIVISION_FAILURES = [
     ('1 / 0', 'Деление на ноль'),
     ('1 / -0.000', 'Деление на ноль'),
-    ('1 / 268435456', DIVISION_TIE),
-    ('-1 / 268435456', DIVISION_TIE),
-    ('3 / 268435456', DIVISION_TIE),
-    ('-3 / 268435456', DIVISION_TIE),
     ('Number("1e1000000") / 3', DIVISION_LIMIT),
     ('Number("1e-1000000") / 3', DIVISION_LIMIT),
     ('1 / Number("1e1000000")', DIVISION_LIMIT),
@@ -365,7 +365,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
         'Message(value); Message(Доли.Divide(value, 3));\n'
         'Message(Доли.Divide(1, 0.3)); Message(TypeOf(value));\n'
         'Message(value = Number("0.142857142857142857142857143"));\n'
-        'Try value = Доли.Divide(1, 268435456); Except Message("caught"); EndTry;\n'
+        'Try value = Доли.Divide(1, 0); Except Message("caught"); EndTry;\n'
         'Message(value); Message(Доли.Divide(1, 8));\n', encoding='utf-8-sig')
     import_output = ('0,142857142857142857142857143\n'
                      '0,047619047619047619047619047666666666666666666666666667\n'
@@ -379,7 +379,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
 
     # One diagnostic of each kind must have the right location on every route;
     # all sign and exponent variants above are additionally checked as catchable.
-    for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+    for expression, message in (DIVISION_FAILURES[index] for index in (0, 2)):
         error_code = f'value = 1 / 7;\nvalue = {expression};\n'
         source.write_text(error_code, encoding='utf-8-sig')
         importer.write_text('// #Импорт Доли.bsl\nДоли.Divide(' +
@@ -1834,8 +1834,8 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
-        if name in ('collections', 'dates'):
-            reconstruct = historical_dates_source if name == 'dates' else historical_collections_source
+        if name in ('collections', 'dates', 'numbers'):
+            reconstruct = {'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
             replay = directory / (name + '-historical.bsl')
             replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
@@ -2067,6 +2067,32 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
     print('Binary fixed-GMT fractions passed: native 185 messages, four fractions, both directions and aliases, CLI and recovery')
 
 
+def check_division_tie_checkpoint(executable, *, directory, env):
+    """Execute all 421 records against original prefix and native PR83 suffix."""
+    directory.mkdir()
+    source = (ROOT / 'integrational_tests/tests/numbers.bsl').read_bytes().replace(b'\r\n', b'\n')
+    native = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_bytes()
+    historical_numbers_source(source, native)  # Bind both complete identities.
+    expected = native.decode('utf-8-sig').replace('\r\n', '\n').replace('\r', '\n')
+    text = source.decode('utf-8')
+    addition = text.split('// Begin exact division half-tie observations.\n', 1)[1]
+    labels = re.findall(r'^ПроверитьМатематику\("([^"]+)", ', addition, re.MULTILINE)
+    if len(labels) != 70 or len(set(labels)) != 70:
+        raise AssertionError('Division tie source labels changed')
+    # Stdin avoids Windows command-line limits and exercises every current probe.
+    result = subprocess.run([executable, '-'], input=text, capture_output=True,
+                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+    if result.returncode or result.stderr or not result.stdout.startswith(expected):
+        raise AssertionError(f'Failed current division tie checkpoint prefix: {result!r}')
+    fixture = json.loads((ROOT / 'tests/fixtures/division_half_ties_linux.json').read_text(encoding='utf-8'))
+    if hashlib.sha256(source).hexdigest() != fixture['source_sha256']:
+        raise AssertionError('Division tie native fixture source mismatch')
+    if result.stdout != expected + '\n'.join(fixture['records']) + '\n':
+        raise AssertionError('Failed native-measured division tie records')
+    print('Binary native division half ties: all 421 records matched, original 350 unchanged')
+
+
+
 def check_value_list_references(executable, *, directory, env):
     """Native PR74 field behavior across entry modes; client routing is local QA."""
     directory.mkdir()
@@ -2130,6 +2156,7 @@ def main() -> None:
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
+        check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)
         check_numeric_helpers(executable, directory=Path(temporary) / "integer-part", env=env)
         check_eval(executable, directory=Path(temporary) / "eval", env=env)
         check_string_parity(executable, directory=Path(temporary) / "string-parity", env=env)

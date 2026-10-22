@@ -288,8 +288,8 @@ are unchanged. Offline tests are not evidence of execution or parity on real 1C.
 `--client-numbers-parity` independently adds the complete unchanged `numbers.bsl`
 scenario after collections and before the negative watchdog. It requires the
 full suite and fixed client probe. The adapter pins the source SHA-256
-`72837cfab6a37506e22408c8b7e620fe8582e9c63214d09e85bb087b1c2a7d86`,
-template, 659 source lines, 19 helper declarations/endings, body boundary and
+`65075fff9adc854a317c74821052a9f9afa2b064d5fbb55b21dbab1ecb87556d`,
+template, 735 source lines, 19 helper declarations/endings, body boundary and
 four message-call sites. Inverse reconstruction restores every source byte;
 helpers and dynamic evaluation retain their local scopes. No server trampoline,
 interpreter-produced expected text, historical fixture or omitted case is used.
@@ -302,7 +302,7 @@ messages, then applies the platform's native `Строка`. Other numbers, Bool
 Undefined, Null and strings are rejected there; all non-strings are rejected by
 the ordinary capture routine. This is intentionally not generic coercion.
 
-The native run must compare all 350 serialized client messages byte-for-byte
+The native run must compare all 421 serialized client messages byte-for-byte
 against the fresh same-run server `numbers.out`. It also reads the unchanged
 server launcher's private `numbers-case/result.json`, verifies that its full
 message array reproduces those exact server bytes, and checks the pinned
@@ -316,8 +316,9 @@ size and count. Failure/late process-census invalidation clears the proof.
 This establishes full numbers client execution and native-conversion parity
 against actual server `Сообщить`. It does **not** measure the managed client's
 UI `Сообщить` rendering or establish general number-formatting equivalence.
-Offline tests check structure, typing and orchestration only; a new native run
-is required before claiming native parity.
+Offline tests check structure, typing and orchestration only; native parity
+requires an actual native run. The verified PR83 source-checkpoint run below
+provides that evidence for its pinned source, not for later runtime revisions.
 
 Numbers selects stage-wire schema 3, which retains the existing ordered
 hash/proof arrays and losslessly packs process-diagnostic field names into a
@@ -329,3 +330,36 @@ under the stage cap; tests also cover numbers without the other parity modes.
 The 24 staged inputs, six server outputs plus provenance, fixed image/network/
 role isolation, client witness, fresh nonce, roundtrip, 120-second watchdog,
 process census and cleanup gates remain unchanged. Client output stays private.
+
+The exact-half division source-first suffix adds 70 independent math expressions
+and one completion marker, without extending the four original message sites.
+The pinned count is now 421; ordinal 30 remains the only raw numeric literal.
+Source-only local results are not native rounding evidence. The historical
+numbers replay uses the exact original 350-message source/output blobs, while
+live CI retains every current expression and its independently captured result.
+
+[PR83 run 39779498177](https://github.com/Atridis/yadinassi/actions/runs/39779498177)
+subsequently supplied verified Linux 1C 8.3.27.1508 evidence for all 421 numbers
+messages on the server and managed client, including the native-conversion
+proof. All 24 inputs, source/generated-module identities, six fresh output
+artifacts and provenance were independently audited. The complete numbers
+output has SHA-256
+`1a65f94485752159d64c80ab4ba9cbca3d2fa127bf0d1a1f50eabc4df2259c53`
+and size 23,131 bytes; all 350 historical records remain byte-identical.
+The full values377 and dates185 captures and client parity also remain intact.
+
+The 16 direct adjacent-candidate pairs at scales 18/27/36 and four separately
+measured reciprocal Pow pairs all select half-away-from-zero, with consistent
+internal numeric payloads and Boolean comparisons. This supports the bounded
+runtime change to increment the quotient coefficient on an exact half. The
+nine-digit-block scale formula, other arithmetic branches and 4096-digit work
+limits are unchanged. Applying the rule beyond the measured cases is model
+generalization, not generic huge-scale evidence; the unsupported 324-place
+display-string exact-half guard is unchanged.
+
+Native capture and all client parity gates passed in that source checkpoint,
+but acceptance was rejected because the old interpreter still raised on exact
+division halves, first differing at numbers line 351. That expected mismatch
+must not be called a successful runtime acceptance. An updated runtime needs
+its own native and platform acceptance before merge; neither this capture nor
+offline tests establish a fresh Windows result.

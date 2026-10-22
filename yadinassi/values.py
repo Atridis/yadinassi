@@ -172,7 +172,8 @@ def divide(left: Decimal, right: Decimal) -> Decimal:
     """Empirical nine-digit-block model, verified by native numbers.bsl v2.
 
     This does not use the process Decimal context or infer a native maximum.
-    True target-quantum ties remain unsupported until native evidence exists.
+    Exact-half ties round away from zero, measured in PR83 at scales 18/27/36.
+    Other bounded scales remain model extrapolations, not new native evidence.
     """
     if not left.is_finite() or not right.is_finite():
         raise ValueError("Деление: ожидаются конечные числа")
@@ -209,9 +210,9 @@ def divide(left: Decimal, right: Decimal) -> Decimal:
     else:
         denominator *= 10 ** -shift
     coefficient, remainder = divmod(numerator, denominator)
-    if 2 * remainder == denominator:
-        raise ValueError("Деление: точная половина на границе округления пока не поддерживается в Yadinassi")
-    if 2 * remainder > denominator:
+    # The coefficient is unsigned: incrementing magnitude rounds a tie away
+    # from zero for either operand sign (native PR83 run 39779498177).
+    if 2 * remainder >= denominator:
         coefficient += 1
     # Decimal(int) and the tuple constructor are exact even under tiny host
     # contexts with rounding traps. scaleb()/unary minus would not be.

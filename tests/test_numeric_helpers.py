@@ -4,6 +4,7 @@ from decimal import Decimal, Inexact, Rounded, ROUND_UP, localcontext
 from pathlib import Path
 import unittest
 
+from scripts.native_historical_replay import historical_numbers_source
 from yadinassi import BSLError, Interpreter
 from yadinassi.numbers import integer_part, minimum, maximum
 
@@ -16,7 +17,9 @@ class NumericHelperTests(unittest.TestCase):
         # Both owner uploads are compared without filtering pending strings.
         root = Path(__file__).resolve().parents[1] / 'integrational_tests'
         output = []
-        Interpreter(output=output.append).execute((root / 'tests/numbers.bsl').read_text(encoding='utf-8-sig'))
+        source = (root / 'tests/numbers.bsl').read_bytes()
+        native = (root.parent / 'tests/fixtures/native_windows/numbers.out').read_bytes()
+        Interpreter(output=output.append).execute(historical_numbers_source(source, native).decode('utf-8-sig'))
         expected = (root.parent / 'tests/fixtures/native_windows/numbers.out').read_text(encoding='utf-8').splitlines()
         self.assertEqual(output, expected)
 
