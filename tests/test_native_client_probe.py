@@ -1744,7 +1744,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
                 self.assertEqual(actual, expected)
                 self.assertTrue(any(value.startswith(root) for value in actual))
 
-    def emitter(self, *, watchdog=False, dates=False, values=False, collections=False, cleanup_failed=False):
+    def emitter(self, *, watchdog=False, dates=False, values=False, collections=False, numbers=False, cleanup_failed=False):
         envelope, inputs, modules = host_fixture.fixture()
         inputs[suite.CLIENT_SOURCE] = "c" * 64
         modules["client_probe"] = "d" * 64
@@ -1754,12 +1754,13 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
         envelope["report"]["stage3"]["client_probe"] = client
         for scenario, enabled, count, module_hash in (("dates", dates, 100, "e" * 64),
                                                        ("values", values, 261, "f" * 64),
-                                                       ("collections", collections, 797, "9" * 64)):
+                                                       ("collections", collections, 797, "9" * 64),
+                                                       ("numbers", numbers, 350, "8" * 64)):
             if not enabled:
                 continue
             case = envelope["report"]["stage3"]["cases"][full.SCENARIOS.index(scenario)]
             source = f"integrational_tests/tests/{scenario}.bsl"
-            if scenario in {"values", "collections"}:
+            if scenario in {"values", "collections", "numbers"}:
                 inputs[source] = getattr(full, scenario.upper() + "_SOURCE_SHA256")
                 case["source_sha256"] = inputs[source]
             case["message_count"] = count
@@ -1768,6 +1769,8 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
                 **copy.deepcopy(client), "source_sha256": inputs[source],
                 "module_sha256": module_hash, "roundtrip_sha256": module_hash,
                 **{key: case[key] for key in ("output_sha256", "output_size", "message_count")}}
+        if numbers:
+            envelope["report"]["stage3"]["client_numbers"]["conversion_verified"] = True
         if watchdog:
             envelope["report"]["stage3"]["client_watchdog"] = {**copy.deepcopy(client), "completed": False,
                 "process_exited": False, "witness_verified": False, "timeout_verified": True}
@@ -1787,7 +1790,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
             arguments = ["emitter", "1" if cleanup_failed else "0", "stage2" if cleanup_failed else "complete",
                          "true", "true", "true", "true", "true", "true", host_fixture.NONCE,
                          "true", "true" if watchdog else "false", "true" if dates else "false",
-                         "true" if values else "false", "true" if collections else "false", "true" if cleanup_failed else "false"]
+                         "true" if values else "false", "true" if collections else "false", "true" if numbers else "false", "true" if cleanup_failed else "false"]
             reader = (mock.patch.object(suite, "secure_bytes", new=stage_fixture.portable_fixture_bytes)
                       if os.name == "nt" else contextlib.nullcontext())
             with reader, mock.patch.object(sys, "argv", arguments), mock.patch.object(sys, "path", sys.path.copy()), \
@@ -1801,14 +1804,14 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
                 exec(compile(script, "offline-final-report-emitter", "exec"), {})
             self.assertEqual(caught.exception.code, 1)
         report, outputs = full.validate_envelope(raw.getvalue(), host_fixture.NONCE, inputs, modules,
-                                                 smoke.validate_report, watchdog_check=watchdog, client_dates=dates, client_values=values, client_collections=collections)
+                                                 smoke.validate_report, watchdog_check=watchdog, client_dates=dates, client_values=values, client_collections=collections, client_numbers=numbers)
         self.assertEqual(outputs, {})
         self.assertFalse(report["native_tests_completed"])
         self.assertEqual(report["status"], "stage3_failed")
         self.assertEqual(report["stage3"]["status"], "failed")
         self.assertEqual(report["stage2"]["status"], "ok")
         last = report["stage3"]["client_watchdog" if watchdog else
-                                "client_collections" if collections else "client_values" if values else "client_dates" if dates else "client_probe"]
+                                "client_numbers" if numbers else "client_collections" if collections else "client_values" if values else "client_dates" if dates else "client_probe"]
         self.assertEqual(last["status"], "failed")
         self.assertFalse(last["quiet"])
         self.assertFalse(last["witness_verified"])

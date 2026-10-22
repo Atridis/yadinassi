@@ -189,7 +189,7 @@ jobs:
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-watchdog-check --client-dates-parity --client-values-parity --client-collections-parity --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-watchdog-check --client-dates-parity --client-values-parity --client-collections-parity --client-numbers-parity --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1
       - name: Upload only validated finite comparison report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

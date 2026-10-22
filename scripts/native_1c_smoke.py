@@ -209,7 +209,7 @@ def validate_input_tree(root: Path, *, full_suite: bool = False, client_probe: b
 
 def _client_parity_module_hash(staged: Path, scenario: str) -> str:
     """Hash the same reviewed adapter over staged inputs, without import leakage."""
-    if scenario not in {"dates", "values", "collections"}:
+    if scenario not in {"dates", "values", "collections", "numbers"}:
         raise SmokeError("invalid_client_parity_scenario")
     names = ("inject_modules", "evidence_gates", "full_suite")
     missing = object()
@@ -229,7 +229,7 @@ def _client_parity_module_hash(staged: Path, scenario: str) -> str:
         source = FULL.read_regular(staged / ("scenarios/" + scenario + ".bsl"), FULL.MAX_FILE, nonempty=True)
         template = FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)
         adapter = {"dates": module.client_dates_module, "values": module.client_values_module,
-                   "collections": module.client_collections_module}[scenario]
+                   "collections": module.client_collections_module, "numbers": module.client_numbers_module}[scenario]
         return FULL.digest(adapter(source, template))
     finally:
         for name in names:
@@ -251,8 +251,14 @@ def client_collections_module_hash(staged: Path) -> str:
     return _client_parity_module_hash(staged, "collections")
 
 
+def client_numbers_module_hash(staged: Path) -> str:
+    return _client_parity_module_hash(staged, "numbers")
+
+
 def container_command(probe: Path, name: str, *, bootstrap: bool = False,
-                      full_suite: bool = False, nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False) -> list[str]:
+                      full_suite: bool = False, nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False) -> list[str]:
+    if client_numbers and (not client_probe or not full_suite):
+        raise SmokeError("client_numbers_requires_client_probe_and_full_suite")
     if client_collections and (not client_probe or not full_suite):
         raise SmokeError("client_collections_requires_client_probe_and_full_suite")
     if client_values and (not client_probe or not full_suite):
@@ -292,7 +298,7 @@ def container_command(probe: Path, name: str, *, bootstrap: bool = False,
         "LANG=ru_RU.UTF-8", "LC_ALL=ru_RU.UTF-8", "TZ=Etc/UTC",
         "/bin/bash", "--noprofile", "--norc", "/smoke/probe.sh",
     ] + (["--full-suite", "--invocation-nonce", nonce] if full_suite else
-         ["--bootstrap-simple-epf"] if bootstrap else []) + (["--client-probe"] if client_probe else []) + (["--client-watchdog-check"] if watchdog_check else []) + (["--client-dates-parity"] if client_dates else []) + (["--client-values-parity"] if client_values else []) + (["--client-collections-parity"] if client_collections else [])
+         ["--bootstrap-simple-epf"] if bootstrap else []) + (["--client-probe"] if client_probe else []) + (["--client-watchdog-check"] if watchdog_check else []) + (["--client-dates-parity"] if client_dates else []) + (["--client-values-parity"] if client_values else []) + (["--client-collections-parity"] if client_collections else []) + (["--client-numbers-parity"] if client_numbers else [])
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -443,7 +449,9 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
 
 def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
               export_native_outputs: bool = False, native_target: str = FULL.WINDOWS_TARGET,
-              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False) -> dict[str, object]:
+              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False) -> dict[str, object]:
+    if client_numbers and (not client_probe or not full_suite):
+        raise SmokeError("client_numbers_requires_client_probe_and_full_suite")
     if client_collections and (not client_probe or not full_suite):
         raise SmokeError("client_collections_requires_client_probe_and_full_suite")
     if client_values and (not client_probe or not full_suite):
@@ -490,6 +498,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 module_hashes["client_values"] = client_values_module_hash(staged)
             if client_collections:
                 module_hashes["client_collections"] = client_collections_module_hash(staged)
+            if client_numbers:
+                module_hashes["client_numbers"] = client_numbers_module_hash(staged)
             auth = work / "registry-auth"
             auth.mkdir(mode=0o700)
             auth_env = docker_environment(auth)
@@ -507,7 +517,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
             if code != 0 or platform.strip() != b"linux/amd64|0":
                 raise SmokeError("unexpected_image_platform_or_volumes")
             run_command = container_command(staged if bootstrap else PROBE, name, bootstrap=bootstrap,
-                                            full_suite=full_suite, nonce=nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections)
+                                            full_suite=full_suite, nonce=nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers)
             payloads = {}
             report = None
             primary_error = None
@@ -516,7 +526,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 runtime = FULL_MAX_RUNTIME if full_suite else BOOTSTRAP_MAX_RUNTIME if bootstrap else MAX_RUNTIME
                 if full_suite:
                     code, raw = bounded_run(run_command, env, runtime, FULL.MAX_TRANSPORT)
-                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections)
+                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers)
                     del raw
                 else:
                     code, raw = bounded_run(run_command, env, runtime)
@@ -630,6 +640,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Also require private client/server values parity after the client checkpoint")
     parser.add_argument("--client-collections-parity", action="store_true",
                         help="Also require private full client/server collections byte parity")
+    parser.add_argument("--client-numbers-parity", action="store_true",
+                        help="Also require private full client/server numbers byte parity")
     parser.add_argument("--client-probe", action="store_true",
                         help="Also require fresh managed-form client-only execution proof")
     parser.add_argument("--export-native-outputs", action="store_true",
@@ -640,6 +652,8 @@ def main(argv: list[str] | None = None) -> int:
                         default=FULL.BYTE_EXACT, help="Raw-byte comparison or the reviewed, source-bound typed Map contract")
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
+    if args.client_numbers_parity and (not args.client_probe or not args.full_suite):
+        parser.error("--client-numbers-parity requires --client-probe and --full-suite")
     if args.client_collections_parity and (not args.client_probe or not args.full_suite):
         parser.error("--client-collections-parity requires --client-probe and --full-suite")
     if args.client_values_parity and (not args.client_probe or not args.full_suite):
@@ -665,7 +679,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     artifact_evidence_validated = False
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check, client_dates=args.client_dates_parity, client_values=args.client_values_parity, client_collections=args.client_collections_parity)
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check, client_dates=args.client_dates_parity, client_values=args.client_values_parity, client_collections=args.client_collections_parity, client_numbers=args.client_numbers_parity)
         if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")
