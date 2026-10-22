@@ -58,3 +58,32 @@ def historical_collections_source(source, output):
         raise ValueError("historical collections source binding changed")
     return replay
 
+
+
+# The six historical Windows captures are immutable. Live CI executes all probes.
+HISTORICAL_VALUES_BLOB = '5b7f3976c2d6de30930c83063079d7e2e41317e5'
+HISTORICAL_VALUES_OUTPUT_BLOB = '016f30d6f3bdb1a814e86a70e3bcf424383a0d27'
+CHARS_PROBE_BLOCKS = (('// Begin Chars namespace helpers.\n', '// End Chars namespace helpers.\n\n'), ('// Begin Chars namespace observations.\n', '// End Chars namespace observations.\n'))
+
+
+def without_chars_probes(text):
+    """Remove only bounded Chars additions; historical caller checks exact hash."""
+    for start, end in CHARS_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError("Chars probe boundaries changed")
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    return text
+
+
+def historical_values_source(source, output):
+    """Reconstruct every byte of original values source, never an output prefix."""
+    source = source.replace(b"\r\n", b"\n")
+    output = output.replace(b"\r\n", b"\n")
+    if git_blob(output) != HISTORICAL_VALUES_OUTPUT_BLOB:
+        raise ValueError("historical values output binding changed")
+    replay = without_chars_probes(source.decode("utf-8")).encode("utf-8")
+    if git_blob(replay) != HISTORICAL_VALUES_BLOB:
+        raise ValueError("historical values source binding changed")
+    return replay

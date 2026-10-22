@@ -33,8 +33,14 @@ REMOVED_RESEARCH_LABELS = {
 }
 
 
+def historical_source():
+    from scripts.native_historical_replay import historical_values_source
+    output = ROOT / 'tests/fixtures/native_windows/values.out'
+    return historical_values_source(SOURCE.read_bytes(), output.read_bytes()).decode('utf-8')
+
+
 def source():
-    return split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))[0]
+    return split_type_supplement(historical_source())[0]
 
 
 def helpers():
@@ -212,7 +218,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
     def test_supplement_retains_raw_inverse_when_a_stage_changes(self):
         # Synthetic stage failure/change is a formatter observability test,
         # not a claim about a new native TypeDescription conversion.
-        _, supplement = split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))
+        _, supplement = split_type_supplement(historical_source())
         vm = Interpreter()
         vm.execute(supplement.split(TYPES_SUPPLEMENT_BODY_START, 1)[0])
         ordinary = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
@@ -260,7 +266,7 @@ class HistoricalTypesSourceTests(unittest.TestCase):
     """Preserve historical source bytes independently of native semantic tests."""
 
     def test_source_gate_rejects_changes_to_historical_blocks(self):
-        program = (SOURCE).read_text(encoding='utf-8-sig')
+        program = historical_source()
         confirmed, labels = pending_types_checkpoint(program)
         self.assertTrue(confirmed.endswith('Сообщить("xml.checkpoint.complete: [ok]");\n'))
         self.assertTrue(labels)
@@ -274,7 +280,7 @@ class HistoricalTypesSourceTests(unittest.TestCase):
 
 class SupplementalTypesGateTests(unittest.TestCase):
     def test_split_recovers_exact_original_and_rejects_mutations(self):
-        program = SOURCE.read_text(encoding='utf-8-sig')
+        program = historical_source()
         original, supplement = split_type_supplement(program)
         self.assertEqual(hashlib.sha256(original.encode()).hexdigest(),
                          smoke_test.TYPES_ORIGINAL_SOURCE_SHA256)
@@ -291,7 +297,7 @@ class SupplementalTypesGateTests(unittest.TestCase):
                 split_type_supplement(changed)
 
     def test_compact_supplement_matches_confirmed_native_output(self):
-        _, supplement = split_type_supplement(SOURCE.read_text(encoding='utf-8-sig'))
+        _, supplement = split_type_supplement(historical_source())
         output = []
         Interpreter(output=output.append).execute(supplement)
         expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
@@ -306,7 +312,7 @@ class StrictNativeGateTests(unittest.TestCase):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
         # Reviewed migration preserves every captured output byte and binds the
         # complete historical source; live Docker compares all current cases.
-        self.assertEqual(hashlib.sha256(actual).hexdigest(), '2733fd98ad78de16732c3c3832e2dc72dcefb5dd9ac59b67da7d3fce8c8a2986')
+        self.assertEqual(hashlib.sha256(actual).hexdigest(), '569edea168907a38c66510c08fa9941f78a6359878c11319801554912d8365a0')
 
     def test_frozen_full_native_comparator_has_reviewed_historical_replay(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')
@@ -314,11 +320,11 @@ class StrictNativeGateTests(unittest.TestCase):
                  + text.split('def check_saved_native_outputs(', 1)[1]
                  .split('def check_timezone_configuration(', 1)[0])
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
-                         "63fb4713233fc70d25b0534d8d0f4c56d843e0b60edbe13f7879585311dad1cf")
+                         "0e7b7ca4bfb843e47d35cde464752a11215bfbf7bde5ff21cca0dc495a00aa14")
 
     def test_frozen_full_modes_and_bounded_command_aliases(self):
         expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
-        full_source = SOURCE.read_text(encoding='utf-8-sig')
+        full_source = historical_source()
         _, command_source = split_type_supplement(full_source)
         marker = 'types.checkpoint.complete: [ok]\n'
         command_expected = expected.split(marker, 1)[1]

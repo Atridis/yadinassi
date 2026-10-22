@@ -19,7 +19,7 @@ OUTPUT_KEYS = {"output_sha256", "output_size", "message_count"}
 class ClientValuesHostTests(unittest.TestCase):
     def setUp(self):
         # Deliberately not historical values output: acceptance must use fresh bytes.
-        self.payload = b"fresh values\n" * 260 + b"message with\nembedded newline\n"
+        self.payload = b"fresh values\n" * 319 + b"message with\nembedded newline\n"
         self.envelope, self.inputs, self.modules = host_fixture.fixture(self.payload)
         self.inputs[full.CLIENT_SOURCE] = "c" * 64
         self.modules.update(client_probe="d" * 64, client_values="e" * 64)
@@ -27,7 +27,7 @@ class ClientValuesHostTests(unittest.TestCase):
         self.server = stage["cases"][full.SCENARIOS.index("values")]
         self.inputs[full.VALUES_SOURCE] = full.VALUES_SOURCE_SHA256
         self.server["source_sha256"] = full.VALUES_SOURCE_SHA256
-        self.server["message_count"] = 261  # Messages need not equal physical lines.
+        self.server["message_count"] = 320  # Messages need not equal physical lines.
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": "c" * 64,
                        "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
                        "process_diagnostics": process_diagnostics(),
@@ -73,7 +73,7 @@ class ClientValuesHostTests(unittest.TestCase):
         report, outputs = self.validate()
         self.assertEqual(outputs["values"], self.payload)
         self.assertEqual(list(outputs), list(full.SCENARIOS))
-        self.assertEqual(report["stage3"]["client_values"]["message_count"], 261)
+        self.assertEqual(report["stage3"]["client_values"]["message_count"], 320)
         self.assertEqual(len(self.inputs), 24)
         self.assertEqual(len(full.ARTIFACT_FILES), 7)
         self.assertNotIn("fresh values", json.dumps(report))
@@ -132,7 +132,7 @@ class ClientValuesHostTests(unittest.TestCase):
         # Another successful case's bytes are not a substitute for values.
         alternate = b"different server case\n"
         other = self.envelope["report"]["stage3"]["cases"][0]
-        other.update(output_sha256=full.digest(alternate), output_size=len(alternate), message_count=261)
+        other.update(output_sha256=full.digest(alternate), output_size=len(alternate), message_count=320)
         self.envelope["outputs"][0].update(sha256=full.digest(alternate), size=len(alternate),
                                           data_b64=base64.b64encode(alternate).decode())
         self.validate()
@@ -141,7 +141,7 @@ class ClientValuesHostTests(unittest.TestCase):
             self.validate()
 
     def test_matching_but_wrong_server_and_client_message_counts_are_rejected(self):
-        for count in (0, 260, 262, 32768, True, "261"):
+        for count in (0, 319, 321, 32768, True, "320"):
             envelope = copy.deepcopy(self.envelope)
             envelope["report"]["stage3"]["cases"][full.SCENARIOS.index("values")]["message_count"] = count
             envelope["report"]["stage3"]["client_values"]["message_count"] = count
@@ -257,8 +257,8 @@ class ClientValuesHostTests(unittest.TestCase):
 
     def test_duplicate_trailing_json_nonfinite_and_stale_stage_nonce_fail_closed(self):
         raw = host_fixture.encode(self.envelope)
-        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":261', b'"message_count":261,"message_count":261'),
-                     raw.replace(b'"message_count":261', b'"message_count":NaN')]
+        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":320', b'"message_count":320,"message_count":320'),
+                     raw.replace(b'"message_count":320', b'"message_count":NaN')]
         for value in malformed:
             with self.subTest(value=value[:30]), self.assertRaises(full.FullError):
                 full.validate_envelope(value, host_fixture.NONCE, self.inputs, self.modules,
@@ -291,8 +291,8 @@ class ClientValuesHostTests(unittest.TestCase):
             case.update(output_size=209715, message_count=32768)
         self.envelope["report"]["stage3"]["cases"][1]["message_count"] = 100
         dates.update(output_size=209715, message_count=100)
-        self.server.update(output_size=1048576, message_count=261)
-        self.values.update(output_size=1048576, message_count=261)
+        self.server.update(output_size=1048576, message_count=320)
+        self.values.update(output_size=1048576, message_count=320)
         self.envelope["report"].update(python_version="99.99.999")
         self.envelope["report"]["configuration_format"].update(
             schema_version="99.999.999.999", element_count=4096, known_elements=sorted(smoke.KNOWN_ELEMENTS))

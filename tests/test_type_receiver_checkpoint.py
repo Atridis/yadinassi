@@ -16,8 +16,14 @@ BODY = '// Дополнение описаний типов: вызов чере
 FINAL = 'types-extra.checkpoint.complete: [ok]'
 
 
+def historical_source():
+    from scripts.native_historical_replay import historical_values_source
+    output = ROOT / 'tests/fixtures/native_windows/values.out'
+    return historical_values_source(SOURCE.read_bytes(), output.read_bytes()).decode('utf-8')
+
+
 def source():
-    return SOURCE.read_text(encoding='utf-8-sig')
+    return historical_source()
 
 
 def helpers():

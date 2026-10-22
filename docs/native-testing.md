@@ -1259,3 +1259,33 @@ serialized graphs or supported collection types. Unmeasured standalone and
 released-owner references remain catchably unsupported. Applying the measured
 behavior to the common runtime is an explicit compatibility inference; native
 client-form execution and historical Windows measurements are not claimed.
+
+
+## Pending finite Chars namespace checkpoint
+
+The bounded `values.bsl` additions investigate `Символы` / `Chars`, not a
+new constructor or enumeration. The candidate pairs `ВК/CR`, `ВТаб/VTab`,
+`НПП/NBSp`, `ПС/LF`, `ПФ/FF`, and `Таб/Tab` are native hypotheses until fresh
+server and real managed-client observations are inspected. No expected result
+is generated from the interpreter. Namespace type identity, rendering,
+serialization, iteration and additional properties remain outside this scope.
+
+The 58 observations plus one completion marker append to all 261 historical
+observations. Every candidate spelling has length/codepoint/string-type and
+readonly/unchanged projections; alias equality, mixed case, unknown members,
+call/index misuse, Eval and receiver passing are checked. Internal string
+roundtrips and XML string roundtrips are separate. Errors from prohibited XML
+controls are preserved as errors; no filtering or raw control characters enter
+new output. All risky accesses execute inside protected expression evaluation.
+
+All six historical Windows captures stay byte-identical. Historical values
+replay removes only two uniquely bounded Chars blocks, then checks the exact
+original source Git blob `5b7f3976c2d6de30930c83063079d7e2e41317e5` and the
+complete normalized capture blob `016f30d6f3bdb1a814e86a70e3bcf424383a0d27`.
+It compares the entire old output, not a current-output prefix. Focused old XML
+and type tests use that same source-bound reconstruction. Fresh native CI and
+client-values parity execute and compare the entire current 320-message source.
+The client adapter is rebound to the exact source, all 38 declarations, 19
+message sites, and inverse reconstruction; no source statement is omitted.
+Image, role, isolation, staged-input set, artifact surface and finite-report
+limits are unchanged. Native evidence and runtime implementation are pending.

@@ -12,9 +12,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_collections_source
+    from .native_historical_replay import historical_collections_source, historical_values_source
 else:
-    from native_historical_replay import historical_collections_source
+    from native_historical_replay import historical_collections_source, historical_values_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1762,6 +1762,10 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             replay = directory / 'collections-historical.bsl'
             replay.write_bytes(historical_collections_source(script.read_bytes(), output.read_bytes()))
             script = replay
+        if name == 'values':
+            replay = directory / 'values-historical.bsl'
+            replay.write_bytes(historical_values_source(script.read_bytes(), output.read_bytes()))
+            script = replay
         result = subprocess.run([executable, str(script)],
                                 cwd=directory, env=environment, capture_output=True,
                                 encoding='utf-8', timeout=30)
@@ -1813,9 +1817,9 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     """Full native values via file/stdin/console; bounded native command sample."""
     directory.mkdir()
     program = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig')
-    # Source preservation is separate from semantic parity; execute the full file.
-    _, command_program = split_type_supplement(program)
     output = ROOT / 'tests/fixtures/native_windows/values.out'
+    program = historical_values_source(program.encode('utf-8'), output.read_bytes()).decode('utf-8')
+    _, command_program = split_type_supplement(program)
     if output.with_suffix('.err').exists():
         raise AssertionError('Native error file exists: values')
     expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
