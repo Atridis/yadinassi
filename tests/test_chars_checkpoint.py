@@ -103,7 +103,7 @@ class CharsCheckpointTests(unittest.TestCase):
         Interpreter(original.append).execute(historical_values_source(raw, OUTPUT.read_bytes()).decode())
         Interpreter(current.append).execute(raw.decode())
         self.assertEqual(len(original), 261)
-        self.assertEqual(len(current), 377)
+        self.assertEqual(len(current), 402)
         # Instrumentation only. Native CI separately compares every current record.
         self.assertEqual(current[:261], original)
         self.assertEqual(current[319], 'chars.checkpoint.complete: [ok]')

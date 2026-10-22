@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 from scripts.native_historical_replay import (
-    FIXED_STRING_PROBE_BLOCKS, historical_values_source, without_fixed_string_probes,
+    without_service_filled_probes, FIXED_STRING_PROBE_BLOCKS, historical_values_source, without_fixed_string_probes,
 )
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse, parse_expression
@@ -16,7 +16,7 @@ PREVIOUS_SHA = '5fd00b472332044f4bae4c12973bcc66c074b27f7c98fe58b21b149088166fff
 
 class FixedStringCheckpointTests(unittest.TestCase):
     def source(self):
-        return SOURCE.read_bytes().replace(b'\r\n', b'\n').decode('utf-8')
+        return without_service_filled_probes(SOURCE.read_bytes().replace(b'\r\n', b'\n').decode('utf-8'))
 
     def test_exact_previous_source_and_all_previous_messages_are_preserved(self):
         current = self.source()

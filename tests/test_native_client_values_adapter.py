@@ -15,9 +15,9 @@ import test_native_1c_full_stage as fixtures
 suite = fixtures.suite
 ROOT = fixtures.REPOSITORY
 NONCE = fixtures.NONCE
-COUNT = 377
+COUNT = 402
 DECLARATIONS = (3, 19, 27, 35, 49, 64, 71, 80, 89, 96, 102, 115, 122, 143, 158, 163, 169, 174, 178, 199, 208, 215, 236, 253, 288, 295, 300, 305, 311, 319, 327, 337, 349, 358, 368, 376, 387, 403, 407, 426)
-SITES = (7, 12, 14, 53, 58, 60, 147, 152, 154, 240, 245, 247, 362, 364, 486, 565, 702, 730, 790, 832, 851)
+SITES = (7, 12, 14, 53, 58, 60, 147, 152, 154, 240, 245, 247, 362, 364, 486, 565, 702, 730, 790, 832, 851, 879)
 CAPTURE = 'ЗначенияКлиентЗахват'
 VARIABLES = ('ЗначенияКлиентСообщения', 'ЗначенияКлиентСимволы')
 
@@ -59,7 +59,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
 
     def test_source_template_and_message_count_are_pinned(self):
         self.assertEqual(suite.digest(self.source),
-                         'eaf36b0deed933ea1c3eabcfbde0be59f2f1d8bf6b07b5533f4df2e8cc967b45')
+                         'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12')
         self.assertEqual(suite.digest(self.template),
                          '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328')
         self.assertEqual(suite.digest(self.source), suite.CLIENT_VALUES_SOURCE_SHA256)
@@ -137,7 +137,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
                 with self.assertRaisesRegex(suite.FullError, '^invalid_input$'):
                     suite.client_values_module(self.source, template)
 
-    def test_reverse_generated_source_preserves_all_853_lines_and_expressions(self):
+    def test_reverse_generated_source_preserves_all_881_lines_and_expressions(self):
         module = self.module()
         start = module.index('// Нативный checkpoint специальных значений: Null.')
         end = module.index('\nКонецПроцедуры\n\n&НаКлиенте\nФункция ВычислитьПробу()', start)
@@ -149,7 +149,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
         restored = restored.replace('Процедура ЗначенияКлиентВыполнить()\n', '')
         restored = restored.replace(CAPTURE + '(', 'Сообщить(') + '\n'
         self.assertEqual(restored.encode(), self.source)
-        self.assertEqual(len(restored.splitlines()), 853)
+        self.assertEqual(len(restored.splitlines()), 881)
         self.assertEqual(tuple(i for i, line in enumerate(restored.splitlines())
                                if re.match(r'^(Процедура|Функция) ', line)), DECLARATIONS)
         self.assertEqual(tuple(i for i, line in enumerate(restored.splitlines())
@@ -166,7 +166,7 @@ class ClientValuesAdapterTests(unittest.TestCase):
             self.assertEqual(re.findall(conversion, module),
                              re.findall(conversion, self.source.decode()))
         self.assertIn('ЗначенияКлиентСообщения.Добавить(Текст);', module)
-        self.assertIn('ЗначенияКлиентСообщения.Количество() >= 377', module)
+        self.assertIn('ЗначенияКлиентСообщения.Количество() >= 402', module)
         self.assertIn(f'> {(suite.MAX_OUTPUT - COUNT) // 4}', module)
         self.assertIn('ЗначенияКлиентВыполнить();', module)
         self.assertIn('Возврат ЗначенияКлиентСообщения;', module)

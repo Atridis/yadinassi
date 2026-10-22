@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
+    from .native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
 else:
-    from native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
+    from native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -629,7 +629,7 @@ saved = "old";
 VALUE_FILLED_OUTPUT = ('Да\nНет\nНет\nДа\nНет\nДа\nНет\nДа\nДа\nНет\nДа\nНет\nДа\n'
                        'Булево\n{"B",0}\nДа\n')
 VALUE_FILLED_FAILURES = (
-    ('ValueIsFilled(Type("Number"))',
+    ('ValueIsFilled(Type("Boolean"))',
      'ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi'),
 )
 for _expression, _message in VALUE_FILLED_FAILURES:
@@ -1141,6 +1141,7 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
     # The old 261 observations have their own exact-source historical replay.
     fixture = json.loads((ROOT / 'tests/fixtures/chars_namespace_linux.json').read_text(encoding='utf-8'))
     complete = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+    complete = without_service_filled_probes(complete)
     previous = without_fixed_string_probes(complete)
     if hashlib.sha256(previous.encode()).hexdigest() != fixture['source_sha256']:
         raise AssertionError('Chars checkpoint source identity changed')
@@ -1174,6 +1175,43 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
         raise AssertionError(f'Failed current fixed String checkpoint capture: {current!r}')
     print('Binary Chars namespace passed: bilingual readonly constants, codepoint projections, '
           'Eval, BOM file, command flags, stdin and console')
+
+
+def check_service_filled_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
+    """Check exact prior output and the independently measured native suffix."""
+    directory = directory.resolve()
+    directory.mkdir()
+    complete = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+    previous = without_service_filled_probes(complete)
+    captures = []
+    for source in (previous, complete):
+        result = subprocess.run([executable, '-'], input=source, capture_output=True,
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+        if result.returncode != 0 or result.stderr:
+            raise AssertionError('Failed service filled checkpoint execution')
+        captures.append(result.stdout)
+    old, current = captures
+    if not current.startswith(old):
+        raise AssertionError('Service filled checkpoint changed previous output')
+    suffix = current[len(old):]
+    records = suffix.splitlines()
+    labels = [f'types-extra.service-filled.{case}.{alias}:'
+              for case in ('type.number', 'type.string', 'round.down', 'round.up',
+                           'round.namespace', 'description.empty', 'description.number',
+                           'description.string', 'number.default', 'number.qualified',
+                           'string.default', 'string.fixed4') for alias in ('ru', 'en')]
+    if (len(records) != 25 or suffix != '\n'.join(records) + '\n'
+            or records[-1] != 'types-extra.service-filled.checkpoint.complete: [ok]'
+            or [item.split(' ', 1)[0] for item in records[:-1]] != labels
+            or any(item.split(': ', 1)[1] not in ('[error]', '[value={"B",0}]', '[value={"B",1}]')
+                   for item in records[:-1])):
+        raise AssertionError('Invalid service filled checkpoint records')
+    fixture = json.loads((ROOT / 'tests/fixtures/service_filled_linux.json').read_text(encoding='utf-8'))
+    if hashlib.sha256(complete.encode('utf-8')).hexdigest() != fixture['source_sha256']:
+        raise AssertionError('Service filled fixture source mismatch')
+    if records != fixture['records']:
+        raise AssertionError('Service filled native observations differ')
+    print('Binary service ValueIsFilled native observations passed')
 
 
 def check_characters(executable: str, *, directory: Path, env: dict) -> None:
@@ -2168,6 +2206,7 @@ def main() -> None:
         check_string_boundaries(executable, directory=Path(temporary) / "boundaries", env=env)
         check_characters(executable, directory=Path(temporary) / "characters", env=env)
         check_chars_namespace(executable, directory=Path(temporary) / "chars-namespace", env=env)
+        check_service_filled_checkpoint(executable, directory=Path(temporary) / "service-filled", env=env)
         check_rounding(executable, directory=Path(temporary) / "rounding", env=env)
         check_numeric_boolean_comparisons(executable, directory=Path(temporary) / "comparisons", env=env)
         check_goto(executable, directory=Path(temporary) / "goto", env=env)

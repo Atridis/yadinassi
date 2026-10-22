@@ -87,7 +87,7 @@ class ValueFilledTests(unittest.TestCase):
                           self.vm.execute(expression))
 
     def test_current_unsupported_types_do_not_guess_native_defaults(self):
-        for value in (BSLType.NUMBER, BSLRoundMode.ROUND15_AS10, ROUND_MODES,
+        for value in (BSLType.BOOLEAN, BSLType.ROUND_MODE, BSLType.TYPE,
                       BSLKeyAndValue('x', None), object(), [], {}, 0):
             with self.assertRaisesRegex(TypeError, 'пока не поддерживается в Yadinassi'):
                 value_is_filled(value)
@@ -114,8 +114,8 @@ class ValueFilledTests(unittest.TestCase):
 
     def test_errors_preserve_assignment_and_recover(self):
         for expression in ('ValueIsFilled()', 'ЗначениеЗаполнено(1, 2)',
-                           'ValueIsFilled(Type("Number"))',
-                           'ValueIsFilled(RoundMode.Round15as10)', 'ValueIsFilled(RoundMode)'):
+                           'ValueIsFilled(Type("Boolean"))',
+                           'ValueIsFilled(New NumberQualifiers(5))', 'ValueIsFilled(New StringQualifiers(5))'):
             with self.subTest(expression=expression):
                 self.vm.execute('saved = "old"')
                 with self.assertRaises(BSLError):

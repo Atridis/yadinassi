@@ -1453,3 +1453,51 @@ with its first mismatch at line 351, while native capture and server/client
 parity succeeded. It is evidence for the rounding choice, not acceptance of the
 later runtime change. Final runtime native and platform acceptance must pass
 independently before merge.
+
+## Service-value ValueIsFilled checkpoint and measured subset
+
+The bounded matrix measures each global alias independently for Type(Number),
+Type(String), both RoundMode values and the RoundMode namespace, empty/Number/String
+TypeDescription, default and (10,2,Any) NumberQualifiers, and default and (4,Fixed)
+StringQualifiers. All 24 calls use the existing protected compact values observer;
+Boolean results and caught errors are valid evidence. Native errors may confirm
+that an existing restriction is correct. The original source-only checkpoint
+changed no runtime semantics or expected native results. Chars namespace, arbitrary objects, new
+collection semantics and other enum families remain out of scope.
+
+The complete values source now emits 402 records: all previous 377 observations,
+24 service-value calls and a completion marker. The adapter preserves 40 helpers,
+changes exactly 22 message-call identifiers, and proves byte-exact inverse source
+reconstruction. Removing the single bounded service block restores the exact
+PR82 source SHA256 eaf36b0deed933ea1c3eabcfbde0be59f2f1d8bf6b07b5533f4df2e8cc967b45;
+subsequent restoration retains all Chars100 and historical261 evidence. The fixed
+String fixture remains unchanged. Live server/client parity always compares all
+402 records byte-for-byte, not a prefix, and never uses exception text as an oracle.
+
+Current source SHA256: dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12
+(881 lines). Exact-type dispatch and hostile-extension-hook guards remain intact.
+The same 24 inputs, six public outputs plus provenance, finite report, resource
+caps, image, roles, network and workflow flags are retained. Native measurement
+and any bounded implementation require fresh source-pinned evidence; local tests
+alone cannot establish native behavior.
+
+
+Native run [39796997071](https://github.com/Atridis/yadinassi/actions/runs/39796997071)
+measured the exact source above on Linux 1C 8.3.27.1508 in server and managed-client
+contexts, with full 402-record byte parity. Both aliases returned true for the two
+Type identities, both rounding values, the RoundMode namespace, plain Number and
+String descriptions, NumberQualifiers(10,2,Any), and StringQualifiers(4,Fixed).
+Empty TypeDescription and default NumberQualifiers/StringQualifiers returned
+false. No measured call raised an error. The independently audited 25-record
+suffix and source/output/artifact bindings are in `service_filled_linux.json`.
+
+Runtime support is deliberately configuration-specific: only these measured
+normalized states are accepted. Other Type identities, composite or qualified
+descriptions, other qualifier states, Date/BinaryData qualifiers and other enum
+families remain unsupported by ValueIsFilled. This is not a claim that native 1C
+rejects those unmeasured values. The namespace is the exact known RoundMode
+singleton; arbitrary instances, subclasses and extension objects are rejected.
+No generic Python truthiness, equality, length or iteration hook determines a
+service value result. Existing primitive and collection semantics are unchanged.
+The source-only statements above describe the original measurement checkpoint;
+local runtime tests now compare the genuine fixture rather than invent defaults.
