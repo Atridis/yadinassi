@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -22,6 +23,21 @@ TEMPLATES = ROOT / "launcher_1c"
 
 class LaunchError(Exception):
     """An unsuccessful build, process, or result exchange."""
+
+
+POST_CREATE_DIRECTIVE = "// NativePostCreate: ExportProbeAfterCreate"
+
+
+def post_create_requested(source: str) -> bool:
+    """A visible fixed test-driver action, never an executable routine name."""
+    lines = source.removeprefix("\ufeff").splitlines()
+    directives = [(index, line) for index, line in enumerate(lines)
+                  if re.match(r"\s*//\s*NativePostCreate", line)]
+    if not directives:
+        return False
+    if directives != [(0, POST_CREATE_DIRECTIVE)]:
+        raise LaunchError("Invalid NativePostCreate directive")
+    return True
 
 
 @dataclass(frozen=True)
@@ -166,18 +182,21 @@ def write_output(path: Path, messages: list[str]) -> None:
 
 def run_case(platform: Platform, script: Path, launcher: Path,
              directory: Path, output: Path) -> None:
+    source_text = script.read_text(encoding="utf-8-sig")
+    post_create = post_create_requested(source_text)
     directory.mkdir()
     sources = directory / "src"
     shutil.copytree(TEMPLATES, sources)
     module = sources / "TestModule" / "Ext" / "ObjectModule.bsl"
     # Preserve all code including declarations, directives and the module body.
-    module.write_text(script.read_text(encoding="utf-8-sig"), encoding="utf-8-sig")
+    module.write_text(source_text, encoding="utf-8-sig")
     epf = directory / "TestModule.epf"
     build_epf(platform, sources / "TestModule.xml", epf)
 
     result = directory / "result.json"
     request = directory / "request.json"
-    request.write_text(json.dumps({"module": str(epf), "result": str(result)},
+    request.write_text(json.dumps({"module": str(epf), "result": str(result),
+                                   "post_create": post_create},
                                   ensure_ascii=False), encoding="utf-8")
     command = platform.command("ENTERPRISE") + [
         "/RunModeManagedApplication", "/VL", "ru_RU",

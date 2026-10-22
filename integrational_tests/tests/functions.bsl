@@ -1,3 +1,8 @@
+// NativePostCreate: ExportProbeAfterCreate
+// Begin exported variable post-create declarations.
+Var ExportProbePublicObject;
+// End exported variable post-create declarations.
+
 // Begin exported variable checkpoint declarations.
 Перем ExportProbeUnset Экспорт;
 Var ExportProbePrivate, ExportProbeValue Export, ExportProbeOther Export;
@@ -6,6 +11,30 @@ Var ExportProbePrivate, ExportProbeValue Export, ExportProbeOther Export;
 
 Перем МодульноеВычисления;
 Перем СчетчикСсылок;
+
+// Begin exported variable post-create helpers.
+Procedure ExportProbeAfterCreate(Val PublicObject) Export
+    ExportProbePublicObject = PublicObject;
+    ObserveExportProbe("post-create.object-context", "Result = ExportProbePublicObject <> Undefined;");
+    ObserveExportProbe("post-create.initial-undefined", "Result = ExportProbePublicObject.ExportProbeUnset = Undefined;");
+    ObserveExportProbe("post-create.read", "Result = ExportProbePublicObject.exportprobevalue;");
+    ObserveExportProbe("post-create.write-routine-read", "ExportProbePublicObject.ExportProbeValue = 31; Result = ExportProbeRead();");
+    ObserveExportProbe("post-create.routine-write-read", "ExportProbeWrite(43); Result = ExportProbePublicObject.ExportProbeValue;");
+    ObserveExportProbe("post-create.private-list-entry", "Result = ExportProbePublicObject.ExportProbePrivate;");
+    ObserveExportProbe("post-create.private-write", "ExportProbePublicObject.ExportProbePrivate = 59; Result = ExportProbePrivate;");
+    ObserveExportProbe("post-create.second-export-entry", "Result = ExportProbePublicObject.ExportProbeOther;");
+    ObserveExportProbe("post-create.undeclared-read", "Result = ExportProbePublicObject.ExportProbeMissing;");
+    ObserveExportProbe("post-create.undeclared-write", "ExportProbePublicObject.ExportProbeMissing = 61; Result = True;");
+    ObserveExportProbe("post-create.local-shadow", "Result = ExportProbeShadow();");
+    ObserveExportProbe("post-create.reference-alias", "Result = ExportProbeAlias(ExportProbePublicObject.ExportProbeValue, ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.value-parameter", "Result = ExportProbeVal(ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.reference-after-error", "ExportProbeFail(ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.collection-shared", "ExportProbePublicObject.ExportProbeArray.Add(47); Result = ExportProbeArray.Count();");
+    ObserveExportProbe("post-create.receiver-identity", "Result = ExportProbePublicObject = ThisObject;");
+    ObserveExportProbe("post-create.self-read", "Result = ThisObject.ExportProbeValue;");
+    ObserveExportProbe("post-create.self-write", "ThisObject.ExportProbeValue = 61; Result = ExportProbePublicObject.ExportProbeValue;");
+EndProcedure
+// End exported variable post-create helpers.
 
 // Begin exported variable discriminator helpers.
 Procedure ObserveExportContext(Val Label, Val Mode, Val Code)

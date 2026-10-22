@@ -6,6 +6,7 @@ import unittest
 from scripts.native_historical_replay import (
     EXPORTED_CONTEXT_BASE_BLOB, EXPORTED_CONTEXT_PROBE_BLOCKS,
     git_blob, without_exported_context_probes, without_exported_variable_probes,
+    without_exported_postcreate_probes,
 )
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse
@@ -16,7 +17,8 @@ LABELS = ('static-read', 'static-write', 'static-routine', 'execute-read', 'exec
 class ExportedContextDiscriminatorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+        cls.source = without_exported_postcreate_probes(
+            (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8'))
         cls.previous = without_exported_context_probes(cls.source)
 
     def test_exact_full131_inverse_and_real_lf_crlf_mutations(self):

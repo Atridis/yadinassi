@@ -48,6 +48,7 @@ CASE_KEYS = {"name", "status", "source_sha256", "module_sha256", "output_sha256"
              "output_size", "message_count"}
 EXECUTE_SCRIPT = r'''
 import sys
+import re
 import importlib.util
 from pathlib import Path
 # Load only the verified package, not arbitrary modules beside the checkout.
@@ -63,9 +64,41 @@ def emit(message):
     message = message.replace("\r\n", "\n").replace("\r", "\n")
     sys.stdout.buffer.write((message + "\n").encode("utf-8"))
 
+POST_CREATE_DIRECTIVE = "// NativePostCreate: ExportProbeAfterCreate"
+
+
+def post_create_requested(source: str) -> bool:
+    """A visible fixed test-driver action, never an executable routine name."""
+    lines = source.removeprefix("\ufeff").splitlines()
+    directives = [(index, line) for index, line in enumerate(lines)
+                  if re.match(r"\s*//\s*NativePostCreate", line)]
+    if not directives:
+        return False
+    if directives != [(0, POST_CREATE_DIRECTIVE)]:
+        raise ValueError("Invalid NativePostCreate directive")
+    return True
+
+
 source = Path(sys.argv[2])
+source_text = source.read_text(encoding="utf-8-sig")
+post_create = post_create_requested(source_text)
 options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
-Interpreter(output=emit, **options).execute(source.read_text(encoding="utf-8-sig"), str(source))
+interpreter = Interpreter(output=emit, **options)
+interpreter.execute(source_text, str(source))
+if post_create:
+    emit("export-phase.post-create: [begin]")
+    try:
+        interpreter.execute("ThisObject.ExportProbeAfterCreate(ThisObject);", "<post-create>")
+    except module.BSLError as error:
+        description = error.message
+        kind = "other"
+        if "Метод объекта не обнаружен" in description:
+            kind = "method-missing"
+        named = '{"B",1}' if "exportprobeaftercreate" in description.lower() else '{"B",0}'
+        emit("export-phase.post-create: [error;kind=" + kind + ";named=" + named + "]")
+        sys.exit(3)  # An unavailable entrypoint must never yield a green comparison.
+    else:
+        emit("export-phase.post-create: [ok]")
 '''
 
 

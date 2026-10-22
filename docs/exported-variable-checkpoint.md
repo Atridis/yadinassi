@@ -1,14 +1,16 @@
 # Exported module variables: local design and checkpoint
 
-Status: parser bootstrap published as Draft PR89, head
-412582452f765839d2b99fdae1705cef067dcafe, tree
-b362aa69ee4eff0313c48ec36ed6f49c82b63a77, based on merged main
-7ca49d6725100f30afc5a24c14fb23e2cf7cfd3c. The present discriminator is local only.
-Native run 39856163175 captured all 131 records on Linux 8.3.27.1508 and passed
-independent evidence-integrity audit, but NOT exported-variable semantic parity.
-ThisObject existed; every exported-field access failed. Internal routine writes
-and local shadowing worked. Thus export visibility, initial Undefined, references,
-Val, exception writeback and collection sharing remain unmeasured.
+Status: local post-Create measurement checkpoint, based on Draft PR89 head
+ebe8235bd4a03c06873adce931cfe53adaca093f (tree e09f6ca6). Publication is pending
+independent exact-change review. Native run 39856163175 captured all 131 records
+on Linux 8.3.27.1508. Native discriminator run 39858423942 then captured all 136
+records and passed independent evidence-integrity audit, NOT semantic parity.
+During initialization, static and Execute exported-field reads failed with
+field-missing, static field write failed with field-missing, and both exported
+routine calls failed with method-missing. The controlled member name was present
+in each bounded diagnostic. These observations do not establish what becomes
+available after Create returns. Export visibility, initial Undefined, references,
+Val, exception writeback and collection sharing remain unmeasured in that phase.
 
 ## Bounded architecture
 
@@ -44,7 +46,7 @@ Yadinassi's documented extension, not a claim about 1C common-module syntax.
 
 ## Native measurement route
 
-Current launcher creates an external-processing object from the complete source.
+The original launcher creates an external-processing object from the complete source.
 Its object module initialization already runs all functions.bsl observations.
 Use ThisObject/ЭтотОбъект property syntax inside guarded Execute strings, with
 static declarations at the beginning and helper routines before executable code.
@@ -106,7 +108,7 @@ No Python reflection, broad platform members, source adapter or native-only bran
 is permitted. Imported module namespaces remain non-values under their existing
 contract. The concrete self-receiver representation, unsupported value operations
 and property-reference behavior require independent design review after the
-native observations. The present checkpoint makes no runtime change.
+native observations. Neither the discriminator nor this post-Create checkpoint makes a runtime change.
 
 
 ## Static versus Execute discriminator
@@ -127,5 +129,85 @@ input bindings are unchanged in shape. Only functions.bsl changes a native input
 
 If static access works but Execute access fails, investigate the dynamic execution
 context. If both fail, a separately reviewed explicit invocation after Create
-returns is needed before drawing lifecycle conclusions. This local source-only
-discriminator does not change the launcher or invent that post-create result.
+returns is needed before drawing lifecycle conclusions. That discriminator did not change the launcher or establish a post-Create result.
+The independently reviewed follow-on measurement design is described below.
+
+
+## Explicit two-phase post-Create measurement
+
+The first source line is exactly `// NativePostCreate: ExportProbeAfterCreate`
+with LF termination. It is a narrow driver directive, not executable module code.
+The complete source still runs its unchanged 136 initialization observations when
+the external-processing object is created. Only after Create returns does the
+explicit driver call the literal exported entrypoint `ExportProbeAfterCreate`,
+passing the actual returned object. The module body never calls that entrypoint.
+No generic method dispatch, source adapter, injected BSL suffix, native-only source
+rewrite, or inferred public receiver is part of this design.
+
+The entrypoint saves its argument in the private module variable
+`ExportProbePublicObject`. It repeats all 15 original core probes through the
+existing guarded ObserveExportProbe helper, prefixing each label with
+`post-create.` and replacing both ThisObject and ЭтотОбъект receivers with the
+passed object. Three independent guarded observations compare receiver identity,
+read through ThisObject, and write 61 through ThisObject then read through the
+passed receiver. Each observation resets the original scalar and collection
+state using the existing helper. Failure of the identity probe cannot suppress
+the remaining probes. Diagnostics remain bounded; no raw error descriptions are
+printed by these observations.
+
+The driver records a begin witness, then either a success witness after the
+entrypoint returns or a bounded failure witness. A complete successful native
+invocation has 156 records: the unchanged 136 initialization records, one begin
+witness, 18 guarded observations, and one success witness. If the host cannot
+access the entrypoint, 138 records are expected structurally: 136 initialization
+records, begin, and bounded failure. Success of the invocation does not imply
+success of any field/reference probe. These counts describe the measurement
+protocol, not fabricated native expected answers. No post-Create native evidence
+has yet been obtained; inspect every actual observation before implementing or
+claiming runtime parity.
+
+Only narrowly delimited declaration/helper blocks and the directive are new in
+functions.bsl. Their exact inverse restores the complete prior 136-record source,
+blob `259abc1315cbcca8642e1a49b44f4ac24a33500e`, independently computed SHA256
+`c6b33e07818ce7e4abd8153feb3d8538d48737d5a543312b18f1fb8e7c5a65cd`.
+Existing historical inverse routes automatically chain through 136 to 131, 116,
+and the complete frozen 88-record source. LF/CRLF transport is normalized before
+binding; genuine mutations to the old source, directive, or inverse boundaries
+are rejected. No frozen source/output fixtures, output prefixes, comparator
+exceptions, trusted-input inventory or runtime are changed by these probes.
+
+Local Interpreter.execute of the complete source still emits exactly the old 136
+rows for both target profiles because it does not invoke the post-Create entry.
+This is only bootstrap evidence, not post-Create support or native semantics.
+The explicit two-phase driver must be audited independently and the fresh native
+capture checked before drawing lifecycle or public-context conclusions.
+
+
+### Two-phase driver and security binding
+
+The canonical directive must be the first source line. Both drivers reject a
+malformed, unknown, misplaced or duplicate reserved directive before execution.
+The native launcher reads the source once and derives both the complete generated
+module and an actual JSON boolean from those bytes. It never sends an executable
+routine name. The BSL launcher validates the boolean and calls exactly
+`ОбъектТеста.ExportProbeAfterCreate(ОбъектТеста)` after successful Create. The host
+uses the same persistent interpreter and literal
+`ThisObject.ExportProbeAfterCreate(ThisObject);` only after source execution.
+
+At the native ENTERPRISE boundary, the existing no-follow bounded reader validates
+exact request keys, module/result paths and the source-derived boolean before the
+process is started. No new provenance fields are needed: source/module hashes,
+trusted launcher/template hashes, the fresh run nonce and full output hash bind
+the deterministic phase witnesses. The 23 core trusted input names (24 with the
+client probe), six outputs plus provenance, limits, isolation, cleanup and exact
+comparison policy remain unchanged. Four existing trusted input contents change:
+functions.bsl, test_launcher.py, the Launcher Form module and full_suite.py. The
+host comparison-driver hash also changes. These are explicit reviewed harness
+changes, not the earlier source-only discriminator.
+
+A failed host entrypoint emits only its bounded failure witness and exits 3 with
+no raw error text. It cannot produce a green comparison even if a native entrypoint
+also fails. Unexpected Python failures are not suppressed. Offline mocks validate
+control flow and request binding only; they are not native export evidence. The
+native-form mock removes its one server compilation annotation solely in the
+in-memory test VM, never from any generated/native source or captured artifact.
