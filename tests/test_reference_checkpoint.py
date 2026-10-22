@@ -6,6 +6,7 @@ import unittest
 from yadinassi import Interpreter
 from yadinassi import ast
 from yadinassi.parser import parse
+from scripts.native_historical_replay import without_extended_exception_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'integrational_tests/tests/functions.bsl'
@@ -33,7 +34,8 @@ class ReferenceCheckpointTests(unittest.TestCase):
 
     def test_local_run_preserves_native_prefix_and_reaches_sentinel(self):
         output = []
-        Interpreter(output=output.append).execute(SCRIPT.read_text(encoding='utf-8'))
+        Interpreter(output=output.append).execute(without_extended_exception_probes(
+            SCRIPT.read_text(encoding='utf-8')))
         native = (ROOT / 'tests/fixtures/native_windows/functions.out').read_text(encoding='utf-8-sig')
         native_lines = native.splitlines()
         boundary = native_lines.index('execute.checkpoint.complete: [ok]') + 1

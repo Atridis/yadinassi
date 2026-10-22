@@ -312,6 +312,101 @@
         + ";calls=" + ЗначениеВСтрокуВнутр(СчетчикСсылок) + "]");
 КонецПроцедуры
 
+// Begin extended exception checkpoint helpers.
+// Новые API остаются в строках: старый интерпретатор выполняет весь checkpoint.
+// Читаем только скаляры; путь, строку модуля и тексты системных ошибок не выводим.
+Функция ПолеРасширеннойОшибки(Знач Инфо, Знач Формула)
+    Попытка
+        Возврат ЗначениеВСтрокуВнутр(Вычислить(Формула));
+    Исключение
+        Возврат "query-error";
+    КонецПопытки;
+КонецФункции
+
+Функция СнимокРасширеннойОшибки(Знач Инфо)
+    Возврат "type=" + ПолеРасширеннойОшибки(Инфо, "TypeOf(Инфо) = Type(""ErrorInfo"")")
+        + ";description=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = ""exception-probe""")
+        + ";code=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Code")
+        + ";additional=" + ПолеРасширеннойОшибки(Инфо, "Инфо.AdditionalInformation")
+        + ";cause-undefined=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause = Undefined")
+        + ";cause-description=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause.Description = ""exception-cause""")
+        + ";cause-code=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause.Code")
+        + ";cause-configuration=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause.IsErrorOfCategory(ErrorCategory.ConfigurationError)")
+        + ";all=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.AllErrors)")
+        + ";runtime=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptRuntimeError)")
+        + ";compile=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptCompileError)")
+        + ";raised=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ExceptionRaisedFromScript)")
+        + ";configuration=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ConfigurationError)")
+        + ";other=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.OtherError)")
+        + ";aliases=" + ПолеРасширеннойОшибки(Инфо, "ТипЗнч(Инфо) = Тип(""ИнформацияОбОшибке"") И Инфо.Описание = Инфо.Description И Инфо.Код = Инфо.Code И Инфо.ДополнительнаяИнформация = Инфо.AdditionalInformation И ТипЗнч(Инфо.Причина) = ТипЗнч(Инфо.Cause)")
+        + ";runtime-alias=" + ПолеРасширеннойОшибки(Инфо, "Инфо.ЯвляетсяОшибкойКатегории(КатегорияОшибки.ОшибкаВоВремяВыполненияВстроенногоЯзыка) = Инфо.IsErrorOfCategory(ErrorCategory.ScriptRuntimeError)")
+        + ";category-alias=" + ПолеРасширеннойОшибки(Инфо, "Инфо.ЯвляетсяОшибкойКатегории(КатегорияОшибки.ОшибкаКонфигурации) = Инфо.IsErrorOfCategory(ErrorCategory.ConfigurationError)");
+КонецФункции
+
+Процедура ВызватьРасширеннуюОшибку(Знач ПричинаПробы, Знач Русский)
+    Если Русский Тогда
+        Выполнить("ВызватьИсключение(""exception-probe"", КатегорияОшибки.ОшибкаКонфигурации, ""E-PROBE"", ""probe-detail"", ПричинаПробы);");
+    Иначе
+        Execute("Raise(""exception-probe"", ErrorCategory.ConfigurationError, ""E-PROBE"", ""probe-detail"", ПричинаПробы);");
+    КонецЕсли;
+КонецПроцедуры
+
+Процедура ПередатьРасширеннуюОшибку(Знач ПричинаПробы, Знач Русский)
+    ВызватьРасширеннуюОшибку(ПричинаПробы, Русский);
+КонецПроцедуры
+
+Процедура ПроверитьРасширеннуюОшибку(Знач Метка, Знач Код, Знач Получение = "ErrorInfo()")
+    ПричинаПробы = Неопределено;
+    Попытка
+        ВызватьИсключение "exception-cause";
+    Исключение
+        Попытка
+            ПричинаПробы = Вычислить(Получение);
+        Исключение
+            // Отсутствие API в старом runtime не прерывает остальные наблюдения.
+        КонецПопытки;
+    КонецПопытки;
+    Инфо = Неопределено;
+    ТекстОшибки = "";
+    Статус = "not-raised";
+    // Прямое исключение сохраняется внутри динамического текста, до границы
+    // Выполнить. Возможную обертку Execute не принимаем за поля самого Raise.
+    КодОбработчика = "Попытка " + Код
+        + " Исключение Статус = ""raised""; ТекстОшибки = ОписаниеОшибки(); Инфо = " + Получение
+        + "; КонецПопытки;";
+    Попытка
+        Выполнить(КодОбработчика);
+    Исключение
+        Если Статус = "raised" Тогда
+            Статус = "info-error";
+        Иначе
+            Статус = "execute-error";
+        КонецЕсли;
+    КонецПопытки;
+    // Снимок читается после обработчика: сохраненное значение не должно зависеть
+    // от последующих исключений в отдельных защищенных запросах.
+    Сообщить("exception." + Метка + ": [" + Статус
+        + ";error-description-token=" + ЗначениеВСтрокуВнутр(Найти(ТекстОшибки, "exception-probe") > 0)
+        + ";" + СнимокРасширеннойОшибки(Инфо) + "]");
+КонецПроцедуры
+
+Процедура ПроверитьСостояниеИнформацииОбОшибке()
+    До = ПолеРасширеннойОшибки(Неопределено, "ErrorInfo() = Undefined");
+    Инфо = Неопределено;
+    Попытка
+        ВызватьИсключение "exception-probe";
+    Исключение
+        Попытка
+            Инфо = Eval("ИнформацияОбОшибке()");
+        Исключение
+        КонецПопытки;
+    КонецПопытки;
+    После = ПолеРасширеннойОшибки(Инфо, "ИнформацияОбОшибке() = Неопределено");
+    Сообщить("exception.handler-state: [before=" + До + ";after=" + После
+        + ";saved=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = ""exception-probe""") + "]");
+КонецПроцедуры
+// End extended exception checkpoint helpers.
+
 Показать(Сложить(2, 3));
 
 Попытка
@@ -426,3 +521,29 @@
 ПроверитьФункциональныйНовый("nonarray-evaluated", "Объект = Новый (""Массив"", ПолучитьДляСсылки(7)); Результат = Объект.Количество();");
 ПроверитьФункциональныйНовый("invalid-selector-order", "Объект = Новый (""НетТакогоТипа"", ПолучитьДляСсылки(Аргументы));");
 Сообщить("reference-new.checkpoint.complete: [ok]");
+// Begin extended exception checkpoint observations.
+// Нативные ответы еще не назначены; ошибки запросов не означают поддержку API.
+ПроверитьРасширеннуюОшибку("statement-en", "Raise ""exception-probe"";", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("statement-ru", "ВызватьИсключение ""exception-probe"";", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("functional-one-en", "Raise(""exception-probe"");", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("functional-one-ru", "ВызватьИсключение(""exception-probe"");", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("functional-five-en", "Raise(""exception-probe"", ErrorCategory.ConfigurationError, ""E-PROBE"", ""probe-detail"", ПричинаПробы);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("functional-five-ru", "ВызватьИсключение(""exception-probe"", КатегорияОшибки.ОшибкаКонфигурации, ""E-PROBE"", ""probe-detail"", ПричинаПробы);", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("category-only", "Raise(""exception-probe"", ErrorCategory.ConfigurationError);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("code-only", "Raise(""exception-probe"",, ""E-PROBE"");", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("additional-only", "ВызватьИсключение(""exception-probe"",,, ""probe-detail"");", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("cause-only", "Raise(""exception-probe"",,,, ПричинаПробы);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("omitted-all", "Raise(""exception-probe"",,,,);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("undefined-all", "ВызватьИсключение(""exception-probe"", Неопределено, Неопределено, Неопределено, Неопределено);", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("empty-fields", "Raise(""exception-probe"",, """", """");", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("rethrow-en", "Try Raise(""exception-probe"", ErrorCategory.ConfigurationError, ""E-PROBE"", ""probe-detail"", ПричинаПробы); Except Raise; EndTry;", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("rethrow-ru", "Попытка ВызватьИсключение(""exception-probe"", КатегорияОшибки.ОшибкаКонфигурации, ""E-PROBE"", ""probe-detail"", ПричинаПробы); Исключение ВызватьИсключение; КонецПопытки;", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("routine-en", "ПередатьРасширеннуюОшибку(ПричинаПробы, False);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("routine-ru", "ПередатьРасширеннуюОшибку(ПричинаПробы, Истина);", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("nested-cause-en", "Try Raise ""exception-cause""; Except Raise(""exception-probe"",, ""E-PROBE"", ""probe-detail"", ErrorInfo()); EndTry;", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("nested-cause-ru", "Попытка ВызватьИсключение ""exception-cause""; Исключение ВызватьИсключение(""exception-probe"",, ""E-PROBE"", ""probe-detail"", ИнформацияОбОшибке()); КонецПопытки;", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("nested-configuration-cause", "Try Raise(""exception-cause"", ErrorCategory.ConfigurationError, ""E-CAUSE""); Except Raise(""exception-probe"",, ""E-PROBE"", ""probe-detail"", ErrorInfo()); EndTry;", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("forbidden-category", "Raise(""exception-probe"", ErrorCategory.AllErrors);", "ErrorInfo()");
+ПроверитьСостояниеИнформацииОбОшибке();
+Сообщить("exception.checkpoint.complete: [ok]");
+// End extended exception checkpoint observations.

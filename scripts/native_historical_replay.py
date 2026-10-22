@@ -212,3 +212,37 @@ def historical_numbers_source(source: bytes, output: bytes) -> bytes:
     if git_blob(historical) != HISTORICAL_NUMBERS_BLOB:
         raise ValueError('Historical numbers reconstruction mismatch')
     return historical
+
+
+# Only the new exception source is removed for the complete frozen 88-record replay.
+# Native full-suite runs never call this projection and always execute all probes.
+HISTORICAL_FUNCTIONS_BLOB = 'c83e860364555a0f6290e3b34d7cf8a8eb40df9f'
+HISTORICAL_FUNCTIONS_OUTPUT_BLOB = '6df192ac9d10c07755948d7c14cfed9e2311c65f'
+EXTENDED_EXCEPTION_PROBE_BLOCKS = (
+    ('// Begin extended exception checkpoint helpers.\n',
+     '// End extended exception checkpoint helpers.\n\n'),
+    ('// Begin extended exception checkpoint observations.\n',
+     '// End extended exception checkpoint observations.\n'),
+)
+
+
+def without_extended_exception_probes(text):
+    """Restore the exact complete source of all 88 historical function records."""
+    for start, end in EXTENDED_EXCEPTION_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('extended exception probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if git_blob(text.encode('utf-8')) != HISTORICAL_FUNCTIONS_BLOB:
+        raise ValueError('extended exception baseline source binding changed')
+    return text
+
+
+def historical_functions_source(source, output):
+    """Replay the complete immutable Windows capture, not an output-prefix pass."""
+    source = source.replace(b'\r\n', b'\n')
+    output = output.replace(b'\r\n', b'\n')
+    if git_blob(output) != HISTORICAL_FUNCTIONS_OUTPUT_BLOB:
+        raise ValueError('historical functions output binding changed')
+    return without_extended_exception_probes(source.decode('utf-8')).encode('utf-8')

@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
 else:
-    from native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1872,8 +1872,8 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
-        if name in ('collections', 'dates', 'numbers'):
-            reconstruct = {'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
+        if name in ('collections', 'dates', 'numbers', 'functions'):
+            reconstruct = {'functions': historical_functions_source, 'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
             replay = directory / (name + '-historical.bsl')
             replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
