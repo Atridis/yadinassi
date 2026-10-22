@@ -1458,9 +1458,9 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_COLLECTIONS_SOURCE_SHA256 = 'f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a'
+CLIENT_COLLECTIONS_SOURCE_SHA256 = 'b3bf181de84a575335ce7e4794ced459ad252eb7853cc42095fb62521dc6a409'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_COLLECTIONS_MESSAGE_COUNT = 797
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 828
 
 
 def empty_collections_report() -> dict:
@@ -1499,8 +1499,8 @@ def collections_mismatch(client: list[str], server: list[str], server_output: by
 def client_collections_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned collections source in the pinned managed-client form.
 
-    All 112 original helpers remain in their original order with client directives.
-    Only the 15 verified message-call identifiers change, and the complete module
+    All 115 source helpers remain in their original order with client directives.
+    Only the 16 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Four explicit helper-local declarations
     preserve source-local bindings against the managed form's Object/Items names.
     Expressions, conversions and error paths stay byte-identical. No server
@@ -1627,6 +1627,9 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         2493: 'Процедура ПерестроитьСсылкуСписка(Поле, Знач Список, Знач Элемент, Знач Журнал)\n',
         2504: 'Функция ВозвратСсылкиСписка(Поле, Знач Журнал)\n',
         2510: 'Функция ПробаСсылкиСписка(Знач Случай)\n',
+        2619: 'Функция ПараКлючейОписаний(Знач Вид)\n',
+        2646: 'Функция РавенствоКлючейОписаний(Знач Вид)\n',
+        2659: 'Функция ИсторияКлючейОписаний(Знач Вид, Знач Режим)\n',
     }
     endings = {
         34: 'КонецПроцедуры\n',
@@ -1741,6 +1744,9 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         2502: 'КонецПроцедуры\n',
         2508: 'КонецФункции\n',
         2614: 'КонецФункции\n',
+        2644: 'КонецФункции\n',
+        2657: 'КонецФункции\n',
+        2746: 'КонецФункции\n',
     }
     sites = {
         90: '    Сообщить(Метка + ": [" + Строка(Значение) + "]");\n',
@@ -1748,40 +1754,41 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         539: '            Сообщить(СтрСоединить(СтрокиВывода, Символ(10)));\n',
         541: '            Сообщить("table." + Метка + ": [" + КомпактноеЗначениеТаблицы(Результат) + "]");\n',
         544: '        Сообщить("table." + Метка + ": [serialize-error]");\n',
-        3442: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
-        3480: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
-        3530: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
-        3560: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
-        3573: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
-        3584: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
-        3592: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
-        3597: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
-        3620: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
-        3622: 'Сообщить("table.checkpoint.complete: [ok]");\n',
+        3574: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
+        3612: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
+        3662: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
+        3692: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
+        3705: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
+        3716: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
+        3724: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
+        3729: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
+        3752: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
+        3754: 'Сообщить("table.checkpoint.complete: [ok]");\n',
+        3786: 'Сообщить("table.descriptor-key.checkpoint.complete: [ok]");\n',
     }
     regions = {
         3: '#Область ВспомогательныеПроцедуры\n',
         173: '#Region FixedCollectionProbes\n',
         259: '#EndRegion\n',
         260: '#КонецОбласти\n',
-        2617: '#Область МассивыИСтруктуры\n',
-        2776: '#КонецОбласти\n',
-        2778: '#Область СоответствиеИТипы\n',
-        2837: '#КонецОбласти\n',
-        2839: '#Область СнимкиИОбратныеКопии\n',
-        2912: '#КонецОбласти\n',
-        2914: '#Область ВложенныеМассивы\n',
-        2963: '#КонецОбласти\n',
-        2965: '#Область РавенствоИсточникиИКлючи\n',
-        3025: '#КонецОбласти\n',
-        3028: '#Область ВнутренняяСериализация\n',
-        3126: '#КонецОбласти\n',
+        2749: '#Область МассивыИСтруктуры\n',
+        2908: '#КонецОбласти\n',
+        2910: '#Область СоответствиеИТипы\n',
+        2969: '#КонецОбласти\n',
+        2971: '#Область СнимкиИОбратныеКопии\n',
+        3044: '#КонецОбласти\n',
+        3046: '#Область ВложенныеМассивы\n',
+        3095: '#КонецОбласти\n',
+        3097: '#Область РавенствоИсточникиИКлючи\n',
+        3157: '#КонецОбласти\n',
+        3160: '#Область ВнутренняяСериализация\n',
+        3258: '#КонецОбласти\n',
     }
-    body_start = 2617
+    body_start = 2749
     capture = 'КоллекцииКлиентЗахват'
     reserved = (capture, 'КоллекцииКлиентСообщения',
                 'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
-    if (len(lines) != 3623
+    if (len(lines) != 3788
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())
@@ -1793,7 +1800,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
                      if re.match(r'^\s*Сообщить\(', line)) != tuple(sites)
             or lines[body_start] != '#Область МассивыИСтруктуры\n'
             or lines[body_start - 1] != '\n'
-            or lines[body_start - 2] != '// End ValueList field reference helpers.\n'
+            or lines[body_start - 2] != '// End descriptor Map-key checkpoint helpers.\n'
             or lines[1] != 'Перем Выход;\n'
             or tuple(i for i, line in enumerate(lines)
                      if re.match(r'^\s*Перем\s', line)) != (1,)

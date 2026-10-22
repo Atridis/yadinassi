@@ -13,8 +13,8 @@ from decimal import Decimal
 import re
 
 PROFILE = "typed-map-order-v1"
-SOURCE_SHA256 = "f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a"
-RECORD_COUNT = 797
+SOURCE_SHA256 = "b3bf181de84a575335ce7e4794ced459ad252eb7853cc42095fb62521dc6a409"
+RECORD_COUNT = 828
 MAX_FILE = 1_048_576
 MAX_RECORD = 4096
 MAX_DEPTH = 12

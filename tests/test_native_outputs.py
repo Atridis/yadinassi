@@ -38,7 +38,7 @@ def normalize_newlines(text: str) -> str:
 
 from scripts.native_historical_replay import (
     historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, git_blob, FINAL_PROBE_BLOCKS,
-    FIELD_REFERENCE_BLOCKS, without_field_reference_probes,
+    FIELD_REFERENCE_BLOCKS, without_field_reference_probes, without_descriptor_map_probes,
     HISTORICAL_COLLECTIONS_BLOB, HISTORICAL_COLLECTIONS_OUTPUT_BLOB,
 )
 
@@ -297,7 +297,7 @@ class HistoricalCollectionsBindingTests(unittest.TestCase):
                     historical_collections_source(source, output)
 
     def test_only_field_reference_blocks_restore_previous_complete_source(self):
-        previous = without_field_reference_probes(self.source.decode("utf-8")).encode("utf-8")
+        previous = without_field_reference_probes(without_descriptor_map_probes(self.source.decode("utf-8"))).encode("utf-8")
         self.assertEqual(git_blob(previous), "041eec9bd8ee0cd37242c91dee58ae38f0a818aa")
         self.assertEqual(len(previous), 275072)
         # Keep the previous final cache probes; this is not a prefix replay.

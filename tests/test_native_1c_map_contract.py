@@ -12,7 +12,7 @@ SPEC = importlib.util.spec_from_file_location(
 contract = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(contract)
 
-SOURCE = "f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a"
+SOURCE = "b3bf181de84a575335ce7e4794ced459ad252eb7853cc42095fb62521dc6a409"
 MAP = b"3d48feae-a9c6-4c5a-a099-9eb6477630c6"
 FIXED_MAP = b"220455ea-6c85-4513-996f-bbe79ed07774"
 ARRAY = b"51e7a0d2-530b-11d4-b98a-008048da3034"
@@ -65,7 +65,7 @@ def nested(pairs):
 
 
 def records(pairs=PAIRS):
-    rows = [(f"record.{number}", b"ok") for number in range(1, 798)]
+    rows = [(f"record.{number}", b"ok") for number in range(1, 829)]
     for ordinal, base in BASES:
         before = mapping(pairs) if ordinal != 303 else nested(pairs)
         after = mapping(tuple(reversed(pairs))) if ordinal != 303 else nested(tuple(reversed(pairs)))
@@ -117,7 +117,7 @@ class MapContractTests(unittest.TestCase):
                 self.assertEqual(result["status"], "equivalent", result)
                 expected = [] if permutation == PAIRS else list(contract.ELIGIBLE_LABELS)
                 self.assertEqual(result["accepted_labels"], expected)
-                self.assertEqual(result["byte_equal_records"], 797 - len(expected))
+                self.assertEqual(result["byte_equal_records"], 828 - len(expected))
 
     def test_alternate_legitimate_typed_bindings_and_counts(self):
         extra_array = (scalar("L"), sequence(ARRAY, (string("a"), string("b"))))
@@ -232,7 +232,7 @@ class MapContractTests(unittest.TestCase):
         a, b = records(pairs), records(pairs[::-1])
         result = self.compare(a, b)
         self.assertEqual(result["status"], "equivalent", result)
-        self.assertEqual(result["records"], 797)
+        self.assertEqual(result["records"], 828)
         self.assertNotIn("PRIVATE", json.dumps(result))
 
     def test_complete_payload_consumption_and_pair_arity(self):
@@ -259,11 +259,20 @@ class MapContractTests(unittest.TestCase):
 
     def test_nonscoped_records_remain_byte_exact_including_other_maps(self):
         original = records()
-        for ordinal in (1, 275, 282, 295, 296, 297, 298, 299, 300, 301, 302, 314, *range(759, 798)):
+        for ordinal in (1, 275, 282, 295, 296, 297, 298, 299, 300, 301, 302, 314, *range(759, 829)):
             self.reject(original, change(original, ordinal, b"different"), "ineligible_difference")
         a = change(original, 100, mapping(PAIRS))
         b = change(original, 100, mapping(PAIRS[::-1]))
         self.reject(a, b, "ineligible_difference")
+
+    def test_historical_length_and_hash_cannot_claim_appended_checkpoint(self):
+        self.reject(records()[:797], reason="record_mismatch")
+        result = self.compare(records(), source=
+            "f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a")
+        self.assertEqual(result["status"], "rejected")
+        self.assertEqual(result["reason"], "source_mismatch")
+        self.assertEqual(len(contract.ELIGIBLE_LABELS), 8)
+        self.assertTrue(all(ordinal < 798 for ordinal in contract._ELIGIBLE))
 
     def test_fixed_record_count_labels_ordinals_and_uniqueness(self):
         original = records()

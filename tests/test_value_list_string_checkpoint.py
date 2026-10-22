@@ -3,7 +3,7 @@
 Synthetic conversions deliberately disagree and fail independently. Their output
 is never saved as native evidence. Complete-output comparators remain strict.
 """
-from scripts.native_historical_replay import FIELD_REFERENCE_BLOCKS
+from scripts.native_historical_replay import DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS, without_descriptor_map_probes
 from collections import Counter
 from contextlib import ExitStack
 from decimal import Decimal
@@ -46,7 +46,7 @@ def section(markers):
 
 def strip_probe(text):
     for start, end in (
-        *FIELD_REFERENCE_BLOCKS,
+        *DESCRIPTOR_MAP_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS,
         ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
         ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),
@@ -246,7 +246,7 @@ class ValueListStringCheckpointTests(unittest.TestCase):
             parse('Result = ' + call.arguments[1].value)
         self.assertEqual(source().count(FINAL), 1)
         self.assertLess(source().index(BODY[1]), source().index('// Начало уточняющих наблюдений кэша строки списка.'))
-        self.assertTrue(source().endswith('Сообщить("table.checkpoint.complete: [ok]");\n'))
+        self.assertTrue(without_descriptor_map_probes(source()).endswith('Сообщить("table.checkpoint.complete: [ok]");\n'))
         started = False
         for node in parse(source()):
             if isinstance(node, ast.Routine):

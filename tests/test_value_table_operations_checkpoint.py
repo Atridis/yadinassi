@@ -1,5 +1,5 @@
 """Probe integrity only: native Sort/GroupBy outputs must come from the owner."""
-from scripts.native_historical_replay import FIELD_REFERENCE_BLOCKS
+from scripts.native_historical_replay import DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS
 import hashlib
 from pathlib import Path
 import unittest
@@ -21,7 +21,7 @@ def source():
     # Isolate the already confirmed operations checkpoint. Full native gates
     # read collections.bsl directly and still compare every output byte.
     for start, end in (
-        *FIELD_REFERENCE_BLOCKS,
+        *DESCRIPTOR_MAP_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS,
         ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
         ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
         ('// Начало уточняющих проб кэша строки списка.\n', '// Конец уточняющих проб кэша строки списка.\n\n'),

@@ -2615,6 +2615,138 @@
 КонецФункции
 // End ValueList field reference helpers.
 
+// Begin descriptor Map-key checkpoint helpers.
+// Native observations only: equality does not establish the Map key rule.
+Функция ПараКлючейОписаний(Знач Вид)
+    Первый = Новый TypeDescription("Number");
+    Второй = Новый TypeDescription("Number");
+    Если Вид = "same-object" Тогда
+        Второй = Первый;
+    ИначеЕсли Вид = "equal-empty" Тогда
+        Первый = Новый TypeDescription;
+        Второй = Новый TypeDescription;
+    ИначеЕсли Вид = "equal-reordered" Тогда
+        Первый = Новый TypeDescription("Number,String");
+        Второй = Новый TypeDescription("String,Number");
+    ИначеЕсли Вид = "equal-copy" Тогда
+        Второй = Новый TypeDescription(Первый);
+    ИначеЕсли Вид = "unequal-types" Тогда
+        Второй = Новый TypeDescription("String");
+    ИначеЕсли Вид = "unequal-number-qualifiers" Тогда
+        Первый = Новый TypeDescription("Number", Новый NumberQualifiers(5, 2));
+        Второй = Новый TypeDescription("Number", Новый NumberQualifiers(5, 1));
+    ИначеЕсли Вид = "unequal-string-qualifiers" Тогда
+        Первый = Новый TypeDescription("String", , Новый StringQualifiers(4, AllowedLength.Fixed));
+        Второй = Новый TypeDescription("String", , Новый StringQualifiers(4, AllowedLength.Variable));
+    ИначеЕсли Вид <> "equal-number" Тогда
+        ВызватьИсключение "unknown descriptor pair";
+    КонецЕсли;
+    Возврат Новый Структура("First,Second", Первый, Второй);
+КонецФункции
+
+Функция РавенствоКлючейОписаний(Знач Вид)
+    Попытка
+        Пара = ПараКлючейОписаний(Вид);
+    Исключение
+        Возврат "setup-error";
+    КонецПопытки;
+    Попытка
+        Возврат Пара.First = Пара.Second;
+    Исключение
+        Возврат "equality-error";
+    КонецПопытки;
+КонецФункции
+
+Функция ИсторияКлючейОписаний(Знач Вид, Знач Режим)
+    // Every operation is independently caught, named and projected to scalars.
+    // A failed insertion never hides the later count or lookup observations.
+    Попытка
+        Пара = ПараКлючейОписаний(Вид);
+        Первый = Пара.First;
+        Второй = Пара.Second;
+        Данные = Новый Map;
+    Исключение
+        Возврат "setup-error";
+    КонецПопытки;
+    Снимок = Неопределено;
+    Копия = Неопределено;
+    Восстановлено = Неопределено;
+    Поток = Неопределено;
+    Журнал = Новый Массив;
+    Шаги = Новый Массив;
+    Шаги.Add("insert-first|Данные.Insert(Первый, 101);");
+    Шаги.Add("count-first|Ответ = Данные.Count();");
+    Шаги.Add("get-first|Ответ = Данные.Get(Первый);");
+    Шаги.Add("index-first|Ответ = Данные[Первый];");
+    Шаги.Add("get-second-before|Ответ = Данные.Get(Второй);");
+    Шаги.Add("index-second-before|Ответ = Данные[Второй];");
+    Если Режим = "mutable" Тогда
+        Шаги.Add("insert-second|Данные.Insert(Второй, 202);");
+        Шаги.Add("count-second|Ответ = Данные.Count();");
+        Шаги.Add("get-first-after|Ответ = Данные.Get(Первый);");
+        Шаги.Add("get-second-after|Ответ = Данные.Get(Второй);");
+        Шаги.Add("index-replace|Данные[Второй] = 303;");
+        Шаги.Add("count-replaced|Ответ = Данные.Count();");
+        Шаги.Add("get-first-replaced|Ответ = Данные.Get(Первый);");
+        Шаги.Add("get-second-replaced|Ответ = Данные.Get(Второй);");
+        Шаги.Add("delete-second|Данные.Delete(Второй);");
+        Шаги.Add("count-deleted|Ответ = Данные.Count();");
+        Шаги.Add("get-first-deleted|Ответ = Данные.Get(Первый);");
+        Шаги.Add("get-second-deleted|Ответ = Данные.Get(Второй);");
+        Шаги.Add("delete-first|Данные.Delete(Первый);");
+        Шаги.Add("count-final|Ответ = Данные.Count();");
+    ИначеЕсли Режим = "fixed-copy" Тогда
+        Шаги.Add("snapshot|Снимок = Новый FixedMap(Данные);");
+        Шаги.Add("fixed-count|Ответ = Снимок.Count();");
+        Шаги.Add("fixed-get-first|Ответ = Снимок.Get(Первый);");
+        Шаги.Add("fixed-get-second|Ответ = Снимок.Get(Второй);");
+        Шаги.Add("fixed-index-second|Ответ = Снимок[Второй];");
+        Шаги.Add("copy|Копия = Новый Map(Снимок);");
+        Шаги.Add("copy-count|Ответ = Копия.Count();");
+        Шаги.Add("copy-get-second|Ответ = Копия.Get(Второй);");
+        Шаги.Add("source-replace|Данные.Insert(Первый, 404);");
+        Шаги.Add("source-delete|Данные.Delete(Первый);");
+        Шаги.Add("source-count|Ответ = Данные.Count();");
+        Шаги.Add("fixed-isolated|Ответ = Снимок.Get(Первый);");
+        Шаги.Add("copy-isolated|Ответ = Копия.Get(Первый);");
+        Шаги.Add("copy-insert-second|Копия.Insert(Второй, 505);");
+        Шаги.Add("copy-count-after|Ответ = Копия.Count();");
+        Шаги.Add("copy-get-first-after|Ответ = Копия.Get(Первый);");
+        Шаги.Add("copy-get-second-after|Ответ = Копия.Get(Второй);");
+        Шаги.Add("fixed-count-after|Ответ = Снимок.Count();");
+        Шаги.Add("fixed-first-after|Ответ = Снимок.Get(Первый);");
+        Шаги.Add("fixed-second-after|Ответ = Снимок.Get(Второй);");
+    Иначе
+        // Single, unequal and duplicate-equal insertion, each mutable and fixed.
+        Если СтрНайти(Режим, "single") = 0 Тогда
+            Шаги.Add("insert-second|Данные.Insert(Второй, 202);");
+        КонецЕсли;
+        Шаги.Add("codec-source-count|Ответ = Данные.Count();");
+        Если СтрНайти(Режим, "fixed") > 0 Тогда
+            Шаги.Add("codec-fixed|Данные = Новый FixedMap(Данные);");
+        КонецЕсли;
+        Шаги.Add("codec-write|Поток = ValueToStringInternal(Данные); Ответ = Поток;");
+        Шаги.Add("codec-read|Восстановлено = ValueFromStringInternal(Поток); Ответ = TypeOf(Восстановлено);");
+        Шаги.Add("codec-count|Ответ = Восстановлено.Count();");
+        Шаги.Add("codec-first|Ответ = Восстановлено.Get(Первый);");
+        Шаги.Add("codec-second|Ответ = Восстановлено.Get(Второй);");
+        Шаги.Add("codec-index-first|Ответ = Восстановлено[Первый];");
+        Шаги.Add("codec-index-second|Ответ = Восстановлено[Второй];");
+    КонецЕсли;
+    Для Каждого Шаг Из Шаги Цикл
+        Части = СтрРазделить(Шаг, "|");
+        Ответ = "ok";
+        Попытка
+            Выполнить(Части[1]);
+            Журнал.Add(Части[0] + ":ok:" + КомпактноеЗначениеТаблицы(Ответ));
+        Исключение
+            Журнал.Add(Части[0] + ":error");
+        КонецПопытки;
+    КонецЦикла;
+    Возврат Журнал;
+КонецФункции
+// End descriptor Map-key checkpoint helpers.
+
 #Область МассивыИСтруктуры
 // Типичный конвейер: массив записей, расчет суммы и сбор кодов для выгрузки.
 Позиции = Новый Массив;
@@ -3621,3 +3753,36 @@
 Сообщить("table.list.reference.checkpoint.complete: [ok]");
 // End ValueList field reference observations.
 Сообщить("table.checkpoint.complete: [ok]");
+// Begin descriptor Map-key checkpoint observations.
+НаблюдатьТаблицы("descriptor-key.equality.same-object", "РавенствоКлючейОписаний(""same-object"")");
+НаблюдатьТаблицы("descriptor-key.mutable.same-object", "ИсторияКлючейОписаний(""same-object"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.same-object", "ИсторияКлючейОписаний(""same-object"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.equality.equal-empty", "РавенствоКлючейОписаний(""equal-empty"")");
+НаблюдатьТаблицы("descriptor-key.mutable.equal-empty", "ИсторияКлючейОписаний(""equal-empty"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.equal-empty", "ИсторияКлючейОписаний(""equal-empty"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.equality.equal-number", "РавенствоКлючейОписаний(""equal-number"")");
+НаблюдатьТаблицы("descriptor-key.mutable.equal-number", "ИсторияКлючейОписаний(""equal-number"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.equal-number", "ИсторияКлючейОписаний(""equal-number"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.equality.equal-reordered", "РавенствоКлючейОписаний(""equal-reordered"")");
+НаблюдатьТаблицы("descriptor-key.mutable.equal-reordered", "ИсторияКлючейОписаний(""equal-reordered"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.equal-reordered", "ИсторияКлючейОписаний(""equal-reordered"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.equality.equal-copy", "РавенствоКлючейОписаний(""equal-copy"")");
+НаблюдатьТаблицы("descriptor-key.mutable.equal-copy", "ИсторияКлючейОписаний(""equal-copy"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.equal-copy", "ИсторияКлючейОписаний(""equal-copy"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.equality.unequal-types", "РавенствоКлючейОписаний(""unequal-types"")");
+НаблюдатьТаблицы("descriptor-key.mutable.unequal-types", "ИсторияКлючейОписаний(""unequal-types"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.unequal-types", "ИсторияКлючейОписаний(""unequal-types"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.equality.unequal-number-qualifiers", "РавенствоКлючейОписаний(""unequal-number-qualifiers"")");
+НаблюдатьТаблицы("descriptor-key.mutable.unequal-number-qualifiers", "ИсторияКлючейОписаний(""unequal-number-qualifiers"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.unequal-number-qualifiers", "ИсторияКлючейОписаний(""unequal-number-qualifiers"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.equality.unequal-string-qualifiers", "РавенствоКлючейОписаний(""unequal-string-qualifiers"")");
+НаблюдатьТаблицы("descriptor-key.mutable.unequal-string-qualifiers", "ИсторияКлючейОписаний(""unequal-string-qualifiers"", ""mutable"")");
+НаблюдатьТаблицы("descriptor-key.fixed-copy.unequal-string-qualifiers", "ИсторияКлючейОписаний(""unequal-string-qualifiers"", ""fixed-copy"")");
+НаблюдатьТаблицы("descriptor-key.codec-mutable-single", "ИсторияКлючейОписаний(""equal-number"", ""codec-mutable-single"")");
+НаблюдатьТаблицы("descriptor-key.codec-fixed-single", "ИсторияКлючейОписаний(""equal-number"", ""codec-fixed-single"")");
+НаблюдатьТаблицы("descriptor-key.codec-mutable-unequal", "ИсторияКлючейОписаний(""unequal-types"", ""codec-mutable-unequal"")");
+НаблюдатьТаблицы("descriptor-key.codec-fixed-unequal", "ИсторияКлючейОписаний(""unequal-types"", ""codec-fixed-unequal"")");
+НаблюдатьТаблицы("descriptor-key.codec-mutable-duplicate-equal", "ИсторияКлючейОписаний(""equal-number"", ""codec-mutable-duplicate-equal"")");
+НаблюдатьТаблицы("descriptor-key.codec-fixed-duplicate-equal", "ИсторияКлючейОписаний(""equal-number"", ""codec-fixed-duplicate-equal"")");
+Сообщить("table.descriptor-key.checkpoint.complete: [ok]");
+// End descriptor Map-key checkpoint observations.
