@@ -87,3 +87,20 @@ def historical_values_source(source, output):
     if git_blob(replay) != HISTORICAL_VALUES_BLOB:
         raise ValueError("historical values source binding changed")
     return replay
+
+
+# Windows dates capture predates the appended fixed-GMT fractional probes.
+HISTORICAL_DATES_BLOB = '1527fe4c52feab97bc6ed8ba007cf664b4565cc6'
+CURRENT_DATES_BLOB = 'd6d03bd014466f41d49ab566c003ac680cd052b2'
+HISTORICAL_DATES_OUTPUT_BLOB = '05d23c46540b301820f2ac81c8a67fc0e1273dc8'
+
+def historical_dates_source(source: bytes, output: bytes) -> bytes:
+    """Reconstruct the exact captured source, never filter observed output."""
+    source = source.replace(b'\r\n', b'\n')
+    output = output.replace(b'\r\n', b'\n')
+    if git_blob(source) != CURRENT_DATES_BLOB or git_blob(output) != HISTORICAL_DATES_OUTPUT_BLOB:
+        raise ValueError('Historical dates source/output identity mismatch')
+    historical = source[:15403]
+    if git_blob(historical) != HISTORICAL_DATES_BLOB:
+        raise ValueError('Historical dates reconstruction mismatch')
+    return historical

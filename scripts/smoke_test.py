@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_collections_source, historical_values_source
+    from .native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source
 else:
-    from native_historical_replay import historical_collections_source, historical_values_source
+    from native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1812,9 +1812,10 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
-        if name == 'collections':
-            replay = directory / 'collections-historical.bsl'
-            replay.write_bytes(historical_collections_source(script.read_bytes(), output.read_bytes()))
+        if name in ('collections', 'dates'):
+            reconstruct = historical_dates_source if name == 'dates' else historical_collections_source
+            replay = directory / (name + '-historical.bsl')
+            replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
         if name == 'values':
             replay = directory / 'values-historical.bsl'

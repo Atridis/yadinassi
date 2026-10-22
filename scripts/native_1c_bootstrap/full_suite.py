@@ -1110,15 +1110,15 @@ def run_client_watchdog(platform, root: Path, inputs: Path, nonce: str, hashes: 
 
 
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_DATES_SOURCE_SHA256 = 'a995169b82f6170f55eb2a935a6e113b53596d529b125563d1e75c394296bcb5'
+CLIENT_DATES_SOURCE_SHA256 = '392761c5ce8f599d569400672b07590184f147c9e4d5cd3f07decee1cffb029e'
 CLIENT_DATES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_DATES_MESSAGE_COUNT = 100
+CLIENT_DATES_MESSAGE_COUNT = 185
 
 
 def client_dates_module(source: bytes, template: bytes) -> bytes:
     """Adapt only the pinned dates source into the pinned managed-client harness.
 
-    Source statements retain their exact spelling/order. Only the five verified
+    Source statements retain their exact spelling/order. Only the six verified
     message-call identifiers change; helpers gain client directives and the
     original module body moves into a client procedure. No server trampoline,
     string conversion, date reference generation or expected values are added.
@@ -1131,11 +1131,11 @@ def client_dates_module(source: bytes, template: bytes) -> bytes:
     lines = original.splitlines(keepends=True)
     # Pin declarations, body boundary and actual call sites, not text matches
     # inside expression strings or comments. The raw digest is checked above.
-    sites = (6, 11, 13, 80, 131)
+    sites = (6, 11, 13, 80, 131, 218)
     declarations = {2: 'Процедура НаблюдатьДату(Знач Метка, Знач Выражение)\n',
                     19: 'Функция ПроверитьКлючиДат()\n'}
     capture = 'ДатыКлиентЗахват'
-    if (len(lines) != 132 or any(lines[i] != text for i, text in declarations.items())
+    if (len(lines) != 219 or any(lines[i] != text for i, text in declarations.items())
             or lines[15] != 'КонецПроцедуры\n' or lines[28] != 'КонецФункции\n'
             or lines[30] != 'НаблюдатьДату("construct.parts", "Date(2024, 2, 29, 12, 34, 56)");\n'
             or tuple(i for i, line in enumerate(lines)
@@ -1161,7 +1161,7 @@ def client_dates_module(source: bytes, template: bytes) -> bytes:
     if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
         raise FullError('invalid_input')
     # Client-only, non-exported module variables are supported in form modules.
-    # 4 UTF-8 bytes per character plus all 100 message LFs is conservative;
+    # 4 UTF-8 bytes per character plus all 185 message LFs is conservative;
     # the receiving verifier enforces the exact serialized UTF-8 byte limit.
     budget = (MAX_OUTPUT - CLIENT_DATES_MESSAGE_COUNT) // 4
     variables = ('&НаКлиенте\nПерем ДатыКлиентСообщения;\n'

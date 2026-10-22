@@ -24,7 +24,7 @@ class DatesExecutionTests(unittest.TestCase):
                 path = self.inputs / name
                 path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n'))
             self.hashes = suite.input_hashes(self.inputs, client_probe=True)
-        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(100)]
+        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(185)]
         self.messages[4] = 'multiline: [a\nb\r\nc]\n'
         self.output = self.root / 'dates.out'
         self.output.write_bytes(suite.serialize_messages(self.messages))
@@ -55,7 +55,7 @@ class DatesExecutionTests(unittest.TestCase):
     def test_full_exact_output_and_multiline_preserved(self):
         result = self.run_dates()
         self.assertEqual(result['status'], 'ok', result)
-        self.assertEqual(result['message_count'], 100)
+        self.assertEqual(result['message_count'], 185)
         self.assertEqual(result['output_sha256'], suite.digest(self.output.read_bytes()))
         self.assertEqual(result['output_size'], len(self.output.read_bytes()))
         self.assertEqual(result['source_sha256'], self.hashes['integrational_tests/tests/dates.bsl'])
