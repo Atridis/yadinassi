@@ -1,14 +1,14 @@
 # Fixed-GMT fractional Date checkpoint
 
-Status: source-only preparation. Native compilation, fresh client/server results,
-interpretation of fractional behavior, and runtime implementation are pending.
-Local Python tests verify packaging and source preservation, not native behavior.
-The runtime deliberately still rejects fractional Date conversions.
+Status: native checkpoint measured and independently verified; bounded runtime
+implementation preserves fractional ticks. Final implementation CI/native proof
+and merge are separate required gates. Source packaging tests remain independent
+of behavior.
 
 ## Bounded question and probes
 
-The existing fixed-GMT implementation rejects every nonzero fractional tick in
-`date_time_conversions._convert`. Only the already supported explicit
+The preceding fixed-GMT implementation rejected every nonzero fractional tick in
+`date_time_conversions._convert`; this measured gap is now removed. Only the already supported explicit
 `GMT{+/-}h[h][:mm]` domain is investigated here. Named zones, omitted/default
 zones, system clocks and boundary-overflow behavior remain out of scope.
 
@@ -82,5 +82,24 @@ The public artifact remains six server outputs plus provenance, not client data.
    four-OS build/test results. Merge only under the existing sequential gate;
    verify fresh main and postmerge checks before advancing the next feature.
 
-Publication and actual native/runtime proof are intentionally pending; this
-checkpoint alone is not ready-for-review or merge evidence.
+## Measured evidence
+
+[Native run 39758795625](https://github.com/Atridis/yadinassi/actions/runs/39758795625)
+binds source-only head `fdba085adf0b2c4438e56c7fd7a3f0f2aca98e3f`, synthetic merge
+`8edf1cf82cb534dfebbb22f2ff508a495181d205`, and tree
+`ac3271236864521fed3d8df4097457024fa087e1`. Linux 1C 8.3.27.1508 completed all
+six scenarios and exact dates client/server parity (185 messages). All 84 new
+numeric observations preserve the input fraction after the signed whole-second
+GMT shift; all inverse compositions recover the input fraction. No new probe
+reported an error. The original 100-message, 8,633-byte prefix is unchanged.
+Full dates output: 13,859 bytes, SHA256
+`ace261dc55bd9d4e7b069f4671c8dbd72937734bdb0b667f7f00b9a215b09a94`.
+
+The checked-in `tests/fixtures/fixed_gmt_fractional_linux.json` copies the exact
+85-message suffix and source/run identity. It is not interpreter-generated.
+All 24 staged hashes, module hashes, provenance, artifact membership/digests,
+client witnesses, watchdog and caps were independently checked. Source-only
+interpreter acceptance was rejected solely for dates, as expected; that red
+workflow is native evidence, not final implementation acceptance. Other five
+scenarios remained accepted. Final implementation proof remains a separate gate.
+

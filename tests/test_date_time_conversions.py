@@ -1,6 +1,6 @@
 """Bounded fixed-offset Date conversion contracts, not native probe evidence.
 
-The documented GMT grammar grounds this subset. Fraction rejection, overflow,
+The documented GMT grammar grounds this subset. Overflow,
 missing/default zones and defensive checks are implementation limits; these
 checks do not claim unmeasured native 1C parity.
 """
@@ -136,12 +136,9 @@ class FixedOffsetConversionTests(unittest.TestCase):
             with self.assertRaises((TypeError, ValueError)):
                 function(date('20240229'))
 
-    def test_fractions_and_opaque_boundaries_are_rejected_even_for_zero_offset(self):
+    def test_opaque_boundaries_are_rejected_even_for_zero_offset(self):
         for function, _ in ALIASES:
             for zone in ('GMT+0', 'GMT-0:00', 'GMT+23:59', 'GMT-23:59'):
-                for ticks in (1, 9999, date('20240229').ticks + 1234, MAX_TICKS - 1):
-                    with self.subTest(ticks=ticks, zone=zone), self.assertRaises((TypeError, ValueError)):
-                        function(BSLDate(ticks), zone)
                 for ticks in (0, MAX_TICKS):
                     with self.assertRaises(UnsupportedDateRange):
                         function(BSLDate(ticks, boundary=True), zone)
@@ -207,13 +204,12 @@ class FixedOffsetRuntimeTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('МестноеВремя(source,"GMT+1")'), date('20240301005959'))
         self.assertEqual(Interpreter().execute('ToLocalTime(Date(2024,2,29),"GMT+1")'), date('20240229010000'))
 
-    def test_invalid_types_defaults_fractions_and_arities_are_catchable(self):
+    def test_invalid_types_defaults_and_arities_are_catchable(self):
         suffixes = ('()', '(source)', '(source,Undefined)', '(source,Null)',
                     '(source,"Europe/Warsaw")', '(source,"GMT+24")', '(source,"gmt+1")',
                     '(source,0)', '(source,True)', '(source,New Array)',
                     '(source,"GMT+1",0)', '(,"GMT+1")', '(Undefined,"GMT+1")',
                     '(Null,"GMT+1")', '(0,"GMT+1")', '("20240229","GMT+1")',
-                    '(source+0.0001,"GMT+0")', '(source-0.0001,"GMT-1")',
                     '(Date(1,1,1),"GMT-23:59")', '(Date(9999,12,31,23,59,59),"GMT+23:59")')
         for _, names in ALIASES:
             for name in names:
