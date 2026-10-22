@@ -127,8 +127,8 @@ class ExportedPostCreateTests(unittest.TestCase):
             self.assertEqual(len(current), 136)
             self.assertEqual(current, previous)
             self.assertFalse(any('post-create.' in row for row in current))
-        # No source adapter, native expected answers, or post-Create runtime
-        # support is introduced or asserted by these local bootstrap tests.
+        # Module execution alone never invokes the explicit post-Create entrypoint.
+        # The separate protocol tests exercise that second phase.
 
 
 if __name__ == '__main__':

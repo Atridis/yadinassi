@@ -1,4 +1,4 @@
-"""Parser bootstrap and genuine native probes; no assumed native field semantics."""
+"""Parser/history invariants and measured initialization/public-field boundaries."""
 import hashlib
 from pathlib import Path
 import re
@@ -85,7 +85,7 @@ class ExportedVariableCheckpointTests(unittest.TestCase):
         self.assertIn('ThisObject.ExportProbePrivate = 59', body)
         self.assertNotIn('ОписаниеОшибки', body)
 
-    def test_bootstrap_preserves_all_116_outputs_and_completes_15_real_observations(self):
+    def test_measured_initialization_preserves_all_116_outputs_and_15_real_observations(self):
         for target in (WINDOWS_8_3_27_2342, LINUX_8_3_27_1508):
             previous, current = [], []
             Interpreter(previous.append, native_target=target).execute(self.previous)
@@ -95,18 +95,28 @@ class ExportedVariableCheckpointTests(unittest.TestCase):
             self.assertEqual(len(current), 131)
             self.assertEqual([row.split(':')[0] for row in current[116:]],
                              ['export-variable.' + label for label in LABELS])
-            # This is a local bootstrap limitation, not a native expected answer.
-            self.assertTrue(current[116].startswith('export-variable.object-context: [error;'))
+            # Native run 39864376445: the identity exists during initialization,
+            # although its exported surface is not ready yet.
+            self.assertEqual(current[116], 'export-variable.object-context: '
+                             '[ok;result={"B",1};value={"N",11};private={"N",19}]')
             for row in current[116:]:
                 self.assertRegex(row, r': \[(?:ok|error);result=.+;value=.+;private=.+\]$')
 
-    def test_import_fields_remain_fail_closed_in_parser_only_checkpoint(self):
+    def test_ready_import_fields_share_storage_but_private_and_reflection_stay_closed(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            (root / 'mod.bsl').write_text('Var Public Export; Public=11;', encoding='utf-8')
-            for operation in ('Message(mod.Public);', 'mod.Public=12;', 'Message(mod.interpreter);'):
+            (root / 'mod.bsl').write_text(
+                'Var Private, Public Export; Public=11; Private=19; '
+                'Function Read() Export Return Public; EndFunction', encoding='utf-8')
+            output = []
+            vm = Interpreter(output.append)
+            vm.execute('// #Import mod.bsl\nMessage(mod.Public); mod.Public=31; Message(mod.Read());',
+                       str(root / 'main.bsl'))
+            self.assertEqual(output, ['11', '31'])
+            for operation in ('Message(mod.Private);', 'mod.Private=59;',
+                              'Message(mod.interpreter);', 'mod.Unknown=12;'):
                 with self.subTest(operation=operation), self.assertRaises(BSLError):
-                    Interpreter(lambda _: None).execute('// #Import mod.bsl\n' + operation, str(root / 'main.bsl'))
+                    vm.execute(operation)
 
 
 if __name__ == '__main__':

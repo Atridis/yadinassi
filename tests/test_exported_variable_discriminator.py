@@ -1,4 +1,4 @@
-"""Static/Execute native discriminator, without assumed native results."""
+"""Static/Execute source discriminator and measured initialization diagnostics."""
 import hashlib
 from pathlib import Path
 import re
@@ -58,7 +58,7 @@ class ExportedContextDiscriminatorTests(unittest.TestCase):
             else:
                 started = True
 
-    def test_full136_bootstrap_and_unmodified131_prefix(self):
+    def test_full136_measured_initialization_and_unmodified131_prefix(self):
         for target in (WINDOWS_8_3_27_2342, LINUX_8_3_27_1508):
             previous, current = [], []
             Interpreter(previous.append, native_target=target).execute(self.previous)
@@ -68,9 +68,12 @@ class ExportedContextDiscriminatorTests(unittest.TestCase):
             self.assertEqual(len(current), 136)
             self.assertEqual([row.split(':')[0] for row in current[131:]],
                              ['export-context.' + label for label in LABELS])
-            for row in current[131:]:
-                # Local fail-closed bootstrap only, not a native expected answer.
-                self.assertIn('[error;kind=other;', row)
+            kinds = ('field-missing', 'field-missing', 'method-missing',
+                     'field-missing', 'method-missing')
+            for label, kind, row in zip(LABELS, kinds, current[131:]):
+                # Exact bounded diagnostics independently captured in native run 39864376445.
+                self.assertEqual(row, 'export-context.' + label + ': [error;kind=' + kind +
+                                 ';named={"B",1};result={"U"};value={"N",11}]')
                 self.assertNotIn('Description', row)
 
 if __name__ == '__main__':

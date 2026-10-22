@@ -1,6 +1,11 @@
 # Exported module variables: local design and checkpoint
 
-Status: local post-Create measurement checkpoint, based on Draft PR89 head
+The checkpoints below are historical. The runtime follow-up implements the
+bounded exported-field and self-module model measured by the recovered native
+capture; see the audited observations and runtime scope at the end. The earlier
+bootstrap commits remain failed interpreter comparisons, not retroactive parity.
+
+Historical status: local post-Create measurement checkpoint, based on Draft PR89 head
 ebe8235bd4a03c06873adce931cfe53adaca093f (tree e09f6ca6). Publication is pending
 independent exact-change review. Native run 39856163175 captured all 131 records
 on Linux 8.3.27.1508. Native discriminator run 39858423942 then captured all 136
@@ -250,3 +255,90 @@ unchanged. The specific failure kind is present in the comparison summary, not
 in the existing provenance case fields; audit both artifacts together with the
 exact comparison-driver hash. Export-ready evidence remains independent of the
 overall failed comparison and nonzero workflow exit.
+
+## Audited post-Create observations
+
+Fresh native run [39864376445](https://github.com/Atridis/yadinassi/actions/runs/39864376445)
+at head `a8a6919a6c73363aa08b17bb9b037d0f1b3c57de`, tree
+`163015d1a03b56dd69ca57eeac42c7435a3c5a07`, recovered the actual bytes.
+Independent audit verified all 299 source files, synthetic parents/tree, both
+artifact ZIP digests, the seven-file inventory, summary/provenance/driver binding,
+all 24 trusted inputs, source/module hashes, fresh nonce, client and security/
+cleanup witnesses, and existing bounds. Security conclusions are captured
+tree-bound evidence, not a claim of independently observing the remote OS.
+
+Linux 1C 8.3.27.1508 produced 156 functions records, 20,326 bytes, SHA256
+`fd3ca42572f383cb7b87dad6401005234e2d50f1537753d1228a81ec26f6d6d5`.
+The historical 136-record prefix and all other five native outputs were
+byte-identical; the full-source inverse chain 136 → 131 → 116 → 88 remained exact.
+Only the existing eight approved Map-order differences applied elsewhere.
+The post-Create phase has the exact begin witness, eighteen observations, and
+successful final witness. All observations retain the private variable at 19:
+
+- The passed public receiver exists, and an unset exported variable is Undefined.
+- Public read returns 11; public write/internal read returns 31; internal
+  routine write/public read returns 43.
+- The unexported first variable in a declaration list and its write both fail;
+  the separately exported second entry reads 17. Unknown read/write also fail.
+- Local shadowing returns 37 without changing the module's 11.
+- Two references to the same public property alias live: after assigning the
+  first parameter 23, the second sees 23 and the module holds 23.
+- A Val parameter returns 41 while the module remains 11.
+- Assignment through a reference survives a raised exception: the observation
+  reports an error, but the module holds 53. This is not deferred copy-out.
+- A shared collection mutation is visible through its exported field (count 2).
+- The actual returned external-data-processor receiver equals ThisObject.
+  ThisObject reads 11 and writes 61, visible through the passed receiver.
+
+The same source's initialization observations still reject public fields and
+methods. Both direct and Execute access fail there, so the distinction is the
+measured lifecycle, not an Execute-only limitation. The callback itself is an
+actual exported public method called on the object returned by Create.
+
+This capture workflow deliberately still failed: its bootstrap interpreter
+exited 3 with empty stderr, emitted zero post-Create observations, and retained
+`interpreter_post_create_failed`, null interpreter hash/size and rejected
+acceptance. The valid native artifact establishes semantics, not interpreter
+parity or permission to merge that bootstrap head. No fixture or expected native
+output was replaced to obtain these results.
+
+## Runtime scope
+
+The runtime uses one stable, opaque self-module receiver and one backing store
+for declared variables. Per-name export metadata admits only exported fields
+and routines through exact dispatch, including imported modules. Property
+references use the measured live storage, including aliasing and exception
+mutation. Private and undeclared members remain inaccessible; there is no Python
+attribute fallback or general platform-object emulation.
+
+The standalone interpreter models the observed lifecycle explicitly: its own
+receiver exists during first module execution, but public access is unavailable
+until that execution completes successfully. Later persistent execute calls can
+use the ready receiver. Imported modules become ready after their existing
+initialization completes; their cache, cycle checks, directory namespaces and
+independent root-interpreter state are unchanged. Internal direct names remain
+usable during initialization. This model is a deliberate standalone contract,
+not a claim about every real platform module type or lifecycle.
+
+ThisObject/ЭтотОбъект denotes the current owner unless explicitly shadowed by
+ordinary existing bindings. Its unshadowed intrinsic binding is read-only.
+Only exported fields and routines are exposed; platform methods, reflection,
+string/type presentation and serialization of the receiver are outside scope.
+The existing comment-based file import remains a project extension, not standard
+1C import syntax. The native full-source probe and historical fixtures remain
+unchanged by the runtime implementation.
+
+Regression tests exercise the real unmodified post-Create source on the host.
+They also retain the failed-host capture path using an explicitly test-only
+source with the entrypoint's Export removed, rather than assuming that the real
+feature must keep failing or fabricating observation rows. Native artifact
+capture validity and successful interpreter comparison remain separate gates.
+
+Local runtime replay uses the unchanged real host driver, the measured Linux
+target, and the same UTC/locale contract against the independently audited
+capture. All 156 functions records, including both phase witnesses, match the
+native bytes exactly. The other five scenarios also retain their results.
+Across all six scenarios, five whole outputs are byte-exact and collections uses only the eight pre-existing
+approved Map-order equivalences. This local replay is not a fresh remote native
+execution of the runtime commit; the latter remains a separate publication/merge
+verification gate.

@@ -22,6 +22,14 @@ DIRECTIVE = launcher.POST_CREATE_DIRECTIVE
 FORM = ROOT / 'integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl'
 
 
+def unavailable_postcreate_entrypoint(source):
+    """A test-only negative source: keep the callback, remove only its public export."""
+    declaration = 'Procedure ExportProbeAfterCreate(Val PublicObject) Export'
+    if source.count(declaration) != 1:
+        raise AssertionError('Expected exactly one committed post-Create entrypoint')
+    return source.replace(declaration, declaration.removesuffix(' Export'), 1)
+
+
 def host_directive_parser():
     tree = pyast.parse(host.EXECUTE_SCRIPT)
     nodes = [node for node in tree.body if
@@ -163,25 +171,45 @@ class Interpreter:
                             else 'export-phase.post-create: [ok]']
                 self.assertEqual(result.stdout.decode().splitlines(), expected)
 
-    def test_host_real_checkpoint_is_bounded_failure_not_green(self):
-        source = ROOT/'integrational_tests/tests/functions.bsl'
+    def test_host_real_measured_checkpoint_completes_all_156_rows(self):
+        source = ROOT / 'integrational_tests/tests/functions.bsl'
         result = subprocess.run([sys.executable, '-c', host.EXECUTE_SCRIPT, str(ROOT), str(source),
                                  'linux-8.3.27.1508'], capture_output=True, check=False)
-        self.assertEqual(result.returncode, 3)
-        self.assertEqual(result.stderr, b'')
+        self.assertEqual((result.returncode, result.stderr), (0, b''))
         expected = []
         Interpreter(expected.append, native_target='linux-8.3.27.1508').execute(
             without_exported_postcreate_probes(source.read_text(encoding='utf-8')))
         lines = result.stdout.decode().splitlines()
+        self.assertEqual(len(lines), 156)
         self.assertEqual(lines[:136], expected)
-        self.assertEqual(lines[136:], ['export-phase.post-create: [begin]',
-            'export-phase.post-create: [error;kind=other;named={"B",0}]'])
+        self.assertEqual(lines[136], 'export-phase.post-create: [begin]')
+        self.assertEqual(tuple(row.split(':', 1)[0] for row in lines[137:155]), host.POST_CREATE_LABELS)
+        self.assertEqual(lines[155], 'export-phase.post-create: [ok]')
+
+    def test_real_host_missing_export_is_bounded_failure_not_green(self):
+        source = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+        negative = unavailable_postcreate_entrypoint(source)
+        self.assertNotEqual(negative, source)
+        self.assertEqual(negative.replace('Procedure ExportProbeAfterCreate(Val PublicObject)',
+                                         'Procedure ExportProbeAfterCreate(Val PublicObject) Export', 1), source)
+        expected = []
+        Interpreter(expected.append, native_target='linux-8.3.27.1508').execute(
+            without_exported_postcreate_probes(source))
         with tempfile.TemporaryDirectory() as folder:
-            historical = Path(folder)/'old.bsl'
+            fixture = Path(folder) / 'missing-entrypoint.bsl'
+            fixture.write_text(negative, encoding='utf-8')
+            result = subprocess.run([sys.executable, '-c', host.EXECUTE_SCRIPT, str(ROOT), str(fixture),
+                                     'linux-8.3.27.1508'], capture_output=True, check=False)
+            self.assertEqual((result.returncode, result.stderr), (3, b''))
+            lines = result.stdout.decode().splitlines()
+            self.assertEqual(lines[:136], expected)
+            self.assertEqual(lines[136:], ['export-phase.post-create: [begin]',
+                'export-phase.post-create: [error;kind=method-missing;named={"B",1}]'])
+            historical = Path(folder) / 'old.bsl'
             historical.write_text('Message("unchanged");', encoding='utf-8')
             result = subprocess.run([sys.executable, '-c', host.EXECUTE_SCRIPT, str(ROOT), str(historical)],
                                     capture_output=True, check=False)
-            self.assertEqual((result.returncode,result.stdout,result.stderr), (0,b'unchanged\n',b''))
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b'unchanged\n', b''))
 
 
 class NativeDriverOfflineTests(unittest.TestCase):

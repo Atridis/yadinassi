@@ -12,12 +12,14 @@ import test_native_1c_output_artifact as artifact
 import test_native_1c_map_contract as map_fixtures
 from test_native_1c_output_artifact import accepted_report, PAYLOAD
 from test_native_1c_full_host import full, smoke, SyntheticFilesystemCase
-from test_native_postcreate_protocol import host_directive_parser, launcher
+from test_native_postcreate_protocol import (
+    host_directive_parser, launcher, unavailable_postcreate_entrypoint,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 BEGIN = b'export-phase.post-create: [begin]'
 OK = b'export-phase.post-create: [ok]'
-ERROR = b'export-phase.post-create: [error;kind=other;named={"B",0}]'
+ERROR = b'export-phase.post-create: [error;kind=method-missing;named={"B",1}]'
 
 
 def native_payload(*, ending=b'\n', failure=None):
@@ -33,12 +35,20 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        result = subprocess.run(
-            [sys.executable, '-I', '-B', '-c', full.EXECUTE_SCRIPT, str(ROOT),
-             str(ROOT / 'integrational_tests/tests/functions.bsl'), full.LINUX_TARGET],
-            cwd=ROOT, env=full.child_environment(), capture_output=True, timeout=full.CASE_SECONDS,
-            check=False)
-        cls.actual_response = result.returncode, result.stdout, result.stderr
+        cls.original_source = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+        cls.failure_source = unavailable_postcreate_entrypoint(cls.original_source)
+        with tempfile.TemporaryDirectory() as folder:
+            failure_path = Path(folder) / 'missing-entrypoint.bsl'
+            failure_path.write_text(cls.failure_source, encoding='utf-8')
+            responses = []
+            for source in (ROOT / 'integrational_tests/tests/functions.bsl', failure_path):
+                result = subprocess.run(
+                    [sys.executable, '-I', '-B', '-c', full.EXECUTE_SCRIPT, str(ROOT),
+                     str(source), full.LINUX_TARGET],
+                    cwd=ROOT, env=full.child_environment(), capture_output=True, timeout=full.CASE_SECONDS,
+                    check=False)
+                responses.append((result.returncode, result.stdout, result.stderr))
+        cls.success_response, cls.actual_response = responses
 
     def setUp(self):
         super().setUp()
@@ -50,7 +60,7 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
         self.inputs = self.report['stage3']['input_sha256']
         for name in full.SCENARIOS:
             source = self.root / f'integrational_tests/tests/{name}.bsl'
-            source.write_bytes((ROOT / f'integrational_tests/tests/{name}.bsl').read_bytes()
+            source.write_bytes(self.failure_source.encode('utf-8')
                                if name == 'functions' else b'// offline fixture\n')
             self.inputs[f'integrational_tests/tests/{name}.bsl'] = full.digest(source.read_bytes())
         self.report['trusted_input_sha256'] = dict(self.inputs)
@@ -85,7 +95,7 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
             if Path(args[-2]).stem != 'functions':
                 return 0, PAYLOAD, b''
             if real:
-                # Execute the exact fixture source against the real unchanged package.
+                # Execute the exact missing-export test fixture against the real package.
                 args = list(args)
                 args[-3] = str(ROOT)
                 result = subprocess.run(args, cwd=cwd, env=full.child_environment(), capture_output=True,
@@ -111,7 +121,18 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
         self.assertEqual(self.report['comparison']['status'], 'failed')
         self.assertEqual(self.report['comparison']['acceptance_status'], 'rejected')
 
-    def test_actual_host_138_exit3_survives_comparison_and_seven_file_packaging(self):
+    def test_unmodified_real_source_is_now_156_success_not_the_failure_fixture(self):
+        code, actual, stderr = self.success_response
+        self.assertEqual((code, stderr), (0, b''))
+        rows = actual.splitlines()
+        self.assertEqual(len(rows), 156)
+        self.assertEqual(rows[136], BEGIN)
+        self.assertEqual(tuple(row.split(b':', 1)[0].decode() for row in rows[137:155]),
+                         full.POST_CREATE_LABELS)
+        self.assertEqual(rows[-1], OK)
+        self.assertNotEqual(self.failure_source, self.original_source)
+
+    def test_actual_missing_export_138_exit3_survives_comparison_and_seven_file_packaging(self):
         code, actual, stderr = self.actual_response
         self.assertEqual((code, stderr), (3, b''))
         self.assertEqual(len(actual.splitlines()), 138)
@@ -131,7 +152,7 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
         self.assertEqual(provenance['schema'], 'native-1c-outputs-v2')
 
     def test_real_lf_crlf_and_bom_sources_and_native_bytes_are_preserved(self):
-        source = (ROOT / 'integrational_tests/tests/functions.bsl').read_bytes().replace(b'\r\n', b'\n')
+        source = self.failure_source.encode('utf-8').replace(b'\r\n', b'\n')
         for bom in (b'', b'\xef\xbb\xbf'):
             for ending in (b'\n', b'\r\n'):
                 with self.subTest(bom=bom, ending=ending):
@@ -177,7 +198,7 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
                      actual.replace(ERROR, OK), actual.replace(ERROR, ERROR + b' suffix'),
                      actual.replace(BEGIN, b'prefix ' + BEGIN), actual + b'extra\n', actual + b'\n',
                      actual.replace(ERROR, b'export-phase.post-create: [error;kind=unknown;named={"B",0}]'),
-                     actual.replace(ERROR, ERROR.replace(b'{"B",0}', b'{"B",2}')),
+                     actual.replace(ERROR, ERROR.replace(b'{"B",1}', b'{"B",2}')),
                      actual.replace(BEGIN + b'\n' + ERROR, ERROR + b'\n' + BEGIN), actual[:-1]]
         responses = [(1, actual, b''), (2, actual, b''), (3, actual, b'private stderr'),
                      (0, actual, b'private stderr')] + [(3, mutation, b'') for mutation in mutations]
