@@ -565,7 +565,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             path = temporary / 'ОшибкаДеления.bsl'
-            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2)):
                 code = f'value = 1 / 7;\nvalue = {expression};\n'
                 path.write_text(code, encoding='utf-8-sig')
                 cases = [((flag, code), None, '', '<команда>:2:')
@@ -599,7 +599,7 @@ class CLITests(unittest.TestCase):
                 'Message(value); Message(Доли.Divide(value, 3));\n'
                 'Message(Доли.Divide(1, 0.3)); Message(TypeOf(value));\n'
                 'Message(value = Number("0.142857142857142857142857143"));\n'
-                'Try value = Доли.Divide(1, 268435456); Except Message("caught"); EndTry;\n'
+                'Try value = Доли.Divide(1, 0); Except Message("caught"); EndTry;\n'
                 'Message(value); Message(Доли.Divide(1, 8));\n', encoding='utf-8-sig')
             expected = ('0,142857142857142857142857143\n'
                         '0,047619047619047619047619047666666666666666666666666667\n'
@@ -610,7 +610,7 @@ class CLITests(unittest.TestCase):
                     result = self.run_cli(str(path), cwd=temporary)
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
                                      (0, expected, ''))
-            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+            for expression, message in (DIVISION_FAILURES[index] for index in (0, 2)):
                 main.write_text('// #Импорт Доли.bsl\nДоли.Divide(' +
                                 expression.replace(' / ', ', ') + ');\n', encoding='utf-8-sig')
                 for path in (main, main.relative_to(temporary)):

@@ -1,5 +1,6 @@
 """Synthetic frozen-smoke framing contracts, not native rounding evidence."""
 from pathlib import Path
+import json
 import subprocess
 import tempfile
 import unittest
@@ -15,8 +16,7 @@ class DivisionTieSmokeTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name) / 'capture'
         self.prefix = (smoke_test.ROOT / 'tests/fixtures/native_windows/numbers.out').read_text(encoding='utf-8-sig')
-        self.records = ['math.' + label + ': [error]' for label in probes()]
-        self.records.append('division-tie.checkpoint.complete: [ok]')
+        self.records = json.loads((smoke_test.ROOT / 'tests/fixtures/division_half_ties_linux.json').read_text(encoding='utf-8'))['records']
 
     def invoke(self, output, status=0, stderr=''):
         result = subprocess.CompletedProcess([], status, output, stderr)
@@ -34,11 +34,13 @@ class DivisionTieSmokeTests(unittest.TestCase):
     def test_full_source_executes_with_complete_native_prefix_and_every_new_label(self):
         self.invoke(self.output())
 
-    def test_new_numeric_boolean_and_error_values_are_not_predicted(self):
-        records = self.records.copy()
-        for i, value in enumerate(('{"N",-0.0000000001}', '{"B",1}', '{"B",0}', 'serialize-error')):
-            records[i] = records[i].replace('error', value)
-        self.invoke(self.output(records))
+    def test_every_changed_native_value_or_error_is_rejected(self):
+        for index in range(len(self.records) - 1):
+            records = self.records.copy()
+            records[index] = records[index].split(': [', 1)[0] + ': [error]'
+            with self.subTest(index=index), self.assertRaises(AssertionError):
+                self.invoke(self.output(records))
+            self.directory.rmdir()
 
     def test_every_record_is_mandatory(self):
         for index in range(len(self.records)):
@@ -51,9 +53,9 @@ class DivisionTieSmokeTests(unittest.TestCase):
         records = self.records.copy(); records[0],records[1]=records[1],records[0];bad.append(self.output(records))
         records = self.records.copy();records[0]=records[1];bad.append(self.output(records))
         bad += [self.output().replace('math.division-tie.', 'wrong.', 1),self.output()+'\n', self.output()[:-1],
-                self.output().replace('[error]', '[bad\tvalue]',1), self.output().replace('[error]', '[{"S","unexpected"}]',1),
+                self.output().replace('[{"N",0.000000003725290298461914063}]', '[bad\tvalue]',1), self.output().replace('[{"N",0.000000003725290298461914063}]', '[{"S","unexpected"}]',1),
                 self.output().replace('div.', 'bad.',1)]
-        bad += [self.output().replace('[error]', '[' + value + ']', 1)
+        bad += [self.output().replace('[{"N",0.000000003725290298461914063}]', '[' + value + ']', 1)
                 for value in ('{"N",--..}', '{"N",1.2.3}', '{"B",2}', '{"B",-1}')]
         for output in bad:
             with self.subTest(output=output[-100:]), self.assertRaises(AssertionError):

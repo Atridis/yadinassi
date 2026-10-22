@@ -3,7 +3,7 @@
 Only NativeDivisionValueTests uses the owner's saved native observations. The
 remaining cases validate the explicitly chosen model and its safety boundaries;
 they are not evidence of universal 1C arithmetic, especially outside the observed
-operand ranges. Exact halves at the chosen scale remain unsupported.
+operand ranges. Exact halves use the separately measured PR83 away-zero rule.
 """
 
 from decimal import (
@@ -24,7 +24,6 @@ from yadinassi.values import divide, number, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HALF_MESSAGE = r"(?i)точная половина.*пока не поддерживается в Yadinassi"
 RESOURCE_MESSAGE = r"(?i)предел ресурсов Yadinassi"
 
 
@@ -47,16 +46,14 @@ def model_scale(left, right):
 
 
 def fraction_oracle(left, right):
-    """Exact rational nearest rounding; None denotes an unsupported true half."""
+    """Exact rational nearest rounding, with measured away-zero tie handling."""
     scale = model_scale(left, right)
     quantum = Fraction(1, 10 ** scale) if scale >= 0 else Fraction(10 ** -scale)
     exact = Fraction(left) / Fraction(right)
     units = abs(exact) / quantum
     whole, remainder = divmod(units.numerator, units.denominator)
     comparison = 2 * remainder - units.denominator
-    if comparison == 0:
-        return None
-    if comparison > 0:
+    if comparison >= 0:
         whole += 1
     rounded = whole * quantum
     return -rounded if exact < 0 else rounded
@@ -122,13 +119,9 @@ class DivisionModelRegressionTests(unittest.TestCase):
     def assert_model_result(self, left, right):
         expected = fraction_oracle(left, right)
         before = (left.as_tuple(), right.as_tuple())
-        if expected is None:
-            with self.assertRaisesRegex((ArithmeticError, ValueError), HALF_MESSAGE):
-                divide(left, right)
-        else:
-            actual = divide(left, right)
-            self.assertIs(type(actual), Decimal)
-            self.assertEqual(Fraction(actual), expected)
+        actual = divide(left, right)
+        self.assertIs(type(actual), Decimal)
+        self.assertEqual(Fraction(actual), expected)
         self.assertEqual((left.as_tuple(), right.as_tuple()), before)
 
     def test_scale_boundaries_and_both_operand_signs_against_exact_rationals(self):
@@ -205,12 +198,11 @@ class DivisionModelRegressionTests(unittest.TestCase):
                     self.assertEqual(divide(value, value), Decimal(1))
         self.assert_model_result(integer, Decimal('7'))
 
-    def test_true_target_halves_are_rejected_for_both_signs_and_even_or_odd_integer_units(self):
+    def test_true_target_halves_round_away_for_both_signs_and_even_or_odd_units(self):
         for numerator in ('1', '3', '-1', '-3', '1.000000000000', '-3.0000'):
             for divisor in ('268435456', '-268435456', '268435456.000000'):
                 with self.subTest(numerator=numerator, divisor=divisor):
                     left, right = Decimal(numerator), Decimal(divisor)
-                    self.assertIsNone(fraction_oracle(left, right))
                     self.assert_model_result(left, right)
 
     def test_historical_native_half_labels_remain_exact_at_scale_54(self):
@@ -258,8 +250,8 @@ class DivisionModelRegressionTests(unittest.TestCase):
                     self.assertEqual(Fraction(divide(left, right)), result)
                     vm.variables.update(left=left, right=right)
                     self.assertEqual(Fraction(vm.execute('left / right')), result)
-                with self.assertRaisesRegex((ArithmeticError, ValueError), HALF_MESSAGE):
-                    divide(Decimal('1'), Decimal('268435456'))
+                self.assertEqual(divide(Decimal('1'), Decimal('268435456')),
+                                 Decimal('0.000000003725290298461914063'))
                 self.assertEqual(context.prec, original.prec)
                 self.assertEqual(context.Emin, original.Emin)
                 self.assertEqual(context.Emax, original.Emax)
@@ -283,9 +275,9 @@ class DivisionRuntimeRegressionTests(unittest.TestCase):
         self.assertNotEqual(result, self.vm.execute('1 / (3 * 7)'))
 
     def test_error_is_source_aware_catchable_and_preserves_assignment_state(self):
-        self.vm.variables.update(a=Decimal(1), b=Decimal('268435456'))
+        self.vm.variables.update(a=Decimal(1), b=Decimal('0'))
         self.vm.execute('result = 17;')
-        with self.assertRaisesRegex(BSLRuntimeError, HALF_MESSAGE) as caught:
+        with self.assertRaisesRegex(BSLRuntimeError, "Деление на ноль") as caught:
             self.vm.execute('\nresult = a / b;', 'half.bsl')
         self.assertEqual((caught.exception.source, caught.exception.line,
                           caught.exception.column), ('half.bsl', 2, 12))
@@ -296,7 +288,7 @@ class DivisionRuntimeRegressionTests(unittest.TestCase):
             Message(result); Message(ErrorDescription() = "");
             result = 1 / 2; Message(result);
         ''', 'caught-half.bsl')
-        self.assertRegex(self.output[0], HALF_MESSAGE)
+        self.assertIn("Деление на ноль", self.output[0])
         self.assertIn('caught-half.bsl:2:', self.output[0])
         self.assertEqual(self.output[1:], ['17', 'Да', '0,5'])
         self.assertEqual(self.vm.execute('ErrorDescription()'), '')

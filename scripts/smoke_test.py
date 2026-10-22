@@ -276,18 +276,18 @@ DIVISION_EXAMPLES = [
     ('Number("123456789012345678901234567890.123456789") / 7',
      '17\u00a0636\u00a0684\u00a0144\u00a0620\u00a0811\u00a0271\u00a0604\u00a0938\u00a0270,'
      '017636684142857142857142857142857143'),
+    # Native PR83 exact-half measurements, also exercised through all CLI routes.
+    ('1 / 268435456', '0,000000003725290298461914063'),
+    ('-1 / 268435456', '-0,000000003725290298461914063'),
+    ('3 / -268435456', '-0,000000011175870895385742188'),
+    ('-3 / -268435456', '0,000000011175870895385742188'),
     ('stored', '0,142857142857142857142857143'),
     ('stored / 3', '0,047619047619047619047619047666666666666666666666666667'),
 ]
-DIVISION_TIE = 'Деление: точная половина на границе округления пока не поддерживается в Yadinassi'
 DIVISION_LIMIT = 'Деление: превышен предел ресурсов Yadinassi (4096 десятичных разрядов)'
 DIVISION_FAILURES = [
     ('1 / 0', 'Деление на ноль'),
     ('1 / -0.000', 'Деление на ноль'),
-    ('1 / 268435456', DIVISION_TIE),
-    ('-1 / 268435456', DIVISION_TIE),
-    ('3 / 268435456', DIVISION_TIE),
-    ('-3 / 268435456', DIVISION_TIE),
     ('Number("1e1000000") / 3', DIVISION_LIMIT),
     ('Number("1e-1000000") / 3', DIVISION_LIMIT),
     ('1 / Number("1e1000000")', DIVISION_LIMIT),
@@ -365,7 +365,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
         'Message(value); Message(Доли.Divide(value, 3));\n'
         'Message(Доли.Divide(1, 0.3)); Message(TypeOf(value));\n'
         'Message(value = Number("0.142857142857142857142857143"));\n'
-        'Try value = Доли.Divide(1, 268435456); Except Message("caught"); EndTry;\n'
+        'Try value = Доли.Divide(1, 0); Except Message("caught"); EndTry;\n'
         'Message(value); Message(Доли.Divide(1, 8));\n', encoding='utf-8-sig')
     import_output = ('0,142857142857142857142857143\n'
                      '0,047619047619047619047619047666666666666666666666666667\n'
@@ -379,7 +379,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
 
     # One diagnostic of each kind must have the right location on every route;
     # all sign and exponent variants above are additionally checked as catchable.
-    for expression, message in (DIVISION_FAILURES[index] for index in (0, 2, 6)):
+    for expression, message in (DIVISION_FAILURES[index] for index in (0, 2)):
         error_code = f'value = 1 / 7;\nvalue = {expression};\n'
         source.write_text(error_code, encoding='utf-8-sig')
         importer.write_text('// #Импорт Доли.bsl\nДоли.Divide(' +
@@ -2068,7 +2068,7 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
 
 
 def check_division_tie_checkpoint(executable, *, directory, env):
-    """Execute full source, preserve native prefix; do not predict new values."""
+    """Execute all 421 records against original prefix and native PR83 suffix."""
     directory.mkdir()
     source = (ROOT / 'integrational_tests/tests/numbers.bsl').read_bytes().replace(b'\r\n', b'\n')
     native = (ROOT / 'tests/fixtures/native_windows/numbers.out').read_bytes()
@@ -2084,17 +2084,13 @@ def check_division_tie_checkpoint(executable, *, directory, env):
                             encoding='utf-8', cwd=directory, env=env, timeout=30)
     if result.returncode or result.stderr or not result.stdout.startswith(expected):
         raise AssertionError(f'Failed current division tie checkpoint prefix: {result!r}')
-    suffix = result.stdout[len(expected):]
-    lines = suffix.split('\n')
-    if (len(lines) != 72 or lines[-1] != ''
-            or lines[-2] != 'division-tie.checkpoint.complete: [ok]'):
-        raise AssertionError('Failed current division tie checkpoint framing')
-    for label, line in zip(labels, lines[:-2]):
-        # Internal Number/Boolean payloads or explicitly isolated errors only.
-        pattern = re.escape('math.' + label) + r': \[(?:error|serialize-error|\{"N",-?[0-9]+(?:\.[0-9]+)?\}|\{"B",[01]\})\]'
-        if re.fullmatch(pattern, line) is None:
-            raise AssertionError('Failed current division tie checkpoint record: ' + label)
-    print('Binary division tie checkpoint: all 421 records, original 350 unchanged; no new native expectations')
+    fixture = json.loads((ROOT / 'tests/fixtures/division_half_ties_linux.json').read_text(encoding='utf-8'))
+    if hashlib.sha256(source).hexdigest() != fixture['source_sha256']:
+        raise AssertionError('Division tie native fixture source mismatch')
+    if result.stdout != expected + '\n'.join(fixture['records']) + '\n':
+        raise AssertionError('Failed native-measured division tie records')
+    print('Binary native division half ties: all 421 records matched, original 350 unchanged')
+
 
 
 def check_value_list_references(executable, *, directory, env):

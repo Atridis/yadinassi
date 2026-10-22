@@ -1375,9 +1375,10 @@ and platform acceptance must pass independently before merge.
 
 ## Exact division half-ties: native-first source checkpoint
 
-This source-only addition appends 70 independent expressions and a completion
-marker to numbers.bsl (421 messages total). No new native expectation or runtime
-rounding choice is introduced. Existing exact-half guards remain in force.
+The initial source-only addition appended 70 independent expressions and a
+completion marker to numbers.bsl (421 messages total), without introducing a
+native expectation or choosing a runtime rounding rule. The then-existing
+division exact-half guard remained in force until native evidence was obtained.
 The original 350-message source and Windows output are immutable; historical
 replay binds both exact Git blobs and reconstructs the original source bytes.
 It never drops, filters or rewrites historical observations. Live CI executes
@@ -1397,14 +1398,58 @@ at 324 places, general huge-scale coverage and universal native arithmetic are
 explicitly outside this checkpoint.
 
 The existing ПроверитьМатематику helper captures raw internal typed numeric or
-Boolean payloads and reports each expression failure independently. No new
-helper, loop, input, workflow flag or expected-output fixture is added. The sole
-raw numeric message stays source line 307/ordinal 30 with the same exact-type,
+Boolean payloads and reports each expression failure independently. The source
+checkpoint added no helper, loop, input, workflow flag or expected-output fixture.
+The sole raw numeric message stays source line 307/ordinal 30 with the same exact-type,
 value and ordinal capture proof. The client adapter pins the full new source,
 735 lines, unchanged 19 helpers and four raw call sites, and 421 messages.
 Input count 24, six output artifacts plus provenance, v3 wire protocol, byte
-caps, image, role, network and isolation remain unchanged. Real native evidence
-must be collected and verified before any runtime rule is implemented.
+caps, image, role, network and isolation remain unchanged. The source-first
+checkpoint required verified native evidence before implementing a runtime rule.
 
 Pow(-3,-1) and Pow(-3,-3) additionally observe an odd negative base as
 non-half reciprocal controls, separately from negative-base odd-exponent ties.
+
+### Verified bounded half-away-from-zero measurements
+
+[PR83 run 39779498177](https://github.com/Atridis/yadinassi/actions/runs/39779498177)
+captured Linux 1C 8.3.27.1508 at head
+`996d48e1fb8c0b7629839212314cd3bd4c1a904c`, synthetic merge
+`cadeb0eaa6937dacb21ae8e3777ff39ff561d5e6`, tree
+`7c9b7d568857a51bb9fc0bab35b075b73c7f48c6`. Independent verification checked
+all 24 inputs, the six output artifacts and provenance, source/module identities,
+and real client execution with exact fresh server/client parity. The complete
+421-record numbers output is 23,131 bytes, SHA-256
+`1a65f94485752159d64c80ab4ba9cbca3d2fa127bf0d1a1f50eabc4df2259c53`.
+The first 350 historical records remain byte-identical; complete values377 and
+dates185 output and client parity are preserved. The narrow ordinal-30 native
+conversion proof is verified, not replaced by generic coercion.
+
+All 16 direct exact-half cases with adjacent-candidate comparison pairs select
+half-away-from-zero at the measured scales 18, 27 and 36. Each numeric internal
+payload agrees with both independent Boolean comparisons; these are stored
+number observations, not display-string observations. The varied signs and
+lower-coefficient parity distinguish this bounded result from half-even,
+half-toward-zero and a fixed signed-direction rule. Denominator padding and
+nearby non-half controls are retained. The 9-place fractional numerator rounds
+away at scale 36; the 10-place numerator preserves its exact rational quotient.
+
+All four separately measured Pow pairs (Pow(2,-28), Pow(-2,-28), Pow(2,-37),
+Pow(-2,-37)) agree with half-away-from-zero. They are independent native
+observations, not an inference that native Pow delegates to division.
+Pow(-3,-1) and Pow(-3,-3) remain separate non-half controls. The suffix contains
+30 numeric and 40 Boolean typed records plus its completion marker.
+
+The runtime change increments the unsigned integer quotient coefficient on an
+exact half, then restores the sign. The existing nine-digit-block scale formula,
+non-half branches and 4096-digit work limits are unchanged. Applying this rule
+to other inputs admitted by the bounded model is an explicit generalization,
+not measured evidence for arbitrary huge scales or all 1C platforms. Exact
+halves in the separate 324-place display-string path remain unsupported;
+that guard is unchanged, and no fresh Windows run is claimed.
+
+The source-checkpoint run correctly rejected numbers against the old runtime,
+with its first mismatch at line 351, while native capture and server/client
+parity succeeded. It is evidence for the rounding choice, not acceptance of the
+later runtime change. Final runtime native and platform acceptance must pass
+independently before merge.
