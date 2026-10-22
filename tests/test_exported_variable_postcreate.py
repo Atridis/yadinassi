@@ -2,6 +2,7 @@
 import hashlib
 from pathlib import Path
 import re
+import tempfile
 import unittest
 
 from scripts.native_historical_replay import (
@@ -19,12 +20,36 @@ from yadinassi.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def checkout_source(path):
+    # Git may check text out with CRLF. Bind the canonical source, not its
+    # checkout transport; preserve every byte other than CRLF pairs.
+    return path.read_bytes().replace(b'\r\n', b'\n')
+
+
 class ExportedPostCreateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.raw = (ROOT / 'integrational_tests/tests/functions.bsl').read_bytes()
+        cls.raw = checkout_source(ROOT / 'integrational_tests/tests/functions.bsl')
         cls.source = cls.raw.decode('utf-8')
         cls.previous = without_exported_postcreate_probes(cls.source)
+
+    def test_real_checkout_lf_crlf_read_path_keeps_exact_source_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'functions.bsl'
+            for ending in (b'\n', b'\r\n'):
+                transported = self.raw.replace(b'\n', ending)
+                if ending == b'\r\n':
+                    self.assertNotEqual(transported, self.raw)
+                    self.assertIn(b'\r\n', transported)
+                path.write_bytes(transported)
+                self.assertEqual(path.read_bytes(), transported)
+                canonical = checkout_source(path)
+                self.assertEqual(canonical, self.raw)
+                self.assertEqual(without_exported_postcreate_probes(canonical.decode()), self.previous)
+                path.write_bytes(transported + b'\r')
+                self.assertNotEqual(checkout_source(path), canonical)
+                with self.assertRaises(ValueError):
+                    without_exported_postcreate_probes(checkout_source(path).decode())
 
     def test_exact_full136_inverse_and_historical_chain(self):
         self.assertTrue(self.raw.startswith(EXPORTED_POSTCREATE_DIRECTIVE.encode()))

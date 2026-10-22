@@ -1,5 +1,6 @@
 """Offline artifact contracts; synthetic bytes are not native execution evidence."""
 import contextlib
+import base64
 import copy
 import io
 import json
@@ -218,9 +219,13 @@ class AtomicTests(unittest.TestCase):
 
 
 class OrchestrationTests(SyntheticFilesystemCase):
-    def invoke(self,*,opt_in=True,mismatch=False,cleanup_bad=False,golden_changed=False,private_cleanup_bad=False,tamper=False):
+    def invoke(self,*,opt_in=True,mismatch=False,cleanup_bad=False,golden_changed=False,private_cleanup_bad=False,tamper=False,
+               post_create=None,through_main=False,final_changed=False,comparison_mode=full.BYTE_EXACT,
+               collections_payload=None):
         operations=[]; exported=[]; retained=[]; original_retain=full.retain_output_bytes
         original_temporary=tempfile.TemporaryDirectory; good=accepted_report(mismatch=mismatch)
+        original_compare=full.compare_outputs; original_export=full.export_output_artifact
+        original_verify=full.verify_output_artifact; final_verifications=[]
         def silent(args,env,seconds,input_bytes=None): operations.append(args[1])
         def bounded(args,env,seconds,limit=smoke.MAX_OUTPUT):
             operations.append(args[1])
@@ -230,22 +235,44 @@ class OrchestrationTests(SyntheticFilesystemCase):
             inputs={src:full.digest((directory/dst).read_bytes()) for src,dst in smoke.FULL_STAGED_FILES.items()}
             modules={name:full.digest(full.generated_module((directory/f"scenarios/{name}.bsl").read_bytes())) for name in full.SCENARIOS}
             data=fixture(PAYLOAD,input_hashes=inputs,modules=modules)[0]; data["nonce"]=data["report"]["stage3"]["nonce"]=args[-1]
+            if post_create is not None:
+                replacements={2:post_create[0]}
+                if collections_payload is not None: replacements[0]=collections_payload
+                for index,payload in replacements.items():
+                    data["report"]["stage3"]["cases"][index].update(output_sha256=full.digest(payload),
+                        output_size=len(payload),message_count=payload.count(b"\n"))
+                    data["outputs"][index].update(sha256=full.digest(payload),size=len(payload),
+                        data_b64=base64.b64encode(payload).decode("ascii"))
             return 0,encode(data)
         def compare(root,capture,stage3,inputs,**kwargs):
             self.assertEqual(operations[-1],"ps"); self.assertTrue(capture.is_dir())
             if tamper:
                 path=capture/"collections.out"; path.chmod(0o600); path.write_bytes(b"changed")
+            if post_create is not None:
+                return original_compare(root,capture,stage3,inputs,runner=lambda args,cwd:
+                    post_create[1] if Path(args[-2]).stem == "functions" else
+                    (0,collections_payload if Path(args[-2]).stem == "collections" and collections_payload is not None
+                     else PAYLOAD,b""),**kwargs)
             return good["comparison"]
         def retain(capture,stage3): retained.append(capture); return original_retain(capture,stage3)
         def export(root,files):
             self.assertTrue(all(not path.exists() for path in retained)); self.assertEqual(list(temp_path.iterdir()),[])
             self.assertEqual(tuple(files),full.ARTIFACT_FILES); exported.append(files)
+            if through_main:
+                original_export(artifact_root,files)
+                if final_changed:
+                    path=artifact_root/full.ARTIFACT_DIRECTORY/"functions.out"
+                    path.chmod(0o600); path.write_bytes(b"changed after export")
+        def verify(root,hashes):
+            final_verifications.append(hashes)
+            original_verify(artifact_root,hashes)
         class BrokenCleanup:
             def __init__(self,**kwargs): self.context=original_temporary(**kwargs)
             def __enter__(self): return self.context.__enter__()
             def __exit__(self,*args): self.context.__exit__(*args); raise OSError("PRIVATE CLEANUP")
-        with original_temporary() as temporary:
+        with original_temporary() as temporary,original_temporary() as artifacts:
             temp_path=Path(temporary).resolve()
+            artifact_root=Path(artifacts).resolve()
             with mock.patch.dict(os.environ,{"GHCR_USER":"Atridis","GHCR_TOKEN":"PRIVATE TOKEN"}), \
                     mock.patch.object(smoke,"run_silent",side_effect=silent),mock.patch.object(smoke,"bounded_run",side_effect=bounded), \
                     mock.patch.object(full,"repository_provenance",return_value=good["repository"]), \
@@ -253,9 +280,25 @@ class OrchestrationTests(SyntheticFilesystemCase):
                     mock.patch.object(full,"windows_fingerprints",side_effect=[{"old":"a"},{"old":"b" if golden_changed else "a"},{"old":"a"}]), \
                     mock.patch.object(full,"compare_outputs",side_effect=compare),mock.patch.object(full,"retain_output_bytes",side_effect=retain), \
                     mock.patch.object(full,"export_output_artifact",side_effect=export), \
+                    mock.patch.object(full,"verify_output_artifact",side_effect=verify), \
                     mock.patch.object(smoke.tempfile,"TemporaryDirectory",BrokenCleanup if private_cleanup_bad else original_temporary):
-                try: result=smoke.run_smoke(temp_path,full_suite=True,export_native_outputs=opt_in)
-                except smoke.SmokeError as error: result=error
+                if through_main:
+                    output=artifact_root/"action-output"; summary=artifact_root/"summary.json"
+                    args=["--execute-approved-image","--full-suite","--output",str(summary)]
+                    if opt_in: args.append("--export-native-outputs")
+                    if comparison_mode == full.MAP_MODE:
+                        args += ["--native-target",full.LINUX_TARGET,"--comparison-mode",comparison_mode]
+                    with mock.patch.dict(os.environ,{"RUNNER_TEMP":str(temp_path),"GITHUB_OUTPUT":str(output)}), \
+                            contextlib.redirect_stdout(io.StringIO()):
+                        code=smoke.main(args)
+                    result={"exit_code":code,"summary":json.loads(summary.read_text()),
+                            "ready":output.read_text() if output.exists() else "",
+                            "final_verifications":len(final_verifications)}
+                else:
+                    try: result=smoke.run_smoke(temp_path,full_suite=True,export_native_outputs=opt_in,
+                        native_target=full.LINUX_TARGET if comparison_mode == full.MAP_MODE else full.WINDOWS_TARGET,
+                        comparison_mode=comparison_mode)
+                    except smoke.SmokeError as error: result=error
             self.assertEqual(list(temp_path.iterdir()),[])
         return result,exported,retained
 

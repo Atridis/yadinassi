@@ -211,3 +211,42 @@ also fails. Unexpected Python failures are not suppressed. Offline mocks validat
 control flow and request binding only; they are not native export evidence. The
 native-form mock removes its one server compilation annotation solely in the
 in-memory test VM, never from any generated/native source or captured artifact.
+
+### Retaining native evidence when the post-Create host fails
+
+The first post-Create checkpoint contained an artifact-export defect: comparison
+correctly rejected the host's exit 3, but the later artifact constructor accepted
+only matched/mismatched interpreter results. Independent offline reproduction
+showed that this discarded otherwise validated native output bytes. A report of
+native output hashes or counts alone is not a substitute for the missing rows,
+and does not establish the post-Create semantics.
+
+Run `39861289780` confirmed this failure path: its only artifact was the summary,
+with `native_artifact_evidence_invalid`; native output upload was skipped. The
+summary reported 156 native records and an output digest, but the six captured
+outputs and provenance were unavailable. These metadata are not treated as
+recovered observation bytes or semantic evidence. A corrected fresh capture is
+required; the original run and summary remain part of the audit history.
+
+The correction distinguishes a narrowly verified post-Create interpreter failure
+from arbitrary interpreter errors. The finite comparison failure kind
+`interpreter_post_create_failed` requires a hash-verified source with the canonical
+directive, exit 3, empty stderr, and exact unique ordered begin/final bounded-error
+witnesses. It remains an error with rejected acceptance and null interpreter
+hash/size, mismatch and semantic evidence. Other interpreter failures, timeouts,
+source changes and capture-integrity failures still cannot use this export path.
+
+Artifact construction retains every existing native source/module/output hash,
+nonce, provenance, cleanup, byte-limit and exact-inventory gate. The narrow error
+path additionally checks the native phase boundaries and, for a completed call,
+the eighteen ordered observation labels without assuming their values. It never
+relabels failure as mismatch, invents interpreter hashes or accepts semantic
+parity. Incomplete or malformed native phase evidence still fails closed.
+
+This is an explicit finite failure-kind and artifact value-domain extension:
+`comparison_status` may be this rigorously rejected error and its interpreter
+hash/size may be null. The seven artifact files and JSON field layout remain
+unchanged. The specific failure kind is present in the comparison summary, not
+in the existing provenance case fields; audit both artifacts together with the
+exact comparison-driver hash. Export-ready evidence remains independent of the
+overall failed comparison and nonzero workflow exit.
