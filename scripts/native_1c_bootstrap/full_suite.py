@@ -299,6 +299,19 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float,
             raise FullError('invalid_dump_result') from None
 
 
+def validate_case_request(command: list[str], directory: Path, post_create: bool) -> None:
+    """Bind the fixed post-create action to the reviewed source at launch time."""
+    if (command.count('/C') != 1 or command.index('/C') + 1 >= len(command)
+            or command[command.index('/C') + 1] != str(directory / 'request.json')):
+        raise FullError('invalid_input')
+    request = strict_json(secure_bytes(directory / 'request.json', 16_384))
+    expected = {'module': str(directory / 'TestModule.epf'),
+                'result': str(directory / 'result.json'), 'post_create': post_create}
+    if (type(request) is not dict or set(request) != set(expected)
+            or type(request['post_create']) is not bool or request != expected):
+        raise FullError('invalid_input')
+
+
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
               inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False) -> dict:
     report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers)
@@ -313,7 +326,13 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
             raise FullError('invalid_input')
         # The unchanged launcher must not parse unbounded/permissive JSON first.
         launcher.read_result = read_native_result
-        launcher.run_process = run_process
+        def case_process(command, case_directory, log, timeout):
+            if len(command) > 1 and command[1] == 'ENTERPRISE':
+                if case_directory != directory:
+                    raise FullError('invalid_input')
+                validate_case_request(command, directory, expected_post_create)
+            run_process(command, case_directory, log, timeout)
+        launcher.run_process = case_process
         def build_epf(platform_argument, source_xml, destination):
             # Verify the exact generated source at the compile boundary, not only
             # after execution. This wraps, but never edits, the reviewed launcher.
@@ -334,6 +353,7 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
             if active['source_sha256'] != report['input_sha256'][f'integrational_tests/tests/{name}.bsl']:
                 raise FullError('invalid_input')
             expected_module = generated_module(source_data)
+            expected_post_create = launcher.post_create_requested(source_data.decode('utf-8-sig'))
             directory, output = root / (name + '-case'), root / (name + '.out')
             absent(directory, output, root / (name + '.err'), output.with_suffix('.out.tmp'))
             launcher.run_case(platform, source, launcher_epf, directory, output)

@@ -261,6 +261,8 @@ EXCEPTION_CONTEXT_PROBE_BLOCKS = (
 
 def without_exception_context_probes(text):
     """Restore the exact 111-record source native-audited on PR88, not its output."""
+    if any(boundary in text for pair in EXPORTED_VARIABLE_PROBE_BLOCKS for boundary in pair):
+        text = without_exported_variable_probes(text)
     for start, end in EXCEPTION_CONTEXT_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError('exception context probe boundaries changed')
@@ -269,4 +271,76 @@ def without_exception_context_probes(text):
         text = before + after
     if git_blob(text.encode('utf-8')) != EXCEPTION_CONTEXT_BASE_BLOB:
         raise ValueError('exception context baseline source binding changed')
+    return text
+
+
+EXPORTED_VARIABLE_BASE_BLOB = '6a56f0f5bbca057bbdd9d9f339ab5a0c59d90650'
+EXPORTED_VARIABLE_PROBE_BLOCKS = (('// Begin exported variable checkpoint declarations.\n', '// End exported variable checkpoint declarations.\n\n'), ('// Begin exported variable checkpoint helpers.\n', '// End exported variable checkpoint helpers.\n\n'), ('// Begin exported variable checkpoint observations.\n', '// End exported variable checkpoint observations.\n'))
+
+def without_exported_variable_probes(text):
+    """Exact prior 116-record source, never a native-output truncation."""
+    if any(boundary in text for pair in EXPORTED_CONTEXT_PROBE_BLOCKS for boundary in pair):
+        text = without_exported_context_probes(text)
+    for start, end in EXPORTED_VARIABLE_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('exported variable probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if git_blob(text.encode('utf-8')) != EXPORTED_VARIABLE_BASE_BLOB:
+        raise ValueError('exported variable baseline source binding changed')
+    return text
+
+
+EXPORTED_CONTEXT_BASE_BLOB = '0c0cfae158f10fec2343992fbbc7642cd5ced6bc'
+EXPORTED_CONTEXT_PROBE_BLOCKS = (
+    ('// Begin exported variable discriminator helpers.\n',
+     '// End exported variable discriminator helpers.\n\n'),
+    ('// Begin exported variable discriminator observations.\n',
+     '// End exported variable discriminator observations.\n'),
+)
+
+
+def without_exported_context_probes(text):
+    """Restore the complete native-audited PR89 131-record source, not output."""
+    if ("NativePostCreate" in text or any(
+            boundary in text for pair in EXPORTED_POSTCREATE_PROBE_BLOCKS for boundary in pair)):
+        text = without_exported_postcreate_probes(text)
+    for start, end in EXPORTED_CONTEXT_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('exported context probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if git_blob(text.encode('utf-8')) != EXPORTED_CONTEXT_BASE_BLOB:
+        raise ValueError('exported context baseline source binding changed')
+    return text
+
+
+EXPORTED_POSTCREATE_DIRECTIVE = '// NativePostCreate: ExportProbeAfterCreate\n'
+EXPORTED_POSTCREATE_BASE_BLOB = '259abc1315cbcca8642e1a49b44f4ac24a33500e'
+EXPORTED_POSTCREATE_BASE_SHA256 = 'c6b33e07818ce7e4abd8153feb3d8538d48737d5a543312b18f1fb8e7c5a65cd'
+EXPORTED_POSTCREATE_PROBE_BLOCKS = (
+    ('// Begin exported variable post-create declarations.\n',
+     '// End exported variable post-create declarations.\n\n'),
+    ('// Begin exported variable post-create helpers.\n',
+     '// End exported variable post-create helpers.\n\n'),
+)
+
+
+def without_exported_postcreate_probes(text):
+    """Restore every byte of the audited 136-record source, never its output."""
+    if not text.startswith(EXPORTED_POSTCREATE_DIRECTIVE) or text.count(EXPORTED_POSTCREATE_DIRECTIVE) != 1:
+        raise ValueError('exported post-create directive changed')
+    text = text[len(EXPORTED_POSTCREATE_DIRECTIVE):]
+    for start, end in EXPORTED_POSTCREATE_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('exported post-create probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8')
+    if (git_blob(raw) != EXPORTED_POSTCREATE_BASE_BLOB
+            or hashlib.sha256(raw).hexdigest() != EXPORTED_POSTCREATE_BASE_SHA256):
+        raise ValueError('exported post-create baseline source binding changed')
     return text

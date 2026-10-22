@@ -46,8 +46,18 @@ FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
             "export_failed"}
 CASE_KEYS = {"name", "status", "source_sha256", "module_sha256", "output_sha256",
              "output_size", "message_count"}
+POST_CREATE_DIRECTIVE = "// NativePostCreate: ExportProbeAfterCreate"
+POST_CREATE_FAILURE = "interpreter_post_create_failed"
+# Labels, not values: a completed callback must retain every guarded observation.
+POST_CREATE_LABELS = tuple("export-variable.post-create." + label for label in (
+    "object-context", "initial-undefined", "read", "write-routine-read",
+    "routine-write-read", "private-list-entry", "private-write", "second-export-entry",
+    "undeclared-read", "undeclared-write", "local-shadow", "reference-alias",
+    "value-parameter", "reference-after-error", "collection-shared", "receiver-identity",
+    "self-read", "self-write"))
 EXECUTE_SCRIPT = r'''
 import sys
+import re
 import importlib.util
 from pathlib import Path
 # Load only the verified package, not arbitrary modules beside the checkout.
@@ -63,9 +73,41 @@ def emit(message):
     message = message.replace("\r\n", "\n").replace("\r", "\n")
     sys.stdout.buffer.write((message + "\n").encode("utf-8"))
 
+POST_CREATE_DIRECTIVE = "// NativePostCreate: ExportProbeAfterCreate"
+
+
+def post_create_requested(source: str) -> bool:
+    """A visible fixed test-driver action, never an executable routine name."""
+    lines = source.removeprefix("\ufeff").splitlines()
+    directives = [(index, line) for index, line in enumerate(lines)
+                  if re.match(r"\s*//\s*NativePostCreate", line)]
+    if not directives:
+        return False
+    if directives != [(0, POST_CREATE_DIRECTIVE)]:
+        raise ValueError("Invalid NativePostCreate directive")
+    return True
+
+
 source = Path(sys.argv[2])
+source_text = source.read_text(encoding="utf-8-sig")
+post_create = post_create_requested(source_text)
 options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
-Interpreter(output=emit, **options).execute(source.read_text(encoding="utf-8-sig"), str(source))
+interpreter = Interpreter(output=emit, **options)
+interpreter.execute(source_text, str(source))
+if post_create:
+    emit("export-phase.post-create: [begin]")
+    try:
+        interpreter.execute("ThisObject.ExportProbeAfterCreate(ThisObject);", "<post-create>")
+    except module.BSLError as error:
+        description = error.message
+        kind = "other"
+        if "Метод объекта не обнаружен" in description:
+            kind = "method-missing"
+        named = '{"B",1}' if "exportprobeaftercreate" in description.lower() else '{"B",0}'
+        emit("export-phase.post-create: [error;kind=" + kind + ";named=" + named + "]")
+        sys.exit(3)  # An unavailable entrypoint must never yield a green comparison.
+    else:
+        emit("export-phase.post-create: [ok]")
 '''
 
 
@@ -83,6 +125,68 @@ def is_digest(value: object) -> bool:
 
 def is_int(value: object, maximum: int) -> bool:
     return type(value) is int and 0 <= value <= maximum
+
+
+def post_create_requested(source: str) -> bool:
+    """Use exactly the launcher's fail-closed canonical directive grammar."""
+    lines = source.removeprefix("\ufeff").splitlines()
+    directives = [(index, line) for index, line in enumerate(lines)
+                  if re.match(r"\s*//\s*NativePostCreate", line)]
+    if not directives:
+        return False
+    if directives != [(0, POST_CREATE_DIRECTIVE)]:
+        raise ValueError("Invalid NativePostCreate directive")
+    return True
+
+
+def post_create_phase(payload: bytes) -> tuple[bool, list[bytes]]:
+    """Validate bounded, exact full-line framing without interpreting probe values."""
+    if type(payload) is not bytes or len(payload) > MAX_FILE or not payload.endswith(b"\n"):
+        raise ValueError("post-create framing")
+    lines = [line.removesuffix(b"\r") for line in payload[:-1].split(b"\n")]
+    if any(b"\r" in line for line in lines):
+        raise ValueError("post-create line ending")
+    markers = [(index, line) for index, line in enumerate(lines)
+               if b"export-phase.post-create" in line]
+    if (len(markers) != 2 or markers[0][1] != b"export-phase.post-create: [begin]"
+            or markers[1][0] != len(lines) - 1):
+        raise ValueError("post-create phase")
+    final = markers[1][1]
+    completed = final == b"export-phase.post-create: [ok]"
+    if not completed and re.fullmatch(
+            rb'export-phase\.post-create: \[error;kind=(?:other|method-missing);named=\{"B",[01]\}\]',
+            final) is None:
+        raise ValueError("post-create result")
+    return completed, lines[markers[0][0] + 1:markers[1][0]]
+
+
+def interpreter_post_create_failed(source: bytes, code: int, actual: bytes, stderr: bytes) -> bool:
+    """Only the verified directive plus the driver's finite failure may be retained."""
+    if code != 3 or stderr != b"":
+        return False
+    try:
+        if not post_create_requested(source.decode("utf-8-sig")):
+            return False
+        completed, _ = post_create_phase(actual)
+        return not completed
+    except (ValueError, UnicodeError):
+        return False
+
+
+def validate_native_post_create(payload: bytes) -> None:
+    completed, rows = post_create_phase(payload)
+    all_probe_rows = [line.removesuffix(b"\r") for line in payload[:-1].split(b"\n")
+                      if b"export-variable.post-create" in line]
+    if all_probe_rows != rows:
+        raise ValueError("post-create probe placement")
+    if completed:
+        if (any(b": " not in row for row in rows)
+                or [row.partition(b": ")[0] for row in rows] != [label.encode("ascii") for label in POST_CREATE_LABELS]):
+            raise ValueError("post-create probe inventory")
+    elif rows:
+        # The fixed callback guards each probe. An entrypoint failure has no rows;
+        # partial callbacks are not a complete native observation set.
+        raise ValueError("post-create incomplete callback")
 
 
 def unique_pairs(pairs):
@@ -833,7 +937,8 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
                         or case["mismatch"] is not None or case["interpreter_size"] is not None
                         or case["interpreter_sha256"] is not None
                         or case["failure_kind"] not in {"source_changed", "native_capture_changed", "invalid_private_file",
-                            "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed"}
+                            "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed",
+                            POST_CREATE_FAILURE}
                         or (case["status"] == "timeout") != (case["failure_kind"] == "interpreter_timeout")):
                     raise ValueError("failure")
                 continue
@@ -892,7 +997,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
                   "acceptance_status": "rejected", "semantic": None}
         try:
             source = root / f"integrational_tests/tests/{name}.bsl"
-            if digest(read_regular(source, MAX_FILE, nonempty=True)) != input_hashes[f"integrational_tests/tests/{name}.bsl"]:
+            source_bytes = read_regular(source, MAX_FILE, nonempty=True)
+            if digest(source_bytes) != input_hashes[f"integrational_tests/tests/{name}.bsl"]:
                 raise FullError("source_changed")
             expected = read_regular(capture / (name + ".out"), MAX_FILE)
             if digest(expected) != case["output_sha256"] or len(expected) != case["output_size"]:
@@ -903,6 +1009,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
                                               "-c", EXECUTE_SCRIPT, str(root), str(source), native_target], root)
             if code != 0 or stderr:
+                if interpreter_post_create_failed(source_bytes, code, actual, stderr):
+                    raise FullError(POST_CREATE_FAILURE)
                 raise FullError("interpreter_failed")
             record.update(interpreter_size=len(actual), interpreter_sha256=digest(actual))
             record["status"] = "matched" if actual == expected else "mismatched"
@@ -1063,15 +1171,21 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
         cases = []
         for name, native, compared in zip(SCENARIOS, stage3["cases"], comparison["cases"]):
             payload = payloads[name + ".out"]
+            post_create_failure = compared["status"] == "error" and compared["failure_kind"] == POST_CREATE_FAILURE
             if (native["status"] != "ok" or native["output_sha256"] != digest(payload)
                     or native["output_size"] != len(payload)
                     or not is_digest(native["source_sha256"]) or not is_digest(native["module_sha256"])
                     or native["source_sha256"] != stage3["input_sha256"][f"integrational_tests/tests/{name}.bsl"]
                     or not is_int(native["message_count"], 32_768)
-                    or compared["status"] not in {"matched", "mismatched"}
+                    or (compared["status"] not in {"matched", "mismatched"} and not post_create_failure)
                     or compared["native_sha256"] != native["output_sha256"]
-                    or compared["native_size"] != native["output_size"]
-                    or not is_digest(compared["interpreter_sha256"])
+                    or compared["native_size"] != native["output_size"]):
+                raise ValueError("case")
+            if post_create_failure:
+                # Comparison validation requires rejected acceptance and null host
+                # hashes/size/mismatch/semantic. Native framing is checked anew.
+                validate_native_post_create(payload)
+            elif (not is_digest(compared["interpreter_sha256"])
                     or not is_int(compared["interpreter_size"], MAX_FILE)
                     or (compared["status"] == "matched") != (compared["interpreter_sha256"] == native["output_sha256"]
                         and compared["interpreter_size"] == native["output_size"])):

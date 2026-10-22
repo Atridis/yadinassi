@@ -73,16 +73,35 @@ class _Return(Exception):
 
 
 class _Module:
-    """Only exported BSL routines are callable; no Python member reflection."""
+    """A stable, explicit public module receiver, never a platform/Python object."""
 
-    def __init__(self, interpreter: "Interpreter", path: Path):
+    def __init__(self, interpreter: "Interpreter", path: Path | None = None):
         self.interpreter = interpreter
         self.path = path
+        self.ready = False
+
+    def __str__(self) -> str:
+        raise TypeError("Строковое представление объекта модуля пока не поддерживается")
+
+    def __repr__(self) -> str:
+        return "<module receiver>"
+
+    def get_member(self, name: str) -> object:
+        key = name.casefold()
+        if not self.ready or key not in self.interpreter.exported_variables:
+            raise ValueError(f"Поле объекта не обнаружено: {name}")
+        return self.interpreter.variables[key]
+
+    def set_member(self, name: str, value: object) -> None:
+        key = name.casefold()
+        if not self.ready or key not in self.interpreter.exported_variables:
+            raise ValueError(f"Поле объекта не обнаружено: {name}")
+        self.interpreter.variables[key] = value
 
     def routine(self, name: str) -> ast.Routine:
         routine = self.interpreter.routines.get(name.casefold())
-        if routine is None or not routine.exported:
-            raise ValueError(f"Экспортная процедура или функция не найдена: {name}")
+        if not self.ready or routine is None or not routine.exported:
+            raise ValueError(f"Метод объекта не обнаружен: {name}")
         return routine
 
 
@@ -102,6 +121,8 @@ class Interpreter:
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
         self.module_names: set[str] = set()
+        self.exported_variables: set[str] = set()
+        self._self_module = _Module(self)
         self.locals: dict[str, object] | None = None
         self.types: dict[str, HostFunction] = {}
         self.output = output
@@ -261,16 +282,23 @@ class Interpreter:
         with target_context(self.native_target):
             # A diagnostic source label need not name a readable filesystem path.
             if not any(isinstance(node, ast.Import) for node in program):
-                return self._execute_program(program)
-            source = program[0].token.source if program else "<строка>"
-            path = None if source.startswith("<") else Path(source).resolve()
-            if path is None:
-                return self._execute_program(program)
-            self._loading.append(path)
-            try:
-                return self._execute_program(program)
-            finally:
-                self._loading.pop()
+                result = self._execute_program(program)
+            else:
+                source = program[0].token.source if program else "<строка>"
+                path = None if source.startswith("<") else Path(source).resolve()
+                if path is None:
+                    result = self._execute_program(program)
+                else:
+                    self._loading.append(path)
+                    try:
+                        result = self._execute_program(program)
+                    finally:
+                        self._loading.pop()
+            # Native public fields and routines become available only after the
+            # first successful whole module initialization. Later REPL executions
+            # keep the same receiver, storage and public availability.
+            self._self_module.ready = True
+            return result
 
     def _execute_program(self, program: list[ast.Node]) -> object:
         # Also validate callers supplying an AST directly. No import or declaration
@@ -295,6 +323,7 @@ class Interpreter:
                 if isinstance(node, ast.Routine):
                     self.routines[node.name.casefold()] = node
                 elif isinstance(node, ast.Var):
+                    self.exported_variables.update(name.casefold() for name in node.exported_names)
                     for name in node.names:
                         self.module_names.add(name.casefold())
                         self.variables.setdefault(name.casefold(), None)
@@ -351,6 +380,8 @@ class Interpreter:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
+        if name in ("thisobject", "этотобъект"):
+            return self._self_module
         if name in ("символы", "chars"):
             return CHARS
         if name in ("допустимыйзнак", "allowedsign"):
@@ -447,7 +478,9 @@ class Interpreter:
         return self.visit(branch)
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
-        value = self.visit(node.object)
+        value = self.receiver(node.object)
+        if type(value) is _Module:
+            return value.get_member(node.name)
         if not isinstance(value, BSLObject):
             raise TypeError("Значение не имеет методов или свойств")
         return value.get_member(node.name)
@@ -471,13 +504,22 @@ class Interpreter:
         routine = (self.routines.get(callee.name.casefold())
                    if isinstance(callee, ast.Name) else None)
         owner = self
+        has_omissions = any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
+        known_receiver = None
         if isinstance(callee, ast.Attribute):
             module = self.import_receiver(callee.object)
             if module is not None:
-                if not isinstance(module, _Module):
+                if type(module) is not _Module:
                     raise TypeError("Пространство каталога не содержит вызываемых подпрограмм")
                 owner = module.interpreter
                 routine = module.routine(callee.name)
+            elif has_omissions:
+                # Classify only stored receivers. Calling a factory to discover
+                # optional arguments would violate the host side-effect guard.
+                known_receiver = self.known_table_receiver(callee.object)
+                if type(known_receiver) is _Module:
+                    owner = known_receiver.interpreter
+                    routine = known_receiver.routine(callee.name)
         if routine is not None:
             return self.call_routine(routine, node.arguments, owner, require_value=require_value)
         # Existing host calls reject omitted arguments before receiver effects.
@@ -486,9 +528,8 @@ class Interpreter:
         # execute a factory merely to discover whether it allows omissions.
         table_receiver = None
         table_optional = None
-        if (isinstance(callee, ast.Attribute)
-                and any(isinstance(a, ast.OmittedArgument) for a in node.arguments)):
-            table_receiver = self.known_table_receiver(callee.object)
+        if isinstance(callee, ast.Attribute) and has_omissions:
+            table_receiver = known_receiver
             table_optional = self.table_optional_arguments(table_receiver, callee.name)
         registered = (self.functions.get(callee.name.casefold())
                       if isinstance(callee, ast.Name) else None)
@@ -497,7 +538,10 @@ class Interpreter:
                  and registered.function is not strings.str_find)):
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
-            receiver = table_receiver if table_optional is not None else self.visit(callee.object)
+            receiver = table_receiver if table_optional is not None else self.receiver(callee.object)
+            if type(receiver) is _Module:
+                return self.call_routine(receiver.routine(callee.name), node.arguments,
+                                         receiver.interpreter, require_value=require_value)
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
             function = receiver.get_method(callee.name)
@@ -547,17 +591,33 @@ class Interpreter:
                           else self.visit(argument)
                           for index, argument in enumerate(node.arguments)))
 
-    def known_table_receiver(self, node: ast.Node) -> object:
-        """Read only explicit built-in receiver storage; never invoke factories."""
+    def known_receiver(self, node: ast.Node) -> object:
+        """Read explicit receiver storage only, never factories or arbitrary fields."""
         node = self.ungroup(node)
+        imported = self.import_receiver(node)
+        if imported is not None:
+            return imported
         if isinstance(node, ast.Name):
-            value = self.visit_Name(node)
-            return value if type(value) in (BSLValueTable, BSLValueTableColumnCollection, BSLValueList) else None
-        if isinstance(node, ast.Attribute) and node.name.casefold() in {"колонки", "columns"}:
-            parent = self.known_table_receiver(node.object)
-            if type(parent) is BSLValueTable:
+            return self.visit_Name(node)
+        if isinstance(node, ast.Attribute):
+            parent = self.known_receiver(node.object)
+            if type(parent) is _Module:
+                return parent.get_member(node.name)
+            if type(parent) is BSLValueTable and node.name.casefold() in {"колонки", "columns"}:
                 return parent.columns
         return None
+
+    def known_table_receiver(self, node: ast.Node) -> object:
+        # Stored module receivers also allow BSL routine omissions. Keep this
+        # classifier as the single existing hook for known optional receivers.
+        value = self.known_receiver(node)
+        return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
+                                       BSLValueList) else None
+
+    def receiver(self, node: ast.Node) -> object:
+        """Use one explicit import-or-value receiver route for all member access."""
+        imported = self.import_receiver(node)
+        return imported if imported is not None else self.visit(node)
 
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
@@ -592,6 +652,10 @@ class Interpreter:
         if isinstance(node, ast.Attribute):
             parent = self.import_receiver(node.object)
             if parent is None:
+                return None
+            if type(parent) is _Module:
+                # A module field is an ordinary value, not another namespace.
+                # Leave its evaluation to the shared explicit receiver route.
                 return None
             if not isinstance(parent, _Namespace):
                 raise TypeError("Вложенное имя допустимо только для пространства каталога")
@@ -653,7 +717,11 @@ class Interpreter:
                 return scope[name]
             return _Reference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
-            owner = self.visit(node.object)
+            owner = self.receiver(node.object)
+            if type(owner) is _Module:
+                owner.get_member(node.name)
+                return _Reference(lambda: owner.get_member(node.name),
+                                  lambda value: owner.set_member(node.name, value))
             if type(owner) is BSLValueListItem:
                 # Native PR74: a field is live storage, not a copy-out temporary.
                 # Resolve the item once; its existing setters retain conversion,
@@ -723,9 +791,9 @@ class Interpreter:
         if isinstance(node.target, ast.Name):
             self.set_variable(node.target.name, self.visit(node.value))
         else:
-            value = self.visit(node.target.object)
+            value = self.receiver(node.target.object)
             if isinstance(node.target, ast.Attribute):
-                if not isinstance(value, BSLObject):
+                if type(value) is not _Module and not isinstance(value, BSLObject):
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, self.visit(node.value))
             else:
@@ -740,6 +808,10 @@ class Interpreter:
 
     def set_variable(self, name: str, value: object) -> None:
         name = name.casefold()
+        if (name in ("thisobject", "этотобъект")
+                and not (self.locals is not None and name in self.locals)
+                and not (name in self.variables and (self.locals is None or name in self.module_names))):
+            raise ValueError(f"Нельзя присвоить значение свойству только для чтения: {name}")
         if name in self.imports and self.locals is None:
             raise ValueError(f"Нельзя присвоить значение имени импорта: {name}")
         if self.locals is None or (name in self.module_names and name not in self.locals):
@@ -835,8 +907,9 @@ class Interpreter:
             child._error_info_boundaries = self._error_info_boundaries
             child._eval_depth = self._eval_depth
             child._execute_depth = self._execute_depth
+            child._self_module.path = path
             child.execute(text, str(path))
-            module = _Module(child, path)
+            module = child._self_module
             self._module_cache[path] = module
         return module
 

@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
 else:
-    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -2196,6 +2196,85 @@ EXTENDED_EXCEPTION_OUTPUT = ('outer\nOUTER\ndetail\ninner\nINNER\ninner detail\n
                              'Да\nДа\nДа\nрусский\nRU\nДа\nINNER\n')
 
 
+EXPORT_VARIABLE_DECLARATIONS = '''Перем A Экспорт, B; Var C Export;
+Function Read() Export Return A; EndFunction
+A=7; B=11; C=13;
+Try ignored=ThisObject.A; Except Message("initial-read-closed"); EndTry;
+Try ThisObject.A=99; Except Message("initial-write-closed"); EndTry;
+Try ignored=ЭтотОбъект.Read(); Except Message("initial-call-closed"); EndTry;
+Message(A+B+C);
+'''
+EXPORT_VARIABLE_DECLARATION_OUTPUT = ('initial-read-closed\ninitial-write-closed\n'
+                                      'initial-call-closed\n31\n')
+
+# A small file-import integration probe, not additional native 1C evidence.
+# The module becomes public only after initialization, before its caller runs.
+EXPORT_VARIABLE_MODULE = '''Var Private, Value Export, After;
+Перем Другой Экспорт, Items Экспорт;
+Function Read() Export Return Value; EndFunction
+Procedure Write(Val next) Export Value=next; EndProcedure
+Function Hidden() Return Private; EndFunction
+Procedure Alias(first, second) Export
+    first=23; Message(second); Value=29; Message(first);
+EndProcedure
+Function Copy(Val slot) Export slot=41; Return slot; EndFunction
+Procedure Fail(slot) Export slot=53; Raise "controlled"; EndProcedure
+Function Count() Export Return Items.Count(); EndFunction
+Function Self() Export Return ThisObject; EndFunction
+Function IsSelf(Val receiver) Export
+    Return receiver = ThisObject And receiver = ЭтотОбъект;
+EndFunction
+Value=11; Другой=17; Private=19; After=7;
+Items=New Array; Items.Add(1);
+'''
+EXPORT_VARIABLE_IMPORT_PROGRAM = '''// #Import mod.bsl
+Message(mod.vAlUe);
+mod.Value=31; Message(mod.Read());
+mod.Write(43); Message(mod.Value); Message(mod.Другой);
+Try ignored=mod.Private; Except Message("private-read-closed"); EndTry;
+Try mod.After=99; Except Message("per-name-write-closed"); EndTry;
+Try ignored=mod.Missing; Except Message("unknown-read-closed"); EndTry;
+Try mod.Missing=99; Except Message("unknown-write-closed"); EndTry;
+Try mod.Hidden(); Except Message("private-call-closed"); EndTry;
+mod.Alias(mod.Value, mod.Value); Message(mod.Value);
+Message(mod.Copy(mod.Value)); Message(mod.Value);
+Try mod.Fail(mod.Value); Except Message("mutation-error"); EndTry;
+Message(mod.Value);
+items=mod.Items; items.Add(2); Message(mod.Count()); Message(mod.Items[1]);
+public=mod.Self(); Message(mod.IsSelf(public));
+public.Value=61; Message(mod.Value); Message(public.Read());
+'''
+EXPORT_VARIABLE_IMPORT_OUTPUT = ('11\n31\n43\n17\nprivate-read-closed\n'
+                                 'per-name-write-closed\nunknown-read-closed\n'
+                                 'unknown-write-closed\nprivate-call-closed\n'
+                                 '23\n29\n29\n41\n29\nmutation-error\n53\n'
+                                 '2\n2\nДа\n61\n61\n')
+
+
+def check_exported_module_variables(executable, *, directory, env):
+    """Measured core field semantics plus the existing file-import extension."""
+    directory.mkdir()
+    source = directory / 'Переменные.bsl'
+    source.write_text(EXPORT_VARIABLE_DECLARATIONS, encoding='utf-8-sig')
+    for arguments, stdin in ((['-c', EXPORT_VARIABLE_DECLARATIONS], None),
+                             ([str(source)], None), (['-'], EXPORT_VARIABLE_DECLARATIONS)):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, EXPORT_VARIABLE_DECLARATION_OUTPUT, ''):
+            raise AssertionError(f'Exported-variable declarations/readiness failed {arguments!r}: {result!r}')
+    (directory / 'mod.bsl').write_text(EXPORT_VARIABLE_MODULE, encoding='utf-8-sig')
+    imported = directory / 'ИмпортПеременных.bsl'
+    imported.write_text(EXPORT_VARIABLE_IMPORT_PROGRAM, encoding='utf-8-sig')
+    # Imports remain file-only; do not imply support for imports via -c or stdin.
+    result = subprocess.run([executable, str(imported)], capture_output=True,
+                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+    if (result.returncode, result.stdout, result.stderr) != (0, EXPORT_VARIABLE_IMPORT_OUTPUT, ''):
+        raise AssertionError(f'Exported-module variable runtime failed: {result!r}')
+    print('Binary exported-module variables passed: bilingual declarations, initialization '
+          'readiness, shared imported fields/routines, private/unknown rejection, live '
+          'aliases, Val, mutation after error, collections, self identity, BOM, -c and stdin')
+
+
 def check_extended_exceptions(executable, *, directory, env):
     """Core structured exception flow and unsupported-display REPL recovery."""
     directory.mkdir()
@@ -2211,7 +2290,8 @@ def check_extended_exceptions(executable, *, directory, env):
         if (result.returncode, result.stdout, result.stderr) != (0, EXTENDED_EXCEPTION_OUTPUT, ''):
             raise AssertionError(f'Failed extended exceptions {arguments!r}: {result!r}')
     fixture = json.loads((ROOT / 'tests/fixtures/extended_exceptions_linux.json').read_text(encoding='utf-8'))
-    native_source = (ROOT / 'integrational_tests/tests/functions.bsl').read_bytes().replace(b'\r\n', b'\n')
+    native_source = without_exported_variable_probes(
+        (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')).encode('utf-8')
     historical = (ROOT / 'tests/fixtures/native_windows/functions.out').read_bytes().replace(b'\r\n', b'\n')
     if (hashlib.sha256(native_source).hexdigest() != fixture['source_sha256']
             or hashlib.sha256(historical).hexdigest() != fixture['historical_output_sha256']):
@@ -2264,6 +2344,7 @@ def main() -> None:
         check_table_checkpoint(executable, directory=Path(temporary) / "table-checkpoint", env=env)
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_extended_exceptions(executable, directory=Path(temporary) / "extended-exceptions", env=env)
+        check_exported_module_variables(executable, directory=Path(temporary) / "exported-module-variables", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)

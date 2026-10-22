@@ -1,5 +1,120 @@
+// NativePostCreate: ExportProbeAfterCreate
+// Begin exported variable post-create declarations.
+Var ExportProbePublicObject;
+// End exported variable post-create declarations.
+
+// Begin exported variable checkpoint declarations.
+Перем ExportProbeUnset Экспорт;
+Var ExportProbePrivate, ExportProbeValue Export, ExportProbeOther Export;
+Перем ExportProbeArray Экспорт;
+// End exported variable checkpoint declarations.
+
 Перем МодульноеВычисления;
 Перем СчетчикСсылок;
+
+// Begin exported variable post-create helpers.
+Procedure ExportProbeAfterCreate(Val PublicObject) Export
+    ExportProbePublicObject = PublicObject;
+    ObserveExportProbe("post-create.object-context", "Result = ExportProbePublicObject <> Undefined;");
+    ObserveExportProbe("post-create.initial-undefined", "Result = ExportProbePublicObject.ExportProbeUnset = Undefined;");
+    ObserveExportProbe("post-create.read", "Result = ExportProbePublicObject.exportprobevalue;");
+    ObserveExportProbe("post-create.write-routine-read", "ExportProbePublicObject.ExportProbeValue = 31; Result = ExportProbeRead();");
+    ObserveExportProbe("post-create.routine-write-read", "ExportProbeWrite(43); Result = ExportProbePublicObject.ExportProbeValue;");
+    ObserveExportProbe("post-create.private-list-entry", "Result = ExportProbePublicObject.ExportProbePrivate;");
+    ObserveExportProbe("post-create.private-write", "ExportProbePublicObject.ExportProbePrivate = 59; Result = ExportProbePrivate;");
+    ObserveExportProbe("post-create.second-export-entry", "Result = ExportProbePublicObject.ExportProbeOther;");
+    ObserveExportProbe("post-create.undeclared-read", "Result = ExportProbePublicObject.ExportProbeMissing;");
+    ObserveExportProbe("post-create.undeclared-write", "ExportProbePublicObject.ExportProbeMissing = 61; Result = True;");
+    ObserveExportProbe("post-create.local-shadow", "Result = ExportProbeShadow();");
+    ObserveExportProbe("post-create.reference-alias", "Result = ExportProbeAlias(ExportProbePublicObject.ExportProbeValue, ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.value-parameter", "Result = ExportProbeVal(ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.reference-after-error", "ExportProbeFail(ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.collection-shared", "ExportProbePublicObject.ExportProbeArray.Add(47); Result = ExportProbeArray.Count();");
+    ObserveExportProbe("post-create.receiver-identity", "Result = ExportProbePublicObject = ThisObject;");
+    ObserveExportProbe("post-create.self-read", "Result = ThisObject.ExportProbeValue;");
+    ObserveExportProbe("post-create.self-write", "ThisObject.ExportProbeValue = 61; Result = ExportProbePublicObject.ExportProbeValue;");
+EndProcedure
+// End exported variable post-create helpers.
+
+// Begin exported variable discriminator helpers.
+Procedure ObserveExportContext(Val Label, Val Mode, Val Code)
+    Result = Undefined;
+    Status = "ok";
+    ErrorKind = "none";
+    NamedMember = False;
+    ExportProbeValue = 11;
+    Try
+        If Mode = 1 Then
+            Result = ThisObject.ExportProbeValue;
+        ElsIf Mode = 2 Then
+            ThisObject.ExportProbeValue = 31;
+            Result = ExportProbeRead();
+        ElsIf Mode = 3 Then
+            Result = ThisObject.ExportProbeRead();
+        Else
+            Execute(Code);
+        EndIf;
+    Except
+        Status = "error";
+        Description = ErrorInfo().Description;
+        ErrorKind = "other";
+        If StrFind(Description, "Поле объекта не обнаружено") > 0 Then
+            ErrorKind = "field-missing";
+        ElsIf StrFind(Description, "Метод объекта не обнаружен") > 0 Then
+            ErrorKind = "method-missing";
+        EndIf;
+        NamedMember = StrFind(Lower(Description), "exportprobe") > 0;
+    EndTry;
+    Message("export-context." + Label + ": [" + Status + ";kind=" + ErrorKind
+        + ";named=" + ValueToStringInternal(NamedMember)
+        + ";result=" + ValueToStringInternal(Result)
+        + ";value=" + ValueToStringInternal(ExportProbeValue) + "]");
+EndProcedure
+// End exported variable discriminator helpers.
+
+// Begin exported variable checkpoint helpers.
+Function ExportProbeRead() Export
+    Return ExportProbeValue;
+EndFunction
+Procedure ExportProbeWrite(Val Value) Export
+    ExportProbeValue = Value;
+EndProcedure
+Function ExportProbeAlias(A, B)
+    A = 23;
+    Return B;
+EndFunction
+Function ExportProbeVal(Val A)
+    A = 41;
+    Return A;
+EndFunction
+Function ExportProbeShadow()
+    Var ExportProbeValue;
+    ExportProbeValue = 37;
+    Return ExportProbeValue;
+EndFunction
+Procedure ExportProbeFail(A)
+    A = 53;
+    Raise "export-probe-controlled";
+EndProcedure
+Procedure ObserveExportProbe(Val Label, Val Code)
+    Result = Undefined;
+    Status = "ok";
+    ExportProbeValue = 11;
+    ExportProbeOther = 17;
+    ExportProbePrivate = 19;
+    ExportProbeArray = New Array;
+    ExportProbeArray.Add(29);
+    Try
+        Execute(Code);
+    Except
+        Status = "error";
+    EndTry;
+    Message("export-variable." + Label + ": [" + Status + ";result="
+        + ValueToStringInternal(Result) + ";value="
+        + ValueToStringInternal(ExportProbeValue) + ";private="
+        + ValueToStringInternal(ExportProbePrivate) + "]");
+EndProcedure
+// End exported variable checkpoint helpers.
 
 Функция Сложить(А, Б)
     Возврат А + Б;
@@ -585,3 +700,27 @@
 ПроверитьКонтекстОшибки("eval-nested-try", "Try Raise ""exception-context""; Except Try Инфо = Eval(""ErrorInfo()""); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; Except Статус = ""capture-error""; EndTry; EndTry;");
 ПроверитьКонтекстОшибки("outside-empty", "Инфо = ErrorInfo(); Внутри = Инфо.Description = """"; Статус = ""captured"";");
 // End exception context checkpoint observations.
+// Begin exported variable checkpoint observations.
+ObserveExportProbe("object-context", "Result = ThisObject <> Undefined;");
+ObserveExportProbe("initial-undefined", "Result = ThisObject.ExportProbeUnset = Undefined;");
+ObserveExportProbe("read", "Result = ЭтотОбъект.exportprobevalue;");
+ObserveExportProbe("write-routine-read", "ThisObject.ExportProbeValue = 31; Result = ExportProbeRead();");
+ObserveExportProbe("routine-write-read", "ExportProbeWrite(43); Result = ThisObject.ExportProbeValue;");
+ObserveExportProbe("private-list-entry", "Result = ThisObject.ExportProbePrivate;");
+ObserveExportProbe("private-write", "ThisObject.ExportProbePrivate = 59; Result = ExportProbePrivate;");
+ObserveExportProbe("second-export-entry", "Result = ThisObject.ExportProbeOther;");
+ObserveExportProbe("undeclared-read", "Result = ThisObject.ExportProbeMissing;");
+ObserveExportProbe("undeclared-write", "ThisObject.ExportProbeMissing = 61; Result = True;");
+ObserveExportProbe("local-shadow", "Result = ExportProbeShadow();");
+ObserveExportProbe("reference-alias", "Result = ExportProbeAlias(ThisObject.ExportProbeValue, ThisObject.ExportProbeValue);");
+ObserveExportProbe("value-parameter", "Result = ExportProbeVal(ThisObject.ExportProbeValue);");
+ObserveExportProbe("reference-after-error", "ExportProbeFail(ThisObject.ExportProbeValue);");
+ObserveExportProbe("collection-shared", "ThisObject.ExportProbeArray.Add(47); Result = ExportProbeArray.Count();");
+// End exported variable checkpoint observations.
+// Begin exported variable discriminator observations.
+ObserveExportContext("static-read", 1, "");
+ObserveExportContext("static-write", 2, "");
+ObserveExportContext("static-routine", 3, "");
+ObserveExportContext("execute-read", 0, "Result = ThisObject.ExportProbeValue;");
+ObserveExportContext("execute-routine", 0, "Result = ThisObject.ExportProbeRead();");
+// End exported variable discriminator observations.
