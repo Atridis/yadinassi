@@ -3,6 +3,23 @@
 
 #Область ВспомогательныеПроцедуры
 
+// Begin FillPropertyValues INCLUDE checkpoint helpers.
+// Fresh mutable structures; catch only the operation, then expose both fields.
+Процедура ПроверитьСписокВключения(Знач Метка, Знач Список)
+    Приемник = Новый Структура("First,Last", 1, 2);
+    Источник = Новый Структура("First,Last", 10, 20);
+    Статус = "ok";
+    Попытка
+        FillPropertyValues(Приемник, Источник, Список);
+    Исключение
+        Статус = "error";
+    КонецПопытки;
+    Показать("fill.include-normalization." + Метка, Статус
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.First)
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.Last));
+КонецПроцедуры
+// End FillPropertyValues INCLUDE checkpoint helpers.
+
 // Три независимых контроля удаления: ошибка не скрывает конечный состав.
 Процедура ПроверитьУдалениеЗаГраницей(Знач Метка)
     Данные = Новый Массив;
@@ -3786,3 +3803,18 @@
 НаблюдатьТаблицы("descriptor-key.codec-fixed-duplicate-equal", "ИсторияКлючейОписаний(""equal-number"", ""codec-fixed-duplicate-equal"")");
 Сообщить("table.descriptor-key.checkpoint.complete: [ok]");
 // End descriptor Map-key checkpoint observations.
+// Begin FillPropertyValues INCLUDE checkpoint observations.
+ПроверитьСписокВключения("control", "First,Last");
+ПроверитьСписокВключения("empty", "");
+ПроверитьСписокВключения("space", " ");
+ПроверитьСписокВключения("comma", ",");
+ПроверитьСписокВключения("leading-empty", ",First,Last");
+ПроверитьСписокВключения("middle-empty", "First,,Last");
+ПроверитьСписокВключения("trailing-empty", "First,Last,");
+ПроверитьСписокВключения("leading-space", " First,Last");
+ПроверитьСписокВключения("before-comma-space", "First ,Last");
+ПроверитьСписокВключения("around-last-space", "First, Last ");
+ПроверитьСписокВключения("missing", "First,Missing,Last");
+ПроверитьСписокВключения("spaced-missing", "First, Missing ,Last");
+ПроверитьСписокВключения("middle-space", "First, ,Last");
+// End FillPropertyValues INCLUDE checkpoint observations.
