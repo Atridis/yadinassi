@@ -145,10 +145,10 @@ parity and the deliberate watchdog checkpoint. The same 24 trusted inputs,
 six public server outputs and provenance are retained. Raw client values
 markers stay private; only finite validation metadata enters the report.
 
-The values adapter pins the original source and template, preserves all 39
-helpers (33 historical plus six Chars checkpoint helpers) and the entire top-level body, and replaces only the 20 verified
+The values adapter pins the original source and template, preserves all 40
+helpers (33 historical, six Chars helpers and one fixed String projection) and the entire top-level body, and replaces only the 21 verified
 `Сообщить` call identifiers with bounded string capture. It adds no `Строка`
-conversion and checks inverse source reconstruction. All 361 messages (the original 320-message checkpoint plus 40 indexed Chars
+conversion and checks inverse source reconstruction. All 377 messages (the native-verified 361-message checkpoint plus 15 fixed String default
 observations and their completion marker) are compared byte-for-byte with this run's fresh server `values.out`, including
 order, multiline content and trailing bytes. No historical output hash is used
 as the parity oracle. Context differences in Null, XML or type-qualifier APIs

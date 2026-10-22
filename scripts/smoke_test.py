@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source
+    from .native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
 else:
-    from native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source
+    from native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1141,15 +1141,33 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
     # The old 261 observations have their own exact-source historical replay.
     fixture = json.loads((ROOT / 'tests/fixtures/chars_namespace_linux.json').read_text(encoding='utf-8'))
     complete = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
-    if hashlib.sha256(complete.encode()).hexdigest() != fixture['source_sha256']:
+    previous = without_fixed_string_probes(complete)
+    if hashlib.sha256(previous.encode()).hexdigest() != fixture['source_sha256']:
         raise AssertionError('Chars checkpoint source identity changed')
-    result = subprocess.run([executable, '-'], input=complete, capture_output=True,
+    result = subprocess.run([executable, '-'], input=previous, capture_output=True,
                             encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
     boundary = 'types-extra.checkpoint.complete: [ok]\n'
     expected_suffix = '\n'.join(fixture['records']) + '\n'
     if (result.returncode != 0 or result.stderr or result.stdout.count(boundary) != 1
             or result.stdout.split(boundary)[1] != expected_suffix):
         raise AssertionError(f'Failed complete native Chars checkpoint: {result!r}')
+    # Execute the entire current source too, preserving all previous bytes and
+    # every added record. New fixed-default values are not a native oracle yet.
+    current = subprocess.run([executable, '-'], input=complete, capture_output=True,
+                             encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+    suffix = current.stdout[len(result.stdout):]
+    records = suffix.splitlines()
+    labels = [f'types-extra.fixed-default.{case}.{argument}:'
+              for case in ('fixed1', 'fixed4', 'fixed0', 'variable4', 'restored4')
+              for argument in ('omitted', 'undefined', 'empty')]
+    labels.append('types-extra.fixed-default.checkpoint.complete:')
+    if (current.returncode != 0 or current.stderr
+            or not current.stdout.startswith(result.stdout) or len(records) != 16
+            or suffix != '\n'.join(records) + '\n'
+            or [item.split(' ', 1)[0] for item in records] != labels
+            or any(any(ord(c) < 32 for c in item) for item in records)
+            or records[-1] != 'types-extra.fixed-default.checkpoint.complete: [ok]'):
+        raise AssertionError(f'Failed current fixed String checkpoint capture: {current!r}')
     print('Binary Chars namespace passed: bilingual readonly constants, codepoint projections, '
           'Eval, BOM file, command flags, stdin and console')
 

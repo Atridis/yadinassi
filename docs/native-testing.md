@@ -1306,3 +1306,34 @@ measured stage wire7623/8192 bytes and full report24968/32768 bytes.
 The two source-only native runs correctly rejected interpreter acceptance
 before implementation. Final runtime acceptance requires its own fresh native
 run and CI, not merely these successful measurements.
+
+
+## Fixed-length String default checkpoint (source only)
+
+The bounded follow-on checkpoint appends 15 independent observations and a
+completion marker to the native-verified 361-message values source. Fixed lengths
+1 and 4, fixed length 0 normalization, variable length 4, and a serialized/restored
+fixed length 4 TypeDescription each compare three distinct calls: omitted argument,
+explicit Undefined, and explicit empty string. No equality between those calls is
+assumed. Both language aliases are observed through the existing default and
+explicit-conversion helpers. A compact projection preserves Value, Type, Russian,
+Internal and Length; non-string results keep Length undefined instead of failing
+or silently converting. Internal scalar serialization is escaped by the existing
+observer, so spaces and control characters do not alter record boundaries.
+
+All previous 361 records, including all 100 actual native Chars fixture observations,
+remain mandatory. The new uniquely bounded helper/observation blocks restore the
+exact previous source SHA256 before the original Chars block removal restores all
+261 historical observations. All six Windows outputs and provenance remain
+unchanged. Live native comparison executes the complete current 377 source in both
+server and managed-client contexts; historical restoration is not a live prefix
+exception. The adapter pins 40 helpers, 21 message sites and exact inverse source.
+
+No runtime behavior changes or native success are claimed here. The omitted fixed
+String guard and ambiguous composite conversion guards remain. A genuine complete
+native run, artifact/source binding, independent review and measured implementation
+are required before runtime acceptance. Image, isolation, roles, network, 24 staged
+inputs, 6 public outputs plus provenance, v3 compact report and caps are unchanged.
+
+Current values source SHA256: `eaf36b0deed933ea1c3eabcfbde0be59f2f1d8bf6b07b5533f4df2e8cc967b45`
+(76092 bytes, 853 lines). Native evidence is still pending.

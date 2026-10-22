@@ -77,13 +77,32 @@ def without_chars_probes(text):
     return text
 
 
+FIXED_STRING_PROBE_BLOCKS = (
+    ('// Begin fixed String default helpers.\n', '// End fixed String default helpers.\n\n'),
+    ('// Begin fixed String default observations.\n', '// End fixed String default observations.\n'),
+)
+
+
+def without_fixed_string_probes(text):
+    """Restore the exact native-verified 361-record Chars source."""
+    for start, end in FIXED_STRING_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError("fixed String probe boundaries changed")
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != '5fd00b472332044f4bae4c12973bcc66c074b27f7c98fe58b21b149088166fff':
+        raise ValueError("fixed String baseline source binding changed")
+    return text
+
+
 def historical_values_source(source, output):
     """Reconstruct every byte of original values source, never an output prefix."""
     source = source.replace(b"\r\n", b"\n")
     output = output.replace(b"\r\n", b"\n")
     if git_blob(output) != HISTORICAL_VALUES_OUTPUT_BLOB:
         raise ValueError("historical values output binding changed")
-    replay = without_chars_probes(source.decode("utf-8")).encode("utf-8")
+    replay = without_chars_probes(without_fixed_string_probes(source.decode("utf-8"))).encode("utf-8")
     if git_blob(replay) != HISTORICAL_VALUES_BLOB:
         raise ValueError("historical values source binding changed")
     return replay
