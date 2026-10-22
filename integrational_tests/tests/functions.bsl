@@ -1,5 +1,55 @@
+// Begin exported variable checkpoint declarations.
+Перем ExportProbeUnset Экспорт;
+Var ExportProbePrivate, ExportProbeValue Export, ExportProbeOther Export;
+Перем ExportProbeArray Экспорт;
+// End exported variable checkpoint declarations.
+
 Перем МодульноеВычисления;
 Перем СчетчикСсылок;
+
+// Begin exported variable checkpoint helpers.
+Function ExportProbeRead() Export
+    Return ExportProbeValue;
+EndFunction
+Procedure ExportProbeWrite(Val Value) Export
+    ExportProbeValue = Value;
+EndProcedure
+Function ExportProbeAlias(A, B)
+    A = 23;
+    Return B;
+EndFunction
+Function ExportProbeVal(Val A)
+    A = 41;
+    Return A;
+EndFunction
+Function ExportProbeShadow()
+    Var ExportProbeValue;
+    ExportProbeValue = 37;
+    Return ExportProbeValue;
+EndFunction
+Procedure ExportProbeFail(A)
+    A = 53;
+    Raise "export-probe-controlled";
+EndProcedure
+Procedure ObserveExportProbe(Val Label, Val Code)
+    Result = Undefined;
+    Status = "ok";
+    ExportProbeValue = 11;
+    ExportProbeOther = 17;
+    ExportProbePrivate = 19;
+    ExportProbeArray = New Array;
+    ExportProbeArray.Add(29);
+    Try
+        Execute(Code);
+    Except
+        Status = "error";
+    EndTry;
+    Message("export-variable." + Label + ": [" + Status + ";result="
+        + ValueToStringInternal(Result) + ";value="
+        + ValueToStringInternal(ExportProbeValue) + ";private="
+        + ValueToStringInternal(ExportProbePrivate) + "]");
+EndProcedure
+// End exported variable checkpoint helpers.
 
 Функция Сложить(А, Б)
     Возврат А + Б;
@@ -585,3 +635,20 @@
 ПроверитьКонтекстОшибки("eval-nested-try", "Try Raise ""exception-context""; Except Try Инфо = Eval(""ErrorInfo()""); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; Except Статус = ""capture-error""; EndTry; EndTry;");
 ПроверитьКонтекстОшибки("outside-empty", "Инфо = ErrorInfo(); Внутри = Инфо.Description = """"; Статус = ""captured"";");
 // End exception context checkpoint observations.
+// Begin exported variable checkpoint observations.
+ObserveExportProbe("object-context", "Result = ThisObject <> Undefined;");
+ObserveExportProbe("initial-undefined", "Result = ThisObject.ExportProbeUnset = Undefined;");
+ObserveExportProbe("read", "Result = ЭтотОбъект.exportprobevalue;");
+ObserveExportProbe("write-routine-read", "ThisObject.ExportProbeValue = 31; Result = ExportProbeRead();");
+ObserveExportProbe("routine-write-read", "ExportProbeWrite(43); Result = ThisObject.ExportProbeValue;");
+ObserveExportProbe("private-list-entry", "Result = ThisObject.ExportProbePrivate;");
+ObserveExportProbe("private-write", "ThisObject.ExportProbePrivate = 59; Result = ExportProbePrivate;");
+ObserveExportProbe("second-export-entry", "Result = ThisObject.ExportProbeOther;");
+ObserveExportProbe("undeclared-read", "Result = ThisObject.ExportProbeMissing;");
+ObserveExportProbe("undeclared-write", "ThisObject.ExportProbeMissing = 61; Result = True;");
+ObserveExportProbe("local-shadow", "Result = ExportProbeShadow();");
+ObserveExportProbe("reference-alias", "Result = ExportProbeAlias(ThisObject.ExportProbeValue, ThisObject.ExportProbeValue);");
+ObserveExportProbe("value-parameter", "Result = ExportProbeVal(ThisObject.ExportProbeValue);");
+ObserveExportProbe("reference-after-error", "ExportProbeFail(ThisObject.ExportProbeValue);");
+ObserveExportProbe("collection-shared", "ThisObject.ExportProbeArray.Add(47); Result = ExportProbeArray.Count();");
+// End exported variable checkpoint observations.

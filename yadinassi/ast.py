@@ -131,6 +131,7 @@ class Continue(Node):
 @dataclass
 class Var(Node):
     names: list[str]
+    exported_names: tuple[str, ...] = ()
 
 
 @dataclass

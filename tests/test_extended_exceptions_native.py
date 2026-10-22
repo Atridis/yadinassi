@@ -5,6 +5,7 @@ from pathlib import Path
 import unittest
 
 from yadinassi import Interpreter
+from scripts.native_historical_replay import without_exported_variable_probes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +16,8 @@ class NativeExtendedExceptionTests(unittest.TestCase):
         fixture = json.loads((ROOT / 'tests/fixtures/extended_exceptions_linux.json').read_text(encoding='utf-8'))
         source = (ROOT / 'integrational_tests/tests/functions.bsl').read_bytes()
         # Checkout EOL transport is not a semantic output normalization.
-        source = source.replace(b'\r\n', b'\n')
+        source = without_exported_variable_probes(
+            source.replace(b'\r\n', b'\n').decode('utf-8')).encode('utf-8')
         historical = (ROOT / 'tests/fixtures/native_windows/functions.out').read_bytes()
         historical = historical.replace(b'\r\n', b'\n')
         self.assertEqual(hashlib.sha256(source).hexdigest(), fixture['source_sha256'])

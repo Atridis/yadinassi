@@ -17,6 +17,7 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.loop_depth = 0
+        self.block_depth = 0
         self.handler_depth = 0
         self.routine_kind: str | None = None
         self.parameter_names: set[str] = set()
@@ -124,6 +125,13 @@ class Parser:
         return default
 
     def block(self, endings: set[str]) -> list[ast.Node]:
+        self.block_depth += 1
+        try:
+            return self._block(endings)
+        finally:
+            self.block_depth -= 1
+
+    def _block(self, endings: set[str]) -> list[ast.Node]:
         statements = []
         regions = []
         while True:
@@ -253,13 +261,22 @@ class Parser:
             self.pos += 1
             return ast.Break(token) if token.kind == "BREAK" else ast.Continue(token)
         if self.accept("VAR"):
-            names = [self.expect("IDENT").value]
-            while self.accept(","):
-                names.append(self.expect("IDENT").value)
+            names = []
+            exported = []
+            while True:
+                name = self.expect("IDENT").value
+                names.append(name)
+                if self.current.kind == "EXPORT":
+                    if self.routine_kind is not None or self.block_depth:
+                        self.fail("Экспорт переменной поддерживается только на уровне модуля")
+                    self.pos += 1
+                    exported.append(name)
+                if not self.accept(","):
+                    break
             for name in names:
                 if name.casefold() in self.parameter_names:
                     self.fail(f"Переменная уже объявлена как параметр: {name}")
-            return ast.Var(token, names)
+            return ast.Var(token, names, tuple(exported))
         # Assignment is a statement, while '=' in an expression is comparison.
         if token.kind == "IDENT":
             start = self.pos

@@ -7,7 +7,7 @@ import unittest
 from scripts.native_historical_replay import (
     EXCEPTION_CONTEXT_BASE_BLOB, EXCEPTION_CONTEXT_PROBE_BLOCKS,
     HISTORICAL_FUNCTIONS_BLOB, git_blob, historical_functions_source,
-    without_exception_context_probes,
+    without_exception_context_probes, without_exported_variable_probes,
 )
 from yadinassi import Interpreter, ast
 from yadinassi.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508
@@ -25,7 +25,8 @@ def literal(text):
 class ExceptionContextCheckpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+        cls.source = without_exported_variable_probes(
+            (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8'))
         cls.previous = without_exception_context_probes(cls.source)
 
     def test_inverse_restores_exact_native_verified_111_source(self):

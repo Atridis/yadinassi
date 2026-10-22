@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
 else:
-    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -2196,6 +2196,26 @@ EXTENDED_EXCEPTION_OUTPUT = ('outer\nOUTER\ndetail\ninner\nINNER\ninner detail\n
                              'Да\nДа\nДа\nрусский\nRU\nДа\nINNER\n')
 
 
+def check_export_variable_bootstrap(executable, *, directory, env):
+    """Parser-only checkpoint, not exported-field runtime acceptance."""
+    directory.mkdir()
+    code = 'Перем A Экспорт, B; Var C Export; A=7; B=11; C=13; Message(A+B+C);'
+    source = directory / 'Переменные.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in ((['-c', code], None), ([str(source)], None), (['-'], code)):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, '31\n', ''):
+            raise AssertionError(f'Export parser bootstrap failed {arguments!r}: {result!r}')
+    (directory / 'mod.bsl').write_text('Var Public Export; Public=11;', encoding='utf-8')
+    source.write_text('// #Import mod.bsl\nMessage(mod.Public);', encoding='utf-8')
+    result = subprocess.run([executable, str(source)], capture_output=True,
+                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+    if result.returncode == 0 or result.stdout or not result.stderr:
+        raise AssertionError(f'Parser-only checkpoint exposed an imported field: {result!r}')
+    print('Export-variable parser bootstrap passed; imported fields remain unsupported')
+
+
 def check_extended_exceptions(executable, *, directory, env):
     """Core structured exception flow and unsupported-display REPL recovery."""
     directory.mkdir()
@@ -2211,7 +2231,8 @@ def check_extended_exceptions(executable, *, directory, env):
         if (result.returncode, result.stdout, result.stderr) != (0, EXTENDED_EXCEPTION_OUTPUT, ''):
             raise AssertionError(f'Failed extended exceptions {arguments!r}: {result!r}')
     fixture = json.loads((ROOT / 'tests/fixtures/extended_exceptions_linux.json').read_text(encoding='utf-8'))
-    native_source = (ROOT / 'integrational_tests/tests/functions.bsl').read_bytes().replace(b'\r\n', b'\n')
+    native_source = without_exported_variable_probes(
+        (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')).encode('utf-8')
     historical = (ROOT / 'tests/fixtures/native_windows/functions.out').read_bytes().replace(b'\r\n', b'\n')
     if (hashlib.sha256(native_source).hexdigest() != fixture['source_sha256']
             or hashlib.sha256(historical).hexdigest() != fixture['historical_output_sha256']):
@@ -2264,6 +2285,7 @@ def main() -> None:
         check_table_checkpoint(executable, directory=Path(temporary) / "table-checkpoint", env=env)
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_extended_exceptions(executable, directory=Path(temporary) / "extended-exceptions", env=env)
+        check_export_variable_bootstrap(executable, directory=Path(temporary) / "export-variable-bootstrap", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)
