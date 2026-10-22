@@ -1603,3 +1603,32 @@ fixed targets, tabs/Unicode whitespace and malformed names remain guarded as
 before. Native source, all fixture bytes, input/security/cap/wire/client rules,
 and the eight Map exceptions are unchanged. This runtime change makes no new
 Windows evidence claim; no evidence is inferred for any excluded category.
+
+### FillPropertyValues EXCLUDE missing names: source-only checkpoint
+
+This checkpoint appends 11 records to the exact 841-record collections source
+(SHA-256 `e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232`).
+Every call creates fresh mutable target `Structure("First,Last,Copy", 1, 2, 3)`
+and source `Structure("First,Last,Copy", 10, 20, 30)`. `Missing` is added only
+to the target (value 4), only to the source (value 40), or to neither. Each
+variant uses fourth-argument lists `Missing`, `Missing,First`, and
+`First,Missing`; the third argument is always Undefined. Two final controls
+use `First` and `First,Last` with Missing absent from both.
+
+Each record reports stable `ok`/`error`, all three target fields, target count,
+and Missing presence/value after catching the operation. Copy is never excluded,
+so partial mutation cannot hide behind First exclusion. Setup fixes insertion
+order only; it makes no assumption about native traversal order. Native errors
+are valid observations and never omitted. Labels start `fill.exclude-missing.`.
+Collections now has 852 records; values 402, numbers 421 and dates 185 are unchanged.
+
+There is no runtime change: absent EXCLUDE names remain explicitly unsupported
+pending independently audited native observations. EDT parameter/description
+conflicts are not evidence for mutation timing. Synthetic tests prove observer
+sensitivity only. Linux results cannot broaden historical Windows/default behavior.
+Excluded: simultaneous lists, empty or spaced tokens, fixed targets or fixed
+sources, new containers and database queries. Exact inverse reconstruction
+restores the complete 841 source and every earlier historical chain; output
+truncation is not a parity exception. Fixtures, all 24 trusted inputs, caps,
+strict wire and client/server comparison, and eight Map-order exceptions remain
+unchanged. Every new record requires byte-exact comparison.

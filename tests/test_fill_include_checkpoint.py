@@ -1,3 +1,4 @@
+from scripts.native_historical_replay import without_fill_exclude_probes
 """Source-only INCLUDE matrix: local predictions never substitute native evidence."""
 import hashlib
 from pathlib import Path
@@ -21,7 +22,7 @@ CASES = (
 class FillIncludeCheckpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        cls.source = without_fill_exclude_probes((ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig'))
         cls.original = without_fill_include_probes(cls.source)
 
     def test_exact_828_source_inverse_and_transport_only_normalization(self):

@@ -32,6 +32,30 @@ def without_field_reference_probes(text):
     return text
 
 
+FILL_EXCLUDE_PROBE_BLOCKS = (
+    ('// Begin FillPropertyValues EXCLUDE checkpoint helpers.\n',
+     '// End FillPropertyValues EXCLUDE checkpoint helpers.\n\n'),
+    ('// Begin FillPropertyValues EXCLUDE checkpoint observations.\n',
+     '// End FillPropertyValues EXCLUDE checkpoint observations.\n'),
+)
+
+
+def without_fill_exclude_probes(text):
+    """Restore all 841 records' source; never truncate observed output."""
+    for start, end in FILL_EXCLUDE_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('fill exclude probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8')
+    if not raw.startswith(b'\xef\xbb\xbf'):
+        raw = b'\xef\xbb\xbf' + raw
+    if hashlib.sha256(raw).hexdigest() != 'e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232':
+        raise ValueError('fill exclude baseline source binding changed')
+    return text
+
+
 FILL_INCLUDE_PROBE_BLOCKS = (
     ('// Begin FillPropertyValues INCLUDE checkpoint helpers.\n',
      '// End FillPropertyValues INCLUDE checkpoint helpers.\n\n'),
@@ -42,6 +66,8 @@ FILL_INCLUDE_PROBE_BLOCKS = (
 
 def without_fill_include_probes(text):
     """Restore all 828 native-verified records' source with an exact byte pin."""
+    if any(boundary in text for pair in FILL_EXCLUDE_PROBE_BLOCKS for boundary in pair):
+        text = without_fill_exclude_probes(text)
     for start, end in FILL_INCLUDE_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError('fill include probe boundaries changed')

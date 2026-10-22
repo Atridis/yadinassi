@@ -3,6 +3,34 @@
 
 #Область ВспомогательныеПроцедуры
 
+// Begin FillPropertyValues EXCLUDE checkpoint helpers.
+// Mutable only; fixed insertion order, not an assumed native iteration order.
+Процедура ПроверитьСписокИсключения(Знач Метка, Знач Наличие, Знач Список)
+    Приемник = Новый Структура("First,Last,Copy", 1, 2, 3);
+    Источник = Новый Структура("First,Last,Copy", 10, 20, 30);
+    Если Наличие = "target-only" Тогда
+        Приемник.Вставить("Missing", 4);
+    ИначеЕсли Наличие = "source-only" Тогда
+        Источник.Вставить("Missing", 40);
+    КонецЕсли;
+    Статус = "ok";
+    Попытка
+        FillPropertyValues(Приемник, Источник, Неопределено, Список);
+    Исключение
+        Статус = "error";
+    КонецПопытки;
+    ЗначениеMissing = Неопределено;
+    ЕстьMissing = Приемник.Свойство("Missing", ЗначениеMissing);
+    Показать("fill.exclude-missing." + Метка, Статус
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.First)
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.Last)
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.Copy)
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.Количество())
+        + ";" + ЗначениеВСтрокуВнутр(ЕстьMissing)
+        + ";" + ЗначениеВСтрокуВнутр(ЗначениеMissing));
+КонецПроцедуры
+// End FillPropertyValues EXCLUDE checkpoint helpers.
+
 // Begin FillPropertyValues INCLUDE checkpoint helpers.
 // Fresh mutable structures; catch only the operation, then expose both fields.
 Процедура ПроверитьСписокВключения(Знач Метка, Знач Список)
@@ -3818,3 +3846,16 @@
 ПроверитьСписокВключения("spaced-missing", "First, Missing ,Last");
 ПроверитьСписокВключения("middle-space", "First, ,Last");
 // End FillPropertyValues INCLUDE checkpoint observations.
+// Begin FillPropertyValues EXCLUDE checkpoint observations.
+ПроверитьСписокИсключения("target-only.missing", "target-only", "Missing");
+ПроверитьСписокИсключения("target-only.missing-first", "target-only", "Missing,First");
+ПроверитьСписокИсключения("target-only.first-missing", "target-only", "First,Missing");
+ПроверитьСписокИсключения("source-only.missing", "source-only", "Missing");
+ПроверитьСписокИсключения("source-only.missing-first", "source-only", "Missing,First");
+ПроверитьСписокИсключения("source-only.first-missing", "source-only", "First,Missing");
+ПроверитьСписокИсключения("neither.missing", "neither", "Missing");
+ПроверитьСписокИсключения("neither.missing-first", "neither", "Missing,First");
+ПроверитьСписокИсключения("neither.first-missing", "neither", "First,Missing");
+ПроверитьСписокИсключения("control.first", "neither", "First");
+ПроверитьСписокИсключения("control.first-last", "neither", "First,Last");
+// End FillPropertyValues EXCLUDE checkpoint observations.
