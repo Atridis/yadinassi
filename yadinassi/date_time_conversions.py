@@ -1,9 +1,9 @@
 """Documented fixed-GMT Date conversions, with a deliberately bounded domain.
 
 The platform documents GMT{+/-}h[h][:mm], hours 0..23 and minutes 0..59.
-Only whole-second dates and these explicit offsets are supported here. Native
-fractional precision, named/computer timezones and overflow behavior have not
-been measured; no choice among their possible behaviors is made implicitly.
+Fractional ticks are preserved, as observed in native run 39758795625.
+Named/computer timezones and overflow behavior remain outside this bounded
+subset; no choice among their possible behaviors is made implicitly.
 """
 
 import re
@@ -39,8 +39,6 @@ def _convert(value: object, zone: object, *, to_local: bool) -> BSLDate:
     if type(value) is not BSLDate:
         raise TypeError("Преобразование времени: первый аргумент должен иметь тип Дата")
     value.require_known()
-    if value.ticks % TICKS_PER_SECOND:
-        raise ValueError("Преобразование времени: дробные секунды пока не поддерживаются")
     offset = _offset_seconds(zone) * TICKS_PER_SECOND
     ticks = value.ticks + offset if to_local else value.ticks - offset
     if not 0 <= ticks <= MAX_TICKS:

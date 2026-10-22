@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_collections_source, historical_values_source
+    from .native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source
 else:
-    from native_historical_replay import historical_collections_source, historical_values_source
+    from native_historical_replay import historical_dates_source, historical_collections_source, historical_values_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1812,9 +1812,10 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
-        if name == 'collections':
-            replay = directory / 'collections-historical.bsl'
-            replay.write_bytes(historical_collections_source(script.read_bytes(), output.read_bytes()))
+        if name in ('collections', 'dates'):
+            reconstruct = historical_dates_source if name == 'dates' else historical_collections_source
+            replay = directory / (name + '-historical.bsl')
+            replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
         if name == 'values':
             replay = directory / 'values-historical.bsl'
@@ -1973,7 +1974,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
 
 
 def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dict) -> None:
-    """Documented whole-second GMT subset, not owner-generated native output."""
+    """Bounded GMT conversions, with native-backed fractional numeric witnesses."""
     directory.mkdir()
     program = (
         'base = Date(2024, 2, 29, 23, 59, 59);\n'
@@ -1986,10 +1987,15 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
         'a = New Array; a.Add(local);\n'
         'Message(ValueFromStringInternal(ValueToStringInternal(a))[0] = local);\n')
     expected = '{"D",20240301000059}\nДа\nДа\n{"D",20240301235859}\nДа\nДа\n'
+    # Numeric subtraction exposes ticks that the Date codec deliberately drops.
+    program += ('fraction = base + 0.0001;\n'
+                'Message(ValueToStringInternal(ToLocalTime(fraction, "GMT+5:30") - base));\n'
+                'Message(ValueToStringInternal(ToUniversalTime(fraction, "GMT-3:45") - base));\n'
+                'Message(ValueToStringInternal(ToUniversalTime(ToLocalTime(fraction, "GMT+5:30"), "GMT+5:30") - base));\n')
+    expected += '{"N",19800.0001}\n{"N",13500.0001}\n{"N",0.0001}\n'
     # Each unsupported call must be catchable without assigning over saved data.
     for expression in ('ToLocalTime(base)', 'ToUniversalTime(base, Undefined)',
                        'ToLocalTime(base, "Europe/Warsaw")',
-                       'ToLocalTime(base + 0.0001, "GMT+0")',
                        'ToUniversalTime(Date(1,1,1), "GMT+0:01")',
                        'ToLocalTime(base, "GMT+24")'):
         program += (f'saved = base; Try saved = {expression}; '
@@ -2018,6 +2024,25 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, '{"D",20250101033000}\n', ''):
             raise AssertionError(f'Failed imported fixed-GMT conversion {path!r}: {result!r}')
+
+
+    # Full current source against literal independently verified native evidence,
+    # alongside (not instead of) the six exact historical capture replays.
+    fixture = json.loads((ROOT / 'tests/fixtures/fixed_gmt_fractional_linux.json').read_text(encoding='utf-8'))
+    source_bytes = (ROOT / 'integrational_tests/tests/dates.bsl').read_bytes().replace(b'\r\n', b'\n')
+    if hashlib.sha256(source_bytes).hexdigest() != fixture['source_sha256']:
+        raise AssertionError('Fractional GMT source fingerprint changed')
+    historical = (ROOT / 'tests/fixtures/native_windows/dates.out').read_text(encoding='utf-8-sig')
+    expected_dates = historical.replace('\r\n', '\n').replace('\r', '\n') + '\n'.join(fixture['records']) + '\n'
+    if hashlib.sha256(expected_dates.encode()).hexdigest() != fixture['full_output_sha256']:
+        raise AssertionError('Fractional GMT native output fingerprint changed')
+    current = directory / 'ПолныеДаты.bsl'
+    current.write_bytes(source_bytes)
+    result = subprocess.run([executable, str(current)], capture_output=True,
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+    if (result.returncode, result.stdout, result.stderr) != (0, expected_dates, ''):
+        raise AssertionError(f'Failed native-backed fractional dates replay: {result!r}')
+    print('Binary fixed-GMT fractions passed: native 185 messages, four fractions, both directions and aliases, CLI and recovery')
 
 
 def check_value_list_references(executable, *, directory, env):

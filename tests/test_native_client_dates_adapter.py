@@ -47,7 +47,7 @@ class ClientDatesAdapterTests(unittest.TestCase):
                 with self.assertRaises(suite.FullError):
                     suite.client_dates_module(source, template)
 
-    def test_reverse_generated_source_preserves_all_132_lines(self):
+    def test_reverse_generated_source_preserves_all_219_lines(self):
         module = suite.client_dates_module(self.source, self.template).decode('utf-8-sig')
         start = module.index('// Нативный checkpoint')
         end = module.index('\nКонецПроцедуры\n\n&НаКлиенте\nФункция ВычислитьПробу()', start)
@@ -56,9 +56,9 @@ class ClientDatesAdapterTests(unittest.TestCase):
         restored = restored.replace('Процедура ДатыКлиентВыполнить()\n', '')
         restored = restored.replace('ДатыКлиентЗахват(', 'Сообщить(') + '\n'
         self.assertEqual(restored, self.source.decode())
-        self.assertEqual(len(restored.splitlines()), 132)
-        self.assertEqual(restored.count('Сообщить('), 5)
-        self.assertEqual(restored.count('\nНаблюдатьДату('), 98)
+        self.assertEqual(len(restored.splitlines()), 219)
+        self.assertEqual(restored.count('Сообщить('), 6)
+        self.assertEqual(restored.count('\nНаблюдатьДату('), 182)
 
     def test_all_declarations_and_calls_are_direct_client_only(self):
         module = suite.client_dates_module(self.source, self.template).decode('utf-8-sig')
@@ -69,12 +69,12 @@ class ClientDatesAdapterTests(unittest.TestCase):
         self.assertNotIn('Сообщить(', module)
         self.assertNotIn('Строка(Текст)', module)
         self.assertIn('ДатыКлиентСообщения.Добавить(Текст);', module)
-        self.assertIn('ДатыКлиентСообщения.Количество() >= 100', module)
-        self.assertIn(f'> {(suite.MAX_OUTPUT - 100) // 4}', module)
+        self.assertIn('ДатыКлиентСообщения.Количество() >= 185', module)
+        self.assertIn(f'> {(suite.MAX_OUTPUT - 185) // 4}', module)
         self.assertIn('ДатыКлиентВыполнить();', module)
         self.assertIn('Возврат ДатыКлиентСообщения;', module)
         self.assertEqual(module.count('ВычислитьПробу();'), 1)
-        self.assertEqual(module.count('ДатыКлиентЗахват('), 6)
+        self.assertEqual(module.count('ДатыКлиентЗахват('), 7)
 
     def test_witness_writer_and_onopen_are_unchanged(self):
         module = suite.client_dates_module(self.source, self.template).decode('utf-8-sig')
@@ -98,7 +98,7 @@ class ClientDatesMarkerTests(unittest.TestCase):
 
     def record(self, values=None, phase='completed'):
         return {'schema': 1, 'nonce': NONCE, 'phase': phase, 'witness': 'client',
-                'values': [f'line {i}' for i in range(100)] if values is None else values}
+                'values': [f'line {i}' for i in range(185)] if values is None else values}
 
     def read(self, record, phase='completed'):
         self.path.write_text(json.dumps(record), encoding='utf-8')
@@ -150,18 +150,18 @@ class ClientDatesMarkerTests(unittest.TestCase):
                 suite.client_dates_marker(self.path, NONCE, 'completed')
 
     def test_byte_bound_includes_newline_per_message_and_utf8(self):
-        values = [''] * 100
-        values[0] = 'a' * (suite.MAX_OUTPUT - 100)
+        values = [''] * 185
+        values[0] = 'a' * (suite.MAX_OUTPUT - 185)
         self.assertEqual(len(suite.serialize_messages(self.read(self.record(values))['values'])),
                          suite.MAX_OUTPUT)
         for first in (values[0] + 'a', 'я' * (suite.MAX_OUTPUT // 2),
                       '\r\n' * (suite.MAX_OUTPUT // 2 + 1)):
             with self.assertRaises(suite.FullError):
-                self.read(self.record([first] + [''] * 99))
+                self.read(self.record([first] + [''] * 184))
 
     def test_existing_private_json_envelope_cap_is_unchanged(self):
         # Decoded payload fits MAX_OUTPUT, but escaping exceeds MAX_RESULT.
-        record = self.record(["\x00" * (suite.MAX_RESULT // 6)] + [""] * 99)
+        record = self.record(["\x00" * (suite.MAX_RESULT // 6)] + [""] * 184)
         self.assertLess(len(suite.serialize_messages(record["values"])), suite.MAX_OUTPUT)
         with self.assertRaises(suite.FullError):
             self.read(record)

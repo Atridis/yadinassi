@@ -1752,7 +1752,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
             "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
             "process_diagnostics": process_diagnostics(), **dict.fromkeys(suite.CLIENT_FLAGS, True)}
         envelope["report"]["stage3"]["client_probe"] = client
-        for scenario, enabled, count, module_hash in (("dates", dates, 100, "e" * 64),
+        for scenario, enabled, count, module_hash in (("dates", dates, 185, "e" * 64),
                                                        ("values", values, 361, "f" * 64),
                                                        ("collections", collections, 797, "9" * 64),
                                                        ("numbers", numbers, 350, "8" * 64)):

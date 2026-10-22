@@ -124,11 +124,11 @@ The public artifact still contains only the same six scenario outputs and
 provenance. A fresh successful native run is required before accepting this
 checkpoint; local synthetic fixtures do not establish native parity.
 
-The adapter is pinned to the complete original dates source and template. It
+The adapter is pinned to the complete current dates source and template. It
 preserves both helpers, all expressions, exception branches and execution order,
-and changes only five verified `Сообщить` identifiers to an explicitly scoped
-string capture. It performs no additional `Строка` conversion. All 100 messages
-(98 observations plus two checkpoints), including multiline values, are serialized
+and changes only six verified `Сообщить` identifiers to an explicitly scoped
+string capture. It performs no additional `Строка` conversion. All 185 messages
+(182 observations plus three checkpoints), including multiline values, are serialized
 with the existing UTF-8/LF rules and compared in full against the fresh server
 `dates.out`, without prefix filtering or map-order relaxation. The inverse adapter
 must recover the original normalized source exactly. This proves expression/result

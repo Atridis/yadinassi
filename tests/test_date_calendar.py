@@ -17,6 +17,8 @@ import sys
 import tempfile
 import unittest
 
+from scripts.native_historical_replay import historical_dates_source
+
 from yadinassi import BSLError, Interpreter, ast
 from yadinassi.dates import (
     BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, add_month,
@@ -95,7 +97,7 @@ class NativeCalendarEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.native = normalized(NATIVE.read_text(encoding='utf-8-sig'))
-        cls.source = SOURCE.read_text(encoding='utf-8-sig')
+        cls.source = historical_dates_source(SOURCE.read_bytes(), NATIVE.read_bytes()).decode('utf-8-sig')
         cls.records = dict(re.findall(
             r'^date\.(calendar\.[a-z0-9.-]+): \[(.*?)\](?=\ndate\.|\n?\Z)',
             cls.native, re.MULTILINE | re.DOTALL))

@@ -37,7 +37,7 @@ def normalize_newlines(text: str) -> str:
 
 
 from scripts.native_historical_replay import (
-    historical_collections_source, historical_values_source, git_blob, FINAL_PROBE_BLOCKS,
+    historical_dates_source, historical_collections_source, historical_values_source, git_blob, FINAL_PROBE_BLOCKS,
     FIELD_REFERENCE_BLOCKS, without_field_reference_probes,
     HISTORICAL_COLLECTIONS_BLOB, HISTORICAL_COLLECTIONS_OUTPUT_BLOB,
 )
@@ -80,9 +80,10 @@ class NativeOutputTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory(prefix="native-historical-") as temporary:
                 arguments = [sys.executable, "-c", EXECUTE_SCRIPT, str(script)]
-                if self.native_root == ROOT and script.name == "collections.bsl":
+                if self.native_root == ROOT and script.name in ("collections.bsl", "dates.bsl"):
+                    reconstruct = historical_dates_source if script.name == "dates.bsl" else historical_collections_source
                     replay = Path(temporary) / script.name
-                    replay.write_bytes(historical_collections_source(
+                    replay.write_bytes(reconstruct(
                         script.read_bytes(), expected_path.read_bytes()))
                     arguments.append(str(replay))
                 if self.native_root == ROOT and script.name == "values.bsl":

@@ -260,7 +260,7 @@ def validate_client_dates(data, source_hash, module_hash, server_case):
         if (server_case["status"] != "ok"
                 or not is_digest(data["output_sha256"])
                 or not is_int(data["output_size"], MAX_FILE)
-                or type(data["message_count"]) is not int or data["message_count"] != 100
+                or type(data["message_count"]) is not int or data["message_count"] != 185
                 or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
             raise ValueError("client dates output identity")
     elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):

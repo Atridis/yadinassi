@@ -17,13 +17,13 @@ OUTPUT_KEYS = {"output_sha256", "output_size", "message_count"}
 class ClientDatesHostTests(unittest.TestCase):
     def setUp(self):
         # Deliberately not historical dates output: acceptance must use fresh bytes.
-        self.payload = b"fresh dates\n" * 99 + b"message with\nembedded newline\n"
+        self.payload = b"fresh dates\n" * 184 + b"message with\nembedded newline\n"
         self.envelope, self.inputs, self.modules = host_fixture.fixture(self.payload)
         self.inputs[full.CLIENT_SOURCE] = "c" * 64
         self.modules.update(client_probe="d" * 64, client_dates="e" * 64)
         stage = self.envelope["report"]["stage3"]
         self.server = stage["cases"][full.SCENARIOS.index("dates")]
-        self.server["message_count"] = 100  # Messages need not equal physical lines.
+        self.server["message_count"] = 185  # Messages need not equal physical lines.
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": "c" * 64,
                        "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
                        "process_diagnostics": process_diagnostics(),
@@ -58,7 +58,7 @@ class ClientDatesHostTests(unittest.TestCase):
         report, outputs = self.validate()
         self.assertEqual(outputs["dates"], self.payload)
         self.assertEqual(list(outputs), list(full.SCENARIOS))
-        self.assertEqual(report["stage3"]["client_dates"]["message_count"], 100)
+        self.assertEqual(report["stage3"]["client_dates"]["message_count"], 185)
         self.assertEqual(len(self.inputs), 24)
         self.assertEqual(len(full.ARTIFACT_FILES), 7)
         self.assertNotIn("fresh dates", json.dumps(report))
@@ -100,14 +100,14 @@ class ClientDatesHostTests(unittest.TestCase):
                 self.validate(envelope)
 
     def test_metadata_is_bound_to_fresh_server_dates_not_another_case(self):
-        for key, value in (("output_sha256", "f" * 64), ("output_size", 8633), ("message_count", 99)):
+        for key, value in (("output_sha256", "f" * 64), ("output_size", 8633), ("message_count", 184)):
             envelope = copy.deepcopy(self.envelope)
             envelope["report"]["stage3"]["client_dates"][key] = value
             with self.subTest(key=key), self.assertRaises(full.FullError):
                 self.validate(envelope)
 
     def test_matching_but_wrong_server_and_client_message_counts_are_rejected(self):
-        for count in (0, 99, 101, 32768, True, "100"):
+        for count in (0, 184, 186, 32768, True, "185"):
             envelope = copy.deepcopy(self.envelope)
             envelope["report"]["stage3"]["cases"][full.SCENARIOS.index("dates")]["message_count"] = count
             envelope["report"]["stage3"]["client_dates"]["message_count"] = count
@@ -184,8 +184,8 @@ class ClientDatesHostTests(unittest.TestCase):
 
     def test_duplicate_trailing_json_nonfinite_and_stale_stage_nonce_fail_closed(self):
         raw = host_fixture.encode(self.envelope)
-        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":100', b'"message_count":100,"message_count":100'),
-                     raw.replace(b'"message_count":100', b'"message_count":NaN')]
+        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":185', b'"message_count":185,"message_count":185'),
+                     raw.replace(b'"message_count":185', b'"message_count":NaN')]
         for value in malformed:
             with self.subTest(value=value[:30]), self.assertRaises(full.FullError):
                 full.validate_envelope(value, host_fixture.NONCE, self.inputs, self.modules,
@@ -213,8 +213,8 @@ class ClientDatesHostTests(unittest.TestCase):
         # Largest valid six-case metadata under the aggregate capture bound.
         for case in self.envelope["report"]["stage3"]["cases"]:
             case.update(output_size=349525, message_count=32768)
-        self.server["message_count"] = 100
-        self.dates.update(output_size=349525, message_count=100)
+        self.server["message_count"] = 185
+        self.dates.update(output_size=349525, message_count=185)
         self.validate(watchdog_check=True)
         self.assertLessEqual(len(host_fixture.encode(self.envelope["report"]["stage3"])), 8192)
         self.assertLessEqual(len(host_fixture.encode(self.envelope["report"])), 32768)

@@ -61,7 +61,7 @@ class ClientValuesHostTests(unittest.TestCase):
     def dates(self):
         stage = self.envelope["report"]["stage3"]
         server = stage["cases"][full.SCENARIOS.index("dates")]
-        server["message_count"] = 100
+        server["message_count"] = 185
         self.modules["client_dates"] = "f" * 64
         record = {**copy.deepcopy(self.client), "source_sha256": self.inputs[full.DATES_SOURCE],
                   "module_sha256": "f" * 64, "roundtrip_sha256": "f" * 64,
@@ -289,8 +289,8 @@ class ClientValuesHostTests(unittest.TestCase):
         # Largest numeric widths with both parity records, under the aggregate cap.
         for case in self.envelope["report"]["stage3"]["cases"]:
             case.update(output_size=209715, message_count=32768)
-        self.envelope["report"]["stage3"]["cases"][1]["message_count"] = 100
-        dates.update(output_size=209715, message_count=100)
+        self.envelope["report"]["stage3"]["cases"][1]["message_count"] = 185
+        dates.update(output_size=209715, message_count=185)
         self.server.update(output_size=1048576, message_count=361)
         self.values.update(output_size=1048576, message_count=361)
         self.envelope["report"].update(python_version="99.99.999")

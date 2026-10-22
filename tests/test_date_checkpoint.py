@@ -153,7 +153,9 @@ class DateCalendarCheckpointTests(unittest.TestCase):
     FINAL = 'date.calendar.checkpoint.complete: [ok]'
 
     def full_source(self):
-        return SOURCE.read_text(encoding='utf-8-sig')
+        text = SOURCE.read_text(encoding='utf-8-sig')
+        end = 'Сообщить("' + self.FINAL + '");'
+        return text[:text.index(end) + len(end)] + '\n'
 
     def calendar_expressions(self):
         return {node.expression.arguments[0].value: node.expression.arguments[1].value
