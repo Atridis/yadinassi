@@ -19,3 +19,9 @@ class IncompleteInput(BSLError):
 
 class BSLRuntimeError(BSLError):
     """A recoverable execution error, catchable by BSL Try/Except."""
+
+    def __init__(self, message: str, source: str, line: int, column: int, *, info=None, source_line=""):
+        super().__init__(message, source, line, column)
+        # Keep the snapshot on the error so rethrow and routine propagation keep it.
+        self.info = info
+        self.source_line = source_line

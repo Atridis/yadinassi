@@ -20,6 +20,8 @@ from .type_qualifiers import (
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )
 from .errors import BSLError, BSLRuntimeError
+from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
+                         FORBIDDEN_RAISE_CATEGORIES, empty_error_info)
 from .collation import string_key
 from .parser import parse, parse_expression, parse_fragment, validate_labels
 from .lexer import KEYWORDS
@@ -109,6 +111,7 @@ class Interpreter:
         self._loading: list[Path] = []
         # Imports share this dynamic handler stack, independent of variable frames.
         self._handled_errors: list[BSLRuntimeError | None] = []
+        self._error_info_boundaries: list[int] = []
         self._execute_depth = [0]
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
         self.register_function("Вычислить", _eval_marker, "Eval")
@@ -131,6 +134,7 @@ class Interpreter:
                                       *date_time_conversions.BUILTINS):
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
+        self.register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
         self.register_type("Соответствие", BSLMap, "Map")
@@ -174,6 +178,16 @@ class Interpreter:
         return (str(self._handled_errors[-1])
                 if self._handled_errors and self._handled_errors[-1] is not None else "")
 
+    def _error_info(self) -> BSLErrorInfo:
+        boundary = self._error_info_boundaries[-1] if self._error_info_boundaries else 0
+        if len(self._handled_errors) <= boundary or self._handled_errors[-1] is None:
+            return empty_error_info()
+        error = self._handled_errors[-1]
+        if error.info is None:
+            error.info = BSLErrorInfo(error.message, module_name=error.source,
+                                      line_number=error.line, initial_string=error.source_line)
+        return error.info
+
     def _evaluate(self, argument: ast.Node) -> object:
         value = self.visit(argument)
         # Native evidence covers a Number argument 12. Other non-string values
@@ -189,6 +203,9 @@ class Interpreter:
         if self._eval_depth[0] >= EVAL_MAX_DEPTH:
             raise ValueError("Вычислить: превышен предел вложенности Yadinassi (16)")
         self._eval_depth[0] += 1
+        # Native Eval does not inherit the enclosing ErrorInfo context. A handler
+        # entered by evaluated code can still establish its own diagnostic frame.
+        self._error_info_boundaries.append(len(self._handled_errors))
         try:
             # Parse and consume the entire input before executing even its first call.
             try:
@@ -199,6 +216,7 @@ class Interpreter:
         except RecursionError:
             raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
         finally:
+            self._error_info_boundaries.pop()
             self._eval_depth[0] -= 1
 
     def visit_Execute(self, node: ast.Execute) -> None:
@@ -314,7 +332,8 @@ class Interpreter:
             if isinstance(error, ZeroDivisionError):
                 message = "Деление на ноль"
             token = node.token
-            raise BSLRuntimeError(message, token.source, token.line, token.column) from None
+            raise BSLRuntimeError(message, token.source, token.line, token.column,
+                                  source_line=token.source_line) from None
 
     def visit_Literal(self, node: ast.Literal) -> object:
         return node.value
@@ -346,6 +365,8 @@ class Interpreter:
             return XML_STRING_PROCESSING
         if name in ("направлениепоиска", "searchdirection"):
             return SEARCH_DIRECTIONS
+        if name in ("категорияошибки", "errorcategory"):
+            return ERROR_CATEGORIES
         if name in ("направлениесортировки", "sortdirection"):
             return SORT_DIRECTIONS
         raise ValueError(f"Переменная или функция не определена: {node.name}")
@@ -811,6 +832,7 @@ class Interpreter:
             child._module_cache = self._module_cache
             child._loading = self._loading
             child._handled_errors = self._handled_errors
+            child._error_info_boundaries = self._error_info_boundaries
             child._eval_depth = self._eval_depth
             child._execute_depth = self._execute_depth
             child.execute(text, str(path))
@@ -853,8 +875,45 @@ class Interpreter:
                                  "пока не поддерживается; используйте явное сообщение")
             raise error
         message = to_string(self.visit(node.value))
+        arguments = node.optional_arguments or []
+        if len(arguments) > 4:
+            raise TypeError("ВызватьИсключение ожидает не более 5 аргументов")
+        values = [None if isinstance(argument, ast.OmittedArgument) else self.visit(argument)
+                  for argument in arguments]
+        values.extend([None] * (4 - len(values)))
+        category, code, additional, cause = values
+        if category is not None:
+            if type(category) is not BSLErrorCategory:
+                raise TypeError("Ожидается значение КатегорияОшибки")
+            if category in FORBIDDEN_RAISE_CATEGORIES:
+                # A rejected category is a runtime validation error, not an
+                # explicitly raised script exception. Native exposes its cause.
+                message = "Недопустимая категория ВызватьИсключение"
+                cause_info = BSLErrorInfo(message, categories=frozenset({
+                    BSLErrorCategory.ALL_ERRORS}))
+                token = node.token
+                info = BSLErrorInfo(message, cause=cause_info, module_name=token.source,
+                                    line_number=token.line, initial_string=token.source_line)
+                raise BSLRuntimeError(message, token.source, token.line, token.column, info=info)
+        if code is not None and type(code) is not str:
+            raise TypeError("Код ошибки должен быть строкой")
+        if additional is not None and type(additional) is not str:
+            raise TypeError("Дополнительная информация должна быть строкой")
+        if cause is not None and type(cause) is not BSLErrorInfo:
+            raise TypeError("Причина должна иметь тип ИнформацияОбОшибке")
+        categories = {BSLErrorCategory.ALL_ERRORS, BSLErrorCategory.SCRIPT_RUNTIME_ERROR,
+                      BSLErrorCategory.EXCEPTION_RAISED_FROM_SCRIPT}
+        if category is not None:
+            categories.add(category)
+        if cause is not None and cause._empty:
+            # Empty diagnostic values contribute OtherError but do not produce
+            # a visible Cause node, as measured by the five-argument checkpoint.
+            categories.update(cause.categories)
+            cause = None
         token = node.token
-        raise BSLRuntimeError(message, token.source, token.line, token.column)
+        info = BSLErrorInfo(message, code or "", additional or "", cause,
+                            frozenset(categories), token.source, token.line, token.source_line)
+        raise BSLRuntimeError(message, token.source, token.line, token.column, info=info)
 
     def visit_Return(self, node: ast.Return) -> None:
         raise _Return(self.visit(node.value) if node.value is not None else None)

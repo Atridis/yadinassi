@@ -66,7 +66,7 @@ def repl(interpreter: Interpreter) -> int:
             if result is not None:
                 try:
                     presentation = to_string(result)
-                except (ValueError, ArithmeticError) as error:
+                except (ValueError, TypeError, ArithmeticError) as error:
                     # Implicit REPL output is outside Interpreter.visit, but
                     # presentation limits still need recoverable diagnostics.
                     token = program[-1].token

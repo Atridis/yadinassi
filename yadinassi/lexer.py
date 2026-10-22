@@ -58,12 +58,14 @@ class Token:
     line: int
     column: int
     source: str
+    source_line: str = ""
 
 
 class Lexer:
     def __init__(self, text: str, source: str = "<строка>", *, allow_directives: bool = True):
         self.text = text.removeprefix("\ufeff")
         self.source = source
+        self.source_lines = [line.removesuffix("\r") for line in self.text.split("\n")]
         self.allow_directives = allow_directives
         self.pos = 0
         self.line = 1
@@ -109,7 +111,8 @@ class Lexer:
                         raise BSLError("Директивы недопустимы в вычисляемом выражении",
                                        self.source, line, column)
                     value = self.import_name(directive, line, column)
-                    result.append(Token("IMPORT", value, line, column, self.source))
+                    result.append(Token("IMPORT", value, line, column, self.source,
+                                        self.source_lines[line - 1]))
                 continue
             if char == "#":
                 if not self.allow_directives:
@@ -132,7 +135,8 @@ class Lexer:
                 if region := regions.process(directive, line, column,
                                              len(compilation.stack), KEYWORDS.keys()):
                     kind, value = region
-                    result.append(Token(kind, value, line, column, self.source))
+                    result.append(Token(kind, value, line, column, self.source,
+                                        self.source_lines[line - 1]))
                     continue
                 if re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE):
                     raise BSLError("Директива #Импорт не поддерживается; используйте "
@@ -204,7 +208,8 @@ class Lexer:
                     kind = value = self.advance()
                 else:
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
-            result.append(Token(kind, value, line, column, self.source))
+            result.append(Token(kind, value, line, column, self.source,
+                                        self.source_lines[line - 1]))
         compilation.finish(self.line, self.column)
         regions.finish()
         result.append(Token("EOF", None, self.line, self.column, self.source))

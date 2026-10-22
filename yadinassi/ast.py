@@ -169,6 +169,7 @@ class Try(Node):
 @dataclass
 class Raise(Node):
     value: Node | None
+    optional_arguments: list[Node] | None = None
 
 
 @dataclass

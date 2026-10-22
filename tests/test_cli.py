@@ -18,6 +18,27 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_extended_exceptions_all_inputs_and_console_display_recovery(self):
+        from scripts.smoke_test import EXTENDED_EXCEPTION_PROGRAM, EXTENDED_EXCEPTION_OUTPUT
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'Исключения.bsl'
+            source.write_text(EXTENDED_EXCEPTION_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, EXTENDED_EXCEPTION_PROGRAM), None)
+                     for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), EXTENDED_EXCEPTION_PROGRAM),
+                      ((), EXTENDED_EXCEPTION_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, EXTENDED_EXCEPTION_OUTPUT, ''))
+        result = self.run_cli(stdin='Try Raise "x"; Except saved=ErrorInfo(); EndTry;\n'
+                              'saved\nErrorCategory.ConfigurationError\nErrorCategory\n'
+                              'Message("still alive");\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout), (1, 'still alive\n'))
+        self.assertEqual(result.stderr.count('пока не поддерживается'), 3)
+        self.assertNotIn('Traceback', result.stderr)
+
     def test_dates_all_flags_bom_file_stdin_and_console(self):
         from scripts.smoke_test import DATE_PROGRAM, DATE_OUTPUT
 

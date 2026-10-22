@@ -13,9 +13,9 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
 else:
-    from native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1872,8 +1872,8 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
-        if name in ('collections', 'dates', 'numbers'):
-            reconstruct = {'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
+        if name in ('collections', 'dates', 'numbers', 'functions'):
+            reconstruct = {'functions': historical_functions_source, 'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
             replay = directory / (name + '-historical.bsl')
             replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
@@ -2168,6 +2168,77 @@ def check_value_list_references(executable, *, directory, env):
           'BOM file, command flags, stdin and console')
 
 
+EXTENDED_EXCEPTION_PROGRAM = '''Procedure Fail()
+    Try Raise ("inner",, "INNER", "inner detail");
+    Except cause = ErrorInfo(); EndTry;
+    Raise ("outer", ErrorCategory.ConfigurationError, "OUTER", "detail", cause);
+EndProcedure
+Try
+    Try Fail(); Except saved = ErrorInfo(); Raise; EndTry;
+Except
+    info = ErrorInfo();
+    Message(info.Description); Message(info.Code); Message(info.AdditionalInformation);
+    Message(info.Cause.Description); Message(info.Cause.Code);
+    Message(info.Cause.AdditionalInformation);
+    Message(info.IsErrorOfCategory(ErrorCategory.ConfigurationError));
+    Message(TypeOf(info) = Type("ErrorInfo"));
+    Message(info.LineNumber = saved.LineNumber);
+EndTry;
+Попытка ВызватьИсключение ("русский",, "RU");
+Исключение
+    ошибка = ИнформацияОбОшибке();
+    Сообщить(ошибка.Описание); Сообщить(ошибка.Код);
+    Сообщить(ошибка.ЯвляетсяОшибкойКатегории(КатегорияОшибки.ИсключениеВызванноеИзВстроенногоЯзыка));
+КонецПопытки;
+Message(saved.Cause.Code);
+'''
+EXTENDED_EXCEPTION_OUTPUT = ('outer\nOUTER\ndetail\ninner\nINNER\ninner detail\n'
+                             'Да\nДа\nДа\nрусский\nRU\nДа\nINNER\n')
+
+
+def check_extended_exceptions(executable, *, directory, env):
+    """Core structured exception flow and unsupported-display REPL recovery."""
+    directory.mkdir()
+    source = directory / 'РасширенныеИсключения.bsl'
+    source.write_text(EXTENDED_EXCEPTION_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, EXTENDED_EXCEPTION_PROGRAM], None)
+             for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], EXTENDED_EXCEPTION_PROGRAM),
+              ([], EXTENDED_EXCEPTION_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, EXTENDED_EXCEPTION_OUTPUT, ''):
+            raise AssertionError(f'Failed extended exceptions {arguments!r}: {result!r}')
+    fixture = json.loads((ROOT / 'tests/fixtures/extended_exceptions_linux.json').read_text(encoding='utf-8'))
+    native_source = (ROOT / 'integrational_tests/tests/functions.bsl').read_bytes().replace(b'\r\n', b'\n')
+    historical = (ROOT / 'tests/fixtures/native_windows/functions.out').read_bytes().replace(b'\r\n', b'\n')
+    if (hashlib.sha256(native_source).hexdigest() != fixture['source_sha256']
+            or hashlib.sha256(historical).hexdigest() != fixture['historical_output_sha256']):
+        raise AssertionError('Extended exception native source/history binding changed')
+    native_expected = historical + ('\n'.join(fixture['records']) + '\n').encode('utf-8')
+    if hashlib.sha256(native_expected).hexdigest() != fixture['complete_output_sha256']:
+        raise AssertionError('Extended exception native output binding changed')
+    native_file = directory / 'ВсеИсключения.bsl'
+    native_file.write_text(native_source.decode('utf-8'), encoding='utf-8-sig')
+    for arguments, stdin in (([str(native_file)], None), (['-'], native_source.decode('utf-8'))):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, native_expected.decode('utf-8'), ''):
+            raise AssertionError(f'Failed all 116 native exception records {arguments!r}: {result!r}')
+    recovery = ('Try Raise "x"; Except saved=ErrorInfo(); EndTry;\n'
+                'saved\nErrorCategory.ConfigurationError\nErrorCategory\n'
+                'Message("still alive");\n/exit\n')
+    result = subprocess.run([executable], input=recovery, capture_output=True,
+                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+    if ((result.returncode, result.stdout) != (1, 'still alive\n')
+            or result.stderr.count('пока не поддерживается') != 3
+            or 'Traceback' in result.stderr):
+        raise AssertionError(f'Failed extended exception display recovery: {result!r}')
+    print('Binary extended exceptions passed: all 116 native records, bilingual fields, category, cause, '
+          'omissions, routines, rethrow, BOM file, command flags, stdin and console recovery')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -2192,6 +2263,7 @@ def main() -> None:
         check_xml_checkpoint(executable, directory=Path(temporary) / "xml-checkpoint", env=env)
         check_table_checkpoint(executable, directory=Path(temporary) / "table-checkpoint", env=env)
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
+        check_extended_exceptions(executable, directory=Path(temporary) / "extended-exceptions", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)

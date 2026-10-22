@@ -68,9 +68,10 @@ class InternalSerializationTests(unittest.TestCase):
                     value_to_string_internal(Decimal(text))
 
     def test_every_runtime_type_has_explicit_codec_and_identifier(self):
-        self.assertEqual(serialization._CODECS, set(BSLType))
+        self.assertEqual(serialization._CODECS | serialization._UNSUPPORTED_CODEC_TYPES, set(BSLType))
+        self.assertFalse(serialization._CODECS & serialization._UNSUPPORTED_CODEC_TYPES)
         self.assertEqual(set(serialization._TYPE_IDS), set(serialization._CODECS))
-        self.assertEqual(serialization._CODECS,
+        self.assertEqual(serialization._CODECS | serialization._UNSUPPORTED_CODEC_TYPES,
                          {kind for _, kind, _ in type_values._VALUE_TYPES})
 
     def test_every_implemented_type_has_native_readback_behavior(self):

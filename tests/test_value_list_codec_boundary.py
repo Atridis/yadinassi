@@ -36,8 +36,9 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
         return read_observation(extract_payload(self.output, 'table.list.codec.' + name))
 
     def test_all_runtime_types_have_complete_codec_policy(self):
-        self.assertEqual(serialization._CODECS, set(BSLType))
-        self.assertEqual(set(serialization._TYPE_IDS), set(BSLType))
+        self.assertEqual(serialization._CODECS | serialization._UNSUPPORTED_CODEC_TYPES, set(BSLType))
+        self.assertFalse(serialization._CODECS & serialization._UNSUPPORTED_CODEC_TYPES)
+        self.assertEqual(set(serialization._TYPE_IDS) | serialization._UNSUPPORTED_CODEC_TYPES, set(BSLType))
 
     def test_four_genuine_native_streams_and_fresh_identity(self):
         populated = BSLValueList()

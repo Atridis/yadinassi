@@ -199,7 +199,28 @@ class Parser:
             }
             if empty and not self.handler_depth:
                 self.fail("ВызватьИсключение без выражения допустимо только внутри Исключение")
-            return ast.Raise(token, None if empty else self.expression())
+            if empty:
+                return ast.Raise(token, None)
+            # A leading group is still an ordinary expression (Raise (a) + b).
+            # Only a comma after its first expression selects the functional form.
+            start = self.pos
+            if self.accept("("):
+                value = self.expression()
+                if self.accept(","):
+                    optional = []
+                    while True:
+                        if self.current.kind in {",", ")"}:
+                            optional.append(ast.OmittedArgument(self.current))
+                        else:
+                            optional.append(self.expression())
+                        if len(optional) > 4:
+                            self.fail("ВызватьИсключение ожидает не более 5 аргументов")
+                        if not self.accept(","):
+                            break
+                    self.expect(")")
+                    return ast.Raise(token, value, optional)
+                self.pos = start
+            return ast.Raise(token, self.expression())
         if self.accept("IF"):
             branches = []
             while True:

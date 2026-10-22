@@ -152,7 +152,8 @@ class QualifierTypePolicyTests(unittest.TestCase):
     def test_new_runtime_types_have_distinct_complete_codec_policies(self):
         self.assertEqual(len(TYPE_IDS), 10)
         self.assertEqual(len(set(TYPE_IDS.values())), 10)
-        self.assertEqual(serialization._CODECS, set(BSLType))
+        self.assertEqual(serialization._CODECS | serialization._UNSUPPORTED_CODEC_TYPES, set(BSLType))
+        self.assertFalse(serialization._CODECS & serialization._UNSUPPORTED_CODEC_TYPES)
         self.assertEqual(set(serialization._TYPE_IDS), set(serialization._CODECS))
         self.assertEqual(set(BSLType), {kind for _, kind, _ in type_values._VALUE_TYPES})
         for kind, identifier in TYPE_IDS.items():
