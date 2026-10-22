@@ -1,5 +1,9 @@
 # Extended Raise and ErrorInfo source checkpoint
 
+The source-only stages below are historical checkpoints. The runtime follow-up
+now implements the measured core and replays all 116 records exactly; see the
+audited-runtime section at the end for evidence and explicit exclusions.
+
 This is a source-only observation checkpoint, not native evidence and not a
 claim that extended exception syntax is already implemented. It adds no runtime
 implementation and creates or rewrites no expected native output.
@@ -140,3 +144,41 @@ hash pins change. Native execution receives all 116 records. All six fixtures,
 24 manifest inputs, six outputs and the other scenario/witness counts remain
 unchanged. These five new observations require a fresh native run before being
 used to change runtime semantics.
+
+## Audited runtime follow-up
+
+Native runs [39840847760](https://github.com/Atridis/yadinassi/actions/runs/39840847760)
+and [39842988052](https://github.com/Atridis/yadinassi/actions/runs/39842988052),
+both attempt 1 on Linux 8.3.27.1508, were independently audited against exact
+source trees, all 24 staged inputs, six output files, four client/server
+witnesses, schema3 provenance, archive bindings, and security/cleanup evidence.
+The second source tree is `7f95931767d345fc51bc843f35b713bf0375a7c1`, synthetic
+commit `c2b84e2f584a7753ae069e823b4ca08e65f7a0ce`, head
+`898bd34cd74f12bd7b83a30cec381e8e806ea227`.
+
+The paired measurements show that direct ErrorInfo capture retains the controlled
+description immediately and after its handler, with or without a nested successful
+Try. Eval capture is already empty inside the handler, with AllErrors/OtherError
+membership and no runtime/script-raised membership. The outside-handler control
+has the same empty snapshot. This does not establish mutation of saved objects.
+The implementation preserves saved immutable information and gives Eval a separate
+ErrorInfo context. Empty information supplied as a cause contributes OtherError
+without exposing a Cause node. A real cause remains accessible, and category
+queries traverse its chain. Rethrow and routine propagation retain the measured
+code/details/cause fields. Omitted optional slots and explicit Undefined have the
+same measured defaults.
+
+`tests/fixtures/extended_exceptions_linux.json` contains only the 28 exact new
+records and provenance/source/output hashes. Tests combine them with the unchanged
+complete 88-record historical file and require exact full 116-record output.
+The binary smoke also compares all 116 records through file and stdin entrypoints.
+No output trimming, new map exceptions, normalized diagnostics, or synthetic
+native answers are introduced.
+
+Only the six documented core category members are implemented. ErrorInfo and
+ErrorCategory internal serialization (including their type records), value string
+presentation, other categories, exact localized platform diagnostics/stack, and
+rare combinations remain outside the supported subset. Rejected-category cause
+text/source and its internal classification are Yadinassi diagnostics, not a claim
+of exact platform-internal error-stack reconstruction. The evidence is Linux
+8.3.27.1508 evidence, not an independent Windows native validation.

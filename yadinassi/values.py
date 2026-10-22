@@ -21,6 +21,8 @@ NULL = BSLNull.VALUE
 class BSLType(Enum):
     """Opaque, immutable type identities; presentations are not their identity."""
 
+    ERROR_INFO = "ИнформацияОбОшибке"
+    ERROR_CATEGORY = "КатегорияОшибки"
     NULL = "Null"
     UNDEFINED = "Неопределено"
     BOOLEAN = "Булево"
