@@ -53,9 +53,14 @@ class ExtendedExceptionCheckpointTests(unittest.TestCase):
                        self.source + EXTENDED_EXCEPTION_PROBE_BLOCKS[1][0]):
             with self.subTest(mutant=mutant[-70:]), self.assertRaises(ValueError):
                 without_extended_exception_probes(mutant)
-        for mutant in (self.native + b'\n', self.native.replace(b'5\n', b'6\n', 1)):
-            with self.assertRaises(ValueError):
-                historical_functions_source(self.source.encode(), mutant)
+        native = self.native.replace(b'\r\n', b'\n')
+        for ending in (b'\n', b'\r\n'):
+            output = native.replace(b'\n', ending)
+            for mutant in (output + ending, output.replace(b'5' + ending, b'6' + ending, 1)):
+                with self.subTest(ending=ending, mutant=mutant[-70:]):
+                    self.assertNotEqual(mutant, output)
+                    with self.assertRaises(ValueError):
+                        historical_functions_source(self.source.encode(), mutant)
 
     def test_declarations_precede_original_body_and_cases_are_bounded(self):
         started = False
