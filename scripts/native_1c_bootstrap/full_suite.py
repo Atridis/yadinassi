@@ -60,14 +60,15 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False) -> dict:
-    if not valid_nonce(nonce) or ((watchdog_check or client_dates or client_values or client_collections) and not client_probe):
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False) -> dict:
+    if not valid_nonce(nonce) or ((watchdog_check or client_dates or client_values or client_collections or client_numbers) and not client_probe):
         raise FullError('invalid_input')
     return {**({'client_probe': empty_client_report()} if client_probe else {}),
             **({'client_watchdog': empty_watchdog_report()} if watchdog_check else {}),
             **({'client_dates': empty_dates_report()} if client_dates else {}),
             **({'client_values': empty_values_report()} if client_values else {}),
             **({'client_collections': empty_collections_report()} if client_collections else {}),
+            **({'client_numbers': empty_numbers_report()} if client_numbers else {}),
             'schema': 1, 'nonce': nonce, 'status': 'not_started',
             'failure_kind': 'prerequisites_failed', 'failed_case': None,
             'input_sha256': {}, 'cases': [
@@ -299,8 +300,8 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float,
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False) -> dict:
-    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections)
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers)
     report.update(status='failed', failure_kind='unexpected_failure')
     active = None
     old_reader, old_process, old_build = launcher.read_result, launcher.run_process, launcher.build_epf
@@ -378,6 +379,12 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
                 collections_output=root / 'collections.out')
             if report['client_collections']['status'] != 'ok':
                 raise FullError(report['client_collections']['failure_kind'])
+        if client_numbers:
+            report['client_numbers'] = run_client_probe(
+                platform, root / 'client-numbers', inputs, nonce, report['input_sha256'],
+                numbers_output=root / 'numbers.out')
+            if report['client_numbers']['status'] != 'ok':
+                raise FullError(report['client_numbers']['failure_kind'])
         if watchdog_check:
             report['client_watchdog'] = run_client_watchdog(
                 platform, root / 'client-watchdog', inputs, nonce, report['input_sha256'])
@@ -405,34 +412,63 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
     return report
 
 
-# Schema 2 is a stage-wire encoding only. Named evidence remains the internal
+# Schemas 2/3 are stage-wire encodings only. Named evidence remains the internal
 # representation, including all failure and process proof fields.
 CLIENT_WIRE_RECORDS = ('client_probe', 'client_dates', 'client_values',
                        'client_collections', 'client_watchdog')
+CLIENT_WIRE_V3_RECORDS = CLIENT_WIRE_RECORDS + ('client_numbers',)
 CLIENT_WIRE_HASHES = ('source_sha256', 'module_sha256', 'roundtrip_sha256')
 CLIENT_WIRE_PROOF = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
+CLIENT_WIRE_DIAGNOSTICS = ('stage', 'reason', 'unexpected_count', 'zombie_count', 'classes')
+CLIENT_WIRE_CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
+
+
+def decode_process_wire(value: object) -> dict:
+    if (type(value) is not list or len(value) != 5
+            or type(value[0]) is not str or value[0] not in {'not_checked', 'baseline', 'before_probe', 'after_exit'}
+            or type(value[1]) is not str or value[1] not in {'none', 'unverified', 'native_not_quiet', 'unexpected_processes'}
+            or any(type(count) is not int or not 0 <= count <= 256 for count in value[2:4])
+            or type(value[4]) is not list or len(value[4]) != len(CLIENT_WIRE_CLASSES)
+            or any(type(count) is not int or not 0 <= count <= 256 for count in value[4])
+            or value[3] > value[2] or sum(value[4]) != value[2]
+            or (value[1] != 'unexpected_processes' and value[2] != 0)):
+        raise FullError('invalid_result')
+    return {**dict(zip(CLIENT_WIRE_DIAGNOSTICS[:4], value[:4])),
+            'classes': dict(zip(CLIENT_WIRE_CLASSES, value[4]))}
 
 
 def decode_stage_wire(data: dict) -> dict:
-    if type(data) is not dict or type(data.get('schema')) is not int or data['schema'] not in (1, 2):
+    if type(data) is not dict or type(data.get('schema')) is not int or data['schema'] not in (1, 2, 3):
+        raise FullError('invalid_result')
+    if any(type(key) is str and key.startswith('client_') and key not in CLIENT_WIRE_V3_RECORDS for key in data):
         raise FullError('invalid_result')
     named = set(CLIENT_WIRE_HASHES + CLIENT_WIRE_PROOF)
     if data['schema'] == 1:
-        if any(type(data.get(key)) is dict and {'hashes', 'proof'} & set(data[key])
-               for key in CLIENT_WIRE_RECORDS):
+        if any(type(data.get(key)) is dict and ({'hashes', 'proof'} & set(data[key])
+               or type(data[key].get('process_diagnostics')) is list)
+               for key in CLIENT_WIRE_V3_RECORDS):
             raise FullError('invalid_result')
         return data
-    if 'client_collections' not in data:
+    if ((data['schema'] == 2 and ('client_collections' not in data or 'client_numbers' in data))
+            or (data['schema'] == 3 and 'client_numbers' not in data)):
         raise FullError('invalid_result')
-    if len(json.dumps(data, separators=(',', ':'), allow_nan=False).encode()) > MAX_STAGE_REPORT:
+    try:
+        size = len(json.dumps(data, separators=(',', ':'), allow_nan=False).encode())
+    except (TypeError, ValueError):
+        raise FullError('invalid_result') from None
+    if size > MAX_STAGE_REPORT:
         raise FullError('export_failed')
     result = {**data, 'schema': 1}
-    for key in CLIENT_WIRE_RECORDS:
+    for key in CLIENT_WIRE_V3_RECORDS:
         if key not in data:
             continue
         record = data[key]
         if (type(record) is not dict or not {'hashes', 'proof'} <= set(record)
                 or named & set(record)):
+            raise FullError('invalid_result')
+        if data['schema'] == 3:
+            diagnostic = decode_process_wire(record.get('process_diagnostics'))
+        elif type(record.get('process_diagnostics')) is not dict:
             raise FullError('invalid_result')
         hashes, proof = record['hashes'], record['proof']
         if (type(hashes) is not list or len(hashes) != 3
@@ -442,6 +478,8 @@ def decode_stage_wire(data: dict) -> dict:
             raise FullError('invalid_result')
         result[key] = {**{name: value for name, value in record.items() if name not in {'hashes', 'proof'}},
                        **dict(zip(CLIENT_WIRE_HASHES, hashes)), **dict(zip(CLIENT_WIRE_PROOF, proof))}
+        if data['schema'] == 3:
+            result[key]['process_diagnostics'] = diagnostic
     return result
 
 
@@ -449,11 +487,12 @@ def encode_stage_wire(report: dict) -> dict:
     if type(report) is not dict or type(report.get('schema')) is not int or report['schema'] != 1:
         raise FullError('invalid_result')
     # The previous opt-in combinations retain their exact existing wire format.
-    if 'client_collections' not in report:
+    if 'client_collections' not in report and 'client_numbers' not in report:
         return decode_stage_wire(report)
-    result = {**report, 'schema': 2}
+    schema = 3 if 'client_numbers' in report else 2
+    result = {**report, 'schema': schema}
     named = set(CLIENT_WIRE_HASHES + CLIENT_WIRE_PROOF)
-    for key in CLIENT_WIRE_RECORDS:
+    for key in CLIENT_WIRE_V3_RECORDS:
         if key not in report:
             continue
         record = report[key]
@@ -463,6 +502,15 @@ def encode_stage_wire(report: dict) -> dict:
         result[key] = {**{name: value for name, value in record.items() if name not in named},
                        'hashes': [record[name] for name in CLIENT_WIRE_HASHES],
                        'proof': [record[name] for name in CLIENT_WIRE_PROOF]}
+        if schema == 3:
+            diagnostic = record.get('process_diagnostics')
+            if (type(diagnostic) is not dict or set(diagnostic) != set(CLIENT_WIRE_DIAGNOSTICS)
+                    or type(diagnostic['classes']) is not dict
+                    or set(diagnostic['classes']) != set(CLIENT_WIRE_CLASSES)):
+                raise FullError('invalid_result')
+            result[key]['process_diagnostics'] = [
+                *[diagnostic[name] for name in CLIENT_WIRE_DIAGNOSTICS[:4]],
+                [diagnostic['classes'][name] for name in CLIENT_WIRE_CLASSES]]
     if decode_stage_wire(result) != report:
         raise FullError('invalid_result')
     return result
@@ -839,9 +887,12 @@ def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostic
     """Keep a final teardown/census failure valid, finite and non-exportable."""
     suite.update(status='failed', failure_kind='process_failed')
     last = (suite['client_watchdog'] if watchdog_check else
+            suite['client_numbers'] if 'client_numbers' in suite else
             suite['client_collections'] if 'client_collections' in suite else
             suite['client_values'] if 'client_values' in suite else
             suite['client_dates'] if 'client_dates' in suite else suite['client_probe'])
+    if 'conversion_verified' in last:
+        last['conversion_verified'] = False
     if 'output_sha256' in last:
         last.update(output_sha256=None, output_size=None, message_count=None)
     last.update(status='failed', failure_kind='process_failed', quiet=False, witness_verified=False)
@@ -866,21 +917,25 @@ def final_client_process_census(nonce: str) -> None:
 
 def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                      hashes: dict, *, stall: bool = False, dates_output: Path | None = None,
-                     values_output: Path | None = None, collections_output: Path | None = None) -> dict:
+                     values_output: Path | None = None, collections_output: Path | None = None,
+                     numbers_output: Path | None = None) -> dict:
     """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
-    parity_output = (collections_output if collections_output is not None else
+    parity_output = (numbers_output if numbers_output is not None else
+                     collections_output if collections_output is not None else
                      values_output if values_output is not None else dates_output)
-    record = (empty_collections_report() if collections_output is not None else
+    record = (empty_numbers_report() if numbers_output is not None else
+              empty_collections_report() if collections_output is not None else
               empty_values_report() if values_output is not None else
               empty_dates_report() if dates_output is not None else empty_client_report())
-    marker_reader = (client_collections_marker if collections_output is not None else
+    marker_reader = (client_numbers_marker if numbers_output is not None else
+                     client_collections_marker if collections_output is not None else
                      client_values_marker if values_output is not None else
                      client_dates_marker if dates_output is not None else client_marker)
     record.update(status='failed', failure_kind='unexpected_failure')
     try:
         if (not valid_nonce(nonce) or type(stall) is not bool
                 or (parity_output is not None and stall)
-                or (sum(value is not None for value in (dates_output, values_output, collections_output)) > 1)
+                or (sum(value is not None for value in (dates_output, values_output, collections_output, numbers_output)) > 1)
                 or platform.timeout != 120
                 or platform.user != 'NativeSmoke' or platform.password is not None):
             raise FullError('invalid_input')
@@ -895,7 +950,13 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
         if digest(source) != hashes[CLIENT_SOURCE]:
             raise FullError('invalid_input')
-        if collections_output is not None:
+        if numbers_output is not None:
+            numbers_source = secure_bytes(inputs / 'scenarios/numbers.bsl', MAX_OUTPUT)
+            if digest(numbers_source) != hashes['integrational_tests/tests/numbers.bsl']:
+                raise FullError('invalid_input')
+            record['source_sha256'] = digest(numbers_source)
+            module = client_numbers_module(numbers_source, source)
+        elif collections_output is not None:
             collections_source = secure_bytes(inputs / 'scenarios/collections.bsl', MAX_OUTPUT)
             if digest(collections_source) != hashes['integrational_tests/tests/collections.bsl']:
                 raise FullError('invalid_input')
@@ -1006,6 +1067,10 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                     except (FullError, OSError):
                         pass  # The original mismatch still fails closed.
                 raise FullError('output_mismatch')
+            if numbers_output is not None:
+                server_messages, _ = read_native_result(numbers_output.parent / 'numbers-case/result.json')
+                verify_numbers_conversion(completion['values'], server_messages, server_output)
+                record['conversion_verified'] = True
             record.update(output_sha256=digest(client_output), output_size=len(client_output),
                           message_count=len(completion['values']))
         record.update(status='ok', failure_kind='none', witness_verified=True)
@@ -1799,6 +1864,218 @@ def client_collections_marker(path: Path, nonce: str, phase: str) -> dict:
         raise FullError('invalid_input')
     value = strict_json(secure_bytes(path, MAX_RESULT), max_depth=3)
     expected_count = 0 if phase == 'entered' else CLIENT_COLLECTIONS_MESSAGE_COUNT
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != expected_count
+            or any(type(item) is not str for item in value['values'])):
+        raise FullError('invalid_result')
+    try:
+        if sum(len(item.encode('utf-8')) for item in value['values']) > MAX_OUTPUT:
+            raise FullError('output_limit')
+        serialize_messages(value['values'])
+    except UnicodeError:
+        raise FullError('invalid_result') from None
+    return value
+
+
+# All four call sites and the sole non-string literal are pinned, not generalized.
+CLIENT_NUMBERS_SOURCE_SHA256 = '72837cfab6a37506e22408c8b7e620fe8582e9c63214d09e85bb087b1c2a7d86'
+CLIENT_NUMBERS_TEMPLATE_SHA256 = CLIENT_VALUES_TEMPLATE_SHA256
+CLIENT_NUMBERS_MESSAGE_COUNT = 350
+CLIENT_NUMBERS_RAW_ORDINAL = 30  # Zero-based; source line 307, Number literal 1234.5.
+
+
+def empty_numbers_report() -> dict:
+    return {**empty_values_report(), 'conversion_verified': False}
+
+
+def verify_numbers_conversion(client: list[str], server: list[str], output: bytes) -> None:
+    """Calibrate only the pinned number against fresh native server Сообщить.
+
+    Client native Строка output is measured, not client UI Сообщить. The original
+    raw server call stays untouched. No historical or interpreter text is an oracle.
+    """
+    if (type(client) is not list or type(server) is not list
+            or len(client) != CLIENT_NUMBERS_MESSAGE_COUNT
+            or len(server) != CLIENT_NUMBERS_MESSAGE_COUNT
+            or any(type(value) is not str for value in client + server)
+            or serialize_messages(server) != output):
+        raise FullError('invalid_result')
+    for messages in (client, server):
+        raw = messages[CLIENT_NUMBERS_RAW_ORDINAL]
+        if (messages[27] != 'present.string: [' + raw + ']'
+                or messages[28] != 'present.concat: [' + raw + ']'
+                or messages[29] != 'present.direct.next:'
+                or messages[31] != 'numbers.complete: [ok]'):
+            raise FullError('output_mismatch')
+    if client[CLIENT_NUMBERS_RAW_ORDINAL] != server[CLIENT_NUMBERS_RAW_ORDINAL]:
+        raise FullError('output_mismatch')
+
+
+def client_numbers_module(source: bytes, template: bytes) -> bytes:
+    """Preserve the complete source and calibrate its sole raw numeric call.
+
+    The 19 helpers retain their order/local scopes with client directives. All
+    four message-call identifiers change; only source line 307 uses the distinct
+    Number(1234.5)/ordinal-30 capture. Its native Строка conversion is checked
+    against this run's raw server message, not asserted to measure client UI.
+    The other three sites remain string-only. No original expression is changed.
+    """
+    if (digest(source) != CLIENT_NUMBERS_SOURCE_SHA256
+            or digest(template) != CLIENT_NUMBERS_TEMPLATE_SHA256):
+        raise FullError('invalid_input')
+    original = generated_module(source).decode('utf-8-sig')
+    harness = generated_module(template).decode('utf-8-sig')
+    lines = original.splitlines(keepends=True)
+    # Check exact declarations, helper endings, body boundary and call sites.
+    # Raw hashes above also pin all expression strings and protected branches.
+    declarations = {
+        2: 'Процедура ПроверитьДвоичноеЧисло(Знач Метка, Знач Текст)\n',
+        11: 'Процедура ПроверитьШестнадцатеричноеЧисло(Знач Метка, Знач Текст)\n',
+        20: 'Процедура ПроверитьСдвигВлево(Знач Метка, Знач Значение, Знач Смещение)\n',
+        29: 'Процедура ПроверитьПобитовыйКонтроль(Знач Метка)\n',
+        45: 'Процедура ПоказатьКомпактнуюЗапись(Знач Метка, Знач Значения)\n',
+        54: 'Процедура ПроверитьСмешанноеСравнение(Знач Метка, Знач Число, Знач Булево)\n',
+        76: 'Процедура ПроверитьЧтениеПространства()\n',
+        102: 'Процедура ПроверитьОкр(Знач Метка, Знач Значение, Знач Разрядность, Знач Режим)\n',
+        110: 'Процедура ПроверитьОкрПоУмолчанию(Знач Метка, Знач Значение)\n',
+        118: 'Процедура ПроверитьРежим(Знач Метка, Знач Значение)\n',
+        141: 'Процедура ПроверитьЦел(Знач Метка, Знач Значение)\n',
+        149: 'Процедура ПроверитьЭкстремумы(Знач Метка, Знач Левое, Знач Правое)\n',
+        162: 'Процедура ПроверитьОдинЭкстремум(Знач Метка, Знач Значение)\n',
+        177: 'Процедура Показать(Метка, Знач Значение)\n',
+        182: 'Процедура ПоказатьВнутреннее(Знач Метка, Знач Значение)\n',
+        199: 'Процедура ПоказатьБулево(Метка, Знач Значение)\n',
+        208: 'Процедура ПоказатьЧтениеВнутреннего(Знач Метка, Знач Текст)\n',
+        225: 'Процедура ПоказатьЧастное(Метка, Знач Числитель, Знач Знаменатель)\n',
+        235: 'Процедура ПроверитьМатематику(Знач Метка, Знач Выражение)\n',
+    }
+    endings = {
+        9: 'КонецПроцедуры\n',
+        18: 'КонецПроцедуры\n',
+        27: 'КонецПроцедуры\n',
+        42: 'КонецПроцедуры\n',
+        51: 'КонецПроцедуры\n',
+        73: 'КонецПроцедуры\n',
+        99: 'КонецПроцедуры\n',
+        108: 'КонецПроцедуры\n',
+        116: 'КонецПроцедуры\n',
+        137: 'КонецПроцедуры\n',
+        147: 'КонецПроцедуры\n',
+        160: 'КонецПроцедуры\n',
+        173: 'КонецПроцедуры\n',
+        179: 'КонецПроцедуры\n',
+        197: 'КонецПроцедуры\n',
+        205: 'КонецПроцедуры\n',
+        222: 'КонецПроцедуры\n',
+        231: 'КонецПроцедуры\n',
+        247: 'КонецПроцедуры\n',
+    }
+    sites = {
+        178: '    Сообщить(Метка + ": [" + Строка(Значение) + "]");\n',
+        304: 'Сообщить("present.concat: [" + 1234.5 + "]");\n',
+        305: 'Сообщить("present.direct.next:");\n',
+        306: 'Сообщить(1234.5);\n',
+    }
+    body_start = 251
+    capture = 'ЧислаКлиентЗахват'
+    reserved = (capture, 'ЧислаКлиентСообщения',
+                'ЧислаКлиентСимволы', 'ЧислаКлиентВыполнить', 'ЧислаКлиентЧисло')
+    if (len(lines) != 659
+            or any(lines[i] != text for i, text in declarations.items())
+            or any(lines[i] != text for i, text in endings.items())
+            or any(lines[i] != text for i, text in sites.items())
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*(?:Процедура|Функция)\s', line)) != tuple(declarations)
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Конец(?:Процедуры|Функции)\b', line)) != tuple(endings)
+            or tuple(i for i, line in enumerate(lines)
+                     if re.match(r'^\s*Сообщить\(', line)) != tuple(sites)
+            or lines[body_start] != 'Треть = 1 / 3;\n'
+            or lines[body_start - 1] != '// и фиксированное количество значащих цифр. Прямой вывод предшествует сложению.\n'
+            or any(re.match(r'^\s*[&#]', line) for line in lines)
+            or any(name.casefold() in text.casefold()
+                   for name in reserved for text in (original, harness))):
+        raise FullError('invalid_input')
+    adapted = lines.copy()
+    for i in sites:
+        adapted[i] = adapted[i].replace('Сообщить(',
+            ('ЧислаКлиентЧисло' if i == 306 else capture) + '(', 1)
+    for i in declarations:
+        adapted[i] = '&НаКлиенте\n' + adapted[i]
+    # Inverse reconstruction is a runtime check, not disabled by Python -O.
+    restored = adapted.copy()
+    for i in declarations:
+        restored[i] = restored[i].removeprefix('&НаКлиенте\n')
+    for i in sites:
+        restored[i] = restored[i].replace(
+            ('ЧислаКлиентЧисло' if i == 306 else capture) + '(', 'Сообщить(', 1)
+    if ''.join(restored) != original:
+        raise FullError('invalid_input')
+    fixed = re.search(r'&НаКлиенте\nФункция ВычислитьПробу\(\)\n.*?\nКонецФункции\n',
+                      harness, flags=re.DOTALL)
+    if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
+        raise FullError('invalid_input')
+    # Client-only, non-exported form variables. Four UTF-8 bytes per character
+    # plus one LF per message conservatively bounds capture; the verifier also
+    # enforces the exact serialized UTF-8 byte and private JSON-envelope caps.
+    budget = (MAX_OUTPUT - CLIENT_NUMBERS_MESSAGE_COUNT) // 4
+    variables = ('&НаКлиенте\nПерем ЧислаКлиентСообщения;\n'
+                 '&НаКлиенте\nПерем ЧислаКлиентСимволы;\n\n')
+    wrapper = f'''&НаКлиенте
+Процедура ЧислаКлиентЧисло(Знач Значение)
+    Если ТипЗнч(Значение) <> Тип("Число") Тогда
+        ВызватьИсключение "client-numbers-type";
+    КонецЕсли;
+    Если Значение <> 1234.5 Или ЧислаКлиентСообщения.Количество() <> 30 Тогда
+        ВызватьИсключение "client-numbers-conversion";
+    КонецЕсли;
+    ЧислаКлиентЗахват(Строка(Значение));
+КонецПроцедуры
+
+&НаКлиенте
+Процедура ЧислаКлиентЗахват(Знач Текст)
+    Если ТипЗнч(Текст) <> Тип("Строка") Тогда
+        ВызватьИсключение "client-numbers-type";
+    КонецЕсли;
+    Если ЧислаКлиентСообщения.Количество() >= {CLIENT_NUMBERS_MESSAGE_COUNT}
+        Или ЧислаКлиентСимволы + СтрДлина(Текст) > {budget} Тогда
+        ВызватьИсключение "client-numbers-limit";
+    КонецЕсли;
+    ЧислаКлиентСимволы = ЧислаКлиентСимволы + СтрДлина(Текст);
+    ЧислаКлиентСообщения.Добавить(Текст);
+КонецПроцедуры
+
+'''
+    wrapper += ''.join(adapted[:body_start])
+    wrapper += '&НаКлиенте\nПроцедура ЧислаКлиентВыполнить()\n'
+    wrapper += ''.join(adapted[body_start:])
+    wrapper += 'КонецПроцедуры\n\n'
+    wrapper += '''&НаКлиенте
+Функция ВычислитьПробу()
+    ЧислаКлиентСообщения = Новый Массив;
+    ЧислаКлиентСимволы = 0;
+    ЧислаКлиентВыполнить();
+    Возврат ЧислаКлиентСообщения;
+КонецФункции
+'''
+    result = variables + harness[:fixed.start()] + wrapper + harness[fixed.end():]
+    return generated_module(result.encode('utf-8'))
+
+
+def client_numbers_marker(path: Path, nonce: str, phase: str) -> dict:
+    """Validate full numbers evidence without predicting or filtering its output.
+
+    This checks shape, not numbers semantics. Only a downstream full-byte
+    comparison with this run's independent native numbers.out proves parity.
+    """
+    if not valid_nonce(nonce) or phase not in {'entered', 'completed'}:
+        raise FullError('invalid_input')
+    value = strict_json(secure_bytes(path, MAX_RESULT), max_depth=3)
+    expected_count = 0 if phase == 'entered' else CLIENT_NUMBERS_MESSAGE_COUNT
     if (type(value) is not dict
             or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
             or type(value['schema']) is not int or value['schema'] != 1

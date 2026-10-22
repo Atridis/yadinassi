@@ -283,3 +283,50 @@ losslessly groups the three source/module/round-trip hashes and five proof
 booleans; host reports restore the existing named schema-1 evidence fields.
 Malformed, mixed or ambiguous wire records fail closed. The 8,192-byte stage and 32,768-byte full-report caps
 are unchanged. Offline tests are not evidence of execution or parity on real 1C.
+
+### Full numbers client execution with narrow native conversion calibration
+
+`--client-numbers-parity` independently adds the complete unchanged `numbers.bsl`
+scenario after collections and before the negative watchdog. It requires the
+full suite and fixed client probe. The adapter pins the source SHA-256
+`72837cfab6a37506e22408c8b7e620fe8582e9c63214d09e85bb087b1c2a7d86`,
+template, 659 source lines, 19 helper declarations/endings, body boundary and
+four message-call sites. Inverse reconstruction restores every source byte;
+helpers and dynamic evaluation retain their local scopes. No server trampoline,
+interpreter-produced expected text, historical fixture or omitted case is used.
+
+Three call sites already supply strings and use string-only bounded capture.
+The remaining site is source line 307, `Сообщить(1234.5)`, yielding zero-based
+message ordinal 30. Only that site calls a separate typed capture routine: it
+requires `Тип("Число")`, exactly `1234.5`, and exactly 30 previously captured
+messages, then applies the platform's native `Строка`. Other numbers, Boolean,
+Undefined, Null and strings are rejected there; all non-strings are rejected by
+the ordinary capture routine. This is intentionally not generic coercion.
+
+The native run must compare all 350 serialized client messages byte-for-byte
+against the fresh same-run server `numbers.out`. It also reads the unchanged
+server launcher's private `numbers-case/result.json`, verifies that its full
+message array reproduces those exact server bytes, and checks the pinned
+`present.string`, `present.concat`, `present.direct.next` and following marker
+positions on both sides. The string/concatenation payloads must equal the raw
+number record, without any hardcoded numeric text. Only after these gates does
+`conversion_verified` become true; host validation requires that proof, the
+pinned source/generated-module identities and exact fresh server output hash,
+size and count. Failure/late process-census invalidation clears the proof.
+
+This establishes full numbers client execution and native-conversion parity
+against actual server `Сообщить`. It does **not** measure the managed client's
+UI `Сообщить` rendering or establish general number-formatting equivalence.
+Offline tests check structure, typing and orchestration only; a new native run
+is required before claiming native parity.
+
+Numbers selects stage-wire schema 3, which retains the existing ordered
+hash/proof arrays and losslessly packs process-diagnostic field names into a
+fixed array. Host and stage decoders restore every named schema-1 evidence
+field, reject malformed/mixed versions, and preserve schema-1/2 behavior for
+existing modes. No evidence is discarded and the 8,192-byte stage / 32,768-byte
+full-report caps are unchanged. The six-record synthetic success report fits
+under the stage cap; tests also cover numbers without the other parity modes.
+The 24 staged inputs, six server outputs plus provenance, fixed image/network/
+role isolation, client witness, fresh nonce, roundtrip, 120-second watchdog,
+process census and cleanup gates remain unchanged. Client output stays private.
