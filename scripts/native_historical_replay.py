@@ -83,8 +83,29 @@ FIXED_STRING_PROBE_BLOCKS = (
 )
 
 
+SERVICE_FILLED_PROBE_BLOCK = (
+    '// Begin service ValueIsFilled observations.\n',
+    '// End service ValueIsFilled observations.\n',
+)
+
+
+def without_service_filled_probes(text):
+    """Restore the exact native-verified 377-record source, not an output prefix."""
+    start, end = SERVICE_FILLED_PROBE_BLOCK
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise ValueError("service filled probe boundaries changed")
+    before, rest = text.split(start, 1)
+    _, after = rest.split(end, 1)
+    text = before + after
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != 'eaf36b0deed933ea1c3eabcfbde0be59f2f1d8bf6b07b5533f4df2e8cc967b45':
+        raise ValueError("service filled baseline source binding changed")
+    return text
+
+
 def without_fixed_string_probes(text):
     """Restore the exact native-verified 361-record Chars source."""
+    if any(boundary in text for boundary in SERVICE_FILLED_PROBE_BLOCK):
+        text = without_service_filled_probes(text)
     for start, end in FIXED_STRING_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError("fixed String probe boundaries changed")

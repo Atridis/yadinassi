@@ -146,10 +146,10 @@ six public server outputs and provenance are retained. Raw client values
 markers stay private; only finite validation metadata enters the report.
 
 The values adapter pins the original source and template, preserves all 40
-helpers (33 historical, six Chars helpers and one fixed String projection) and the entire top-level body, and replaces only the 21 verified
+helpers (33 historical, six Chars helpers and one fixed String projection) and the entire top-level body, and replaces only the 22 verified
 `Сообщить` call identifiers with bounded string capture. It adds no `Строка`
-conversion and checks inverse source reconstruction. All 377 messages (the native-verified 361-message checkpoint plus 15 fixed String default
-observations and their completion marker) are compared byte-for-byte with this run's fresh server `values.out`, including
+conversion and checks inverse source reconstruction. All 402 messages (the native-verified 377-message checkpoint plus 24 service-value
+ValueIsFilled observations and their completion marker) are compared byte-for-byte with this run's fresh server `values.out`, including
 order, multiline content and trailing bytes. No historical output hash is used
 as the parity oracle. Context differences in Null, XML or type-qualifier APIs
 must fail the checkpoint rather than be normalized or accepted as map-order

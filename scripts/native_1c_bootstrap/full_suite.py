@@ -1223,9 +1223,9 @@ def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
         raise FullError('invalid_result') from None
     return value
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_VALUES_SOURCE_SHA256 = 'eaf36b0deed933ea1c3eabcfbde0be59f2f1d8bf6b07b5533f4df2e8cc967b45'
+CLIENT_VALUES_SOURCE_SHA256 = 'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12'
 CLIENT_VALUES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_VALUES_MESSAGE_COUNT = 377
+CLIENT_VALUES_MESSAGE_COUNT = 402
 
 
 def empty_values_report() -> dict:
@@ -1237,7 +1237,7 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned values source in the pinned managed-client form.
 
     All 40 helpers (39 previous and one fixed String projection) remain in their original order with client directives.
-    Only the 21 verified message-call identifiers change, and the complete module
+    Only the 22 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Expressions, conversions and error paths
     stay byte-identical. No server trampoline or reference values are added.
     """
@@ -1355,12 +1355,13 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         790: 'Сообщить("chars.checkpoint.complete: [ok]");\n',
         832: 'Сообщить("chars.index.checkpoint.complete: [ok]");\n',
         851: 'Сообщить("types-extra.fixed-default.checkpoint.complete: [ok]");\n',
+        879: 'Сообщить("types-extra.service-filled.checkpoint.complete: [ok]");\n',
     }
     body_start = 437
     capture = 'ЗначенияКлиентЗахват'
     reserved = (capture, 'ЗначенияКлиентСообщения',
                 'ЗначенияКлиентСимволы', 'ЗначенияКлиентВыполнить')
-    if (len(lines) != 853
+    if (len(lines) != 881
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())

@@ -131,7 +131,7 @@ class CharsTests(unittest.TestCase):
         actual = [record for record in output if record.startswith('chars.')]
         expected = fixture['records']
         self.assertEqual(len(expected), 100)
-        self.assertEqual(len(output), 377)
+        self.assertEqual(len(output), 402)
         original = []
         Interpreter(original.append).execute(previous)
         self.assertEqual(len(original), 361)

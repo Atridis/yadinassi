@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import smoke_test
-from scripts.native_historical_replay import without_fixed_string_probes
+from scripts.native_historical_replay import without_fixed_string_probes, without_service_filled_probes
 
 
 class FixedStringSmokeTests(unittest.TestCase):
@@ -20,6 +20,8 @@ class FixedStringSmokeTests(unittest.TestCase):
     def setUpClass(cls):
         cls.complete = (smoke_test.ROOT / 'integrational_tests/tests/values.bsl').read_text(
             encoding='utf-8')
+        cls.full_source = cls.complete
+        cls.complete = without_service_filled_probes(cls.complete)
         cls.previous = without_fixed_string_probes(cls.complete)
         cls.fixture = json.loads(
             (smoke_test.ROOT / 'tests/fixtures/chars_namespace_linux.json').read_text(
@@ -45,7 +47,7 @@ class FixedStringSmokeTests(unittest.TestCase):
         source_directory = self.root / 'integrational_tests/tests'
         source_directory.mkdir(parents=True)
         self.source_path = source_directory / 'values.bsl'
-        self.source_path.write_text(self.complete, encoding='utf-8')
+        self.source_path.write_text(self.full_source, encoding='utf-8')
         fixture_directory = self.root / 'tests/fixtures'
         fixture_directory.mkdir(parents=True)
         self.fixture_path = fixture_directory / 'chars_namespace_linux.json'
@@ -105,7 +107,7 @@ class FixedStringSmokeTests(unittest.TestCase):
             self.assertEqual(run.call_count, 7)
 
     def test_changed_previous_source_rejected_before_checkpoint_execution(self):
-        self.source_path.write_text(self.complete.replace('NULL', 'Null', 1), encoding='utf-8')
+        self.source_path.write_text(self.full_source.replace('NULL', 'Null', 1), encoding='utf-8')
         with patch.object(smoke_test.subprocess, 'run', side_effect=self.results()) as run:
             with self.assertRaisesRegex(ValueError, 'baseline source binding changed'):
                 self.invoke()

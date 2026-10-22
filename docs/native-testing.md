@@ -1453,3 +1453,30 @@ with its first mismatch at line 351, while native capture and server/client
 parity succeeded. It is evidence for the rounding choice, not acceptance of the
 later runtime change. Final runtime native and platform acceptance must pass
 independently before merge.
+
+## Service-value ValueIsFilled checkpoint (source only)
+
+The next bounded matrix measures each global alias independently for Type(Number),
+Type(String), both RoundMode values and the RoundMode namespace, empty/Number/String
+TypeDescription, default and (10,2,Any) NumberQualifiers, and default and (4,Fixed)
+StringQualifiers. All 24 calls use the existing protected compact values observer;
+Boolean results and caught errors are valid evidence. Native errors may confirm
+that the existing restriction is correct. No runtime semantics or expected native
+results are changed at this checkpoint. Chars namespace, arbitrary objects, new
+collection semantics and other enum families remain out of scope.
+
+The complete values source now emits 402 records: all previous 377 observations,
+24 service-value calls and a completion marker. The adapter preserves 40 helpers,
+changes exactly 22 message-call identifiers, and proves byte-exact inverse source
+reconstruction. Removing the single bounded service block restores the exact
+PR82 source SHA256 eaf36b0deed933ea1c3eabcfbde0be59f2f1d8bf6b07b5533f4df2e8cc967b45;
+subsequent restoration retains all Chars100 and historical261 evidence. The fixed
+String fixture remains unchanged. Live server/client parity always compares all
+402 records byte-for-byte, not a prefix, and never uses exception text as an oracle.
+
+Current source SHA256: dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12
+(881 lines). Exact-type dispatch and hostile-extension-hook guards remain intact.
+The same 24 inputs, six public outputs plus provenance, finite report, resource
+caps, image, roles, network and workflow flags are retained. Native measurement
+and any bounded implementation require fresh source-pinned evidence; local tests
+validate instrumentation only and cannot establish native behavior.

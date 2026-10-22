@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.native_historical_replay import without_fixed_string_probes
+from scripts.native_historical_replay import without_fixed_string_probes, without_service_filled_probes
 from yadinassi import Interpreter
 from yadinassi.serialization import value_from_string_internal, value_to_string_internal
 from yadinassi.type_descriptions import BSLTypeDescription as TD
@@ -50,14 +50,14 @@ class FixedStringDefaultTests(unittest.TestCase):
         fixture = json.loads((ROOT / 'tests/fixtures/fixed_string_default_linux.json').read_text(encoding='utf-8'))
         self.assertEqual(fixture['native_run'], 39769351606)
         self.assertEqual(fixture['contexts'], ['server', 'managed-client'])
-        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), fixture['source_sha256'])
+        self.assertEqual(hashlib.sha256(without_service_filled_probes(source).encode()).hexdigest(), fixture['source_sha256'])
         previous, actual = [], []
         Interpreter(previous.append).execute(without_fixed_string_probes(source))
         Interpreter(actual.append).execute(source)
         self.assertEqual(len(previous), 361)
-        self.assertEqual(len(actual), 377)
+        self.assertEqual(len(actual), 402)
         self.assertEqual(actual[:361], previous)
-        self.assertEqual(actual[361:], fixture['records'])
+        self.assertEqual(actual[361:377], fixture['records'])
         self.assertEqual(len(fixture['records']), 16)
         self.assertTrue(all('[error]' not in item and '[serialize-error]' not in item
                             for item in fixture['records']))

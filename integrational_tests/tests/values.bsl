@@ -851,3 +851,31 @@
 НаблюдатьДополнениеТипов("fixed-default.restored4.empty", "ПроекцияУмолчанияСтроки(ПриведениеТипов(ValueFromStringInternal(ValueToStringInternal(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed)))), """"))");
 Сообщить("types-extra.fixed-default.checkpoint.complete: [ok]");
 // End fixed String default observations.
+// Begin service ValueIsFilled observations.
+// Each alias is independent; a caught native error is a valid observation.
+НаблюдатьДополнениеТипов("service-filled.type.number.ru", "ЗначениеЗаполнено(Type(""Number""))");
+НаблюдатьДополнениеТипов("service-filled.type.number.en", "ValueIsFilled(Type(""Number""))");
+НаблюдатьДополнениеТипов("service-filled.type.string.ru", "ЗначениеЗаполнено(Type(""String""))");
+НаблюдатьДополнениеТипов("service-filled.type.string.en", "ValueIsFilled(Type(""String""))");
+НаблюдатьДополнениеТипов("service-filled.round.down.ru", "ЗначениеЗаполнено(RoundMode.Round15as10)");
+НаблюдатьДополнениеТипов("service-filled.round.down.en", "ValueIsFilled(RoundMode.Round15as10)");
+НаблюдатьДополнениеТипов("service-filled.round.up.ru", "ЗначениеЗаполнено(RoundMode.Round15as20)");
+НаблюдатьДополнениеТипов("service-filled.round.up.en", "ValueIsFilled(RoundMode.Round15as20)");
+НаблюдатьДополнениеТипов("service-filled.round.namespace.ru", "ЗначениеЗаполнено(RoundMode)");
+НаблюдатьДополнениеТипов("service-filled.round.namespace.en", "ValueIsFilled(RoundMode)");
+НаблюдатьДополнениеТипов("service-filled.description.empty.ru", "ЗначениеЗаполнено(New TypeDescription)");
+НаблюдатьДополнениеТипов("service-filled.description.empty.en", "ValueIsFilled(New TypeDescription)");
+НаблюдатьДополнениеТипов("service-filled.description.number.ru", "ЗначениеЗаполнено(New TypeDescription(""Number""))");
+НаблюдатьДополнениеТипов("service-filled.description.number.en", "ValueIsFilled(New TypeDescription(""Number""))");
+НаблюдатьДополнениеТипов("service-filled.description.string.ru", "ЗначениеЗаполнено(New TypeDescription(""String""))");
+НаблюдатьДополнениеТипов("service-filled.description.string.en", "ValueIsFilled(New TypeDescription(""String""))");
+НаблюдатьДополнениеТипов("service-filled.number.default.ru", "ЗначениеЗаполнено(New NumberQualifiers)");
+НаблюдатьДополнениеТипов("service-filled.number.default.en", "ValueIsFilled(New NumberQualifiers)");
+НаблюдатьДополнениеТипов("service-filled.number.qualified.ru", "ЗначениеЗаполнено(New NumberQualifiers(10,2,AllowedSign.Any))");
+НаблюдатьДополнениеТипов("service-filled.number.qualified.en", "ValueIsFilled(New NumberQualifiers(10,2,AllowedSign.Any))");
+НаблюдатьДополнениеТипов("service-filled.string.default.ru", "ЗначениеЗаполнено(New StringQualifiers)");
+НаблюдатьДополнениеТипов("service-filled.string.default.en", "ValueIsFilled(New StringQualifiers)");
+НаблюдатьДополнениеТипов("service-filled.string.fixed4.ru", "ЗначениеЗаполнено(New StringQualifiers(4,AllowedLength.Fixed))");
+НаблюдатьДополнениеТипов("service-filled.string.fixed4.en", "ValueIsFilled(New StringQualifiers(4,AllowedLength.Fixed))");
+Сообщить("types-extra.service-filled.checkpoint.complete: [ok]");
+// End service ValueIsFilled observations.
