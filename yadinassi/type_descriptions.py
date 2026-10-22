@@ -271,9 +271,9 @@ class BSLTypeDescription(BSLObject):
                 return None
             target = self.types[0]
             if target is BSLType.STRING:
-                if self.string_qualifiers.allowed_length is BSLAllowedLength.FIXED:
-                    _unsupported("значение по умолчанию строки фиксированной длины")
-                return ""
+                # Native PR82 measured omitted fixed-length String separately
+                # from explicit Undefined/empty: all use the qualified default.
+                return _qualified_string("", self.string_qualifiers)
             if target is BSLType.NUMBER:
                 return Decimal(0)
             if target is BSLType.DATE:

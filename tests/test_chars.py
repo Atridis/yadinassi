@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 
+from scripts.native_historical_replay import without_fixed_string_probes
 from yadinassi import Interpreter
 from yadinassi.chars import CHARS
 from yadinassi.errors import BSLRuntimeError
@@ -122,14 +123,19 @@ class CharsTests(unittest.TestCase):
         self.assertEqual(fixture['native_run'], 39746207974)
         self.assertEqual(fixture['server_and_managed_client_message_count'], 361)
         source = (root / 'integrational_tests/tests/values.bsl').read_text(encoding="utf-8")
-        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), fixture['source_sha256'])
+        previous = without_fixed_string_probes(source)
+        self.assertEqual(hashlib.sha256(previous.encode()).hexdigest(), fixture['source_sha256'])
         output = []
         vm = Interpreter(output.append)
         vm.execute(source)
         actual = [record for record in output if record.startswith('chars.')]
         expected = fixture['records']
         self.assertEqual(len(expected), 100)
-        self.assertEqual(len(output), 361)
+        self.assertEqual(len(output), 377)
+        original = []
+        Interpreter(original.append).execute(previous)
+        self.assertEqual(len(original), 361)
+        self.assertEqual(output[:361], original)
         self.assertEqual(actual, expected)
 
     def test_namespace_presentation_error_keeps_repl_usable(self):

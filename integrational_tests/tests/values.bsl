@@ -423,6 +423,17 @@
 // End Chars indexed write helper.
 // End Chars namespace helpers.
 
+// Begin fixed String default helpers.
+Функция ПроекцияУмолчанияСтроки(Знач Итог)
+    Итог.Вставить("Internal", ЗначениеВСтрокуВнутр(Итог.Value));
+    Итог.Вставить("Length", Неопределено);
+    Если ТипЗнч(Итог.Value) = Тип("Строка") Тогда
+        Итог.Length = СтрДлина(Итог.Value);
+    КонецЕсли;
+    Возврат Итог;
+КонецФункции
+// End fixed String default helpers.
+
 // Значение, тип и настоящий прямой/обратный кодек.
 НаблюдатьNull("literal.upper", "NULL");
 НаблюдатьNull("literal.mixed", "nUlL");
@@ -822,3 +833,21 @@
 Сообщить("chars.index.checkpoint.complete: [ok]");
 // End Chars index supplement.
 // End Chars namespace observations.
+// Begin fixed String default observations.
+НаблюдатьДополнениеТипов("fixed-default.fixed1.omitted", "ПроекцияУмолчанияСтроки(УмолчаниеТипаДополнения(New TypeDescription(""String"", , New StringQualifiers(1,AllowedLength.Fixed))))");
+НаблюдатьДополнениеТипов("fixed-default.fixed1.undefined", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(1,AllowedLength.Fixed)), Undefined))");
+НаблюдатьДополнениеТипов("fixed-default.fixed1.empty", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(1,AllowedLength.Fixed)), """"))");
+НаблюдатьДополнениеТипов("fixed-default.fixed4.omitted", "ПроекцияУмолчанияСтроки(УмолчаниеТипаДополнения(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed))))");
+НаблюдатьДополнениеТипов("fixed-default.fixed4.undefined", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed)), Undefined))");
+НаблюдатьДополнениеТипов("fixed-default.fixed4.empty", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed)), """"))");
+НаблюдатьДополнениеТипов("fixed-default.fixed0.omitted", "ПроекцияУмолчанияСтроки(УмолчаниеТипаДополнения(New TypeDescription(""String"", , New StringQualifiers(0,AllowedLength.Fixed))))");
+НаблюдатьДополнениеТипов("fixed-default.fixed0.undefined", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(0,AllowedLength.Fixed)), Undefined))");
+НаблюдатьДополнениеТипов("fixed-default.fixed0.empty", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(0,AllowedLength.Fixed)), """"))");
+НаблюдатьДополнениеТипов("fixed-default.variable4.omitted", "ПроекцияУмолчанияСтроки(УмолчаниеТипаДополнения(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Variable))))");
+НаблюдатьДополнениеТипов("fixed-default.variable4.undefined", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Variable)), Undefined))");
+НаблюдатьДополнениеТипов("fixed-default.variable4.empty", "ПроекцияУмолчанияСтроки(ПриведениеТипов(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Variable)), """"))");
+НаблюдатьДополнениеТипов("fixed-default.restored4.omitted", "ПроекцияУмолчанияСтроки(УмолчаниеТипаДополнения(ValueFromStringInternal(ValueToStringInternal(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed))))))");
+НаблюдатьДополнениеТипов("fixed-default.restored4.undefined", "ПроекцияУмолчанияСтроки(ПриведениеТипов(ValueFromStringInternal(ValueToStringInternal(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed)))), Undefined))");
+НаблюдатьДополнениеТипов("fixed-default.restored4.empty", "ПроекцияУмолчанияСтроки(ПриведениеТипов(ValueFromStringInternal(ValueToStringInternal(New TypeDescription(""String"", , New StringQualifiers(4,AllowedLength.Fixed)))), """"))");
+Сообщить("types-extra.fixed-default.checkpoint.complete: [ok]");
+// End fixed String default observations.

@@ -24,7 +24,7 @@ class ValuesExecutionTests(unittest.TestCase):
                 path = self.inputs / name
                 path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n'))
             self.hashes = suite.input_hashes(self.inputs, client_probe=True)
-        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(361)]
+        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(377)]
         self.messages[4] = 'multiline: [a\nb\r\nc]\n'
         self.output = self.root / 'values.out'
         self.output.write_bytes(suite.serialize_messages(self.messages))
@@ -55,7 +55,7 @@ class ValuesExecutionTests(unittest.TestCase):
     def test_full_exact_output_and_multiline_preserved(self):
         result = self.run_values()
         self.assertEqual(result['status'], 'ok', result)
-        self.assertEqual(result['message_count'], 361)
+        self.assertEqual(result['message_count'], 377)
         self.assertEqual(result['output_sha256'], suite.digest(self.output.read_bytes()))
         self.assertEqual(result['output_size'], len(self.output.read_bytes()))
         self.assertEqual(result['source_sha256'], self.hashes['integrational_tests/tests/values.bsl'])
@@ -82,7 +82,7 @@ class ValuesExecutionTests(unittest.TestCase):
     def test_every_new_chars_record_is_mandatory_not_an_ignored_suffix(self):
         # Synthetic wire records test the strict comparator, not native semantics.
         # Original 261 records retain their order; every appended record matters.
-        for index in range(261, 361):
+        for index in range(261, 377):
             self.transform = lambda marker, index=index: marker['values'].__setitem__(index, 'changed')
             with self.subTest(index=index):
                 result = self.run_values()

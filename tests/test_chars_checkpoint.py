@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from scripts.native_historical_replay import (
     CHARS_PROBE_BLOCKS, HISTORICAL_VALUES_BLOB, HISTORICAL_VALUES_OUTPUT_BLOB,
-    git_blob, historical_values_source, without_chars_probes,
+    git_blob, historical_values_source, without_chars_probes, without_fixed_string_probes,
 )
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse, parse_expression
@@ -22,7 +22,7 @@ SOURCE_SHA256 = '5fd00b472332044f4bae4c12973bcc66c074b27f7c98fe58b21b149088166ff
 class CharsCheckpointTests(unittest.TestCase):
     def test_unique_blocks_source_binding_and_exact_original_reconstruction(self):
         raw = SOURCE.read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(hashlib.sha256(raw).hexdigest(), SOURCE_SHA256)
+        self.assertEqual(hashlib.sha256(without_fixed_string_probes(raw.decode()).encode()).hexdigest(), SOURCE_SHA256)
         text = raw.decode()
         for start, end in CHARS_PROBE_BLOCKS:
             self.assertEqual(text.count(start), 1)
@@ -31,7 +31,7 @@ class CharsCheckpointTests(unittest.TestCase):
         self.assertEqual(git_blob(restored), HISTORICAL_VALUES_BLOB)
         self.assertEqual(git_blob(OUTPUT.read_bytes().replace(b'\r\n', b'\n')),
                          HISTORICAL_VALUES_OUTPUT_BLOB)
-        self.assertEqual(restored.decode(), without_chars_probes(text))
+        self.assertEqual(restored.decode(), without_chars_probes(without_fixed_string_probes(text)))
         self.assertNotIn('chars.', restored.decode())
         self.assertEqual(len(restored.splitlines()), 651)
         self.assertEqual(len(restored), 57351)
@@ -103,14 +103,14 @@ class CharsCheckpointTests(unittest.TestCase):
         Interpreter(original.append).execute(historical_values_source(raw, OUTPUT.read_bytes()).decode())
         Interpreter(current.append).execute(raw.decode())
         self.assertEqual(len(original), 261)
-        self.assertEqual(len(current), 361)
+        self.assertEqual(len(current), 377)
         # Instrumentation only. Native CI separately compares every current record.
         self.assertEqual(current[:261], original)
         self.assertEqual(current[319], 'chars.checkpoint.complete: [ok]')
-        self.assertEqual(current[-1], 'chars.index.checkpoint.complete: [ok]')
+        self.assertEqual(current[360], 'chars.index.checkpoint.complete: [ok]')
         # Removing only the supplemental helper/observations restores the exact
         # native-verified 320-record source, not an interpreter-derived oracle.
-        baseline = raw.decode()
+        baseline = without_fixed_string_probes(raw.decode())
         for start, end in (('// Begin Chars indexed write helper.\n',
                             '// End Chars indexed write helper.\n'),
                            ('// Begin Chars index supplement.\n',
@@ -125,8 +125,8 @@ class CharsCheckpointTests(unittest.TestCase):
         Interpreter(previous.append).execute(baseline)
         self.assertEqual(len(previous), 320)
         self.assertEqual(current[:320], previous)
-        self.assertTrue(all(x.startswith('chars.') for x in current[261:]))
-        self.assertTrue(all(not any(ord(c) < 32 for c in x) for x in current[261:]))
+        self.assertTrue(all(x.startswith('chars.') for x in current[261:361]))
+        self.assertTrue(all(not any(ord(c) < 32 for c in x) for x in current[261:361]))
 
 
     def test_checkpoint_with_crlf_checkout_and_non_utf8_default_encoding(self):

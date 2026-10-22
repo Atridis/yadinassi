@@ -1,0 +1,35 @@
+{
+  "native_run": 39769351606,
+  "native_run_url": "https://github.com/Atridis/yadinassi/actions/runs/39769351606",
+  "head": "a261a9b4b2507513fae040967e89a24e514d3a7a",
+  "commit": "eff8450f09cef146d1a81e6d4b44a97551285d1b",
+  "tree": "8aee3cefb3da82f79ba8a047f101ebfe6e26e7fa",
+  "platform": "Linux 1C 8.3.27.1508",
+  "contexts": [
+    "server",
+    "managed-client"
+  ],
+  "source_sha256": "eaf36b0deed933ea1c3eabcfbde0be59f2f1d8bf6b07b5533f4df2e8cc967b45",
+  "output_sha256": "3eec8857e229ba26997257fc7f31ed105d4bf1dd5526ebd758aba40db7c51f7b",
+  "artifact_sha256": "f7f0f00bebe34bee96895aa26dd4f8123b16e9ffcd64f94b9262348f5ca140dc",
+  "server_and_managed_client_message_count": 377,
+  "previous_messages": 361,
+  "records": [
+    "types-extra.fixed-default.fixed1.omitted: [value=structure(5);value.Value={\"S\",\" \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\" \"};value.Internal={\"S\",\"{\"\"S\"\",\"\" \"\"}\"};value.Length={\"N\",1}]",
+    "types-extra.fixed-default.fixed1.undefined: [value=structure(6);value.Value={\"S\",\" \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\" \"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\" \"\"}\"};value.Length={\"N\",1}]",
+    "types-extra.fixed-default.fixed1.empty: [value=structure(6);value.Value={\"S\",\" \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\" \"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\" \"\"}\"};value.Length={\"N\",1}]",
+    "types-extra.fixed-default.fixed4.omitted: [value=structure(5);value.Value={\"S\",\"    \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"    \"};value.Internal={\"S\",\"{\"\"S\"\",\"\"    \"\"}\"};value.Length={\"N\",4}]",
+    "types-extra.fixed-default.fixed4.undefined: [value=structure(6);value.Value={\"S\",\"    \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"    \"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"    \"\"}\"};value.Length={\"N\",4}]",
+    "types-extra.fixed-default.fixed4.empty: [value=structure(6);value.Value={\"S\",\"    \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"    \"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"    \"\"}\"};value.Length={\"N\",4}]",
+    "types-extra.fixed-default.fixed0.omitted: [value=structure(5);value.Value={\"S\",\"\"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"\"\"}\"};value.Length={\"N\",0}]",
+    "types-extra.fixed-default.fixed0.undefined: [value=structure(6);value.Value={\"S\",\"\"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"\"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"\"\"}\"};value.Length={\"N\",0}]",
+    "types-extra.fixed-default.fixed0.empty: [value=structure(6);value.Value={\"S\",\"\"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"\"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"\"\"}\"};value.Length={\"N\",0}]",
+    "types-extra.fixed-default.variable4.omitted: [value=structure(5);value.Value={\"S\",\"\"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"\"\"}\"};value.Length={\"N\",0}]",
+    "types-extra.fixed-default.variable4.undefined: [value=structure(6);value.Value={\"S\",\"\"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"\"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"\"\"}\"};value.Length={\"N\",0}]",
+    "types-extra.fixed-default.variable4.empty: [value=structure(6);value.Value={\"S\",\"\"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"\"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"\"\"}\"};value.Length={\"N\",0}]",
+    "types-extra.fixed-default.restored4.omitted: [value=structure(5);value.Value={\"S\",\"    \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"    \"};value.Internal={\"S\",\"{\"\"S\"\",\"\"    \"\"}\"};value.Length={\"N\",4}]",
+    "types-extra.fixed-default.restored4.undefined: [value=structure(6);value.Value={\"S\",\"    \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"    \"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"    \"\"}\"};value.Length={\"N\",4}]",
+    "types-extra.fixed-default.restored4.empty: [value=structure(6);value.Value={\"S\",\"    \"};value.Type={\"T\",9b6abf8b-0173-48e5-b0a0-83b21fcf63c5};value.Russian={\"S\",\"    \"};value.DateDelta={\"U\"};value.Internal={\"S\",\"{\"\"S\"\",\"\"    \"\"}\"};value.Length={\"N\",4}]",
+    "types-extra.fixed-default.checkpoint.complete: [ok]"
+  ]
+}
