@@ -32,6 +32,30 @@ def without_field_reference_probes(text):
     return text
 
 
+FILL_INCLUDE_PROBE_BLOCKS = (
+    ('// Begin FillPropertyValues INCLUDE checkpoint helpers.\n',
+     '// End FillPropertyValues INCLUDE checkpoint helpers.\n\n'),
+    ('// Begin FillPropertyValues INCLUDE checkpoint observations.\n',
+     '// End FillPropertyValues INCLUDE checkpoint observations.\n'),
+)
+
+
+def without_fill_include_probes(text):
+    """Restore all 828 native-verified records' source with an exact byte pin."""
+    for start, end in FILL_INCLUDE_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('fill include probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8')
+    if not raw.startswith(b'\xef\xbb\xbf'):
+        raw = b'\xef\xbb\xbf' + raw
+    if hashlib.sha256(raw).hexdigest() != 'b3bf181de84a575335ce7e4794ced459ad252eb7853cc42095fb62521dc6a409':
+        raise ValueError('fill include baseline source binding changed')
+    return text
+
+
 DESCRIPTOR_MAP_PROBE_BLOCKS = (
     ('// Begin descriptor Map-key checkpoint helpers.\n',
      '// End descriptor Map-key checkpoint helpers.\n\n'),
@@ -42,6 +66,8 @@ DESCRIPTOR_MAP_PROBE_BLOCKS = (
 
 def without_descriptor_map_probes(text):
     """Restore every byte of the native-verified 797-message source."""
+    if any(boundary in text for pair in FILL_INCLUDE_PROBE_BLOCKS for boundary in pair):
+        text = without_fill_include_probes(text)
     for start, end in DESCRIPTOR_MAP_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError('descriptor map probe boundaries changed')

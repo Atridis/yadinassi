@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import unittest
 
+from scripts.native_historical_replay import without_fill_include_probes
 from yadinassi import Interpreter
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +33,7 @@ class DescriptorMapCheckpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.raw = (ROOT / 'integrational_tests/tests/collections.bsl').read_bytes()
-        cls.source = source_lf(cls.raw)
+        cls.source = without_fill_include_probes(source_lf(cls.raw))
         cls.original = inverse(cls.source)
         cls.messages = []
         Interpreter(output=cls.messages.append).execute(cls.source)

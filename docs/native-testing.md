@@ -1544,3 +1544,62 @@ client adapter is still source-bound and reversible; client/server output must
 match strictly. The eight historical map-order exceptions do not expand.
 Offline tests exercise LF and CRLF checkout canonicalization only in test
 fixtures; production source pins continue to hash exact bytes.
+
+
+### FillPropertyValues INCLUDE normalization: source-only checkpoint
+
+This checkpoint appends 13 records to the exact 828-record collections source
+(SHA-256 `b3bf181de84a575335ce7e4794ced459ad252eb7853cc42095fb62521dc6a409`).
+Each fresh mutable `Structure("First,Last", 1, 2)` receives values from
+`Structure("First,Last", 10, 20)` using only the third argument. Every record
+contains the stable operation class `ok` or `error`, then both serialized target
+fields after catching, so lazy traversal and partial mutation remain observable.
+Native errors are valid observations, not reasons to omit a record.
+
+The exact ordered inputs are `"First,Last"`, `""`, `" "`, `","`, `",First,Last"`,
+`"First,,Last"`, `"First,Last,"`, `" First,Last"`, `"First ,Last"`,
+`"First, Last "`, `"First,Missing,Last"`, `"First, Missing ,Last"`,
+`"First, ,Last"`. Labels use `fill.include-normalization.` followed by
+`control`, `empty`, `space`, `comma`, `leading-empty`, `middle-empty`,
+`trailing-empty`, `leading-space`, `before-comma-space`, `around-last-space`,
+`missing`, `spaced-missing`, and `middle-space`. Collections now has 841
+records; values 402, numbers 421 and dates 185 are unchanged.
+
+No interpreter behavior changes. The explicit execution-scoped native target
+selects existing traversal: Linux 8.3.27.1508 right to left, historical Windows
+8.3.27.2342 left to right. The host OS does not select the target; ordinary
+Python helpers and the default interpreter retain Windows behavior. Local
+outputs are predictions only. New Linux evidence must not broaden Windows
+normalization semantics without independently source-bound Windows evidence.
+
+Excluded: EXCLUDE/fourth argument, simultaneous lists, fixed targets, tabs or
+Unicode whitespace, malformed identifiers, new containers, and database queries.
+The old source is reconstructed with an exact hash check, not output truncation.
+All immutable fixtures, the 24-input security set, caps, strict wire/client
+comparison, and the eight existing Map-order exceptions remain unchanged.
+New records remain byte-exact and ineligible for Map-order exceptions.
+
+### Audited Linux INCLUDE normalization runtime
+
+PR #86 native run `39825533352`, attempt 1, executed synthetic commit
+`53af5fb18ce6ef6692f656dace7173485209fd68` and source tree
+`5e7c46b10cbc02a106d5223f861f2b5971eb247e`. Two independent audits verified
+all 841 collections records, four exact client/server witnesses, all 24 trusted
+inputs, archive/provenance/security/cleanup bindings, and the byte-identical old
+828 prefix. The source-only workflow correctly failed interpreter parity on
+eight added records while retaining accepted native evidence.
+
+For the explicit Linux 8.3.27.1508 target only, INCLUDE now ignores raw empty
+comma-delimited tokens and trims ASCII U+0020 at nonempty token boundaries.
+An empty list and comma-only list are successful no-ops. A whitespace-only token
+is not a raw empty token: it errors. Traversal remains lazy and right-to-left;
+`First, Missing ,Last` and `First, ,Last` copy Last before failing, leaving
+First unchanged. No eager validation, atomic replacement, or broad whitespace
+normalization is introduced.
+
+Historical Windows/default behavior and direct Python calls outside an explicit
+Linux target retain the prior guards and traversal. EXCLUDE, simultaneous lists,
+fixed targets, tabs/Unicode whitespace and malformed names remain guarded as
+before. Native source, all fixture bytes, input/security/cap/wire/client rules,
+and the eight Map exceptions are unchanged. This runtime change makes no new
+Windows evidence claim; no evidence is inferred for any excluded category.

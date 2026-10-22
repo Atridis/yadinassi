@@ -14,6 +14,7 @@ from pathlib import Path
 import unittest
 
 from tests.native_observations import extract_payload, read_observation
+from scripts.native_historical_replay import without_fill_include_probes
 from yadinassi import Interpreter
 from yadinassi.dates import BSLDate
 from yadinassi.errors import BSLRuntimeError
@@ -72,7 +73,10 @@ def pair(name):
 
 def canonical_source(raw):
     # Checkout portability only, never a normalization of native output bytes.
-    return raw.decode('utf-8-sig').replace('\r\n', '\n').encode('utf-8-sig')
+    text = raw.decode('utf-8-sig').replace('\r\n', '\n')
+    if 'FillPropertyValues INCLUDE checkpoint' in text:
+        text = without_fill_include_probes(text)
+    return text.encode('utf-8-sig')
 
 
 def native_history(label):

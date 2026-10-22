@@ -3,7 +3,7 @@
 Competing synthetic caches run the actual BSL helpers. Their outputs are not
 native evidence and are never written to the integration output directory.
 """
-from scripts.native_historical_replay import DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS, without_descriptor_map_probes
+from scripts.native_historical_replay import FILL_INCLUDE_PROBE_BLOCKS, DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS, without_descriptor_map_probes
 from collections import Counter
 from contextlib import ExitStack
 from decimal import Decimal
@@ -190,7 +190,7 @@ class ValueListStringCacheCheckpointTests(unittest.TestCase):
     def test_new_blocks_restore_old_source_and_preserve_current_native_evidence(self):
         text = source()
         for start, end in (
-            *DESCRIPTOR_MAP_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS,
+            *FILL_INCLUDE_PROBE_BLOCKS, *DESCRIPTOR_MAP_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS,
             ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),
             ('// Начало заключительных наблюдений пустой строки кэша списка.\n', '// Конец заключительных наблюдений пустой строки кэша списка.\n'),
             HELPERS, BODY):
