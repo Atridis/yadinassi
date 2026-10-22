@@ -290,9 +290,6 @@ class _Writer:
                         entries = (reversed(value._items.values()) if kind is BSLType.MAP
                                    else value._items.values())
                         for key, item in entries:
-                            if kind in _MAPS and type(key) is BSLTypeDescription:
-                                raise TypeError("ОписаниеТипов как ключ соответствия "
-                                                "пока не поддерживается в Yadinassi")
                             self.emit(',\n')
                             self.pair(key, item, depth)
                     self.emit('\n}' if count else '}')

@@ -1502,13 +1502,22 @@ service value result. Existing primitive and collection semantics are unchanged.
 The source-only statements above describe the original measurement checkpoint;
 local runtime tests now compare the genuine fixture rather than invent defaults.
 
-### Descriptor keys in Map / FixedMap: source-only checkpoint
+### Descriptor keys in Map / FixedMap: audited scalar subset
 
 The collections scenario now appends 31 observations after the unchanged 797
-messages (828 total). This is a native-first checkpoint, not a runtime change or
-new golden. Descriptor equality already supported by the interpreter does not
-establish native Map key equivalence. Until actual 1C output is audited, the
-existing explicit rejection in map operations and internal serialization stays.
+messages (828 total). Native-first PR85 run
+[39815192778](https://github.com/Atridis/yadinassi/actions/runs/39815192778)
+was independently audited against source tree
+`056986f9981dcbd192bde693673c9e69917c41c7`. Its strict managed-client and server
+witnesses establish value-based keys for the bounded immutable scalar
+TypeDescription subset: equivalent descriptions replace and delete one entry,
+while distinct types or qualifiers remain separate. Fixed snapshots and mutable
+copies keep their values isolated. Missing fixed indexing throws; Get returns
+Undefined. All six codec histories successfully retain descriptor keys and
+resolve equivalent descriptions after readback. This is measured native
+behavior, not an inference from the interpreter's pre-existing equality.
+Other collection/host keys continue to use identity. No new descriptor types,
+qualifiers, codec formats or resource budgets are introduced.
 
 Eight pairs are observed: the same object; distinct empty and Number descriptors;
 reordered Number/String; a copied Number descriptor; Number versus String;

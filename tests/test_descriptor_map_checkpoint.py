@@ -1,4 +1,4 @@
-"""Source-only descriptor-key probes; offline execution is not native evidence."""
+"""Descriptor-key probe integrity; offline execution is not native evidence."""
 from pathlib import Path
 import hashlib
 import unittest
@@ -79,20 +79,20 @@ class DescriptorMapCheckpointTests(unittest.TestCase):
             self.assertFalse(message.endswith(': [error]'), message)
         self.assertEqual(self.messages[-1], 'table.descriptor-key.checkpoint.complete: [ok]')
 
-    def test_native_pending_runtime_policy_is_not_mistaken_for_evidence(self):
-        # The implementation still rejects descriptor keys. These are observed
-        # errors, NOT a guessed native golden or an acceptance expectation.
+    def test_audited_runtime_histories_keep_each_operation_observable(self):
+        # Exact native payload and value semantics are pinned in runtime tests.
+        # This source-contract test retains independently visible steps.
         histories = [m for m in self.messages[797:-1] if '.equality.' not in m]
         self.assertEqual(len(histories), 22)
         for message in histories:
-            self.assertIn('insert-first:error', message)
+            self.assertIn('insert-first:ok:', message)
             self.assertIn('count-first:ok:', message)
-            self.assertIn('get-first:error', message)
-            self.assertIn('get-second-before:error', message)
+            self.assertIn('get-first:ok:', message)
+            self.assertIn('get-second-before:ok:', message)
         for pair in PAIRS:
             message = next(m for m in histories if f'.mutable.{pair}:' in m)
             for step in ('insert-second', 'index-replace', 'delete-second', 'delete-first'):
-                self.assertIn(step + ':error', message)
+                self.assertIn(step + ':ok:', message)
             self.assertIn('count-final:ok:', message)
             fixed = next(m for m in histories if f'.fixed-copy.{pair}:' in m)
             for step in ('fixed-count', 'copy-count', 'source-count', 'fixed-count-after'):
