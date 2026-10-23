@@ -394,8 +394,9 @@ Yadinassi. Наличие комментария не делает послед�
 - Регистр букв не важен. Параметры, значения по умолчанию, `Экспорт`, рекурсия
   и вызовы через импорт сохраняют прежнюю семантику.
 - Серверные `&НаСервере` и `&НаСервереБезКонтекста` поддержаны в ограниченной
-  автономной модели ниже. Совместные `&НаКлиентеНаСервере`,
-  `&НаКлиентеНаСервереБезКонтекста` и английские варианты пока отклоняются.
+  автономной модели ниже. `&НаКлиентеНаСервереБезКонтекста` и английский
+  вариант поддержаны отдельными client/server телами без module capability.
+  Контекстная `&НаКлиентеНаСервере` пока отклоняется.
   Неизвестные аннотации, повторные директивы и директивы перед операторами
   также являются ошибками, а не молча игнорируются.
 
@@ -5307,7 +5308,7 @@ infobase. Правила alias/exception в official guide расходятся 
 ссылки не измерен. Прямое Val выражение свойства остается обычным выражением.
 Локальные защитные границы:10 000 вхождений на пакет
 и глубина64, не утверждение о лимитах 1С. Полное состояние форм,
-остальные типы сериализации и dual-директивы остаются обязательными
+остальные типы сериализации и контекстная dual-директива остаются обязательными
 следующими частями, не optional edge polishing.
 
 Подробности: [execution-directives.md](docs/execution-directives.md) и
@@ -5340,7 +5341,21 @@ native run39987049433 независимо проверен. Новый [огр�
 AtClient/AtServer оба false; standalone target flags не меняются. Module vars
 и context-bearing calls недоступны; same-server вложенные calls сохраняют ссылки.
 Прямой client call использует прежний packet/copyout contract. NoContext Var
-и dual отклоняются. Отсутствие initializer replay является явной автономной
-границей, не измеренным native обещанием. Новый strict134 whole-source gate
-еще требует current-head native/4OS приемки, исторический capture не parity.
+отклоняется. Dual NoContext теперь наследует сторону вызова, но не module capability. Отсутствие initializer replay является явной автономной
+границей, не измеренным native обещанием. Strict134 whole-source native и четыре OS проверены на actual main69e9
+в run40012722981/40012722910. Новый dual strict135 требует свежей приемки;
+исторический measurement-only capture не parity.
 [Точные границы и evidence](docs/module-context-measurement.md). PR90 не меняется.
+
+
+### Dual NoContext: ограниченная автономная поддержка
+
+`&НаКлиентеНаСервереБезКонтекста` / `&AtClientAtServerNoContext` имеют независимые
+client/server варианты. Вызов остается на текущей стороне без packet copy и
+initializer replay, module capability всегда false. Ссылочные параметры, Val
+объекты и записи перед исключением сохраняют same-side семантику. Missing-side
+variant не перенаправляется на другую сторону. Module variables/implicit ThisObject
+недоступны; task-local capability восстанавливается при Async interleaving.
+Async dual, dual Var и вызов экспортированного dual через module receiver
+(включая import) пока вне поддержанного subset; это не универсальные native запреты.
+[Измерения, точный scope и обязательные свежие gates](docs/dual-directive-measurement.md).

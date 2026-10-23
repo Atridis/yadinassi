@@ -2338,6 +2338,33 @@ def check_server_nocontext(executable, *, directory, env):
           'stdin and console')
 
 
+def check_dual_nocontext(executable, *, directory, env):
+    """Replay the nine captured dual observations with logical-only profile bits."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    code = (probes / 'dual_directive_core.bsl').read_text(encoding='utf-8')
+    code += '\nFor Each Observed In CollectDualDirectiveProbe() Do Message(Observed); EndDo;\n'
+    capture = json.loads((probes / 'dual_directive_measurement.json').read_text(encoding='utf-8'))
+    values = list(capture['native_values'])
+    if len(values) != 9 or any(type(value) is not int for value in values):
+        raise AssertionError('Dual capture width/type')
+    for index in (0, 3, 6):
+        values[index] &= 12
+    if values != capture['projected_values']:
+        raise AssertionError('Dual capture projection mismatch')
+    expected = ''.join(str(value) + '\n' for value in values)
+    source = directory / 'СовместныйБезКонтекста.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Dual NoContext failed {arguments!r}: {result!r}')
+    print('Binary dual NoContext passed: nine measured/projection observations, '
+          'three caller lanes, same-side alias/escaping writes, BOM file, -c, stdin and console')
+
+
 def check_extended_exceptions(executable, *, directory, env):
     """Core structured exception flow and unsupported-display REPL recovery."""
     directory.mkdir()
@@ -2461,6 +2488,7 @@ def main() -> None:
         check_exported_module_variables(executable, directory=Path(temporary) / "exported-module-variables", env=env)
         check_side_local_module_variables(executable, directory=Path(temporary) / "side-local-module", env=env)
         check_server_nocontext(executable, directory=Path(temporary) / "server-nocontext", env=env)
+        check_dual_nocontext(executable, directory=Path(temporary) / "dual-nocontext", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)

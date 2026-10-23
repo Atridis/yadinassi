@@ -28,7 +28,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
     def test_native_and_host_contracts_match_with_old_values_retained(self):
         self.assertEqual(suite.CLIENT_VALUES, full.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[:4], [42, "client-probe", 3, 6])
-        self.assertEqual(len(full.CLIENT_VALUES), 134)
+        self.assertEqual(len(full.CLIENT_VALUES), 135)
         self.assertEqual(len(set(value.split(":", 1)[0]
                                  for value in full.CLIENT_VALUES[4:15])), 11)
 
@@ -177,7 +177,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
 
     def test_real_interpreter_records_literal_stage_without_native_error_text(self):
         from yadinassi import Interpreter
-        source = full.nocontext_shared_source(full.dual_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE))).decode('utf-8-sig')
+        source = full.nocontext_shared_source(suite.dual_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE))).decode('utf-8-sig')
         source = source.replace('Return A + B;', 'Raise "PRIVATE_ERROR";')
         vm = Interpreter()
         vm.execute(source)

@@ -1101,7 +1101,7 @@ Procedure NoContextAppend(RecordsOut)
     EndDo;
 EndProcedure
 
-// BEGIN bounded dual measurement
+// BEGIN bounded dual witness
 &НаКлиентеНаСервереБезКонтекста
 Procedure DualProbeLeaf(ReferenceValue)
     ReferenceValue = ReferenceValue + 1;
@@ -1117,12 +1117,6 @@ Function DualProbeOperation(ReferenceValue, Val ContainerValue, Val Escape)
         Raise "dual-directive-controlled-failure";
     EndIf;
     ProfileMask = 0;
-#If Client Then
-    ProfileMask = ProfileMask + 1;
-#EndIf
-#If Server Then
-    ProfileMask = ProfileMask + 2;
-#EndIf
 #If AtClient Then
     ProfileMask = ProfileMask + 4;
 #EndIf

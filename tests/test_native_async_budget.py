@@ -21,11 +21,10 @@ Marker validation hints are enumerated independently for all eight failed-row
 positions. They require an invalid-result row, so a separate majorant replaces
 that row and all later rows with empty, failed/unreached observations. This keeps
 all production applicability checks active; no validator is patched for size.
-The standard client's 417 finite marker diagnostics are bounded independently;
+The standard client's 420 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
-The temporary dual measurement adds nine bounded integer observations, never
-expected native values. Separate standard/dual partitions bound both diagnostic
-shapes; the dual maximum uses 15 for profile slots and 999 elsewhere (JSON length is additive).
+The strict dual suffix is one fixed string in the private135 witness; it adds
+no public diagnostic payload. All generic finite failure limits remain intact.
 Host-side Async comparison adds only a compact result to public summary and
 artifact provenance, never to stage wire. Eight runtimeerror mismatches are the
 longest valid comparator result; all existing early/late/marker partitions retain
@@ -165,12 +164,6 @@ def maximum_standard_marker_diagnostics():
     return dict(phase='completed', kind='runtime_error', ordinal=14, error_stage=11)
 
 
-def maximum_dual_marker_diagnostics():
-    # Nine integer slots: profiles 0/3/6 are 0..15, others 0..999; no bool/null.
-    return dict(phase='completed', kind='count', ordinal=134, error_stage=0,
-                dual=[15,999,999,15,999,999,15,999,999])
-
-
 def bind_identity(value):
     value['template_sha256'] = TEMPLATE
     for row, module in zip(value['cases'], MODULES):
@@ -308,7 +301,7 @@ def maximum_bootstrap_diagnostics():
             tail=[longest(d.CONTEXT_TOKENS)] * 32, omitted_middle=False))
 
 
-def majorant(early=False, marker_case=None, dual_capture=False):
+def majorant(early=False, marker_case=None):
     """Unreachable combinations are intentional upper bounds, never evidence."""
     result = probe()
     result['status'] = longest(smoke.STATUS | {'stage3_failed'})
@@ -329,8 +322,7 @@ def majorant(early=False, marker_case=None, dual_capture=False):
     client = s['client_probe']
     client.update(status='not_started', failure_kind=longest(full.FAILURES),
         process_diagnostics=maximum_process_diagnostics(),
-        marker_diagnostics=(maximum_dual_marker_diagnostics() if dual_capture
-                            else maximum_standard_marker_diagnostics()))
+        marker_diagnostics=maximum_standard_marker_diagnostics())
     client.update({key: False for key in full.CLIENT_FLAGS})
     measurement = s['client_async']
     measurement.update(status='inconclusive', failure_kind=longest(suite.ASYNC_FAILURES),
@@ -396,12 +388,10 @@ def render_provenance(record, *, async_result=None, accepted=False):
 
 
 def proof_results():
-    partitions = [majorant(marker_case=case, dual_capture=dual)
-                  for dual in (False, True) for case in (None, *range(8))]
+    partitions = [majorant(marker_case=case) for case in (None, *range(8))]
     wire = max((render_stage(value['stage3']) for value in partitions), key=len)
     late = max((render_summary(value, error=True)[0] for value in partitions), key=len)
-    early = max((render_summary(majorant(early=True, dual_capture=dual), error=True)[0]
-                 for dual in (False, True)), key=len)
+    early = render_summary(majorant(early=True), error=True)[0]
     files, _ = render_provenance(maximum_observed_record())
     projected = json.loads(files['provenance.json'])
     # At most five additional bytes: all six native sizes independently get
@@ -416,9 +406,9 @@ def proof_results():
         actual_provenance_boundary_bytes=len(files['provenance.json']),
         conditional_paths=80, failure_prefix_variants=216,
         failure_diagnostic_variants=1744, maximum_failure_diagnostic_wire_bytes=10,
-        standard_marker_diagnostic_variants=417,
-        dual_integer_slots=9, dual_integer_maximum=999, dual_profile_maximum=15,
-        diagnostic_shape_partitions=2,
+        standard_marker_diagnostic_variants=420,
+        strict_witness_entries=135, dense_dual_token_bytes=35,
+        diagnostic_shape_partitions=1,
         marker_validation_diagnostic_variants=sum(len(list(marker_validation_variants(case))) for case in range(8)),
         marker_validation_diagnostic_variants_by_case=[len(list(marker_validation_variants(case))) for case in range(8)],
         maximum_marker_validation_diagnostic_wire_bytes=11,
@@ -778,7 +768,8 @@ class AsyncBudgetTests(unittest.TestCase):
             11, 73, 74, 72, 1]
         expected += ['module.context.v1', 10, 100, 111, True, 100, True, 100, True, 11]
         expected += ['nocontext.core.v3', 12, 22, 0, 12, 2, True, 16, True, 6, 14, 14, True, 7, 18]
-        self.assertEqual(len(expected), 134)
+        expected += ['dual.v1:000032017000017041000032017']
+        self.assertEqual(len(expected), 135)
         self.assertEqual(suite.CLIENT_VALUES, expected)
         self.assertEqual(full.CLIENT_VALUES, expected)
         # Freeze bool/int distinctions as well as equality for the strict119
@@ -792,16 +783,16 @@ class AsyncBudgetTests(unittest.TestCase):
         for phase, kind, ordinal, error_stage in itertools.product(
                 ('invalid', 'error', 'completed'),
                 ('none', 'count', 'type', 'value', 'runtime_error'),
-                range(-1, 136), range(12)):
+                range(-1, 137), range(12)):
             diagnostic = dict(phase=phase, kind=kind, ordinal=ordinal, error_stage=error_stage)
             if phase != 'completed':
                 allowed = kind == 'none' and ordinal == -1 and error_stage == 0
             elif kind == 'runtime_error':
                 allowed = 1 <= error_stage <= 11 and ordinal == error_stage + 3
             elif kind == 'count':
-                allowed = 0 <= ordinal <= 134 and error_stage == 0
+                allowed = 0 <= ordinal <= 135 and error_stage == 0
             elif kind in ('type', 'value'):
-                allowed = 0 <= ordinal < 134 and error_stage == 0
+                allowed = 0 <= ordinal < 135 and error_stage == 0
             else:
                 allowed = ordinal == -1 and error_stage == 0
             if not allowed:
@@ -836,7 +827,7 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertLessEqual(len(summary), CAPS['public_summary'])
             with self.assertRaises(full.FullError):
                 full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], b''), result, smoke.IMAGE)
-        self.assertEqual(count, 417)
+        self.assertEqual(count, 420)
 
     def test_process_counter_width_bound_is_derived_not_independent_maxima(self):
         # DP over seven nonnegative counters with a <=256 sum proves 16

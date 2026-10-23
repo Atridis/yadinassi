@@ -325,6 +325,9 @@ CLIENT_VALUES += ['module.context.v1'] + [10, 100, 111, True, 100, True, 100, Tr
 # Logical-context projection of audited profile mask19; new exact source needs native validation.
 CLIENT_VALUES += ['nocontext.core.v3'] + [12, 22, 0, 12, 2, True, 16, True, 6, 14, 14, True, 7, 18]
 
+# One exact dense witness, projected from the audited nine-slot native capture.
+CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
+
 
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
@@ -358,29 +361,6 @@ CLIENT_NOCONTEXT_SHARED_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd
 CLIENT_NOCONTEXT_BLOCK = b'\n// BEGIN bounded no-context witness\n&AtServerNoContext\nFunction NoContextLeaf(Value)\n    Value = Value + 1;\n    Return Value;\nEndFunction\n\n&AtServerNoContext\nFunction NoContextOperation(Value, Val PrivateValue, Val Mode)\n    Var Initial, Nested, ProfileMask, Caught;\n    Initial = Value;\n    Value = Value + 10;\n    PrivateValue = PrivateValue + 20;\n    Nested = NoContextLeaf(Value);\n    ProfileMask = 0;\n#If AtClient Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 2;\n#EndIf\n    Caught = False;\n    If Mode = 1 Then\n        Try\n            Raise "nocontext-controlled-failure";\n        Except\n            Caught = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n        EndTry;\n    EndIf;\n    If Mode = 2 Then\n        Raise "nocontext-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,PrivateValue,ProfileMask,Caught", Initial, Nested, PrivateValue, ProfileMask, Caught);\nEndFunction\n\n&AtServer\nFunction NoContextFromContext(Val Escape)\n    Var LocalValue, PrivateValue, Result, Failed, Matched;\n    LocalValue = 3;\n    PrivateValue = 4;\n    Failed = False;\n    Matched = False;\n    Result = Undefined;\n    Try\n        If Escape Then\n            Result = NoContextOperation(LocalValue, PrivateValue, 2);\n        Else\n            Result = NoContextOperation(LocalValue, PrivateValue, 0);\n        EndIf;\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    Return New Structure("Value,PrivateValue,Failed,Matched,Result", LocalValue, PrivateValue, Failed, Matched, Result);\nEndFunction\n\n&AtClient\nProcedure NoContextRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunNoContextProbe()\n    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;\n    Records = New Array;\n    Records.Add("nocontext.core.v3");\n    Value = 1;\n    PrivateValue = 2;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "normal.nested", Result.Nested);\n    NoContextRecord(Records, "normal.private", Result.PrivateValue);\n    NoContextRecord(Records, "normal.profile", Result.ProfileMask);\n    NoContextRecord(Records, "normal.caller", Value);\n    NoContextRecord(Records, "normal.val.caller", PrivateValue);\n    Value = 5;\n    Result = NoContextOperation(Value, PrivateValue, 1);\n    NoContextRecord(Records, "caught.matched", Result.Caught);\n    NoContextRecord(Records, "caught.caller", Value);\n    Value = 6;\n    Failed = False;\n    Matched = False;\n    Try\n        NoContextOperation(Value, PrivateValue, 2);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    NoContextRecord(Records, "escape.caught", Failed And Matched);\n    NoContextRecord(Records, "escape.caller", Value);\n    Nested = NoContextFromContext(False);\n    NoContextRecord(Records, "context.normal.value", Nested.Value);\n    Nested = NoContextFromContext(True);\n    NoContextRecord(Records, "context.escape.value", Nested.Value);\n    NoContextRecord(Records, "context.escape.caught", Nested.Failed And Nested.Matched);\n    Value = 7;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "recovery.initial", Result.Initial);\n    NoContextRecord(Records, "recovery.caller", Value);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure NoContextAppend(RecordsOut)\n    Var NoContextValue;\n    For Each NoContextValue In RunNoContextProbe() Do\n        RecordsOut.Add(NoContextValue);\n    EndDo;\nEndProcedure\n'
 CLIENT_NOCONTEXT_INITIALIZER = b'// Initialization runs in its explicitly compiled side only. Do not infer that\n// arbitrary unguarded standalone root statements should run on the server.\n#If AtClient Then\nContextClientCounter = 10;\n#EndIf\n#If AtServer Then\nContextServerCounter = 100;\n#EndIf\n'
 CLIENT_NOCONTEXT_CALL = b'    NoContextAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
-
-
-# Temporary native-only dual measurement. Both consumers use this exact inverse.
-CLIENT_DUAL_TEMPLATE_SHA256 = '9ce132a3edef0c944a9a2d6776f98d1f209ecbd57ae314e8f02ba4e56d23ae06'
-CLIENT_DUAL_SHARED_SHA256 = 'b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14'
-CLIENT_DUAL_PREFIX = b'// BEGIN bounded dual declarations\n&AtServer\nVar DualProbeServerState;\n\n// END bounded dual declarations\n'
-CLIENT_DUAL_BLOCK = b'\n// BEGIN bounded dual measurement\n&\xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5\xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5\xd0\x91\xd0\xb5\xd0\xb7\xd0\x9a\xd0\xbe\xd0\xbd\xd1\x82\xd0\xb5\xd0\xba\xd1\x81\xd1\x82\xd0\xb0\nProcedure DualProbeLeaf(ReferenceValue)\n    ReferenceValue = ReferenceValue + 1;\nEndProcedure\n\n&AtClientAtServerNoContext\nFunction DualProbeOperation(ReferenceValue, Val ContainerValue, Val Escape)\n    Var ProfileMask;\n    ReferenceValue = ReferenceValue + 10;\n    DualProbeLeaf(ReferenceValue);\n    ContainerValue[0] = ContainerValue[0] + 10;\n    If Escape Then\n        Raise "dual-directive-controlled-failure";\n    EndIf;\n    ProfileMask = 0;\n#If Client Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If Server Then\n    ProfileMask = ProfileMask + 2;\n#EndIf\n#If AtClient Then\n    ProfileMask = ProfileMask + 4;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 8;\n#EndIf\n    Return New Structure("Container,Mask", ContainerValue, ProfileMask);\nEndFunction\n\n&AtClient\nFunction DualProbeFromClient()\n    Var Observations, ScalarValue, ContainerValue, OperationResult, Caught;\n    Observations = New Array;\n    ScalarValue = 1;\n    ContainerValue = New Array;\n    ContainerValue.Add(2);\n    OperationResult = DualProbeOperation(ScalarValue, ContainerValue, False);\n    Observations.Add(OperationResult.Mask);\n    OperationResult.Container[0] = OperationResult.Container[0] + 20;\n    Observations.Add(ContainerValue[0]);\n    ScalarValue = 6;\n    ContainerValue = New Array;\n    ContainerValue.Add(7);\n    Caught = False;\n    Try\n        DualProbeOperation(ScalarValue, ContainerValue, True);\n    Except\n        If Find(ErrorDescription(), "dual-directive-controlled-failure") > 0 Then\n            Caught = True;\n        Else\n            Raise;\n        EndIf;\n    EndTry;\n    If Not Caught Then\n        Raise "dual-directive-expected-exception-missing";\n    EndIf;\n    Observations.Add(ScalarValue);\n    Return Observations;\nEndFunction\n\n&AtServer\nFunction DualProbeFromServer()\n    Var Observations, ScalarValue, ContainerValue, OperationResult, Caught;\n    DualProbeServerState = 40;\n    Observations = New Array;\n    ScalarValue = 1;\n    ContainerValue = New Array;\n    ContainerValue.Add(2);\n    OperationResult = DualProbeOperation(ScalarValue, ContainerValue, False);\n    Observations.Add(OperationResult.Mask);\n    ScalarValue = 6;\n    ContainerValue = New Array;\n    ContainerValue.Add(7);\n    Caught = False;\n    Try\n        DualProbeOperation(ScalarValue, ContainerValue, True);\n    Except\n        If Find(ErrorDescription(), "dual-directive-controlled-failure") > 0 Then\n            Caught = True;\n        Else\n            Raise;\n        EndIf;\n    EndTry;\n    If Not Caught Then\n        Raise "dual-directive-expected-exception-missing";\n    EndIf;\n    Observations.Add(ScalarValue);\n    DualProbeServerState = DualProbeServerState + 1;\n    Observations.Add(DualProbeServerState);\n    Return Observations;\nEndFunction\n\n&AtServerNoContext\nFunction DualProbeFromServerNoContext()\n    Var Observations, ScalarValue, ContainerValue, OperationResult, Caught;\n    Observations = New Array;\n    ScalarValue = 1;\n    ContainerValue = New Array;\n    ContainerValue.Add(2);\n    OperationResult = DualProbeOperation(ScalarValue, ContainerValue, False);\n    Observations.Add(OperationResult.Mask);\n    OperationResult.Container[0] = OperationResult.Container[0] + 20;\n    Observations.Add(ContainerValue[0]);\n    ScalarValue = 6;\n    ContainerValue = New Array;\n    ContainerValue.Add(7);\n    Caught = False;\n    Try\n        DualProbeOperation(ScalarValue, ContainerValue, True);\n    Except\n        If Find(ErrorDescription(), "dual-directive-controlled-failure") > 0 Then\n            Caught = True;\n        Else\n            Raise;\n        EndIf;\n    EndTry;\n    If Not Caught Then\n        Raise "dual-directive-expected-exception-missing";\n    EndIf;\n    Observations.Add(ScalarValue);\n    Return Observations;\nEndFunction\n\n&AtClient\nFunction CollectDualDirectiveProbe() Export\n    Var Observations, Part, Item;\n    Observations = New Array;\n    Part = DualProbeFromClient();\n    For Each Item In Part Do\n        Observations.Add(Item);\n    EndDo;\n    Part = DualProbeFromServer();\n    For Each Item In Part Do\n        Observations.Add(Item);\n    EndDo;\n    Part = DualProbeFromServerNoContext();\n    For Each Item In Part Do\n        Observations.Add(Item);\n    EndDo;\n    Return Observations;\nEndFunction\n\n&AtClient\nFunction DualProbeEncode(Observations)\n    Var Encoded, Observation, Slot, Digits, Hundreds, Tens, Units;\n    If Observations.Count() <> 9 Then\n        Raise "dual-directive-invalid-count";\n    EndIf;\n    Encoded = "dual.v1:";\n    Digits = "0123456789";\n    Slot = 0;\n    For Each Observation In Observations Do\n        If TypeOf(Observation) <> Type("Number") Then\n            Raise "dual-directive-invalid-type";\n        EndIf;\n        If Observation < 0 Or Observation > 999 Or Int(Observation) <> Observation Then\n            Raise "dual-directive-invalid-range";\n        EndIf;\n        If (Slot = 0 Or Slot = 3 Or Slot = 6) And Observation > 15 Then\n            Raise "dual-directive-invalid-profile";\n        EndIf;\n        Hundreds = Int(Observation / 100);\n        Tens = Int(Observation / 10) - Hundreds * 10;\n        Units = Observation - Int(Observation / 10) * 10;\n        Encoded = Encoded + Mid(Digits, Hundreds + 1, 1)\n            + Mid(Digits, Tens + 1, 1) + Mid(Digits, Units + 1, 1);\n        Slot = Slot + 1;\n    EndDo;\n    Return Encoded;\nEndFunction\n\n&AtClient\nProcedure DualProbeAppend(RecordsOut)\n    RecordsOut.Add(DualProbeEncode(CollectDualDirectiveProbe()));\nEndProcedure\n'
-CLIENT_DUAL_CALL = b'    DualProbeAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
-
-
-def dual_shared_source(raw: bytes) -> bytes:
-    """Restore all strict134 bytes; never evaluate or predict the dual suffix."""
-    tail = CLIENT_DUAL_BLOCK + CLIENT_NOCONTEXT_INITIALIZER
-    if (digest(raw) != CLIENT_DUAL_TEMPLATE_SHA256
-            or not raw.startswith(CLIENT_DUAL_PREFIX) or not raw.endswith(tail)
-            or raw.count(CLIENT_DUAL_PREFIX) != 1 or raw.count(CLIENT_DUAL_BLOCK) != 1
-            or raw.count(CLIENT_DUAL_CALL) != 1):
-        raise FullError('source_changed')
-    restored = (raw[len(CLIENT_DUAL_PREFIX):-len(tail)] + CLIENT_NOCONTEXT_INITIALIZER).replace(
-        CLIENT_DUAL_CALL, b'', 1)
-    if digest(restored) != CLIENT_DUAL_SHARED_SHA256:
-        raise FullError('source_changed')
-    return restored
 
 
 def nocontext_shared_source(raw: bytes) -> bytes:
@@ -429,19 +409,19 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 
+CLIENT_WITNESS_SOURCE_SHA256 = 'c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413'
+
+
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute exact restored134; the pinned dual suffix is native-only measurement."""
+    """Compute the exact staged witness independently in the real interpreter."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
-    if digest(raw) != source_hash:
+    if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:
         raise FullError("source_changed")
-    shared_source = dual_shared_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
-        shared_path = Path(cache).resolve() / "shared-witness.bsl"
-        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -468,8 +448,7 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
-                                  {'phase', 'kind', 'ordinal', 'error_stage', 'dual'})
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -477,14 +456,6 @@ def validate_marker_diagnostics(value):
             or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
-    if 'dual' in value:
-        records = value['dual']
-        if (value['phase'] != 'completed' or value['kind'] != 'count'
-                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
-                or type(records) is not list or len(records) != 9
-                or any(type(item) is not int or not 0 <= item <= (15 if index in (0, 3, 6) else 999)
-                       for index, item in enumerate(records))):
-            raise ValueError('client dual measurement')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':

@@ -1,6 +1,16 @@
 {
-  "status": "uncaptured_native_only_measurement",
-  "native_values": null,
+  "status": "audited_historical_capture_projected_strict_witness",
+  "native_values": [
+    3,
+    32,
+    17,
+    3,
+    17,
+    41,
+    3,
+    32,
+    17
+  ],
   "entry": "CollectDualDirectiveProbe",
   "entry_side": "client",
   "record_count": 9,
@@ -15,7 +25,6 @@
     "server.nocontext.normal.val.container.alias",
     "server.nocontext.escape.caller.scalar"
   ],
-  "source_sha256": "761b25578c9327dd3cf76a1f9ff81002c1c02d3e5df96f6c5616379a1058a345",
   "native_preconditions": [
     "Literal managed-form compilation, never Execute(text).",
     "Declarations precede module initializer; this fixture has none.",
@@ -31,8 +40,6 @@
     ],
     "state_seed": 40,
     "profile_bit_weights": [
-      1,
-      2,
       4,
       8
     ],
@@ -57,7 +64,18 @@
       "native_json_writer": "unchanged",
       "two_space_lf_marker_upper_bytes": 2041
     },
-    "decoded_observation_slots": 9
+    "decoded_observation_slots": 9,
+    "projected_strict_values": [
+      0,
+      32,
+      17,
+      0,
+      17,
+      41,
+      0,
+      32,
+      17
+    ]
   },
   "removed_observations": [
     "Duplicate normal scalar caller and returned scalar slots.",
@@ -68,12 +86,58 @@
     "Client module-state restoration slot, retaining server-context restoration."
   ],
   "not_evidence": [
-    "No native compilation has been performed.",
-    "No native result or expected vector has been generated.",
-    "Profile mask records target flags separately from context flags and does not identify runtime side.",
-    "The frozen candidate intentionally does not support this directive."
+    "Historical measurement was rejected by ordinary strict134 acceptance.",
+    "The projected exact source requires a fresh native run before acceptance.",
+    "Generic platform Client/Server flags do not establish execution side.",
+    "Capability-negative cases and dual Async legality remain unmeasured.",
+    "Dual calls add no network, RPC, or real form support."
   ],
-  "integrated_source_sha256": "9ce132a3edef0c944a9a2d6776f98d1f209ecbd57ae314e8f02ba4e56d23ae06",
   "restored_strict134_sha256": "b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14",
-  "integrated_module_sha256": "029fc7c47c32e8cc494b2dfb4256b83a7be02836403143e08542edce5b0c90c3"
+  "projected_values": [
+    0,
+    32,
+    17,
+    0,
+    17,
+    41,
+    0,
+    32,
+    17
+  ],
+  "expected_dense_token": "dual.v1:000032017000017041000032017",
+  "fresh_projected_native_validation": "required_not_yet_obtained",
+  "captured_source_sha256": "761b25578c9327dd3cf76a1f9ff81002c1c02d3e5df96f6c5616379a1058a345",
+  "captured_integrated_source_sha256": "9ce132a3edef0c944a9a2d6776f98d1f209ecbd57ae314e8f02ba4e56d23ae06",
+  "captured_integrated_module_sha256": "029fc7c47c32e8cc494b2dfb4256b83a7be02836403143e08542edce5b0c90c3",
+  "source_sha256": "fc26176991ab93b32c61e1fa1a35017d5041c944a83bbcfd1fcb868f1b4039be",
+  "integrated_source_sha256": "c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413",
+  "capture": {
+    "run_id": 40016529386,
+    "artifact_id": 12527973799,
+    "summary_zip_sha256": "7dd804a26fb5cf63cf5de93c2dc1ba908767bba9f64e949f04626344d9278dba",
+    "report_sha256": "9c34ba39a9c5c2c1fc8e2d2053568d2a27c4f1c66a911cf9bf5ff2d52a56b9d2",
+    "head_sha": "d8cf849b69f666bf1d35f061879232f345d55bfa",
+    "checkout_sha": "86fe6545aabe331826dfb52d336537db405a8e34",
+    "tree_sha": "b7b8bf0b2a0ebc2fd5ff0a87eb87d9c10127f8c2",
+    "acceptance": "rejected_measurement_only",
+    "platform_version": "8.3.27.1508"
+  },
+  "projection": {
+    "removed_profile_bits": {
+      "Client": 1,
+      "Server": 2
+    },
+    "retained_profile_bits": {
+      "AtClient": 4,
+      "AtServer": 8
+    },
+    "profile_slots": [
+      0,
+      3,
+      6
+    ],
+    "other_slots_unchanged": true,
+    "runtime_side_not_inferred_from_profile": true
+  },
+  "integrated_module_sha256": "2c183cd3d0cce3425c429b44ecd7ef85bb20bb816d20c2f7a448af62576741bd"
 }

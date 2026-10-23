@@ -290,34 +290,22 @@ def without_request_site_diagnostic(template):
 
 
 def without_dual_measurement(source, *, host=False):
-    """Test-only exact inverse of the native-only capture additions.
-
-    Keep historical whole-Python-source pins AND every Async8 literal pin.
-    The result must match main69e9df8 before any older Async projection runs.
-    """
+    """Test-only exact inverse retaining all historical whole-source/Async pins."""
     def replace_once(old, new):
         nonlocal source
         assert source.count(old) == 1
         source = source.replace(old, new, 1)
-    start = source.index('# Temporary native-only dual measurement. Both consumers use this exact inverse.')
-    end = source.index('def nocontext_shared_source', start)
-    source = source[:start] + source[end:]
+    replace_once("\n# One exact dense witness, projected from the audited nine-slot native capture.\n"
+                 "CLIENT_VALUES += ['dual.v1:000032017000017041000032017']\n", '')
     if host:
-        replace_once('"""Compute exact restored134; the pinned dual suffix is native-only measurement."""',
-                     '"""Compute the exact staged witness independently in the real interpreter."""')
-        replace_once('    shared_source = dual_shared_source(raw)\n', '')
-        replace_once('        shared_path = Path(cache).resolve() / "shared-witness.bsl"\n        shared_path.write_bytes(shared_source)\n', '')
-        replace_once('"-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)',
-                     '"-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)')
-        replace_once("            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},\n                                  {'phase', 'kind', 'ordinal', 'error_stage', 'dual'})",
-                     "            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}")
-        start = source.index("    if 'dual' in value:\n")
-        end = source.index("    if value['phase'] != 'completed':\n", start)
-        source = source[:start] + source[end:]
+        pin = re.search(r"CLIENT_WITNESS_SOURCE_SHA256 = '[0-9a-f]{64}'\n\n\n", source).group()
+        replace_once(pin, '')
+        replace_once('if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:',
+                     'if digest(raw) != source_hash:')
         expected = '146793000907b969dc07ca264053dbb6d54c9272a844cb9eb0176e59d85d1d66'
     else:
-        start = source.index('    # One exact, fixed-width token carries nine native-only integer slots.')
-        end = source.index('    # The four old client observations', start)
+        start = source.index('# Exact historical-adapter inverse only; the host executes the full strict witness.')
+        end = source.index('def nocontext_shared_source', start)
         source = source[:start] + source[end:]
         replace_once('    template = dual_shared_source(template)\n', '')
         current = re.search(r"CLIENT_DIRECTIVE_TEMPLATE_SHA256 = '[0-9a-f]{64}'", source).group()

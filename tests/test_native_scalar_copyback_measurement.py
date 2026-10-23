@@ -53,7 +53,7 @@ class ScalarCopybackParityTests(unittest.TestCase):
         expected = ['copyback.core.v1'] + [token(entry['value']) for entry in data['observations']]
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[15:50], expected)
-        self.assertEqual(len(full.CLIENT_VALUES), 134)
+        self.assertEqual(len(full.CLIENT_VALUES), 135)
         # Historical scalar capture identity; the whole current source additionally
         # contains the separately captured object operations.
         self.assertEqual(data['capture']['source_sha256'],
@@ -62,7 +62,7 @@ class ScalarCopybackParityTests(unittest.TestCase):
     def test_exact_restored_source_computes_all_captured_values(self):
         from yadinassi import Interpreter
         vm = Interpreter(lambda value: self.fail('unexpected Message'))
-        vm.execute(full.dual_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(linux_fixture(ROOT / full.CLIENT_SOURCE).decode('utf-8-sig'))
         actual = list(vm.execute('ВычислитьПробу()'))
         self.assertEqual(actual, suite.CLIENT_VALUES)
         self.assertEqual(vm.execution_context, 'client')

@@ -1,101 +1,109 @@
-# Dual NoContext: finite measurement only
+# Bounded dual NoContext implementation
 
-This candidate does not implement `&AtClientAtServerNoContext` or
-`&НаКлиентеНаСервереБезКонтекста` in the interpreter. It adds an uncaptured,
-literal managed-form measurement to the existing native runner. Native compilation,
-execution, observed values, and parity are not claimed. The JSON plan keeps
-`native_values` and `accepted_native_values` null.
+This slice supports `&AtClientAtServerNoContext` and
+`&НаКлиентеНаСервереБезКонтекста` as independently compiled client/server variants.
+Root and unannotated routines remain client. A dual call inherits execution side,
+not module capability: both variants have no module context. The interpreter is
+still autonomous; no forms, database/query, network RPC or command-module
+`&AtClientAtServer` support is added.
 
-The baseline is main `69e9df834975b9b6e3036aace579bb7ee1491ec7`, tree
-`d817ebf4c29cc7fa42ded80a8cc29150a82e5a09`. The complete strict134 contract,
-all interpreter runtime files, all eight Async sources and identities, the four
-historical parity modules, and existing transport/reader caps remain unchanged.
+## Audited target evidence
 
-## Source and observations
+[Measurement run40016529386](https://github.com/Atridis/yadinassi/actions/runs/40016529386)
+on head `d8cf849b69f666bf1d35f061879232f345d55bfa`, tree
+`b7b8bf0b2a0ebc2fd5ff0a87eb87d9c10127f8c2`, was independently audited. The
+checkout was synthetic merge `86fe6545aabe331826dfb52d336537db405a8e34` with that
+same tree. Summary artifact12527973799 ZIP SHA-256:
+`7dd804a26fb5cf63cf5de93c2dc1ba908767bba9f64e949f04626344d9278dba`.
+The literal managed-form source SHA-256 was
+`9ce132a3edef0c944a9a2d6776f98d1f209ecbd57ae314e8f02ba4e56d23ae06`;
+generated module and native roundtrip were
+`029fc7c47c32e8cc494b2dfb4256b83a7be02836403143e08542edce5b0c90c3`.
+Pinned target: Linux/amd64, 1C8.3.27.1508, managed application, file infobase.
 
-`integrational_tests/directive_probes/dual_directive_core.bsl` is the exact
-unexecuted design source, SHA-256
-`761b25578c9327dd3cf76a1f9ff81002c1c02d3e5df96f6c5616379a1058a345`.
-Its labels and integration identity are in `dual_directive_measurement.json`.
+Nine ordered observations were `[3,32,17,3,17,41,3,32,17]`:
 
-The source collects nine ordered integer observations:
+1. Client: profile, Val Array/returned-reference alias, escaping scalar write.
+2. Context server: profile, escaping scalar write, caller module-state recovery.
+3. NoContext server: profile, Val Array/returned-reference alias, escaping scalar.
 
-1. Client caller: profile mask, Val/returned-container alias, escaping scalar.
-2. Server-context caller: profile mask, escaping scalar, caller module-state access.
-3. Server-NoContext caller: profile mask, Val/returned-container alias, escaping scalar.
+Each caller invokes the named dual routine directly. The outer server wrappers
+are genuine client-to-server boundaries, but their observations occur on the
+server before the arrays return. The controlled exception is checked; unexpected
+errors are rethrown. Alias32 and scalar17 distinguish ordinary same-side reference
+behavior from packet-copy/normal-only-copyout. Caller state41 establishes recovery,
+not a native negative test for access from inside the dual routine.
 
-`Client`, `Server`, `AtClient`, and `AtServer` contribute separate mask bits.
-Their actual values are unknown; a target mask must not be treated as a runtime
-side. The mask fields are bounded to 0..15 by construction; the remaining
-integer fields are bounded to 0..999, without asserting any expected values.
-The controlled failure is matched exactly by its fixed substring; unexpected
-errors are rethrown and a missing failure raises a separate fixed error.
+All three captured profile masks3 mean generic `Client` and `Server` true,
+logical `AtClient` and `AtServer` false. This is a target-specific compiler
+observation, not universal target equivalence or permission to change standalone
+defaults. The final source projects only logical bits, producing masks0 and
+preserving the other six measured observations. Exact source reconstruction binds
+that projection to the captured fixture. A fresh final-source native run is still
+required; the historical capture was deliberately rejected by strict134 and did
+not run the later full-client lanes/watchdog or establish full parity.
 
-The integration mechanically moves the annotated server variable into the module
-variable prefix, preserves all six standalone routines byte-for-byte, and adds
-only a literal digit encoder and one append procedure. Both helpers precede the
-unchanged module initializer suffix. All new routine locals are explicit.
-The two outer server wrappers remain real client/server boundaries; observations
-are made within each caller before its result array crosses that boundary.
+## Runtime and compiler contract
 
-## Bounded capture, deliberate nonacceptance
+Dual variants are compiled independently using their side's existing standalone
+target defaults; both logical At* flags are false. There is no new preprocessor
+symbol. Variant identity retains the original declaration's token provenance.
+Only variants of that same declaration can share a name; conflicting declarations
+are rejected before effects. Persistent replacement removes the previous whole
+family. A missing selected-side variant fails before argument effects, rather
+than falling back to the other side or a host function.
 
-The completed marker has the exact typed strict134 baseline plus ONE string:
-`dual.v1:` followed by nine fixed-width three-digit ASCII decimal fields, without
-separators. The complete marker has 135 entries. The literal BSL encoder checks
-count, numeric type, integrality and each range before building digits with
-`Int` and `Mid`. It does not use new JSON writer settings, enums or formatting
-APIs. The existing JSON writer is byte-for-byte unchanged.
+A matching dual call never switches side, creates a server activation, serializes
+parameters, or replays a module initializer. Ordinary non-Val references, Val
+object handles and writes surviving an escaping exception are preserved. An
+explicit call from a client dual variant to `AtServerNoContext` remains a real
+logical client/server crossing with the existing bounded packet contract; its
+server counterpart is a same-side call.
 
-Only an exact completed marker with the existing schema, nonce and client witness,
-the full typed baseline, and the exact token grammar can expose a temporary
-`dual` diagnostic containing nine integers. Booleans, strings in the integer
-slots, signs, Unicode digits, fractions, wrong lengths, wrong masks and private
-text are rejected. No native error text or arbitrary string is exported.
+Module variables, implicit ThisObject/ЭтотОбъект and context-bearing callees are
+unavailable. Module-storage reads/writes through an explicitly passed module
+receiver are also denied by this bounded capability policy. Already bound
+references deliberately supplied by a context-bearing caller, including a module
+field reference, retain ordinary parameter semantics; they do not expose a module
+handle for fresh field resolution. Ordinary object arguments and explicit
+local/formal shadows remain legal. Execute/Eval cannot
+restore capability. Entry/exit uses task-local side/capability stacks and finally
+cleanup; synchronous dual calls around Await must not leak state between tasks.
+The existing NoContext no-initializer-replay policy remains an explicit autonomous
+boundary, not a measured promise about every native initialization side effect.
 
-The ordinary marker verifier still accepts exactly 134 values. The appended
-measurement is deliberately rejected with failed/invalid_result and
-`witness_verified=false`; it cannot produce acceptance, parity or output artifacts.
-The native source/module/roundtrip hashes, staging checks, nonce, bounded private
-reader and process/quiescence gates remain in force. A failure diagnostic alone
-is not native evidence; a later capture needs an independent complete audit.
+`Export` may decorate an internal dual declaration, but invoking dual routines
+through an interpreter module receiver, including imported or stored receivers,
+is outside this initial autonomous subset and is rejected. This receiver boundary
+is not a claim about all native common-module import mechanisms. The platform
+form-module rule specifically excludes exposing such routines via ThisObject.
 
-## Exact inverses and regression gates
+Dual-on-Var, Async dual and Await in a dual body remain rejected. Async-dual
+legality has not been measured; the initial rejection is a conservative supported
+subset, not an assertion of universal native illegality. Context-bearing dual
+`AtClientAtServer` remains unsupported. No intentionally uncompilable native
+fixtures or new compiler-error-classification infrastructure are added.
 
-The identical `dual_shared_source` inverse used by host preflight and the native
-historical-adapter route requires the exact integrated hash, prefix, helper block
-and call. It restores every byte of strict134 source
-`b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14`.
-The host executes only this restored source in its real isolated interpreter child.
-All four historical adapter module hashes remain pinned to their previous bytes.
-This projection is not used to remove the new source from the native measurement.
+Primary references: [8.3.27 Developer Guide](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1808293),
+§4.8.1.3 for form/command directives, module visibility and ThisObject exposure;
+[preprocessor reference](https://1c-dn.com/library/preprocessor_instructions/) for
+target versus logical compilation flags. Positive observations do not replace
+unperformed native capability-negative or Async-dual legality tests.
 
-Focused tests cover the mechanical integration, section ordering, explicit locals,
-all inverse mutations, strict134 acceptance, dense token grammar, synthetic digit
-encoding, private reader failures, typed diagnostic failure-only behavior and
-actual production report serializers. Test-only exact inverses restore the
-baseline host/stage Python sources before older Async source projections, retaining
-all historical whole-source and Async8 pins rather than rebasing them.
+## Strict source-bound acceptance
 
-The private marker's synthetic two-space/LF upper bound is 2041 bytes, including
-all nine maximum-width fields, under the unchanged 2048-byte read cap. This is a
-conservative formatting calculation, not a native run. The existing combined
-Async proof includes both ordinary and dual diagnostic shapes in every early,
-late and failed-marker partition. Its exact production serialization results are
-recorded in the accompanying local validation report; no cap is raised.
+The final contract has135 values: the preceding134 plus ONE fixed token
+`dual.v1:` followed by nine three-digit ASCII integer fields. The projected vector
+is `[0,32,17,0,17,41,0,32,17]`. Native and host must match the entire exact typed
+contract. The dense encoding is retained to respect the unchanged2048-byte private
+reader cap, not as a capture-only success exception. Original JSON writer and all
+security/transport caps remain unchanged; no new writer settings or enums.
 
-## Limits and next gate
-
-This measurement does not add forms, database access, networking, module capability
-support or runtime dispatch. Positive caller observations do not prove forbidden
-module access or export/call rejection. Native capability-negative behavior and
-Async-dual declaration legality remain unknown and outside this positive source.
-No intentionally uncompilable native fixtures or new compiler-classification route
-are added.
-
-After source-bound native evidence is independently captured and audited, remove
-the temporary capture diagnostics/encoding, derive only the supported narrow
-contract, and implement it separately with real context-restoration and Async
-composition tests. A later implementation still needs fresh strict134 and Async8
-native gates plus normal required CI. Historical captures cannot substitute for
-current-source validation.
+Temporary public dual diagnostic payload is removed. Host preflight executes the
+entire exact staged source, including dual calls, without stripping the new body.
+The exact inverse remains only for constructing the four unchanged historical
+adapter modules. Existing Async8 bodies/identities and source-bound comparison are
+preserved. Full local tests, current-source native strict135, independent artifact
+audit, fresh same-run Async8 composition evidence and required OS CI gate release.
+These gates are pending for this implementation, not satisfied by measurement-only
+history or tests of the parent runtime.

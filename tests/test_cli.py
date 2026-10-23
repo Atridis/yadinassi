@@ -1270,7 +1270,7 @@ EndTry;
             self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
 
     def test_client_compilation_clean_diagnostics_and_unfinished_repl(self):
-        cases = [('&AtClientAtServerNoContext\nProcedure P() EndProcedure', 'не поддерживается'),
+        cases = [('&AtClientAtServer\nProcedure P() EndProcedure', 'не поддерживается'),
                  ('#If Client Then\nMessage(1);', '#КонецЕсли'),
                  ('#Else', 'соответствующей #Если')]
         for code, message in cases:

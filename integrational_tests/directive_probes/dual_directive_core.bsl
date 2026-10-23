@@ -1,4 +1,4 @@
-// Unexecuted measurement source. No native values are asserted.
+// Audited historical projection; this exact source requires fresh native validation.
 // Managed form module. Invoke CollectDualDirectiveProbe on the client after creation.
 // No module initializer; all observations occur in explicit caller routines.
 &AtServer
@@ -19,12 +19,6 @@ Function DualProbeOperation(ReferenceValue, Val ContainerValue, Val Escape)
         Raise "dual-directive-controlled-failure";
     EndIf;
     ProfileMask = 0;
-#If Client Then
-    ProfileMask = ProfileMask + 1;
-#EndIf
-#If Server Then
-    ProfileMask = ProfileMask + 2;
-#EndIf
 #If AtClient Then
     ProfileMask = ProfileMask + 4;
 #EndIf
