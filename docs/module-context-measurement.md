@@ -1,9 +1,9 @@
 # Side-local module variables, not form state
 
-Status: local implementation based on independently audited native capture
+Status: merged implementation based on independently audited native capture
 [run 39974330047](https://github.com/Atridis/yadinassi/actions/runs/39974330047).
-Current implementation-head native parity and four-platform CI remain required
-before ready/merge. The capture itself was a deliberately rejected measurement,
+All pre-merge native/four-platform gates passed; merged main e83eb60f has an
+independently audited native119 pass in run39987049433. The capture itself was a deliberately rejected measurement,
 not a full parity run: later client suites and watchdog did not start.
 
 ## Evidence and scope
@@ -114,4 +114,7 @@ provenance14311/32768. It covers80 conditional Async paths,216 failure prefixes,
 1744 failure diagnostic encodings and3188 marker-validation variants. The bound
 is conservative, not a new accepted native report. Private ordinary marker
 pretty serialization remains1859/2048. No coverage or caps are reduced/increased.
-The integrated current head still requires a new native audit and four-OS CI.
+The integrated head passed independent native audit in run39982661042 and all
+eight push/PR OS jobs before merge. Actual-main native run39987049433 also passed
+independent audit with unchanged119, four-client and watchdog evidence. The next
+[NoContext measurement](nocontext-measurement.md) is separate and is not full parity.

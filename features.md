@@ -5334,5 +5334,7 @@ client variables сохраняются. Default root/unannotated variables ос
 обычный #If Server сам по себе не активирует прежний ignored root. Формы,
 form attributes, server exports и imports не добавлены. Девять native observations
 независимо проверены, temporary capture удален; exact whole-source host/native
-контракт теперь119 значений. Current-head native и4OS gates еще обязательны.
+контракт теперь119 значений. Pre-merge native/4OS gates пройдены; actual-main
+native run39987049433 независимо проверен. Отдельный [замер NoContext](docs/nocontext-measurement.md)
+пока не является поддержкой директивы или полной parity.
 [Точные границы и evidence](docs/module-context-measurement.md). PR90 не меняется.

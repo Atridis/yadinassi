@@ -42,6 +42,7 @@ Var ContextServerUninitialized;
         Значения.Добавить(ObjectTransferValue);
     EndDo;
     ContextModuleAppend(Значения);
+    NoContextAppend(Значения);
     Возврат Значения;
 КонецФункции
 
@@ -980,6 +981,116 @@ Procedure ContextModuleAppend(RecordsOut)
     EndDo;
 EndProcedure
 
+
+// BEGIN bounded no-context measurement
+&AtServerNoContext
+Function NoContextLeaf(Value)
+    Value = Value + 1;
+    Return Value;
+EndFunction
+
+&AtServerNoContext
+Function NoContextOperation(Value, Val PrivateValue, Val Mode)
+    Var Initial, Nested, ServerSide, Caught;
+    Initial = Value;
+    Value = Value + 10;
+    PrivateValue = PrivateValue + 20;
+    Nested = NoContextLeaf(Value);
+    ServerSide = False;
+#If AtServer Then
+    ServerSide = True;
+#EndIf
+    Caught = False;
+    If Mode = 1 Then
+        Try
+            Raise "nocontext-controlled-failure";
+        Except
+            Caught = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;
+        EndTry;
+    EndIf;
+    If Mode = 2 Then
+        Raise "nocontext-controlled-failure";
+    EndIf;
+    Return New Structure("Initial,Nested,PrivateValue,ServerSide,Caught", Initial, Nested, PrivateValue, ServerSide, Caught);
+EndFunction
+
+&AtServer
+Function NoContextFromContext(Val Escape)
+    Var LocalValue, PrivateValue, Result, Failed, Matched;
+    LocalValue = 3;
+    PrivateValue = 4;
+    Failed = False;
+    Matched = False;
+    Result = Undefined;
+    Try
+        If Escape Then
+            Result = NoContextOperation(LocalValue, PrivateValue, 2);
+        Else
+            Result = NoContextOperation(LocalValue, PrivateValue, 0);
+        EndIf;
+    Except
+        Failed = True;
+        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;
+    EndTry;
+    Return New Structure("Value,PrivateValue,Failed,Matched,Result", LocalValue, PrivateValue, Failed, Matched, Result);
+EndFunction
+
+&AtClient
+Procedure NoContextRecord(Records, Val Label, Val Value)
+    If Value = Undefined Then
+        Records.Add("U");
+    Else
+        Records.Add(Value);
+    EndIf;
+EndProcedure
+
+&AtClient
+Function RunNoContextProbe()
+    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;
+    Records = New Array;
+    Records.Add("nocontext.core.v1");
+    Value = 1;
+    PrivateValue = 2;
+    Result = NoContextOperation(Value, PrivateValue, 0);
+    NoContextRecord(Records, "normal.nested", Result.Nested);
+    NoContextRecord(Records, "normal.private", Result.PrivateValue);
+    NoContextRecord(Records, "normal.server", Result.ServerSide);
+    NoContextRecord(Records, "normal.caller", Value);
+    NoContextRecord(Records, "normal.val.caller", PrivateValue);
+    Value = 5;
+    Result = NoContextOperation(Value, PrivateValue, 1);
+    NoContextRecord(Records, "caught.matched", Result.Caught);
+    NoContextRecord(Records, "caught.caller", Value);
+    Value = 6;
+    Failed = False;
+    Matched = False;
+    Try
+        NoContextOperation(Value, PrivateValue, 2);
+    Except
+        Failed = True;
+        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;
+    EndTry;
+    NoContextRecord(Records, "escape.caught", Failed And Matched);
+    NoContextRecord(Records, "escape.caller", Value);
+    Nested = NoContextFromContext(False);
+    NoContextRecord(Records, "context.normal.value", Nested.Value);
+    Nested = NoContextFromContext(True);
+    NoContextRecord(Records, "context.escape.value", Nested.Value);
+    NoContextRecord(Records, "context.escape.caught", Nested.Failed And Nested.Matched);
+    Value = 7;
+    Result = NoContextOperation(Value, PrivateValue, 0);
+    NoContextRecord(Records, "recovery.initial", Result.Initial);
+    NoContextRecord(Records, "recovery.caller", Value);
+    Return Records;
+EndFunction
+
+&AtClient
+Procedure NoContextAppend(RecordsOut)
+    Var NoContextValue;
+    For Each NoContextValue In RunNoContextProbe() Do
+        RecordsOut.Add(NoContextValue);
+    EndDo;
+EndProcedure
 // Initialization runs in its explicitly compiled side only. Do not infer that
 // arbitrary unguarded standalone root statements should run on the server.
 #If AtClient Then

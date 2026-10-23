@@ -299,12 +299,12 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         current_pin = 'ASYNC_FIXTURE_SHA256 = ' + repr(fixture['ASYNC_FIXTURE_SHA256'])
         self.assertEqual(source.count(current_pin), 1)
         source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
-        # Published a61f376 / tree b555f4f, plus exact main 0dbb938 and module119 integration.
+        # Published a61f376 / tree b555f4f, plus exact main 0dbb938 and module119 integration plus pinned temporary NoContext measurement.
         # Only the audited ordinary object witness, bool transport and legacy
         # adapter inverse and reviewed module119 contract/inverse differ from that
         # historical production-source pin; Async literal sources stay identical.
         self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
-                         'dd5c53bcb375b4bd2b14edc297fd3864c2c9b97ad0cf5e1a1e5ff89015f5598f')
+                         '9b7a595fe12ec77df4407bbd355ea138c67ba524cf396099bf3d433adc3d23e3')
         host = (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8')
         self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
         host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
@@ -312,7 +312,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         self.assertEqual(host.count(current_identity), 1)
         host = host.replace(current_identity, 'ASYNC_EXPECTED_IDENTITY = ' + repr(previous_identity))
         self.assertEqual(hashlib.sha256(host.encode('utf-8')).hexdigest(),
-                         '4adab5fc5a36b1c54ad884c9d6e6c0f4dd1127ee31da68cb4a9eb1cf165fd28f')
+                         'e3f7b1e3ca2372f516d49d1ef254c6f9e209f6fc5e1a6628730ce60b969ae7d3')
         self.assertEqual(hashlib.sha256(json.dumps(fixture['ASYNC_CASE_SOURCES'], ensure_ascii=False,
                          separators=(',', ':')).encode('utf-8')).hexdigest(),
                          '09edb17d68c0ff7a5462498b132afa5c2b202912abdcb48e33ae1c676a39c075')
@@ -356,7 +356,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         fixture = literal_sources()
         # Normalize only the pre-existing end-token/pin delta; these exact
         # source hashes additionally pin the reviewed Python-only diagnostic and
-        # exact main 0dbb938 ordinary witness and module119 integration.
+        # exact main 0dbb938 ordinary witness and module119 integration plus pinned temporary NoContext measurement.
         previous_aggregate = '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb'
         previous_identity = {'template': '19e6444a1856d5f4b8769a80f9ed97df0a042559e8255849635dff083dc8aba4', 'modules': ['b72afebe539cd97cd3eebc28c2aaf6866375609f3bb15f6433c69fb2dd5f99f7', '8df02833ca425b23f81c8b318f0af6ac05605d39f4c008b7e753206ed1c5374b', 'bff8fc309d743edd5e2aad989acc69d9fc142cab4f6cb11164edc73a9b6ead57', '311e8e0483ebbb69f34beb1c71d44ce61a56caf362d180c13e1f744ceb5a7aa6', '0f60e947518b7140f56973fccb631e167309ca36d2da10ce41355e9bdf41be61', 'a2b82d56e4f705b0bef66955b35d279a788da1cf2295f28af278d4a381a5f755', '9dd42db7bca81ed3e36ae12602693f8f5e5efcaf71e37a77e5a6e582b03355f9', '028492c644622ed2e8e79d9b65d8f6b8566b2a4e202088272ff0c391e2203df8']}
         source = without_ru_request_end_token(SNIPPET.read_text(encoding='utf-8'))
@@ -364,7 +364,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         self.assertEqual(source.count(current_pin), 1)
         source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
         self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
-                         '029ee9115a9cf6b6bd6ef29c9bdf2d002cf6697e3caa5d379f4400735eccdaae')
+                         '136d082753940f94be50288a7280c17d22ac91aa0ba9165ee3794475ce9808de')
         host = (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8')
         self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
         host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
@@ -372,7 +372,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         self.assertEqual(host.count(current_identity), 1)
         host = host.replace(current_identity, 'ASYNC_EXPECTED_IDENTITY = ' + repr(previous_identity))
         self.assertEqual(hashlib.sha256(host.encode('utf-8')).hexdigest(),
-                         'a8436c2d293619006e3738f611a8c517181b900d7a3cba0b6ac341ac63623dc3')
+                         'ad6f8241497dc74b309d6666775e394f4243545658905d3ca6d92bfafeddf3ca')
 
     def test_inline_end_operations_are_the_only_template_change(self):
         fixture = make_fixture()

@@ -350,6 +350,27 @@ def module_context_shared_source(raw: bytes) -> bytes:
 
 
 
+CLIENT_NOCONTEXT_TEMPLATE_SHA256 = 'acebb0bf1610941ae51d61ffd45e9ba38f33d703feaf12b3dc649b2609fb0430'
+CLIENT_NOCONTEXT_SHARED_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17'
+CLIENT_NOCONTEXT_BLOCK = b'\n// BEGIN bounded no-context measurement\n&AtServerNoContext\nFunction NoContextLeaf(Value)\n    Value = Value + 1;\n    Return Value;\nEndFunction\n\n&AtServerNoContext\nFunction NoContextOperation(Value, Val PrivateValue, Val Mode)\n    Var Initial, Nested, ServerSide, Caught;\n    Initial = Value;\n    Value = Value + 10;\n    PrivateValue = PrivateValue + 20;\n    Nested = NoContextLeaf(Value);\n    ServerSide = False;\n#If AtServer Then\n    ServerSide = True;\n#EndIf\n    Caught = False;\n    If Mode = 1 Then\n        Try\n            Raise "nocontext-controlled-failure";\n        Except\n            Caught = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n        EndTry;\n    EndIf;\n    If Mode = 2 Then\n        Raise "nocontext-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,PrivateValue,ServerSide,Caught", Initial, Nested, PrivateValue, ServerSide, Caught);\nEndFunction\n\n&AtServer\nFunction NoContextFromContext(Val Escape)\n    Var LocalValue, PrivateValue, Result, Failed, Matched;\n    LocalValue = 3;\n    PrivateValue = 4;\n    Failed = False;\n    Matched = False;\n    Result = Undefined;\n    Try\n        If Escape Then\n            Result = NoContextOperation(LocalValue, PrivateValue, 2);\n        Else\n            Result = NoContextOperation(LocalValue, PrivateValue, 0);\n        EndIf;\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    Return New Structure("Value,PrivateValue,Failed,Matched,Result", LocalValue, PrivateValue, Failed, Matched, Result);\nEndFunction\n\n&AtClient\nProcedure NoContextRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunNoContextProbe()\n    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;\n    Records = New Array;\n    Records.Add("nocontext.core.v1");\n    Value = 1;\n    PrivateValue = 2;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "normal.nested", Result.Nested);\n    NoContextRecord(Records, "normal.private", Result.PrivateValue);\n    NoContextRecord(Records, "normal.server", Result.ServerSide);\n    NoContextRecord(Records, "normal.caller", Value);\n    NoContextRecord(Records, "normal.val.caller", PrivateValue);\n    Value = 5;\n    Result = NoContextOperation(Value, PrivateValue, 1);\n    NoContextRecord(Records, "caught.matched", Result.Caught);\n    NoContextRecord(Records, "caught.caller", Value);\n    Value = 6;\n    Failed = False;\n    Matched = False;\n    Try\n        NoContextOperation(Value, PrivateValue, 2);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    NoContextRecord(Records, "escape.caught", Failed And Matched);\n    NoContextRecord(Records, "escape.caller", Value);\n    Nested = NoContextFromContext(False);\n    NoContextRecord(Records, "context.normal.value", Nested.Value);\n    Nested = NoContextFromContext(True);\n    NoContextRecord(Records, "context.escape.value", Nested.Value);\n    NoContextRecord(Records, "context.escape.caught", Nested.Failed And Nested.Matched);\n    Value = 7;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "recovery.initial", Result.Initial);\n    NoContextRecord(Records, "recovery.caller", Value);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure NoContextAppend(RecordsOut)\n    Var NoContextValue;\n    For Each NoContextValue In RunNoContextProbe() Do\n        RecordsOut.Add(NoContextValue);\n    EndDo;\nEndProcedure\n'
+CLIENT_NOCONTEXT_INITIALIZER = b'// Initialization runs in its explicitly compiled side only. Do not infer that\n// arbitrary unguarded standalone root statements should run on the server.\n#If AtClient Then\nContextClientCounter = 10;\n#EndIf\n#If AtServer Then\nContextServerCounter = 100;\n#EndIf\n'
+CLIENT_NOCONTEXT_CALL = b'    NoContextAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+
+
+def nocontext_shared_source(raw: bytes) -> bytes:
+    """Exact pre-initializer measurement/call inverse, never generic source stripping."""
+    tail = CLIENT_NOCONTEXT_BLOCK + CLIENT_NOCONTEXT_INITIALIZER
+    if (digest(raw) != CLIENT_NOCONTEXT_TEMPLATE_SHA256
+            or not raw.endswith(tail)
+            or raw.count(CLIENT_NOCONTEXT_CALL) != 1):
+        raise FullError('source_changed')
+    restored = (raw[:-len(tail)] + CLIENT_NOCONTEXT_INITIALIZER).replace(
+        CLIENT_NOCONTEXT_CALL, b'', 1)
+    if digest(restored) != CLIENT_NOCONTEXT_SHARED_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
 CLIENT_EXECUTE_SCRIPT = r'''
 import sys
 import re
@@ -383,15 +404,18 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute all119 values from the exact staged source in the interpreter."""
+    """Compute restored119 only; the pinned NoContext block is native-only measurement."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
+    shared_source = nocontext_shared_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        shared_path = Path(cache).resolve() / "shared-witness.bsl"
+        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -418,7 +442,8 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
+                                  {'phase', 'kind', 'ordinal', 'error_stage', 'nocontext'})
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -426,6 +451,14 @@ def validate_marker_diagnostics(value):
             or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
+    if 'nocontext' in value:
+        records = value['nocontext']
+        if (value['phase'] != 'completed' or value['kind'] != 'count'
+                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
+                or type(records) is not list or len(records) != 14
+                or any(not (item is None or type(item) is bool
+                            or (type(item) is int and 0 <= item <= 999)) for item in records)):
+            raise ValueError('client NoContext measurement')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':

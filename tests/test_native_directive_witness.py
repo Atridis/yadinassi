@@ -56,7 +56,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / "probe.bsl"
             path.write_bytes(changed)
-            with self.assertRaisesRegex(full.FullError, "^interpreter_failed$"):
+            with self.assertRaisesRegex(full.FullError, "^source_changed$"):
                 full.verify_client_interpreter(ROOT, path, full.digest(changed))
 
     def test_hash_mismatch_never_executes(self):
@@ -177,7 +177,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
 
     def test_real_interpreter_records_literal_stage_without_native_error_text(self):
         from yadinassi import Interpreter
-        source = linux_fixture(ROOT / full.CLIENT_SOURCE).decode('utf-8-sig')
+        source = full.nocontext_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig')
         source = source.replace('Return A + B;', 'Raise "PRIVATE_ERROR";')
         vm = Interpreter()
         vm.execute(source)

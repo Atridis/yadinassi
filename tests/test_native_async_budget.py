@@ -23,6 +23,8 @@ that row and all later rows with empty, failed/unreached observations. This keep
 all production applicability checks active; no validator is patched for size.
 The standard client's 372 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
+The temporary14-element NoContext vector is bounded with all False, longer
+than every allowed null, boolean or integer0..999 element.
 No native process or external action is invoked by these tests.
 """
 from __future__ import annotations
@@ -154,7 +156,9 @@ def maximum_process_diagnostics():
 
 
 def maximum_standard_marker_diagnostics():
-    return dict(phase='completed', kind='runtime_error', ordinal=14, error_stage=11)
+    # False is the longest allowed finite measurement element (vs null/int0..999).
+    return dict(phase='completed', kind='count', ordinal=119, error_stage=0,
+                nocontext=[False] * 14)
 
 
 def bind_identity(value):
@@ -621,7 +625,8 @@ class AsyncBudgetTests(unittest.TestCase):
         self.assertEqual(full.CLIENT_VALUES, expected)
         maximum = maximum_standard_marker_diagnostics()
         full.validate_marker_diagnostics(maximum)
-        self.assertEqual(len(compact(maximum)), 74)
+        self.assertEqual(len(maximum["nocontext"]), 14)
+        self.assertGreater(len(compact(maximum)), 74)
         count = 0
         for phase, kind, ordinal, error_stage in itertools.product(
                 ('invalid', 'error', 'completed'),
