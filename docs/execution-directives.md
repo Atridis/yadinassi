@@ -3,11 +3,11 @@
 Status: bounded implementation based on main `be82ce1`, independently reviewed
 and validated for the Val slice by audited native runs (see evidence below).
 Scalar non-Val strict whole-source acceptance passed audited actual-main native
-run 39951594654. The current object-transfer extension is measurement-only;
-see [object-transfer-measurement.md](object-transfer-measurement.md). Its host
-preflight temporarily computes the exact hash-restored fifty-value scalar source,
-not native-only object helpers. Unit results alone are not native evidence. Existing Async measurement work and historical parity fixtures remain
-unchanged.
+run 39951594654. The object implementation now follows independently audited
+58-record captures, including named/expression timing. Current-head strict109
+whole-source native acceptance and four-OS CI remain release gates, not yet passed.
+See [object-transfer-measurement.md](object-transfer-measurement.md). Existing
+Async work and historical parity modules remain unchanged.
 
 ## Scope and execution model
 
@@ -17,17 +17,27 @@ Client code can call it synchronously in an isolated logical server activation.
 This is an interpreter context, not a 1C server, network transport, form, database
 or query engine. There is no CLI server mode and native_target is independent.
 
-Cross-side transfer accepts only `String`, `Number`, `Boolean` and `Undefined`.
-Val parameters retain caller-side left-to-right value evaluation, including
-existing defaults. Non-Val parameters now accept explicit named caller storage:
-each formal gets a detached scalar input after all actual-expression effects.
-On normal completion, every non-Val formal is copied out in parameter order,
-including unchanged formals; repeated actuals therefore use the rightmost formal.
-All result/outgoing values are validated before any caller write. Escaping server
-exceptions perform no copyout; an exception caught on the server followed by a
-normal return still permits copyout. Same-side references are not used to cross
-the boundary. Property/index sinks, including forwarded references, and
-unmeasured non-Val forms remain explicitly unsupported; object transfer is still rejected.
+Cross-side transfer accepts String, Number, Boolean, Undefined and exact mutable
+Array/Structure graphs containing those leaves. Each occurrence is copied:
+shared children, repeated formals and result/outgoing roots do not preserve
+identity across the boundary. Cycles, other collection/object kinds and host
+subclasses fail closed. Local guards bound a packet to10,000 visited occurrences
+and depth64; these limits are not claimed as native limits.
+
+Expression actuals evaluate once left-to-right. Named storage actuals, including
+Val, are read after all expression effects; expression results retain their value
+or object handle until the final packet copy. Val prevents copyout, not the
+measured late read of named actual storage. Non-Val supports named variable sinks
+only. On normal completion all non-Val formals are copied out in positional order,
+including unchanged formals; repeated actuals use the rightmost formal. Result
+and all output graphs are validated and independently copied before any caller
+write. Escaping exceptions perform no copyout; caught server exceptions followed
+by normal return permit copyout. Property/index sinks, including forwarded
+references, and unmeasured non-Val forms remain unsupported. A named Val actual
+forwarding an opaque client property/index reference is also rejected; its late
+read timing has not been measured. Direct Val property expressions remain value
+expressions. Same-side references
+retain their existing semantics.
 
 This is the measured **8.3.27.1508 Linux/amd64 managed file-infobase** subset, not
 a universal claim for other targets. The official guide's alias/exception rules
@@ -71,10 +81,9 @@ parity before measurement.
   client module storage, imports or ready public ThisObject receiver. Unannotated
   module variables remain client-only. Server locals must not alias client globals.
   This does not provide the full context-bearing module-state behavior of AtServer.
-- Common named-variable scalar non-Val copyback is now the measured second
-  slice. Object serialization and context-bearing module-state transfer remain
-  required next parts, not optional polishing. Neither may be implemented as
-  ordinary live Python/BSL references. Broader non-Val sink/default/expression
+- Scalar and acyclic mutable Array/Structure transfer now have a measured contract.
+  Other object types and context-bearing module-state transfer remain required
+  next parts, not optional polishing. Broader non-Val sink/default/expression
   forms need their own bounded contract before support is claimed.
 - Server variable lifetime, nested server state, module exports and cross-module
   server dispatch require a separately measured state contract. Current imported
@@ -180,7 +189,7 @@ and is not accepted directive evidence.
 
 On rejected ordinary-client completion only, `marker_diagnostics` now reports a
 finite phase (`invalid`, `error`, `completed`), mismatch class, zero-based value
-ordinal (0–49, or 50 for excess values), and optional literal operation stage
+ordinal (0–108, or 109 for excess values), and optional literal operation stage
 (1–11). The BSL witness catches unexpected computation errors into a fixed
 sentinel plus stage number, never error descriptions. Stage order is the eleven
 labels in the positive probe; ordinal 4 is the first directive observation.
@@ -214,17 +223,17 @@ helpers were removed before the audited Val run. The 34 audited copyback
 observations and fixed version label extend scalar acceptance to 50 values.
 PR92 passed exact complete-source execution, full native audit and four-OS CI
 before merge; its temporary capture diagnostics/shared inverse were removed.
-The current object measurement below introduces a separate bounded inverse and
-finite diagnostics, without claiming whole-source object parity. The legacy
-parity adapter inverse remains exact and byte-preserving.
+The current object implementation removes temporary capture metadata and the
+shared-source exception. Host and native now independently require all109 typed
+values from the whole exact staged source. The separate historical parity inverse
+still preserves all four client modules byte-for-byte.
 
-## Current object measurement boundary
+## Current object transfer boundary
 
-PR92 scalar copyback is merged and its actual-main native evidence audited.
-The next object measurement appends eight calls/48 finite observations without
-implementing object transfer. The existing strict fifty-value acceptance rejects
-extras. Host execution currently uses an exact full-hash inverse to the accepted
-scalar source, not whole-source object parity. The legacy parity inverse also
-removes the appended object call block; all four modules remain byte-identical.
-See [object-transfer-measurement.md](object-transfer-measurement.md) for the
-bounded encoding, unchanged caps, source relationship and release gates.
+The original48 observations and the additional10 named/expression discriminators
+were independently audited as measurement evidence. They define this narrow
+8.3.27.1508 target contract, not universal serialization semantics. The runtime
+implements per-occurrence copying and measured binding timing; strict109 native
+acceptance and current-head CI still need to pass before ready/merge. See
+[object-transfer-measurement.md](object-transfer-measurement.md) for exact capture
+identities and the distinction between historical rejected capture and acceptance.

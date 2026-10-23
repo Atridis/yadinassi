@@ -1,3 +1,7 @@
+> Current status: the historical measurement stages below are superseded by the
+> implemented narrow contract and strict whole-source parity described at the end.
+> Their rejected measurement runs are evidence of observations, not acceptance.
+
 # Bounded object-transfer measurement
 
 Status: uncaptured measurement-only stage on exact main
@@ -283,3 +287,49 @@ A separate Windows-only pure request-binding test uses the existing portable
 fixture reader, so binding negatives are exercised rather than accidentally
 passing through descriptor/path identity rejection. Production secure reads are
 unchanged; the precise differing Windows stat field was not captured.
+
+
+## Implemented contract after independently audited mixed capture
+
+[Run39961116549](https://github.com/Atridis/yadinassi/actions/runs/39961116549)
+produced all58 observations. Artifact12504562952 ZIP SHA256:
+`2f552e2620500c68823da3bba8bc06c3d9d9e082ca21d5bbfe0966d1404498ba`.
+Head `fadda0be4f066abaaf7d9c6a786fd4901aef3be0` and report PR merge
+`174795833b33a3e9061c37efb9928e2fbab463ae` share tree
+`182383962308f3f5810b593382956c28d5ce3549`. Independent audit verified all319
+blobs,24 pins, runtime provenance, source/module/roundtrip, nonce/schema and
+original48 equality. The ten appended values were false,73,72,72,74,11,73,74,72,1.
+The historical strict50 gate intentionally rejected extras; later client/watchdog
+phases did not run. This does not count as strict runtime/native acceptance.
+
+The measured implementation reads named caller storage after all argument
+expression effects, for both Val and non-Val. Expressions evaluate once in order;
+scalar expression results retain their scalar value, while object expression
+results retain the old object handle and therefore see intervening mutation before
+serialization. Every Array/Structure occurrence is copied separately, including
+shared child occurrences, repeated formal inputs, outputs and returned roots.
+Normal completion copies all non-Val outputs in positional order; escaping
+exceptions copy none. Result and the entire outgoing graph packet are validated
+and copied before caller storage is written. Val formals never copy out.
+
+Scope is exact mutable Array and Structure with String/Number/Boolean/Undefined
+leaves. Cycles, other object classes, host subclasses and non-variable non-Val
+sinks (including forwarded property/index references) fail closed. Named Val
+forwarding of opaque property/index references is also outside this bounded
+storage contract. Local packet limits are10,000 visited occurrences and depth64,
+not claimed native limits. Shared DAG expansion consumes this occurrence budget.
+Module state, other object serialization, NoContext and dual directives remain
+required subsequent work. Same-side calls retain ordinary reference semantics.
+This targets the captured Linux/amd64 managed file-infobase8.3.27.1508; it does not
+resolve the documented alias/exception disagreement by inventing a file-mode rule.
+
+`object_transfer_native.json` records the independently captured values, not
+interpreter-generated expectations. Native and host now require the same109
+values, and host computes them from the exact complete staged source. That source
+is byte-identical to the audited mixed capture. Host preflight now permits exact
+Boolean results as well as strings/integral numbers. Temporary observation-list
+and error-stage metadata and shared-source execution inverse are removed; the
+source-local failure sentinel still causes strict rejection without exposing raw
+errors. Existing four-client adapter outputs and all security/size limits remain
+unchanged. Current implementation-head native parity, independent audit and all
+four OS checks remain required before ready/merge.

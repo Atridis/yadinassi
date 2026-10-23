@@ -317,29 +317,12 @@ CLIENT_VALUES = [
 # Audited pinned native scalar-copyback capture, not interpreter-generated data.
 CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
 
+# Audited pinned object capture, including named/expression timing; not local expected generation.
+CLIENT_VALUES += ['object.transfer.v1'] + [True, False, 1, 1, 1, False, 2, 21, 23, 23, 2, False, 3, 3, 3, False, 41, 42, 4, False, 5, 51, 51, 51, 51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73, 73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74, 11, 73, 74, 72, 1]
+
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
-
-
-CLIENT_OBJECT_TEMPLATE_SHA256 = '6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120'
-CLIENT_SHARED_TEMPLATE_SHA256 = '52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c'
-CLIENT_OBJECT_MARKER = b'\n// BEGIN bounded object transfer measurement\n'
-CLIENT_OBJECT_CALL = b'    For Each ObjectTransferValue In RunObjectTransferProbe() Do\n        \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f.\xd0\x94\xd0\xbe\xd0\xb1\xd0\xb0\xd0\xb2\xd0\xb8\xd1\x82\xd1\x8c(ObjectTransferValue);\n    EndDo;\n'
-
-
-def client_interpreter_source(raw: bytes) -> bytes:
-    """Exact inverse of native-only object measurement, not a general rewriter."""
-    if CLIENT_OBJECT_MARKER not in raw:
-        return raw
-    if (digest(raw) != CLIENT_OBJECT_TEMPLATE_SHA256
-            or raw.count(CLIENT_OBJECT_MARKER) != 1
-            or raw.count(CLIENT_OBJECT_CALL) != 1):
-        raise FullError('source_changed')
-    restored = raw.split(CLIENT_OBJECT_MARKER, 1)[0].replace(CLIENT_OBJECT_CALL, b'', 1)
-    if digest(restored) != CLIENT_SHARED_TEMPLATE_SHA256:
-        raise FullError('source_changed')
-    return restored
 
 
 CLIENT_EXECUTE_SCRIPT = r'''
@@ -365,7 +348,7 @@ result = []
 for value in values:
     if type(value) is Decimal and value.is_finite() and value == value.to_integral_value():
         result.append(int(value))
-    elif type(value) is str:
+    elif type(value) in (str, bool):
         result.append(value)
     else:
         raise RuntimeError("unexpected witness type")
@@ -375,22 +358,15 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute the exact hash-restored fifty-value witness during measurement.
-
-    Appended native-only object helpers are not interpreter parity evidence.
-    Native strict acceptance stays unchanged and rejects extra observations.
-    """
+    """Compute the full exact staged-source witness, including object transport."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
-    shared_source = client_interpreter_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
-        shared_path = Path(cache).resolve() / "shared-witness.bsl"
-        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -417,9 +393,7 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
-                                  {'phase', 'kind', 'ordinal', 'error_stage', 'object_transfer'},
-                                  {'phase', 'kind', 'ordinal', 'error_stage', 'object_error_stage'})
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -427,20 +401,6 @@ def validate_marker_diagnostics(value):
             or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
-    if 'object_transfer' in value:
-        records = value['object_transfer']
-        if (value['phase'] != 'completed' or value['kind'] != 'count'
-                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
-                or type(records) is not list or len(records) != 58
-                or any(not (item is None or type(item) is bool
-                            or (type(item) is int and 0 <= item <= 999)) for item in records)):
-            raise ValueError('client object transfer measurement')
-    if 'object_error_stage' in value:
-        stage = value['object_error_stage']
-        if (value['phase'] != 'completed' or value['kind'] != 'count'
-                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
-                or type(stage) is not int or not 0 <= stage <= 141):
-            raise ValueError('client object error stage')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':

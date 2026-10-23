@@ -190,17 +190,17 @@ x = 3; Replace(x); Message(x);
             self.assertEqual(self.vm.execute(f'Identity({expression})'), expected)
         self.assertEqual(self.messages, ['3'])
 
-    def test_objects_rejected_at_boundary_without_callee_effects(self):
+    def test_unsupported_objects_rejected_at_boundary_without_callee_effects(self):
         self.vm.execute('''
 &AtServer
 Function S(Val X) Message("entered"); Return X; EndFunction
 ''')
         with self.assertRaisesRegex(BSLError, 'Межконтекстная передача'):
-            self.vm.execute('S(New Array());')
+            self.vm.execute('S(New Map());')
         self.assertEqual(self.messages, [])
 
-    def test_non_scalar_return_rejected_and_caller_restored(self):
-        self.vm.execute('&AtServer\nFunction S() Return New Array(); EndFunction')
+    def test_unsupported_return_rejected_and_caller_restored(self):
+        self.vm.execute('&AtServer\nFunction S() Return New Map(); EndFunction')
         with self.assertRaisesRegex(BSLError, 'Межконтекстная передача'):
             self.vm.execute('S();')
         self.assertEqual(self.vm.execution_context, 'client')
