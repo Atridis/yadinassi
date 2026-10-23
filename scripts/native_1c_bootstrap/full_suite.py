@@ -3200,6 +3200,7 @@ EndProcedure
 
 &AtClient
 Function AsyncReadRequest(ЭтапВхода)
+    Var AsyncRequestKey;
     // Streaming grammar rejects nested values, duplicate keys and trailing data.
     ЭтапВхода = "request_open";
     Reader = New JSONReader;
@@ -3215,25 +3216,25 @@ Function AsyncReadRequest(ЭтапВхода)
         Else
             ЭтапВхода = "request_key_current_later";
         EndIf;
-        Key = Reader.CurrentValue;
+        AsyncRequestKey = Reader.CurrentValue;
         If Index = 1 Then
             ЭтапВхода = "request_key_property_first";
         Else
             ЭтапВхода = "request_key_property_later";
         EndIf;
-        If Request.Property(Key) Then Raise "ASYNC-REQUEST"; EndIf;
+        If Request.Property(AsyncRequestKey) Then Raise "ASYNC-REQUEST"; EndIf;
         ЭтапВхода = "request_value";
-        If Key = "schema" Or Key = "version" Then
+        If AsyncRequestKey = "schema" Or AsyncRequestKey = "version" Then
             AsyncExpectToken(Reader, JSONValueType.Number);
             If TypeOf(Reader.CurrentValue) <> Type("Number") Or Reader.CurrentValue <> 1 Then
                 Raise "ASYNC-REQUEST";
             EndIf;
-        ElsIf Key = "nonce" Or Key = "entered" Or Key = "completed" Then
+        ElsIf AsyncRequestKey = "nonce" Or AsyncRequestKey = "entered" Or AsyncRequestKey = "completed" Then
             AsyncExpectToken(Reader, JSONValueType.String);
         Else
             Raise "ASYNC-REQUEST";
         EndIf;
-        Request.Insert(Key, Reader.CurrentValue);
+        Request.Insert(AsyncRequestKey, Reader.CurrentValue);
     EndDo;
     ЭтапВхода = "request_end";
     AsyncExpectToken(Reader, JSONValueType.ObjectEnd);
@@ -3710,7 +3711,7 @@ EnDpRoCeDuRe
 )
 
 
-ASYNC_FIXTURE_SHA256 = '0c7e4335e2175bc500fdd4268dac5488290a08663f625cd44b83721b2ea6dc6d'
+ASYNC_FIXTURE_SHA256 = '3d789ced862ca647626a2106b21c2a27f15622cc918b0c3edff80f89c4f6b444'
 
 
 def async_client_module(case_id: int) -> bytes:

@@ -1550,7 +1550,7 @@ def async_source_identity(source: bytes) -> dict:
         if any('__ASYNC_CASE_' in case for case in cases):
             raise ValueError('async nested placeholder')
         fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
-        if fixture_hash != '0c7e4335e2175bc500fdd4268dac5488290a08663f625cd44b83721b2ea6dc6d':
+        if fixture_hash != '3d789ced862ca647626a2106b21c2a27f15622cc918b0c3edff80f89c4f6b444':
             raise ValueError('async fixture not pinned')
         modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
         identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
@@ -1802,4 +1802,4 @@ def validate_async_marker_raw(raw, nonce, case_id, phase):
     return data
 
 
-ASYNC_EXPECTED_IDENTITY = {'template': 'f7ffa135b1b7973233e2b19ae64021ee3608abfec3b9e93fb1315b47a4dd6856', 'modules': ['37da88eff7ad44a7ab0e7ced9f446ec4bb48c7a1b5a388fb23338d8c604f4a8c', '1545c86531bb5993e9249980a1b2dd9a0f434dcebee70321a2b69c0b681267bf', '6f8a986a51a9f9771172566a6d6c974249f9a594034437ba81a3744c8eec0322', 'fe8181824af9c0dc960d94682a7684c69983dc482b456026713a3b3321ad9c23', '1c9bb7de7191dd3ff227a0244eba74da6fdb28d43fcd95568fdd0a5a56cafdce', '19cea00dd9ab8cf78c772b8fad609915da2dd721d8343232718326363958f876', 'e59be64d820861f20343daefdac96362dab03c099e3800b365a394d16cb251dc', 'ff85c42aabe4d450a9315fb5c56b26862cbf1af4a173a3735d2b4fb4d0349d8a']}
+ASYNC_EXPECTED_IDENTITY = {'template': 'd53ce9873242502e179caaca49adff04a986a58865a1fdaca32f3e1d9cb854e2', 'modules': ['4cf8dc8b014a93c675a62ae89b102353480863c39f7df324596a49d3cc2cae41', 'adb5fe8065609fba0dd54283fea3749a8f7d592cf784f5e7654a7d230ad3c058', '181a108f3d00a9995b7e94a8ef082c2ef78869539417bf37e81652c1036827f0', '23e85d5ffc50d4c89eff4a44f4a2cd0ed005525598d3aa3b96269569b047145a', 'e7296edf741905c342e4ab07b171fe9176e4dcf8853fcc20b4023dd25a1ac561', '0f328368811ae13d97c887158bd50834c6d75f42a7ad6854542f9363886bedcd', '78173ef8425ad3d16ce5b3b87814e31f8fb5b09bc000d530725461a84fe37f3d', '550e1467f1f93df41206fa4d5c6a6fa47549123e33f37792a9aa242390ac8c76']}

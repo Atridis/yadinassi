@@ -47,8 +47,8 @@ class GeneratedRequestSiteGuardTests(unittest.TestCase):
             expected = (
                 ('read', 'If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;', helper),
                 ('token', 'If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;', helper),
-                ('current', 'Key = Reader.CurrentValue;', reader),
-                ('property', 'If Request.Property(Key) Then Raise "ASYNC-REQUEST"; EndIf;', reader),
+                ('current', 'AsyncRequestKey = Reader.CurrentValue;', reader),
+                ('property', 'If Request.Property(AsyncRequestKey) Then Raise "ASYNC-REQUEST"; EndIf;', reader),
             )
             for name, operation, source in expected:
                 block = (f'If Index = 1 Then\n'

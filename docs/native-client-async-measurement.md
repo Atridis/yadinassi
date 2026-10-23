@@ -102,6 +102,14 @@ and it is never successful Async evidence. Other native log categories
 are diagnostic classifications, not proof of a particular cause. No raw log
 text, error description, new sidecar, or new artifact class is exported.
 
+The request reader declares `AsyncRequestKey` locally and uses it in place of
+implicit `Key`; `Reader.CurrentValue`, validation order, and all eight measured
+cases are unchanged. This bounded scope correction avoids depending on an
+undeclared name in the form context. The observed first current-value assignment
+failure does not distinguish getter failure from assignment failure or establish
+a `Key` collision. Offline scope and exact-inverse tests are not native proof of
+the cause or a successful fix; another native measurement is still required.
+
 For a failed case, semantic proof stays zero, trace/value/error observations stay
 empty, and the measurement's continuity stays null. Valid diagnostic markers never turn a timed
 out or otherwise failed process into accepted measurements. When entry is not

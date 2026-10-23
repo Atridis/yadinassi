@@ -190,6 +190,20 @@ def routine(source, name):
 
 
 
+
+def without_local_request_key(template):
+    start = template.index('Function AsyncReadRequest(ЭтапВхода)\n')
+    end = template.index('EndFunction', start) + len('EndFunction')
+    body = template[start:end]
+    declaration = '    Var AsyncRequestKey;\n'
+    assert body.count(declaration) == 1
+    assert not re.search(r'\bKey\b', body)
+    body = body.replace(declaration, '')
+    body, count = re.subn(r'\bAsyncRequestKey\b', 'Key', body)
+    assert count == 8
+    return template[:start] + body + template[end:]
+
+
 def without_request_site_diagnostic(template):
     start = template.index('&AtClient\nProcedure AsyncExpectRequestKey')
     end = template.index('&AtClient\nFunction AsyncReadRequest', start)
@@ -210,6 +224,22 @@ def without_request_site_diagnostic(template):
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
+    def test_local_request_key_is_the_only_template_change(self):
+        fixture = make_fixture()
+        template = fixture['ASYNC_TEMPLATE']
+        body = routine(template, 'AsyncReadRequest')
+        self.assertTrue(body.startswith('    Var AsyncRequestKey;\n'))
+        self.assertEqual(len(re.findall(r'\bAsyncRequestKey\b', template)), 9)
+        restored = without_local_request_key(template)
+        # Exact inverse binds the complete previously reviewed template/cases,
+        # not an expected source assembled from the changed implementation.
+        self.assertEqual(hashlib.sha256(restored.encode('utf-8')).hexdigest(),
+                         'f7ffa135b1b7973233e2b19ae64021ee3608abfec3b9e93fb1315b47a4dd6856')
+        self.assertEqual(hashlib.sha256(json.dumps(
+            [restored, fixture['ASYNC_CASE_SOURCES']], ensure_ascii=False,
+            separators=(',', ':')).encode('utf-8')).hexdigest(),
+            '0c7e4335e2175bc500fdd4268dac5488290a08663f625cd44b83721b2ea6dc6d')
+
     def test_entry_failure_log_is_finite_private_stage_only(self):
         handler = routine(make_fixture()['ASYNC_TEMPLATE'], 'ПриОткрытии')
         stages = re.findall(r'ЭтапВхода = "([a-z]+)";', handler)
@@ -235,7 +265,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
     def test_request_substages_are_fixed_by_reference_without_semantic_changes(self):
         from test_native_async_protocol import suite
         template = make_fixture()['ASYNC_TEMPLATE']
-        body = routine(without_request_site_diagnostic(template), 'AsyncReadRequest')
+        body = routine(without_request_site_diagnostic(without_local_request_key(template)), 'AsyncReadRequest')
         labels = ['request_open', 'request_object', 'request_key', 'request_value',
                   'request_end', 'request_fields', 'request_nonce', 'request_paths']
         all_labels = ['request', 'witness', 'initialize', 'entered', 'root', *labels,
@@ -262,7 +292,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
             if index + 1 < len(labels):
                 self.assertLess(body.index(operation), body.index('ЭтапВхода = "' + labels[index + 1] + '";'))
             self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS['ASYNC-ENTRY-FAILURE:' + label], 18 + index)
-        restored = without_request_site_diagnostic(template)
+        restored = without_request_site_diagnostic(without_local_request_key(template))
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
                          'b591f9eeb6690f741ef790b61df1a09774e88bdbd0a10bfe6ffe9cd3c50c4918')
         restored = re.sub(r'^\s*ЭтапВхода = "request_[a-z]+";\n', '', restored, flags=re.M)
@@ -348,13 +378,13 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         assert 'NativePostCreate' not in source
         request = routine(fixture['ASYNC_TEMPLATE'], 'AsyncReadRequest')
         assert 'For Index = 1 To 5 Do' in request
-        assert 'If Request.Property(Key)' in request
+        assert 'If Request.Property(AsyncRequestKey)' in request
         assert 'JSONValueType.PropertyName' in request
         assert 'JSONValueType.ObjectEnd' in request
         assert 'If Reader.Read() Then Raise' in request
-        assert 'Key = "case"' not in request
-        assert 'Key = "code"' not in request
-        assert 'Key = "procedure"' not in request
+        assert 'AsyncRequestKey = "case"' not in request
+        assert 'AsyncRequestKey = "code"' not in request
+        assert 'AsyncRequestKey = "procedure"' not in request
 
 
     def test_values_are_exact_bounded_and_nonstringified(self):

@@ -69,7 +69,7 @@ class SiteStructure(BSLStructure):
         return super().property(name, output)
 
 
-def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False):
+def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False, expose_context_keys=False):
     module = reader_fixture.suite.async_client_module(case_id).decode('utf-8-sig')
     start = module.index('&AtClient\nProcedure AsyncExpectToken')
     end = module.index('&НаКлиенте\nПроцедура АсинхЗаписатьВход')
@@ -83,11 +83,21 @@ def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False):
     vm.execute('Var JSONValueType, LaunchParameter;')
     vm.variables['jsonvaluetype'] = SiteTokenNames(site_fault, iteration)
     vm.variables['launchparameter'] = '/tmp/offline/request.json'
-    if site_fault == 'key_assignment_error':
+    if expose_context_keys:
+        # Controlled context only, not a claim about real managed-form members.
+        vm.execute('Var Key, AsyncRequestKey;')
+        vm.variables['key'] = 'unchanged context Key'
+        vm.variables['asyncrequestkey'] = 'unchanged outer AsyncRequestKey'
+    if site_fault == 'key_assignment_error' or expose_context_keys:
         normal_set_variable = vm.set_variable
         def set_variable(name, value):
-            if name.casefold() == 'key' and reader.position == 2 * iteration - 1:
-                raise ValueError(FAULT_DESCRIPTION)
+            if expose_context_keys and name.casefold() == 'key':
+                raise ValueError('Controlled read-only context Key')
+            if name.casefold() == 'asyncrequestkey':
+                if expose_context_keys:
+                    assert vm.locals is not None and 'asyncrequestkey' in vm.locals
+                if site_fault == 'key_assignment_error' and reader.position == 2 * iteration - 1:
+                    raise ValueError(FAULT_DESCRIPTION)
             return normal_set_variable(name, value)
         vm.set_variable = set_variable
     vm.execute(exact_slice, source=SOURCE_LABEL)
@@ -113,6 +123,20 @@ FAULTS = (
 
 
 class GeneratedRequestSiteIntegrationTests(unittest.TestCase):
+    def test_explicit_request_key_is_local_with_exposed_context_names(self):
+        for case_id in range(8):
+            with self.subTest(case=case_id):
+                vm, reader, output, _ = exercise_site(None, case_id, expose_context_keys=True)
+                self.assertFalse(vm.execute('Caught'))
+                self.assertEqual(vm.execute('Result.Count()'), Decimal(5))
+                self.assertEqual(vm.execute('Result.nonce'), 'a' * 32)
+                self.assertEqual(vm.variables['key'], 'unchanged context Key')
+                self.assertEqual(vm.variables['asyncrequestkey'], 'unchanged outer AsyncRequestKey')
+                self.assertEqual(reader.read_calls, 13)
+                self.assertTrue(reader.closed)
+                self.assertIsNone(vm.locals)
+                self.assertEqual(output, [])
+
     def test_success_retains_strict_reader_and_has_no_diagnostic_output(self):
         for case_id in range(8):
             vm, reader, output, module = exercise_site(None, case_id)
