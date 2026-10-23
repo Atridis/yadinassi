@@ -8,6 +8,7 @@ import re
 import tempfile
 import unittest
 from unittest import mock
+from test_native_1c_full_host import SyntheticFilesystemCase
 from test_native_client_probe import full, suite, ROOT, stage_fixture
 from test_native_directive_witness import linux_fixture
 import test_native_async_budget as budget
@@ -31,8 +32,9 @@ def measured(values):
     return full.CLIENT_VALUES[:134] + ['dual.v1:' + ''.join(f'{value:03d}' for value in values)]
 
 
-class DualWitnessTests(unittest.TestCase):
+class DualWitnessTests(SyntheticFilesystemCase):
     def setUp(self):
+        super().setUp()
         if os.name == 'nt':
             patch = mock.patch.object(suite, 'secure_bytes', new=stage_fixture.portable_fixture_bytes)
             patch.start()

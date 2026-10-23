@@ -97,7 +97,7 @@ class AsyncRuntimeWiringTests(SyntheticFilesystemCase):
             self.test_source_change()
 
 
-class AsyncParityPublicationContextTests(unittest.TestCase):
+class AsyncParityPublicationContextTests(SyntheticFilesystemCase):
     """A matched compact result cannot authorize parity in another context."""
 
     @staticmethod
