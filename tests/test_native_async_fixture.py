@@ -190,6 +190,23 @@ def routine(source, name):
 
 
 
+def without_request_site_diagnostic(template):
+    start = template.index('&AtClient\nFunction AsyncRequestKeySite')
+    end = template.index('&НаКлиенте\nПроцедура АсинхЗаписатьВход')
+    template = template[:start] + template[end:]
+    addition = '''        СохраненнаяОшибкаВхода = ErrorInfo();
+        Если ЭтапВхода = "request_key" Тогда
+            Попытка
+                ЭтапВхода = AsyncRequestKeySite(СохраненнаяОшибкаВхода);
+            Исключение
+                // Diagnostic failure cannot replace the original coarse stage.
+            КонецПопытки;
+        КонецЕсли;
+'''
+    assert template.count(addition) == 1
+    return template.replace(addition, '')
+
+
 class AsyncFixtureSourcesTest(unittest.TestCase):
     def test_entry_failure_log_is_finite_private_stage_only(self):
         handler = routine(make_fixture()['ASYNC_TEMPLATE'], 'ПриОткрытии')
@@ -207,6 +224,9 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         catch = handler.split('Исключение', 1)[1]
         self.assertEqual(re.findall(r'Сообщить\(([^\n]+)\);', catch),
                          ['"ASYNC-ENTRY-FAILURE:" + ЭтапВхода'])
+        self.assertTrue(catch.lstrip().startswith('СохраненнаяОшибкаВхода = ErrorInfo();'))
+        self.assertEqual(handler.count('ErrorInfo()'), 1)
+        self.assertIn('Если ЭтапВхода = "request_key" Тогда', catch)
         for forbidden in ('ОписаниеОшибки(', 'ИнформацияОбОшибке(',
                           'ЗавершитьРаботуСистемы(', 'АсинхЗаписатьЗавершение('):
             self.assertNotIn(forbidden, handler)
@@ -217,7 +237,9 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         body = routine(template, 'AsyncReadRequest')
         labels = ['request_open', 'request_object', 'request_key', 'request_value',
                   'request_end', 'request_fields', 'request_nonce', 'request_paths']
-        all_labels = ['request', 'witness', 'initialize', 'entered', 'root', *labels]
+        all_labels = ['request', 'witness', 'initialize', 'entered', 'root', *labels,
+                      'request_key_call', 'request_key_read', 'request_key_token',
+                      'request_key_current', 'request_key_property']
         self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS,
                          {'ASYNC-ENTRY-FAILURE:' + label: 13 + index
                           for index, label in enumerate(all_labels)})
@@ -235,7 +257,10 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
             if index + 1 < len(labels):
                 self.assertLess(body.index(operation), body.index('ЭтапВхода = "' + labels[index + 1] + '";'))
             self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS['ASYNC-ENTRY-FAILURE:' + label], 18 + index)
-        restored = re.sub(r'^\s*ЭтапВхода = "request_[a-z]+";\n', '', template, flags=re.M)
+        restored = without_request_site_diagnostic(template)
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         'b591f9eeb6690f741ef790b61df1a09774e88bdbd0a10bfe6ffe9cd3c50c4918')
+        restored = re.sub(r'^\s*ЭтапВхода = "request_[a-z]+";\n', '', restored, flags=re.M)
         restored = restored.replace('Function AsyncReadRequest(ЭтапВхода)', 'Function AsyncReadRequest()')
         restored = restored.replace('АсинхЗапрос = AsyncReadRequest(ЭтапВхода);', 'АсинхЗапрос = AsyncReadRequest();')
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
@@ -425,15 +450,25 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         fixture = make_fixture()
         for case, body in enumerate(fixture['ASYNC_CASE_SOURCES']):
             source = fixture['ASYNC_TEMPLATE'] + body
-            # Each variable/routine declaration has its own client directive.
-            # No declaration may inherit a server/default compilation context.
-            declarations = list(re.finditer(
-                r'(?im)^\s*(?:(?:Асинх|Async)\s+)?'
-                r'(?:Перем|Var|Функция|Процедура|Function|Procedure)\b', source))
-            self.assertGreater(len(declarations), 3)
-            for declaration in declarations:
-                previous = source[:declaration.start()].rstrip().splitlines()[-1].strip()
-                self.assertIn(previous.casefold(), ('&наклиенте', '&atclient'), (case, previous))
+            # Module variables/routines need their own client directive;
+            # explicitly local variables inherit their routine's context.
+            previous, inside_routine, declarations = '', False, 0
+            for line in source.splitlines():
+                stripped = line.strip()
+                declaration = re.match(r'(?i)(?:(?:Асинх|Async)\s+)?'
+                    r'(Перем|Var|Функция|Процедура|Function|Procedure)\b', stripped)
+                if declaration:
+                    local_variable = declaration[1].casefold() in ('перем', 'var') and inside_routine
+                    if not local_variable:
+                        self.assertIn(previous.casefold(), ('&наклиенте', '&atclient'), (case, previous))
+                        declarations += 1
+                    if declaration[1].casefold() not in ('перем', 'var'):
+                        inside_routine = True
+                if re.match(r'(?i)(?:КонецФункции|КонецПроцедуры|EndFunction|EndProcedure)\b', stripped):
+                    inside_routine = False
+                if stripped:
+                    previous = stripped
+            self.assertGreater(declarations, 3)
             directives = re.findall(r'(?im)^\s*&([^\n]+)', source)
             self.assertTrue(all(d.casefold() in ('наклиенте', 'atclient') for d in directives))
             self.assertEqual(re.findall(r'(?im)^\s*#([^\n]+)', source),
@@ -449,6 +484,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
             r'(?im)^\s*(?:(?:Асинх|Async)\s+)?'
             r'(?:Функция|Процедура|Function|Procedure)\s+(\w+)\(', cleaned))
         calls = set(re.findall(r'(?u)(?<![\w])(\w+)\s*\(', cleaned)) - declared
+        calls -= {'And', 'Not'}  # Logical operators before a parenthesized expression.
         expected = {
             'Close', 'ErrorInfo', 'GetBinaryDataFromString', 'Insert',
             'IsErrorOfCategory', 'Mid', 'OpenFile', 'Property', 'Raise', 'Read',

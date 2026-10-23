@@ -13,7 +13,8 @@ PRECEDENCE = {
     "*": 5, "/": 5, "%": 5,
 }
 class Parser:
-    def __init__(self, tokens: list[Token]):
+    def __init__(self, tokens: list[Token], compilation_context: str | None = None):
+        self.compilation_context = compilation_context
         self.tokens = tokens
         self.pos = 0
         self.loop_depth = 0
@@ -57,9 +58,18 @@ class Parser:
             if token := self.accept("IMPORT"):
                 statements.append(ast.Import(token, token.value))
                 continue
-            if self.accept("ATCLIENT"):
+            execution_context = "client"
+            annotation = self.accept("ATCLIENT") or self.accept("ATSERVER")
+            if annotation:
+                execution_context = "server" if annotation.kind == "ATSERVER" else "client"
                 if self.current.kind not in ("FUNCTION", "PROCEDURE"):
-                    self.fail("После &НаКлиенте ожидается объявление процедуры или функции")
+                    self.fail("После директивы исполнения ожидается объявление процедуры или функции")
+                if self.compilation_context and execution_context != self.compilation_context:
+                    ending = "END" + self.current.kind
+                    while self.current.kind not in {ending, "EOF"}:
+                        self.pos += 1
+                    self.expect(ending)
+                    continue
             if self.current.kind in ("FUNCTION", "PROCEDURE"):
                 token = self.current
                 kind = token.kind
@@ -79,7 +89,7 @@ class Parser:
                 finally:
                     self.routine_kind = None
                     self.parameter_names = set()
-                statements.append(ast.Routine(token, name, parameters, kind == "FUNCTION", exported, body))
+                statements.append(ast.Routine(token, name, parameters, kind == "FUNCTION", exported, body, execution_context))
                 # Routine brackets are not statements and need no semicolon.
                 continue
             statements.append(self.statement())
@@ -177,7 +187,7 @@ class Parser:
         if self.accept("GOTO"):
             self.expect("~")
             return ast.Goto(token, self.expect("IDENT").value)
-        if token.kind == "ATCLIENT":
+        if token.kind in {"ATCLIENT", "ATSERVER"}:
             self.fail("Директива исполнения допустима только перед подпрограммой уровня модуля")
         if token.kind == "IMPORT":
             self.fail("Импорт допустим только на уровне модуля")
@@ -444,7 +454,13 @@ def validate_labels(statements: list[ast.Node]) -> None:
 
 
 def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
-    return Parser(Lexer(text, source).tokens()).parse()
+    client = Parser(Lexer(text, source).tokens(), "client").parse()
+    server_tokens = Lexer(text, source, execution_context="server",
+                          server_declarations_only=True).tokens()
+    server = Parser(server_tokens, "server").parse()
+    return [node for node in client if not (
+        isinstance(node, ast.Routine) and node.execution_context == "server"
+    )] + [node for node in server if isinstance(node, ast.Routine)]
 
 
 def parse_expression(text: str, source: str = "<Вычислить>") -> ast.Node:
@@ -460,7 +476,7 @@ def parse_fragment(text: str, source: str = "<Выполнить>") -> list[ast.
     tokens = Lexer(text, source, allow_directives=False).tokens()
     # Reject declarations anywhere, including unreachable branches, before effects.
     for token in tokens:
-        if token.kind in {"VAR", "FUNCTION", "PROCEDURE", "ATCLIENT", "IMPORT"}:
+        if token.kind in {"VAR", "FUNCTION", "PROCEDURE", "ATCLIENT", "ATSERVER", "IMPORT"}:
             raise BSLError("Выполнить: объявления и импорт недопустимы",
                            token.source, token.line, token.column)
     # A fresh parser intentionally has no surrounding routine/loop/handler/labels.

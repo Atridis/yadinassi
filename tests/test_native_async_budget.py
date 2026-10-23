@@ -14,9 +14,11 @@ Scheduling permutations do not change length: tokens are integers and preserve
 the same multiset. Number -999999 is the longest accepted value payload; other
 public scalar types, hashes, enum tags and error ordinals have fixed bounds.
 A call-side rejection omits both Awaits, so at most SIX errors can coexist.
-The failure-only diagnostic tuple has 1041 legal encodings, plus null; its
+The failure-only diagnostic tuple has 1236 legal encodings, plus null; its
 longest compact encoding is ten bytes. The late majorant includes that tuple
 even alongside every completed observation, a deliberately unreachable bound.
+The standard client's 60 finite marker diagnostics are bounded independently;
+both majorants include the longest diagnostic even when it is unreachable.
 No native process or external action is invoked by these tests.
 """
 from __future__ import annotations
@@ -44,7 +46,7 @@ MODULES = full.ASYNC_EXPECTED_IDENTITY['modules']
 EXTRAS = ('client_dates', 'client_values', 'client_collections', 'client_numbers', 'client_watchdog')
 CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
 CAPS = {'stage_wire': 8192, 'public_summary': 32768, 'provenance': 32768}
-MAXIMUM_FAILURE_DIAGNOSTICS = [5, 3, 3, 25]
+MAXIMUM_FAILURE_DIAGNOSTICS = [5, 3, 3, 30]
 
 
 def compact(value):
@@ -65,6 +67,10 @@ def maximum_process_diagnostics():
     return dict(stage='before_probe', reason='unexpected_processes',
                 unexpected_count=256, zombie_count=256,
                 classes=dict(zip(CLASSES, (100, 100, 10, 10, 10, 10, 16))))
+
+
+def maximum_standard_marker_diagnostics():
+    return dict(phase='completed', kind='runtime_error', ordinal=14, error_stage=11)
 
 
 def bind_identity(value):
@@ -203,7 +209,9 @@ def majorant(early=False):
     for case in s['cases']:
         case.update(status='not_started', output_size=1048576)
     client = s['client_probe']
-    client.update(status='not_started', failure_kind=longest(full.FAILURES), process_diagnostics=maximum_process_diagnostics())
+    client.update(status='not_started', failure_kind=longest(full.FAILURES),
+        process_diagnostics=maximum_process_diagnostics(),
+        marker_diagnostics=maximum_standard_marker_diagnostics())
     client.update({key: False for key in full.CLIENT_FLAGS})
     measurement = s['client_async']
     measurement.update(status='inconclusive', failure_kind=longest(suite.ASYNC_FAILURES),
@@ -271,7 +279,8 @@ def proof_results():
         public_summary_early_upper_bytes=len(early), provenance_upper_bytes=len(pretty(projected)),
         actual_provenance_boundary_bytes=len(files['provenance.json']),
         conditional_paths=80, failure_prefix_variants=216,
-        failure_diagnostic_variants=1042, maximum_failure_diagnostic_wire_bytes=10,
+        failure_diagnostic_variants=1237, maximum_failure_diagnostic_wire_bytes=10,
+        standard_marker_diagnostic_variants=60,
         maximum_simultaneous_errors=6, maximum_trace_events_per_case=24,
         staged_paths=24, artifact_classes=7)
 
@@ -402,7 +411,7 @@ class AsyncBudgetTests(unittest.TestCase):
 
     def test_every_finite_failure_diagnostic_encoding_is_bounded(self):
         self.assertEqual((len(suite.ASYNC_HOST_STAGES), len(suite.ASYNC_MARKER_STATES),
-                          len(suite.ASYNC_LOG_CATEGORIES)), (6, 4, 26))
+                          len(suite.ASYNC_LOG_CATEGORIES)), (6, 4, 31))
         self.assertEqual(len(compact(MAXIMUM_FAILURE_DIAGNOSTICS)), 10)
         record = next(failure_records())
         maximum_wire = len(render_stage(stage(record)[0]))
@@ -412,7 +421,7 @@ class AsyncBudgetTests(unittest.TestCase):
         # Exhaust the finite product independently of either validator. JSON
         # size is additive: all legal lists have four fixed-width integers,
         # with only the category ever taking two digits. Null is shorter.
-        for value in (None, *map(list, itertools.product(range(6), range(4), range(4), range(26)))):
+        for value in (None, *map(list, itertools.product(range(6), range(4), range(4), range(31)))):
             allowed = value is None or (
                 (value[0] >= 3 or value[1:3] == [0, 0])
                 and (value[0] != 0 or value[3] == 0)
@@ -435,7 +444,73 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertIsNone(restored['continuity_sha256'])
             self.assertLessEqual(len(wire), maximum_wire)
             self.assertLessEqual(len(pretty(record)), maximum_public)
-        self.assertEqual(count, 1042)
+        self.assertEqual(count, 1237)
+
+    def test_standard_client_witness_and_marker_diagnostics_remain_bounded(self):
+        expected = [42, 'client-probe', 3, 6,
+            'directive.call.add: {"N",42}',
+            'directive.preprocessor.server: server',
+            'directive.preprocessor.client: client',
+            'directive.call.nested: server',
+            'directive.param.val: {"N",7}',
+            'directive.exception: {"B",1}',
+            'directive.return.number: {"N",42}',
+            'directive.return.string: {"S","x"}',
+            'directive.return.boolean: {"B",1}',
+            'directive.return.undefined: {"U"}',
+            'directive.call.recovery: {"N",42}']
+        self.assertEqual(len(expected), 15)
+        self.assertEqual(suite.CLIENT_VALUES, expected)
+        self.assertEqual(full.CLIENT_VALUES, expected)
+        maximum = maximum_standard_marker_diagnostics()
+        full.validate_marker_diagnostics(maximum)
+        self.assertEqual(len(compact(maximum)), 74)
+        count = 0
+        for phase, kind, ordinal, error_stage in itertools.product(
+                ('invalid', 'error', 'completed'),
+                ('none', 'count', 'type', 'value', 'runtime_error'),
+                range(-1, 16), range(12)):
+            diagnostic = dict(phase=phase, kind=kind, ordinal=ordinal, error_stage=error_stage)
+            if phase != 'completed':
+                allowed = kind == 'none' and ordinal == -1 and error_stage == 0
+            elif kind == 'runtime_error':
+                allowed = 1 <= error_stage <= 11 and ordinal == error_stage + 3
+            elif kind == 'count':
+                allowed = 0 <= ordinal <= 15 and error_stage == 0
+            elif kind in ('type', 'value'):
+                allowed = 0 <= ordinal < 15 and error_stage == 0
+            else:
+                allowed = ordinal == -1 and error_stage == 0
+            if not allowed:
+                with self.assertRaises(ValueError):
+                    full.validate_marker_diagnostics(diagnostic)
+                continue
+            count += 1
+            full.validate_marker_diagnostics(diagnostic)
+            self.assertLessEqual(len(compact(diagnostic)), len(compact(maximum)))
+            self.assertLessEqual(len(pretty(diagnostic)), len(pretty(maximum)))
+            s, inputs, modules = stage(suite.empty_async_report())
+            s.update(status='failed', failure_kind='invalid_result')
+            s['client_probe'].update(status='failed', failure_kind='invalid_result',
+                witness_verified=False, marker_diagnostics=diagnostic)
+            wire = render_stage(s)
+            full.validate_stage3(json.loads(wire), NONCE, inputs, modules,
+                                 prerequisites=True, client_async=True)
+            self.assertEqual(full.decode_stage3_wire(json.loads(wire)), s)
+            result = probe(suite.empty_async_report())
+            result['stage3'] = s
+            summary, code = render_summary(result)
+            public = json.loads(summary)
+            self.assertEqual(code, 1)
+            self.assertFalse(public['client_async_measurement_completed'])
+            self.assertFalse(public['client_async_parity_claimed'])
+            self.assertEqual(s['client_async'], suite.empty_async_report())
+            self.assertNotIn(b'directive.', wire + summary)
+            self.assertLessEqual(len(wire), CAPS['stage_wire'])
+            self.assertLessEqual(len(summary), CAPS['public_summary'])
+            with self.assertRaises(full.FullError):
+                full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], b''), result, smoke.IMAGE)
+        self.assertEqual(count, 60)
 
     def test_process_counter_width_bound_is_derived_not_independent_maxima(self):
         # DP over seven nonnegative counters with a <=256 sum proves 16

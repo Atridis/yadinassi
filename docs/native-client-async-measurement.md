@@ -88,7 +88,13 @@ localization additionally distinguishes open, object, key, value, end, fields,
 nonce, and paths operations using fixed request-prefixed labels. These labels
 identify the operation group being attempted, not the statement-level cause or
 Async language behavior. Request validation remains strict; no fallback parser
-or free-form error information is added. Other native log categories
+or free-form error information is added. On request-key failure, a bounded
+source-site classifier can additionally identify the pinned helper-call, read
+guard, token guard, current-value assignment, or property-check statement. It
+saves the original error before a failure-only same-module calibration and
+exports only a fixed label. Uncertain module, line, source, or cause-chain
+observations retain the broader request-key label. A matched statement can
+contain a guard and a Raise; it does not alone establish an underlying API cause. Other native log categories
 are diagnostic classifications, not proof of a particular cause. No raw log
 text, error description, new sidecar, or new artifact class is exported.
 

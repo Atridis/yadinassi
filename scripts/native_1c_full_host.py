@@ -296,9 +296,80 @@ def generated_module(source: bytes) -> bytes:
 
 
 CLIENT_SOURCE = "scripts/native_1c_bootstrap/client_probe.bsl"
+# Exact finite witness contract, independently executed by the host interpreter.
+CLIENT_VALUES = [
+    42,
+    'client-probe',
+    3,
+    6,
+    'directive.call.add: {"N",42}',
+    'directive.preprocessor.server: server',
+    'directive.preprocessor.client: client',
+    'directive.call.nested: server',
+    'directive.param.val: {"N",7}',
+    'directive.exception: {"B",1}',
+    'directive.return.number: {"N",42}',
+    'directive.return.string: {"S","x"}',
+    'directive.return.boolean: {"B",1}',
+    'directive.return.undefined: {"U"}',
+    'directive.call.recovery: {"N",42}',
+]
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
+
+
+CLIENT_EXECUTE_SCRIPT = r'''
+import sys
+import re
+import importlib.util
+from pathlib import Path
+# Load only the verified package, not arbitrary modules beside the checkout.
+package = Path(sys.argv[1]) / "yadinassi"
+spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                            submodule_search_locations=[str(package)])
+module = importlib.util.module_from_spec(spec)
+sys.modules["yadinassi"] = module
+spec.loader.exec_module(module)
+Interpreter = module.Interpreter
+
+import json
+from decimal import Decimal
+vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")))
+vm.execute(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
+values = list(vm.execute("ВычислитьПробу()"))
+result = []
+for value in values:
+    if type(value) is Decimal and value.is_finite() and value == value.to_integral_value():
+        result.append(int(value))
+    elif type(value) is str:
+        result.append(value)
+    else:
+        raise RuntimeError("unexpected witness type")
+sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+'''
+
+
+
+def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
+    """Execute the exact native form source, calling only its finite computation.
+
+    Native separately validates the same typed values and exact module roundtrip.
+    This is bounded witness parity, not a full client/server platform claim.
+    """
+    raw = read_regular(source, MAX_FILE, nonempty=True)
+    if digest(raw) != source_hash:
+        raise FullError("source_changed")
+    runner = bounded_child if runner is None else runner
+    with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        code, output, stderr = runner(
+            [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+    expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
+    if code != 0 or stderr or output != expected:
+        raise FullError("interpreter_failed")
+    if read_regular(source, MAX_FILE, nonempty=True) != raw:
+        raise FullError("source_changed")
 
 
 def validate_process_diagnostics(value):
@@ -318,7 +389,37 @@ def validate_process_diagnostics(value):
     return value
 
 
+def validate_marker_diagnostics(value):
+    if (type(value) is not dict
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or type(value['phase']) is not str
+            or value['phase'] not in {'invalid', 'error', 'completed'}
+            or type(value['kind']) is not str
+            or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= 15
+            or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
+        raise ValueError('client marker diagnostics')
+    if value['phase'] != 'completed':
+        valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
+    elif value['kind'] == 'runtime_error':
+        valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
+    elif value['kind'] == 'count':
+        valid = 0 <= value['ordinal'] <= 15 and value['error_stage'] == 0
+    elif value['kind'] in {'type', 'value'}:
+        valid = 0 <= value['ordinal'] < 15 and value['error_stage'] == 0
+    else:
+        valid = value['ordinal'] == -1 and value['error_stage'] == 0
+    if not valid:
+        raise ValueError('client marker diagnostics combination')
+    return value
+
+
 def validate_client_probe(data, source_hash, module_hash):
+    if type(data) is dict and "marker_diagnostics" in data:
+        validate_marker_diagnostics(data["marker_diagnostics"])
+        if data.get("status") != "failed" or data.get("failure_kind") != "invalid_result" or data.get("witness_verified") is not False:
+            raise ValueError("client marker diagnostics outcome")
+        data = {key: value for key, value in data.items() if key != "marker_diagnostics"}
     if (type(data) is not dict
             or set(data) != CLIENT_FLAGS | CLIENT_HASHES | {"status", "failure_kind", "process_diagnostics"}
             or any(type(data[key]) is not bool for key in CLIENT_FLAGS)
@@ -1449,7 +1550,7 @@ def async_source_identity(source: bytes) -> dict:
         if any('__ASYNC_CASE_' in case for case in cases):
             raise ValueError('async nested placeholder')
         fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
-        if fixture_hash != 'f6a4e32a92874a95dab240984fbd82095a73244cc02c00a286c19422e963de94':
+        if fixture_hash != '00a39eac17bc2f1db8d65994e53c71f3b9a6a9fb97598c787294b20ab4155226':
             raise ValueError('async fixture not pinned')
         modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
         identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
@@ -1553,7 +1654,7 @@ def validate_async_failure_diagnostics(data):
     require(type(value) is list and len(value) == 4, 'failure diagnostic fields')
     stage, entered, completed, category = value
     require(number(stage, 0, 5) and number(entered, 0, 3)
-            and number(completed, 0, 3) and number(category, 0, 25), 'failure diagnostic codes')
+            and number(completed, 0, 3) and number(category, 0, 30), 'failure diagnostic codes')
     require(stage >= 3 or (entered == 0 and completed == 0), 'failure marker applicability')
     require(stage != 0 or category == 0, 'failure log applicability')
     require(category < 13 or stage >= 3, 'entry log applicability')
@@ -1701,4 +1802,4 @@ def validate_async_marker_raw(raw, nonce, case_id, phase):
     return data
 
 
-ASYNC_EXPECTED_IDENTITY = {'template': 'b591f9eeb6690f741ef790b61df1a09774e88bdbd0a10bfe6ffe9cd3c50c4918', 'modules': ['3aca417755fb2f0e0c5ea643dfe99d9455eec47879b3736b7738bdfb3e30c8b5', '7673c4f432ad5dcc5883a9c48fc9a2c07e95c1f3ea93914bf07ef1fc685c265c', '0ccd1a2b6867c9f235ab39d282bc3b6ae4d1030c72ed15bf65ebcc19c90f6b68', '18d2b1d2aba4768fc1023f26219c2802965d607c8fab0489624f247d69c0eec5', '6c00b43619f021fce7f87aa30a37af99471736a1631839f4b051414bea2c641a', '97b4b0b4fe2a58f02eb6b3614d7c1cd0598769f2c7d87d5ccb167f8f4e81ba9e', '6965293efb999f6e6ad20601972603cc8428289a4930742aae6720c8c6784a19', '204253bfd22bccdd09876f1c149c88aa53d6d874eab706713b27c89c66ba63d2']}
+ASYNC_EXPECTED_IDENTITY = {'template': '9f710582aac60108e8e385ea4685302dad9cce33086638d4486ea80a5bb4fa13', 'modules': ['491d39c47d29184889f392c13967d898383a737af3d352b7702b4175da8e6c28', 'c83f83c8d04d884ce2bfc4ff2b027d453d56211a459e73f604b364edf331affc', '550a1c249ebe2705b05cfdfd5e0608529334453a3ea6594f0d8349515438567e', '4d51bfd91385d8126d33d91e94dec9bb4150b7815b742e602d31993816489e4f', '1e4c468c61faeb2270f17e050cf8fd84bf8a6e6418aff201a52d89f5cfbe686c', '96a9f80e9b4e9d229587e415d14c36faec3d0b87ae1df7df297ade8b25053e29', '47f58bb4117dca4fb8c43c9690890ffbedbe586d5b7f54e2e86509e4db04a315', '8ed7951205624daf9fabf51e06abc83a761b06d0ba0e9dec2eb000452679cdf7']}
