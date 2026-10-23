@@ -84,7 +84,7 @@ _TYPE_IDS = {
 }
 # This syntax milestone does not claim native serialization for error objects or
 # their types. Keep an explicit refusal policy instead of inventing native GUIDs.
-_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY})
+_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE})
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
@@ -234,6 +234,8 @@ class _Writer:
             raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
         if kind in _UNSUPPORTED_CODEC_TYPES or (
                 kind is BSLType.TYPE and value in _UNSUPPORTED_CODEC_TYPES):
+            if kind is BSLType.PROMISE or (kind is BSLType.TYPE and value is BSLType.PROMISE):
+                raise ValueError("ЗначениеВСтрокуВнутр: сериализация Обещание пока не поддерживается")
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов ошибок пока не поддерживается")
         if kind not in _CODECS:
             raise ValueError("ЗначениеВСтрокуВнутр: для типа не задана политика сериализации Yadinassi")

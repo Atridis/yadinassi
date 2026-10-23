@@ -11,6 +11,8 @@ from .preprocessor import ConditionalCompilation, SourceRegions
 
 KEYWORDS: dict[str, str] = {}
 for kind, aliases in {
+    "ASYNC": ("Асинх", "Async"),
+    "AWAIT": ("Ждать", "Await"),
     "EXECUTE": ("Выполнить", "Execute"),
     "GOTO": ("Перейти", "Goto"),
     "TRY": ("Попытка", "Try"),
@@ -266,7 +268,7 @@ class Lexer:
                         continue
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
             if skipping_client:
-                if skipped_depth == 0 and kind not in {"FUNCTION", "PROCEDURE"}:
+                if skipped_depth == 0 and kind not in {"ASYNC", "FUNCTION", "PROCEDURE"}:
                     raise BSLError("После директивы исполнения ожидается объявление процедуры или функции",
                                    self.source, line, column)
                 if kind in {"FUNCTION", "PROCEDURE"}:

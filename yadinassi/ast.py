@@ -37,6 +37,11 @@ class Unary(Node):
 
 
 @dataclass
+class Await(Node):
+    operand: Node
+
+
+@dataclass
 class Binary(Node):
     left: Node
     operator: str
@@ -149,6 +154,7 @@ class Routine(Node):
     exported: bool
     body: list[Node]
     execution_context: str = "client"
+    is_async: bool = False
 
 
 @dataclass
