@@ -22,14 +22,25 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
         self.assertEqual(len(set(value.split(":", 1)[0]
                                  for value in full.CLIENT_VALUES[4:])), 11)
 
+    def test_positive_witness_uses_execution_context_not_platform_target_flags(self):
+        for relative in (full.CLIENT_SOURCE,
+                         'integrational_tests/directive_probes/client_server.bsl'):
+            source = (ROOT / relative).read_text(encoding='utf-8-sig')
+            self.assertIn('#Если НаСервере И Не НаКлиенте Тогда', source)
+            self.assertIn('#If AtClient And Not AtServer Then', source)
+            self.assertNotIn('#Если Сервер И Не Клиент Тогда', source)
+            self.assertNotIn('#If Client And Not Server Then', source)
+            self.assertNotIn('DirectiveClientProfile', source)
+            self.assertNotIn('DirectiveServerProfile', source)
+
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_exact_shared_native_witness_computes_contract_in_real_interpreter(self):
+    def test_exact_native_module_computes_contract_in_real_interpreter(self):
         source = ROOT / full.CLIENT_SOURCE
         full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()))
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
     def test_changed_callee_is_rejected_by_real_interpreter_gate(self):
-        source = full.client_interpreter_source((ROOT / full.CLIENT_SOURCE).read_bytes())
+        source = (ROOT / full.CLIENT_SOURCE).read_bytes()
         changed = source.replace(b"Return A + B;", b"Return A + B + 1;")
         self.assertNotEqual(source, changed)
         with tempfile.TemporaryDirectory() as temporary:
@@ -46,10 +57,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
         runner.assert_not_called()
 
     def test_child_failure_stderr_and_wrong_typed_result_fail_closed(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        source = Path(temporary.name).resolve() / "probe.bsl"
-        source.write_bytes(linux_fixture(ROOT / full.CLIENT_SOURCE))
+        source = ROOT / full.CLIENT_SOURCE
         good = json.dumps(full.CLIENT_VALUES, ensure_ascii=False,
                           separators=(",", ":")).encode()
         for result in [(1, good, b""), (0, good, b"error"),
@@ -146,7 +154,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
 
     def test_real_interpreter_records_literal_stage_without_native_error_text(self):
         from yadinassi import Interpreter
-        source = full.client_interpreter_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig')
+        source = (ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8-sig')
         source = source.replace('Return A + B;', 'Raise "PRIVATE_ERROR";')
         vm = Interpreter()
         vm.execute(source)
@@ -179,38 +187,3 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
         for change in ({'status': 'ok'}, {'witness_verified': True}, {'failure_kind': 'timeout'}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 full.validate_client_probe({**record, **change}, 'a' * 64, 'b' * 64)
-
-    def test_profiles_keep_all_six_bits_for_each_directive_side(self):
-        for client, server in [('111111', '111111'), ('101010', '010100'), ('000000', '000000')]:
-            values = suite.CLIENT_VALUES + ['directive.profile.client:' + client,
-                                            'directive.profile.server:' + server]
-            result = self.diagnose(values)
-            self.assertEqual(result['preprocessor'], dict(client=client, server=server))
-            self.assertEqual(result['phase'], 'completed')
-            # Profile presence cannot turn the original marker into success.
-            with tempfile.TemporaryDirectory() as temporary:
-                path = Path(temporary).resolve() / 'marker.json'
-                path.write_text(json.dumps(dict(schema=1, nonce='a' * 32,
-                    phase='completed', witness='client', values=values)))
-                with self.assertRaises(suite.FullError):
-                    suite.client_marker(path, 'a' * 32, 'completed')
-
-    def test_profile_retains_original_mismatch_and_rejects_unbounded_bits(self):
-        values = list(suite.CLIENT_VALUES)
-        values[5] = 'directive.preprocessor.server: other'
-        result = self.diagnose(values + ['directive.profile.client:111110', 'directive.profile.server:111110'])
-        self.assertEqual((result['kind'], result['ordinal']), ('value', 5))
-        for bits in ('PRIVATE', '1111111', '11111', '11111X', 111111, None):
-            with self.subTest(bits=bits), self.assertRaises(ValueError):
-                full.validate_marker_diagnostics({**result, 'preprocessor': {'client': bits, 'server': '111111'}})
-
-    def test_profile_inverse_exactly_restores_published_shared_witness(self):
-        raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
-        restored = full.client_interpreter_source(raw)
-        self.assertEqual(full.digest(restored), full.CLIENT_SHARED_TEMPLATE_SHA256)
-        self.assertNotIn(b'ThickClient', restored)
-        self.assertIn(b'Function DirectiveWitnessValues()', restored)
-        for changed in (raw + b' ', raw.replace(b'ThickClientManagedApplication', b'ThinClient'),
-                        raw.replace(b'DirectiveClientProfile()', b'DirectiveClientProfile(1)', 1)):
-            with self.subTest(length=len(changed)), self.assertRaises(full.FullError):
-                full.client_interpreter_source(changed)

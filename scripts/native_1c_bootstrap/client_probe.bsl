@@ -26,8 +26,6 @@
     Для Каждого Наблюдение Из DirectiveWitnessValues() Цикл
         Значения.Добавить(Наблюдение);
     КонецЦикла;
-    Значения.Добавить("directive.profile.client:" + DirectiveClientProfile());
-    Значения.Добавить("directive.profile.server:" + DirectiveServerProfile());
     Возврат Значения;
 КонецФункции
 
@@ -74,7 +72,7 @@ EndFunction
 
 &НаСервере
 Функция DirectiveSide()
-#Если Сервер И Не Клиент Тогда
+#Если НаСервере И Не НаКлиенте Тогда
     Возврат "server";
 #Иначе
     Возврат "other";
@@ -112,7 +110,7 @@ Function DirectiveWitnessValues()
     Stage = 2;
     Results.Add("directive.preprocessor.server: " + DirectiveSide());
     Stage = 3;
-#If Client And Not Server Then
+#If AtClient And Not AtServer Then
     Results.Add("directive.preprocessor.client: client");
 #Else
     Results.Add("directive.preprocessor.client: other");
@@ -149,77 +147,3 @@ Function DirectiveWitnessValues()
     EndTry;
     Return Results;
 EndFunction
-
-// BEGIN native-only predefined-symbol measurement
-&AtClient
-Function DirectiveClientProfile()
-    Bits = "";
-#If Client Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If Server Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If AtClient Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If AtServer Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If ThickClientManagedApplication Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If ThickClientOrdinaryApplication Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-    Return Bits;
-EndFunction
-
-&AtServer
-Function DirectiveServerProfile()
-    Bits = "";
-#If Client Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If Server Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If AtClient Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If AtServer Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If ThickClientManagedApplication Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-#If ThickClientOrdinaryApplication Then
-    Bits = Bits + "1";
-#Else
-    Bits = Bits + "0";
-#EndIf
-    Return Bits;
-EndFunction
-

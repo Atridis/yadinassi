@@ -319,25 +319,6 @@ CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
 
 
-CLIENT_PROFILE_TEMPLATE_SHA256 = '2e3224907a6919774a6c440739897f25f3b380256a3e8e6383ee6a91e1312de4'
-CLIENT_SHARED_TEMPLATE_SHA256 = 'c2fb456076b0e79ecef07ca1967e8642970907c22ffabf9cb4b92dc47f2aaf47'
-CLIENT_PROFILE_MARKER = b'\n// BEGIN native-only predefined-symbol measurement\n'
-CLIENT_PROFILE_CALLS = b'    \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f.\xd0\x94\xd0\xbe\xd0\xb1\xd0\xb0\xd0\xb2\xd0\xb8\xd1\x82\xd1\x8c("directive.profile.client:" + DirectiveClientProfile());\n    \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f.\xd0\x94\xd0\xbe\xd0\xb1\xd0\xb0\xd0\xb2\xd0\xb8\xd1\x82\xd1\x8c("directive.profile.server:" + DirectiveServerProfile());\n'
-
-
-def client_interpreter_source(raw: bytes) -> bytes:
-    """Exact inverse of native-only profile instrumentation, not a BSL rewriter."""
-    if CLIENT_PROFILE_MARKER not in raw:
-        return raw
-    if (digest(raw) != CLIENT_PROFILE_TEMPLATE_SHA256
-            or raw.count(CLIENT_PROFILE_MARKER) != 1 or raw.count(CLIENT_PROFILE_CALLS) != 1):
-        raise FullError('source_changed')
-    restored = raw.split(CLIENT_PROFILE_MARKER, 1)[0].replace(CLIENT_PROFILE_CALLS, b'', 1)
-    if digest(restored) != CLIENT_SHARED_TEMPLATE_SHA256:
-        raise FullError('source_changed')
-    return restored
-
-
 CLIENT_EXECUTE_SCRIPT = r'''
 import sys
 import re
@@ -371,7 +352,7 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Execute the exact shared witness, excluding pinned native-only measurement.
+    """Execute the exact native form source, calling only its finite computation.
 
     Native separately validates the same typed values and exact module roundtrip.
     This is bounded witness parity, not a full client/server platform claim.
@@ -379,14 +360,11 @@ def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, run
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
-    shared_source = client_interpreter_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
-        shared_path = Path(cache).resolve() / "shared-witness.bsl"
-        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -412,13 +390,6 @@ def validate_process_diagnostics(value):
 
 
 def validate_marker_diagnostics(value):
-    if type(value) is dict and 'preprocessor' in value:
-        profile = value['preprocessor']
-        if (type(profile) is not dict or set(profile) != {'client', 'server'}
-                or any(type(bits) is not str or re.fullmatch(r'[01]{6}', bits) is None
-                       for bits in profile.values()) or value.get('phase') != 'completed'):
-            raise ValueError('client preprocessor profile')
-        value = {key: item for key, item in value.items() if key != 'preprocessor'}
     if (type(value) is not dict
             or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
             or type(value['phase']) is not str

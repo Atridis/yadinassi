@@ -7,7 +7,7 @@ EndFunction
 
 &НаСервере
 Функция DirectiveSide()
-#Если Сервер И Не Клиент Тогда
+#Если НаСервере И Не НаКлиенте Тогда
     Возврат "server";
 #Иначе
     Возврат "other";
@@ -39,7 +39,7 @@ EndFunction
 Procedure RunDirectiveProbe() Export
     Message("directive.call.add: " + ValueToStringInternal(DirectiveAdd()));
     Message("directive.preprocessor.server: " + DirectiveSide());
-#If Client And Not Server Then
+#If AtClient And Not AtServer Then
     Message("directive.preprocessor.client: client");
 #Else
     Message("directive.preprocessor.client: other");

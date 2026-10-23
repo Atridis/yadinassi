@@ -118,11 +118,8 @@ flag, image, process timeout, credential boundary, manual dispatch, database
 query or async runner changes are required. Literal managed-form client code
 calls literal server methods, never `Execute(text)`.
 
-Before the native invocation, the host runs the shared witness source through
-our interpreter in the existing bounded, credential-free isolated subprocess.
-During the native-only profile measurement described below, this is the exact
-hash-restored preceding shared source, not the entire staged native module;
-the added profile helpers are not interpreted. The shared witness is evaluated by
+Before the native invocation, the host runs the exact staged form source through
+our interpreter in the existing bounded, credential-free isolated subprocess,
 calling only `ВычислитьПробу()`. Its computed typed values must equal the finite
 contract. The native marker independently must equal that same typed contract,
 with nonce, client OnOpen wiring, source/module/roundtrip hashes, clean process
@@ -132,8 +129,7 @@ The native marker remains private under existing policy; the public report
 retains verified completion and source identity, not unvalidated raw output.
 
 The mixed template has a new exact hash. A narrowly checked inverse removes only
-the appended witness and its one call, plus the native-only profile suffix
-and its two call lines during measurement, then verifies the original template hash
+the appended witness and its one call, then verifies the original template hash
 `4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328`.
 All four existing parity adapters keep their original pins and produce identical
 client-only modules. The separate PR90 async harness also touches this template;
@@ -162,30 +158,29 @@ The original exact typed marker equality still rejects every sentinel, partial
 result and mismatch. Metadata cannot grant success, export raw values or replace
 source identity. The four old parity modules remain byte-identical.
 
-### Native-only predefined-symbol measurement (not acceptance)
+### Measured target flags versus execution context
 
-The second run observed a completed marker whose first mismatch was ordinal 5,
-`directive.preprocessor.server`, not a runtime-error sentinel. The preceding
-client→server scalar sum was 42; the complete witness remains rejected.
-The official preprocessor reference distinguishes thick/file-mode behavior
-(where Client and Server can both be defined) from thin-client/backend contexts:
-https://1c-dn.com/library/preprocessor_instructions/
+The measurement-only run [39931188144](https://github.com/Atridis/yadinassi/actions/runs/39931188144)
+for head `83a85d440f5009242fc041cfddb02f00072e948a` produced client `111010`
+and server `110110`, in order Client, Server, AtClient, AtServer,
+ThickClientManagedApplication, ThickClientOrdinaryApplication. Both platform
+Client and Server flags are true in this thick managed/file-mode target;
+AtClient and AtServer discriminate the observed compilation contexts. This is
+consistent with the [official preprocessor reference](https://1c-dn.com/library/preprocessor_instructions/).
+The artifact was independently audited against all 24 staged input hashes and
+PR tree `5e9161a0e9745b469cfbad99aff37d9b48c714e8` (the report identifies the PR
+merge commit, not the branch head). Source SHA256:
+`2e3224907a6919774a6c440739897f25f3b380256a3e8e6383ee6a91e1312de4`;
+module and roundtrip SHA256:
+`48fa1c4b5a830680e3d7379b2b0b6a6d795dd5b1a3ee44723a67ba6029e804a5`.
+The complete witness was rejected at ordinal 5; these profiles are measurement
+evidence, not accepted parity or a reason to change standalone defaults.
 
-The next measurement adds two literal six-bit strings, independently compiled
-inside `&AtClient` and `&AtServer`: Client, Server, AtClient, AtServer,
-ThickClientManagedApplication, ThickClientOrdinaryApplication, in that order.
-Only these twelve boolean bits are exposed as finite failure diagnostics; no
-native error text or arbitrary values are exported. Runtime/default-client
-semantics and the original fifteen-value acceptance contract are unchanged.
-The extra measurement records deliberately keep this run fail-closed, even if
-all earlier observations match. They are not new expected parity values.
-
-Because the two ThickClient keywords are unsupported by the standalone logical
-profile, the host computes the shared witness after an exact hash-bound inverse
-removes only this native-only measurement suffix and its two call lines. The
-restored source hash must equal the preceding published shared witness; this is
-not execution of the additional native-only profile helpers by our interpreter.
-The full native module remains source/module/roundtrip-bound, and the original
-four parity module inverses/pins remain unchanged. Actual profile capture must
-be audited before choosing a target-compatible acceptance contract; do not
-silently turn native thick/file-mode flags into standalone defaults.
+The positive witness now tests logical side with AtServer And Not AtClient and
+AtClient And Not AtServer. Its matching subset explicitly excludes equivalence
+of platform Client/Server target flags with standalone Client/Server defaults.
+All fifteen expected typed values are unchanged. The temporary profile helpers,
+extra records and shared-source inverse are removed; the host again executes
+exactly the whole staged form source. The four legacy adapters retain their
+byte-identical modules and pins. A new complete audited native PASS is still
+required; neither the measurement nor local tests satisfy that release gate.
