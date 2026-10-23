@@ -525,7 +525,7 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
         self.assertIn('Запрос.mode = "stall"', source)
         self.assertIn("Пока Истина Цикл", source)
         self.assertIn("ЗавершитьРаботуСистемы(Ложь)", source)
-        self.assertEqual(source.count("&AtServer"), 16)  # five shared + eleven capture helpers
+        self.assertEqual(source.count("&AtServer"), 25)  # sixteen scalar + nine object helpers
         self.assertEqual(source.count("&НаСервере"), 1)
         self.assertIn("Function DirectiveWitnessValues()", source)
         for forbidden in ("ЗапуститьТестНаСервере", "ВнешниеОбработки.Создать",

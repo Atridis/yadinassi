@@ -28,7 +28,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
     def test_native_and_host_contracts_match_with_old_values_retained(self):
         self.assertEqual(suite.CLIENT_VALUES, full.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[:4], [42, "client-probe", 3, 6])
-        self.assertEqual(len(full.CLIENT_VALUES), 50)
+        self.assertEqual(len(full.CLIENT_VALUES), 109)
         self.assertEqual(len(set(value.split(":", 1)[0]
                                  for value in full.CLIENT_VALUES[4:15])), 11)
 
@@ -44,7 +44,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
             self.assertNotIn('DirectiveServerProfile', source)
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_exact_native_module_computes_contract_in_real_interpreter(self):
+    def test_exact_whole_module_computes_contract_in_real_interpreter(self):
         source = ROOT / full.CLIENT_SOURCE
         full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()))
 
@@ -83,7 +83,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
     def test_each_directive_label_is_required_by_native_marker(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / "completed.json"
-            for index in range(4, len(suite.CLIENT_VALUES)):
+            for index in range(4, 15):
                 values = list(suite.CLIENT_VALUES)
                 values[index] = values[index].split(":", 1)[0] + ": wrong"
                 path.write_text(json.dumps(dict(schema=1, nonce="a" * 32,
@@ -157,7 +157,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
 
     def test_first_mismatch_count_type_value_never_exports_payload(self):
         for index in range(len(suite.CLIENT_VALUES)):
-            for replacement, kind in [(None, 'type'), ('PRIVATE', 'value' if index >= 4 or index == 1 else 'type')]:
+            for replacement, kind in [(None, 'type'), ('PRIVATE', 'value' if type(suite.CLIENT_VALUES[index]) is str else 'type')]:
                 values = list(suite.CLIENT_VALUES)
                 values[index] = replacement
                 result = self.diagnose(values)

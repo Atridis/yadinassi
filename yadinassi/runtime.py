@@ -717,16 +717,21 @@ class Interpreter:
                 if not parameter.by_value and (index >= len(arguments) or
                         not isinstance(self.ungroup(arguments[index]), ast.Name)):
                     raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
-        # Bind left to right in the caller's frame. Val snapshots the value,
-        # while ordinary same-side parameters keep a live storage alias.
+        # Evaluate expression actuals once, left to right. At a measured crossing,
+        # named actual storage (including Val) is read after all actual effects.
+        # Same-side argument semantics remain unchanged.
         bindings = {}
         copyback: list[tuple[str, _VariableReference]] = []
+        late_inputs: dict[str, _VariableReference] = {}
         for index, parameter in enumerate(function.parameters):
             argument = arguments[index] if index < len(arguments) else None
             if argument is None or isinstance(argument, ast.OmittedArgument):
                 value = self.visit(parameter.default) if parameter.default is not None else None
             else:
-                value = self.visit(argument) if parameter.by_value else self.argument(argument)
+                if crossing and isinstance(self.ungroup(argument), ast.Name):
+                    value = self.argument(argument)
+                else:
+                    value = self.visit(argument) if parameter.by_value else self.argument(argument)
             name = parameter.name.casefold()
             if crossing and not parameter.by_value:
                 # A named caller formal may itself alias a property/index.
@@ -735,16 +740,19 @@ class Interpreter:
                 if not isinstance(value, _VariableReference):
                     raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
                 copyback.append((name, value))
-            elif crossing:
-                self._check_context_scalar(value)
+            if crossing and isinstance(value, _Reference):
+                if not isinstance(value, _VariableReference):
+                    raise TypeError("Межконтекстная передача ссылок на свойства пока не поддерживается")
+                late_inputs[name] = value
             bindings[name] = value
         if crossing:
-            # Native 8.3.27.1508: non-Val values are read after all actual
-            # expression effects, independently even for repeated storage.
-            for name, reference in copyback:
-                value = reference.get()
-                self._check_context_scalar(value)
-                bindings[name] = value
+            # Native 8.3.27.1508: names remain storage, expression results remain
+            # values/handles. Clone the complete packet only after actual effects.
+            for name, reference in late_inputs.items():
+                bindings[name] = reference.get()
+            names = list(bindings)
+            copied = self._copy_context_packet([bindings[name] for name in names])
+            bindings = dict(zip(names, copied))
             owner = owner._new_server_activation()
         previous = owner.locals
         owner.locals = bindings
@@ -758,13 +766,12 @@ class Interpreter:
             if crossing:
                 # Validate the entire outgoing packet before touching caller
                 # storage. Escaping errors never reach this normal-return path.
-                self._check_context_scalar(result)
-                outgoing = [(reference, bindings[name]) for name, reference in copyback]
-                for _, value in outgoing:
-                    self._check_context_scalar(value)
-                # Every non-Val formal participates, including unchanged values.
-                # Positional order makes the rightmost repeated actual win.
-                for reference, value in outgoing:
+                packet = self._copy_context_packet(
+                    [result] + [bindings[name] for name, _ in copyback])
+                result = packet[0]
+                # Every output/result gets an independent per-occurrence copy.
+                # Publish only after the whole packet validates and allocates.
+                for (_, reference), value in zip(copyback, packet[1:]):
                     reference.set(value)
             return result
         finally:
@@ -772,11 +779,42 @@ class Interpreter:
             owner.locals = previous
 
     @staticmethod
-    def _check_context_scalar(value: object) -> None:
-        # Explicit first-step boundary. Do not pass mutable Python/BSL objects
-        # by identity where the platform would serialize and copy them.
-        if value is not None and type(value) not in (str, bool, Decimal):
-            raise TypeError("Межконтекстная передача пока поддерживает только Строка, Число, Булево и Неопределено")
+    def _copy_context_packet(values: list[object]) -> list[object]:
+        """Measured acyclic Array/Structure transport, not generic deepcopy.
+
+        Shared children are copied per occurrence, not memoized. Resource limits
+        and unsupported/cyclic graph rejection are local safety policy, not
+        additional claims about native serialization limits.
+        """
+        remaining = 10_000
+        active: set[int] = set()
+
+        def copy(value: object, depth: int) -> object:
+            nonlocal remaining
+            remaining -= 1
+            if remaining < 0 or depth > 64:
+                raise ValueError("Межконтекстная передача: превышен предел размера или глубины")
+            if value is None or type(value) in (str, bool, Decimal):
+                return value
+            if type(value) not in (BSLArray, BSLStructure):
+                raise TypeError("Межконтекстная передача поддерживает скаляры, Массив и Структуру")
+            identity = id(value)
+            if identity in active:
+                raise ValueError("Межконтекстная передача циклических коллекций пока не поддерживается")
+            active.add(identity)
+            try:
+                if type(value) is BSLArray:
+                    result = BSLArray()
+                    result.items = [copy(item, depth + 1) for item in value.items]
+                else:
+                    result = BSLStructure()
+                    for key, (name, item) in value._items.items():
+                        result._items[key] = (name, copy(item, depth + 1))
+                return result
+            finally:
+                active.remove(identity)
+
+        return [copy(value, 0) for value in values]
 
     def _new_server_activation(self) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
