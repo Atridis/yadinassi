@@ -1,6 +1,7 @@
 """Offline two-phase driver tests; mocks are never native export evidence."""
 import ast as pyast
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -93,6 +94,11 @@ class DirectiveProtocolTests(unittest.TestCase):
             self.assertFalse((root/'rejected').exists())
 
     def test_request_binding_and_boolean_types(self):
+        # This pure binding fixture is not a Linux descriptor-identity test.
+        if os.name == "nt":
+            reader = mock.patch.object(stage.suite, "secure_bytes", new=stage.portable_fixture_bytes)
+            reader.start()
+            self.addCleanup(reader.stop)
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()
             command = ['native', 'ENTERPRISE', '/C', str(root/'request.json')]

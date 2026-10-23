@@ -1,8 +1,9 @@
 # Bounded scalar non-Val copyback evidence
 
-Status: the measurement was captured and independently audited. The bounded
-runtime implementation and strict parity gate are now under validation; a new
-complete current-head native PASS and four-OS CI are required before ready/merge.
+Status: scalar measurement, implementation and strict parity passed independent
+audit, PR92 checks and actual-main native run39951594654. The next
+[object measurement](object-transfer-measurement.md) temporarily executes the
+exact hash-restored scalar source, not whole-source object parity.
 Root remains client-default. No database/query, network RPC, object transfer,
 module-state transfer, NoContext, dual directives or async changes are included.
 
@@ -72,7 +73,7 @@ We implement the measured narrow target behavior, not an invented changed-only
 model or an unsupported explanation that file mode resolves the discrepancy.
 This does not establish behavior for every platform version or deployment.
 
-## Strict parity after measurement
+## Accepted scalar strict parity after measurement (PR92)
 
 The existing fifteen values remain unchanged. The literal `copyback.core.v1`
 and all 34 captured scalar tokens now form an exact fifty-value contract in
@@ -127,5 +128,6 @@ headroom; this branch does not modify that async branch.
 - 32: `recovery.value`
 - 33: `complete`
 
-The complete bit alone is not a parity claim. Current-head runtime/native equality,
-full regression tests, four-OS CI and independent artifact audit remain release gates.
+The complete bit alone is not a parity claim. The scalar fifty-value gate passed
+independent native audit. Each subsequent implementation still requires current-head
+parity, full regression tests, four-OS CI and independent artifact audit.

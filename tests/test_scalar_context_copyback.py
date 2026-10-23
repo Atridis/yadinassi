@@ -121,14 +121,14 @@ Start();
         self.assertEqual(self.messages, ['192', '9', '2'])
         self.assert_restored()
 
-    def test_val_snapshot_is_not_delayed_with_non_val_copy_in(self):
+    def test_named_val_uses_measured_late_snapshot_with_non_val(self):
         self.vm.execute('''
 &AtServer
 Function Timing(Val Snapshot, A, Val Ignored) Return Snapshot * 10 + A; EndFunction
 Function Change(X) X = 9; Return 0; EndFunction
 x = 1; result = Timing(x, x, Change(x));
 ''')
-        self.assertEqual(self.vm.variables['result'], Decimal(19))
+        self.assertEqual(self.vm.variables['result'], Decimal(99))
         self.assertEqual(self.vm.variables['x'], Decimal(9))
 
     def test_escaping_exception_does_not_copy_out_and_recovery_works(self):
@@ -267,8 +267,8 @@ x = 1; Try Change(x, x); Except Message(x); EndTry;
         self.assert_restored()
 
     def test_all_outgoing_values_validate_before_any_caller_write(self):
-        for body in ('A = 43; B = New Array();',
-                     'A = New Array(); B = 43;'):
+        for body in ('A = 43; B = New Map();',
+                     'A = New Map(); B = 43;'):
             with self.subTest(body=body):
                 self.vm.execute(f'''
 &AtServer
@@ -286,7 +286,7 @@ x = 1; y = 2;
     def test_invalid_function_result_prevents_copyout_even_when_discarded(self):
         self.vm.execute('''
 &AtServer
-Function Invalid(X) X = 43; Return New Array(); EndFunction
+Function Invalid(X) X = 43; Return New Map(); EndFunction
 x = 1;
 ''')
         for call in ('Invalid(x);', 'result = Invalid(x);'):
@@ -306,12 +306,12 @@ x = 1; control = 2; Change(x, control);
         self.assertEqual(self.vm.variables['control'], Decimal(2))
         self.assert_restored()
 
-    def test_non_scalar_input_rejected_before_server_body(self):
+    def test_unsupported_input_rejected_before_server_body(self):
         self.vm.execute('''
 &AtServer
 Procedure Change(X) Message("entered"); X = 43; EndProcedure
 ''')
-        for expression in ('New Array()', 'New Structure()', 'Date(2026, 1, 1)'):
+        for expression in ('New Map()', 'New FixedStructure()', 'Date(2026, 1, 1)'):
             with self.subTest(expression=expression):
                 self.vm.execute(f'x = {expression};')
                 original = self.vm.variables['x']
@@ -326,7 +326,7 @@ Procedure Change(X) Message("entered"); X = 43; EndProcedure
 &AtServer
 Procedure Change(X, Val Ignored) Message(X); X = 43; EndProcedure
 Function Scalar(X) X = 9; Return 0; EndFunction
-Function ObjectValue(X) X = New Array(); Return 0; EndFunction
+Function ObjectValue(X) X = New Map(); Return 0; EndFunction
 x = New Array(); Change(x, Scalar(x));
 ''')
         self.assertEqual(self.messages, ['9'])

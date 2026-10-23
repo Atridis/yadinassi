@@ -317,6 +317,9 @@ CLIENT_VALUES = [
 # Audited pinned native scalar-copyback capture, not interpreter-generated data.
 CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
 
+# Audited pinned object capture, including named/expression timing; not local expected generation.
+CLIENT_VALUES += ['object.transfer.v1'] + [True, False, 1, 1, 1, False, 2, 21, 23, 23, 2, False, 3, 3, 3, False, 41, 42, 4, False, 5, 51, 51, 51, 51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73, 73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74, 11, 73, 74, 72, 1]
+
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
@@ -345,7 +348,7 @@ result = []
 for value in values:
     if type(value) is Decimal and value.is_finite() and value == value.to_integral_value():
         result.append(int(value))
-    elif type(value) is str:
+    elif type(value) in (str, bool):
         result.append(value)
     else:
         raise RuntimeError("unexpected witness type")
@@ -355,10 +358,7 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Execute the exact whole native form source and its finite typed witness.
-
-    Native independently validates the same values and exact module roundtrip.
-    """
+    """Compute the full exact staged-source witness, including object transport."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")

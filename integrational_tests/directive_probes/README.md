@@ -39,3 +39,15 @@ a new runtime/native PASS remains necessary. Its platform8.3.27.1508 target and
 the official-guide discrepancy are documented in
 `docs/scalar-copyback-measurement.md`. Negative/future modules above are not
 included in this scalar acceptance claim.
+
+## Object-transfer capture and strict parity
+
+`object_transfer_core.bsl` contains nine direct client/server calls and58
+observations captured on the pinned8.3.27.1508 target. The independently audited
+fixture `object_transfer_native.json` binds labels/values to run39961116549,
+artifact ZIP digest, source/module hashes and exact repository tree.
+The full original staged source now executes in our interpreter and must match
+the same109 typed values checked by native. Capture-only diagnostics and the
+host shared-source inverse are removed. Four historical client adapters remain
+byte-identical. Current-head native and CI gates are still required.
+See [object-transfer-measurement.md](../../docs/object-transfer-measurement.md).
