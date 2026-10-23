@@ -314,29 +314,12 @@ CLIENT_VALUES = [
     'directive.return.undefined: {"U"}',
     'directive.call.recovery: {"N",42}',
 ]
+# Audited pinned native scalar-copyback capture, not interpreter-generated data.
+CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
+
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
-
-
-CLIENT_COPYBACK_TEMPLATE_SHA256 = '52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c'
-CLIENT_SHARED_TEMPLATE_SHA256 = 'b98f7cb8e3489fabdd5df6cec8b929b7e059f9931f1fbfedb8d112be53c1f437'
-CLIENT_COPYBACK_MARKER = b'\n// BEGIN bounded scalar copyback measurement\n'
-CLIENT_COPYBACK_CALL = b'    For Each CopybackValue In RunScalarCopybackProbe() Do\n        \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f.\xd0\x94\xd0\xbe\xd0\xb1\xd0\xb0\xd0\xb2\xd0\xb8\xd1\x82\xd1\x8c(CopybackValue);\n    EndDo;\n'
-
-
-def client_interpreter_source(raw: bytes) -> bytes:
-    """Exact inverse of native-only copyback measurement, never a BSL rewriter."""
-    if CLIENT_COPYBACK_MARKER not in raw:
-        return raw
-    if (digest(raw) != CLIENT_COPYBACK_TEMPLATE_SHA256
-            or raw.count(CLIENT_COPYBACK_MARKER) != 1
-            or raw.count(CLIENT_COPYBACK_CALL) != 1):
-        raise FullError('source_changed')
-    restored = raw.split(CLIENT_COPYBACK_MARKER, 1)[0].replace(CLIENT_COPYBACK_CALL, b'', 1)
-    if digest(restored) != CLIENT_SHARED_TEMPLATE_SHA256:
-        raise FullError('source_changed')
-    return restored
 
 
 CLIENT_EXECUTE_SCRIPT = r'''
@@ -372,22 +355,18 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute the exact hash-restored shared witness during native measurement.
+    """Execute the exact whole native form source and its finite typed witness.
 
-    Additional native-only copyback helpers are not interpreter parity evidence.
-    Original strict native acceptance remains unchanged and rejects extra records.
+    Native independently validates the same values and exact module roundtrip.
     """
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
-    shared_source = client_interpreter_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
-        shared_path = Path(cache).resolve() / "shared-witness.bsl"
-        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -414,29 +393,22 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
-                                  {'phase', 'kind', 'ordinal', 'error_stage', 'copyback'})
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
             or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
-            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= 15
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
-    if 'copyback' in value:
-        records = value['copyback']
-        if (value['phase'] != 'completed' or type(records) is not list or len(records) != 34
-                or any(not (item is None or type(item) is bool
-                            or (type(item) is int and 0 <= item <= 999)) for item in records)):
-            raise ValueError('client copyback measurement')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':
         valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
     elif value['kind'] == 'count':
-        valid = 0 <= value['ordinal'] <= 15 and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] <= len(CLIENT_VALUES) and value['error_stage'] == 0
     elif value['kind'] in {'type', 'value'}:
-        valid = 0 <= value['ordinal'] < 15 and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] < len(CLIENT_VALUES) and value['error_stage'] == 0
     else:
         valid = value['ordinal'] == -1 and value['error_stage'] == 0
     if not valid:

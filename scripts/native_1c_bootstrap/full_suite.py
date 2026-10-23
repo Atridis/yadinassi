@@ -631,6 +631,9 @@ CLIENT_VALUES = [
     'directive.return.undefined: {"U"}',
     'directive.call.recovery: {"N",42}',
 ]
+# Audited pinned native scalar-copyback capture, not interpreter-generated data.
+CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
+
 CLIENT_FLAGS = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
 PROCESS_CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
 
@@ -721,22 +724,6 @@ def client_marker_diagnostics(path: Path, nonce: str) -> dict:
             result['phase'] = 'error'
         return result
     result['phase'] = 'completed'
-    # Native-only scalar measurement; never changes client_marker acceptance.
-    if len(values) == len(CLIENT_VALUES) + 35 and values[15] == 'copyback.core.v1':
-        measured = []
-        for token in values[16:]:
-            if type(token) is not str:
-                break
-            if token == '{"U"}':
-                measured.append(None)
-            elif token in ('{"B",0}', '{"B",1}'):
-                measured.append(token == '{"B",1}')
-            elif re.fullmatch(r'\{"N",(0|[1-9][0-9]{0,2})\}', token):
-                measured.append(int(token[5:-1]))
-            else:
-                break
-        if len(measured) == 34:
-            result['copyback'] = measured
     # The four old client observations precede the fixed local error sentinel.
     if (len(values) == 6 and values[:4] == CLIENT_VALUES[:4]
             and all(type(a) is type(b) for a, b in zip(values[:4], CLIENT_VALUES[:4]))

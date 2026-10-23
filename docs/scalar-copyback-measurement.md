@@ -1,64 +1,94 @@
-# Bounded scalar non-Val copyback measurement
+# Bounded scalar non-Val copyback evidence
 
-Status: measurement-only, uncaptured. No non-Val runtime support is claimed.
-Root remains client-default; no database/query, network RPC, object transfer,
+Status: the measurement was captured and independently audited. The bounded
+runtime implementation and strict parity gate are now under validation; a new
+complete current-head native PASS and four-OS CI are required before ready/merge.
+Root remains client-default. No database/query, network RPC, object transfer,
 module-state transfer, NoContext, dual directives or async changes are included.
 
-## Why capture first
+## Captured target and provenance
 
-The [official developer guide](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1678862)
-§4.7.4.3 describes independent argument copies, Val suppressing copyout, the
-rightmost changed formal winning for repeated actual variables, and Undefined
-copyout after an escaping server exception. “Changed” and exact copy-in timing
-still need evidence for this target. Do not guess assignment tracking versus
-final-value comparison from documentation alone.
+[Native run 39944524944](https://github.com/Atridis/yadinassi/actions/runs/39944524944)
+measured 1C 8.3.27.1508 on the pinned Linux/amd64 image, file infobase (`/F`),
+thick managed application. Its source head was
+`4ab2f25c4fa834f97c3037b2b6723a2aeb283be5`, tree
+`e8c8de8de369145d42c96d3474fa0a4b1d12a71c`.
+Summary artifact 12497771050 has ZIP SHA256
+`b5cc52786344468500083531e1a14daaf3415c0826fc58b402bdb5eaf92a606c`.
+The exact staged source SHA256 is
+`52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c`;
+generated module and roundtrip SHA256 are
+`285d66599e70ccd1f4ff6761bd9e171fef40dedd5cae3bdb05ce45f3a0b059cc`.
+The captured values and labels are committed in
+`integrational_tests/directive_probes/scalar_copyback_core.native.json`.
+They come from that native artifact, not from interpreter-generated expectations.
 
-The twelve operations cover common non-Val assignment, Val control, return plus
-copyout, server-caught and escaping exceptions, independent repeated actuals,
-rightmost changed/unchanged formals, B=B, B=2 then B=1, one order-marked copy-in
-timing call, and recovery. This is not an exhaustive defaults/parentheses matrix.
-Object transfer and context-bearing module state remain mandatory next work.
+Independent audit verified all 24 staged/trusted input hashes, nonce, tree,
+module/roundtrip identities and every observation slot. Disputed calls are
+literal calls from `&AtClient RunScalarCopybackProbe` to named `&AtServer`
+routines, not local server wrappers. Caller sinks are read on the client after
+return or after EndTry. The recording helper takes Value by Val and cannot
+change the caller variables. Timing helpers intentionally change the actual
+variable before server entry.
 
-## Existing bounded protocol
+The measurement marker completed, but its extra records deliberately failed the
+then-fifteen-value equality gate: witness_verified and client_probe.completed
+were false. Later four client parity scenarios and watchdog were not started.
+Thus this capture is semantic evidence, not a complete native acceptance PASS.
+Previously observed preprocessing profiles were not remeasured here.
 
-The ordinary client probe retains its original fifteen values. It appends the
-literal `copyback.core.v1` followed by 34 scalar ValueToStringInternal tokens in
-the order below. The standalone source prints labels; the managed-form adapter
-returns only ordered tokens, so no Message dialogs or raw exception text escape.
-The original strict fifteen-value native acceptance is unchanged: extra records
-always reject success. No synthetic result becomes a native fixture.
+## Measured bounded semantics
 
-Failure diagnostics accept the extension only for a valid completed marker with
-exact nonce/schema/witness/key set, exact count/sentinel, and every token in the
-finite domain Undefined, Boolean or integer 0..999. The public `copyback` list
-contains only JSON null, Boolean or bounded integer values. Unknown token,
-partial capture, arbitrary string, malformed JSON, wrong nonce or oversize file
-never exports the extension. The existing 2048-byte private marker bound remains.
-These are observations, not expected parity values.
+The twelve operations cover assignment, Val control, return plus copyout,
+server-caught and escaping exceptions, necessary repeated-actual discriminators,
+one order-marked copy-in timing call, and recovery. The implemented subset is:
 
-A conservative six-client codec fixture with maximum-size output counters,
-full process diagnostics and 34 false values round-trips through the real stage
-serializer in 8169 bytes (8192 cap); its compact named report is 11201 bytes
-(32768 cap). This is not a blanket bound for combining future metadata. The
-real measurement fails in the ordinary probe before later clients run. PR90
-integration must separately re-prove combined wire/public-report headroom; do
-not raise caps or silently drop diagnostics. Capture-only payload is temporary.
+- Explicit named scalar non-Val actuals retain caller sinks while argument
+  expressions are evaluated. Their values are read after all actual-expression
+  effects; Val arguments retain their evaluation-time snapshots.
+- Server formals are independent cells, not live caller references.
+- On normal completion, every non-Val formal is copied out in parameter order,
+  including unchanged values. The rightmost repeated actual therefore wins.
+- An escaping server exception copies nothing back. A server-caught exception
+  followed by normal completion does copy back.
+- The result and every outgoing value must pass scalar validation before the
+  first caller write. Unsupported objects cannot cause partial copyout.
 
-The independently audited actual-main public report serializes to 24745 bytes
-with the production indent=2/sorted-keys serializer. Retaining every original
-field, adding the maximum 34-false capture, and setting the ordinary probe to
-failed/invalid_result/witness_verified=false yields 25596 bytes, below the
-32768-byte public cap. This is a conservative serialization shape, not a valid
-accepted report or new native evidence.
+This matches the captured independent-alias result 1, rightmost result 52,
+unchanged/self-assigned/reverted right formal result 1, escaped caller values
+1/2/3, and timing signature 192 with final X=9 and two helper calls.
+Same-side reference behavior is unchanged. Property/index actuals, including
+forwarded references, non-Val literals/expressions/omissions, object transfer and module state are not
+supported by this bounded cross-context implementation. Objects and context
+state remain mandatory subsequent work, not optional edge polishing.
 
-The host preflight uses an exact full-template hash-bound inverse to remove only
-the appended capture suffix and one call block, then checks the restored source
-SHA256 `b98f7cb8e3489fabdd5df6cec8b929b7e059f9931f1fbfedb8d112be53c1f437`.
-It computes the already audited shared witness, not native-only copyback helpers.
-The original staged-source hash is checked before/after. The four legacy parity
-adapters independently restore the exact old template and retain byte-identical
-modules/pins. Source/module/roundtrip, nonce, OnOpen, exit and quiescence gates
-are unchanged. No PR90 files or workflow/image pins change.
+### Explicit guide disagreement
+
+The [official 8.3.27 developer guide](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1678862)
+§4.7.4.3 describes changed-rightmost alias copyout and Undefined non-Val values
+after an escaping server exception. It explicitly includes file infobases in
+the interaction discussion. These predictions disagree with this audited target.
+We implement the measured narrow target behavior, not an invented changed-only
+model or an unsupported explanation that file mode resolves the discrepancy.
+This does not establish behavior for every platform version or deployment.
+
+## Strict parity after measurement
+
+The existing fifteen values remain unchanged. The literal `copyback.core.v1`
+and all 34 captured scalar tokens now form an exact fifty-value contract in
+both host and native validators. The host independently executes the entire
+exact staged source in the real interpreter, with source hashes checked before
+and after execution. It no longer strips a shared-source subset. Native success
+requires the same exact typed values and existing source/module/roundtrip,
+nonce, OnOpen, exit and quiescence checks.
+
+Temporary public copyback metadata and its decoder are removed; no measured
+value exception weakens acceptance. Finite failure diagnostics remain enums and
+bounded ordinals only. The 2048-byte marker, 8192-byte wire and 32768-byte public
+report caps are unchanged. The four legacy parity adapters still restore their
+exact historical template and produce byte-identical modules. PR90 integration
+must reconcile template pins and independently verify combined serializer
+headroom; this branch does not modify that async branch.
 
 ## Observation order (zero-based)
 
@@ -97,16 +127,5 @@ are unchanged. No PR90 files or workflow/image pins change.
 - 32: `recovery.value`
 - 33: `complete`
 
-A true complete bit means execution reached the final record, not that semantics
-matched a prediction. Entered/complete and per-operation errors must be audited
-before interpreting values. Current runtime still rejects non-Val boundaries;
-local execution tests only verify that this guard remains, never native parity.
-
-## After capture
-
-Audit exact source/tree and all records, then implement the measured common
-scalar copy-in/copy-out model with detached formals and explicit caller sinks.
-Only after that replace the measurement-only exception with independently
-computed exact-source runtime/native parity. Full unit/CLI/four-OS CI and audited
-native evidence remain required for implementation ready/merge. No implementation
-or semantic broadening follows from a merely completed measurement marker.
+The complete bit alone is not a parity claim. Current-head runtime/native equality,
+full regression tests, four-OS CI and independent artifact audit remain release gates.
