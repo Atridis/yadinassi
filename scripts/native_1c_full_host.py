@@ -1550,7 +1550,7 @@ def async_source_identity(source: bytes) -> dict:
         if any('__ASYNC_CASE_' in case for case in cases):
             raise ValueError('async nested placeholder')
         fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
-        if fixture_hash != '00a39eac17bc2f1db8d65994e53c71f3b9a6a9fb97598c787294b20ab4155226':
+        if fixture_hash != '0c7e4335e2175bc500fdd4268dac5488290a08663f625cd44b83721b2ea6dc6d':
             raise ValueError('async fixture not pinned')
         modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
         identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
@@ -1654,7 +1654,7 @@ def validate_async_failure_diagnostics(data):
     require(type(value) is list and len(value) == 4, 'failure diagnostic fields')
     stage, entered, completed, category = value
     require(number(stage, 0, 5) and number(entered, 0, 3)
-            and number(completed, 0, 3) and number(category, 0, 30), 'failure diagnostic codes')
+            and number(completed, 0, 3) and number(category, 0, 38), 'failure diagnostic codes')
     require(stage >= 3 or (entered == 0 and completed == 0), 'failure marker applicability')
     require(stage != 0 or category == 0, 'failure log applicability')
     require(category < 13 or stage >= 3, 'entry log applicability')
@@ -1802,4 +1802,4 @@ def validate_async_marker_raw(raw, nonce, case_id, phase):
     return data
 
 
-ASYNC_EXPECTED_IDENTITY = {'template': '9f710582aac60108e8e385ea4685302dad9cce33086638d4486ea80a5bb4fa13', 'modules': ['491d39c47d29184889f392c13967d898383a737af3d352b7702b4175da8e6c28', 'c83f83c8d04d884ce2bfc4ff2b027d453d56211a459e73f604b364edf331affc', '550a1c249ebe2705b05cfdfd5e0608529334453a3ea6594f0d8349515438567e', '4d51bfd91385d8126d33d91e94dec9bb4150b7815b742e602d31993816489e4f', '1e4c468c61faeb2270f17e050cf8fd84bf8a6e6418aff201a52d89f5cfbe686c', '96a9f80e9b4e9d229587e415d14c36faec3d0b87ae1df7df297ade8b25053e29', '47f58bb4117dca4fb8c43c9690890ffbedbe586d5b7f54e2e86509e4db04a315', '8ed7951205624daf9fabf51e06abc83a761b06d0ba0e9dec2eb000452679cdf7']}
+ASYNC_EXPECTED_IDENTITY = {'template': 'f7ffa135b1b7973233e2b19ae64021ee3608abfec3b9e93fb1315b47a4dd6856', 'modules': ['37da88eff7ad44a7ab0e7ced9f446ec4bb48c7a1b5a388fb23338d8c604f4a8c', '1545c86531bb5993e9249980a1b2dd9a0f434dcebee70321a2b69c0b681267bf', '6f8a986a51a9f9771172566a6d6c974249f9a594034437ba81a3744c8eec0322', 'fe8181824af9c0dc960d94682a7684c69983dc482b456026713a3b3321ad9c23', '1c9bb7de7191dd3ff227a0244eba74da6fdb28d43fcd95568fdd0a5a56cafdce', '19cea00dd9ab8cf78c772b8fad609915da2dd721d8343232718326363958f876', 'e59be64d820861f20343daefdac96362dab03c099e3800b365a394d16cb251dc', 'ff85c42aabe4d450a9315fb5c56b26862cbf1af4a173a3735d2b4fb4d0349d8a']}

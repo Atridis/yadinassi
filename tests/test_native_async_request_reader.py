@@ -219,7 +219,8 @@ class GeneratedRequestReaderTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 vm, _ = exercise(canonical(), fault=stage)
                 self.assertTrue(vm.execute('Caught'))
-                self.assertEqual(vm.execute('Stage'), stage)
+                self.assertEqual(vm.execute('Stage'),
+                                 'request_key_read_first' if part == 'key' else stage)
                 self.assertNotIn('result', vm.variables)
 
 

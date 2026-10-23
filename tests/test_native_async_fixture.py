@@ -191,20 +191,22 @@ def routine(source, name):
 
 
 def without_request_site_diagnostic(template):
-    start = template.index('&AtClient\nFunction AsyncRequestKeySite')
-    end = template.index('&НаКлиенте\nПроцедура АсинхЗаписатьВход')
+    start = template.index('&AtClient\nProcedure AsyncExpectRequestKey')
+    end = template.index('&AtClient\nFunction AsyncReadRequest', start)
     template = template[:start] + template[end:]
-    addition = '''        СохраненнаяОшибкаВхода = ErrorInfo();
-        Если ЭтапВхода = "request_key" Тогда
-            Попытка
-                ЭтапВхода = AsyncRequestKeySite(СохраненнаяОшибкаВхода);
-            Исключение
-                // Diagnostic failure cannot replace the original coarse stage.
-            КонецПопытки;
-        КонецЕсли;
-'''
-    assert template.count(addition) == 1
-    return template.replace(addition, '')
+    template = template.replace(
+        'AsyncExpectRequestKey(Reader, JSONValueType.PropertyName, ЭтапВхода, Index);',
+        'AsyncExpectToken(Reader, JSONValueType.PropertyName);')
+    for name in ('current', 'property'):
+        addition = (f'        If Index = 1 Then\n'
+                    f'            ЭтапВхода = "request_key_{name}_first";\n'
+                    f'        Else\n'
+                    f'            ЭтапВхода = "request_key_{name}_later";\n'
+                    f'        EndIf;\n')
+        assert template.count(addition) == 1
+        template = template.replace(addition, '')
+    return template.replace('ЭтапВхода = "request_key_call";',
+                            'ЭтапВхода = "request_key";')
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
@@ -224,9 +226,8 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         catch = handler.split('Исключение', 1)[1]
         self.assertEqual(re.findall(r'Сообщить\(([^\n]+)\);', catch),
                          ['"ASYNC-ENTRY-FAILURE:" + ЭтапВхода'])
-        self.assertTrue(catch.lstrip().startswith('СохраненнаяОшибкаВхода = ErrorInfo();'))
-        self.assertEqual(handler.count('ErrorInfo()'), 1)
-        self.assertIn('Если ЭтапВхода = "request_key" Тогда', catch)
+        self.assertNotIn('ErrorInfo()', handler)
+        self.assertNotIn('AsyncRequestKeySite', handler)
         for forbidden in ('ОписаниеОшибки(', 'ИнформацияОбОшибке(',
                           'ЗавершитьРаботуСистемы(', 'АсинхЗаписатьЗавершение('):
             self.assertNotIn(forbidden, handler)
@@ -234,12 +235,16 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
     def test_request_substages_are_fixed_by_reference_without_semantic_changes(self):
         from test_native_async_protocol import suite
         template = make_fixture()['ASYNC_TEMPLATE']
-        body = routine(template, 'AsyncReadRequest')
+        body = routine(without_request_site_diagnostic(template), 'AsyncReadRequest')
         labels = ['request_open', 'request_object', 'request_key', 'request_value',
                   'request_end', 'request_fields', 'request_nonce', 'request_paths']
         all_labels = ['request', 'witness', 'initialize', 'entered', 'root', *labels,
                       'request_key_call', 'request_key_read', 'request_key_token',
-                      'request_key_current', 'request_key_property']
+                      'request_key_current', 'request_key_property',
+                      'request_key_read_first', 'request_key_read_later',
+                      'request_key_token_first', 'request_key_token_later',
+                      'request_key_current_first', 'request_key_current_later',
+                      'request_key_property_first', 'request_key_property_later']
         self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS,
                          {'ASYNC-ENTRY-FAILURE:' + label: 13 + index
                           for index, label in enumerate(all_labels)})

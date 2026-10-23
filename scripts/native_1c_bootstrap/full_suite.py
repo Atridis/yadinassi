@@ -2671,6 +2671,7 @@ ASYNC_VERSION = 1
 ASYNC_MAX_MARKER = 16_384
 # Wire ordinals are independent of the legacy process diagnostic vocabulary.
 # observed_* describes only the stable post-stop capture, not final continuity.
+# Categories are append-only: 26 retains the helper-call stage; 27-30 are retired.
 ASYNC_HOST_STAGES = ('prepare', 'build', 'roundtrip', 'enterprise', 'markers', 'continuity')
 ASYNC_MARKER_STATES = ('not_checked', 'observed_absent', 'observed_invalid', 'observed_valid')
 ASYNC_LOG_CATEGORIES = ('not_checked', 'observed_absent', 'observed_invalid', 'unknown',
@@ -2681,13 +2682,21 @@ ASYNC_LOG_CATEGORIES = ('not_checked', 'observed_absent', 'observed_invalid', 'u
     'entry_request_object', 'entry_request_key', 'entry_request_value',
     'entry_request_end', 'entry_request_fields', 'entry_request_nonce', 'entry_request_paths',
     'entry_request_key_call', 'entry_request_key_read', 'entry_request_key_token',
-    'entry_request_key_current', 'entry_request_key_property')
+    'entry_request_key_current', 'entry_request_key_property',
+    'entry_request_key_read_first', 'entry_request_key_read_later',
+    'entry_request_key_token_first', 'entry_request_key_token_later',
+    'entry_request_key_current_first', 'entry_request_key_current_later',
+    'entry_request_key_property_first', 'entry_request_key_property_later')
 ASYNC_ENTRY_LOG_MARKERS = {'ASYNC-ENTRY-FAILURE:' + name: index
                          for index, name in enumerate(('request', 'witness', 'initialize', 'entered', 'root',
                              'request_open', 'request_object', 'request_key', 'request_value',
                              'request_end', 'request_fields', 'request_nonce', 'request_paths',
                              'request_key_call', 'request_key_read', 'request_key_token',
-                             'request_key_current', 'request_key_property'), 13)}
+                             'request_key_current', 'request_key_property',
+                             'request_key_read_first', 'request_key_read_later',
+                             'request_key_token_first', 'request_key_token_later',
+                             'request_key_current_first', 'request_key_current_later',
+                             'request_key_property_first', 'request_key_property_later'), 13)}
 ASYNC_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
 ASYNC_STRINGS = ('7', '17', '11', '12', '21', '22', '31', '33')
 ASYNC_FAILURES = ('none', 'prerequisites_failed', 'stale_evidence', 'invalid_input',
@@ -2913,7 +2922,7 @@ def validate_async_failure_diagnostics(record):
             or type(value) is not list or len(value) != 4
             or not _async_int(value[0], 0, 5)
             or any(not _async_int(item, 0, 3) for item in value[1:3])
-            or not _async_int(value[3], 0, 30)
+            or not _async_int(value[3], 0, 38)
             or (value[0] < 3 and value[1:3] != [0, 0])
             or (value[0] == 0 and value[3] != 0)
             or (value[3] >= 13 and value[0] < 3)
@@ -3174,6 +3183,22 @@ Procedure AsyncExpectToken(Reader, Val Token)
 EndProcedure
 
 &AtClient
+Procedure AsyncExpectRequestKey(Reader, Val Token, ЭтапВхода, Val Index)
+    If Index = 1 Then
+        ЭтапВхода = "request_key_read_first";
+    Else
+        ЭтапВхода = "request_key_read_later";
+    EndIf;
+    If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
+    If Index = 1 Then
+        ЭтапВхода = "request_key_token_first";
+    Else
+        ЭтапВхода = "request_key_token_later";
+    EndIf;
+    If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;
+EndProcedure
+
+&AtClient
 Function AsyncReadRequest(ЭтапВхода)
     // Streaming grammar rejects nested values, duplicate keys and trailing data.
     ЭтапВхода = "request_open";
@@ -3183,9 +3208,19 @@ Function AsyncReadRequest(ЭтапВхода)
     Request = New Structure;
     AsyncExpectToken(Reader, JSONValueType.ObjectStart);
     For Index = 1 To 5 Do
-        ЭтапВхода = "request_key";
-        AsyncExpectToken(Reader, JSONValueType.PropertyName);
+        ЭтапВхода = "request_key_call";
+        AsyncExpectRequestKey(Reader, JSONValueType.PropertyName, ЭтапВхода, Index);
+        If Index = 1 Then
+            ЭтапВхода = "request_key_current_first";
+        Else
+            ЭтапВхода = "request_key_current_later";
+        EndIf;
         Key = Reader.CurrentValue;
+        If Index = 1 Then
+            ЭтапВхода = "request_key_property_first";
+        Else
+            ЭтапВхода = "request_key_property_later";
+        EndIf;
         If Request.Property(Key) Then Raise "ASYNC-REQUEST"; EndIf;
         ЭтапВхода = "request_value";
         If Key = "schema" Or Key = "version" Then
@@ -3220,84 +3255,6 @@ Function AsyncReadRequest(ЭтапВхода)
         Or StrLen(Request.completed) = 0 Or StrLen(Request.completed) > 512
         Or Request.entered = Request.completed Then Raise "ASYNC-REQUEST"; EndIf;
     Return Request;
-EndFunction
-
-&AtClient
-Function AsyncRequestKeySite(Val Saved)
-    Var Calibration, Module, Frame, Name, Line, Source, NextFrame, Candidate, Depth, Site, Previous;
-    // Failure-only source site, never a semantic cause or success witness.
-    // Calibrate this pinned module without guessing a native module-name spelling.
-    Try
-Raise "ASYNC-SITE-CALIBRATION";
-    Except
-        Calibration = ErrorInfo();
-    EndTry;
-    If TypeOf(Calibration) <> Type("ErrorInfo") Then Return "request_key"; EndIf;
-    Module = Calibration.ModuleName;
-    If TypeOf(Module) <> Type("String") Then Return "request_key"; EndIf;
-    If StrLen(Module) = 0 Or StrLen(Module) > 512 Then Return "request_key"; EndIf;
-    If TypeOf(Calibration.LineNumber) <> Type("Number") Then Return "request_key"; EndIf;
-    If Calibration.LineNumber <> 227 Then Return "request_key"; EndIf;
-    If TypeOf(Calibration.InitialString) <> Type("String") Then Return "request_key"; EndIf;
-    If Calibration.InitialString <> "Raise ""ASYNC-SITE-CALIBRATION"";" Then Return "request_key"; EndIf;
-    If TypeOf(Calibration.Description) <> Type("String") Then Return "request_key"; EndIf;
-    If Calibration.Description <> "ASYNC-SITE-CALIBRATION" Then Return "request_key"; EndIf;
-    Frame = Saved;
-    Candidate = "request_key";
-    Previous = -1;
-    // Complete the bounded pinned callgraph before returning a source location.
-    // Unknown frames, inconsistent branches and cycles retain the coarse stage.
-    For Depth = 1 To 4 Do
-        If TypeOf(Frame) <> Type("ErrorInfo") Then Return "request_key"; EndIf;
-        Name = Frame.ModuleName;
-        Line = Frame.LineNumber;
-        Source = Frame.InitialString;
-        NextFrame = Frame.Cause;
-        If TypeOf(Name) <> Type("String") Or TypeOf(Line) <> Type("Number")
-            Or TypeOf(Source) <> Type("String") Then Return "request_key"; EndIf;
-        If Name = "" And Line = 0 And Source = "" Then
-            If TypeOf(NextFrame) = Type("Undefined") Then Return Candidate; EndIf;
-            Return "request_key";
-        EndIf;
-        If Name <> Module Or StrLen(Source) > 128 Then Return "request_key"; EndIf;
-        // Two literal source spellings only: exact indentation or none.
-        If Line = 375 And (Source = "        АсинхЗапрос = AsyncReadRequest(ЭтапВхода);"
-            Or Source = "АсинхЗапрос = AsyncReadRequest(ЭтапВхода);") Then
-            Site = 0;
-        ElsIf Line = 183 And (Source = "        AsyncExpectToken(Reader, JSONValueType.PropertyName);"
-            Or Source = "AsyncExpectToken(Reader, JSONValueType.PropertyName);") Then
-            Site = 1;
-        ElsIf Line = 168 And (Source = "    If Not Reader.Read() Then Raise ""ASYNC-REQUEST""; EndIf;"
-            Or Source = "If Not Reader.Read() Then Raise ""ASYNC-REQUEST""; EndIf;") Then
-            Site = 2;
-        ElsIf Line = 169 And (Source = "    If Reader.CurrentValueType <> Token Then Raise ""ASYNC-REQUEST""; EndIf;"
-            Or Source = "If Reader.CurrentValueType <> Token Then Raise ""ASYNC-REQUEST""; EndIf;") Then
-            Site = 3;
-        ElsIf Line = 184 And (Source = "        Key = Reader.CurrentValue;"
-            Or Source = "Key = Reader.CurrentValue;") Then
-            Site = 4;
-        ElsIf Line = 185 And (Source = "        If Request.Property(Key) Then Raise ""ASYNC-REQUEST""; EndIf;"
-            Or Source = "If Request.Property(Key) Then Raise ""ASYNC-REQUEST""; EndIf;") Then
-            Site = 5;
-        Else
-            Return "request_key";
-        EndIf;
-        // Only OnOpen -> any site, or helper call -> Read/token, may refine.
-        If Previous <> -1 And Not (Previous = 0 And Site > 0)
-            And Not (Previous = 1 And (Site = 2 Or Site = 3)) Then
-            Return "request_key";
-        EndIf;
-        If Site = 1 Then Candidate = "request_key_call";
-        ElsIf Site = 2 Then Candidate = "request_key_read";
-        ElsIf Site = 3 Then Candidate = "request_key_token";
-        ElsIf Site = 4 Then Candidate = "request_key_current";
-        ElsIf Site = 5 Then Candidate = "request_key_property";
-        EndIf;
-        Previous = Site;
-        If TypeOf(NextFrame) = Type("Undefined") Then Return Candidate; EndIf;
-        Frame = NextFrame;
-    EndDo;
-    Return "request_key";
 EndFunction
 
 &НаКлиенте
@@ -3392,14 +3349,6 @@ EndFunction
         ЭтапВхода = "root";
         АсинхКореньПробы();
     Исключение
-        СохраненнаяОшибкаВхода = ErrorInfo();
-        Если ЭтапВхода = "request_key" Тогда
-            Попытка
-                ЭтапВхода = AsyncRequestKeySite(СохраненнаяОшибкаВхода);
-            Исключение
-                // Diagnostic failure cannot replace the original coarse stage.
-            КонецПопытки;
-        КонецЕсли;
         // Finite private log witness only, never native semantic evidence.
         Сообщить("ASYNC-ENTRY-FAILURE:" + ЭтапВхода);
         // No completion and no early exit: external watchdog fails closed.
@@ -3761,7 +3710,7 @@ EnDpRoCeDuRe
 )
 
 
-ASYNC_FIXTURE_SHA256 = '00a39eac17bc2f1db8d65994e53c71f3b9a6a9fb97598c787294b20ab4155226'
+ASYNC_FIXTURE_SHA256 = '0c7e4335e2175bc500fdd4268dac5488290a08663f625cd44b83721b2ea6dc6d'
 
 
 def async_client_module(case_id: int) -> bytes:
