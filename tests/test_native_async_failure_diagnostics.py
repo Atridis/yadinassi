@@ -121,7 +121,6 @@ class AsyncFailureObservationTests(unittest.TestCase):
         self.completed = self.root / 'completed.json'
         self.native_log = self.root / 'enterprise.log'
         self.console = self.root / 'enterprise-console.log'
-        self.started = time.time_ns()
         self.previous = {}
 
     def marker(self, phase):
@@ -137,8 +136,8 @@ class AsyncFailureObservationTests(unittest.TestCase):
 
     def capture(self, *, stopped=True, stage=3):
         return suite.async_failure_observation(stage, 0, NONCE, stopped=stopped,
-            marker_context=(self.entered, self.completed, self.request, self.request_snap, self.started, self.previous),
-            log_context=((self.native_log, self.console), self.started))
+            marker_context=(self.entered, self.completed, self.request, self.request_snap, self.previous),
+            log_context=((self.native_log, self.console), self.request, self.request_snap, 2048))
 
     def test_stop_gate_absence_validity_and_completed_dependency(self):
         with mock.patch.object(suite, 'async_diagnostic_snapshot', side_effect=AssertionError('read before stop')):
@@ -200,7 +199,45 @@ class AsyncFailureObservationTests(unittest.TestCase):
         self.previous.clear()
         swapped.write_bytes(self.request.read_bytes())
         swapped.replace(self.request)
-        self.assertEqual(self.capture()[1:3], [2, 2])
+        self.native_log.write_bytes(b'ASYNC-ENTRY-FAILURE:root')
+        self.assertEqual(self.capture()[1:], [2, 2, 2])
+
+    def test_anchor_replaced_during_classification_invalidates_markers_and_log(self):
+        self.write('entered')
+        self.write('completed')
+        self.native_log.write_bytes(b'ASYNC-ENTRY-FAILURE:root')
+        import diagnostics
+        original = diagnostics.summarize_text
+        def replace(text):
+            swapped = self.root / 'swap'
+            swapped.write_bytes(self.request.read_bytes())
+            swapped.replace(self.request)
+            return original(text)
+        with mock.patch.object(diagnostics, 'summarize_text', side_effect=replace):
+            self.assertEqual(self.capture()[1:], [2, 2, 2])
+
+    def test_future_anchor_cannot_make_current_files_fresh(self):
+        future = time.time_ns() + 60_000_000_000
+        os.utime(self.request, ns=(future, future))
+        self.request_snap = suite.async_file_snapshot(self.request, 2048)
+        self.write('entered')
+        self.write('completed')
+        self.native_log.write_bytes(b'ASYNC-ENTRY-FAILURE:root')
+        self.assertEqual(self.capture()[1:], [2, 2, 2])
+
+    def test_marker_and_log_on_different_device_are_invalid(self):
+        self.write('entered')
+        self.write('completed')
+        self.native_log.write_bytes(b'ASYNC-ENTRY-FAILURE:root')
+        original = suite.async_diagnostic_snapshot
+        def different_device(*args, **kwargs):
+            value = original(*args, **kwargs)
+            if value is None:
+                return None
+            signature, data = value
+            return (signature[0] + 1, *signature[1:]), data
+        with mock.patch.object(suite, 'async_diagnostic_snapshot', side_effect=different_device):
+            self.assertEqual(self.capture()[1:], [2, 2, 2])
 
     def test_same_bytes_replacement_during_marker_validation_invalidates(self):
         self.write('entered')
@@ -394,6 +431,50 @@ class AsyncOfflineAdapterTests(unittest.TestCase):
         finally:
             fixture.doCleanups()
         self.assertIs(suite.secure_bytes, original)
+
+
+class AsyncFilesystemClockTests(unittest.TestCase):
+    def test_freshness_equality_each_timestamp_and_device_are_independent_gates(self):
+        anchor = ((7, 1, 0, 1, 1, 100, 110), b'anchor')
+        for device, mtime, ctime, expected in (
+                (7, 110, 110, True), (7, 111, 112, True),
+                (7, 109, 110, False), (7, 110, 109, False),
+                (8, 110, 110, False)):
+            observed = ((device, 2, 0, 1, 1, mtime, ctime), b'observed')
+            self.assertIs(suite.async_diagnostic_after(observed, anchor), expected)
+        future = ((7, 1, 0, 1, 1, 1000, 110), b'anchor')
+        observed = ((7, 2, 0, 1, 1, 110, 110), b'observed')
+        self.assertFalse(suite.async_diagnostic_after(observed, future))
+
+    def test_coarse_filesystem_ticks_and_ahead_wall_clock_preserve_all_five_ci_cases(self):
+        # Model coarse inode timestamps only AFTER the real secure reader has
+        # checked type, identity, size and bytes; never substitute native proof.
+        original = suite.async_file_snapshot
+        real_time_ns = time.time_ns
+        names = (
+            (AsyncFailureExecutionTests, 'test_actual_host_operation_not_inferred_from_empty_row'),
+            (AsyncFailureObservationTests, 'test_absent_marker_created_during_log_classification_invalidates'),
+            (AsyncFailureObservationTests, 'test_exact_entry_labels_finite_generic_categories_and_conflicts'),
+            (AsyncFailureObservationTests, 'test_stop_gate_absence_validity_and_completed_dependency'),
+            (AsyncOfflineAdapterTests, 'test_forced_windows_adapter_preserves_assertions_and_restores_reader'),
+            (AsyncFailureObservationTests, 'test_malformed_stale_nonce_case_witness_and_bom_are_never_valid'),
+            (AsyncFailureObservationTests, 'test_previous_marker_and_request_snapshots_cannot_be_rebased'),
+            (AsyncFailureObservationTests, 'test_same_bytes_replacement_during_marker_validation_invalidates'),
+        )
+        for quantum in (1, 10_000_000, 1_000_000_000):
+            def coarse(*args, **kwargs):
+                signature, data = original(*args, **kwargs)
+                signature = (*signature[:5], *(value // quantum * quantum for value in signature[5:7]))
+                return signature, data
+            result = unittest.TestResult()
+            tests = unittest.TestSuite(case(name) for case, name in names)
+            with self.subTest(quantum=quantum), \
+                 mock.patch.object(suite, 'async_file_snapshot', side_effect=coarse), \
+                 mock.patch.object(suite.time, 'time_ns', side_effect=lambda: real_time_ns() + 10_000_000_000):
+                tests.run(result)
+                self.assertEqual(result.testsRun, len(names))
+                self.assertEqual(result.failures, [])
+                self.assertEqual(result.errors, [])
 
 
 if __name__ == '__main__':

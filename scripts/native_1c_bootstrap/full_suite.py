@@ -2300,7 +2300,7 @@ def async_failure_observation(stage, case_id, nonce, *, stopped, marker_context=
     retained = []
     marker_snaps = []
     if marker_context is not None:
-        entered, completed, request, request_snap, started, previous = marker_context
+        entered, completed, request, request_snap, previous = marker_context
         for index, (path, phase) in enumerate(((entered, 'entered'), (completed, 'completed')), 1):
             saved = None
             try:
@@ -2311,7 +2311,7 @@ def async_failure_observation(stage, case_id, nonce, *, stopped, marker_context=
                 if saved is None:
                     result[index] = 1
                 else:
-                    if saved[0][5] < started or saved[0][6] < started or saved[1].startswith(b'\xef\xbb\xbf'):
+                    if not async_diagnostic_after(saved, request_snap) or saved[1].startswith(b'\xef\xbb\xbf'):
                         raise FullError('stale_evidence')
                     validate_async_marker(strict_json(saved[1], max_depth=5), nonce, case_id, phase)
                     result[index] = 3
@@ -2322,9 +2322,10 @@ def async_failure_observation(stage, case_id, nonce, *, stopped, marker_context=
         if result[2] == 3 and (result[1] != 3 or marker_snaps[1][0][5] < marker_snaps[0][0][5]):
             result[2] = 2
     if log_context is not None:
-        paths, started = log_context
+        paths, anchor_path, anchor_snap, anchor_limit = log_context
         try:
             from diagnostics import native_text, summarize_text
+            async_require_snapshot(anchor_path, anchor_snap, anchor_limit)
             categories, entry_labels = set(), set()
             present = False
             for path in paths:
@@ -2333,7 +2334,7 @@ def async_failure_observation(stage, case_id, nonce, *, stopped, marker_context=
                 if saved is None:
                     continue
                 present = True
-                if saved[0][5] < started or saved[0][6] < started:
+                if not async_diagnostic_after(saved, anchor_snap):
                     raise FullError('stale_evidence')
                 text = native_text(saved[1])
                 for line in text.splitlines():
@@ -2372,7 +2373,20 @@ def async_failure_observation(stage, case_id, nonce, *, stopped, marker_context=
             result[1:3] = [2, 2]
         if result[2] == 3 and result[1] != 3:
             result[2] = 2
+    if log_context is not None:
+        try:
+            async_require_snapshot(anchor_path, anchor_snap, anchor_limit)
+        except Exception:
+            result[3] = 2
     return result
+
+
+def async_diagnostic_after(saved, anchor):
+    # Filesystem timestamps may be coarser than time.time_ns(). Compare only
+    # against an earlier, securely retained current-case file on the same device.
+    # Equal ticks are valid; exclusive paths and nonce/snapshots still bind runs.
+    floor = max(anchor[0][5:7])
+    return saved[0][0] == anchor[0][0] and all(value >= floor for value in saved[0][5:7])
 
 
 def fail_async_process_checkpoint(record, diagnostics=None):
@@ -2396,7 +2410,7 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
     template_hash = digest(ASYNC_TEMPLATE.encode('utf-8'))
     module_hashes = [digest(module) for module in modules]
     retained = []
-    def step(command, directory, log):
+    def step(command, directory, log, anchor):
         nonlocal process_stopped, log_context
         process_stopped = False
         log_context = None
@@ -2405,7 +2419,8 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
             raise FullError('timeout')
         native_log = Path(command[command.index('/Out') + 1])
         absent(native_log, log)
-        log_context = ((native_log, log), time.time_ns())
+        async_require_snapshot(*anchor)
+        log_context = ((native_log, log), *anchor)
         try:
             run_async_process(command,directory,log,min(120,remaining),require_clean_tree=True)
         except Exception as error:
@@ -2469,7 +2484,7 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
             client_wiring(src)
             epf = case / 'AsyncClientProbe.epf'
             host_stage = 1
-            step(platform.command('DESIGNER')+['/LoadExternalDataProcessorOrReportFromFiles',str(src/'Launcher.xml'),str(epf),'/Out',str(case/'build.log'),'/DumpResult',str(case/'build.result')],case,case/'build-console.log')
+            step(platform.command('DESIGNER')+['/LoadExternalDataProcessorOrReportFromFiles',str(src/'Launcher.xml'),str(epf),'/Out',str(case/'build.log'),'/DumpResult',str(case/'build.result')],case,case/'build-console.log',(module_path,module_snap,MAX_OUTPUT))
             require_epf(epf)
             retained.append((epf,async_file_snapshot(epf,MAX_OUTPUT),MAX_OUTPUT,False))
             async_require_snapshot(module_path,module_snap,MAX_OUTPUT)
@@ -2477,7 +2492,7 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
             log_context = None
             dumped = case / 'roundtrip'
             dumped.mkdir(mode=0o700)
-            step(platform.command('DESIGNER')+['/DumpExternalDataProcessorOrReportToFiles',str(dumped/'Launcher.xml'),str(epf),'/Out',str(case/'dump.log'),'/DumpResult',str(case/'dump.result')],case,case/'dump-console.log')
+            step(platform.command('DESIGNER')+['/DumpExternalDataProcessorOrReportToFiles',str(dumped/'Launcher.xml'),str(epf),'/Out',str(case/'dump.log'),'/DumpResult',str(case/'dump.result')],case,case/'dump-console.log',(module_path,module_snap,MAX_OUTPUT))
             actual = generated_module(secure_bytes(dumped/CLIENT_MODULE,MAX_OUTPUT))
             if actual != module:
                 raise FullError('module_mismatch')
@@ -2502,10 +2517,10 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
             host_stage = 3
             absent(entered, completed)
             marker_pins = {}
-            marker_context = (entered, completed, request, request_snap, time.time_ns(), marker_pins)
+            marker_context = (entered, completed, request, request_snap, marker_pins)
             enterprise_error = None
             try:
-                step(platform.command('ENTERPRISE')+['/RunModeManagedApplication','/VL','ru_RU','/Execute',str(epf),'/C',str(request),'/Out',str(case/'enterprise.log')],case,case/'enterprise-console.log')
+                step(platform.command('ENTERPRISE')+['/RunModeManagedApplication','/VL','ru_RU','/Execute',str(epf),'/C',str(request),'/Out',str(case/'enterprise.log')],case,case/'enterprise-console.log',(request,request_snap,2048))
             except Exception as error:
                 enterprise_error = error
                 raise

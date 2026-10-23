@@ -11,7 +11,35 @@ python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --clien
   --comparison-mode typed-map-order-v1
 ```
 
-The measurement flag cannot be combined with optional client parity or watchdog flags. This does not replace standard CI coverage. The owner-only manual workflow requires an explicit true measurement flag and a reviewed commit SHA matching the dispatched same-repository branch revision. False/missing flags, forks, tags, and mismatched revisions are rejected. Running the command requires the existing approved native image and execution environment.
+The measurement flag cannot be combined with optional client parity or watchdog flags. This does not replace standard CI coverage. The owner-only manual fallback requires an explicit true measurement flag and a reviewed commit SHA matching the dispatched same-repository branch revision. False/missing flags, forks, tags, and mismatched revisions are rejected. Running the command requires the existing approved native image and execution environment.
+
+
+## Reviewed push opt-in
+
+The exact same-repository branch `codex/native-client-async-reviewed` is a
+separate launch control, not a development branch. After reviewing a candidate
+commit and verifying its standard CI, fast-forward this branch to that exact
+commit, checking the expected previous head before updating it. Do not push
+unreviewed work to this branch. A branch name alone does not prove review; the
+intentional promotion is the opt-in decision. When bootstrapping, create the
+branch at the previous commit, then promote it to the reviewed candidate and
+verify a `push` run for the candidate SHA, rather than assuming that creation
+alone launched it.
+
+Only that exact push ref selects the bounded async command. Existing PR and
+`main` routes keep the standard comparison, and `workflow_dispatch` with its
+explicit flag and matching `reviewed_sha` remains available. Admission preserves
+the owner/repository numeric identity checks and rejects forced or deleted
+reviewed-branch pushes, mismatched event/checkout/workflow revisions, tags and
+other branch contexts. An async verdict cannot satisfy the standard required
+verdict name; skipped, failed or cancelled execution is not successful evidence.
+
+No new credentials or token permissions are introduced: execution retains
+`contents: read` and `packages: read`, the approved image digest, isolated
+container and fixed public artifact inventory. These checks do not prevent
+repository editors from modifying workflows and do not narrow the existing
+public-repository package grant. The opt-in route does not create a new image
+confidentiality boundary.
 
 ## Fixed language-only observations
 

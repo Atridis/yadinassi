@@ -15,6 +15,7 @@ REPOSITORY = "Atridis/yadinassi"
 REPOSITORY_ID = 359770628
 OWNER = "Atridis"
 OWNER_ID = 30860798
+ASYNC_REVIEWED_REF = "refs/heads/codex/native-client-async-reviewed"
 PR_ACTIONS = frozenset({"opened", "synchronize", "reopened"})
 MAX_EVENT_BYTES = 8 * 1024 * 1024
 
@@ -86,8 +87,19 @@ def validate_admission(event, context):
         require(is_sha(base.get("sha")) and is_sha(head.get("sha")), "pr_revisions_invalid")
         return "pull_request"
     if context.get("GITHUB_EVENT_NAME") == "push":
-        require(context.get("GITHUB_REF") == "refs/heads/main" and event.get("ref") == "refs/heads/main",
+        ref = context.get("GITHUB_REF")
+        require(ref in ("refs/heads/main", ASYNC_REVIEWED_REF) and event.get("ref") == ref,
                 "push_ref_not_approved")
+        if ref == ASYNC_REVIEWED_REF:
+            # Deliberately advancing this exact owner-only branch opts in the reviewed SHA.
+            # Branch naming is not a security boundary against repository/workflow editors.
+            require(event.get("forced") is False, "push_forced_or_invalid")
+            require(context.get("GITHUB_REF_TYPE") == "branch"
+                    and context.get("GITHUB_BASE_REF") == "" and context.get("GITHUB_HEAD_REF") == "",
+                    "push_reviewed_context_invalid")
+            require(context.get("GITHUB_WORKFLOW_REF") == f"{REPOSITORY}/.github/workflows/native-1c-isolated-smoke.yml@{ref}"
+                    and context.get("GITHUB_WORKFLOW_SHA") == context["GITHUB_SHA"],
+                    "push_workflow_revision_mismatch")
         require(event.get("deleted") is False, "push_deleted_or_invalid")
         require(event.get("after") == context["GITHUB_SHA"]
                 and object_value(event.get("head_commit")).get("id") == context["GITHUB_SHA"],

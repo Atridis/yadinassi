@@ -1,4 +1,4 @@
-"""Offline tests for the separately opted-in, immutable manual measurement route."""
+"""Offline tests for the separately opted-in, immutable manual and reviewed-push measurement routes."""
 import copy
 import importlib.util
 import json
@@ -52,6 +52,111 @@ def environment(context):
 def inline_admission():
     block = WORKFLOW.read_text().split("\n  eligibility:\n", 1)[1].split("\n  smoke:\n", 1)[0]
     return textwrap.dedent(block.split("        run: |\n", 1)[1]).split("<<'PYTHON'\n", 1)[1].split("\nPYTHON", 1)[0]
+
+
+REVIEWED_REF = "refs/heads/codex/native-client-async-reviewed"
+
+
+def push_fixture(sha=SHA):
+    event, context = fixture(sha)
+    event.pop("inputs")
+    event.update(ref=REVIEWED_REF, after=sha, head_commit={"id": sha}, deleted=False, forced=False)
+    context.update(GITHUB_EVENT_NAME="push", GITHUB_REF=REVIEWED_REF,
+                   GITHUB_WORKFLOW_REF=f"Atridis/yadinassi/.github/workflows/native-1c-isolated-smoke.yml@{REVIEWED_REF}")
+    context.pop("NATIVE_DISPATCH_INPUTS")
+    return event, context
+
+
+class ReviewedPushAdmissionTests(unittest.TestCase):
+    def test_exact_owner_reviewed_push_and_immutable_binding(self):
+        event, context = push_fixture()
+        self.assertEqual(policy.validate_admission(event, context), "push")
+        policy.validate_binding(event, context, SHA, ["2" * 40], "")
+        for commit, status in (("2" * 40, ""), (SHA, "?? injected.py"), (SHA, " M tracked.py")):
+            with self.subTest(commit=commit, status=status), self.assertRaises(policy.PolicyError):
+                policy.validate_binding(event, context, commit, [], status)
+
+    def test_force_delete_missing_and_nonboolean_flags_fail_closed(self):
+        for flag in ("forced", "deleted"):
+            for value in (None, True, "false", "true", 0, 1, [], {}):
+                event, context = push_fixture()
+                event[flag] = value
+                with self.subTest(flag=flag, value=value), self.assertRaises(policy.PolicyError):
+                    policy.validate_admission(event, context)
+            event, context = push_fixture()
+            del event[flag]
+            with self.subTest(missing=flag), self.assertRaises(policy.PolicyError):
+                policy.validate_admission(event, context)
+
+    def test_only_exact_reviewed_ref_not_working_branch_or_tag(self):
+        for ref in (REVIEWED_REF + "/child", REVIEWED_REF + "-extra", REVIEWED_REF.upper(),
+                    "refs/heads/codex/native-client-async-measurement", "refs/tags/codex/native-client-async-reviewed",
+                    REVIEWED_REF.removeprefix("refs/heads/"), None, [], "", "refs/pull/90/merge"):
+            event, context = push_fixture()
+            event["ref"] = ref
+            context["GITHUB_REF"] = ref
+            with self.subTest(ref=ref), self.assertRaises(policy.PolicyError):
+                policy.validate_admission(event, context)
+        for target in ("event", "context"):
+            event, context = push_fixture()
+            if target == "event":
+                event["ref"] = "refs/heads/main"
+            else:
+                context["GITHUB_REF"] = "refs/heads/main"
+            with self.subTest(target=target), self.assertRaises(policy.PolicyError):
+                policy.validate_admission(event, context)
+
+    def test_same_repository_owner_and_actor_ids_remain_mandatory(self):
+        for key in ("GITHUB_REPOSITORY", "GITHUB_REPOSITORY_ID", "GITHUB_REPOSITORY_OWNER",
+                    "GITHUB_REPOSITORY_OWNER_ID", "GITHUB_ACTOR", "GITHUB_ACTOR_ID", "NATIVE_TRIGGERING_ACTOR"):
+            event, context = push_fixture()
+            context[key] = "other"
+            with self.subTest(key=key), self.assertRaises(policy.PolicyError):
+                policy.validate_admission(event, context)
+        for key, value in (("fork", True), ("id", 1), ("id", "359770628"), ("full_name", "fork/yadinassi"), ("owner", {})):
+            event, context = push_fixture()
+            event["repository"][key] = value
+            with self.subTest(key=key), self.assertRaises(policy.PolicyError):
+                policy.validate_admission(event, context)
+        event, context = push_fixture()
+        event["sender"]["id"] = 1
+        with self.assertRaises(policy.PolicyError):
+            policy.validate_admission(event, context)
+
+    def test_push_and_workflow_revisions_and_branch_context_are_exact(self):
+        for key, value in (("GITHUB_SHA", "2" * 40), ("GITHUB_WORKFLOW_SHA", "2" * 40),
+                           ("GITHUB_WORKFLOW_REF", "Atridis/yadinassi/.github/workflows/native-1c-isolated-smoke.yml@refs/heads/main"),
+                           ("GITHUB_REF_TYPE", "tag"), ("GITHUB_BASE_REF", "main"), ("GITHUB_HEAD_REF", "topic")):
+            event, context = push_fixture()
+            context[key] = value
+            with self.subTest(key=key), self.assertRaises(policy.PolicyError):
+                policy.validate_admission(event, context)
+        for key, value in (("after", "2" * 40), ("head_commit", {"id": "2" * 40}), ("head_commit", None)):
+            event, context = push_fixture()
+            event[key] = value
+            with self.subTest(key=key), self.assertRaises(policy.PolicyError):
+                policy.validate_admission(event, context)
+
+    def test_inline_reviewed_push_isolated_admission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "json.py").write_text("raise RuntimeError('candidate code ran')")
+            event_path = root / "event.json"
+            for mode in ("approved", "forced", "deleted", "stale", "fork"):
+                event, context = push_fixture()
+                if mode in ("forced", "deleted"):
+                    event[mode] = True
+                elif mode == "stale":
+                    context["GITHUB_WORKFLOW_SHA"] = "2" * 40
+                elif mode == "fork":
+                    event["repository"]["fork"] = True
+                event_path.write_text(json.dumps(event))
+                context["GITHUB_EVENT_PATH"] = str(event_path)
+                result = subprocess.run([sys.executable, "-I", "-B", "-c", inline_admission()], cwd=root,
+                                        env=environment(context), capture_output=True, timeout=30)
+                with self.subTest(mode=mode):
+                    self.assertEqual(result.returncode, 0 if mode == "approved" else 1, result.stderr)
+                    self.assertNotIn(b"candidate code ran", result.stderr)
 
 
 class ManualAdmissionTests(unittest.TestCase):
@@ -228,7 +333,7 @@ class ManualWorkflowTests(unittest.TestCase):
         ):
             block = source.split(f"\n  {job}:\n", 1)[1]
             name = block.splitlines()[0].strip()
-            expected = "name: ${{ github.event_name == 'workflow_dispatch' && '" + manual_name + "' || '" + standard_name + "' }}"
+            expected = "name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && '" + manual_name + "' || '" + standard_name + "' }}"
             self.assertEqual(name, expected)
             self.assertNotEqual(manual_name, standard_name)
 
@@ -250,8 +355,8 @@ class ManualWorkflowTests(unittest.TestCase):
         source = WORKFLOW.read_text()
         native = source.split("        id: native\n", 1)[1].split("      - name:", 1)[0]
         measurement = source.split("        id: native_async\n", 1)[1].split("      - name:", 1)[0]
-        self.assertIn("        if: github.event_name != 'workflow_dispatch'\n", native)
-        self.assertIn("        if: github.event_name == 'workflow_dispatch' && inputs.client_async_measurement == true\n", measurement)
+        self.assertIn("        if: github.event_name != 'workflow_dispatch' && !(github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')\n", native)
+        self.assertIn("        if: (github.event_name == 'workflow_dispatch' && inputs.client_async_measurement == true) || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')\n", measurement)
         self.assertEqual(re.findall(r"^        run: (.*)$", native, re.M), [STANDARD_COMMAND])
         self.assertEqual(re.findall(r"^        run: (.*)$", measurement, re.M), [MEASUREMENT_COMMAND])
         self.assertEqual(source.count("--client-async-measurement"), 1)
