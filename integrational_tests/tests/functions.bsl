@@ -612,6 +612,14 @@ EndFunction
 
 Function CollectTrailingOmittedProbe()
     Var Result;
+    // Begin trailing omitted direct positive witness.
+    OmitProbeArgumentCalls = 0;
+    OmitProbeBodyCalls = 0;
+    Result = OmitProbeDefaults(5,);
+    If Result <> 52 Or OmitProbeArgumentCalls <> 0 Or OmitProbeBodyCalls <> 1 Then
+        Raise "omit-probe-direct";
+    EndIf;
+    // End trailing omitted direct positive witness.
     Result = "omit.v1:";
     Result = Result + OmitProbeObserve("OmitProbeDefaults()");
     Result = Result + OmitProbeObserve("OmitProbeRequired()");
@@ -798,6 +806,6 @@ ObserveExportContext("execute-read", 0, "Result = ThisObject.ExportProbeValue;")
 ObserveExportContext("execute-routine", 0, "Result = ThisObject.ExportProbeRead();");
 // End exported variable discriminator observations.
 // Begin trailing omitted argument checkpoint observations.
-// Measurement only: native expected token remains unknown until audited capture.
+// Audited Execute token retained; the direct positive witness requires fresh native validation.
 Message(CollectTrailingOmittedProbe());
 // End trailing omitted argument checkpoint observations.

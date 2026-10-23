@@ -365,6 +365,8 @@ TRAILING_OMITTED_PROBE_BLOCKS = (
 
 def without_trailing_omitted_probes(text):
     """Restore every byte of the prior source; never trim observed output."""
+    if any(boundary in text for boundary in TRAILING_OMITTED_DIRECT_BLOCK):
+        text = without_trailing_omitted_direct_probe(text)
     if hashlib.sha256(text.encode('utf-8')).hexdigest() != TRAILING_OMITTED_SOURCE_SHA256:
         raise ValueError('trailing omitted source binding changed')
     for start, end in TRAILING_OMITTED_PROBE_BLOCKS:
@@ -378,3 +380,32 @@ def without_trailing_omitted_probes(text):
             or hashlib.sha256(raw).hexdigest() != TRAILING_OMITTED_BASE_SHA256):
         raise ValueError('trailing omitted baseline source binding changed')
     return text
+
+
+# The fresh literal positive witness adds no output and has an exact inverse to
+# the independently audited Execute measurement, whose source pin stays intact.
+TRAILING_OMITTED_DIRECT_SOURCE_SHA256 = 'b180494a704f59bc959cc07afecb9e568cd0fa64bb73109e45f7ae52b003bfbb'
+TRAILING_OMITTED_DIRECT_BLOCK = (
+    '    // Begin trailing omitted direct positive witness.\n',
+    '    // End trailing omitted direct positive witness.\n',
+)
+
+
+def without_trailing_omitted_direct_probe(text):
+    """Restore the complete captured measurement source, not projected output."""
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != TRAILING_OMITTED_DIRECT_SOURCE_SHA256:
+        raise ValueError('trailing omitted direct source binding changed')
+    start, end = TRAILING_OMITTED_DIRECT_BLOCK
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise ValueError('trailing omitted direct boundaries changed')
+    before, rest = text.split(start, 1)
+    _, after = rest.split(end, 1)
+    result = before + after
+    old_note = '// Measurement only: native expected token remains unknown until audited capture.'
+    new_note = '// Audited Execute token retained; the direct positive witness requires fresh native validation.'
+    if result.count(new_note) != 1:
+        raise ValueError('trailing omitted direct observation note changed')
+    result = result.replace(new_note, old_note, 1)
+    if hashlib.sha256(result.encode('utf-8')).hexdigest() != TRAILING_OMITTED_SOURCE_SHA256:
+        raise ValueError('trailing omitted captured source binding changed')
+    return result
