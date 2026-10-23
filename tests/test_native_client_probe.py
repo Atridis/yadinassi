@@ -518,14 +518,14 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
 
     def test_probe_source_has_client_entry_and_bounded_server_witness_and_nonmodal_stall(self):
         source = (ROOT / suite.CLIENT_SOURCE).read_text(encoding="utf-8-sig")
-        self.assertEqual(source.count("&НаКлиенте"), 4)
+        self.assertEqual(source.splitlines().count("&НаКлиенте"), 4)
         self.assertIn("#Если Клиент Тогда", source)
         self.assertIn('Возврат "client";', source)
         self.assertIn('ВызватьИсключение "not-client";', source)
         self.assertIn('Запрос.mode = "stall"', source)
         self.assertIn("Пока Истина Цикл", source)
         self.assertIn("ЗавершитьРаботуСистемы(Ложь)", source)
-        self.assertEqual(source.count("&AtServer"), 32)  # prior29 plus two NoContext helpers and one context wrapper
+        self.assertEqual(source.count("&AtServer"), 35)  # prior32 plus dual server variable/context/NoContext callers
         self.assertEqual(source.count("&НаСервере"), 1)
         self.assertIn("Function DirectiveWitnessValues()", source)
         for forbidden in ("ЗапуститьТестНаСервере", "ВнешниеОбработки.Создать",

@@ -360,6 +360,29 @@ CLIENT_NOCONTEXT_INITIALIZER = b'// Initialization runs in its explicitly compil
 CLIENT_NOCONTEXT_CALL = b'    NoContextAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
 
 
+# Temporary native-only dual measurement. Both consumers use this exact inverse.
+CLIENT_DUAL_TEMPLATE_SHA256 = '9ce132a3edef0c944a9a2d6776f98d1f209ecbd57ae314e8f02ba4e56d23ae06'
+CLIENT_DUAL_SHARED_SHA256 = 'b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14'
+CLIENT_DUAL_PREFIX = b'// BEGIN bounded dual declarations\n&AtServer\nVar DualProbeServerState;\n\n// END bounded dual declarations\n'
+CLIENT_DUAL_BLOCK = b'\n// BEGIN bounded dual measurement\n&\xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5\xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5\xd0\x91\xd0\xb5\xd0\xb7\xd0\x9a\xd0\xbe\xd0\xbd\xd1\x82\xd0\xb5\xd0\xba\xd1\x81\xd1\x82\xd0\xb0\nProcedure DualProbeLeaf(ReferenceValue)\n    ReferenceValue = ReferenceValue + 1;\nEndProcedure\n\n&AtClientAtServerNoContext\nFunction DualProbeOperation(ReferenceValue, Val ContainerValue, Val Escape)\n    Var ProfileMask;\n    ReferenceValue = ReferenceValue + 10;\n    DualProbeLeaf(ReferenceValue);\n    ContainerValue[0] = ContainerValue[0] + 10;\n    If Escape Then\n        Raise "dual-directive-controlled-failure";\n    EndIf;\n    ProfileMask = 0;\n#If Client Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If Server Then\n    ProfileMask = ProfileMask + 2;\n#EndIf\n#If AtClient Then\n    ProfileMask = ProfileMask + 4;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 8;\n#EndIf\n    Return New Structure("Container,Mask", ContainerValue, ProfileMask);\nEndFunction\n\n&AtClient\nFunction DualProbeFromClient()\n    Var Observations, ScalarValue, ContainerValue, OperationResult, Caught;\n    Observations = New Array;\n    ScalarValue = 1;\n    ContainerValue = New Array;\n    ContainerValue.Add(2);\n    OperationResult = DualProbeOperation(ScalarValue, ContainerValue, False);\n    Observations.Add(OperationResult.Mask);\n    OperationResult.Container[0] = OperationResult.Container[0] + 20;\n    Observations.Add(ContainerValue[0]);\n    ScalarValue = 6;\n    ContainerValue = New Array;\n    ContainerValue.Add(7);\n    Caught = False;\n    Try\n        DualProbeOperation(ScalarValue, ContainerValue, True);\n    Except\n        If Find(ErrorDescription(), "dual-directive-controlled-failure") > 0 Then\n            Caught = True;\n        Else\n            Raise;\n        EndIf;\n    EndTry;\n    If Not Caught Then\n        Raise "dual-directive-expected-exception-missing";\n    EndIf;\n    Observations.Add(ScalarValue);\n    Return Observations;\nEndFunction\n\n&AtServer\nFunction DualProbeFromServer()\n    Var Observations, ScalarValue, ContainerValue, OperationResult, Caught;\n    DualProbeServerState = 40;\n    Observations = New Array;\n    ScalarValue = 1;\n    ContainerValue = New Array;\n    ContainerValue.Add(2);\n    OperationResult = DualProbeOperation(ScalarValue, ContainerValue, False);\n    Observations.Add(OperationResult.Mask);\n    ScalarValue = 6;\n    ContainerValue = New Array;\n    ContainerValue.Add(7);\n    Caught = False;\n    Try\n        DualProbeOperation(ScalarValue, ContainerValue, True);\n    Except\n        If Find(ErrorDescription(), "dual-directive-controlled-failure") > 0 Then\n            Caught = True;\n        Else\n            Raise;\n        EndIf;\n    EndTry;\n    If Not Caught Then\n        Raise "dual-directive-expected-exception-missing";\n    EndIf;\n    Observations.Add(ScalarValue);\n    DualProbeServerState = DualProbeServerState + 1;\n    Observations.Add(DualProbeServerState);\n    Return Observations;\nEndFunction\n\n&AtServerNoContext\nFunction DualProbeFromServerNoContext()\n    Var Observations, ScalarValue, ContainerValue, OperationResult, Caught;\n    Observations = New Array;\n    ScalarValue = 1;\n    ContainerValue = New Array;\n    ContainerValue.Add(2);\n    OperationResult = DualProbeOperation(ScalarValue, ContainerValue, False);\n    Observations.Add(OperationResult.Mask);\n    OperationResult.Container[0] = OperationResult.Container[0] + 20;\n    Observations.Add(ContainerValue[0]);\n    ScalarValue = 6;\n    ContainerValue = New Array;\n    ContainerValue.Add(7);\n    Caught = False;\n    Try\n        DualProbeOperation(ScalarValue, ContainerValue, True);\n    Except\n        If Find(ErrorDescription(), "dual-directive-controlled-failure") > 0 Then\n            Caught = True;\n        Else\n            Raise;\n        EndIf;\n    EndTry;\n    If Not Caught Then\n        Raise "dual-directive-expected-exception-missing";\n    EndIf;\n    Observations.Add(ScalarValue);\n    Return Observations;\nEndFunction\n\n&AtClient\nFunction CollectDualDirectiveProbe() Export\n    Var Observations, Part, Item;\n    Observations = New Array;\n    Part = DualProbeFromClient();\n    For Each Item In Part Do\n        Observations.Add(Item);\n    EndDo;\n    Part = DualProbeFromServer();\n    For Each Item In Part Do\n        Observations.Add(Item);\n    EndDo;\n    Part = DualProbeFromServerNoContext();\n    For Each Item In Part Do\n        Observations.Add(Item);\n    EndDo;\n    Return Observations;\nEndFunction\n\n&AtClient\nFunction DualProbeEncode(Observations)\n    Var Encoded, Observation, Slot, Digits, Hundreds, Tens, Units;\n    If Observations.Count() <> 9 Then\n        Raise "dual-directive-invalid-count";\n    EndIf;\n    Encoded = "dual.v1:";\n    Digits = "0123456789";\n    Slot = 0;\n    For Each Observation In Observations Do\n        If TypeOf(Observation) <> Type("Number") Then\n            Raise "dual-directive-invalid-type";\n        EndIf;\n        If Observation < 0 Or Observation > 999 Or Int(Observation) <> Observation Then\n            Raise "dual-directive-invalid-range";\n        EndIf;\n        If (Slot = 0 Or Slot = 3 Or Slot = 6) And Observation > 15 Then\n            Raise "dual-directive-invalid-profile";\n        EndIf;\n        Hundreds = Int(Observation / 100);\n        Tens = Int(Observation / 10) - Hundreds * 10;\n        Units = Observation - Int(Observation / 10) * 10;\n        Encoded = Encoded + Mid(Digits, Hundreds + 1, 1)\n            + Mid(Digits, Tens + 1, 1) + Mid(Digits, Units + 1, 1);\n        Slot = Slot + 1;\n    EndDo;\n    Return Encoded;\nEndFunction\n\n&AtClient\nProcedure DualProbeAppend(RecordsOut)\n    RecordsOut.Add(DualProbeEncode(CollectDualDirectiveProbe()));\nEndProcedure\n'
+CLIENT_DUAL_CALL = b'    DualProbeAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+
+
+def dual_shared_source(raw: bytes) -> bytes:
+    """Restore all strict134 bytes; never evaluate or predict the dual suffix."""
+    tail = CLIENT_DUAL_BLOCK + CLIENT_NOCONTEXT_INITIALIZER
+    if (digest(raw) != CLIENT_DUAL_TEMPLATE_SHA256
+            or not raw.startswith(CLIENT_DUAL_PREFIX) or not raw.endswith(tail)
+            or raw.count(CLIENT_DUAL_PREFIX) != 1 or raw.count(CLIENT_DUAL_BLOCK) != 1
+            or raw.count(CLIENT_DUAL_CALL) != 1):
+        raise FullError('source_changed')
+    restored = (raw[len(CLIENT_DUAL_PREFIX):-len(tail)] + CLIENT_NOCONTEXT_INITIALIZER).replace(
+        CLIENT_DUAL_CALL, b'', 1)
+    if digest(restored) != CLIENT_DUAL_SHARED_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
 def nocontext_shared_source(raw: bytes) -> bytes:
     """Exact pre-initializer witness/call inverse for legacy adapters only."""
     tail = CLIENT_NOCONTEXT_BLOCK + CLIENT_NOCONTEXT_INITIALIZER
@@ -407,15 +430,18 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute the exact staged witness independently in the real interpreter."""
+    """Compute exact restored134; the pinned dual suffix is native-only measurement."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
+    shared_source = dual_shared_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        shared_path = Path(cache).resolve() / "shared-witness.bsl"
+        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -442,7 +468,8 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
+                                  {'phase', 'kind', 'ordinal', 'error_stage', 'dual'})
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -450,6 +477,14 @@ def validate_marker_diagnostics(value):
             or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
+    if 'dual' in value:
+        records = value['dual']
+        if (value['phase'] != 'completed' or value['kind'] != 'count'
+                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
+                or type(records) is not list or len(records) != 9
+                or any(type(item) is not int or not 0 <= item <= (15 if index in (0, 3, 6) else 999)
+                       for index, item in enumerate(records))):
+            raise ValueError('client dual measurement')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':

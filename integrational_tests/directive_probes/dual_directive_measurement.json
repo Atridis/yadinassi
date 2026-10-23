@@ -1,0 +1,79 @@
+{
+  "status": "uncaptured_native_only_measurement",
+  "native_values": null,
+  "entry": "CollectDualDirectiveProbe",
+  "entry_side": "client",
+  "record_count": 9,
+  "labels": [
+    "client.normal.profile",
+    "client.normal.val.container.alias",
+    "client.escape.caller.scalar",
+    "server.context.normal.profile",
+    "server.context.escape.caller.scalar",
+    "server.context.caller.context.restored",
+    "server.nocontext.normal.profile",
+    "server.nocontext.normal.val.container.alias",
+    "server.nocontext.escape.caller.scalar"
+  ],
+  "source_sha256": "761b25578c9327dd3cf76a1f9ff81002c1c02d3e5df96f6c5616379a1058a345",
+  "native_preconditions": [
+    "Literal managed-form compilation, never Execute(text).",
+    "Declarations precede module initializer; this fixture has none.",
+    "Client entry is invoked after form creation.",
+    "Each variable not a parameter is explicitly local or annotated module storage."
+  ],
+  "boundedness": {
+    "new_record_slots": 1,
+    "mutation_constants": [
+      1,
+      10,
+      20
+    ],
+    "state_seed": 40,
+    "profile_bit_weights": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "accepted_native_values": null,
+    "cap_or_range_changes": "none",
+    "combined_report_budget": "See focused production serializer proof; no cap increases.",
+    "marker_encoding": {
+      "entries": 135,
+      "prefix": "dual.v1:",
+      "payload": "9 fixed-width ASCII decimal fields, 3 digits each, no separator",
+      "record_limits": [
+        15,
+        999,
+        999,
+        15,
+        999,
+        999,
+        15,
+        999,
+        999
+      ],
+      "native_json_writer": "unchanged",
+      "two_space_lf_marker_upper_bytes": 2041
+    },
+    "decoded_observation_slots": 9
+  },
+  "removed_observations": [
+    "Duplicate normal scalar caller and returned scalar slots.",
+    "Per-lane recovery calls.",
+    "Per-lane escaped Val container slots.",
+    "Per-lane caught booleans, replaced by exact controlled-error matching and fail-closed rethrow/missing-error checks.",
+    "Server-context normal alias slot, retaining server-NoContext alias observation.",
+    "Client module-state restoration slot, retaining server-context restoration."
+  ],
+  "not_evidence": [
+    "No native compilation has been performed.",
+    "No native result or expected vector has been generated.",
+    "Profile mask records target flags separately from context flags and does not identify runtime side.",
+    "The frozen candidate intentionally does not support this directive."
+  ],
+  "integrated_source_sha256": "9ce132a3edef0c944a9a2d6776f98d1f209ecbd57ae314e8f02ba4e56d23ae06",
+  "restored_strict134_sha256": "b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14",
+  "integrated_module_sha256": "029fc7c47c32e8cc494b2dfb4256b83a7be02836403143e08542edce5b0c90c3"
+}

@@ -23,7 +23,9 @@ that row and all later rows with empty, failed/unreached observations. This keep
 all production applicability checks active; no validator is patched for size.
 The standard client's 417 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
-The prior temporary NoContext vector is removed; only finite mismatch metadata remains.
+The temporary dual measurement adds nine bounded integer observations, never
+expected native values. Separate standard/dual partitions bound both diagnostic
+shapes; the dual maximum uses 15 for profile slots and 999 elsewhere (JSON length is additive).
 Host-side Async comparison adds only a compact result to public summary and
 artifact provenance, never to stage wire. Eight runtimeerror mismatches are the
 longest valid comparator result; all existing early/late/marker partitions retain
@@ -163,6 +165,12 @@ def maximum_standard_marker_diagnostics():
     return dict(phase='completed', kind='runtime_error', ordinal=14, error_stage=11)
 
 
+def maximum_dual_marker_diagnostics():
+    # Nine integer slots: profiles 0/3/6 are 0..15, others 0..999; no bool/null.
+    return dict(phase='completed', kind='count', ordinal=134, error_stage=0,
+                dual=[15,999,999,15,999,999,15,999,999])
+
+
 def bind_identity(value):
     value['template_sha256'] = TEMPLATE
     for row, module in zip(value['cases'], MODULES):
@@ -300,7 +308,7 @@ def maximum_bootstrap_diagnostics():
             tail=[longest(d.CONTEXT_TOKENS)] * 32, omitted_middle=False))
 
 
-def majorant(early=False, marker_case=None):
+def majorant(early=False, marker_case=None, dual_capture=False):
     """Unreachable combinations are intentional upper bounds, never evidence."""
     result = probe()
     result['status'] = longest(smoke.STATUS | {'stage3_failed'})
@@ -321,7 +329,8 @@ def majorant(early=False, marker_case=None):
     client = s['client_probe']
     client.update(status='not_started', failure_kind=longest(full.FAILURES),
         process_diagnostics=maximum_process_diagnostics(),
-        marker_diagnostics=maximum_standard_marker_diagnostics())
+        marker_diagnostics=(maximum_dual_marker_diagnostics() if dual_capture
+                            else maximum_standard_marker_diagnostics()))
     client.update({key: False for key in full.CLIENT_FLAGS})
     measurement = s['client_async']
     measurement.update(status='inconclusive', failure_kind=longest(suite.ASYNC_FAILURES),
@@ -387,10 +396,12 @@ def render_provenance(record, *, async_result=None, accepted=False):
 
 
 def proof_results():
-    partitions = [majorant(), *(majorant(marker_case=case) for case in range(8))]
+    partitions = [majorant(marker_case=case, dual_capture=dual)
+                  for dual in (False, True) for case in (None, *range(8))]
     wire = max((render_stage(value['stage3']) for value in partitions), key=len)
     late = max((render_summary(value, error=True)[0] for value in partitions), key=len)
-    early, _ = render_summary(majorant(early=True), error=True)
+    early = max((render_summary(majorant(early=True, dual_capture=dual), error=True)[0]
+                 for dual in (False, True)), key=len)
     files, _ = render_provenance(maximum_observed_record())
     projected = json.loads(files['provenance.json'])
     # At most five additional bytes: all six native sizes independently get
@@ -406,6 +417,8 @@ def proof_results():
         conditional_paths=80, failure_prefix_variants=216,
         failure_diagnostic_variants=1744, maximum_failure_diagnostic_wire_bytes=10,
         standard_marker_diagnostic_variants=417,
+        dual_integer_slots=9, dual_integer_maximum=999, dual_profile_maximum=15,
+        diagnostic_shape_partitions=2,
         marker_validation_diagnostic_variants=sum(len(list(marker_validation_variants(case))) for case in range(8)),
         marker_validation_diagnostic_variants_by_case=[len(list(marker_validation_variants(case))) for case in range(8)],
         maximum_marker_validation_diagnostic_wire_bytes=11,

@@ -259,3 +259,11 @@ implementation requires a fresh strict134 acceptance and does not retroactively
 extend that historical119 acceptance. See
 [the module-context specification](module-context-measurement.md) for the default-client mapping, initializer
 selection and exclusions; no form attributes or cross-context imports are added.
+
+### Pending dual-NoContext measurement
+
+A [finite, native-only dual-NoContext measurement](dual-directive-measurement.md)
+is prepared separately from interpreter support. Its nine observations remain
+uncaptured and the existing strict134 acceptance intentionally rejects the extra
+measurement token. This does not establish native capability-negative behavior or
+Async-dual declaration legality; the runtime support boundary is unchanged.
