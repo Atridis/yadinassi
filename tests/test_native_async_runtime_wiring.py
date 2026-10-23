@@ -1,15 +1,17 @@
 """Offline bounded actual-only child contract; not fresh native parity."""
 import copy
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-from scripts import native_1c_full_host as host
+from test_native_1c_full_host import full as host, SyntheticFilesystemCase, read_synthetic_file
 from test_native_async_comparison import NATIVE, ROOT
 from test_native_1c_output_artifact import semantic_report
 
-class AsyncRuntimeWiringTests(unittest.TestCase):
+class AsyncRuntimeWiringTests(SyntheticFilesystemCase):
     def setUp(self):
+        super().setUp()
         self.report = semantic_report()
         self.report['stage3']['client_async'] = copy.deepcopy(NATIVE)
         versions = mock.patch.object(host.importlib.metadata, 'version', side_effect=lambda key: host.DEPENDENCIES[key])
@@ -23,10 +25,12 @@ class AsyncRuntimeWiringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as private:
             kwargs = {} if runner is None else {'runner': runner}
             return host.compare_async_runtime(ROOT, Path(private), self.report, self.hashes, **kwargs)
+    @unittest.skipIf(os.name == "nt", "real native host uses POSIX descriptor/pipe/process-group semantics")
     def test_real_child(self):
         result = self.execute()
         self.assertEqual(result['status'], 'matched')
         self.assertEqual(result['actual_sha256'], 'a576aa7f01fc6b14b1bf695e3a41e7cbd5ab87d21b385045a0a2eb33e95955f7')
+    @unittest.skipIf(os.name == "nt", "real native host uses POSIX descriptor/pipe/process-group semantics")
     def test_isolation(self):
         def runner(args, cwd, **limits):
             self.assertEqual(args[1:3], ['-I', '-B'])
@@ -58,6 +62,7 @@ class AsyncRuntimeWiringTests(unittest.TestCase):
                 self.execute(runner)
             runner.assert_called_once()
             self.assertNotIn('SECRET', str(error.exception))
+    @unittest.skipIf(os.name == "nt", "real native host uses POSIX descriptor/pipe/process-group semantics")
     def test_provenance_change(self):
         with mock.patch.object(host, 'interpreter_provenance', side_effect=[{'source': 'old'}, {'source': 'new'}]):
             with self.assertRaisesRegex(host.FullError, 'execution_provenance_changed'): self.execute()
@@ -69,6 +74,7 @@ class AsyncRuntimeWiringTests(unittest.TestCase):
                        {'actual_sha256': 'secret'}, {'extra': 'value'}):
             with self.assertRaises(host.FullError): host.validate_async_comparison({**valid, **change})
 
+    @unittest.skipIf(os.name == "nt", "real native host uses POSIX descriptor/pipe/process-group semantics")
     def test_native_mutation_is_compared_not_replaced(self):
         self.report['stage3']['client_async']['cases'][0][6][0] = [4, 18]
         self.assertEqual(self.execute()['status'], 'mismatched')
@@ -82,6 +88,13 @@ class AsyncRuntimeWiringTests(unittest.TestCase):
             with self.assertRaisesRegex(host.FullError, '^semantic_context_invalid$'): self.execute(runner)
             runner.assert_not_called()
             section[key] = old
+
+
+    def test_synthetic_windows_reader_still_exercises_source_and_actual_guards(self):
+        # Exercise the Windows fixture adapter even on Linux; no native-security claim.
+        with mock.patch.object(host, 'read_regular', side_effect=read_synthetic_file):
+            self.test_untrusted_output()
+            self.test_source_change()
 
 
 class AsyncParityPublicationContextTests(unittest.TestCase):

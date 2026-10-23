@@ -137,6 +137,12 @@ class Continue(Node):
 class Var(Node):
     names: list[str]
     exported_names: tuple[str, ...] = ()
+    execution_context: str = "client"
+
+
+@dataclass
+class ServerInitializer(Node):
+    body: list[Node]
 
 
 @dataclass

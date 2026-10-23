@@ -283,7 +283,7 @@ EndTry;
                 self.assertEqual(vm.execution_context, 'client')
 
     def test_invalid_server_placement_and_unsupported_families(self):
-        for code in ('&AtServer\nx=1;', '&AtServer\nVar X;',
+        for code in ('&AtServer\nx=1;',
                      '&AtServer\n&AtClient\nProcedure P() EndProcedure',
                      'Procedure P()\n&AtServer\nProcedure S() EndProcedure\nEndProcedure',
                      '&AtServerNoContext\nProcedure S() EndProcedure',

@@ -131,6 +131,8 @@ class Interpreter:
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
         self.server_routines: dict[str, ast.Routine] = {}
+        self.server_module_names: set[str] = set()
+        self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
         self._context_stack = ["client"]
         self._client_routine_names: set[str] = set()
@@ -435,22 +437,29 @@ class Interpreter:
                 token = node.token
                 raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
                                token.source, token.line, token.column)
-        # Register module declarations before executing any module statements.
+        # Register side-local declarations before any module statement executes.
         for node in program:
             if isinstance(node, ast.Routine):
                 registry = self.server_routines if node.execution_context == "server" else self.routines
                 opposite = self.routines if node.execution_context == "server" else self.server_routines
                 opposite.pop(node.name.casefold(), None)
                 registry[node.name.casefold()] = node
+            elif isinstance(node, ast.ServerInitializer):
+                self.server_initializers.append(node)
             elif isinstance(node, ast.Var):
+                if node.execution_context == "server":
+                    self.server_module_names.update(name.casefold() for name in node.names)
+                    continue
                 self.exported_variables.update(name.casefold() for name in node.exported_names)
                 for name in node.names:
                     self.module_names.add(name.casefold())
                     self.variables.setdefault(name.casefold(), None)
         for node in program:
             if isinstance(node, ast.Import):
-                (yield from self._visit(node))
-        return (yield from self.block([node for node in program if not isinstance(node, ast.Import)]))
+                yield from self._visit(node)
+        return (yield from self.block([node for node in program
+            if not isinstance(node, (ast.Import, ast.ServerInitializer))
+            and not (isinstance(node, ast.Var) and node.execution_context == "server")]))
 
     def block(self, statements: list[ast.Node]) -> object:
         result = None
@@ -858,9 +867,15 @@ class Interpreter:
                                             procedure=not function.is_function)
             return promise if function.is_function else None
         previous = owner.locals
-        owner.locals = bindings
+        # Fresh server module initialization precedes formal parameter storage.
+        # One cleanup boundary encloses BOTH initializer and routine execution.
+        owner.locals = None if crossing else bindings
         owner._context_stack.append(function.execution_context)
         try:
+            if crossing:
+                for initializer in owner.server_initializers:
+                    yield from owner.block(initializer.body)
+                owner.locals = bindings
             result = None
             try:
                 (yield from owner.block(function.body))
@@ -948,6 +963,9 @@ class Interpreter:
         server._logical_side = "server"
         server._context_stack = self._context_stack
         server.routines = self.server_routines.copy()
+        server.module_names = self.server_module_names.copy()
+        server.variables = dict.fromkeys(server.module_names)
+        server.server_initializers = self.server_initializers.copy()
         server._client_routine_names = set(self.routines)
         # Keep server-bound core helpers. Copy registered host functions while
         # rebinding this interpreter's methods, never retaining client frames.
@@ -964,8 +982,8 @@ class Interpreter:
                                                   reference_parameters=function.reference_parameters,
                                                   returns_value=function.returns_value)
         server.types = self.types.copy()
-        # Module variables, imports and the public module receiver have no
-        # cross-context contract in this first slice. Never alias client state.
+        # Imports and the public module receiver remain unsupported server-side.
+        # Side-local variables above never alias client storage.
         server._self_module.ready = False
         return server
 

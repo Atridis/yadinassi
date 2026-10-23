@@ -1,3 +1,12 @@
+// BEGIN bounded module context declarations
+&AtClient
+Var ContextClientCounter;
+&AtServer
+Var ContextServerCounter;
+&AtServer
+Var ContextServerUninitialized;
+
+// END bounded module context declarations
 // Fixed managed-form client checkpoint, not six-scenario client parity.
 &НаКлиенте
 Функция КонтекстПробы()
@@ -32,6 +41,7 @@
     For Each ObjectTransferValue In RunObjectTransferProbe() Do
         Значения.Добавить(ObjectTransferValue);
     EndDo;
+    ContextModuleAppend(Значения);
     Возврат Значения;
 КонецФункции
 
@@ -902,3 +912,79 @@ Function RunObjectTransferProbe()
     EndTry;
     Return Records;
 EndFunction
+
+// BEGIN bounded module context measurement
+&AtServer
+Function ContextModuleNested()
+    ContextServerCounter = ContextServerCounter + 1;
+    Return ContextServerCounter;
+EndFunction
+
+&AtServer
+Function ContextModuleCall(Val Escape)
+    Var Initial, Nested, WasUndefined;
+    Initial = ContextServerCounter;
+    WasUndefined = ContextServerUninitialized = Undefined;
+    ContextServerCounter = ContextServerCounter + 10;
+    ContextServerUninitialized = 7;
+    Nested = ContextModuleNested();
+    If Escape Then
+        Raise "module-context-controlled-failure";
+    EndIf;
+    Return New Structure("Initial,Nested,WasUndefined", Initial, Nested, WasUndefined);
+EndFunction
+
+&AtClient
+Procedure ContextModuleRecord(Records, Val Label, Val Value)
+    If Value = Undefined Then
+        Records.Add("U");
+    Else
+        Records.Add(Value);
+    EndIf;
+EndProcedure
+
+&AtClient
+Function RunModuleContextProbe()
+    Var Records, First, Second, Third, Failed, Matched;
+    Records = New Array;
+    Records.Add("module.context.v1");
+    ContextModuleRecord(Records, "client.initial", ContextClientCounter);
+    ContextClientCounter = ContextClientCounter + 1;
+    First = ContextModuleCall(False);
+    ContextModuleRecord(Records, "server.initial", First.Initial);
+    ContextModuleRecord(Records, "server.nested", First.Nested);
+    ContextModuleRecord(Records, "server.undefined", First.WasUndefined);
+    Second = ContextModuleCall(False);
+    ContextModuleRecord(Records, "server.repeated.initial", Second.Initial);
+    Failed = False;
+    Matched = False;
+    Try
+        ContextModuleCall(True);
+    Except
+        Failed = True;
+        Matched = Find(ErrorDescription(), "module-context-controlled-failure") > 0;
+    EndTry;
+    Third = ContextModuleCall(False);
+    ContextModuleRecord(Records, "escaped.caught", Failed And Matched);
+    ContextModuleRecord(Records, "server.recovery.initial", Third.Initial);
+    ContextModuleRecord(Records, "server.recovery.undefined", Third.WasUndefined);
+    ContextModuleRecord(Records, "client.retained", ContextClientCounter);
+    Return Records;
+EndFunction
+
+&AtClient
+Procedure ContextModuleAppend(RecordsOut)
+    Var ModuleContextValue;
+    For Each ModuleContextValue In RunModuleContextProbe() Do
+        RecordsOut.Add(ModuleContextValue);
+    EndDo;
+EndProcedure
+
+// Initialization runs in its explicitly compiled side only. Do not infer that
+// arbitrary unguarded standalone root statements should run on the server.
+#If AtClient Then
+ContextClientCounter = 10;
+#EndIf
+#If AtServer Then
+ContextServerCounter = 100;
+#EndIf

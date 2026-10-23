@@ -21,7 +21,7 @@ Marker validation hints are enumerated independently for all eight failed-row
 positions. They require an invalid-result row, so a separate majorant replaces
 that row and all later rows with empty, failed/unreached observations. This keeps
 all production applicability checks active; no validator is patched for size.
-The standard client's 342 finite marker diagnostics are bounded independently;
+The standard client's 372 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
 Host-side Async comparison adds only a compact result to public summary and
 artifact provenance, never to stage wire. Eight runtimeerror mismatches are the
@@ -356,13 +356,19 @@ def render_summary(value, *, error=False, artifact_error=False):
             code = smoke.main(['--execute-approved-image', '--full-suite', '--client-probe',
                 '--client-async-measurement', '--native-target', full.LINUX_TARGET,
                 '--comparison-mode', full.MAP_MODE, '--export-native-outputs', '--output', str(path)])
-        return path.read_bytes(), code
+        # The production cap measures rendered UTF-8 text before write_text.
+        # Native execution is Linux-only, where that text is written with LF.
+        # Windows test files may gain CRLF during text I/O: universal-newline
+        # reading recovers exactly the Linux serializer bytes, not a new codec.
+        return path.read_text(encoding='utf-8').encode('utf-8'), code
 
 
 def render_stage(value):
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / 'stage.json'
         suite.write_report(path, value)
+        # This production writer uses binary xb/write, so its wire bytes must
+        # remain exact on every OS; never normalize or reserialize the wire.
         return path.read_bytes()
 
 
@@ -397,7 +403,7 @@ def proof_results():
         actual_provenance_boundary_bytes=len(files['provenance.json']),
         conditional_paths=80, failure_prefix_variants=216,
         failure_diagnostic_variants=1744, maximum_failure_diagnostic_wire_bytes=10,
-        standard_marker_diagnostic_variants=342,
+        standard_marker_diagnostic_variants=372,
         marker_validation_diagnostic_variants=sum(len(list(marker_validation_variants(case))) for case in range(8)),
         marker_validation_diagnostic_variants_by_case=[len(list(marker_validation_variants(case))) for case in range(8)],
         maximum_marker_validation_diagnostic_wire_bytes=11,
@@ -407,6 +413,40 @@ def proof_results():
 
 
 class AsyncBudgetTests(unittest.TestCase):
+    def test_linux_serializer_bound_is_independent_of_crlf_text_transport(self):
+        value = majorant()
+        expected, expected_code = render_summary(value, error=True)
+        wire = render_stage(value['stage3'])
+        written = []
+
+        def windows_text_write(path, text, encoding=None, errors=None, newline=None):
+            # Explicitly simulate Windows write_text transport on every runner.
+            # JSON string newlines are escaped, so only formatting LF expands.
+            raw = text.replace('\n', '\r\n').encode(encoding or 'utf-8', errors or 'strict')
+            written.append(raw)
+            path.write_bytes(raw)
+            return len(text)
+
+        with mock.patch.object(Path, 'write_text', windows_text_write):
+            actual, code = render_summary(value, error=True)
+            without = copy.deepcopy(value)
+            del without['async_comparison']
+            smaller, _ = render_summary(without, error=True)
+            self.assertEqual(render_stage(value['stage3']), wire)
+        self.assertEqual(code, expected_code)
+        self.assertEqual(actual, expected)
+        self.assertEqual(json.loads(actual), json.loads(written[0]))
+        self.assertEqual(written[0], expected.replace(b'\n', b'\r\n'))
+        self.assertGreater(len(written[0]), len(expected))
+        self.assertLessEqual(len(actual), CAPS['public_summary'])
+        self.assertEqual(len(actual) - len(smaller), 778)
+        # Wire producer is already binary: preserve exact production bytes and
+        # run the decoder rather than silently changing its transport.
+        self.assertNotIn(b'\r', wire)
+        self.assertNotIn(b'\n', wire)
+        self.assertEqual(full.decode_stage3_wire(json.loads(wire)), value['stage3'])
+        self.assertLessEqual(len(wire), CAPS['stage_wire'])
+
     def test_compact_async_result_maximum_is_production_valid(self):
         maximum = maximum_async_comparison()
         for code in ('none', 'trace', 'values', 'errors', 'lifecycle', 'runtimeerror'):
@@ -721,9 +761,14 @@ class AsyncBudgetTests(unittest.TestCase):
             51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73,
             73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74,
             11, 73, 74, 72, 1]
-        self.assertEqual(len(expected), 109)
+        expected += ['module.context.v1', 10, 100, 111, True, 100, True, 100, True, 11]
+        self.assertEqual(len(expected), 119)
         self.assertEqual(suite.CLIENT_VALUES, expected)
         self.assertEqual(full.CLIENT_VALUES, expected)
+        # Freeze bool/int distinctions as well as equality for the strict119
+        # witness and its nine side-local module-context observations.
+        self.assertEqual(list(map(type, suite.CLIENT_VALUES)), list(map(type, expected)))
+        self.assertEqual(list(map(type, full.CLIENT_VALUES)), list(map(type, expected)))
         maximum = maximum_standard_marker_diagnostics()
         full.validate_marker_diagnostics(maximum)
         self.assertEqual(len(compact(maximum)), 74)
@@ -731,16 +776,16 @@ class AsyncBudgetTests(unittest.TestCase):
         for phase, kind, ordinal, error_stage in itertools.product(
                 ('invalid', 'error', 'completed'),
                 ('none', 'count', 'type', 'value', 'runtime_error'),
-                range(-1, 111), range(12)):
+                range(-1, 121), range(12)):
             diagnostic = dict(phase=phase, kind=kind, ordinal=ordinal, error_stage=error_stage)
             if phase != 'completed':
                 allowed = kind == 'none' and ordinal == -1 and error_stage == 0
             elif kind == 'runtime_error':
                 allowed = 1 <= error_stage <= 11 and ordinal == error_stage + 3
             elif kind == 'count':
-                allowed = 0 <= ordinal <= 109 and error_stage == 0
+                allowed = 0 <= ordinal <= 119 and error_stage == 0
             elif kind in ('type', 'value'):
-                allowed = 0 <= ordinal < 109 and error_stage == 0
+                allowed = 0 <= ordinal < 119 and error_stage == 0
             else:
                 allowed = ordinal == -1 and error_stage == 0
             if not allowed:
@@ -770,11 +815,12 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertNotIn(b'directive.', wire + summary)
             self.assertNotIn(b'copyback.core.', wire + summary)
             self.assertNotIn(b'object.transfer.', wire + summary)
+            self.assertNotIn(b'module.context.', wire + summary)
             self.assertLessEqual(len(wire), CAPS['stage_wire'])
             self.assertLessEqual(len(summary), CAPS['public_summary'])
             with self.assertRaises(full.FullError):
                 full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], b''), result, smoke.IMAGE)
-        self.assertEqual(count, 342)
+        self.assertEqual(count, 372)
 
     def test_process_counter_width_bound_is_derived_not_independent_maxima(self):
         # DP over seven nonnegative counters with a <=256 sum proves 16

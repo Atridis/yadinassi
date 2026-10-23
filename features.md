@@ -5306,7 +5306,7 @@ infobase. Правила alias/exception в official guide расходятся 
 ссылку на свойство/индекс через параметр wrapper, тоже отклоняется: timing этой
 ссылки не измерен. Прямое Val выражение свойства остается обычным выражением.
 Локальные защитные границы:10 000 вхождений на пакет
-и глубина64, не утверждение о лимитах 1С. Модульное состояние,
+и глубина64, не утверждение о лимитах 1С. Полное состояние форм,
 остальные типы сериализации, NoContext и dual-директивы остаются обязательными
 следующими частями, не optional edge polishing.
 
@@ -5325,5 +5325,14 @@ flags standalone defaults не заявляется. PR90 не менялся. F
 shared-source exception удалены: теперь host исполняет весь exact staged source,
 native обязан совпасть по109 typed values. Исторические модули не изменены.
 [object-transfer-measurement.md](docs/object-transfer-measurement.md) содержит
-источники измерений и границы. Текущий strict native/4OS прогон еще требуется;
-исторический measurement-only failure не выдается за acceptance. PR90 не меняется.
+источники измерений и границы. Strict 109 native parity подтверждена и независимо проверена на actual main
+0dbb938 в run 39969439403. Исторический measurement-only failure не выдается
+за acceptance. Следующий этап добавляет top-level &AtClient/&AtServer Var,
+side-local storage и явно logical-side guarded server initializer. Свежая серверная
+активация создается на внешний вызов, вложенные server calls разделяют ее;
+client variables сохраняются. Default root/unannotated variables остаются client,
+обычный #If Server сам по себе не активирует прежний ignored root. Формы,
+form attributes, server exports и imports не добавлены. Девять native observations
+независимо проверены, temporary capture удален; exact whole-source host/native
+контракт теперь119 значений. Current-head native и4OS gates еще обязательны.
+[Точные границы и evidence](docs/module-context-measurement.md). PR90 не меняется.
