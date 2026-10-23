@@ -45,7 +45,7 @@ INPUT_FILES = {
 FAILURE_KINDS = {'none', 'prerequisites_failed', 'stale_evidence', 'invalid_input',
                  'invalid_result', 'invalid_dump_result', 'artifact_missing',
                  'output_mismatch', 'output_limit', 'module_mismatch', 'timeout',
-                 'process_failed', 'unexpected_failure', 'export_failed'}
+                 'process_failed', 'unexpected_failure', 'export_failed', 'unsupported_observation'}
 
 
 class FullError(Exception):
@@ -60,10 +60,13 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False) -> dict:
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False) -> dict:
     if not valid_nonce(nonce) or ((watchdog_check or client_dates or client_values or client_collections or client_numbers) and not client_probe):
         raise FullError('invalid_input')
-    return {**({'client_probe': empty_client_report()} if client_probe else {}),
+    if type(client_async) is not bool or (client_async and (not client_probe or watchdog_check or client_dates or client_values or client_collections or client_numbers)):
+        raise FullError('invalid_input')
+    return {**({'client_async': empty_async_report()} if client_async else {}),
+            **({'client_probe': empty_client_report()} if client_probe else {}),
             **({'client_watchdog': empty_watchdog_report()} if watchdog_check else {}),
             **({'client_dates': empty_dates_report()} if client_dates else {}),
             **({'client_values': empty_values_report()} if client_values else {}),
@@ -313,12 +316,15 @@ def validate_case_request(command: list[str], directory: Path, post_create: bool
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False) -> dict:
-    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers)
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
     report.update(status='failed', failure_kind='unexpected_failure')
+    async_deadline = None
     active = None
     old_reader, old_process, old_build = launcher.read_result, launcher.run_process, launcher.build_epf
     try:
+        if client_async:
+            async_deadline = read_async_deadline(nonce)
         report['input_sha256'] = input_hashes(inputs, client_probe=client_probe)
         absent(root)
         root.mkdir(mode=0o700)
@@ -410,6 +416,10 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
                 platform, root / 'client-watchdog', inputs, nonce, report['input_sha256'])
             if report['client_watchdog']['status'] != 'ok':
                 raise FullError(report['client_watchdog']['failure_kind'])
+        if client_async:
+            report['client_async'] = run_client_async(platform, root / 'client-async', inputs, nonce, report['input_sha256'], deadline=async_deadline)
+            if report['client_async']['status'] != 'ok':
+                raise FullError(report['client_async']['failure_kind'])
         if input_hashes(inputs, client_probe=client_probe) != report['input_sha256']:
             active = None
             report['failed_case'] = None
@@ -458,6 +468,14 @@ def decode_process_wire(value: object) -> dict:
 
 
 def decode_stage_wire(data: dict) -> dict:
+    if type(data) is dict and type(data.get('schema')) is int and data['schema'] == 4:
+        if ('client_async' not in data or 'client_probe' not in data
+                or any(key in data for key in ('client_dates','client_values','client_collections','client_numbers','client_watchdog'))
+                or len(json.dumps(data,separators=(',',':'),allow_nan=False).encode()) > MAX_STAGE_REPORT):
+            raise FullError('invalid_result')
+        base = {key:value for key,value in data.items() if key != 'client_async'}
+        base['schema'] = 1
+        return {**decode_stage_wire(base),'client_async':decode_async_wire(data['client_async'])}
     if type(data) is not dict or type(data.get('schema')) is not int or data['schema'] not in (1, 2, 3):
         raise FullError('invalid_result')
     if any(type(key) is str and key.startswith('client_') and key not in CLIENT_WIRE_V3_RECORDS for key in data):
@@ -504,6 +522,14 @@ def decode_stage_wire(data: dict) -> dict:
 
 
 def encode_stage_wire(report: dict) -> dict:
+    if type(report) is dict and 'client_async' in report:
+        if type(report.get('schema')) is not int or report['schema'] != 1:
+            raise FullError('invalid_result')
+        base = {key:value for key,value in report.items() if key != 'client_async'}
+        result = {**encode_stage_wire(base),'schema':4,'client_async':encode_async_wire(report['client_async'])}
+        if decode_stage_wire(result) != report:
+            raise FullError('invalid_result')
+        return result
     if type(report) is not dict or type(report.get('schema')) is not int or report['schema'] != 1:
         raise FullError('invalid_result')
     # The previous opt-in combinations retain their exact existing wire format.
@@ -964,6 +990,9 @@ def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
 def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostics=None) -> None:
     """Keep a final teardown/census failure valid, finite and non-exportable."""
     suite.update(status='failed', failure_kind='process_failed')
+    if 'client_async' in suite and suite['client_async']['status'] != 'not_started':
+        fail_async_process_checkpoint(suite['client_async'], diagnostics)
+        return
     last = (suite['client_watchdog'] if watchdog_check else
             suite['client_numbers'] if 'client_numbers' in suite else
             suite['client_collections'] if 'client_collections' in suite else
@@ -2236,3 +2265,1811 @@ def client_numbers_marker(path: Path, nonce: str, phase: str) -> dict:
     except UnicodeError:
         raise FullError('invalid_result') from None
     return value
+
+
+def run_async_process(command: list[str], directory: Path, log: Path, timeout: float,
+                *, require_clean_tree: bool = False) -> None:
+    if os.name != 'posix' or type(timeout) not in (int, float) or not 0 < timeout <= 120:
+        raise FullError('invalid_input')
+    absent(log)
+    with log.open('xb') as output:
+        with subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
+                              stdout=output, stderr=subprocess.STDOUT,
+                              start_new_session=True) as child:
+            try:
+                code = child.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                error = FullError('timeout')
+                try:
+                    _stop_group(child)
+                    error.async_process_stopped = True
+                except Exception:
+                    error.async_process_stopped = False
+                raise error from None
+            except BaseException as error:
+                try:
+                    _stop_group(child)
+                    error.async_process_stopped = True
+                except Exception:
+                    error.async_process_stopped = False
+                raise
+            if require_clean_tree:
+                # A zero-exit leader is not completion while descendants remain.
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        os.killpg(child.pid, 0)
+                    except ProcessLookupError:
+                        break
+                    if time.monotonic() >= deadline:
+                        error = FullError('process_failed')
+                        try:
+                            _stop_group(child)
+                            error.async_process_stopped = True
+                        except Exception:
+                            error.async_process_stopped = False
+                        raise error
+                    time.sleep(0.02)
+            else:
+                _stop_group(child)
+    if code:
+        error = FullError('process_failed')
+        error.async_process_stopped = True
+        raise error
+    if '/DumpResult' in command:
+        result = Path(command[command.index('/DumpResult') + 1])
+        try:
+            data = secure_bytes(result, 128)
+            value = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig').strip()
+            if not re.fullmatch(r'[+-]?[0-9]+', value) or int(value) != 0:
+                raise ValueError
+        except (FullError, ValueError, UnicodeError) as cause:
+            error = cause if isinstance(cause, FullError) else FullError('invalid_dump_result')
+            error.async_process_stopped = True
+            raise error from None
+
+
+
+def read_async_deadline(nonce: str) -> float:
+    value = strict_json(secure_bytes(Path('/tmp/onec-smoke/async-deadline.json'), 256))
+    if (type(value) is not dict or set(value) != {'schema', 'nonce', 'deadline'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or not valid_nonce(nonce) or value['nonce'] != nonce
+            or type(value['deadline']) is not int
+            or not time.monotonic() < value['deadline'] <= time.monotonic() + 2340):
+        raise FullError('timeout')
+    return value['deadline']
+
+# Async-only private file continuity: same bytes in a replaced inode are not proof.
+def async_file_snapshot(path: Path, limit: int, *, allow_empty=False):
+    def signature(value):
+        return (value.st_dev,value.st_ino,value.st_mode,value.st_nlink,value.st_size,value.st_mtime_ns,value.st_ctime_ns)
+    before = path.lstat()
+    data = secure_bytes(path, limit, allow_empty=allow_empty)
+    after = path.lstat()
+    if signature(before) != signature(after):
+        raise FullError('stale_evidence')
+    return signature(after), data
+
+
+def async_require_snapshot(path, saved, limit, *, allow_empty=False):
+    if async_file_snapshot(path, limit, allow_empty=allow_empty) != saved:
+        raise FullError('stale_evidence')
+
+
+def async_diagnostic_snapshot(path, limit, *, allow_empty=False):
+    """A stable no-follow file observation, including securely observed absence."""
+    def parents():
+        result = []
+        for parent in path.absolute().parents:
+            value = parent.lstat()
+            if not stat.S_ISDIR(value.st_mode):
+                raise FullError('stale_evidence')
+            result.append((value.st_dev, value.st_ino, value.st_mode))
+        return result
+    before = parents()
+    try:
+        result = async_file_snapshot(path, limit, allow_empty=allow_empty)
+    except FileNotFoundError:
+        try:
+            descriptor = _open_no_follow(path)
+        except FileNotFoundError:
+            result = None
+        else:
+            os.close(descriptor)
+            raise FullError('stale_evidence')
+    if before != parents():
+        raise FullError('stale_evidence')
+    return result
+
+
+def async_failure_observation(stage, case_id, nonce, *, stopped, marker_context=None,
+                              log_context=None):
+    """Lossy post-stop observations, never continuing proof or semantic diagnosis.
+
+    No file is reread/rebased by the final emitter. observed_* is historical at
+    this capture only; row proof remains zero and continuity remains null.
+    """
+    result = [stage, 0, 0, 0]
+    if not stopped:
+        return result
+    retained = []
+    marker_snaps = []
+    if marker_context is not None:
+        entered, completed, request, request_snap, previous = marker_context
+        for index, (path, phase) in enumerate(((entered, 'entered'), (completed, 'completed')), 1):
+            saved = None
+            try:
+                async_require_snapshot(request, request_snap, 2048)
+                saved = async_diagnostic_snapshot(path, ASYNC_MAX_MARKER)
+                if phase in previous and saved != previous[phase]:
+                    raise FullError('stale_evidence')
+                if saved is None:
+                    result[index] = 1
+                else:
+                    if not async_diagnostic_after(saved, request_snap) or saved[1].startswith(b'\xef\xbb\xbf'):
+                        raise FullError('stale_evidence')
+                    validate_async_marker(strict_json(saved[1], max_depth=5), nonce, case_id, phase)
+                    result[index] = 3
+                retained.append((index, path, saved, ASYNC_MAX_MARKER, False))
+            except Exception:
+                result[index] = 2
+            marker_snaps.append(saved)
+        if result[2] == 3 and (result[1] != 3 or marker_snaps[1][0][5] < marker_snaps[0][0][5]):
+            result[2] = 2
+    if log_context is not None:
+        paths, anchor_path, anchor_snap, anchor_limit = log_context
+        try:
+            from diagnostics import native_text, summarize_text
+            async_require_snapshot(anchor_path, anchor_snap, anchor_limit)
+            categories, entry_labels = set(), set()
+            present = False
+            for path in paths:
+                saved = async_diagnostic_snapshot(path, MAX_OUTPUT, allow_empty=True)
+                retained.append((3, path, saved, MAX_OUTPUT, True))
+                if saved is None:
+                    continue
+                present = True
+                if not async_diagnostic_after(saved, anchor_snap):
+                    raise FullError('stale_evidence')
+                text = native_text(saved[1])
+                for line in text.splitlines():
+                    if 'ASYNC-ENTRY-FAILURE:' in line:
+                        if line not in ASYNC_ENTRY_LOG_MARKERS or stage < 3:
+                            raise FullError('invalid_result')
+                        entry_labels.add(ASYNC_ENTRY_LOG_MARKERS[line])
+                category = summarize_text(text)['category']
+                if category != 'unknown':
+                    categories.add(category)
+            specific = categories - {'runtime_error', 'startup_failed'}
+            if len(entry_labels) > 1 or len(specific) > 1 or 'conflicting_evidence' in categories or (entry_labels and specific):
+                result[3] = 12
+            elif entry_labels:
+                result[3] = next(iter(entry_labels))
+            elif specific:
+                result[3] = ASYNC_LOG_CATEGORIES.index(next(iter(specific)))
+            elif categories:
+                result[3] = 5 if 'runtime_error' in categories else 11
+            else:
+                result[3] = 3 if present else 1
+        except Exception:
+            result[3] = 2
+    # Check all observations again after parsing/classifying the bounded files.
+    # A late replacement cannot turn the first snapshot into accepted evidence.
+    for index, path, saved, limit, allow_empty in retained:
+        try:
+            if async_diagnostic_snapshot(path, limit, allow_empty=allow_empty) != saved:
+                raise FullError('stale_evidence')
+        except Exception:
+            result[index] = 2
+    if marker_context is not None:
+        try:
+            async_require_snapshot(request, request_snap, 2048)
+        except Exception:
+            result[1:3] = [2, 2]
+        if result[2] == 3 and result[1] != 3:
+            result[2] = 2
+    if log_context is not None:
+        try:
+            async_require_snapshot(anchor_path, anchor_snap, anchor_limit)
+        except Exception:
+            result[3] = 2
+    return result
+
+
+def async_diagnostic_after(saved, anchor):
+    # Filesystem timestamps may be coarser than time.time_ns(). Compare only
+    # against an earlier, securely retained current-case file on the same device.
+    # Equal ticks are valid; exclusive paths and nonce/snapshots still bind runs.
+    floor = max(anchor[0][5:7])
+    return saved[0][0] == anchor[0][0] and all(value >= floor for value in saved[0][5:7])
+
+
+def fail_async_process_checkpoint(record, diagnostics=None):
+    # Only the last reached row is invalidated; no accepted aggregate survives.
+    reached = [r for r in record['cases'] if r[1] != 0]
+    row = reached[-1] if reached else record['cases'][0]
+    index, module_hash = row[0], row[3]
+    record['cases'][index] = [index,2,11,module_hash,0,[],[],[]]
+    record.update(status='failed', failure_kind='process_failed', continuity_sha256=None,
+                  failure_diagnostics=None, marker_validation_failure=None)
+    record['process_diagnostics'] = diagnostics if diagnostics is not None else dict(empty_process_diagnostics(),stage='after_exit',reason='unverified')
+
+
+def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dict, *, deadline: float) -> dict:
+    record = empty_async_report()
+    current = 0
+    host_stage = 0
+    process_stopped = False
+    marker_context = log_context = None
+    modules = [async_client_module(i) for i in range(8)]
+    template_hash = digest(ASYNC_TEMPLATE.encode('utf-8'))
+    module_hashes = [digest(module) for module in modules]
+    retained = []
+    def step(command, directory, log, anchor):
+        nonlocal process_stopped, log_context
+        process_stopped = False
+        log_context = None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise FullError('timeout')
+        native_log = Path(command[command.index('/Out') + 1])
+        absent(native_log, log)
+        async_require_snapshot(*anchor)
+        log_context = ((native_log, log), *anchor)
+        try:
+            run_async_process(command,directory,log,min(120,remaining),require_clean_tree=True)
+        except Exception as error:
+            process_stopped = getattr(error, 'async_process_stopped', False) is True
+            raise
+        process_stopped = True
+        if '/DumpResult' in command:
+            path = Path(command[command.index('/DumpResult')+1])
+            saved = async_file_snapshot(path,128)
+            data = saved[1]
+            try:
+                value = data.decode('utf-16' if data[:2] in (b'\xff\xfe',b'\xfe\xff') else 'utf-8-sig').strip()
+                if not re.fullmatch(r'[+-]?[0-9]+',value) or int(value) != 0:
+                    raise ValueError
+            except (ValueError,UnicodeError):
+                raise FullError('invalid_dump_result') from None
+            retained.append((path,saved,128,False))
+    try:
+        if (not valid_nonce(nonce) or type(deadline) not in (int,float)
+                or not time.monotonic() < deadline <= time.monotonic()+2340
+                or platform.timeout != 120 or platform.user != 'NativeSmoke' or platform.password is not None):
+            raise FullError('invalid_input')
+        absent(root)
+        root.mkdir(mode=0o700)
+        source_path = inputs / 'bootstrap/full_suite.py'
+        source_snapshot = async_file_snapshot(source_path,MAX_OUTPUT)
+        if digest(source_snapshot[1]) != hashes['scripts/native_1c_bootstrap/full_suite.py']:
+            raise FullError('invalid_input')
+        retained.append((source_path,source_snapshot,MAX_OUTPUT,False))
+        record['template_sha256'] = template_hash
+        for current,module in enumerate(modules):
+            host_stage = 0
+            process_stopped = False
+            marker_context = log_context = None
+            case = root / ('case-'+str(current))
+            absent(case)
+            case.mkdir(mode=0o700)
+            record['process_diagnostics'].update(stage='baseline',reason='unverified')
+            baseline = client_process_baseline(nonce)
+            record['process_diagnostics'].update(stage='before_probe',reason='native_not_quiet')
+            if not native_processes_quiet(platform.executable):
+                raise FullError('process_failed')
+            record['process_diagnostics'].update(reason='none')
+            src = case / 'src'
+            src.mkdir(mode=0o700)
+            for relative in ('Launcher.xml','Launcher/Ext/ObjectModule.bsl','Launcher/Forms/Main.xml','Launcher/Forms/Main/Ext/Form.xml'):
+                origin = inputs / 'launcher/launcher_1c' / relative
+                snap = async_file_snapshot(origin,MAX_OUTPUT)
+                if digest(snap[1]) != hashes['integrational_tests/launcher_1c/'+relative]:
+                    raise FullError('invalid_input')
+                retained.append((origin,snap,MAX_OUTPUT,False))
+                destination = src / relative
+                destination.parent.mkdir(parents=True,exist_ok=True)
+                with destination.open('xb') as stream: stream.write(snap[1])
+                retained.append((destination,async_file_snapshot(destination,MAX_OUTPUT),MAX_OUTPUT,False))
+            module_path = src / CLIENT_MODULE
+            module_path.parent.mkdir(parents=True,exist_ok=True)
+            with module_path.open('xb') as stream: stream.write(module)
+            module_snap = async_file_snapshot(module_path,MAX_OUTPUT)
+            retained.append((module_path,module_snap,MAX_OUTPUT,False))
+            client_wiring(src)
+            epf = case / 'AsyncClientProbe.epf'
+            host_stage = 1
+            step(platform.command('DESIGNER')+['/LoadExternalDataProcessorOrReportFromFiles',str(src/'Launcher.xml'),str(epf),'/Out',str(case/'build.log'),'/DumpResult',str(case/'build.result')],case,case/'build-console.log',(module_path,module_snap,MAX_OUTPUT))
+            require_epf(epf)
+            retained.append((epf,async_file_snapshot(epf,MAX_OUTPUT),MAX_OUTPUT,False))
+            async_require_snapshot(module_path,module_snap,MAX_OUTPUT)
+            host_stage = 2
+            log_context = None
+            dumped = case / 'roundtrip'
+            dumped.mkdir(mode=0o700)
+            step(platform.command('DESIGNER')+['/DumpExternalDataProcessorOrReportToFiles',str(dumped/'Launcher.xml'),str(epf),'/Out',str(case/'dump.log'),'/DumpResult',str(case/'dump.result')],case,case/'dump-console.log',(module_path,module_snap,MAX_OUTPUT))
+            actual = generated_module(secure_bytes(dumped/CLIENT_MODULE,MAX_OUTPUT))
+            if actual != module:
+                raise FullError('module_mismatch')
+            client_wiring(dumped)
+            for relative in ('Launcher.xml','Launcher/Ext/ObjectModule.bsl','Launcher/Forms/Main.xml','Launcher/Forms/Main/Ext/Form.xml',CLIENT_MODULE):
+                path = dumped/relative
+                allow_empty = relative == 'Launcher/Ext/ObjectModule.bsl'
+                retained.append((path,async_file_snapshot(path,MAX_OUTPUT,allow_empty=allow_empty),MAX_OUTPUT,allow_empty))
+            host_stage = 0
+            log_context = None
+            entered,completed,request = case/'entered.json',case/'completed.json',case/'request.json'
+            absent(entered,completed,request)
+            expected = {'schema':1,'version':1,'nonce':nonce,'entered':str(entered),'completed':str(completed)}
+            with request.open('x',encoding='utf-8') as stream: json.dump(expected,stream,sort_keys=True,separators=(',',':'))
+            request_snap = async_file_snapshot(request,2048)
+            if request_snap[1] != json.dumps(expected,sort_keys=True,separators=(',',':')).encode('utf-8') or strict_json(request_snap[1]) != expected or entered.parent != case or completed.parent != case:
+                raise FullError('invalid_input')
+            retained.append((request,request_snap,2048,False))
+            host_stage = 5
+            for path,saved,limit,allow_empty in retained:
+                async_require_snapshot(path,saved,limit,allow_empty=allow_empty)
+            host_stage = 3
+            absent(entered, completed)
+            marker_pins = {}
+            marker_context = (entered, completed, request, request_snap, marker_pins)
+            enterprise_error = None
+            try:
+                step(platform.command('ENTERPRISE')+['/RunModeManagedApplication','/VL','ru_RU','/Execute',str(epf),'/C',str(request),'/Out',str(case/'enterprise.log')],case,case/'enterprise-console.log',(request,request_snap,2048))
+            except Exception as error:
+                enterprise_error = error
+                raise
+            finally:
+                try:
+                    record['process_diagnostics'].update(stage='after_exit',reason='unverified')
+                    survivors = client_process_snapshot()-baseline
+                    if survivors:
+                        record['process_diagnostics'] = unexpected_process_diagnostics(survivors,'after_exit')
+                    else:
+                        require_session_bus(Path('/tmp/onec-smoke'),nonce)
+                        record['process_diagnostics'].update(reason='native_not_quiet')
+                        if native_processes_quiet(platform.executable):
+                            record['process_diagnostics'].update(reason='none')
+                except Exception:
+                    if enterprise_error is None:
+                        raise
+            if record['process_diagnostics']['reason'] != 'none':
+                raise FullError('process_failed')
+            host_stage = 4
+            marker_pins['entered'] = False
+            try:
+                entered_snap = async_file_snapshot(entered,ASYNC_MAX_MARKER)
+            except FileNotFoundError:
+                marker_pins['entered'] = None
+                raise
+            marker_pins['entered'] = entered_snap
+            marker_pins['completed'] = False
+            try:
+                completed_snap = async_file_snapshot(completed,ASYNC_MAX_MARKER)
+            except FileNotFoundError:
+                marker_pins['completed'] = None
+                raise
+            marker_pins['completed'] = completed_snap
+            validate_async_marker(strict_json(entered_snap[1],max_depth=5),nonce,current,'entered')
+            completion = validate_async_marker(strict_json(completed_snap[1],max_depth=5),nonce,current,'completed')
+            if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
+                raise FullError('invalid_result')
+            retained.extend(((entered,entered_snap,ASYNC_MAX_MARKER,False),(completed,completed_snap,ASYNC_MAX_MARKER,False)))
+            if completion['status'] != 1:
+                raise FullError(ASYNC_FAILURES[completion['failure']])
+            record['cases'][current] = [current,1,0,module_hashes[current],63,completion['trace'],completion['values'],completion['errors']]
+        host_stage = 5
+        for path,saved,limit,allow_empty in retained:
+            async_require_snapshot(path,saved,limit,allow_empty=allow_empty)
+        record['continuity_sha256'] = write_async_continuity(root,inputs,nonce,retained)
+        record.update(status='ok',failure_kind='none')
+        validate_async_report(record,template_hash,module_hashes)
+    except Exception as error:
+        kind = error.kind if isinstance(error,FullError) else 'artifact_missing' if isinstance(error,OSError) else 'unexpected_failure'
+        if kind not in ASYNC_FAILURES or kind in ('none','prerequisites_failed'):
+            kind = 'unexpected_failure'
+        if isinstance(error,ClientProcessError): record['process_diagnostics'] = error.diagnostics
+        status = 3 if kind == 'unsupported_observation' else 2
+        record['cases'][current] = [current,status,ASYNC_FAILURES.index(kind),module_hashes[current] if record['template_sha256'] else None,0,[],[],[]]
+        record.update(status='inconclusive' if status == 3 else 'failed',failure_kind=kind,continuity_sha256=None)
+        record['failure_diagnostics'] = async_failure_observation(
+            host_stage, current, nonce, stopped=process_stopped,
+            marker_context=marker_context, log_context=log_context)
+        if kind == 'invalid_result':
+            record['marker_validation_failure'] = observe_async_marker_validation_failure(
+                host_stage,current,nonce,stopped=process_stopped,marker_context=marker_context)
+    return record
+# Client Async finite protocol v1. This code is embedded in trusted full_suite.py.
+# Public rows stay compact in summary/provenance; descriptors never cross that boundary.
+ASYNC_VERSION = 2
+ASYNC_MAX_MARKER = 16_384
+# Wire ordinals are independent of the legacy process diagnostic vocabulary.
+# observed_* describes only the stable post-stop capture, not final continuity.
+# Categories are append-only: 0-38 are unchanged; 39-43 localize request end.
+# Category 26 retains the key helper-call stage; 27-30 are retired.
+ASYNC_HOST_STAGES = ('prepare', 'build', 'roundtrip', 'enterprise', 'markers', 'continuity')
+ASYNC_MARKER_STATES = ('not_checked', 'observed_absent', 'observed_invalid', 'observed_valid')
+ASYNC_LOG_CATEGORIES = ('not_checked', 'observed_absent', 'observed_invalid', 'unknown',
+    'compile_error', 'runtime_error', 'unsupported_api', 'permission_denied',
+    'authentication_failed', 'license_unavailable', 'training_restriction',
+    'startup_failed', 'conflicting_evidence', 'entry_request', 'entry_witness',
+    'entry_initialize', 'entry_entered', 'entry_root', 'entry_request_open',
+    'entry_request_object', 'entry_request_key', 'entry_request_value',
+    'entry_request_end', 'entry_request_fields', 'entry_request_nonce', 'entry_request_paths',
+    'entry_request_key_call', 'entry_request_key_read', 'entry_request_key_token',
+    'entry_request_key_current', 'entry_request_key_property',
+    'entry_request_key_read_first', 'entry_request_key_read_later',
+    'entry_request_key_token_first', 'entry_request_key_token_later',
+    'entry_request_key_current_first', 'entry_request_key_current_later',
+    'entry_request_key_property_first', 'entry_request_key_property_later',
+    'entry_request_end_call', 'entry_request_end_read', 'entry_request_end_token',
+    'entry_request_end_trailing', 'entry_request_end_close')
+ASYNC_ENTRY_LOG_MARKERS = {'ASYNC-ENTRY-FAILURE:' + name: index
+                         for index, name in enumerate(('request', 'witness', 'initialize', 'entered', 'root',
+                             'request_open', 'request_object', 'request_key', 'request_value',
+                             'request_end', 'request_fields', 'request_nonce', 'request_paths',
+                             'request_key_call', 'request_key_read', 'request_key_token',
+                             'request_key_current', 'request_key_property',
+                             'request_key_read_first', 'request_key_read_later',
+                             'request_key_token_first', 'request_key_token_later',
+                             'request_key_current_first', 'request_key_current_later',
+                             'request_key_property_first', 'request_key_property_later',
+                             'request_end_call', 'request_end_read', 'request_end_token',
+                             'request_end_trailing', 'request_end_close'), 13)}
+ASYNC_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
+ASYNC_STRINGS = ('7', '17', '11', '12', '21', '22', '31', '33')
+ASYNC_FAILURES = ('none', 'prerequisites_failed', 'stale_evidence', 'invalid_input',
+                  'invalid_result', 'invalid_dump_result', 'artifact_missing',
+                  'output_mismatch', 'output_limit', 'module_mismatch', 'timeout',
+                  'process_failed', 'unexpected_failure', 'export_failed',
+                  'unsupported_observation')
+ASYNC_PROOF_FLAGS = ('entered', 'completed', 'process_exited', 'quiet',
+                     'witness_verified', 'roundtrip_module_equal')
+ASYNC_REQUIRED = (
+    (10,11,12,13,14,15,16,17,18),
+    (10,11,12,13,14,15,16,17,25,26),
+    (10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28),
+    (10,13,16), (10,11,12,13,14,15,16,19),
+    (10,11,12,13,14,15,16), (10,11,12),
+    (10,11,12,13,14,15,16,17,18),
+)
+ASYNC_EDGES = (
+    ((10,11),(11,12),(10,13),(13,14),(12,14),(14,15),(15,16),(16,17),(17,18)),
+    ((10,11),(11,12),(12,25),(25,26),(26,13),(13,14),(14,17),(10,15),(15,16),(16,17)),
+    ((10,11),(11,12),(12,25),(25,26),(26,13),(13,14),(14,22),(10,15),(15,16),(16,17),(17,18),(18,27),(27,28),(28,19),(19,20),(20,23),(16,21),(21,22),(22,23),(23,24)),
+    ((10,11),(10,12),(11,13),(12,13),(13,14),(13,15),(14,16),(15,16),(16,17),(16,18)),
+    ((10,11),(11,12),(12,13),(11,14),(14,16),(10,15),(15,16),(16,17),(16,18),(17,19),(18,19),(13,19)),
+    ((10,11),(11,12),(12,13),(13,14),(14,16),(10,15),(15,16)),
+    ((10,11),(11,12),(10,13),(12,14),(13,15),(15,16),(15,17),(12,16),(12,17),(16,18),(17,18),(18,19),(18,20),(12,19),(12,20)),
+    ((10,11),(11,12),(12,13),(13,14),(14,15),(15,16),(16,17),(17,18)),
+)
+
+
+def _async_bad():
+    raise FullError('invalid_result')
+
+
+def _async_int(value, low=0, high=999999):
+    return type(value) is int and low <= value <= high
+
+
+def _async_hash(value):
+    return type(value) is str and re.fullmatch(r'[0-9a-f]{64}', value) is not None
+
+
+def _async_value(value):
+    if type(value) is not list or len(value) != 2 or not _async_int(value[0], 0, 7):
+        _async_bad()
+    tag, payload = value
+    if not _async_int(payload, -999999, 999999):
+        _async_bad()
+    if ((tag in (0,1,2,6) and payload != 0)
+            or (tag == 3 and payload not in (0,1))
+            or (tag == 5 and not 0 <= payload <= 7)
+            or (tag == 7 and not 0 <= payload <= 2)):
+        _async_bad()
+    return tag
+
+
+def _async_error(error):
+    if (type(error) is not list or len(error) != 7
+            or not _async_int(error[0], 0, 6)
+            or any(not _async_int(v, 0, 4) for v in error[1:4])
+            or any(not _async_int(v, 0, 3) for v in error[4:6])
+            or not _async_hash(error[6])):
+        _async_bad()
+
+
+def validate_async_observation(case_id, trace, values, errors):
+    """Exact inventory and logical DAG, deliberately not an Await scheduler."""
+    if (not _async_int(case_id, 0, 7) or type(trace) is not list
+            or not 5 <= len(trace) <= 24
+            or any(not _async_int(v, 0, 28) for v in trace)
+            or len(set(trace)) != len(trace) or trace[:2] != [0,1]
+            or trace[-3:] != [2,3,4] or type(values) is not list
+            or len(values) != ASYNC_SLOTS[case_id] or type(errors) is not list
+            or len(errors) > 3):
+        _async_bad()
+    tags = [_async_value(value) for value in values]
+    for error in errors:
+        _async_error(error)
+    allowed_errors = {3:{0:3,1:4,2:5}, 6:{0:0,1:1,2:2}, 7:{2:6}}.get(case_id, {})
+    refs = []
+    for slot, value in enumerate(values):
+        if value[0] == 7:
+            ordinal = value[1]
+            if slot not in allowed_errors or ordinal >= len(errors) or errors[ordinal][0] != allowed_errors[slot]:
+                _async_bad()
+            refs.append(ordinal)
+    if refs != list(range(len(errors))):
+        _async_bad()
+    required = set(ASYNC_REQUIRED[case_id]) | {0,1,2,3,4}
+    skipped = set()
+    if case_id == 3:
+        required.update((12 if tags[0] == 7 else 11, 15 if tags[1] == 7 else 14, 18 if tags[2] == 7 else 17))
+    elif case_id == 4:
+        required.add(17 if tags[1] == 6 else 18)
+        if tags[1] != 6:
+            skipped.add(2)
+    elif case_id == 6:
+        if tags[0] == 7:
+            required.add(14)
+            skipped.update((1,2))
+        else:
+            required.update((13,15,18,17 if tags[1] == 7 else 16,20 if tags[2] == 7 else 19))
+    elif case_id == 7 and tags[2] != 7:
+        _async_bad()
+    if any((tag == 0) != (slot in skipped) for slot, tag in enumerate(tags)):
+        _async_bad()
+    if set(trace) != required:
+        _async_bad()
+    positions = {event:index for index,event in enumerate(trace)}
+    if any(a in required and b in required and positions[a] >= positions[b] for a,b in ASYNC_EDGES[case_id]):
+        _async_bad()
+    return {'trace':trace, 'values':values, 'errors':errors}
+
+
+def _async_private_error(descriptor):
+    """Hash exact bounded selected fields, never a recursive ErrorInfo object."""
+    keys = {'schema','phase','description','code','additional','category','cause','module','line','source'}
+    if (type(descriptor) is not dict or set(descriptor) != keys
+            or not _async_int(descriptor['schema'],1,1) or not _async_int(descriptor['phase'],0,6)):
+        _async_bad()
+    fields = ('description','code','additional','category','cause','module','line','source')
+    allowed = {'description':{0,1,2,3,4},'code':{0,1,2,3,4},'additional':{0,1,2,3,4},
+               'category':{0,1,3,5},'cause':{0,1,5},'module':{0,2},'line':{0,1,3},'source':{0,2}}
+    for name in fields:
+        item = descriptor[name]
+        if type(item) is not list or len(item) != 2 or not _async_int(item[0],0,5) or item[0] not in allowed[name]:
+            _async_bad()
+        tag,payload = item
+        if tag in (0,1):
+            if payload is not None:
+                _async_bad()
+        elif tag == 2:
+            if type(payload) is not str or len(payload) > 512:
+                _async_bad()
+            try:
+                if len(payload.encode('utf-8')) > 512:
+                    _async_bad()
+            except UnicodeError:
+                _async_bad()
+        elif tag == 3:
+            if not _async_int(payload):
+                _async_bad()
+        elif tag == 4:
+            if type(payload) is not bool:
+                _async_bad()
+        elif tag == 5 and (not _async_int(payload,0,1) or payload != (1 if name == 'category' else 0)):
+            _async_bad()
+    try:
+        raw = json.dumps(descriptor, sort_keys=True, separators=(',',':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+    except (TypeError,ValueError,UnicodeError):
+        _async_bad()
+    if len(raw) > 4096:
+        _async_bad()
+    public = [descriptor['phase']]
+    for name,synthetic in zip(fields[:3], ('ASYNC-REJECT','ASYNC-CODE','ASYNC-DETAIL')):
+        tag,payload = descriptor[name]
+        public.append(4 if tag == 0 else 0 if tag == 1 else 1 if tag == 2 and payload == '' else 2 if tag == 2 and payload == synthetic else 3)
+    tag,payload = descriptor['category']
+    public.append(3 if tag == 0 else 0 if tag == 1 else 1 if tag == 3 and payload == 1 else 2)
+    public.append({0:3,1:0,5:1}[descriptor['cause'][0]])
+    public.append(hashlib.sha256(raw).hexdigest())
+    return public
+
+
+def client_async_marker(path, nonce, case_id, phase):
+    if not valid_nonce(nonce) or not _async_int(case_id,0,7) or phase not in ('entered','completed'):
+        raise FullError('invalid_input')
+    raw = secure_bytes(path, ASYNC_MAX_MARKER)
+    if raw.startswith(b'\xef\xbb\xbf'):
+        _async_bad()
+    value = strict_json(raw, max_depth=5)
+    return validate_async_marker(value, nonce, case_id, phase)
+
+
+def validate_async_marker(value, nonce, case_id, phase):
+    fields = {'schema','nonce','case','phase','witness'}
+    if phase == 'completed':
+        fields |= {'status','failure','trace','values','errors'}
+    if (not valid_nonce(nonce) or not _async_int(case_id,0,7) or phase not in ('entered','completed')
+            or type(value) is not dict or set(value) != fields
+            or not _async_int(value['schema'],1,1) or not _async_int(value['case'],case_id,case_id)
+            or type(value['nonce']) is not str or value['nonce'] != nonce
+            or type(value['phase']) is not str or value['phase'] != phase
+            or type(value['witness']) is not str or value['witness'] != 'client'):
+        _async_bad()
+    if phase == 'entered':
+        return value
+    if not _async_int(value['status'],1,3) or not _async_int(value['failure'],0,14):
+        _async_bad()
+    if value['status'] != 1:
+        if ((value['status'] == 2 and not 1 <= value['failure'] <= 13)
+                or (value['status'] == 3 and value['failure'] != 14)
+                or any(type(value[k]) is not list or value[k] != [] for k in ('trace','values','errors'))):
+            _async_bad()
+        return value
+    if value['failure'] != 0 or type(value['errors']) is not list or len(value['errors']) > 3:
+        _async_bad()
+    public = [_async_private_error(error) for error in value['errors']]
+    validate_async_observation(case_id, value['trace'], value['values'], public)
+    return {**value,'errors':public}
+
+
+# Failure-only validator sites. These ordinals are not semantic observations.
+# The fourth tuple member is a site-specific locator; 31 means not applicable.
+ASYNC_MARKER_VALIDATION_SITES = (
+    'not_checked', 'json_encoding', 'json_depth', 'json_duplicate_key',
+    'json_integer_width', 'json_float', 'json_constant', 'json_syntax',
+    'envelope_shape', 'envelope_schema', 'completion_codes',
+    'failure_completion_shape', 'success_failure_code', 'errors_shape',
+    'descriptor_shape', 'descriptor_schema', 'descriptor_phase',
+    'descriptor_pair', 'descriptor_tag', 'descriptor_null_payload',
+    'descriptor_string_payload', 'descriptor_utf8_limit',
+    'descriptor_integer_payload', 'descriptor_boolean_payload',
+    'descriptor_enum_payload', 'descriptor_encoding', 'descriptor_budget',
+    'observation_shape', 'event_type', 'event_duplicate', 'root_boundary',
+    'value_pair', 'value_tag', 'value_payload', 'reference_phase',
+    'reference_ordinal', 'reference_bijection', 'skipped_slot',
+    'missing_event', 'extra_event', 'causal_edge', 'required_handler', 'unknown')
+
+
+def async_marker_validation_failure(raw, nonce, case_id, phase):
+    """Classify an already rejected bounded marker without changing acceptance.
+
+    Exact validators remain the authority. Only fixed codes and bounded source
+    locators can leave this function; no exception text or native payload does.
+    Known identity disagreement is deliberately not diagnosable evidence.
+    """
+    if (type(raw) is not bytes or len(raw) > ASYNC_MAX_MARKER or not valid_nonce(nonce)
+            or not _async_int(case_id,0,7) or phase not in ('entered','completed')): return None
+    marker_phase = 0 if phase == 'entered' else 1
+    def failure(site, descriptor=3, locator=31):
+        return [marker_phase, site, descriptor, locator]
+    try:
+        value = strict_json(raw, max_depth=5)
+    except FullError:
+        # Match the original bounded JSON parser's order and reject vocabulary.
+        # This second parse is diagnostic-only and can never grant acceptance.
+        try:
+            text = raw.decode('utf-8-sig')
+        except UnicodeError:
+            return failure(1)
+        depth, quoted, escaped = 0, False, False
+        for character in text:
+            if quoted:
+                if escaped: escaped = False
+                elif character == '\\': escaped = True
+                elif character == '"': quoted = False
+            elif character == '"': quoted = True
+            elif character in '[{':
+                depth += 1
+                if depth > 5: return failure(2)
+            elif character in ']}':
+                depth -= 1
+                if depth < 0: return failure(7)
+        site = 7
+        def pairs(items):
+            nonlocal site
+            result = {}
+            for key, item in items:
+                if key in result:
+                    site = 3
+                    raise ValueError
+                result[key] = item
+            return result
+        def number(token):
+            nonlocal site
+            if len(token) > 10:
+                site = 4
+                raise ValueError
+            return int(token)
+        def floating(token):
+            nonlocal site
+            site = 5
+            raise ValueError
+        def constant(token):
+            nonlocal site
+            site = 6
+            raise ValueError
+        try:
+            json.loads(text, object_pairs_hook=pairs, parse_int=number,
+                       parse_float=floating, parse_constant=constant)
+        except (ValueError, UnicodeError, RecursionError):
+            return failure(site)
+        return failure(42)
+    # Do not publish a diagnostic for a different invocation, case or context.
+    if type(value) is dict and any(value.get(key) != expected or type(value.get(key)) is not type(expected)
+            for key, expected in (('nonce', nonce), ('case', case_id),
+                                  ('phase', phase), ('witness', 'client'))):
+        return None
+    try:
+        validate_async_marker(value, nonce, case_id, phase)
+    except FullError:
+        pass
+    else:
+        return None
+    fields = {'schema','nonce','case','phase','witness'}
+    if phase == 'completed': fields |= {'status','failure','trace','values','errors'}
+    if type(value) is not dict or set(value) != fields: return failure(8)
+    if not _async_int(value['schema'],1,1): return failure(9)
+    if phase == 'entered': return failure(42)
+    if not _async_int(value['status'],1,3) or not _async_int(value['failure'],0,14): return failure(10)
+    if value['status'] != 1: return failure(11)
+    if value['failure'] != 0: return failure(12)
+    if type(value['errors']) is not list or len(value['errors']) > 3: return failure(13)
+    names = ('schema','phase','description','code','additional','category','cause','module','line','source')
+    allowed = ({0,1,2,3,4},{0,1,2,3,4},{0,1,2,3,4},{0,1,3,5},{0,1,5},{0,2},{0,1,3},{0,2})
+    public = []
+    for ordinal, descriptor in enumerate(value['errors']):
+        if type(descriptor) is not dict or set(descriptor) != set(names): return failure(14,ordinal)
+        if not _async_int(descriptor['schema'],1,1): return failure(15,ordinal,0)
+        if not _async_int(descriptor['phase'],0,6): return failure(16,ordinal,1)
+        for locator, (name, tags) in enumerate(zip(names[2:],allowed),2):
+            item = descriptor[name]
+            if type(item) is not list or len(item) != 2: return failure(17,ordinal,locator)
+            tag, payload = item
+            if not _async_int(tag,0,5) or tag not in tags: return failure(18,ordinal,locator)
+            if tag in (0,1):
+                if payload is not None: return failure(19,ordinal,locator)
+            elif tag == 2:
+                if type(payload) is not str: return failure(20,ordinal,locator)
+                try:
+                    if len(payload) > 512 or len(payload.encode('utf-8')) > 512: return failure(21,ordinal,locator)
+                except UnicodeError:
+                    return failure(25,ordinal,locator)
+            elif tag == 3:
+                if not _async_int(payload): return failure(22,ordinal,locator)
+            elif tag == 4:
+                if type(payload) is not bool: return failure(23,ordinal,locator)
+            elif not _async_int(payload,0,1) or payload != (1 if name == 'category' else 0):
+                return failure(24,ordinal,locator)
+        try:
+            encoded = json.dumps(descriptor, sort_keys=True, separators=(',',':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+        except (TypeError,ValueError,UnicodeError):
+            return failure(25,ordinal)
+        if len(encoded) > 4096: return failure(26,ordinal)
+        public.append(_async_private_error(descriptor))
+    trace, values = value['trace'], value['values']
+    if (type(trace) is not list or not 5 <= len(trace) <= 24
+            or type(values) is not list or len(values) != ASYNC_SLOTS[case_id]): return failure(27)
+    if any(not _async_int(event,0,28) for event in trace): return failure(28)
+    if len(set(trace)) != len(trace):
+        return failure(29,locator=next(event for index,event in enumerate(trace) if event in trace[:index]))
+    if trace[:2] != [0,1] or trace[-3:] != [2,3,4]: return failure(30)
+    tags = []
+    for slot, pair in enumerate(values):
+        if type(pair) is not list or len(pair) != 2: return failure(31,locator=slot)
+        tag,payload = pair
+        if not _async_int(tag,0,7): return failure(32,locator=slot)
+        if (not _async_int(payload,-999999,999999)
+                or (tag in (0,1,2,6) and payload != 0)
+                or (tag == 3 and payload not in (0,1))
+                or (tag == 5 and not 0 <= payload <= 7)
+                or (tag == 7 and not 0 <= payload <= 2)): return failure(33,locator=slot)
+        tags.append(tag)
+    allowed_errors = {3:{0:3,1:4,2:5},6:{0:0,1:1,2:2},7:{2:6}}.get(case_id,{})
+    refs = []
+    for slot, (tag, ordinal) in enumerate(values):
+        if tag == 7:
+            if slot not in allowed_errors or ordinal >= len(public): return failure(35,ordinal,slot)
+            if public[ordinal][0] != allowed_errors[slot]: return failure(34,ordinal,slot)
+            refs.append(ordinal)
+    if refs != list(range(len(public))): return failure(36)
+    required = set(ASYNC_REQUIRED[case_id]) | {0,1,2,3,4}
+    skipped = set()
+    if case_id == 3:
+        required.update((12 if tags[0] == 7 else 11,15 if tags[1] == 7 else 14,18 if tags[2] == 7 else 17))
+    elif case_id == 4:
+        required.add(17 if tags[1] == 6 else 18)
+        if tags[1] != 6: skipped.add(2)
+    elif case_id == 6:
+        if tags[0] == 7:
+            required.add(14)
+            skipped.update((1,2))
+        else:
+            required.update((13,15,18,17 if tags[1] == 7 else 16,20 if tags[2] == 7 else 19))
+    elif case_id == 7 and tags[2] != 7: return failure(41,locator=2)
+    for slot,tag in enumerate(tags):
+        if (tag == 0) != (slot in skipped): return failure(37,locator=slot)
+    if required - set(trace): return failure(38,locator=min(required-set(trace)))
+    if set(trace) - required: return failure(39,locator=min(set(trace)-required))
+    positions = {event:index for index,event in enumerate(trace)}
+    for edge,(before,after) in enumerate(ASYNC_EDGES[case_id]):
+        if before in required and after in required and positions[before] >= positions[after]:
+            return failure(40,locator=edge)
+    return failure(42)
+
+
+def observe_async_marker_validation_failure(stage, case_id, nonce, *, stopped, marker_context):
+    """A bounded failure hint tied to the original request and marker snapshots."""
+    if stage != 4 or not stopped or marker_context is None: return None
+    entered, completed, request, request_snap, previous = marker_context
+    retained = []
+    result = None
+    try:
+        async_require_snapshot(request,request_snap,2048)
+        for path,phase in ((entered,'entered'),(completed,'completed')):
+            saved = previous.get(phase)
+            if type(saved) is not tuple or len(saved) != 2: return None
+            if async_diagnostic_snapshot(path,ASYNC_MAX_MARKER) != saved: return None
+            if not async_diagnostic_after(saved,request_snap): return None
+            retained.append((path,saved))
+        if retained[1][1][0][5] < retained[0][1][0][5]: return None
+        for (path,saved),phase in zip(retained,('entered','completed')):
+            try:
+                value = strict_json(saved[1],max_depth=5)
+                validate_async_marker(value,nonce,case_id,phase)
+            except FullError:
+                result = async_marker_validation_failure(saved[1],nonce,case_id,phase)
+                break
+        # No late replacement or changed request can retain a diagnostic hint.
+        for path,saved in retained:
+            if async_diagnostic_snapshot(path,ASYNC_MAX_MARKER) != saved: return None
+        async_require_snapshot(request,request_snap,2048)
+    except Exception:
+        return None
+    return result
+
+
+def empty_async_report():
+    return {'version':2,'status':'not_started','failure_kind':'prerequisites_failed',
+            'template_sha256':None,'continuity_sha256':None,'process_diagnostics':empty_process_diagnostics(),
+            'failure_diagnostics':None,'marker_validation_failure':None,
+            'cases':[[i,0,1,None,0,[],[],[]] for i in range(8)]}
+
+
+def _async_diagnostic(value):
+    if (type(value) is not dict or set(value) != set(CLIENT_WIRE_DIAGNOSTICS)
+            or type(value['classes']) is not dict or set(value['classes']) != set(CLIENT_WIRE_CLASSES)):
+        _async_bad()
+    wire = [value[name] for name in CLIENT_WIRE_DIAGNOSTICS[:4]] + [[value['classes'][name] for name in CLIENT_WIRE_CLASSES]]
+    decode_process_wire(wire)
+    return wire
+
+
+def validate_async_marker_failure(record):
+    value = record['marker_validation_failure']
+    if value is None: return
+    diagnostic = record.get('failure_diagnostics')
+    if (record.get('status') != 'failed' or record.get('failure_kind') != 'invalid_result'
+            or type(diagnostic) is not list or len(diagnostic) != 4 or diagnostic[0] != 4
+            or type(value) is not list or len(value) != 4
+            or not _async_int(value[0],0,1) or not _async_int(value[1],1,42)
+            or not _async_int(value[2],0,3) or not _async_int(value[3],0,31)):
+        _async_bad()
+    phase,site,descriptor,locator = value
+    if diagnostic[phase+1] != 2 or (phase == 1 and diagnostic[1] != 3): _async_bad()
+    rows = record.get('cases')
+    if type(rows) is not list or len(rows) != 8: _async_bad()
+    failed = [i for i,row in enumerate(rows) if type(row) is list and len(row) == 8 and row[1:3] == [2,4]]
+    if len(failed) != 1: _async_bad()
+    case_id = failed[0]
+    if phase == 0 and site not in (*range(1,10),42): _async_bad()
+    if 14 <= site <= 26:
+        if descriptor == 3: _async_bad()
+        if site in (14,26): valid = locator == 31
+        elif site == 15: valid = locator == 0
+        elif site == 16: valid = locator == 1
+        elif site == 25: valid = 2 <= locator <= 9 or locator == 31
+        else: valid = 2 <= locator <= 9
+    elif site in (34,35):
+        valid = descriptor < 3 and locator < ASYNC_SLOTS[case_id]
+    else:
+        if descriptor != 3: _async_bad()
+        if site in (29,38,39): valid = 0 <= locator <= 28
+        elif site in (31,32,33,37): valid = locator < ASYNC_SLOTS[case_id]
+        elif site == 40: valid = locator < len(ASYNC_EDGES[case_id])
+        elif site == 41: valid = case_id == 7 and locator == 2
+        else: valid = locator == 31
+    if not valid: _async_bad()
+
+
+def validate_async_failure_diagnostics(record):
+    validate_async_marker_failure(record)
+    value = record['failure_diagnostics']
+    if value is None:
+        return
+    if (record.get('status') not in ('failed', 'inconclusive')
+            or type(value) is not list or len(value) != 4
+            or not _async_int(value[0], 0, 5)
+            or any(not _async_int(item, 0, 3) for item in value[1:3])
+            or not _async_int(value[3], 0, 43)
+            or (value[0] < 3 and value[1:3] != [0, 0])
+            or (value[0] == 0 and value[3] != 0)
+            or (value[3] >= 13 and value[0] < 3)
+            or (value[2] == 3 and value[1] != 3)):
+        _async_bad()
+
+
+def validate_async_report(record, template_hash, module_hashes):
+    keys = {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','marker_validation_failure','cases'}
+    if (not _async_hash(template_hash) or type(module_hashes) not in (list,tuple) or len(module_hashes) != 8
+            or any(not _async_hash(h) for h in module_hashes) or type(record) is not dict or set(record) != keys
+            or not _async_int(record['version'],2,2)
+            or type(record['status']) is not str or record['status'] not in ('not_started','ok','failed','inconclusive')
+            or type(record['failure_kind']) is not str or record['failure_kind'] not in ASYNC_FAILURES
+            or (record['template_sha256'] is not None and (not _async_hash(record['template_sha256']) or record['template_sha256'] != template_hash))
+            or type(record['cases']) is not list or len(record['cases']) != 8):
+        _async_bad()
+    if (not _async_hash(record['continuity_sha256']) if record['status'] == 'ok' else record['continuity_sha256'] is not None):
+        _async_bad()
+    _async_diagnostic(record['process_diagnostics'])
+    validate_async_failure_diagnostics(record)
+    stopped = False
+    failed = None
+    observed = 0
+    for i,row in enumerate(record['cases']):
+        if (type(row) is not list or len(row) != 8 or not _async_int(row[0],i,i)
+                or not _async_int(row[1],0,3) or not _async_int(row[2],0,14)
+                or not _async_int(row[4],0,63)
+                or (row[3] is not None and (not _async_hash(row[3]) or row[3] != module_hashes[i]))):
+            _async_bad()
+        status,reason = row[1:3]
+        if status == 1:
+            if stopped or reason != 0 or row[3] != module_hashes[i] or row[4] != 63:
+                _async_bad()
+            validate_async_observation(i,*row[5:])
+            observed += 1
+        else:
+            if row[4] != 0 or any(type(v) is not list or v != [] for v in row[5:]):
+                _async_bad()
+            if status == 0:
+                if reason != 1 or row[3] is not None:
+                    _async_bad()
+            elif stopped or (status == 2 and not 1 <= reason <= 13) or (status == 3 and (reason != 14 or row[3] is None)):
+                _async_bad()
+            else:
+                failed = row
+            stopped = True
+    diagnostic = record['process_diagnostics']
+    if record['status'] == 'ok':
+        if (observed != 8 or record['failure_kind'] != 'none' or record['template_sha256'] != template_hash
+                or diagnostic['stage'] != 'after_exit' or diagnostic['reason'] != 'none'):
+            _async_bad()
+    elif record['status'] == 'not_started':
+        if (observed or failed is not None or record['failure_kind'] != 'prerequisites_failed'
+                or record['template_sha256'] is not None or diagnostic['stage'] != 'not_checked' or diagnostic['reason'] != 'none'):
+            _async_bad()
+    elif (failed is None or record['status'] != ('inconclusive' if failed[1] == 3 else 'failed')
+            or record['failure_kind'] != ASYNC_FAILURES[failed[2]]
+            or ((observed or failed[3] is not None) and record['template_sha256'] != template_hash)):
+        _async_bad()
+    return record
+
+
+def encode_async_wire(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
+        _async_bad()
+    validate_async_failure_diagnostics(record)
+    return {**record,'process_diagnostics':_async_diagnostic(record['process_diagnostics'])}
+
+
+def decode_async_wire(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
+        _async_bad()
+    validate_async_failure_diagnostics(record)
+    return {**record,'process_diagnostics':decode_process_wire(record['process_diagnostics'])}
+
+
+def async_named_cases(record):
+    """Inspection only. Never put these expanded objects in a public serializer."""
+    return [dict(case_id=r[0],status=r[1],failure=r[2],module_sha256=r[3],roundtrip_sha256=r[3] if r[4] == 63 else None,
+                 proof={name:bool(r[4] & (1 << i)) for i,name in enumerate(ASYNC_PROOF_FLAGS)},trace=r[5],values=r[6],errors=r[7]) for r in record['cases']]
+# Fixed client-language measurement fixture. Native compilation/execution is a
+# separate gate; offline source tests do not establish native behavior.
+# Primary syntax references:
+# https://kb.1ci.com/1C_Enterprise_Platform/FAQ/Development/Standards/Enhancements_to_1C_Enterprise_language_syntax_for_asynchronous_functions__synchronous_asynchrony/?language=en
+# https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_16._Operations_with_various_data_formats/16.2._JSON_operations/16.2.5._Stream_method/
+# https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_32._Debugging_and_testing_applications/32.3._Runtime_errors/32.3.3._Error_information/?language=en
+
+ASYNC_TEMPLATE = '''// Fixed client async language measurement, never interpreter parity.
+&НаКлиенте
+Перем АсинхЗапрос, АсинхКонтекст, АсинхТрасса, АсинхЗначения, АсинхОшибки;
+&НаКлиенте
+Перем АсинхОжидания, АсинхЗавершено, АсинхНесовместимо, АсинхСбой;
+&НаКлиенте
+Перем АсинхВнутреннее, АсинхЛистЗначение, АсинхЗначениеУмолчания;
+
+&НаКлиенте
+Функция АсинхНомерСлучая()
+    Возврат __ASYNC_CASE_ID__;
+КонецФункции
+
+&НаКлиенте
+Функция АсинхКонтекстПробы()
+#Если Клиент Тогда
+    Возврат "client";
+#Иначе
+    ВызватьИсключение "ASYNC-NOT-CLIENT";
+#КонецЕсли
+КонецФункции
+
+&НаКлиенте
+Функция АсинхПара(Знач Тег, Знач Данные)
+    Пара = Новый Массив;
+    Пара.Добавить(Тег);
+    Пара.Добавить(Данные);
+    Возврат Пара;
+КонецФункции
+
+&НаКлиенте
+Процедура АсинхНачатьТест(Знач ЧислоСлотов)
+    Для Индекс = 1 По ЧислоСлотов Цикл
+        АсинхЗначения.Добавить(АсинхПара(0, 0));
+    КонецЦикла;
+    АсинхСобытие(1);
+КонецПроцедуры
+
+&НаКлиенте
+Процедура АсинхСобытие(Знач Код)
+    Если АсинхЗавершено Или АсинхТрасса.Количество() >= 24
+        Или АсинхТрасса.Найти(Код) <> Неопределено Тогда
+        АсинхСбой = Истина;
+        Возврат;
+    КонецЕсли;
+    АсинхТрасса.Добавить(Код);
+КонецПроцедуры
+
+&НаКлиенте
+Процедура АсинхУдержать(Знач Обещание)
+    // Every created function Promise is retained, including the root's test.
+    // Failure cleanup consumes this finite registry before terminal output.
+    Если ТипЗнч(Обещание) = Тип("Обещание") Тогда
+        АсинхОжидания.Добавить(Обещание);
+    КонецЕсли;
+КонецПроцедуры
+
+&НаКлиенте
+Процедура АсинхСохранить(Знач Слот, Знач Данные)
+    Вид = ТипЗнч(Данные);
+    Если Вид = Тип("Неопределено") Тогда
+        Пара = АсинхПара(1, 0);
+    ИначеЕсли Вид = Тип("Null") Тогда
+        Пара = АсинхПара(2, 0);
+    ИначеЕсли Вид = Тип("Булево") Тогда
+        Если Данные Тогда Код = 1; Иначе Код = 0; КонецЕсли;
+        Пара = АсинхПара(3, Код);
+    ИначеЕсли Вид = Тип("Число") Тогда
+        Если Данные <> Цел(Данные) Или Данные < -999999 Или Данные > 999999 Тогда
+            АсинхНесовместимо = Истина;
+            Возврат;
+        КонецЕсли;
+        Пара = АсинхПара(4, Данные);
+    ИначеЕсли Вид = Тип("Строка") Тогда
+        // Exact equality only. No conversion or substring classification.
+        Словарь = СтрРазделить("7,17,11,12,21,22,31,33", ",");
+        Код = Словарь.Найти(Данные);
+        Если Код = Неопределено Тогда
+            АсинхНесовместимо = Истина;
+            Возврат;
+        КонецЕсли;
+        Пара = АсинхПара(5, Код);
+    ИначеЕсли Вид = Тип("Обещание") Тогда
+        Пара = АсинхПара(6, 0);
+    Иначе
+        АсинхНесовместимо = Истина;
+        Возврат;
+    КонецЕсли;
+    АсинхЗначения[Слот] = Пара;
+КонецПроцедуры
+
+&НаКлиенте
+Функция АсинхПоле(Знач Данные, Знач Режим)
+    // Modes: 0 diagnostic scalar, 1 source line, 2 cause, 3 source text.
+    Вид = ТипЗнч(Данные);
+    Если Вид = Тип("Неопределено") Тогда
+        Если Режим = 3 Тогда
+            АсинхНесовместимо = Истина;
+            Возврат АсинхПара(0, Неопределено);
+        КонецЕсли;
+        Возврат АсинхПара(1, Неопределено);
+    КонецЕсли;
+    Если (Режим = 0 Или Режим = 3) И Вид = Тип("Строка") Тогда
+        Если СтрДлина(Данные) > 512
+            Или GetBinaryDataFromString(Данные, "UTF-8", Ложь).Size() > 512 Тогда
+            АсинхНесовместимо = Истина;
+            Возврат АсинхПара(0, Неопределено);
+        КонецЕсли;
+        Возврат АсинхПара(2, Данные);
+    ИначеЕсли (Режим = 0 Или Режим = 1) И Вид = Тип("Число") Тогда
+        Если Данные = Цел(Данные) И Данные >= 0 И Данные <= 999999 Тогда
+            Возврат АсинхПара(3, Данные);
+        КонецЕсли;
+    ИначеЕсли Режим = 0 И Вид = Тип("Булево") Тогда
+        Возврат АсинхПара(4, Данные);
+    ИначеЕсли Режим = 2 И Вид = Тип("ИнформацияОбОшибке") Тогда
+        Возврат АсинхПара(5, 0);
+    КонецЕсли;
+    АсинхНесовместимо = Истина;
+    Возврат АсинхПара(0, Неопределено);
+КонецФункции
+
+&НаКлиенте
+Процедура АсинхСохранитьОшибку(Знач Слот, Знач Фаза, Знач СохраненнаяОшибка)
+    // Use only the originally saved ErrorInfo after guarded property failures.
+    // Missing properties are unavailable, never invented Undefined values.
+    Описание = АсинхПара(0, Неопределено);
+    Код = АсинхПара(0, Неопределено);
+    Дополнение = АсинхПара(0, Неопределено);
+    Категория = АсинхПара(0, Неопределено);
+    Причина = АсинхПара(0, Неопределено);
+    Модуль = АсинхПара(0, Неопределено);
+    СтрокаКода = АсинхПара(0, Неопределено);
+    Исходник = АсинхПара(0, Неопределено);
+    Если ТипЗнч(СохраненнаяОшибка) <> Тип("ИнформацияОбОшибке") Тогда
+        АсинхНесовместимо = Истина;
+        Возврат;
+    КонецЕсли;
+    Попытка Описание = АсинхПоле(СохраненнаяОшибка.Description, 0); Исключение КонецПопытки;
+    Попытка Код = АсинхПоле(СохраненнаяОшибка.Code, 0); Исключение КонецПопытки;
+    Попытка Дополнение = АсинхПоле(СохраненнаяОшибка.AdditionalInformation, 0); Исключение КонецПопытки;
+    Попытка
+        // Category membership is documented; ErrorInfo.Category is not.
+        Если СохраненнаяОшибка.IsErrorOfCategory(ErrorCategory.ConfigurationError) Тогда
+            Категория = АсинхПара(3, 1);
+        Иначе
+            Категория = АсинхПара(3, 2);
+        КонецЕсли;
+    Исключение КонецПопытки;
+    Попытка Причина = АсинхПоле(СохраненнаяОшибка.Cause, 2); Исключение КонецПопытки;
+    Попытка Модуль = АсинхПоле(СохраненнаяОшибка.ModuleName, 3); Исключение КонецПопытки;
+    Попытка СтрокаКода = АсинхПоле(СохраненнаяОшибка.LineNumber, 1); Исключение КонецПопытки;
+    Попытка Исходник = АсинхПоле(СохраненнаяОшибка.InitialString, 3); Исключение КонецПопытки;
+    Дескриптор = Новый Структура("schema,phase,description,code,additional,category,cause,module,line,source",
+        1, Фаза, Описание, Код, Дополнение, Категория, Причина, Модуль, СтрокаКода, Исходник);
+    Если АсинхОшибки.Количество() >= 3 Тогда
+        АсинхНесовместимо = Истина;
+        Возврат;
+    КонецЕсли;
+    // Host hashes the complete canonical descriptor, requires <=4096 bytes,
+    // and never puts these private fields into summary/provenance/artifacts.
+    АсинхЗначения[Слот] = АсинхПара(7, АсинхОшибки.Количество());
+    АсинхОшибки.Добавить(Дескриптор);
+КонецПроцедуры
+
+&AtClient
+Procedure AsyncExpectToken(Reader, Val Token)
+    If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
+    If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;
+EndProcedure
+
+&AtClient
+Procedure AsyncExpectRequestKey(Reader, Val Token, ЭтапВхода, Val Index)
+    If Index = 1 Then
+        ЭтапВхода = "request_key_read_first";
+    Else
+        ЭтапВхода = "request_key_read_later";
+    EndIf;
+    If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
+    If Index = 1 Then
+        ЭтапВхода = "request_key_token_first";
+    Else
+        ЭтапВхода = "request_key_token_later";
+    EndIf;
+    If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;
+EndProcedure
+
+&AtClient
+Function AsyncReadRequest(ЭтапВхода)
+    Var AsyncRequestKey, AsyncRequestEndToken;
+    // Streaming grammar rejects nested values, duplicate keys and trailing data.
+    ЭтапВхода = "request_open";
+    Reader = New JSONReader;
+    Reader.OpenFile(LaunchParameter);
+    ЭтапВхода = "request_object";
+    Request = New Structure;
+    AsyncExpectToken(Reader, JSONValueType.ObjectStart);
+    For Index = 1 To 5 Do
+        ЭтапВхода = "request_key_call";
+        AsyncExpectRequestKey(Reader, JSONValueType.PropertyName, ЭтапВхода, Index);
+        If Index = 1 Then
+            ЭтапВхода = "request_key_current_first";
+        Else
+            ЭтапВхода = "request_key_current_later";
+        EndIf;
+        AsyncRequestKey = Reader.CurrentValue;
+        If Index = 1 Then
+            ЭтапВхода = "request_key_property_first";
+        Else
+            ЭтапВхода = "request_key_property_later";
+        EndIf;
+        If Request.Property(AsyncRequestKey) Then Raise "ASYNC-REQUEST"; EndIf;
+        ЭтапВхода = "request_value";
+        If AsyncRequestKey = "schema" Or AsyncRequestKey = "version" Then
+            AsyncExpectToken(Reader, JSONValueType.Number);
+            If TypeOf(Reader.CurrentValue) <> Type("Number") Or Reader.CurrentValue <> 1 Then
+                Raise "ASYNC-REQUEST";
+            EndIf;
+        ElsIf AsyncRequestKey = "nonce" Or AsyncRequestKey = "entered" Or AsyncRequestKey = "completed" Then
+            AsyncExpectToken(Reader, JSONValueType.String);
+        Else
+            Raise "ASYNC-REQUEST";
+        EndIf;
+        Request.Insert(AsyncRequestKey, Reader.CurrentValue);
+    EndDo;
+    ЭтапВхода = "request_end_call";
+    AsyncRequestEndToken = ТипЗначенияJSON.КонецОбъекта;
+    ЭтапВхода = "request_end_read";
+    If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
+    ЭтапВхода = "request_end_token";
+    If Reader.CurrentValueType <> AsyncRequestEndToken Then Raise "ASYNC-REQUEST"; EndIf;
+    ЭтапВхода = "request_end_trailing";
+    If Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
+    ЭтапВхода = "request_end_close";
+    Reader.Close();
+    ЭтапВхода = "request_fields";
+    If Not Request.Property("schema") Or Not Request.Property("version")
+        Or Not Request.Property("nonce") Or Not Request.Property("entered")
+        Or Not Request.Property("completed") Then Raise "ASYNC-REQUEST"; EndIf;
+    ЭтапВхода = "request_nonce";
+    If StrLen(Request.nonce) <> 32 Then Raise "ASYNC-REQUEST"; EndIf;
+    For Index = 1 To 32 Do
+        If StrFind("0123456789abcdef", Mid(Request.nonce, Index, 1)) = 0 Then
+            Raise "ASYNC-REQUEST";
+        EndIf;
+    EndDo;
+    ЭтапВхода = "request_paths";
+    If StrLen(Request.entered) = 0 Or StrLen(Request.entered) > 512
+        Or StrLen(Request.completed) = 0 Or StrLen(Request.completed) > 512
+        Or Request.entered = Request.completed Then Raise "ASYNC-REQUEST"; EndIf;
+    Return Request;
+EndFunction
+
+&НаКлиенте
+Процедура АсинхЗаписатьВход()
+    Запись = Новый ЗаписьJSON;
+    Запись.ОткрытьФайл(АсинхЗапрос.entered, "UTF-8", Ложь);
+    ЗаписатьJSON(Запись, Новый Структура("schema,nonce,case,phase,witness",
+        1, АсинхЗапрос.nonce, АсинхНомерСлучая(), "entered", АсинхКонтекст));
+    Запись.Закрыть();
+КонецПроцедуры
+
+&НаКлиенте
+Процедура АсинхЗаписатьЗавершение(Знач Статус, Знач Причина)
+    Если АсинхЗавершено Тогда ВызватьИсключение "ASYNC-ONCE"; КонецЕсли;
+    АсинхЗавершено = Истина;
+    Если Статус <> 1 Тогда
+        АсинхТрасса = Новый Массив;
+        АсинхЗначения = Новый Массив;
+        АсинхОшибки = Новый Массив;
+    КонецЕсли;
+    // OpenFile is not an atomic exclusive-create primitive. Fresh owned paths,
+    // source review, this once guard and host identity checks provide the proof.
+    Запись = Новый ЗаписьJSON;
+    Запись.ОткрытьФайл(АсинхЗапрос.completed, "UTF-8", Ложь);
+    ЗаписатьJSON(Запись, Новый Структура("schema,nonce,case,phase,witness,status,failure,trace,values,errors",
+        1, АсинхЗапрос.nonce, АсинхНомерСлучая(), "completed", АсинхКонтекст,
+        Статус, Причина, АсинхТрасса, АсинхЗначения, АсинхОшибки));
+    Запись.Закрыть();
+КонецПроцедуры
+
+&НаКлиенте
+Асинх Процедура АсинхКореньПробы()
+    Попытка
+        АсинхСобытие(0);
+        Тест = АсинхТестПробы();
+        АсинхУдержать(Тест);
+        Результат = Ждать Тест;
+        АсинхСобытие(3);
+    Исключение
+        АсинхСбой = Истина;
+    КонецПопытки;
+    Если АсинхСбой Или АсинхНесовместимо Тогда
+        // No normal-path extra Await. On failure, every retained function,
+        // including leaves/inner/test, is terminal before failure completion.
+        Индекс = 0;
+        Пока Индекс < АсинхОжидания.Количество() Цикл
+            Попытка
+                Отброшено = Ждать АсинхОжидания[Индекс];
+            Исключение
+                // Rejected Promise is terminal; no diagnostic publication.
+            КонецПопытки;
+            Индекс = Индекс + 1;
+        КонецЦикла;
+    КонецЕсли;
+    Попытка
+        Если АсинхСбой Тогда
+            АсинхЗаписатьЗавершение(2, 12);
+        ИначеЕсли АсинхНесовместимо Тогда
+            АсинхЗаписатьЗавершение(3, 14);
+        Иначе
+            АсинхСобытие(4);
+            Если АсинхСбой Тогда
+                АсинхЗаписатьЗавершение(2, 12);
+            Иначе
+                АсинхЗаписатьЗавершение(1, 0);
+            КонецЕсли;
+        КонецЕсли;
+    Исключение
+        // Partial or missing marker cannot pass the external verifier.
+    КонецПопытки;
+    // The only application exit site is the owning Async root terminal path.
+    ЗавершитьРаботуСистемы(Ложь);
+КонецПроцедуры
+
+&НаКлиенте
+Процедура ПриОткрытии(Отказ)
+    ЭтапВхода = "request";
+    Попытка
+        АсинхЗапрос = AsyncReadRequest(ЭтапВхода);
+        ЭтапВхода = "witness";
+        АсинхКонтекст = АсинхКонтекстПробы();
+        ЭтапВхода = "initialize";
+        АсинхТрасса = Новый Массив;
+        АсинхЗначения = Новый Массив;
+        АсинхОшибки = Новый Массив;
+        АсинхОжидания = Новый Массив;
+        АсинхЗавершено = Ложь;
+        АсинхНесовместимо = Ложь;
+        АсинхСбой = Ложь;
+        ЭтапВхода = "entered";
+        АсинхЗаписатьВход();
+        ЭтапВхода = "root";
+        АсинхКореньПробы();
+    Исключение
+        // Finite private log witness only, never native semantic evidence.
+        Сообщить("ASYNC-ENTRY-FAILURE:" + ЭтапВхода);
+        // No completion and no early exit: external watchdog fails closed.
+    КонецПопытки;
+КонецПроцедуры
+
+__ASYNC_CASE_SOURCE__
+'''
+
+ASYNC_CASE_SOURCES = (
+    '''// Case 0: RU no-Await, repeated Await and implicit Undefined.
+&НаКлиенте
+Асинх Функция АсинхБезОжидания()
+    АсинхСобытие(11);
+    АсинхСобытие(12);
+    Возврат 17;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхБезВозврата()
+    АсинхСобытие(16);
+    АсинхСобытие(17);
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(4);
+    АсинхСобытие(10);
+    Обещание = АсинхБезОжидания();
+    АсинхУдержать(Обещание);
+    АсинхСобытие(13);
+    АсинхСохранить(0, Обещание);
+    Результат = Ждать Обещание;
+    АсинхСобытие(14);
+    АсинхСохранить(1, Результат);
+    Повтор = Ждать Обещание;
+    АсинхСобытие(15);
+    АсинхСохранить(2, Повтор);
+    Пустое = АсинхБезВозврата();
+    АсинхУдержать(Пустое);
+    РезультатПустого = Ждать Пустое;
+    АсинхСобытие(18);
+    АсинхСохранить(3, РезультатПустого);
+    АсинхСобытие(2);
+КонецФункции
+''',
+    '''// Case 1: settled leaf ordering, not a prescribed scheduler order.
+&НаКлиенте
+Асинх Функция АсинхЛист()
+    АсинхСобытие(25);
+    АсинхСобытие(26);
+    Возврат 11;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхВетвь()
+    АсинхСобытие(11);
+    АсинхСобытие(12);
+    Лист = АсинхЛист();
+    АсинхУдержать(Лист);
+    АсинхЛистЗначение = Ждать Лист;
+    АсинхСобытие(13);
+    АсинхСобытие(14);
+    Возврат АсинхЛистЗначение + 1;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(3);
+    АсинхСобытие(10);
+    Обещание = АсинхВетвь();
+    АсинхУдержать(Обещание);
+    АсинхСобытие(15);
+    АсинхСохранить(0, Обещание);
+    АсинхСобытие(16);
+    Результат = Ждать Обещание;
+    АсинхСобытие(17);
+    АсинхСохранить(1, АсинхЛистЗначение);
+    АсинхСохранить(2, Результат);
+    АсинхСобытие(2);
+КонецФункции
+''',
+    '''// Case 2: both siblings and their leaves are retained and joined.
+&НаКлиенте
+Асинх Функция АсинхЛистА()
+    АсинхСобытие(25);
+    АсинхСобытие(26);
+    Возврат 21;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхЛистБ()
+    АсинхСобытие(27);
+    АсинхСобытие(28);
+    Возврат 22;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхВетвьА()
+    АсинхСобытие(11);
+    АсинхСобытие(12);
+    Лист = АсинхЛистА();
+    АсинхУдержать(Лист);
+    Результат = Ждать Лист;
+    АсинхСобытие(13);
+    АсинхСобытие(14);
+    Возврат Результат;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхВетвьБ()
+    АсинхСобытие(17);
+    АсинхСобытие(18);
+    Лист = АсинхЛистБ();
+    АсинхУдержать(Лист);
+    Результат = Ждать Лист;
+    АсинхСобытие(19);
+    АсинхСобытие(20);
+    Возврат Результат;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(5);
+    АсинхСобытие(10);
+    А = АсинхВетвьА();
+    АсинхУдержать(А);
+    АсинхСобытие(15);
+    АсинхСохранить(0, А);
+    АсинхСобытие(16);
+    Б = АсинхВетвьБ();
+    АсинхУдержать(Б);
+    АсинхСобытие(21);
+    АсинхСохранить(1, Б);
+    Попытка
+        ЗначениеА = Ждать А;
+        АсинхСобытие(22);
+        АсинхСохранить(2, ЗначениеА);
+    Исключение
+        АсинхСбой = Истина;
+    КонецПопытки;
+    Попытка
+        ЗначениеБ = Ждать Б;
+        АсинхСобытие(23);
+        АсинхСохранить(3, ЗначениеБ);
+    Исключение
+        АсинхСбой = Истина;
+    КонецПопытки;
+    Попытка
+        ПовторА = Ждать А;
+        АсинхСобытие(24);
+        АсинхСохранить(4, ПовторА);
+    Исключение
+        АсинхСбой = Истина;
+    КонецПопытки;
+    АсинхСобытие(2);
+КонецФункции
+''',
+    '''// Case 3: each non-Promise operand gets a distinct terminal branch.
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(3);
+    АсинхСобытие(10);
+    Попытка
+        Данные = Ждать 7;
+        АсинхСобытие(11);
+        АсинхСохранить(0, Данные);
+    Исключение
+        Ошибка = ИнформацияОбОшибке();
+        АсинхСобытие(12);
+        АсинхСохранитьОшибку(0, 3, Ошибка);
+    КонецПопытки;
+    АсинхСобытие(13);
+    Попытка
+        Данные = Ждать Неопределено;
+        АсинхСобытие(14);
+        АсинхСохранить(1, Данные);
+    Исключение
+        Ошибка = ИнформацияОбОшибке();
+        АсинхСобытие(15);
+        АсинхСохранитьОшибку(1, 4, Ошибка);
+    КонецПопытки;
+    АсинхСобытие(16);
+    Попытка
+        Данные = Ждать Null;
+        АсинхСобытие(17);
+        АсинхСохранить(2, Данные);
+    Исключение
+        Ошибка = ИнформацияОбОшибке();
+        АсинхСобытие(18);
+        АсинхСохранитьОшибку(2, 5, Ошибка);
+    КонецПопытки;
+    АсинхСобытие(2);
+КонецФункции
+''',
+    '''// Case 4: at most one conditional unwrap; inner always joined explicitly.
+&НаКлиенте
+Асинх Функция АсинхВнутренняяФункция()
+    АсинхСобытие(12);
+    АсинхСобытие(13);
+    Возврат 31;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхВнешняяФункция()
+    АсинхСобытие(11);
+    АсинхВнутреннее = АсинхВнутренняяФункция();
+    АсинхУдержать(АсинхВнутреннее);
+    АсинхСобытие(14);
+    Возврат АсинхВнутреннее;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(4);
+    АсинхСобытие(10);
+    Внешнее = АсинхВнешняяФункция();
+    АсинхУдержать(Внешнее);
+    АсинхСобытие(15);
+    АсинхСохранить(0, Внешнее);
+    Первое = Ждать Внешнее;
+    АсинхСобытие(16);
+    АсинхСохранить(1, Первое);
+    Если ТипЗнч(Первое) = Тип("Обещание") Тогда
+        Второе = Ждать Первое;
+        АсинхСобытие(17);
+        АсинхСохранить(2, Второе);
+    Иначе
+        АсинхСобытие(18);
+    КонецЕсли;
+    ВнутреннийРезультат = Ждать АсинхВнутреннее;
+    АсинхСобытие(19);
+    АсинхСохранить(3, ВнутреннийРезультат);
+    АсинхСобытие(2);
+КонецФункции
+''',
+    '''// Case 5: separate implicit/explicit Val scalars and shared array alias.
+&НаКлиенте
+Асинх Функция АсинхПараметры(Первый, Знач Второй, Знач МассивДанных, ПоУмолчанию = 7)
+    АсинхСобытие(11);
+    Первый = 6;
+    Второй = 8;
+    АсинхСобытие(12);
+    МассивДанных[0] = МассивДанных[0] + 1;
+    АсинхСобытие(13);
+    АсинхЗначениеУмолчания = ПоУмолчанию;
+    АсинхСобытие(14);
+    Возврат Первый + Второй + ПоУмолчанию;
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(7);
+    ПервыйФакт = 5;
+    ВторойФакт = 4;
+    МассивФакт = Новый Массив;
+    МассивФакт.Добавить(9);
+    АсинхСобытие(10);
+    Обещание = АсинхПараметры(ПервыйФакт, ВторойФакт, МассивФакт);
+    АсинхУдержать(Обещание);
+    АсинхСобытие(15);
+    АсинхСохранить(0, Обещание);
+    Результат = Ждать Обещание;
+    АсинхСобытие(16);
+    АсинхСохранить(1, Результат);
+    АсинхСохранить(2, ПервыйФакт);
+    АсинхСохранить(3, ВторойФакт);
+    АсинхСохранить(4, МассивФакт.Количество());
+    АсинхСохранить(5, МассивФакт[0]);
+    АсинхСохранить(6, АсинхЗначениеУмолчания);
+    АсинхСобытие(2);
+КонецФункции
+''',
+    '''// Case 6: call-side propagation remains distinct from rejected Await.
+&НаКлиенте
+Асинх Функция АсинхОтклонить()
+    АсинхСобытие(11);
+    АсинхСобытие(12);
+    ВызватьИсключение("ASYNC-REJECT", КатегорияОшибки.ОшибкаКонфигурации,
+        "ASYNC-CODE", "ASYNC-DETAIL", Неопределено);
+КонецФункции
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(3);
+    АсинхСобытие(10);
+    ВызовВернулся = Ложь;
+    Попытка
+        Обещание = АсинхОтклонить();
+        АсинхУдержать(Обещание);
+        АсинхСобытие(13);
+        АсинхСохранить(0, Обещание);
+        ВызовВернулся = Истина;
+    Исключение
+        Ошибка = ИнформацияОбОшибке();
+        АсинхСобытие(14);
+        АсинхСохранитьОшибку(0, 0, Ошибка);
+    КонецПопытки;
+    Если ВызовВернулся Тогда
+        АсинхСобытие(15);
+        Попытка
+            Результат = Ждать Обещание;
+            АсинхСобытие(16);
+            АсинхСохранить(1, Результат);
+        Исключение
+            Ошибка = ИнформацияОбОшибке();
+            АсинхСобытие(17);
+            АсинхСохранитьОшибку(1, 1, Ошибка);
+        КонецПопытки;
+        АсинхСобытие(18);
+        Попытка
+            Повтор = Ждать Обещание;
+            АсинхСобытие(19);
+            АсинхСохранить(2, Повтор);
+        Исключение
+            Ошибка = ИнформацияОбОшибке();
+            АсинхСобытие(20);
+            АсинхСохранитьОшибку(2, 2, Ошибка);
+        КонецПопытки;
+    КонецЕсли;
+    АсинхСобытие(2);
+КонецФункции
+''',
+    '''// Case 7: EN/mixed-case grammar, grouped nested Await argument/return.
+&AtClient
+AsYnC FuNcTiOn AsyncNestedLeaf()
+    АсинхСобытие(11);
+    АсинхСобытие(12);
+    ReTuRn 32;
+EnDfUnCtIoN
+&AtClient
+Function AsyncAddOne(Val Value)
+    АсинхСобытие(13);
+    Return Value + 1;
+EndFunction
+&AtClient
+aSyNc fUnCtIoN AsyncEnglish()
+    АсинхСобытие(10);
+    Leaf = AsyncNestedLeaf();
+    АсинхУдержать(Leaf);
+    Return AsyncAddOne((aWaIt Leaf));
+EndFunction
+&AtClient
+AsYnC PrOcEdUrE AsyncHandledProcedure()
+    АсинхСобытие(15);
+    Try
+        Raise("ASYNC-REJECT", ErrorCategory.ConfigurationError,
+            "ASYNC-CODE", "ASYNC-DETAIL", Undefined);
+    Except
+        SavedError = ErrorInfo();
+        АсинхСобытие(16);
+        АсинхСохранитьОшибку(2, 6, SavedError);
+    EndTry;
+    // Deliberately no suspension: terminal event is explicit, not inferred.
+    АсинхСобытие(17);
+EnDpRoCeDuRe
+&НаКлиенте
+Асинх Функция АсинхТестПробы()
+    АсинхНачатьТест(3);
+    Обещание = AsyncEnglish();
+    АсинхУдержать(Обещание);
+    АсинхСохранить(0, Обещание);
+    Результат = Ждать Обещание;
+    АсинхСобытие(14);
+    АсинхСохранить(1, Результат);
+    AsyncHandledProcedure();
+    АсинхСобытие(18);
+    АсинхСобытие(2);
+КонецФункции
+''',
+)
+
+
+ASYNC_FIXTURE_SHA256 = '83a6e22dbb4788498985e51e06ea610d2a9bc95702852da396cb6d7779bf1c5a'
+
+
+def async_client_module(case_id: int) -> bytes:
+    """Only trusted fixed literal sources, never request-controlled BSL."""
+    if type(case_id) is not int or not 0 <= case_id < 8:
+        raise FullError('invalid_input')
+    if (type(ASYNC_TEMPLATE) is not str or type(ASYNC_CASE_SOURCES) is not tuple
+            or len(ASYNC_CASE_SOURCES) != 8
+            or ASYNC_TEMPLATE.count('__ASYNC_CASE_ID__') != 1
+            or ASYNC_TEMPLATE.count('__ASYNC_CASE_SOURCE__') != 1
+            or any(type(source) is not str or '__ASYNC_CASE_' in source
+                   for source in ASYNC_CASE_SOURCES)):
+        raise FullError('invalid_input')
+    source_hash = hashlib.sha256(json.dumps(
+        [ASYNC_TEMPLATE, ASYNC_CASE_SOURCES], ensure_ascii=False,
+        separators=(',', ':')).encode('utf-8')).hexdigest()
+    if source_hash != ASYNC_FIXTURE_SHA256:
+        raise FullError('invalid_input')
+    text = ASYNC_TEMPLATE.replace('__ASYNC_CASE_ID__', str(case_id))
+    text = text.replace('__ASYNC_CASE_SOURCE__', ASYNC_CASE_SOURCES[case_id])
+    return generated_module(text.encode('utf-8'))
+
+
+def async_manifest_paths(root: Path, inputs: Path):
+    metadata = ('Launcher.xml','Launcher/Ext/ObjectModule.bsl','Launcher/Forms/Main.xml','Launcher/Forms/Main/Ext/Form.xml')
+    paths = {str(inputs/'bootstrap/full_suite.py'):(MAX_OUTPUT,False)}
+    for name in metadata: paths[str(inputs/'launcher/launcher_1c'/name)]=(MAX_OUTPUT,False)
+    for i in range(8):
+        case=root/('case-'+str(i))
+        for prefix in ('src','roundtrip'):
+            for name in (*metadata,CLIENT_MODULE):
+                paths[str(case/prefix/name)]=(MAX_OUTPUT,prefix=='roundtrip' and name=='Launcher/Ext/ObjectModule.bsl')
+        paths[str(case/'build.result')]=(128,False)
+        paths[str(case/'dump.result')]=(128,False)
+        paths[str(case/'AsyncClientProbe.epf')]=(MAX_OUTPUT,False)
+        paths[str(case/'request.json')]=(2048,False)
+        paths[str(case/'entered.json')]=(ASYNC_MAX_MARKER,False)
+        paths[str(case/'completed.json')]=(ASYNC_MAX_MARKER,False)
+    return paths
+
+
+def write_async_continuity(root: Path, inputs: Path, nonce: str, retained):
+    expected=async_manifest_paths(root,inputs)
+    entries={}
+    for path,saved,limit,allow_empty in retained:
+        name=str(path)
+        if name not in expected or expected[name] != (limit,allow_empty):
+            raise FullError('invalid_result')
+        item=[list(map(str,saved[0])),digest(saved[1])]
+        if name in entries and entries[name] != item:
+            raise FullError('stale_evidence')
+        entries[name]=item
+    if set(entries) != set(expected): raise FullError('invalid_result')
+    raw=json.dumps({'schema':1,'nonce':nonce,'files':entries},sort_keys=True,separators=(',',':')).encode()
+    if len(raw)>65536: raise FullError('output_limit')
+    with (root/'continuity.json').open('xb') as stream: stream.write(raw)
+    return digest(raw)
+
+
+def final_async_evidence_check(root: Path, inputs: Path, nonce: str, expected_sha256: str):
+    manifest=root/'continuity.json'
+    pinned=async_file_snapshot(manifest,65536)
+    if not _async_hash(expected_sha256) or digest(pinned[1]) != expected_sha256:
+        raise FullError('stale_evidence')
+    value=strict_json(pinned[1],max_depth=5)
+    expected=async_manifest_paths(root,inputs)
+    if (type(value) is not dict or set(value)!={'schema','nonce','files'}
+            or type(value['schema']) is not int or value['schema']!=1
+            or value['nonce']!=nonce or not valid_nonce(nonce)
+            or type(value['files']) is not dict or set(value['files'])!=set(expected)):
+        raise FullError('invalid_result')
+    for name,(limit,allow_empty) in expected.items():
+        claim=value['files'][name]
+        if (type(claim) is not list or len(claim)!=2 or type(claim[0]) is not list
+                or len(claim[0])!=7 or any(type(n) is not str or re.fullmatch(r'(0|[1-9][0-9]{0,19})',n) is None for n in claim[0])
+                or not _async_hash(claim[1])):
+            raise FullError('invalid_result')
+        current=async_file_snapshot(Path(name),limit,allow_empty=allow_empty)
+        if list(map(str,current[0]))!=claim[0] or digest(current[1])!=claim[1]:
+            raise FullError('stale_evidence')
+    async_require_snapshot(manifest,pinned,65536)

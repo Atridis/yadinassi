@@ -165,7 +165,7 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", text)
         self.assertIn("github.event_name == 'pull_request'", text)
         self.assertIn("types: [opened, synchronize, reopened]", text)
-        for forbidden in ("workflow_dispatch:", "workflow_call:", "pull_request_target:",
+        for forbidden in ("workflow_call:", "pull_request_target:",
                           "workflow_run:", "paths:", "paths-ignore:", "tags:", "write"):
             self.assertNotIn(forbidden, text)
         self.assertEqual(text.count("contents: read"), 1)

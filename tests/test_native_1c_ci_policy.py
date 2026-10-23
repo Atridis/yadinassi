@@ -134,7 +134,7 @@ class AdmissionTests(unittest.TestCase):
                     policy.validate_admission(event, context)
 
     def test_unsupported_event_action_ref_and_state_fail_closed(self):
-        for event_name in ("workflow_dispatch", "workflow_call", "workflow_run", "pull_request_target", "release", None, [], ""):
+        for event_name in ("workflow_call", "workflow_run", "pull_request_target", "release", None, [], ""):
             event, context = fixtures()
             context["GITHUB_EVENT_NAME"] = event_name
             with self.subTest(event_name=event_name), self.assertRaisesRegex(policy.PolicyError, "^event_not_approved$"):
@@ -359,10 +359,10 @@ class WorkflowTests(unittest.TestCase):
     def test_exact_routes_no_path_filters_and_per_revision_concurrency(self):
         source = WORKFLOW_PATH.read_text()
         events = source.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
-        self.assertEqual(events, "  pull_request:\n    branches: [main]\n    types: [opened, synchronize, reopened]\n  push:\n    branches: [main]\n")
+        self.assertEqual(events.split("  workflow_dispatch:\n", 1)[0], "  pull_request:\n    branches: [main]\n    types: [opened, synchronize, reopened]\n  push:\n    branches: [main, codex/native-client-async-reviewed]\n")
         self.assertIn("group: native-1c-${{ github.event.pull_request.number || github.ref }}", source)
         self.assertIn("cancel-in-progress: false", source)
-        for forbidden in ("paths:", "paths-ignore:", "workflow_dispatch:", "workflow_call:", "pull_request_target:",
+        for forbidden in ("paths:", "paths-ignore:", "workflow_call:", "pull_request_target:",
                           "workflow_run:", "schedule:", "tags:", "secrets:", "continue-on-error:", "pull_request.draft"):
             self.assertNotIn(forbidden, source)
 
@@ -392,7 +392,7 @@ class WorkflowTests(unittest.TestCase):
                       "github.event_name == 'push'", "github.ref == 'refs/heads/main'"):
             self.assertIn(guard, native)
         verdict = workflow_job("verdict")
-        self.assertIn("    name: Native 1C required verdict", verdict)
+        self.assertIn("    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}", verdict)
         self.assertIn("    if: always()", verdict)
         self.assertIn("    needs: [eligibility, smoke]", verdict)
 
@@ -403,7 +403,7 @@ class WorkflowTests(unittest.TestCase):
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 """,
-            "smoke": """    name: Native 1C six scenarios
+            "smoke": """    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement' || 'Native 1C six scenarios' }}
     needs: eligibility
     if: >-
       needs.eligibility.result == 'success' &&
@@ -414,14 +414,15 @@ class WorkflowTests(unittest.TestCase):
       github.actor_id == '30860798' &&
       github.triggering_actor == 'Atridis' &&
       ((github.event_name == 'pull_request' && github.base_ref == 'main') ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/native-client-async-reviewed')) ||
+       (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/') && inputs.client_async_measurement == true))
     permissions:
       contents: read
       packages: read
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 """,
-            "verdict": """    name: Native 1C required verdict
+            "verdict": """    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}
     if: always()
     needs: [eligibility, smoke]
     permissions: {}
@@ -437,8 +438,8 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(len(re.findall(r"^      - ", steps, re.M)), 1)
             self.assertNotRegex(steps, r"(?m)^        if:")
         native = workflow_job("smoke")
-        self.assertEqual(len(re.findall(r"^      - ", native, re.M)), 7)
-        self.assertEqual(native.count("GHCR_TOKEN: ${{ github.token }}"), 1)
+        self.assertEqual(len(re.findall(r"^      - ", native, re.M)), 8)
+        self.assertEqual(native.count("GHCR_TOKEN: ${{ github.token }}"), 2)
         self.assertIn("        env:\n          GHCR_USER: ${{ github.actor }}\n          GHCR_TOKEN: ${{ github.token }}\n        run: python3 scripts/native_1c_smoke.py", native)
 
     def test_immutable_actions_checkout_and_binding_precede_native_token(self):
@@ -462,7 +463,7 @@ class WorkflowTests(unittest.TestCase):
         native = workflow_job("smoke")
         self.assertEqual(native.count("retention-days: 7"), 2)
         self.assertEqual(native.count("if-no-files-found: error"), 2)
-        self.assertIn("if: always() && steps.native.outputs.native_outputs_ready == 'true'", native)
+        self.assertIn("if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')", native)
         self.assertIn("path: native-smoke/report.json", native)
         output_paths = native.split("          path: |\n", 1)[1].split("          if-no-files-found:", 1)[0]
         self.assertEqual(output_paths.split(), [f"native-smoke/native-outputs/{name}" for name in (
