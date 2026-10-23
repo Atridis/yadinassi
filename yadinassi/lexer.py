@@ -92,11 +92,30 @@ class Lexer:
         result = []
         compilation = ConditionalCompilation(self.source, self.execution_context)
         capturing_server = False
+        capturing_variable = False
+        capturing_routine = False
+        skipped_variable = False
+        root_fragment = False
+        root_depth = 0
+        client_compilation = ConditionalCompilation(self.source, "client")
         skipping_client = False
         skipped_depth = 0
         regions = SourceRegions(self.source)
         while self.peek():
             char = self.peek()
+            # Only branches excluded from the default client root may initialize
+            # a server activation. Never replay unguarded module statements.
+            server_root = (self.server_declarations_only and compilation.active
+                           and not client_compilation.active and compilation.logical_guard)
+            # An excluded nested preprocessor branch does not terminate its
+            # enclosing initializer. Runtime If/loop bodies may span it.
+            root_ended = (root_depth > len(compilation.stack) or
+                          root_depth > 0 and (
+                              not compilation.stack[root_depth - 1].active or
+                              client_compilation.stack[root_depth - 1].active))
+            if root_fragment and (root_ended or (char == "&" and compilation.active)):
+                result.append(Token("SERVERROOTEND", None, self.line, self.column, self.source))
+                root_fragment = False
             if char.isspace():
                 self.advance()
                 continue
@@ -109,7 +128,9 @@ class Lexer:
             # compilation selects explicitly server-annotated declarations,
             # never a second execution/parse of the root statement section.
             if (self.server_declarations_only and not capturing_server
-                    and not skipping_client and char not in "#&"):
+                    and not skipping_client and char not in "#&"
+                    and (not server_root or re.match(
+                        r"(?:Procedure|Function|Процедура|Функция)\b", self.text[self.pos:], re.I))):
                 # Track unannotated (therefore client) routine boundaries even
                 # after another root statement on the same line. Quoted text
                 # and comments cannot introduce declarations or directives.
@@ -139,6 +160,14 @@ class Lexer:
                 else:
                     self.advance()
                 continue
+            if (server_root and not capturing_server and not skipping_client
+                    and not root_fragment and char not in "#&"
+                    and not (char == "/" and self.peek(1) == "/")):
+                result.append(Token("SERVERROOTBEGIN", None, self.line, self.column, self.source))
+                root_fragment = True
+                root_depth = next(index + 1 for index, branch in enumerate(compilation.stack)
+                                  if branch.active and not client_compilation.stack[index].active
+                                  and any(parent.logical for parent in compilation.stack[:index + 1]))
             line, column = self.line, self.column
             if char == "/" and self.peek(1) == "/":
                 start = self.pos
@@ -146,6 +175,14 @@ class Lexer:
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 directive = self.text[start + 2:self.pos].split("//", 1)[0].strip()
+                if (self.server_declarations_only and standalone
+                        and re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE)):
+                    if capturing_server:
+                        raise BSLError("Импорт в серверной подпрограмме не поддерживается",
+                                       self.source, line, column)
+                    # Comment imports are a client-only extension. Preserve the
+                    # historical ignored root contract; never load them here.
+                    continue
                 if standalone and re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE):
                     if not self.allow_directives:
                         raise BSLError("Директивы недопустимы в вычисляемом выражении",
@@ -167,12 +204,13 @@ class Lexer:
                     self.advance()
                 directive = self.text[start:self.pos].split("//", 1)[0].strip()
                 previous_depth = len(compilation.stack)
+                client_compilation.process(directive, line, column)
                 if conditional := compilation.process(directive, line, column):
                     regions.conditional_boundary(conditional, previous_depth, line, column)
                     continue
                 if not compilation.active:
                     continue
-                if self.server_declarations_only and not capturing_server:
+                if self.server_declarations_only and not capturing_server and not root_fragment:
                     # Root regions and other root-only directives do not belong
                     # to the server declaration fragment. Conditional nesting
                     # was still processed above to select the right sources.
@@ -266,6 +304,12 @@ class Lexer:
                         continue
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
             if skipping_client:
+                if skipped_depth == 0 and kind == "VAR":
+                    skipped_variable = True
+                if skipped_variable:
+                    if kind == ";":
+                        skipping_client = skipped_variable = False
+                    continue
                 if skipped_depth == 0 and kind not in {"FUNCTION", "PROCEDURE"}:
                     raise BSLError("После директивы исполнения ожидается объявление процедуры или функции",
                                    self.source, line, column)
@@ -278,8 +322,16 @@ class Lexer:
                 continue
             result.append(Token(kind, value, line, column, self.source,
                                         self.source_lines[line - 1]))
+            if self.server_declarations_only and capturing_server and kind in {"FUNCTION", "PROCEDURE"}:
+                capturing_routine = True
+            if self.server_declarations_only and capturing_server and not capturing_routine and kind == "VAR":
+                capturing_variable = True
+            if capturing_variable and kind == ";":
+                capturing_server = capturing_variable = False
             if self.server_declarations_only and kind in {"ENDFUNCTION", "ENDPROCEDURE"}:
-                capturing_server = False
+                capturing_server = capturing_routine = False
+        if root_fragment:
+            result.append(Token("SERVERROOTEND", None, self.line, self.column, self.source))
         compilation.finish(self.line, self.column)
         if skipping_client:
             raise IncompleteInput("Не завершена подпрограмма",

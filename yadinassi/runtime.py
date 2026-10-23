@@ -126,6 +126,8 @@ class Interpreter:
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
         self.server_routines: dict[str, ast.Routine] = {}
+        self.server_module_names: set[str] = set()
+        self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
         self._context_stack = ["client"]
         self._client_routine_names: set[str] = set()
@@ -347,7 +349,12 @@ class Interpreter:
                     opposite = self.routines if node.execution_context == "server" else self.server_routines
                     opposite.pop(node.name.casefold(), None)
                     registry[node.name.casefold()] = node
+                elif isinstance(node, ast.ServerInitializer):
+                    self.server_initializers.append(node)
                 elif isinstance(node, ast.Var):
+                    if node.execution_context == "server":
+                        self.server_module_names.update(name.casefold() for name in node.names)
+                        continue
                     self.exported_variables.update(name.casefold() for name in node.exported_names)
                     for name in node.names:
                         self.module_names.add(name.casefold())
@@ -355,7 +362,8 @@ class Interpreter:
             for node in program:
                 if isinstance(node, ast.Import):
                     self.visit(node)
-            return self.block([node for node in program if not isinstance(node, ast.Import)])
+            return self.block([node for node in program if not isinstance(node, (ast.Import, ast.ServerInitializer))
+                               and not (isinstance(node, ast.Var) and node.execution_context == "server")])
 
     def block(self, statements: list[ast.Node]) -> object:
         result = None
@@ -754,6 +762,14 @@ class Interpreter:
             copied = self._copy_context_packet([bindings[name] for name in names])
             bindings = dict(zip(names, copied))
             owner = owner._new_server_activation()
+            # Module storage is initialized before parameter locals are installed.
+            # Exceptions escape without copy-out and the detached activation dies.
+            owner._context_stack.append("server")
+            try:
+                for initializer in owner.server_initializers:
+                    owner.block(initializer.body)
+            finally:
+                owner._context_stack.pop()
         previous = owner.locals
         owner.locals = bindings
         owner._context_stack.append(function.execution_context)
@@ -822,6 +838,9 @@ class Interpreter:
         server._logical_side = "server"
         server._context_stack = self._context_stack
         server.routines = self.server_routines.copy()
+        server.module_names = self.server_module_names.copy()
+        server.variables = dict.fromkeys(server.module_names)
+        server.server_initializers = self.server_initializers.copy()
         server._client_routine_names = set(self.routines)
         # Keep server-bound core helpers. Copy registered host functions while
         # rebinding this interpreter's methods, never retaining client frames.
@@ -838,8 +857,8 @@ class Interpreter:
                                                   reference_parameters=function.reference_parameters,
                                                   returns_value=function.returns_value)
         server.types = self.types.copy()
-        # Module variables, imports and the public module receiver have no
-        # cross-context contract in this first slice. Never alias client state.
+        # Imports and the public module receiver remain unsupported server-side.
+        # Side-local variables above never alias client storage.
         server._self_module.ready = False
         return server
 

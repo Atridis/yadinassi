@@ -21,7 +21,7 @@ Marker validation hints are enumerated independently for all eight failed-row
 positions. They require an invalid-result row, so a separate majorant replaces
 that row and all later rows with empty, failed/unreached observations. This keeps
 all production applicability checks active; no validator is patched for size.
-The standard client's 342 finite marker diagnostics are bounded independently;
+The standard client's 372 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
 No native process or external action is invoked by these tests.
 """
@@ -371,7 +371,7 @@ def proof_results():
         actual_provenance_boundary_bytes=len(files['provenance.json']),
         conditional_paths=80, failure_prefix_variants=216,
         failure_diagnostic_variants=1744, maximum_failure_diagnostic_wire_bytes=10,
-        standard_marker_diagnostic_variants=342,
+        standard_marker_diagnostic_variants=372,
         marker_validation_diagnostic_variants=sum(len(list(marker_validation_variants(case))) for case in range(8)),
         marker_validation_diagnostic_variants_by_case=[len(list(marker_validation_variants(case))) for case in range(8)],
         maximum_marker_validation_diagnostic_wire_bytes=11,
@@ -615,7 +615,8 @@ class AsyncBudgetTests(unittest.TestCase):
             51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73,
             73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74,
             11, 73, 74, 72, 1]
-        self.assertEqual(len(expected), 109)
+        expected += ['module.context.v1', 10, 100, 111, True, 100, True, 100, True, 11]
+        self.assertEqual(len(expected), 119)
         self.assertEqual(suite.CLIENT_VALUES, expected)
         self.assertEqual(full.CLIENT_VALUES, expected)
         maximum = maximum_standard_marker_diagnostics()
@@ -625,16 +626,16 @@ class AsyncBudgetTests(unittest.TestCase):
         for phase, kind, ordinal, error_stage in itertools.product(
                 ('invalid', 'error', 'completed'),
                 ('none', 'count', 'type', 'value', 'runtime_error'),
-                range(-1, 111), range(12)):
+                range(-1, 121), range(12)):
             diagnostic = dict(phase=phase, kind=kind, ordinal=ordinal, error_stage=error_stage)
             if phase != 'completed':
                 allowed = kind == 'none' and ordinal == -1 and error_stage == 0
             elif kind == 'runtime_error':
                 allowed = 1 <= error_stage <= 11 and ordinal == error_stage + 3
             elif kind == 'count':
-                allowed = 0 <= ordinal <= 109 and error_stage == 0
+                allowed = 0 <= ordinal <= 119 and error_stage == 0
             elif kind in ('type', 'value'):
-                allowed = 0 <= ordinal < 109 and error_stage == 0
+                allowed = 0 <= ordinal < 119 and error_stage == 0
             else:
                 allowed = ordinal == -1 and error_stage == 0
             if not allowed:
@@ -668,7 +669,7 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertLessEqual(len(summary), CAPS['public_summary'])
             with self.assertRaises(full.FullError):
                 full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], b''), result, smoke.IMAGE)
-        self.assertEqual(count, 342)
+        self.assertEqual(count, 372)
 
     def test_process_counter_width_bound_is_derived_not_independent_maxima(self):
         # DP over seven nonnegative counters with a <=256 sum proves 16

@@ -58,14 +58,21 @@ class Parser:
             if token := self.accept("IMPORT"):
                 statements.append(ast.Import(token, token.value))
                 continue
+            if token := self.accept("SERVERROOTBEGIN"):
+                body = self.block({"SERVERROOTEND"})
+                self.expect("SERVERROOTEND")
+                if any(isinstance(node, (ast.Var, ast.Import)) for node in body):
+                    self.fail("Серверный инициализатор не допускает объявлений и импортов")
+                statements.append(ast.ServerInitializer(token, body))
+                continue
             execution_context = "client"
             annotation = self.accept("ATCLIENT") or self.accept("ATSERVER")
             if annotation:
                 execution_context = "server" if annotation.kind == "ATSERVER" else "client"
-                if self.current.kind not in ("FUNCTION", "PROCEDURE"):
-                    self.fail("После директивы исполнения ожидается объявление процедуры или функции")
+                if self.current.kind not in ("FUNCTION", "PROCEDURE", "VAR"):
+                    self.fail("После директивы исполнения ожидается объявление процедуры, функции или переменной")
                 if self.compilation_context and execution_context != self.compilation_context:
-                    ending = "END" + self.current.kind
+                    ending = ";" if self.current.kind == "VAR" else "END" + self.current.kind
                     while self.current.kind not in {ending, "EOF"}:
                         self.pos += 1
                     self.expect(ending)
@@ -92,7 +99,12 @@ class Parser:
                 statements.append(ast.Routine(token, name, parameters, kind == "FUNCTION", exported, body, execution_context))
                 # Routine brackets are not statements and need no semicolon.
                 continue
-            statements.append(self.statement())
+            node = self.statement()
+            if annotation and isinstance(node, ast.Var):
+                node.execution_context = execution_context
+                if execution_context == "server" and node.exported_names:
+                    self.fail("Экспорт серверной переменной пока не поддерживается")
+            statements.append(node)
             separated = self.accept(";") or isinstance(statements[-1], ast.Label)
             self.region_directives(regions)
             if not separated and self.current.kind != "EOF":
@@ -271,6 +283,8 @@ class Parser:
             self.pos += 1
             return ast.Break(token) if token.kind == "BREAK" else ast.Continue(token)
         if self.accept("VAR"):
+            if self.compilation_context == "server" and self.routine_kind is None and self.block_depth:
+                self.fail("Объявления внутри серверного инициализатора не поддерживаются")
             names = []
             exported = []
             while True:
@@ -431,7 +445,7 @@ def validate_labels(statements: list[ast.Node]) -> None:
                 labels[name] = (node, path)
             elif isinstance(node, ast.Goto):
                 jumps.append((node, path))
-            elif isinstance(node, ast.Routine):
+            elif isinstance(node, (ast.Routine, ast.ServerInitializer)):
                 validate_labels(node.body)
             elif isinstance(node, ast.If):
                 for _, branch in node.branches:
@@ -459,8 +473,11 @@ def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
                           server_declarations_only=True).tokens()
     server = Parser(server_tokens, "server").parse()
     return [node for node in client if not (
-        isinstance(node, ast.Routine) and node.execution_context == "server"
-    )] + [node for node in server if isinstance(node, ast.Routine)]
+        isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
+    )] + [node for node in server if (
+        isinstance(node, ast.ServerInitializer) or
+        isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
+    )]
 
 
 def parse_expression(text: str, source: str = "<Вычислить>") -> ast.Node:
