@@ -30,8 +30,12 @@ class _Branch:
 
 
 class ConditionalCompilation:
-    def __init__(self, source: str):
+    def __init__(self, source: str, execution_context: str = "client"):
+        if execution_context not in {"client", "server"}:
+            raise ValueError("Unknown execution context")
         self.source = source
+        self.symbols = {name: value == (execution_context == "client")
+                        for name, value in SYMBOLS.items()}
         self.stack: list[_Branch] = []
 
     @property
@@ -50,7 +54,7 @@ class ConditionalCompilation:
             raise BSLError(message, self.source, line, column)
 
         if kind in ("if", "elsif"):
-            condition = _Condition(rest, fail).parse()
+            condition = _Condition(rest, fail, self.symbols).parse()
         elif rest:
             fail("После #Иначе / #КонецЕсли не должно быть выражения")
         if kind == "if":
@@ -139,7 +143,8 @@ class SourceRegions:
 
 
 class _Condition:
-    def __init__(self, text, fail):
+    def __init__(self, text, fail, symbols=SYMBOLS):
+        self.symbols = symbols
         self.fail = fail
         self.tokens = re.findall(r"[^\W\d]\w*|\S", text)
         self.pos = 0
@@ -191,4 +196,4 @@ class _Condition:
         self.pos += 1
         if name.casefold() not in SYMBOLS:
             self.fail(f"Неподдерживаемый символ препроцессора: {name}")
-        return SYMBOLS[name.casefold()]
+        return self.symbols[name.casefold()]

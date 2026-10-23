@@ -25,6 +25,7 @@ class ClientNumbersAdapterTests(unittest.TestCase):
         if os.name == 'nt':
             self.source = self.source.replace(b'\r\n', b'\n')
             self.template = self.template.replace(b'\r\n', b'\n')
+        self.template = suite.client_parity_template(self.template)
 
     def module(self):
         return suite.client_numbers_module(self.source, self.template).decode('utf-8-sig')

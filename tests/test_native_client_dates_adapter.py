@@ -25,6 +25,7 @@ class ClientDatesAdapterTests(unittest.TestCase):
         if os.name == 'nt':
             self.source = self.source.replace(b'\r\n', b'\n')
             self.template = self.template.replace(b'\r\n', b'\n')
+        self.template = suite.client_parity_template(self.template)
 
     def test_pins_source_and_template_and_rejects_every_tamper(self):
         self.assertEqual(suite.digest(self.source), suite.CLIENT_DATES_SOURCE_SHA256)

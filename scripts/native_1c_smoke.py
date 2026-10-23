@@ -490,6 +490,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 FULL.read_regular(staged / f"scenarios/{case}.bsl", FULL.MAX_FILE, nonempty=True)))
                 for case in FULL.SCENARIOS} if full_suite else None)
             if client_probe:
+                FULL.verify_client_interpreter(ROOT, staged / "bootstrap/client_probe.bsl",
+                                               input_hashes[FULL.CLIENT_SOURCE])
                 module_hashes["client_probe"] = FULL.digest(FULL.generated_module(
                     FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)))
             if client_dates:

@@ -95,6 +95,7 @@ class ClientNumbersOptionTests(unittest.TestCase):
                 stack.enter_context(mock.patch.dict(os.environ, {'GHCR_USER': 'offline', 'GHCR_TOKEN': 'fixture-only'}))
                 for name in ('windows_fingerprints', 'repository_provenance', 'interpreter_provenance'):
                     stack.enter_context(mock.patch.object(smoke.FULL, name, return_value={}))
+                interpreter = stack.enter_context(mock.patch.object(smoke.FULL, 'verify_client_interpreter'))
                 adapters = {}
                 for name in ('dates', 'values', 'collections', 'numbers'):
                     adapters[name] = stack.enter_context(mock.patch.object(
@@ -106,6 +107,10 @@ class ClientNumbersOptionTests(unittest.TestCase):
                     side_effect=smoke.FULL.FullError('offline_stop')))
                 with self.assertRaisesRegex(smoke.SmokeError, '^offline_stop$'):
                     smoke.run_smoke(Path(directory), full_suite=True, client_probe=True, **options)
+                interpreter.assert_called_once()
+                self.assertEqual(interpreter.call_args.args[0], smoke.ROOT)
+                self.assertEqual(interpreter.call_args.args[1].name, 'client_probe.bsl')
+                self.assertEqual(interpreter.call_args.args[2], validate.call_args.args[2][smoke.FULL.CLIENT_SOURCE])
                 self.assertEqual(validate.call_args.kwargs, options)
                 self.assertEqual(len(validate.call_args.args[2]), 24)
                 expected = set(smoke.FULL.SCENARIOS) | {'client_probe'}

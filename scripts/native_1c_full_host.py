@@ -296,9 +296,80 @@ def generated_module(source: bytes) -> bytes:
 
 
 CLIENT_SOURCE = "scripts/native_1c_bootstrap/client_probe.bsl"
+# Exact finite witness contract, independently executed by the host interpreter.
+CLIENT_VALUES = [
+    42,
+    'client-probe',
+    3,
+    6,
+    'directive.call.add: {"N",42}',
+    'directive.preprocessor.server: server',
+    'directive.preprocessor.client: client',
+    'directive.call.nested: server',
+    'directive.param.val: {"N",7}',
+    'directive.exception: {"B",1}',
+    'directive.return.number: {"N",42}',
+    'directive.return.string: {"S","x"}',
+    'directive.return.boolean: {"B",1}',
+    'directive.return.undefined: {"U"}',
+    'directive.call.recovery: {"N",42}',
+]
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
+
+
+CLIENT_EXECUTE_SCRIPT = r'''
+import sys
+import re
+import importlib.util
+from pathlib import Path
+# Load only the verified package, not arbitrary modules beside the checkout.
+package = Path(sys.argv[1]) / "yadinassi"
+spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                            submodule_search_locations=[str(package)])
+module = importlib.util.module_from_spec(spec)
+sys.modules["yadinassi"] = module
+spec.loader.exec_module(module)
+Interpreter = module.Interpreter
+
+import json
+from decimal import Decimal
+vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")))
+vm.execute(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
+values = list(vm.execute("ВычислитьПробу()"))
+result = []
+for value in values:
+    if type(value) is Decimal and value.is_finite() and value == value.to_integral_value():
+        result.append(int(value))
+    elif type(value) is str:
+        result.append(value)
+    else:
+        raise RuntimeError("unexpected witness type")
+sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+'''
+
+
+
+def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
+    """Execute the exact native form source, calling only its finite computation.
+
+    Native separately validates the same typed values and exact module roundtrip.
+    This is bounded witness parity, not a full client/server platform claim.
+    """
+    raw = read_regular(source, MAX_FILE, nonempty=True)
+    if digest(raw) != source_hash:
+        raise FullError("source_changed")
+    runner = bounded_child if runner is None else runner
+    with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        code, output, stderr = runner(
+            [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+    expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
+    if code != 0 or stderr or output != expected:
+        raise FullError("interpreter_failed")
+    if read_regular(source, MAX_FILE, nonempty=True) != raw:
+        raise FullError("source_changed")
 
 
 def validate_process_diagnostics(value):
@@ -318,7 +389,37 @@ def validate_process_diagnostics(value):
     return value
 
 
+def validate_marker_diagnostics(value):
+    if (type(value) is not dict
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or type(value['phase']) is not str
+            or value['phase'] not in {'invalid', 'error', 'completed'}
+            or type(value['kind']) is not str
+            or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= 15
+            or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
+        raise ValueError('client marker diagnostics')
+    if value['phase'] != 'completed':
+        valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
+    elif value['kind'] == 'runtime_error':
+        valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
+    elif value['kind'] == 'count':
+        valid = 0 <= value['ordinal'] <= 15 and value['error_stage'] == 0
+    elif value['kind'] in {'type', 'value'}:
+        valid = 0 <= value['ordinal'] < 15 and value['error_stage'] == 0
+    else:
+        valid = value['ordinal'] == -1 and value['error_stage'] == 0
+    if not valid:
+        raise ValueError('client marker diagnostics combination')
+    return value
+
+
 def validate_client_probe(data, source_hash, module_hash):
+    if type(data) is dict and "marker_diagnostics" in data:
+        validate_marker_diagnostics(data["marker_diagnostics"])
+        if data.get("status") != "failed" or data.get("failure_kind") != "invalid_result" or data.get("witness_verified") is not False:
+            raise ValueError("client marker diagnostics outcome")
+        data = {key: value for key, value in data.items() if key != "marker_diagnostics"}
     if (type(data) is not dict
             or set(data) != CLIENT_FLAGS | CLIENT_HASHES | {"status", "failure_kind", "process_diagnostics"}
             or any(type(data[key]) is not bool for key in CLIENT_FLAGS)

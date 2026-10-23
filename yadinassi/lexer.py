@@ -62,11 +62,14 @@ class Token:
 
 
 class Lexer:
-    def __init__(self, text: str, source: str = "<строка>", *, allow_directives: bool = True):
+    def __init__(self, text: str, source: str = "<строка>", *, allow_directives: bool = True,
+                 execution_context: str = "client", server_declarations_only: bool = False):
         self.text = text.removeprefix("\ufeff")
         self.source = source
         self.source_lines = [line.removesuffix("\r") for line in self.text.split("\n")]
         self.allow_directives = allow_directives
+        self.execution_context = execution_context
+        self.server_declarations_only = server_declarations_only
         self.pos = 0
         self.line = 1
         self.column = 1
@@ -87,7 +90,10 @@ class Lexer:
 
     def tokens(self) -> list[Token]:
         result = []
-        compilation = ConditionalCompilation(self.source)
+        compilation = ConditionalCompilation(self.source, self.execution_context)
+        capturing_server = False
+        skipping_client = False
+        skipped_depth = 0
         regions = SourceRegions(self.source)
         while self.peek():
             char = self.peek()
@@ -97,6 +103,40 @@ class Lexer:
             if not compilation.active and char != "#":
                 # Excluded lines need not be valid BSL; no imports or annotations run.
                 while self.peek() and self.peek() not in "\r\n":
+                    self.advance()
+                continue
+            # The standalone entry point belongs only to the client. A server
+            # compilation selects explicitly server-annotated declarations,
+            # never a second execution/parse of the root statement section.
+            if (self.server_declarations_only and not capturing_server
+                    and not skipping_client and char not in "#&"):
+                # Track unannotated (therefore client) routine boundaries even
+                # after another root statement on the same line. Quoted text
+                # and comments cannot introduce declarations or directives.
+                if char == "/" and self.peek(1) == "/":
+                    while self.peek() and self.peek() not in "\r\n":
+                        self.advance()
+                elif char == '"':
+                    try:
+                        self.string(self.line, self.column)
+                    except BSLError:
+                        # Root text excluded from the client may deliberately
+                        # be invalid BSL. It is never a server entry point.
+                        pass
+                elif char == "'":
+                    self.advance()
+                    while self.peek() and self.peek() not in "'\r\n":
+                        self.advance()
+                    if self.peek() == "'":
+                        self.advance()
+                elif char.isalpha() or char == "_":
+                    start = self.pos
+                    while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
+                        self.advance()
+                    if KEYWORDS.get(self.text[start:self.pos].casefold()) in {"FUNCTION", "PROCEDURE"}:
+                        skipping_client = True
+                        skipped_depth = 1
+                else:
                     self.advance()
                 continue
             line, column = self.line, self.column
@@ -132,6 +172,11 @@ class Lexer:
                     continue
                 if not compilation.active:
                     continue
+                if self.server_declarations_only and not capturing_server:
+                    # Root regions and other root-only directives do not belong
+                    # to the server declaration fragment. Conditional nesting
+                    # was still processed above to select the right sources.
+                    continue
                 if region := regions.process(directive, line, column,
                                              len(compilation.stack), KEYWORDS.keys()):
                     kind, value = region
@@ -160,11 +205,20 @@ class Lexer:
                     raise BSLError("Ожидается директива исполнения на отдельной строке",
                                    self.source, line, column)
                 name = match.group(1).casefold()
-                if name not in {"наклиенте", "atclient"}:
+                if self.server_declarations_only and skipping_client:
+                    continue
+                if self.server_declarations_only and not capturing_server and name in {"наклиенте", "atclient"}:
+                    skipping_client = True
+                    skipped_depth = 0
+                    continue
+                if name not in {"наклиенте", "atclient", "насервере", "atserver"}:
                     raise BSLError(f"Директива {directive} не поддерживается: "
-                                   "доступен только клиентский контекст &НаКлиенте / &AtClient",
+                                   "доступны &НаКлиенте / &AtClient и &НаСервере / &AtServer",
                                    self.source, line, column)
-                value, kind = directive, "ATCLIENT"
+                value = directive
+                kind = "ATSERVER" if name in {"насервере", "atserver"} else "ATCLIENT"
+                if self.server_declarations_only:
+                    capturing_server = True
             elif char.isalpha() or char == "_":
                 start = self.pos
                 while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
@@ -207,10 +261,29 @@ class Lexer:
                 elif char in "+-*/%=<>()[];.,?~:":
                     kind = value = self.advance()
                 else:
+                    if skipping_client:
+                        self.advance()
+                        continue
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
+            if skipping_client:
+                if skipped_depth == 0 and kind not in {"FUNCTION", "PROCEDURE"}:
+                    raise BSLError("После директивы исполнения ожидается объявление процедуры или функции",
+                                   self.source, line, column)
+                if kind in {"FUNCTION", "PROCEDURE"}:
+                    skipped_depth += 1
+                elif kind in {"ENDFUNCTION", "ENDPROCEDURE"}:
+                    skipped_depth -= 1
+                    if skipped_depth == 0:
+                        skipping_client = False
+                continue
             result.append(Token(kind, value, line, column, self.source,
                                         self.source_lines[line - 1]))
+            if self.server_declarations_only and kind in {"ENDFUNCTION", "ENDPROCEDURE"}:
+                capturing_server = False
         compilation.finish(self.line, self.column)
+        if skipping_client:
+            raise IncompleteInput("Не завершена подпрограмма",
+                                  self.source, self.line, self.column)
         regions.finish()
         result.append(Token("EOF", None, self.line, self.column, self.source))
         return result
