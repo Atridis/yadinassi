@@ -1646,7 +1646,43 @@ def _host_async_diagnostic(value):
     return validate_process_diagnostics(value)
 
 
+def validate_async_marker_failure(data):
+    """Independent finite failure-only hint validation, never marker acceptance."""
+    value = data['marker_validation_failure']
+    if value is None: return
+    require, number = _host_async_require, _host_async_number
+    hint = data.get('failure_diagnostics')
+    require(data.get('status') == 'failed' and data.get('failure_kind') == 'invalid_result', 'marker failure applicability')
+    require(type(hint) is list and len(hint) == 4 and hint[0] == 4, 'marker failure stage')
+    require(type(value) is list and len(value) == 4, 'marker failure fields')
+    phase,site,descriptor,locator = value
+    require(number(phase,0,1) and number(site,1,42) and number(descriptor,0,3) and number(locator,0,31), 'marker failure codes')
+    require(hint[phase+1] == 2 and (phase == 0 or hint[1] == 3), 'marker failure observation')
+    rows = data.get('cases')
+    require(type(rows) is list and len(rows) == 8, 'marker failure rows')
+    failures = [index for index,row in enumerate(rows) if type(row) is list and len(row) == 8 and row[1:3] == [2,4]]
+    require(len(failures) == 1, 'marker failure case')
+    case_id = failures[0]
+    require(phase == 1 or site in set(range(1,10)) | {42}, 'marker failure phase')
+    if site in range(14,27):
+        require(descriptor < 3, 'marker descriptor ordinal')
+        allowed = ({31} if site in (14,26) else {0} if site == 15 else {1} if site == 16
+                   else set(range(2,10)) | ({31} if site == 25 else set()))
+        require(locator in allowed, 'marker descriptor field')
+    elif site in (34,35):
+        require(descriptor < 3 and locator in range(HOST_ASYNC_SLOTS[case_id]), 'marker reference locator')
+    else:
+        require(descriptor == 3, 'marker descriptor sentinel')
+        if site in (29,38,39): allowed = set(range(29))
+        elif site in (31,32,33,37): allowed = set(range(HOST_ASYNC_SLOTS[case_id]))
+        elif site == 40: allowed = set(range(len(HOST_ASYNC_EDGES[case_id])))
+        elif site == 41: allowed = {2} if case_id == 7 else set()
+        else: allowed = {31}
+        require(locator in allowed, 'marker field locator')
+
+
 def validate_async_failure_diagnostics(data):
+    validate_async_marker_failure(data)
     value = data['failure_diagnostics']
     if value is None:
         return
@@ -1668,8 +1704,8 @@ def validate_client_async(data, template_hash, module_hashes):
     number = _host_async_number
     require(_host_async_sha(template_hash) and type(module_hashes) in (tuple,list)
             and len(module_hashes) == 8 and all(_host_async_sha(x) for x in module_hashes),'trusted hashes')
-    require(type(data) is dict and set(data) == {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','cases'},'record fields')
-    require(number(data['version'],1,1),'version')
+    require(type(data) is dict and set(data) == {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','marker_validation_failure','cases'},'record fields')
+    require(number(data['version'],2,2),'version')
     require(type(data['status']) is str and data['status'] in ('not_started','ok','failed','inconclusive'),'status')
     require(type(data['failure_kind']) is str and data['failure_kind'] in HOST_ASYNC_FAILURES,'reason')
     require(data['template_sha256'] is None or _host_async_sha(data['template_sha256']) and data['template_sha256'] == template_hash,'template identity')
@@ -1715,7 +1751,7 @@ def validate_client_async(data, template_hash, module_hashes):
 
 
 def decode_async_wire(record):
-    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
         raise ValueError('async wire')
     validate_async_failure_diagnostics(record)
     wire = record['process_diagnostics']
@@ -1730,7 +1766,7 @@ def decode_async_wire(record):
 
 
 def encode_async_wire(record):
-    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
         raise ValueError('async wire')
     validate_async_failure_diagnostics(record)
     diagnostic = _host_async_diagnostic(record['process_diagnostics'])

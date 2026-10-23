@@ -33,6 +33,8 @@ class AsyncIntegrationTests(fixture.SyntheticFilesystemCase):
             smoke.validate_report,client_async=enabled)
     def test_schema4_roundtrip_fixed_inputs_and_six_outputs(self):
         wire=suite.encode_stage_wire(self.stage);self.assertEqual(wire['schema'],4)
+        self.assertEqual(wire['client_async']['version'], 2)
+        self.assertIsNone(wire['client_async']['marker_validation_failure'])
         report,outputs=self.validate()
         self.assertEqual(report['stage3']['client_async'],self.stage['client_async'])
         self.assertEqual(len(self.inputs),24);self.assertEqual(list(outputs),list(full.SCENARIOS))

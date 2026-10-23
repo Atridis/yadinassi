@@ -2486,7 +2486,7 @@ def fail_async_process_checkpoint(record, diagnostics=None):
     index, module_hash = row[0], row[3]
     record['cases'][index] = [index,2,11,module_hash,0,[],[],[]]
     record.update(status='failed', failure_kind='process_failed', continuity_sha256=None,
-                  failure_diagnostics=None)
+                  failure_diagnostics=None, marker_validation_failure=None)
     record['process_diagnostics'] = diagnostics if diagnostics is not None else dict(empty_process_diagnostics(),stage='after_exit',reason='unverified')
 
 
@@ -2670,10 +2670,13 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
         record['failure_diagnostics'] = async_failure_observation(
             host_stage, current, nonce, stopped=process_stopped,
             marker_context=marker_context, log_context=log_context)
+        if kind == 'invalid_result':
+            record['marker_validation_failure'] = observe_async_marker_validation_failure(
+                host_stage,current,nonce,stopped=process_stopped,marker_context=marker_context)
     return record
 # Client Async finite protocol v1. This code is embedded in trusted full_suite.py.
 # Public rows stay compact in summary/provenance; descriptors never cross that boundary.
-ASYNC_VERSION = 1
+ASYNC_VERSION = 2
 ASYNC_MAX_MARKER = 16_384
 # Wire ordinals are independent of the legacy process diagnostic vocabulary.
 # observed_* describes only the stable post-stop capture, not final continuity.
@@ -2909,10 +2912,226 @@ def validate_async_marker(value, nonce, case_id, phase):
     return {**value,'errors':public}
 
 
+# Failure-only validator sites. These ordinals are not semantic observations.
+# The fourth tuple member is a site-specific locator; 31 means not applicable.
+ASYNC_MARKER_VALIDATION_SITES = (
+    'not_checked', 'json_encoding', 'json_depth', 'json_duplicate_key',
+    'json_integer_width', 'json_float', 'json_constant', 'json_syntax',
+    'envelope_shape', 'envelope_schema', 'completion_codes',
+    'failure_completion_shape', 'success_failure_code', 'errors_shape',
+    'descriptor_shape', 'descriptor_schema', 'descriptor_phase',
+    'descriptor_pair', 'descriptor_tag', 'descriptor_null_payload',
+    'descriptor_string_payload', 'descriptor_utf8_limit',
+    'descriptor_integer_payload', 'descriptor_boolean_payload',
+    'descriptor_enum_payload', 'descriptor_encoding', 'descriptor_budget',
+    'observation_shape', 'event_type', 'event_duplicate', 'root_boundary',
+    'value_pair', 'value_tag', 'value_payload', 'reference_phase',
+    'reference_ordinal', 'reference_bijection', 'skipped_slot',
+    'missing_event', 'extra_event', 'causal_edge', 'required_handler', 'unknown')
+
+
+def async_marker_validation_failure(raw, nonce, case_id, phase):
+    """Classify an already rejected bounded marker without changing acceptance.
+
+    Exact validators remain the authority. Only fixed codes and bounded source
+    locators can leave this function; no exception text or native payload does.
+    Known identity disagreement is deliberately not diagnosable evidence.
+    """
+    if (type(raw) is not bytes or len(raw) > ASYNC_MAX_MARKER or not valid_nonce(nonce)
+            or not _async_int(case_id,0,7) or phase not in ('entered','completed')): return None
+    marker_phase = 0 if phase == 'entered' else 1
+    def failure(site, descriptor=3, locator=31):
+        return [marker_phase, site, descriptor, locator]
+    try:
+        value = strict_json(raw, max_depth=5)
+    except FullError:
+        # Match the original bounded JSON parser's order and reject vocabulary.
+        # This second parse is diagnostic-only and can never grant acceptance.
+        try:
+            text = raw.decode('utf-8-sig')
+        except UnicodeError:
+            return failure(1)
+        depth, quoted, escaped = 0, False, False
+        for character in text:
+            if quoted:
+                if escaped: escaped = False
+                elif character == '\\': escaped = True
+                elif character == '"': quoted = False
+            elif character == '"': quoted = True
+            elif character in '[{':
+                depth += 1
+                if depth > 5: return failure(2)
+            elif character in ']}':
+                depth -= 1
+                if depth < 0: return failure(7)
+        site = 7
+        def pairs(items):
+            nonlocal site
+            result = {}
+            for key, item in items:
+                if key in result:
+                    site = 3
+                    raise ValueError
+                result[key] = item
+            return result
+        def number(token):
+            nonlocal site
+            if len(token) > 10:
+                site = 4
+                raise ValueError
+            return int(token)
+        def floating(token):
+            nonlocal site
+            site = 5
+            raise ValueError
+        def constant(token):
+            nonlocal site
+            site = 6
+            raise ValueError
+        try:
+            json.loads(text, object_pairs_hook=pairs, parse_int=number,
+                       parse_float=floating, parse_constant=constant)
+        except (ValueError, UnicodeError, RecursionError):
+            return failure(site)
+        return failure(42)
+    # Do not publish a diagnostic for a different invocation, case or context.
+    if type(value) is dict and any(value.get(key) != expected or type(value.get(key)) is not type(expected)
+            for key, expected in (('nonce', nonce), ('case', case_id),
+                                  ('phase', phase), ('witness', 'client'))):
+        return None
+    try:
+        validate_async_marker(value, nonce, case_id, phase)
+    except FullError:
+        pass
+    else:
+        return None
+    fields = {'schema','nonce','case','phase','witness'}
+    if phase == 'completed': fields |= {'status','failure','trace','values','errors'}
+    if type(value) is not dict or set(value) != fields: return failure(8)
+    if not _async_int(value['schema'],1,1): return failure(9)
+    if phase == 'entered': return failure(42)
+    if not _async_int(value['status'],1,3) or not _async_int(value['failure'],0,14): return failure(10)
+    if value['status'] != 1: return failure(11)
+    if value['failure'] != 0: return failure(12)
+    if type(value['errors']) is not list or len(value['errors']) > 3: return failure(13)
+    names = ('schema','phase','description','code','additional','category','cause','module','line','source')
+    allowed = ({0,1,2,3,4},{0,1,2,3,4},{0,1,2,3,4},{0,1,3,5},{0,1,5},{0,2},{0,1,3},{0,2})
+    public = []
+    for ordinal, descriptor in enumerate(value['errors']):
+        if type(descriptor) is not dict or set(descriptor) != set(names): return failure(14,ordinal)
+        if not _async_int(descriptor['schema'],1,1): return failure(15,ordinal,0)
+        if not _async_int(descriptor['phase'],0,6): return failure(16,ordinal,1)
+        for locator, (name, tags) in enumerate(zip(names[2:],allowed),2):
+            item = descriptor[name]
+            if type(item) is not list or len(item) != 2: return failure(17,ordinal,locator)
+            tag, payload = item
+            if not _async_int(tag,0,5) or tag not in tags: return failure(18,ordinal,locator)
+            if tag in (0,1):
+                if payload is not None: return failure(19,ordinal,locator)
+            elif tag == 2:
+                if type(payload) is not str: return failure(20,ordinal,locator)
+                try:
+                    if len(payload) > 512 or len(payload.encode('utf-8')) > 512: return failure(21,ordinal,locator)
+                except UnicodeError:
+                    return failure(25,ordinal,locator)
+            elif tag == 3:
+                if not _async_int(payload): return failure(22,ordinal,locator)
+            elif tag == 4:
+                if type(payload) is not bool: return failure(23,ordinal,locator)
+            elif not _async_int(payload,0,1) or payload != (1 if name == 'category' else 0):
+                return failure(24,ordinal,locator)
+        try:
+            encoded = json.dumps(descriptor, sort_keys=True, separators=(',',':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+        except (TypeError,ValueError,UnicodeError):
+            return failure(25,ordinal)
+        if len(encoded) > 4096: return failure(26,ordinal)
+        public.append(_async_private_error(descriptor))
+    trace, values = value['trace'], value['values']
+    if (type(trace) is not list or not 5 <= len(trace) <= 24
+            or type(values) is not list or len(values) != ASYNC_SLOTS[case_id]): return failure(27)
+    if any(not _async_int(event,0,28) for event in trace): return failure(28)
+    if len(set(trace)) != len(trace):
+        return failure(29,locator=next(event for index,event in enumerate(trace) if event in trace[:index]))
+    if trace[:2] != [0,1] or trace[-3:] != [2,3,4]: return failure(30)
+    tags = []
+    for slot, pair in enumerate(values):
+        if type(pair) is not list or len(pair) != 2: return failure(31,locator=slot)
+        tag,payload = pair
+        if not _async_int(tag,0,7): return failure(32,locator=slot)
+        if (not _async_int(payload,-999999,999999)
+                or (tag in (0,1,2,6) and payload != 0)
+                or (tag == 3 and payload not in (0,1))
+                or (tag == 5 and not 0 <= payload <= 7)
+                or (tag == 7 and not 0 <= payload <= 2)): return failure(33,locator=slot)
+        tags.append(tag)
+    allowed_errors = {3:{0:3,1:4,2:5},6:{0:0,1:1,2:2},7:{2:6}}.get(case_id,{})
+    refs = []
+    for slot, (tag, ordinal) in enumerate(values):
+        if tag == 7:
+            if slot not in allowed_errors or ordinal >= len(public): return failure(35,ordinal,slot)
+            if public[ordinal][0] != allowed_errors[slot]: return failure(34,ordinal,slot)
+            refs.append(ordinal)
+    if refs != list(range(len(public))): return failure(36)
+    required = set(ASYNC_REQUIRED[case_id]) | {0,1,2,3,4}
+    skipped = set()
+    if case_id == 3:
+        required.update((12 if tags[0] == 7 else 11,15 if tags[1] == 7 else 14,18 if tags[2] == 7 else 17))
+    elif case_id == 4:
+        required.add(17 if tags[1] == 6 else 18)
+        if tags[1] != 6: skipped.add(2)
+    elif case_id == 6:
+        if tags[0] == 7:
+            required.add(14)
+            skipped.update((1,2))
+        else:
+            required.update((13,15,18,17 if tags[1] == 7 else 16,20 if tags[2] == 7 else 19))
+    elif case_id == 7 and tags[2] != 7: return failure(41,locator=2)
+    for slot,tag in enumerate(tags):
+        if (tag == 0) != (slot in skipped): return failure(37,locator=slot)
+    if required - set(trace): return failure(38,locator=min(required-set(trace)))
+    if set(trace) - required: return failure(39,locator=min(set(trace)-required))
+    positions = {event:index for index,event in enumerate(trace)}
+    for edge,(before,after) in enumerate(ASYNC_EDGES[case_id]):
+        if before in required and after in required and positions[before] >= positions[after]:
+            return failure(40,locator=edge)
+    return failure(42)
+
+
+def observe_async_marker_validation_failure(stage, case_id, nonce, *, stopped, marker_context):
+    """A bounded failure hint tied to the original request and marker snapshots."""
+    if stage != 4 or not stopped or marker_context is None: return None
+    entered, completed, request, request_snap, previous = marker_context
+    retained = []
+    result = None
+    try:
+        async_require_snapshot(request,request_snap,2048)
+        for path,phase in ((entered,'entered'),(completed,'completed')):
+            saved = previous.get(phase)
+            if type(saved) is not tuple or len(saved) != 2: return None
+            if async_diagnostic_snapshot(path,ASYNC_MAX_MARKER) != saved: return None
+            if not async_diagnostic_after(saved,request_snap): return None
+            retained.append((path,saved))
+        if retained[1][1][0][5] < retained[0][1][0][5]: return None
+        for (path,saved),phase in zip(retained,('entered','completed')):
+            try:
+                value = strict_json(saved[1],max_depth=5)
+                validate_async_marker(value,nonce,case_id,phase)
+            except FullError:
+                result = async_marker_validation_failure(saved[1],nonce,case_id,phase)
+                break
+        # No late replacement or changed request can retain a diagnostic hint.
+        for path,saved in retained:
+            if async_diagnostic_snapshot(path,ASYNC_MAX_MARKER) != saved: return None
+        async_require_snapshot(request,request_snap,2048)
+    except Exception:
+        return None
+    return result
+
+
 def empty_async_report():
-    return {'version':1,'status':'not_started','failure_kind':'prerequisites_failed',
+    return {'version':2,'status':'not_started','failure_kind':'prerequisites_failed',
             'template_sha256':None,'continuity_sha256':None,'process_diagnostics':empty_process_diagnostics(),
-            'failure_diagnostics':None,
+            'failure_diagnostics':None,'marker_validation_failure':None,
             'cases':[[i,0,1,None,0,[],[],[]] for i in range(8)]}
 
 
@@ -2925,7 +3144,45 @@ def _async_diagnostic(value):
     return wire
 
 
+def validate_async_marker_failure(record):
+    value = record['marker_validation_failure']
+    if value is None: return
+    diagnostic = record.get('failure_diagnostics')
+    if (record.get('status') != 'failed' or record.get('failure_kind') != 'invalid_result'
+            or type(diagnostic) is not list or len(diagnostic) != 4 or diagnostic[0] != 4
+            or type(value) is not list or len(value) != 4
+            or not _async_int(value[0],0,1) or not _async_int(value[1],1,42)
+            or not _async_int(value[2],0,3) or not _async_int(value[3],0,31)):
+        _async_bad()
+    phase,site,descriptor,locator = value
+    if diagnostic[phase+1] != 2 or (phase == 1 and diagnostic[1] != 3): _async_bad()
+    rows = record.get('cases')
+    if type(rows) is not list or len(rows) != 8: _async_bad()
+    failed = [i for i,row in enumerate(rows) if type(row) is list and len(row) == 8 and row[1:3] == [2,4]]
+    if len(failed) != 1: _async_bad()
+    case_id = failed[0]
+    if phase == 0 and site not in (*range(1,10),42): _async_bad()
+    if 14 <= site <= 26:
+        if descriptor == 3: _async_bad()
+        if site in (14,26): valid = locator == 31
+        elif site == 15: valid = locator == 0
+        elif site == 16: valid = locator == 1
+        elif site == 25: valid = 2 <= locator <= 9 or locator == 31
+        else: valid = 2 <= locator <= 9
+    elif site in (34,35):
+        valid = descriptor < 3 and locator < ASYNC_SLOTS[case_id]
+    else:
+        if descriptor != 3: _async_bad()
+        if site in (29,38,39): valid = 0 <= locator <= 28
+        elif site in (31,32,33,37): valid = locator < ASYNC_SLOTS[case_id]
+        elif site == 40: valid = locator < len(ASYNC_EDGES[case_id])
+        elif site == 41: valid = case_id == 7 and locator == 2
+        else: valid = locator == 31
+    if not valid: _async_bad()
+
+
 def validate_async_failure_diagnostics(record):
+    validate_async_marker_failure(record)
     value = record['failure_diagnostics']
     if value is None:
         return
@@ -2942,10 +3199,10 @@ def validate_async_failure_diagnostics(record):
 
 
 def validate_async_report(record, template_hash, module_hashes):
-    keys = {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','cases'}
+    keys = {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','marker_validation_failure','cases'}
     if (not _async_hash(template_hash) or type(module_hashes) not in (list,tuple) or len(module_hashes) != 8
             or any(not _async_hash(h) for h in module_hashes) or type(record) is not dict or set(record) != keys
-            or not _async_int(record['version'],1,1)
+            or not _async_int(record['version'],2,2)
             or type(record['status']) is not str or record['status'] not in ('not_started','ok','failed','inconclusive')
             or type(record['failure_kind']) is not str or record['failure_kind'] not in ASYNC_FAILURES
             or (record['template_sha256'] is not None and (not _async_hash(record['template_sha256']) or record['template_sha256'] != template_hash))
@@ -2998,14 +3255,14 @@ def validate_async_report(record, template_hash, module_hashes):
 
 
 def encode_async_wire(record):
-    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
         _async_bad()
     validate_async_failure_diagnostics(record)
     return {**record,'process_diagnostics':_async_diagnostic(record['process_diagnostics'])}
 
 
 def decode_async_wire(record):
-    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
         _async_bad()
     validate_async_failure_diagnostics(record)
     return {**record,'process_diagnostics':decode_process_wire(record['process_diagnostics'])}

@@ -62,7 +62,8 @@ def observation(case, *, scalar_errors=(True,True,True), nested=True, reject_cal
 
 
 def record(**options):
-    return dict(version=1,status='ok',failure_kind='none',template_sha256=H,continuity_sha256=H,failure_diagnostics=None,
+    return dict(version=2,status='ok',failure_kind='none',template_sha256=H,continuity_sha256=H,failure_diagnostics=None,
+                marker_validation_failure=None,
                 process_diagnostics=fixtures.process_diagnostics(),
                 cases=[[i,1,0,MODULES[i],63,*observation(i,**options)] for i in range(8)])
 
@@ -77,6 +78,66 @@ class AsyncProtocolTests(unittest.TestCase):
     def reject(self,value):
         with self.assertRaises(suite.FullError): suite.validate_async_report(value,H,MODULES)
         with self.assertRaises(ValueError): full.validate_client_async(value,H,MODULES)
+
+    def test_report_version_two_is_explicit_and_old_reports_fail_closed(self):
+        self.assertEqual(record()['version'], 2)
+        self.assertEqual(suite.empty_async_report()['version'], 2)
+        self.assertIsNone(record()['marker_validation_failure'])
+        self.assertIsNone(suite.empty_async_report()['marker_validation_failure'])
+        for version in (None, True, False, 0, 1, 3, 2.0, '2'):
+            data = record()
+            data['version'] = version
+            self.reject(data)
+        data = record()
+        del data['marker_validation_failure']
+        self.reject(data)
+        # Only the public async report is version 2. Private marker and
+        # private descriptor schemas remain byte-compatible schema 1.
+        marker = dict(schema=1, nonce=NONCE, case=0, phase='entered', witness='client')
+        self.assertEqual(suite.validate_async_marker(marker, NONCE, 0, 'entered'), marker)
+        self.assertEqual(full.validate_async_marker_raw(json.dumps(marker).encode(), NONCE, 0, 'entered'), marker)
+        self.assertEqual(private_error(6)['schema'], 1)
+        for schema in (True, 0, 2):
+            invalid = dict(marker, schema=schema)
+            with self.assertRaises(suite.FullError):
+                suite.validate_async_marker(invalid, NONCE, 0, 'entered')
+            with self.assertRaises(ValueError):
+                full.validate_async_marker_raw(json.dumps(invalid).encode(), NONCE, 0, 'entered')
+
+    def test_marker_validation_hint_types_bounds_and_failure_applicability(self):
+        base = record()
+        base.update(status='failed', failure_kind='invalid_result', continuity_sha256=None,
+                    failure_diagnostics=[4, 3, 2, 0], marker_validation_failure=[1, 38, 3, 28])
+        base['cases'][7] = [7, 2, 4, MODULES[7], 0, [], [], []]
+        self.accept(base)
+        for malformed in ({}, (), '', True, 0, [], [1, 38, 3], [1, 38, 3, 28, 0]):
+            data = copy.deepcopy(base)
+            data['marker_validation_failure'] = malformed
+            self.reject(data)
+        for index, maximum in enumerate((1, 42, 3, 31)):
+            for item in (True, False, None, 'PRIVATE', 0.0, -1, maximum + 1, [], {}):
+                data = copy.deepcopy(base)
+                data['marker_validation_failure'][index] = item
+                self.reject(data)
+        for failure in (None, [3, 3, 2, 0], [4, 2, 2, 0], [4, 3, 3, 0], [4, 3, 1, 0]):
+            data = copy.deepcopy(base)
+            data['failure_diagnostics'] = failure
+            self.reject(data)
+        for status, kind in (('ok', 'none'), ('not_started', 'prerequisites_failed'),
+                             ('inconclusive', 'unsupported_observation'), ('failed', 'timeout')):
+            data = copy.deepcopy(base)
+            data.update(status=status, failure_kind=kind)
+            self.reject(data)
+        for cases in (record()['cases'], [], None):
+            data = copy.deepcopy(base)
+            data['cases'] = cases
+            self.reject(data)
+        data = copy.deepcopy(base)
+        data['cases'][6] = [6, 2, 4, MODULES[6], 0, [], [], []]
+        self.reject(data)
+        data = record()
+        data['marker_validation_failure'] = [1, 38, 3, 28]
+        self.reject(data)
 
     def test_every_conditional_inventory_and_error_phase_path(self):
         for scalar,nested,call,awaited in itertools.product(itertools.product((False,True),repeat=3),(False,True),(False,True),itertools.product((False,True),repeat=2)):

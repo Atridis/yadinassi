@@ -17,6 +17,10 @@ A call-side rejection omits both Awaits, so at most SIX errors can coexist.
 The failure-only diagnostic tuple has 1743 legal encodings, plus null; its
 longest compact encoding is ten bytes. The late majorant includes that tuple
 even alongside every completed observation, a deliberately unreachable bound.
+Marker validation hints are enumerated independently for all eight failed-row
+positions. They require an invalid-result row, so a separate majorant replaces
+that row and all later rows with empty, failed/unreached observations. This keeps
+all production applicability checks active; no validator is patched for size.
 The standard client's 165 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
 No native process or external action is invoked by these tests.
@@ -46,7 +50,87 @@ MODULES = full.ASYNC_EXPECTED_IDENTITY['modules']
 EXTRAS = ('client_dates', 'client_values', 'client_collections', 'client_numbers', 'client_watchdog')
 CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
 CAPS = {'stage_wire': 8192, 'public_summary': 32768, 'provenance': 32768}
+STAGED_PATHS = (
+    'integrational_tests/launcher_1c/Launcher.xml',
+    'integrational_tests/launcher_1c/Launcher/Ext/ObjectModule.bsl',
+    'integrational_tests/launcher_1c/Launcher/Forms/Main.xml',
+    'integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form.xml',
+    'integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl',
+    'integrational_tests/launcher_1c/TestModule.xml',
+    'integrational_tests/launcher_1c/TestModule/Ext/ObjectModule.bsl',
+    'integrational_tests/test_launcher.py',
+    'integrational_tests/tests/collections.bsl',
+    'integrational_tests/tests/dates.bsl',
+    'integrational_tests/tests/functions.bsl',
+    'integrational_tests/tests/numbers.bsl',
+    'integrational_tests/tests/strings.bsl',
+    'integrational_tests/tests/values.bsl',
+    'scripts/native_1c_bootstrap/client_probe.bsl',
+    'scripts/native_1c_bootstrap/diagnostics.py',
+    'scripts/native_1c_bootstrap/evidence_gates.py',
+    'scripts/native_1c_bootstrap/full_suite.py',
+    'scripts/native_1c_bootstrap/inject_modules.py',
+    'scripts/native_1c_bootstrap/modules/ManagedApplicationModule.bsl',
+    'scripts/native_1c_bootstrap/modules/SessionModule.bsl',
+    'scripts/native_1c_bootstrap/run_stage.py',
+    'scripts/native_1c_bootstrap/simple_smoke.bsl',
+    'scripts/native_1c_smoke_probe.sh',
+)
+ARTIFACT_CLASSES = ('collections.out', 'dates.out', 'functions.out', 'numbers.out',
+                    'strings.out', 'values.out', 'provenance.json')
 MAXIMUM_FAILURE_DIAGNOSTICS = [5, 3, 3, 43]
+MAXIMUM_MARKER_VALIDATION_FAILURE = [1, 38, 3, 28]
+# Frozen independently from the production validators.
+MARKER_CASE_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
+MARKER_CASE_EDGES = (9, 10, 20, 10, 12, 7, 15, 8)
+
+
+def marker_validation_allowed(case_id, value):
+    if value is None:
+        return True
+    phase, site, descriptor, locator = value
+    if phase == 0 and site not in (*range(1, 10), 42):
+        return False
+    if 14 <= site <= 26:
+        if descriptor == 3:
+            return False
+        if site in (14, 26):
+            return locator == 31
+        if site in (15, 16):
+            return locator == site - 15
+        if site == 25:
+            return 2 <= locator <= 9 or locator == 31
+        return 2 <= locator <= 9
+    if site in (34, 35):
+        return descriptor < 3 and locator < MARKER_CASE_SLOTS[case_id]
+    if descriptor != 3:
+        return False
+    if site in (29, 38, 39):
+        return locator <= 28
+    if site in (31, 32, 33, 37):
+        return locator < MARKER_CASE_SLOTS[case_id]
+    if site == 40:
+        return locator < MARKER_CASE_EDGES[case_id]
+    if site == 41:
+        return case_id == 7 and locator == 2
+    return locator == 31
+
+
+def marker_validation_variants(case_id):
+    yield None
+    for value in itertools.product(range(2), range(1, 43), range(4), range(32)):
+        if marker_validation_allowed(case_id, value):
+            yield list(value)
+
+
+def marker_failure_record(case_id, phase=1):
+    value = maximum_observed_record()
+    value.update(status='failed', failure_kind='invalid_result', continuity_sha256=None,
+                 failure_diagnostics=[4, 3, 2, 43] if phase else [4, 2, 0, 43],
+                 marker_validation_failure=MAXIMUM_MARKER_VALIDATION_FAILURE.copy())
+    value['cases'][case_id:] = [[case_id, 2, 4, MODULES[case_id], 0, [], [], []]] + [
+        [case, 0, 1, None, 0, [], [], []] for case in range(case_id + 1, 8)]
+    return value
 
 
 def compact(value):
@@ -190,7 +274,7 @@ def maximum_bootstrap_diagnostics():
             tail=[longest(d.CONTEXT_TOKENS)] * 32, omitted_middle=False))
 
 
-def majorant(early=False):
+def majorant(early=False, marker_case=None):
     """Unreachable combinations are intentional upper bounds, never evidence."""
     result = probe()
     result['status'] = longest(smoke.STATUS | {'stage3_failed'})
@@ -217,6 +301,12 @@ def majorant(early=False):
     measurement.update(status='inconclusive', failure_kind=longest(suite.ASYNC_FAILURES),
         process_diagnostics=maximum_process_diagnostics(),
         failure_diagnostics=MAXIMUM_FAILURE_DIAGNOSTICS.copy())
+    if marker_case is not None:
+        # A nonnull marker hint necessarily consumes a failed row and rules
+        # out later observations. Use its own production-valid partition.
+        value = marker_failure_record(marker_case)
+        value['process_diagnostics'] = maximum_process_diagnostics()
+        s['client_async'] = value
     if early:
         # A failed bootstrap cannot precede any server/client observation.
         result['stage3']['client_async'] = suite.empty_async_report()
@@ -263,8 +353,9 @@ def render_provenance(record):
 
 
 def proof_results():
-    wire = render_stage(majorant()['stage3'])
-    late, _ = render_summary(majorant(), error=True)
+    partitions = [majorant(), *(majorant(marker_case=case) for case in range(8))]
+    wire = max((render_stage(value['stage3']) for value in partitions), key=len)
+    late = max((render_summary(value, error=True)[0] for value in partitions), key=len)
     early, _ = render_summary(majorant(early=True), error=True)
     files, _ = render_provenance(maximum_observed_record())
     projected = json.loads(files['provenance.json'])
@@ -281,6 +372,9 @@ def proof_results():
         conditional_paths=80, failure_prefix_variants=216,
         failure_diagnostic_variants=1744, maximum_failure_diagnostic_wire_bytes=10,
         standard_marker_diagnostic_variants=165,
+        marker_validation_diagnostic_variants=sum(len(list(marker_validation_variants(case))) for case in range(8)),
+        marker_validation_diagnostic_variants_by_case=[len(list(marker_validation_variants(case))) for case in range(8)],
+        maximum_marker_validation_diagnostic_wire_bytes=11,
         maximum_simultaneous_errors=6, maximum_trace_events_per_case=24,
         staged_paths=24, artifact_classes=7)
 
@@ -290,6 +384,8 @@ class AsyncBudgetTests(unittest.TestCase):
         self.assertEqual((suite.MAX_STAGE_REPORT, full.MAX_STAGE_REPORT), (8192, 8192))
         self.assertEqual((suite.MAX_REPORT, full.MAX_REPORT, smoke.MAX_OUTPUT), (32768, 32768, 32768))
         self.assertEqual(len(stage()[1]), 24)
+        self.assertEqual(tuple(sorted(stage()[1])), STAGED_PATHS)
+        self.assertEqual(full.ARTIFACT_FILES, ARTIFACT_CLASSES)
         self.assertEqual(full.ARTIFACT_FILES, tuple(name+'.out' for name in full.SCENARIOS) + ('provenance.json',))
         for name in EXTRAS:
             self.assertNotIn(name, stage()[0])
@@ -308,6 +404,7 @@ class AsyncBudgetTests(unittest.TestCase):
             path = Path(directory) / 'inputs'
             hashes = smoke.stage_inputs(path, full_suite=True, client_probe=True)
             self.assertEqual(len(hashes), 24)
+            self.assertEqual(tuple(sorted(hashes)), STAGED_PATHS)
             standard = dict(full_suite=True, nonce=NONCE, client_probe=True,
                 client_dates=True, client_values=True, client_collections=True,
                 client_numbers=True, watchdog_check=True)
@@ -359,6 +456,7 @@ class AsyncBudgetTests(unittest.TestCase):
             suite.validate_async_report(record, TEMPLATE, MODULES)
             full.validate_client_async(record, TEMPLATE, MODULES)
             self.assertIsNone(record['failure_diagnostics'])
+            self.assertIsNone(record['marker_validation_failure'])
             self.assertLessEqual(sum(len(row[7]) for row in record['cases']), 6)
             s, inputs, modules = stage(record)
             raw = render_stage(s)
@@ -395,7 +493,8 @@ class AsyncBudgetTests(unittest.TestCase):
         self.assertEqual(count, 216)
 
     def test_final_census_invalidates_every_reached_prefix_without_growth(self):
-        records = [maximum_observed_record(), *failure_records()]
+        records = [maximum_observed_record(), *failure_records(),
+                   *(marker_failure_record(case) for case in range(8))]
         for record in records:
             s, inputs, modules = stage(record)
             suite.fail_client_process_checkpoint(s, False, maximum_process_diagnostics())
@@ -403,6 +502,7 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertEqual(s['status'], 'failed')
             self.assertEqual(s['client_async']['status'], 'failed')
             self.assertIsNone(s['client_async']['failure_diagnostics'])
+            self.assertIsNone(s['client_async']['marker_validation_failure'])
             self.assertIsNone(s['client_async']['continuity_sha256'])
             self.assertTrue(all(row[4:] == [0, [], [], []]
                                 for row in s['client_async']['cases'] if row[1] != 1))
@@ -445,6 +545,49 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertLessEqual(len(wire), maximum_wire)
             self.assertLessEqual(len(pretty(record)), maximum_public)
         self.assertEqual(count, 1744)
+
+    def test_every_finite_marker_validation_hint_uses_real_codecs_and_stays_failure_only(self):
+        self.assertEqual(tuple(suite.ASYNC_SLOTS), MARKER_CASE_SLOTS)
+        self.assertEqual(tuple(map(len, suite.ASYNC_EDGES)), MARKER_CASE_EDGES)
+        self.assertEqual(len(compact(MAXIMUM_MARKER_VALIDATION_FAILURE)), 11)
+        counts = []
+        for case_id in range(8):
+            record = marker_failure_record(case_id)
+            maximum_wire = len(render_stage(stage(record)[0]))
+            maximum_public = len(pretty(record))
+            original_rows = copy.deepcopy(record['cases'])
+            count = 0
+            values = itertools.chain((None,), map(list, itertools.product(range(2), range(1, 43), range(4), range(32))))
+            for value in values:
+                record['marker_validation_failure'] = value
+                record['failure_diagnostics'] = [4, 2, 0, 43] if value is not None and value[0] == 0 else [4, 3, 2, 43]
+                if not marker_validation_allowed(case_id, value):
+                    with self.assertRaises(suite.FullError):
+                        suite.validate_async_report(record, TEMPLATE, MODULES)
+                    with self.assertRaises(ValueError):
+                        full.validate_client_async(record, TEMPLATE, MODULES)
+                    continue
+                count += 1
+                suite.validate_async_report(record, TEMPLATE, MODULES)
+                full.validate_client_async(record, TEMPLATE, MODULES)
+                wire = render_stage(stage(record)[0])
+                restored = full.decode_stage3_wire(json.loads(wire))['client_async']
+                self.assertEqual(restored, record)
+                self.assertEqual(restored['cases'], original_rows)
+                self.assertIsNone(restored['continuity_sha256'])
+                self.assertEqual(restored['cases'][case_id][4:], [0, [], [], []])
+                self.assertLessEqual(len(wire), maximum_wire)
+                self.assertLessEqual(len(pretty(record)), maximum_public)
+            counts.append(count)
+            summary, code = render_summary(probe(record))
+            public = json.loads(summary)
+            self.assertEqual(code, 1)
+            self.assertFalse(public['client_async_measurement_completed'])
+            self.assertFalse(public['client_async_parity_claimed'])
+            self.assertLessEqual(len(summary), CAPS['public_summary'])
+            with self.assertRaises(full.FullError):
+                full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], b''), probe(record), smoke.IMAGE)
+        self.assertEqual(counts, [396, 387, 417, 387, 399, 424, 392, 386])
 
     def test_standard_client_witness_and_marker_diagnostics_remain_bounded(self):
         expected = [42, 'client-probe', 3, 6,

@@ -155,3 +155,102 @@ empty, and the measurement's continuity stays null. Valid diagnostic markers nev
 out or otherwise failed process into accepted measurements. When entry is not
 observed and logs are inconclusive, compilation, startup, and an unobserved
 client failure remain unresolved alternatives.
+
+
+## Marker validator discriminator (inner report version 2)
+
+[Run 39956806191](https://github.com/Atridis/yadinassi/actions/runs/39956806191)
+reached accepted per-case traces for cases 0–5. Case 6 failed with
+`invalid_result` and diagnostic `[4,3,2,3]`: marker validation stage, observed
+valid entered marker, observed invalid completed marker, and no specific native
+log category. Case 7 was not reached. The aggregate was not accepted and its
+continuity digest was null. Those public fields do not identify an ErrorInfo
+field, an error phase, a missing event, or a violated causal edge. In particular,
+they do not establish different rejected-Promise semantics.
+
+A new failure-only `marker_validation_failure` field distinguishes those
+alternatives without changing any accepted marker predicate or BSL source.
+The inner `client_async.version` is explicitly 2; outer schema 4, request/marker
+schema 1, generated modules, the 24 staged paths and all artifact/size caps stay
+unchanged. Version 1 inner records are not accepted by the version 2 reader.
+`failure_diagnostics` retains exactly its existing meaning, including its fourth
+native-log-category member.
+
+The new field is normally null. A non-null value is exactly
+`[marker_phase, validator_site, descriptor_ordinal, field_locator]`, four strict
+integers. Marker phase is 0 for entered or 1 for completed. Descriptor ordinal
+is 0–2 only at descriptor/reference sites, otherwise sentinel 3. The locator is
+site-specific, never a raw string or native scalar value; sentinel 31 means not
+applicable. Descriptor field ordinals are schema 0, phase 1, description 2,
+code 3, additional 4, category 5, cause 6, module 7, line 8, and source 9.
+
+| Site | Rejection | Locator |
+| --- | --- | --- |
+| 1 | JSON UTF-8 decoding | 31 |
+| 2 | JSON depth | 31 |
+| 3 | Duplicate JSON key | 31 |
+| 4 | JSON integer token width | 31 |
+| 5 | JSON float token | 31 |
+| 6 | JSON non-finite constant | 31 |
+| 7 | JSON syntax | 31 |
+| 8 | Marker envelope shape/keys | 31 |
+| 9 | Marker schema | 31 |
+| 10 | Completion status/failure code | 31 |
+| 11 | Failed/inconclusive completion shape | 31 |
+| 12 | Nonzero failure code on successful completion | 31 |
+| 13 | Error-list shape/length | 31 |
+| 14 | Descriptor shape/keys | 31 |
+| 15 | Descriptor schema | 0 |
+| 16 | Descriptor phase type/range | 1 |
+| 17 | Descriptor pair shape | Descriptor field 2–9 |
+| 18 | Descriptor field tag | Descriptor field 2–9 |
+| 19 | Descriptor absent/Undefined payload | Descriptor field 2–9 |
+| 20 | Descriptor string payload type | Descriptor field 2–9 |
+| 21 | Descriptor string character/UTF-8 limit | Descriptor field 2–9 |
+| 22 | Descriptor integer payload | Descriptor field 2–9 |
+| 23 | Descriptor Boolean payload | Descriptor field 2–9 |
+| 24 | Descriptor native-type payload | Descriptor field 2–9 |
+| 25 | Descriptor Unicode/canonical encoding | Descriptor field 2–9, or 31 |
+| 26 | Canonical descriptor byte budget | 31 |
+| 27 | Observation list shape/length | 31 |
+| 28 | Event type/range | 31, never the invalid payload |
+| 29 | Duplicate event | Known event ID 0–28 |
+| 30 | Root trace boundaries | 31 |
+| 31 | Value-pair shape | Fixed case slot |
+| 32 | Value tag | Fixed case slot |
+| 33 | Value payload | Fixed case slot |
+| 34 | Referenced error phase disagrees with fixed slot phase | Fixed case slot |
+| 35 | Error reference/ordinal | Fixed case slot |
+| 36 | Error-reference bijection | 31 |
+| 37 | Not-executed slot disagreement | Fixed case slot |
+| 38 | Missing required event | First missing known event ID |
+| 39 | Excess event | First excess known event ID |
+| 40 | Causal order | First violated edge ordinal in the frozen case DAG |
+| 41 | Required handled-error observation | Slot 2, case 7 only |
+| 42 | Unclassified rejection | 31 |
+
+The discriminator runs only after the original strict parser/validator rejects.
+It cannot turn failure into success or rewrite observations. Its deliberately
+bounded duplicate checks are diagnostic, not an alternate acceptance path.
+The field is permitted only for `failed` / `invalid_result` at marker stage,
+with the selected marker observed invalid; a completed-marker hint additionally
+requires observed valid entry. Both validators enforce exact per-site locator
+and descriptor ranges. Accepted traces and error descriptors are never retained
+on the failing case: its proof stays zero and its trace/value/error lists empty.
+
+Capture requires confirmed process stop and the original securely retained
+request, entered and completed snapshots. It checks freshness and marker order,
+then checks every snapshot again after classification. Missing original pins,
+stale timestamps, changed files (including same-byte inode replacement), or
+known nonce/case/phase/witness disagreement yield null. For malformed JSON,
+only the finite parser rejection is reported from the pinned private path; no
+identity or semantic observation is inferred from unparseable bytes. The final
+emitter preserves this historical capture and does not reread or rebase it.
+Unknown is a bounded rejection site, never successful evidence.
+
+Offline tests pin all original marker-acceptance function bytes and all BSL
+fixture identities, compare classifier verdicts with both strict validators,
+and exercise parser/descriptor/reference/inventory/DAG failures and late
+replacement. Actual serializer checks retain the 8192-byte stage limit and
+32768-byte summary/provenance limits. A fresh native run and independent audit
+are still required to learn which marker predicate rejected case 6.
