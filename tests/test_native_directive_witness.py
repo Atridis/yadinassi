@@ -44,13 +44,13 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
             self.assertNotIn('DirectiveServerProfile', source)
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_exact_native_module_computes_contract_in_real_interpreter(self):
+    def test_exact_restored_shared_module_computes_contract_in_real_interpreter(self):
         source = ROOT / full.CLIENT_SOURCE
         full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()))
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_changed_callee_is_rejected_by_real_interpreter_gate(self):
-        source = (ROOT / full.CLIENT_SOURCE).read_bytes()
+    def test_changed_shared_callee_is_rejected_by_real_interpreter_gate(self):
+        source = full.client_interpreter_source((ROOT / full.CLIENT_SOURCE).read_bytes())
         changed = source.replace(b"Return A + B;", b"Return A + B + 1;")
         self.assertNotEqual(source, changed)
         with tempfile.TemporaryDirectory() as temporary:
@@ -67,7 +67,10 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
         runner.assert_not_called()
 
     def test_child_failure_stderr_and_wrong_typed_result_fail_closed(self):
-        source = ROOT / full.CLIENT_SOURCE
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        source = Path(temporary.name).resolve() / "probe.bsl"
+        source.write_bytes(linux_fixture(ROOT / full.CLIENT_SOURCE))
         good = json.dumps(full.CLIENT_VALUES, ensure_ascii=False,
                           separators=(",", ":")).encode()
         for result in [(1, good, b""), (0, good, b"error"),
@@ -174,7 +177,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
 
     def test_real_interpreter_records_literal_stage_without_native_error_text(self):
         from yadinassi import Interpreter
-        source = (ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8-sig')
+        source = full.client_interpreter_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig')
         source = source.replace('Return A + B;', 'Raise "PRIVATE_ERROR";')
         vm = Interpreter()
         vm.execute(source)

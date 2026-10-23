@@ -27,9 +27,17 @@ of the proposed model; such output must never become a native expected fixture.
 
 The automated ordinary client probe now carries an equivalent eleven-observation
 positive witness in `scripts/native_1c_bootstrap/client_probe.bsl`. The host
-independently executes that exact form source through the interpreter before the
-native invocation. Both must satisfy the same finite typed contract. Existing
+independently executes the exact shared witness through the interpreter before
+the native invocation. During the current copyback-only measurement, an exact
+hash inverse restores the previously audited shared source and excludes the
+new helpers; no copyback parity is claimed. The original finite contract stays
+unchanged and intentionally rejects the extra measurement records. Existing
 client proof and four client parity scenarios remain intact; no async branch or
 new runner is used. See `docs/execution-directives.md` for source binding and the
 strict inverse that preserves the original parity template. Negative/future
 modules above remain independent measurements, not part of this positive gate.
+
+`scalar_copyback_core.bsl` is the next twelve-operation capture source, with 34
+fixed typed records. It is integrated into the ordinary client probe as a
+native-only measurement, not an expected-output fixture. See
+`docs/scalar-copyback-measurement.md` for order, bounds and release conditions.

@@ -1,8 +1,8 @@
 # Logical execution directives: first bounded implementation
 
 Status: bounded implementation based on main `be82ce1`, independently reviewed
-and validated by an audited end-to-end native run (see evidence below). Current-
-head rerun and four-OS CI remain release gates. Unit results alone are not native
+and validated by an audited end-to-end native run (see evidence below). The new
+copyback measurement is deliberately not accepted parity. Unit results alone are not native
 evidence. Existing Async measurement work and historical parity fixtures remain
 unchanged.
 
@@ -119,8 +119,11 @@ flag, image, process timeout, credential boundary, manual dispatch, database
 query or async runner changes are required. Literal managed-form client code
 calls literal server methods, never `Execute(text)`.
 
-Before the native invocation, the host runs the exact staged form source through
-our interpreter in the existing bounded, credential-free isolated subprocess,
+Before the native invocation, the host runs the shared witness source through
+our interpreter in the existing bounded, credential-free isolated subprocess.
+For the current scalar-copyback measurement this is the exact hash-restored
+previously audited source, not the new native-only copyback helpers; see
+[scalar-copyback-measurement.md](scalar-copyback-measurement.md). It does so by
 calling only `ВычислитьПробу()`. Its computed typed values must equal the finite
 contract. The native marker independently must equal that same typed contract,
 with nonce, client OnOpen wiring, source/module/roundtrip hashes, clean process
@@ -130,7 +133,8 @@ The native marker remains private under existing policy; the public report
 retains verified completion and source identity, not unvalidated raw output.
 
 The mixed template has a new exact hash. A narrowly checked inverse removes only
-the appended witness and its one call, then verifies the original template hash
+the appended witness and its one call, plus the current copyback measurement
+suffix and its one call block, then verifies the original template hash
 `4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328`.
 All four existing parity adapters keep their original pins and produce identical
 client-only modules. The separate PR90 async harness also touches this template;
@@ -148,10 +152,11 @@ Source SHA256: `b98f7cb8e3489fabdd5df6cec8b929b7e059f9931f1fbfedb8d112be53c1f437
 module/roundtrip: `ae7275f83f2be4976cfe42f3f7da71384f44c87130c3674c9a2d03e8a4f226b3`.
 All four full client parity counts (841/185/421/402) were retained; existing
 collections typed-map-order equivalence remains, not universal byte equality.
-The current follow-up changes only offline Windows fixture routing and this
-status documentation; runtime and native witness source are unchanged. Full
-four-OS CI and current-head native audit remain release gates. Local tests alone
-are not native evidence.
+The subsequent Windows fixture/docs-only correction was validated on actual
+main `1c3582a22f6a434bf10fd51c779ff5a15b2a2a42` by audited native run
+[39939471860](https://github.com/Atridis/yadinassi/actions/runs/39939471860) and
+four-OS run [39939471865](https://github.com/Atridis/yadinassi/actions/runs/39939471865).
+This is historical Val-slice evidence, not acceptance of the new copyback measurement.
 
 ### Finite diagnostics after the first native run
 
@@ -191,9 +196,18 @@ evidence, not accepted parity or a reason to change standalone defaults.
 The positive witness now tests logical side with AtServer And Not AtClient and
 AtClient And Not AtServer. Its matching subset explicitly excludes equivalence
 of platform Client/Server target flags with standalone Client/Server defaults.
-All fifteen expected typed values are unchanged. The temporary profile helpers,
-extra records and shared-source inverse are removed; the host again executes
-exactly the whole staged form source. The four legacy adapters retain their
-byte-identical modules and pins. The corrected witness passed the audited run
-listed above. A current-head rerun remains required after the test/docs follow-up;
-neither the earlier measurement-only run nor local tests satisfy that gate.
+All fifteen expected typed values are unchanged. The earlier profile-only
+helpers were removed before the audited whole-source Val witness run. The
+current copyback measurement separately uses an exact shared-source inverse
+as described below; it must not be confused with that accepted run. The four
+legacy adapters retain their byte-identical modules and pins. Neither a
+measurement-only run nor local tests establish copyback implementation parity.
+
+### Current scalar-copyback measurement
+
+The next bounded step measures non-Val scalar transfer before changing runtime
+semantics. Its extra records deliberately fail the unchanged fifteen-value
+acceptance contract. The host executes the hash-restored shared witness only;
+no parity is claimed for native-only copyback code. See the separate
+[measurement contract](scalar-copyback-measurement.md). The preceding audited
+Val witness remains historical evidence, not acceptance of this measurement.

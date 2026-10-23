@@ -5300,8 +5300,11 @@ replay восстанавливает точный исходный текст, 
 Подробный контракт, независимые native-сценарии и порядок следующих этапов:
 [execution-directives.md](docs/execution-directives.md). Нативных эталонов для
 этого этапа не сгенерировано. Обычный client-probe расширен ограниченным
-source-bound witness с независимым исполнением того же исходника нашим
-интерпретатором; прежние четыре parity-модуля и их pins сохранены побайтно.
+source-bound witness с независимым исполнением общей части исходника нашим
+интерпретатором. В текущем измерении scalar non-Val copyback новые native-only
+helpers исключаются точным hash-bound inverse; их parity не заявляется и runtime
+по-прежнему отклоняет non-Val cross-side вызовы. Измерение не является acceptance.
+Прежние четыре parity-модуля и их pins сохранены побайтно.
 Witness использует НаКлиенте/НаСервере как признаки контекста исполнения;
 эквивалентность платформенных Client/Server flags standalone defaults не входит
 в matching subset. Измеренный thick managed target имеет Client=Server=true;
