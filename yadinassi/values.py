@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    PROMISE = "Обещание"
     """Opaque, immutable type identities; presentations are not their identity."""
 
     ERROR_INFO = "ИнформацияОбОшибке"

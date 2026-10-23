@@ -1038,6 +1038,92 @@ def map_contract():
     return module
 
 
+
+ASYNC_ACTUAL_LIMIT = 8192
+ASYNC_EXECUTE_SCRIPT = r"""
+import sys
+import importlib.util
+from pathlib import Path
+try:
+    root = Path(sys.argv[1])
+    path = root / "scripts/native_async_comparison.py"
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_async_comparison", path))
+    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+    source = (root / "scripts/native_1c_bootstrap/full_suite.py").read_bytes()
+    template, bodies = module.read_pinned_sources(source)
+    package = root / "yadinassi"
+    spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                                submodule_search_locations=[str(package)])
+    runtime = importlib.util.module_from_spec(spec)
+    sys.modules["yadinassi"] = runtime
+    spec.loader.exec_module(runtime)
+    sys.stdout.buffer.write(module.canonical(module.execute_actual(bodies)))
+except BaseException:
+    sys.exit(1)
+"""
+
+
+def async_contract(root: Path):
+    path = root / "scripts/native_async_comparison.py"
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_async_comparison", path))
+    exec(compile(read_regular(path, 4 * MAX_FILE, nonempty=True), str(path), "exec"), module.__dict__)
+    return module
+
+
+def validate_async_comparison(result):
+    if (type(result) is not dict or set(result) != {"profile", "status", "cases", "actual_sha256"}
+            or result["profile"] != "async-language-8-v1"
+            or type(result["status"]) is not str or result["status"] not in {"matched", "mismatched"}
+            or not is_digest(result["actual_sha256"])
+            or type(result["cases"]) is not list or len(result["cases"]) != 8):
+        raise FullError("async_comparison_invalid")
+    for row in result["cases"]:
+        if (type(row) is not list or len(row) != 2 or any(type(v) is not str for v in row)
+                or row[0] not in {"matched", "mismatched"}
+                or row[1] not in {"none", "runtimeerror", "lifecycle", "trace", "values", "errors"}
+                or (row[0] == "matched") != (row[1] == "none")):
+            raise FullError("async_comparison_invalid")
+    if (result["status"] == "matched") != all(row[0] == "matched" for row in result["cases"]):
+        raise FullError("async_comparison_invalid")
+    return result
+
+
+def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes: dict, *, runner=bounded_child):
+    """Execute actual-only rows in isolation; compare accepted same-run evidence here."""
+    source_path = "scripts/native_1c_bootstrap/full_suite.py"
+    validate_semantic_context(report, APPROVED_IMAGE)
+    if report["trusted_input_sha256"] != input_hashes:
+        raise FullError("async_evidence_invalid")
+    before = interpreter_provenance(root)
+    source = read_regular(root / source_path, 262144, nonempty=True)
+    if digest(source) != input_hashes.get(source_path):
+        raise FullError("async_source_changed")
+    if (report.get("native_evidence_accepted") is not True
+            or report.get("container_cleanup_verified") is not True
+            or report.get("native_transport_validated") is not True):
+        raise FullError("async_evidence_invalid")
+    try:
+        contract = async_contract(root)
+        template, bodies = contract.read_pinned_sources(source)
+        native = report["stage3"]["client_async"]
+        contract.validate_inputs(template, bodies, native)
+        with tempfile.TemporaryDirectory(prefix="async-cache-", dir=private) as cache:
+            code, stdout, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+                "-c", ASYNC_EXECUTE_SCRIPT, str(root)], root,
+                stdout_limit=ASYNC_ACTUAL_LIMIT, stderr_limit=MAX_STDERR)
+        if code or stderr:
+            raise FullError("async_execution_failed")
+        actual = strict_json(stdout, ASYNC_ACTUAL_LIMIT)
+        result = contract.compare_observations(template, bodies, native, actual)
+    except FullError:
+        raise
+    except Exception:
+        raise FullError("async_comparison_invalid") from None
+    if (interpreter_provenance(root) != before
+            or read_regular(root / source_path, 262144, nonempty=True) != source):
+        raise FullError("execution_provenance_changed")
+    return validate_async_comparison(result)
+
 def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
     contract = map_contract()
     if type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}:
@@ -1234,7 +1320,7 @@ def interpreter_provenance(root: Path) -> dict:
     if any(path.suffix not in {".py", ".txt"} for path in files):
         raise FullError("unexpected_interpreter_source")
     files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
-              root / "scripts/native_1c_map_contract.py"]
+              root / "scripts/native_1c_map_contract.py", root / "scripts/native_async_comparison.py"]
     if not files or len(files) > 512:
         raise FullError("interpreter_provenance_invalid")
     hashes = {path.relative_to(root).as_posix(): digest(read_regular(path, 4 * MAX_FILE, nonempty=True)) for path in files}
@@ -1370,6 +1456,12 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
             metadata["client_async"] = measurement
             metadata["client_async_measurement_completed"] = True
             metadata["client_async_parity_claimed"] = False
+            if "async_comparison" in report:
+                validate_semantic_context(report, image)
+                metadata["async_comparison"] = validate_async_comparison(report["async_comparison"])
+                metadata["client_async_parity_claimed"] = bool(
+                    metadata["async_comparison"]["status"] == "matched"
+                    and comparison["acceptance_status"] == "accepted")
             metadata["purpose"] = "client-async-language-measurement-v1"
         raw = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
         if len(raw) > MAX_REPORT:

@@ -312,7 +312,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         self.assertEqual(host.count(current_identity), 1)
         host = host.replace(current_identity, 'ASYNC_EXPECTED_IDENTITY = ' + repr(previous_identity))
         self.assertEqual(hashlib.sha256(host.encode('utf-8')).hexdigest(),
-                         '4adab5fc5a36b1c54ad884c9d6e6c0f4dd1127ee31da68cb4a9eb1cf165fd28f')
+                         '0b0ec3c41aaf790ece3109acdc65f5a0002f0efc399bf3f95e750a888bafbd47')
         self.assertEqual(hashlib.sha256(json.dumps(fixture['ASYNC_CASE_SOURCES'], ensure_ascii=False,
                          separators=(',', ':')).encode('utf-8')).hexdigest(),
                          '09edb17d68c0ff7a5462498b132afa5c2b202912abdcb48e33ae1c676a39c075')
@@ -372,7 +372,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         self.assertEqual(host.count(current_identity), 1)
         host = host.replace(current_identity, 'ASYNC_EXPECTED_IDENTITY = ' + repr(previous_identity))
         self.assertEqual(hashlib.sha256(host.encode('utf-8')).hexdigest(),
-                         'a8436c2d293619006e3738f611a8c517181b900d7a3cba0b6ac341ac63623dc3')
+                         'a1554901df27516c22dfeb89e8e0a7b4f611213e98dc9a96370fd9387024b803')
 
     def test_inline_end_operations_are_the_only_template_change(self):
         fixture = make_fixture()

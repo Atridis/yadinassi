@@ -23,6 +23,10 @@ that row and all later rows with empty, failed/unreached observations. This keep
 all production applicability checks active; no validator is patched for size.
 The standard client's 372 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
+Host-side Async comparison adds only a compact result to public summary and
+artifact provenance, never to stage wire. Eight runtimeerror mismatches are the
+longest valid comparator result; all existing early/late/marker partitions retain
+that additional majorant, even when runtime comparison cannot have been reached.
 No native process or external action is invoked by these tests.
 """
 from __future__ import annotations
@@ -260,6 +264,26 @@ def probe(record=None):
     result['configuration_format'].update(schema_version='99.999.999.999', element_count=4096,
         known_elements=[longest(smoke.KNOWN_ELEMENTS)] * len(smoke.KNOWN_ELEMENTS))
     result['comparison'] = comparison(stage3)
+    result['async_comparison'] = maximum_async_comparison()
+    return result
+
+
+def maximum_async_comparison():
+    result = dict(profile='async-language-8-v1', status='mismatched',
+                  cases=[['mismatched', 'runtimeerror'] for _ in range(8)], actual_sha256=H)
+    full.validate_async_comparison(result)
+    return result
+
+
+def accepted_comparison(stage3):
+    result = comparison(stage3)
+    result.update(status='ok', acceptance_status='accepted')
+    for native, case in zip(stage3['cases'], result['cases']):
+        case.update(status='matched', acceptance_status='accepted', mismatch=None,
+                    interpreter_size=native['output_size'], interpreter_sha256=native['output_sha256'])
+        if case['name'] == 'collections':
+            case['semantic'].update(byte_equal_records=841, accepted_labels=[])
+    full.validate_comparison(result, stage3, full.LINUX_TARGET, full.MAP_MODE)
     return result
 
 
@@ -323,31 +347,39 @@ def majorant(early=False, marker_case=None):
     return result
 
 
-def render_summary(value, *, error=False):
+def render_summary(value, *, error=False, artifact_error=False):
     """The real CLI constructs AND pretty-serializes the report; no copied codec."""
     with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
         path = Path(directory) / 'summary.json'
         options = dict(side_effect=smoke.SmokeError('x'*64, validated_report=copy.deepcopy(value), cleanup_error='x'*64)) if error else dict(return_value=copy.deepcopy(value))
-        with mock.patch.object(smoke, 'run_smoke', **options), mock.patch.object(full, 'verify_output_artifact'):
+        with mock.patch.object(smoke, 'run_smoke', **options), mock.patch.object(full, 'verify_output_artifact', side_effect=full.FullError('native_artifact_evidence_invalid') if artifact_error else None):
             code = smoke.main(['--execute-approved-image', '--full-suite', '--client-probe',
                 '--client-async-measurement', '--native-target', full.LINUX_TARGET,
                 '--comparison-mode', full.MAP_MODE, '--export-native-outputs', '--output', str(path)])
-        return path.read_bytes(), code
+        # The production cap measures rendered UTF-8 text before write_text.
+        # Native execution is Linux-only, where that text is written with LF.
+        # Windows test files may gain CRLF during text I/O: universal-newline
+        # reading recovers exactly the Linux serializer bytes, not a new codec.
+        return path.read_text(encoding='utf-8').encode('utf-8'), code
 
 
 def render_stage(value):
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / 'stage.json'
         suite.write_report(path, value)
+        # This production writer uses binary xb/write, so its wire bytes must
+        # remain exact on every OS; never normalize or reserialize the wire.
         return path.read_bytes()
 
 
-def render_provenance(record):
+def render_provenance(record, *, async_result=None, accepted=False):
     result = probe(record)
     payloads = {case['name']+'.out': b'x' * case['output_size'] for case in result['stage3']['cases']}
     for case in result['stage3']['cases']:
         case['output_sha256'] = full.digest(payloads[case['name']+'.out'])
-    result['comparison'] = comparison(result['stage3'])
+    result['comparison'] = accepted_comparison(result['stage3']) if accepted else comparison(result['stage3'])
+    if async_result is not None:
+        result['async_comparison'] = copy.deepcopy(async_result)
     files = full.output_artifact_files(payloads, result, smoke.IMAGE)
     return files, result
 
@@ -376,10 +408,124 @@ def proof_results():
         marker_validation_diagnostic_variants_by_case=[len(list(marker_validation_variants(case))) for case in range(8)],
         maximum_marker_validation_diagnostic_wire_bytes=11,
         maximum_simultaneous_errors=6, maximum_trace_events_per_case=24,
-        staged_paths=24, artifact_classes=7)
+        staged_paths=24, artifact_classes=7,
+        async_comparison_compact_bytes=len(compact(maximum_async_comparison())))
 
 
 class AsyncBudgetTests(unittest.TestCase):
+    def test_linux_serializer_bound_is_independent_of_crlf_text_transport(self):
+        value = majorant()
+        expected, expected_code = render_summary(value, error=True)
+        wire = render_stage(value['stage3'])
+        written = []
+
+        def windows_text_write(path, text, encoding=None, errors=None, newline=None):
+            # Explicitly simulate Windows write_text transport on every runner.
+            # JSON string newlines are escaped, so only formatting LF expands.
+            raw = text.replace('\n', '\r\n').encode(encoding or 'utf-8', errors or 'strict')
+            written.append(raw)
+            path.write_bytes(raw)
+            return len(text)
+
+        with mock.patch.object(Path, 'write_text', windows_text_write):
+            actual, code = render_summary(value, error=True)
+            without = copy.deepcopy(value)
+            del without['async_comparison']
+            smaller, _ = render_summary(without, error=True)
+            self.assertEqual(render_stage(value['stage3']), wire)
+        self.assertEqual(code, expected_code)
+        self.assertEqual(actual, expected)
+        self.assertEqual(json.loads(actual), json.loads(written[0]))
+        self.assertEqual(written[0], expected.replace(b'\n', b'\r\n'))
+        self.assertGreater(len(written[0]), len(expected))
+        self.assertLessEqual(len(actual), CAPS['public_summary'])
+        self.assertEqual(len(actual) - len(smaller), 778)
+        # Wire producer is already binary: preserve exact production bytes and
+        # run the decoder rather than silently changing its transport.
+        self.assertNotIn(b'\r', wire)
+        self.assertNotIn(b'\n', wire)
+        self.assertEqual(full.decode_stage3_wire(json.loads(wire)), value['stage3'])
+        self.assertLessEqual(len(wire), CAPS['stage_wire'])
+
+    def test_compact_async_result_maximum_is_production_valid(self):
+        maximum = maximum_async_comparison()
+        for code in ('none', 'trace', 'values', 'errors', 'lifecycle', 'runtimeerror'):
+            status = 'matched' if code == 'none' else 'mismatched'
+            value = dict(profile='async-language-8-v1', status=status,
+                         cases=[[status, code] for _ in range(8)], actual_sha256=H)
+            full.validate_async_comparison(value)
+            self.assertLessEqual(len(compact(value)), len(compact(maximum)))
+            self.assertLessEqual(len(pretty(value)), len(pretty(maximum)))
+        value = majorant()
+        self.assertNotIn('async_comparison', value['stage3'])
+        with_result, _ = render_summary(value, error=True)
+        without = copy.deepcopy(value)
+        del without['async_comparison']
+        without_result, _ = render_summary(without, error=True)
+        self.assertEqual(len(with_result) - len(without_result), 778)
+        self.assertEqual(json.loads(with_result)['probe']['async_comparison'], maximum)
+
+    def test_accepted_native_fixture_and_comparator_gates_use_real_serializers(self):
+        from scripts import native_async_comparison as adapter
+        root = Path(__file__).resolve().parents[1]
+        fixture_path = root / 'tests/fixtures/native_async_comparison_linux_8_3_27_1508.json'
+        native = json.loads(fixture_path.read_text(encoding='utf-8'))['client_async']
+        template, sources = adapter.read_pinned_sources((root / 'scripts/native_1c_bootstrap/full_suite.py').read_bytes())
+        matched = adapter.compare(template, sources, native)
+        self.assertEqual(matched['status'], 'matched')
+        files, value = render_provenance(native, async_result=matched, accepted=True)
+        metadata = json.loads(files['provenance.json'])
+        self.assertEqual(metadata['async_comparison'], matched)
+        self.assertTrue(metadata['client_async_parity_claimed'])
+        raw, code = render_summary(value)
+        public = json.loads(raw)
+        self.assertEqual(code, 0)
+        self.assertTrue(public['client_async_parity_claimed'])
+        self.assertTrue(public['smoke_completed'])
+        self.assertLessEqual(len(raw), CAPS['public_summary'])
+        self.assertLessEqual(len(files['provenance.json']), CAPS['provenance'])
+        variants = [None, {}, {'status': 'matched'}, maximum_async_comparison()]
+        for mismatch in ('trace', 'values', 'errors', 'lifecycle', 'runtimeerror'):
+            changed = copy.deepcopy(matched)
+            changed['status'] = 'mismatched'
+            changed['cases'][0] = ['mismatched', mismatch]
+            variants.append(changed)
+        for candidate in variants:
+            changed = copy.deepcopy(value)
+            if candidate is None:
+                changed.pop('async_comparison')
+            else:
+                changed['async_comparison'] = candidate
+            raw, code = render_summary(changed)
+            public = json.loads(raw)
+            self.assertEqual(code, 1)
+            self.assertFalse(public['client_async_parity_claimed'])
+            self.assertFalse(public['smoke_completed'])
+            self.assertLessEqual(len(raw), CAPS['public_summary'])
+        # An accepted Async result cannot erase any native security/evidence gate.
+        for gate in ('native_evidence_accepted', 'native_transport_validated',
+                     'native_cases_completed', 'container_cleanup_verified',
+                     'private_payloads_removed', 'windows_goldens_unchanged'):
+            changed = copy.deepcopy(value)
+            changed[gate] = False
+            raw, code = render_summary(changed)
+            public = json.loads(raw)
+            self.assertEqual(code, 1)
+            self.assertFalse(public['client_async_parity_claimed'])
+            with self.assertRaises(full.FullError):
+                full.output_artifact_files({name: files[name] for name in full.ARTIFACT_FILES[:-1]}, changed, smoke.IMAGE)
+        for error, artifact_error in ((True, False), (False, True)):
+            raw, code = render_summary(value, error=error, artifact_error=artifact_error)
+            public = json.loads(raw)
+            self.assertEqual(code, 1)
+            self.assertFalse(public['client_async_parity_claimed'])
+            self.assertFalse(public['smoke_completed'])
+            self.assertLessEqual(len(raw), CAPS['public_summary'])
+        rejected_files, _ = render_provenance(native, async_result=matched, accepted=False)
+        self.assertFalse(json.loads(rejected_files['provenance.json'])['client_async_parity_claimed'])
+        mismatch_files, _ = render_provenance(native, async_result=maximum_async_comparison(), accepted=True)
+        self.assertFalse(json.loads(mismatch_files['provenance.json'])['client_async_parity_claimed'])
+
     def test_caps_artifacts_and_staged_inventory_are_unchanged(self):
         self.assertEqual((suite.MAX_STAGE_REPORT, full.MAX_STAGE_REPORT), (8192, 8192))
         self.assertEqual((suite.MAX_REPORT, full.MAX_REPORT, smoke.MAX_OUTPUT), (32768, 32768, 32768))
@@ -619,6 +765,10 @@ class AsyncBudgetTests(unittest.TestCase):
         self.assertEqual(len(expected), 119)
         self.assertEqual(suite.CLIENT_VALUES, expected)
         self.assertEqual(full.CLIENT_VALUES, expected)
+        # Freeze bool/int distinctions as well as equality for the strict119
+        # witness and its nine side-local module-context observations.
+        self.assertEqual(list(map(type, suite.CLIENT_VALUES)), list(map(type, expected)))
+        self.assertEqual(list(map(type, full.CLIENT_VALUES)), list(map(type, expected)))
         maximum = maximum_standard_marker_diagnostics()
         full.validate_marker_diagnostics(maximum)
         self.assertEqual(len(compact(maximum)), 74)
@@ -665,6 +815,7 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertNotIn(b'directive.', wire + summary)
             self.assertNotIn(b'copyback.core.', wire + summary)
             self.assertNotIn(b'object.transfer.', wire + summary)
+            self.assertNotIn(b'module.context.', wire + summary)
             self.assertLessEqual(len(wire), CAPS['stage_wire'])
             self.assertLessEqual(len(summary), CAPS['public_summary'])
             with self.assertRaises(full.FullError):

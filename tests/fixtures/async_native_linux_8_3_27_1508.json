@@ -1,0 +1,413 @@
+{
+  "schema": 1,
+  "provenance": {
+    "repository": "Atridis/yadinassi",
+    "commit": "5eaa21bb292498a45886f746fb54cc730140ac12",
+    "run_id": 39964367396,
+    "run_url": "https://github.com/Atridis/yadinassi/actions/runs/39964367396",
+    "platform": "Linux 1C 8.3.27.1508 thick managed client",
+    "scope": "Accepted finite native observations from Linux 1C 8.3.27.1508 thick managed client and exact eight fixtures, not runtime implementation/parity or a universal scheduler specification.",
+    "source": "scripts/native_1c_bootstrap/full_suite.py:ASYNC_CASE_SOURCES",
+    "extraction": "Python ast.literal_eval; exact source strings encoded UTF-8, without newline normalization",
+    "limitations": "Offline replay, not a new native run or universal scheduler proof. Native module hashes refer to full native modules, not the standalone replay wrapper. Private error descriptor hashes include native source locations and are provenance only."
+  },
+  "cases": [
+    {
+      "case": 0,
+      "source": "// Case 0: RU no-Await, repeated Await and implicit Undefined.\n&НаКлиенте\nАсинх Функция АсинхБезОжидания()\n    АсинхСобытие(11);\n    АсинхСобытие(12);\n    Возврат 17;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхБезВозврата()\n    АсинхСобытие(16);\n    АсинхСобытие(17);\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(4);\n    АсинхСобытие(10);\n    Обещание = АсинхБезОжидания();\n    АсинхУдержать(Обещание);\n    АсинхСобытие(13);\n    АсинхСохранить(0, Обещание);\n    Результат = Ждать Обещание;\n    АсинхСобытие(14);\n    АсинхСохранить(1, Результат);\n    Повтор = Ждать Обещание;\n    АсинхСобытие(15);\n    АсинхСохранить(2, Повтор);\n    Пустое = АсинхБезВозврата();\n    АсинхУдержать(Пустое);\n    РезультатПустого = Ждать Пустое;\n    АсинхСобытие(18);\n    АсинхСохранить(3, РезультатПустого);\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "44708b0d6399104c16853827cd2050c32137fceea31f8f7e701fa08dcc63462d",
+      "native_module_sha256": "9c35b55df6f304166f83535490b7cffe51f0bac3383663fa4d2c201dfd4f3317",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 1,
+          "type": "Number",
+          "value": 17
+        },
+        {
+          "slot": 2,
+          "type": "Number",
+          "value": 17
+        },
+        {
+          "slot": 3,
+          "type": "Undefined",
+          "value": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": 1,
+      "source": "// Case 1: settled leaf ordering, not a prescribed scheduler order.\n&НаКлиенте\nАсинх Функция АсинхЛист()\n    АсинхСобытие(25);\n    АсинхСобытие(26);\n    Возврат 11;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхВетвь()\n    АсинхСобытие(11);\n    АсинхСобытие(12);\n    Лист = АсинхЛист();\n    АсинхУдержать(Лист);\n    АсинхЛистЗначение = Ждать Лист;\n    АсинхСобытие(13);\n    АсинхСобытие(14);\n    Возврат АсинхЛистЗначение + 1;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(3);\n    АсинхСобытие(10);\n    Обещание = АсинхВетвь();\n    АсинхУдержать(Обещание);\n    АсинхСобытие(15);\n    АсинхСохранить(0, Обещание);\n    АсинхСобытие(16);\n    Результат = Ждать Обещание;\n    АсинхСобытие(17);\n    АсинхСохранить(1, АсинхЛистЗначение);\n    АсинхСохранить(2, Результат);\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "1d228f94bda71a637308be535f9e42b58942dd9a14b54e42836a98044c3b1691",
+      "native_module_sha256": "2f1521d54fef7ecd73f8dce7f36f983111ff2fdb98112a89bd47f01988072676",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        12,
+        25,
+        26,
+        15,
+        16,
+        13,
+        14,
+        17,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 1,
+          "type": "Number",
+          "value": 11
+        },
+        {
+          "slot": 2,
+          "type": "Number",
+          "value": 12
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": 2,
+      "source": "// Case 2: both siblings and their leaves are retained and joined.\n&НаКлиенте\nАсинх Функция АсинхЛистА()\n    АсинхСобытие(25);\n    АсинхСобытие(26);\n    Возврат 21;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхЛистБ()\n    АсинхСобытие(27);\n    АсинхСобытие(28);\n    Возврат 22;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхВетвьА()\n    АсинхСобытие(11);\n    АсинхСобытие(12);\n    Лист = АсинхЛистА();\n    АсинхУдержать(Лист);\n    Результат = Ждать Лист;\n    АсинхСобытие(13);\n    АсинхСобытие(14);\n    Возврат Результат;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхВетвьБ()\n    АсинхСобытие(17);\n    АсинхСобытие(18);\n    Лист = АсинхЛистБ();\n    АсинхУдержать(Лист);\n    Результат = Ждать Лист;\n    АсинхСобытие(19);\n    АсинхСобытие(20);\n    Возврат Результат;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(5);\n    АсинхСобытие(10);\n    А = АсинхВетвьА();\n    АсинхУдержать(А);\n    АсинхСобытие(15);\n    АсинхСохранить(0, А);\n    АсинхСобытие(16);\n    Б = АсинхВетвьБ();\n    АсинхУдержать(Б);\n    АсинхСобытие(21);\n    АсинхСохранить(1, Б);\n    Попытка\n        ЗначениеА = Ждать А;\n        АсинхСобытие(22);\n        АсинхСохранить(2, ЗначениеА);\n    Исключение\n        АсинхСбой = Истина;\n    КонецПопытки;\n    Попытка\n        ЗначениеБ = Ждать Б;\n        АсинхСобытие(23);\n        АсинхСохранить(3, ЗначениеБ);\n    Исключение\n        АсинхСбой = Истина;\n    КонецПопытки;\n    Попытка\n        ПовторА = Ждать А;\n        АсинхСобытие(24);\n        АсинхСохранить(4, ПовторА);\n    Исключение\n        АсинхСбой = Истина;\n    КонецПопытки;\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "1d4d2ef7ec1404aa775c8e1edff0b2878ff224d3f2c0ae3856638552976b9b9a",
+      "native_module_sha256": "6e1a01c33d77681426c6d3f0c0d648fde353514edad381ba2c6bd2b586284959",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        12,
+        25,
+        26,
+        15,
+        16,
+        17,
+        18,
+        27,
+        28,
+        21,
+        13,
+        14,
+        19,
+        20,
+        22,
+        23,
+        24,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 1,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 2,
+          "type": "Number",
+          "value": 21
+        },
+        {
+          "slot": 3,
+          "type": "Number",
+          "value": 22
+        },
+        {
+          "slot": 4,
+          "type": "Number",
+          "value": 21
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": 3,
+      "source": "// Case 3: each non-Promise operand gets a distinct terminal branch.\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(3);\n    АсинхСобытие(10);\n    Попытка\n        Данные = Ждать 7;\n        АсинхСобытие(11);\n        АсинхСохранить(0, Данные);\n    Исключение\n        Ошибка = ИнформацияОбОшибке();\n        АсинхСобытие(12);\n        АсинхСохранитьОшибку(0, 3, Ошибка);\n    КонецПопытки;\n    АсинхСобытие(13);\n    Попытка\n        Данные = Ждать Неопределено;\n        АсинхСобытие(14);\n        АсинхСохранить(1, Данные);\n    Исключение\n        Ошибка = ИнформацияОбОшибке();\n        АсинхСобытие(15);\n        АсинхСохранитьОшибку(1, 4, Ошибка);\n    КонецПопытки;\n    АсинхСобытие(16);\n    Попытка\n        Данные = Ждать Null;\n        АсинхСобытие(17);\n        АсинхСохранить(2, Данные);\n    Исключение\n        Ошибка = ИнформацияОбОшибке();\n        АсинхСобытие(18);\n        АсинхСохранитьОшибку(2, 5, Ошибка);\n    КонецПопытки;\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "ee6c6cc6a2dcafc4b088b221f6707b05f1a6ff88370de80a802e9f59267ace89",
+      "native_module_sha256": "a3959ce4beb9fe01cc1d3f3416bdb2ac7ef56ecb9cdcce11c0b41d96f347bc78",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        13,
+        14,
+        16,
+        17,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Number",
+          "value": 7
+        },
+        {
+          "slot": 1,
+          "type": "Undefined",
+          "value": null
+        },
+        {
+          "slot": 2,
+          "type": "Null",
+          "value": null
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": 4,
+      "source": "// Case 4: at most one conditional unwrap; inner always joined explicitly.\n&НаКлиенте\nАсинх Функция АсинхВнутренняяФункция()\n    АсинхСобытие(12);\n    АсинхСобытие(13);\n    Возврат 31;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхВнешняяФункция()\n    АсинхСобытие(11);\n    АсинхВнутреннее = АсинхВнутренняяФункция();\n    АсинхУдержать(АсинхВнутреннее);\n    АсинхСобытие(14);\n    Возврат АсинхВнутреннее;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(4);\n    АсинхСобытие(10);\n    Внешнее = АсинхВнешняяФункция();\n    АсинхУдержать(Внешнее);\n    АсинхСобытие(15);\n    АсинхСохранить(0, Внешнее);\n    Первое = Ждать Внешнее;\n    АсинхСобытие(16);\n    АсинхСохранить(1, Первое);\n    Если ТипЗнч(Первое) = Тип(\"Обещание\") Тогда\n        Второе = Ждать Первое;\n        АсинхСобытие(17);\n        АсинхСохранить(2, Второе);\n    Иначе\n        АсинхСобытие(18);\n    КонецЕсли;\n    ВнутреннийРезультат = Ждать АсинхВнутреннее;\n    АсинхСобытие(19);\n    АсинхСохранить(3, ВнутреннийРезультат);\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "3bb38075f77f4b2a18c42946ac22f94a9be874f78e8f040a8ca12ca6a25990ed",
+      "native_module_sha256": "a5a2d09e4a7be7749121b0a26c30670bcd122d76ae81e6b5158fdb9de7ff2b1b",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        18,
+        19,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 1,
+          "type": "Number",
+          "value": 31
+        },
+        {
+          "slot": 2,
+          "type": "skipped",
+          "value": null
+        },
+        {
+          "slot": 3,
+          "type": "Number",
+          "value": 31
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": 5,
+      "source": "// Case 5: separate implicit/explicit Val scalars and shared array alias.\n&НаКлиенте\nАсинх Функция АсинхПараметры(Первый, Знач Второй, Знач МассивДанных, ПоУмолчанию = 7)\n    АсинхСобытие(11);\n    Первый = 6;\n    Второй = 8;\n    АсинхСобытие(12);\n    МассивДанных[0] = МассивДанных[0] + 1;\n    АсинхСобытие(13);\n    АсинхЗначениеУмолчания = ПоУмолчанию;\n    АсинхСобытие(14);\n    Возврат Первый + Второй + ПоУмолчанию;\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(7);\n    ПервыйФакт = 5;\n    ВторойФакт = 4;\n    МассивФакт = Новый Массив;\n    МассивФакт.Добавить(9);\n    АсинхСобытие(10);\n    Обещание = АсинхПараметры(ПервыйФакт, ВторойФакт, МассивФакт);\n    АсинхУдержать(Обещание);\n    АсинхСобытие(15);\n    АсинхСохранить(0, Обещание);\n    Результат = Ждать Обещание;\n    АсинхСобытие(16);\n    АсинхСохранить(1, Результат);\n    АсинхСохранить(2, ПервыйФакт);\n    АсинхСохранить(3, ВторойФакт);\n    АсинхСохранить(4, МассивФакт.Количество());\n    АсинхСохранить(5, МассивФакт[0]);\n    АсинхСохранить(6, АсинхЗначениеУмолчания);\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "346b5f6a3df8f3dc7dcdac8c21a613f8028bbf9014ccaa748350d3de669857a7",
+      "native_module_sha256": "761b8ed069ac9451cd9eb918c5e7e7d6d84a9d380155bc56b36ffd05717d76f6",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 1,
+          "type": "Number",
+          "value": 21
+        },
+        {
+          "slot": 2,
+          "type": "Number",
+          "value": 5
+        },
+        {
+          "slot": 3,
+          "type": "Number",
+          "value": 4
+        },
+        {
+          "slot": 4,
+          "type": "Number",
+          "value": 1
+        },
+        {
+          "slot": 5,
+          "type": "Number",
+          "value": 10
+        },
+        {
+          "slot": 6,
+          "type": "Number",
+          "value": 7
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": 6,
+      "source": "// Case 6: call-side propagation remains distinct from rejected Await.\n&НаКлиенте\nАсинх Функция АсинхОтклонить()\n    АсинхСобытие(11);\n    АсинхСобытие(12);\n    ВызватьИсключение(\"ASYNC-REJECT\", КатегорияОшибки.ОшибкаКонфигурации,\n        \"ASYNC-CODE\", \"ASYNC-DETAIL\", Неопределено);\nКонецФункции\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(3);\n    АсинхСобытие(10);\n    ВызовВернулся = Ложь;\n    Попытка\n        Обещание = АсинхОтклонить();\n        АсинхУдержать(Обещание);\n        АсинхСобытие(13);\n        АсинхСохранить(0, Обещание);\n        ВызовВернулся = Истина;\n    Исключение\n        Ошибка = ИнформацияОбОшибке();\n        АсинхСобытие(14);\n        АсинхСохранитьОшибку(0, 0, Ошибка);\n    КонецПопытки;\n    Если ВызовВернулся Тогда\n        АсинхСобытие(15);\n        Попытка\n            Результат = Ждать Обещание;\n            АсинхСобытие(16);\n            АсинхСохранить(1, Результат);\n        Исключение\n            Ошибка = ИнформацияОбОшибке();\n            АсинхСобытие(17);\n            АсинхСохранитьОшибку(1, 1, Ошибка);\n        КонецПопытки;\n        АсинхСобытие(18);\n        Попытка\n            Повтор = Ждать Обещание;\n            АсинхСобытие(19);\n            АсинхСохранить(2, Повтор);\n        Исключение\n            Ошибка = ИнформацияОбОшибке();\n            АсинхСобытие(20);\n            АсинхСохранитьОшибку(2, 2, Ошибка);\n        КонецПопытки;\n    КонецЕсли;\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "b52f19889745e0c9dbbdf45ba303ef210f0e42c17c53abe26009c859552f302d",
+      "native_module_sha256": "395dfd07a0171d361fd5c029e6a2400ef8d72097f506e073c75fedb1bc3105f4",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        12,
+        13,
+        15,
+        17,
+        18,
+        20,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 1,
+          "type": "ErrorReference",
+          "value": 0
+        },
+        {
+          "slot": 2,
+          "type": "ErrorReference",
+          "value": 1
+        }
+      ],
+      "errors": [
+        {
+          "phase": 1,
+          "phase_meaning": "first Await rejection",
+          "description": "exact synthetic ASYNC-REJECT",
+          "code": "exact synthetic ASYNC-CODE",
+          "additional": "exact synthetic ASYNC-DETAIL",
+          "category": "ConfigurationError membership",
+          "cause": "Undefined",
+          "private_descriptor_sha256": "3d85633f7189709af7d6cde7b1359f7f9ce14206ea0c95d9ff783aa8982b8a74"
+        },
+        {
+          "phase": 2,
+          "phase_meaning": "repeated Await rejection",
+          "description": "exact synthetic ASYNC-REJECT",
+          "code": "exact synthetic ASYNC-CODE",
+          "additional": "exact synthetic ASYNC-DETAIL",
+          "category": "ConfigurationError membership",
+          "cause": "Undefined",
+          "private_descriptor_sha256": "eef03c6804d261eac0c0c8b115cb4d521ead07b40bc632fadebe521489791a7d"
+        }
+      ]
+    },
+    {
+      "case": 7,
+      "source": "// Case 7: EN/mixed-case grammar, grouped nested Await argument/return.\n&AtClient\nAsYnC FuNcTiOn AsyncNestedLeaf()\n    АсинхСобытие(11);\n    АсинхСобытие(12);\n    ReTuRn 32;\nEnDfUnCtIoN\n&AtClient\nFunction AsyncAddOne(Val Value)\n    АсинхСобытие(13);\n    Return Value + 1;\nEndFunction\n&AtClient\naSyNc fUnCtIoN AsyncEnglish()\n    АсинхСобытие(10);\n    Leaf = AsyncNestedLeaf();\n    АсинхУдержать(Leaf);\n    Return AsyncAddOne((aWaIt Leaf));\nEndFunction\n&AtClient\nAsYnC PrOcEdUrE AsyncHandledProcedure()\n    АсинхСобытие(15);\n    Try\n        Raise(\"ASYNC-REJECT\", ErrorCategory.ConfigurationError,\n            \"ASYNC-CODE\", \"ASYNC-DETAIL\", Undefined);\n    Except\n        SavedError = ErrorInfo();\n        АсинхСобытие(16);\n        АсинхСохранитьОшибку(2, 6, SavedError);\n    EndTry;\n    // Deliberately no suspension: terminal event is explicit, not inferred.\n    АсинхСобытие(17);\nEnDpRoCeDuRe\n&НаКлиенте\nАсинх Функция АсинхТестПробы()\n    АсинхНачатьТест(3);\n    Обещание = AsyncEnglish();\n    АсинхУдержать(Обещание);\n    АсинхСохранить(0, Обещание);\n    Результат = Ждать Обещание;\n    АсинхСобытие(14);\n    АсинхСохранить(1, Результат);\n    AsyncHandledProcedure();\n    АсинхСобытие(18);\n    АсинхСобытие(2);\nКонецФункции\n",
+      "source_body_sha256": "e5b70ff27b99395ea8aa1a92bbb94f26b3b4a84745293133450e0f92869de6e7",
+      "native_module_sha256": "3ac1cd874da474e939006034f5a7216e7d2a26e9f9a9fb87f0c0813b1968a45a",
+      "trace": [
+        0,
+        1,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        2,
+        3,
+        4
+      ],
+      "values": [
+        {
+          "slot": 0,
+          "type": "Promise",
+          "value": null
+        },
+        {
+          "slot": 1,
+          "type": "Number",
+          "value": 33
+        },
+        {
+          "slot": 2,
+          "type": "ErrorReference",
+          "value": 0
+        }
+      ],
+      "errors": [
+        {
+          "phase": 6,
+          "phase_meaning": "handled Async procedure",
+          "description": "exact synthetic ASYNC-REJECT",
+          "code": "exact synthetic ASYNC-CODE",
+          "additional": "exact synthetic ASYNC-DETAIL",
+          "category": "ConfigurationError membership",
+          "cause": "Undefined",
+          "private_descriptor_sha256": "0a396d8092a9f73436ba712109076fac731ea1ddd98a4634dc38957a8e641c7e"
+        }
+      ]
+    }
+  ]
+}

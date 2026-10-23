@@ -11,6 +11,8 @@ from .preprocessor import ConditionalCompilation, SourceRegions
 
 KEYWORDS: dict[str, str] = {}
 for kind, aliases in {
+    "ASYNC": ("Асинх", "Async"),
+    "AWAIT": ("Ждать", "Await"),
     "EXECUTE": ("Выполнить", "Execute"),
     "GOTO": ("Перейти", "Goto"),
     "TRY": ("Попытка", "Try"),
@@ -130,7 +132,7 @@ class Lexer:
             if (self.server_declarations_only and not capturing_server
                     and not skipping_client and char not in "#&"
                     and (not server_root or re.match(
-                        r"(?:Procedure|Function|Процедура|Функция)\b", self.text[self.pos:], re.I))):
+                        r"(?:Async|Асинх|Procedure|Function|Процедура|Функция)\b", self.text[self.pos:], re.I))):
                 # Track unannotated (therefore client) routine boundaries even
                 # after another root statement on the same line. Quoted text
                 # and comments cannot introduce declarations or directives.
@@ -154,9 +156,10 @@ class Lexer:
                     start = self.pos
                     while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
                         self.advance()
-                    if KEYWORDS.get(self.text[start:self.pos].casefold()) in {"FUNCTION", "PROCEDURE"}:
+                    declaration = KEYWORDS.get(self.text[start:self.pos].casefold())
+                    if declaration in {"ASYNC", "FUNCTION", "PROCEDURE"}:
                         skipping_client = True
-                        skipped_depth = 1
+                        skipped_depth = 0 if declaration == "ASYNC" else 1
                 else:
                     self.advance()
                 continue
@@ -310,7 +313,7 @@ class Lexer:
                     if kind == ";":
                         skipping_client = skipped_variable = False
                     continue
-                if skipped_depth == 0 and kind not in {"FUNCTION", "PROCEDURE"}:
+                if skipped_depth == 0 and kind not in {"ASYNC", "FUNCTION", "PROCEDURE"}:
                     raise BSLError("После директивы исполнения ожидается объявление процедуры или функции",
                                    self.source, line, column)
                 if kind in {"FUNCTION", "PROCEDURE"}:
