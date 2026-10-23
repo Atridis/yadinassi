@@ -333,3 +333,16 @@ source-local failure sentinel still causes strict rejection without exposing raw
 errors. Existing four-client adapter outputs and all security/size limits remain
 unchanged. Current implementation-head native parity, independent audit and all
 four OS checks remain required before ready/merge.
+
+
+## Accepted object slice and later isolated measurement
+
+The implementation passed strict109 on actual main
+`0dbb93818f9cf18e48aa0e493e86557ddd272c58`, [run 39969439403](https://github.com/Atridis/yadinassi/actions/runs/39969439403),
+with independent source/provenance/native/client/watchdog artifact audit.
+Summary ZIP SHA256 `21d3da17472cfa329e383ec5430c229cb85b8ed184e0fd5ac03e200bf77d94d6`;
+outputs ZIP SHA256 `b2d302e4a996cca812a4c1ef3361cda7408cbfbd4db59651778b6e2110143586`.
+This supersedes the earlier pending-native status. A separate
+[module-variable measurement](module-context-measurement.md) now temporarily
+restores this exact accepted109 source for host preflight, without claiming
+support or parity for the newly appended module-variable scenario.

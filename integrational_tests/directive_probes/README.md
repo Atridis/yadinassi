@@ -51,3 +51,12 @@ the same109 typed values checked by native. Capture-only diagnostics and the
 host shared-source inverse are removed. Four historical client adapters remain
 byte-identical. Current-head native and CI gates are still required.
 See [object-transfer-measurement.md](../../docs/object-transfer-measurement.md).
+
+
+## Module-variable measurement
+
+`module_context_core.bsl` is an uncaptured four-call, nine-record scenario for
+side-local annotated variables and initializer/lifetime observations. Native
+expected values are intentionally absent. Host preflight executes the exact
+restored accepted109 source, not this new scenario. See
+[module-context-measurement.md](../../docs/module-context-measurement.md).

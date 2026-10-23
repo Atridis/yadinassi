@@ -59,10 +59,10 @@ class ScalarCopybackParityTests(unittest.TestCase):
         self.assertEqual(data['capture']['source_sha256'],
                          "52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c")
 
-    def test_whole_source_computes_all_captured_values(self):
+    def test_exact_restored_source_computes_all_captured_values(self):
         from yadinassi import Interpreter
         vm = Interpreter(lambda value: self.fail('unexpected Message'))
-        vm.execute(linux_fixture(ROOT / full.CLIENT_SOURCE).decode('utf-8-sig'))
+        vm.execute(full.module_context_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig'))
         actual = list(vm.execute('ВычислитьПробу()'))
         self.assertEqual(actual, suite.CLIENT_VALUES)
         self.assertEqual(vm.execution_context, 'client')

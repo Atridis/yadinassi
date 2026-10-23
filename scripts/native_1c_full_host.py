@@ -325,6 +325,28 @@ CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
 
 
+CLIENT_MODULE_TEMPLATE_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17'
+CLIENT_MODULE_SHARED_SHA256 = '6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120'
+CLIENT_MODULE_PREFIX = b'// BEGIN bounded module context declarations\n&AtClient\nVar ContextClientCounter;\n&AtServer\nVar ContextServerCounter;\n&AtServer\nVar ContextServerUninitialized;\n\n// END bounded module context declarations\n'
+CLIENT_MODULE_SUFFIX = b'\n// BEGIN bounded module context measurement\n&AtServer\nFunction ContextModuleNested()\n    ContextServerCounter = ContextServerCounter + 1;\n    Return ContextServerCounter;\nEndFunction\n\n&AtServer\nFunction ContextModuleCall(Val Escape)\n    Var Initial, Nested, WasUndefined;\n    Initial = ContextServerCounter;\n    WasUndefined = ContextServerUninitialized = Undefined;\n    ContextServerCounter = ContextServerCounter + 10;\n    ContextServerUninitialized = 7;\n    Nested = ContextModuleNested();\n    If Escape Then\n        Raise "module-context-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,WasUndefined", Initial, Nested, WasUndefined);\nEndFunction\n\n&AtClient\nProcedure ContextModuleRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunModuleContextProbe()\n    Var Records, First, Second, Third, Failed, Matched;\n    Records = New Array;\n    Records.Add("module.context.v1");\n    ContextModuleRecord(Records, "client.initial", ContextClientCounter);\n    ContextClientCounter = ContextClientCounter + 1;\n    First = ContextModuleCall(False);\n    ContextModuleRecord(Records, "server.initial", First.Initial);\n    ContextModuleRecord(Records, "server.nested", First.Nested);\n    ContextModuleRecord(Records, "server.undefined", First.WasUndefined);\n    Second = ContextModuleCall(False);\n    ContextModuleRecord(Records, "server.repeated.initial", Second.Initial);\n    Failed = False;\n    Matched = False;\n    Try\n        ContextModuleCall(True);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "module-context-controlled-failure") > 0;\n    EndTry;\n    Third = ContextModuleCall(False);\n    ContextModuleRecord(Records, "escaped.caught", Failed And Matched);\n    ContextModuleRecord(Records, "server.recovery.initial", Third.Initial);\n    ContextModuleRecord(Records, "server.recovery.undefined", Third.WasUndefined);\n    ContextModuleRecord(Records, "client.retained", ContextClientCounter);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure ContextModuleAppend(RecordsOut)\n    Var ModuleContextValue;\n    For Each ModuleContextValue In RunModuleContextProbe() Do\n        RecordsOut.Add(ModuleContextValue);\n    EndDo;\nEndProcedure\n\n// Initialization runs in its explicitly compiled side only. Do not infer that\n// arbitrary unguarded standalone root statements should run on the server.\n#If AtClient Then\nContextClientCounter = 10;\n#EndIf\n#If AtServer Then\nContextServerCounter = 100;\n#EndIf\n'
+CLIENT_MODULE_CALL = b'    ContextModuleAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+
+
+def module_context_shared_source(raw: bytes) -> bytes:
+    """Exact measured prefix/call/suffix inverse, not generic source stripping."""
+    if (digest(raw) != CLIENT_MODULE_TEMPLATE_SHA256
+            or not raw.startswith(CLIENT_MODULE_PREFIX)
+            or not raw.endswith(CLIENT_MODULE_SUFFIX)
+            or raw.count(CLIENT_MODULE_CALL) != 1):
+        raise FullError('source_changed')
+    restored = raw[len(CLIENT_MODULE_PREFIX):-len(CLIENT_MODULE_SUFFIX)].replace(
+        CLIENT_MODULE_CALL, b'', 1)
+    if digest(restored) != CLIENT_MODULE_SHARED_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
+
 CLIENT_EXECUTE_SCRIPT = r'''
 import sys
 import re
@@ -358,15 +380,18 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute the full exact staged-source witness, including object transport."""
+    """Compute the exact restored109 witness; new module state is native-only."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
+    shared_source = module_context_shared_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        shared_path = Path(cache).resolve() / "shared-witness.bsl"
+        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -393,7 +418,8 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
+                                  {'phase', 'kind', 'ordinal', 'error_stage', 'module_context'})
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -401,6 +427,14 @@ def validate_marker_diagnostics(value):
             or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
+    if 'module_context' in value:
+        records = value['module_context']
+        if (value['phase'] != 'completed' or value['kind'] != 'count'
+                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
+                or type(records) is not list or len(records) != 9
+                or any(not (item is None or type(item) is bool
+                            or (type(item) is int and 0 <= item <= 999)) for item in records)):
+            raise ValueError('client module context measurement')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':

@@ -727,6 +727,20 @@ def client_marker_diagnostics(path: Path, nonce: str) -> dict:
             result['phase'] = 'error'
         return result
     result['phase'] = 'completed'
+    # Temporary native-only side-local module state observations.
+    if (len(values) == len(CLIENT_VALUES) + 10
+            and all(type(a) is type(b) and a == b for a, b in zip(values, CLIENT_VALUES))
+            and values[109] == 'module.context.v1'):
+        measured = []
+        for item in values[110:]:
+            if type(item) is str and item == 'U':
+                measured.append(None)
+            elif type(item) is bool or (type(item) is int and 0 <= item <= 999):
+                measured.append(item)
+            else:
+                break
+        if len(measured) == 9:
+            result['module_context'] = measured
     # The four old client observations precede the fixed local error sentinel.
     if (len(values) == 6 and values[:4] == CLIENT_VALUES[:4]
             and all(type(a) is type(b) for a, b in zip(values[:4], CLIENT_VALUES[:4]))
@@ -1192,14 +1206,37 @@ def run_client_watchdog(platform, root: Path, inputs: Path, nonce: str, hashes: 
     return record
 
 
+CLIENT_MODULE_TEMPLATE_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17'
+CLIENT_MODULE_SHARED_SHA256 = '6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120'
+CLIENT_MODULE_PREFIX = b'// BEGIN bounded module context declarations\n&AtClient\nVar ContextClientCounter;\n&AtServer\nVar ContextServerCounter;\n&AtServer\nVar ContextServerUninitialized;\n\n// END bounded module context declarations\n'
+CLIENT_MODULE_SUFFIX = b'\n// BEGIN bounded module context measurement\n&AtServer\nFunction ContextModuleNested()\n    ContextServerCounter = ContextServerCounter + 1;\n    Return ContextServerCounter;\nEndFunction\n\n&AtServer\nFunction ContextModuleCall(Val Escape)\n    Var Initial, Nested, WasUndefined;\n    Initial = ContextServerCounter;\n    WasUndefined = ContextServerUninitialized = Undefined;\n    ContextServerCounter = ContextServerCounter + 10;\n    ContextServerUninitialized = 7;\n    Nested = ContextModuleNested();\n    If Escape Then\n        Raise "module-context-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,WasUndefined", Initial, Nested, WasUndefined);\nEndFunction\n\n&AtClient\nProcedure ContextModuleRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunModuleContextProbe()\n    Var Records, First, Second, Third, Failed, Matched;\n    Records = New Array;\n    Records.Add("module.context.v1");\n    ContextModuleRecord(Records, "client.initial", ContextClientCounter);\n    ContextClientCounter = ContextClientCounter + 1;\n    First = ContextModuleCall(False);\n    ContextModuleRecord(Records, "server.initial", First.Initial);\n    ContextModuleRecord(Records, "server.nested", First.Nested);\n    ContextModuleRecord(Records, "server.undefined", First.WasUndefined);\n    Second = ContextModuleCall(False);\n    ContextModuleRecord(Records, "server.repeated.initial", Second.Initial);\n    Failed = False;\n    Matched = False;\n    Try\n        ContextModuleCall(True);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "module-context-controlled-failure") > 0;\n    EndTry;\n    Third = ContextModuleCall(False);\n    ContextModuleRecord(Records, "escaped.caught", Failed And Matched);\n    ContextModuleRecord(Records, "server.recovery.initial", Third.Initial);\n    ContextModuleRecord(Records, "server.recovery.undefined", Third.WasUndefined);\n    ContextModuleRecord(Records, "client.retained", ContextClientCounter);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure ContextModuleAppend(RecordsOut)\n    Var ModuleContextValue;\n    For Each ModuleContextValue In RunModuleContextProbe() Do\n        RecordsOut.Add(ModuleContextValue);\n    EndDo;\nEndProcedure\n\n// Initialization runs in its explicitly compiled side only. Do not infer that\n// arbitrary unguarded standalone root statements should run on the server.\n#If AtClient Then\nContextClientCounter = 10;\n#EndIf\n#If AtServer Then\nContextServerCounter = 100;\n#EndIf\n'
+CLIENT_MODULE_CALL = b'    ContextModuleAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+
+
+def module_context_shared_source(raw: bytes) -> bytes:
+    """Exact measured prefix/call/suffix inverse, not generic source stripping."""
+    if (digest(raw) != CLIENT_MODULE_TEMPLATE_SHA256
+            or not raw.startswith(CLIENT_MODULE_PREFIX)
+            or not raw.endswith(CLIENT_MODULE_SUFFIX)
+            or raw.count(CLIENT_MODULE_CALL) != 1):
+        raise FullError('source_changed')
+    restored = raw[len(CLIENT_MODULE_PREFIX):-len(CLIENT_MODULE_SUFFIX)].replace(
+        CLIENT_MODULE_CALL, b'', 1)
+    if digest(restored) != CLIENT_MODULE_SHARED_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
+
 # New mixed-context witness is removed only by this exact, hash-bound inverse.
 # The four parity adapters retain their original pins and generated bytes.
-CLIENT_DIRECTIVE_TEMPLATE_SHA256 = '6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120'
+CLIENT_DIRECTIVE_TEMPLATE_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17'
 CLIENT_LEGACY_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
 
 
 def client_parity_template(template: bytes) -> bytes:
-    if digest(template) != CLIENT_DIRECTIVE_TEMPLATE_SHA256:
+    template = module_context_shared_source(template)
+    if digest(template) != CLIENT_MODULE_SHARED_SHA256:
         raise FullError('invalid_input')
     marker = b"\n// BEGIN bounded directive witness\n"
     call = b'    \xd0\x94\xd0\xbb\xd1\x8f \xd0\x9a\xd0\xb0\xd0\xb6\xd0\xb4\xd0\xbe\xd0\xb3\xd0\xbe \xd0\x9d\xd0\xb0\xd0\xb1\xd0\xbb\xd1\x8e\xd0\xb4\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\x98\xd0\xb7 DirectiveWitnessValues() \xd0\xa6\xd0\xb8\xd0\xba\xd0\xbb\n        \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f.\xd0\x94\xd0\xbe\xd0\xb1\xd0\xb0\xd0\xb2\xd0\xb8\xd1\x82\xd1\x8c(\xd0\x9d\xd0\xb0\xd0\xb1\xd0\xbb\xd1\x8e\xd0\xb4\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5);\n    \xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\xa6\xd0\xb8\xd0\xba\xd0\xbb\xd0\xb0;\n'

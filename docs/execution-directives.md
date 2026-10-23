@@ -4,9 +4,11 @@ Status: bounded implementation based on main `be82ce1`, independently reviewed
 and validated for the Val slice by audited native runs (see evidence below).
 Scalar non-Val strict whole-source acceptance passed audited actual-main native
 run 39951594654. The object implementation now follows independently audited
-58-record captures, including named/expression timing. Current-head strict109
-whole-source native acceptance and four-OS CI remain release gates, not yet passed.
-See [object-transfer-measurement.md](object-transfer-measurement.md). Existing
+58-record captures, including named/expression timing. Strict109 whole-source acceptance was independently audited on actual main
+0dbb938 in [run 39969439403](https://github.com/Atridis/yadinassi/actions/runs/39969439403).
+A new [module-variable measurement](module-context-measurement.md) is now isolated
+from that accepted source using an exact inverse; host preflight does not claim
+parity for the new variable scenario. Existing
 Async work and historical parity modules remain unchanged.
 
 ## Scope and execution model
@@ -233,7 +235,7 @@ still preserves all four client modules byte-for-byte.
 The original48 observations and the additional10 named/expression discriminators
 were independently audited as measurement evidence. They define this narrow
 8.3.27.1508 target contract, not universal serialization semantics. The runtime
-implements per-occurrence copying and measured binding timing; strict109 native
-acceptance and current-head CI still need to pass before ready/merge. See
+implements per-occurrence copying and measured binding timing; strict109 native acceptance was audited on actual main 0dbb938. The new
+module-variable measurement remains unimplemented and is not acceptance. See
 [object-transfer-measurement.md](object-transfer-measurement.md) for exact capture
 identities and the distinction between historical rejected capture and acceptance.

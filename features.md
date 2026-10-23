@@ -5325,5 +5325,9 @@ flags standalone defaults не заявляется. PR90 не менялся. F
 shared-source exception удалены: теперь host исполняет весь exact staged source,
 native обязан совпасть по109 typed values. Исторические модули не изменены.
 [object-transfer-measurement.md](docs/object-transfer-measurement.md) содержит
-источники измерений и границы. Текущий strict native/4OS прогон еще требуется;
-исторический measurement-only failure не выдается за acceptance. PR90 не меняется.
+источники измерений и границы. Strict 109 native parity подтверждена и независимо проверена на actual main
+0dbb938 в run 39969439403. Исторический measurement-only failure не выдается
+за acceptance. Новый отдельный этап переменных модулей пока измерительный:
+[границы и протокол](docs/module-context-measurement.md). Host временно исполняет
+точно восстановленный исходник 109 значений, а не новые module-variable helpers.
+Поддержка annotated Var и server initializer еще не заявляется; PR90 не меняется.
