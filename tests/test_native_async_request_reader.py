@@ -166,11 +166,17 @@ class GeneratedRequestReaderTests(unittest.TestCase):
 
     def test_all_key_orders_preserve_values(self):
         items = list(json.loads(canonical()).items())
-        for ordered in itertools.permutations(items):
-            with self.subTest(order=[key for key, _ in ordered]):
-                vm, _ = exercise(json.dumps(dict(ordered), separators=(',', ':')).encode())
-                self.assertFalse(vm.execute('Caught'))
-                self.assertEqual(vm.execute('Result.Count()'), Decimal(5))
+        for case_id in range(8):
+            for ordered in itertools.permutations(items):
+                with self.subTest(case=case_id, order=[key for key, _ in ordered]):
+                    vm, reader = exercise(json.dumps(dict(ordered), separators=(',', ':')).encode(),
+                                          case_id=case_id)
+                    self.assertFalse(vm.execute('Caught'))
+                    self.assertEqual(vm.execute('Result.Count()'), Decimal(5))
+                    for key, value in ordered:
+                        self.assertEqual(vm.execute('Result.' + key), value)
+                    self.assertEqual(reader.read_calls, 13)
+                    self.assertTrue(reader.closed)
 
     def test_strict_negatives_reach_actual_bsl_guards(self):
         good = canonical()
@@ -192,11 +198,12 @@ class GeneratedRequestReaderTests(unittest.TestCase):
             for value in ('', 'a' * 513):
                 bad.append(canonical(**{key: value}))
         bad.append(canonical(completed='/tmp/offline/entered.json'))
-        for index, raw in enumerate(bad):
-            with self.subTest(case=index):
-                vm, _ = exercise(raw)
-                self.assertTrue(vm.execute('Caught'))
-                self.assertNotIn('result', vm.variables)
+        for case_id in range(8):
+            for index, raw in enumerate(bad):
+                with self.subTest(case=case_id, invalid=index):
+                    vm, _ = exercise(raw, case_id=case_id)
+                    self.assertTrue(vm.execute('Caught'))
+                    self.assertNotIn('result', vm.variables)
 
     def test_lexical_numbers_are_value_checks_not_integer_spelling(self):
         # Native reader converts numbers. Canonical writer uses 1, but the BSL
@@ -220,7 +227,8 @@ class GeneratedRequestReaderTests(unittest.TestCase):
                 vm, _ = exercise(canonical(), fault=stage)
                 self.assertTrue(vm.execute('Caught'))
                 self.assertEqual(vm.execute('Stage'),
-                                 'request_key_read_first' if part == 'key' else stage)
+                                 {'key': 'request_key_read_first',
+                                  'end': 'request_end_read'}.get(part, stage))
                 self.assertNotIn('result', vm.variables)
 
 

@@ -14,7 +14,7 @@ Scheduling permutations do not change length: tokens are integers and preserve
 the same multiset. Number -999999 is the longest accepted value payload; other
 public scalar types, hashes, enum tags and error ordinals have fixed bounds.
 A call-side rejection omits both Awaits, so at most SIX errors can coexist.
-The failure-only diagnostic tuple has 1548 legal encodings, plus null; its
+The failure-only diagnostic tuple has 1743 legal encodings, plus null; its
 longest compact encoding is ten bytes. The late majorant includes that tuple
 even alongside every completed observation, a deliberately unreachable bound.
 The standard client's 60 finite marker diagnostics are bounded independently;
@@ -46,7 +46,7 @@ MODULES = full.ASYNC_EXPECTED_IDENTITY['modules']
 EXTRAS = ('client_dates', 'client_values', 'client_collections', 'client_numbers', 'client_watchdog')
 CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
 CAPS = {'stage_wire': 8192, 'public_summary': 32768, 'provenance': 32768}
-MAXIMUM_FAILURE_DIAGNOSTICS = [5, 3, 3, 38]
+MAXIMUM_FAILURE_DIAGNOSTICS = [5, 3, 3, 43]
 
 
 def compact(value):
@@ -279,7 +279,7 @@ def proof_results():
         public_summary_early_upper_bytes=len(early), provenance_upper_bytes=len(pretty(projected)),
         actual_provenance_boundary_bytes=len(files['provenance.json']),
         conditional_paths=80, failure_prefix_variants=216,
-        failure_diagnostic_variants=1549, maximum_failure_diagnostic_wire_bytes=10,
+        failure_diagnostic_variants=1744, maximum_failure_diagnostic_wire_bytes=10,
         standard_marker_diagnostic_variants=60,
         maximum_simultaneous_errors=6, maximum_trace_events_per_case=24,
         staged_paths=24, artifact_classes=7)
@@ -411,7 +411,7 @@ class AsyncBudgetTests(unittest.TestCase):
 
     def test_every_finite_failure_diagnostic_encoding_is_bounded(self):
         self.assertEqual((len(suite.ASYNC_HOST_STAGES), len(suite.ASYNC_MARKER_STATES),
-                          len(suite.ASYNC_LOG_CATEGORIES)), (6, 4, 39))
+                          len(suite.ASYNC_LOG_CATEGORIES)), (6, 4, 44))
         self.assertEqual(len(compact(MAXIMUM_FAILURE_DIAGNOSTICS)), 10)
         record = next(failure_records())
         maximum_wire = len(render_stage(stage(record)[0]))
@@ -421,7 +421,7 @@ class AsyncBudgetTests(unittest.TestCase):
         # Exhaust the finite product independently of either validator. JSON
         # size is additive: all legal lists have four fixed-width integers,
         # with only the category ever taking two digits. Null is shorter.
-        for value in (None, *map(list, itertools.product(range(6), range(4), range(4), range(39)))):
+        for value in (None, *map(list, itertools.product(range(6), range(4), range(4), range(44)))):
             allowed = value is None or (
                 (value[0] >= 3 or value[1:3] == [0, 0])
                 and (value[0] != 0 or value[3] == 0)
@@ -444,7 +444,7 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertIsNone(restored['continuity_sha256'])
             self.assertLessEqual(len(wire), maximum_wire)
             self.assertLessEqual(len(pretty(record)), maximum_public)
-        self.assertEqual(count, 1549)
+        self.assertEqual(count, 1744)
 
     def test_standard_client_witness_and_marker_diagnostics_remain_bounded(self):
         expected = [42, 'client-probe', 3, 6,

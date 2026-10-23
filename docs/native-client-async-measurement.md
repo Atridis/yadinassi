@@ -93,9 +93,12 @@ literal labels assigned immediately before the read guard, token guard,
 current-value assignment, and property check. Each distinguishes the first
 iteration from any later iteration. These eight labels append wire categories
 31–38; existing categories 0–30 retain their meaning, including the helper-call
-category 26 and retired source-classifier categories 27–30. The key-only token helper preserves the
+category 26 and retired source-classifier categories 27–30. Request-end labels
+append categories 39–43 for ObjectEnd argument/helper call, the helper's Read
+guard, token assertion, trailing Read/rejection, and Close respectively.
+Existing categories 0–38 retain their meaning. Dedicated key and end token helpers preserve the
 original token-argument evaluation before reading; a failure while evaluating
-that argument retains the request-key-call label, not a claimed API cause. No ErrorInfo calibration,
+that argument retains the corresponding call label, not a claimed API cause. No ErrorInfo calibration,
 source-line matching, or cause-chain classifier is used. A label identifies the
 operation being attempted, not whether an API access, guard, or Raise failed,
 and it is never successful Async evidence. Other native log categories
@@ -107,8 +110,13 @@ implicit `Key`; `Reader.CurrentValue`, validation order, and all eight measured
 cases are unchanged. This bounded scope correction avoids depending on an
 undeclared name in the form context. The observed first current-value assignment
 failure does not distinguish getter failure from assignment failure or establish
-a `Key` collision. Offline scope and exact-inverse tests are not native proof of
-the cause or a successful fix; another native measurement is still required.
+a `Key` collision. A subsequent native measurement passed the key/value loop
+and reached the request-end operation group, without successful entry/completion
+markers or Async evidence. The direct end labels distinguish the remaining
+operations without loosening the grammar or changing their order. Offline
+controlled failures, all 120 key orders for each of eight modules, strict-negative
+tests, and exact-inverse checks are not native proof of the underlying cause;
+another native measurement is still required.
 
 For a failed case, semantic proof stays zero, trace/value/error observations stay
 empty, and the measurement's continuity stays null. Valid diagnostic markers never turn a timed

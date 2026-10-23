@@ -18,8 +18,23 @@ class SiteReader(reader_fixture.ControlledReader):
     def __init__(self, tokens, expected_path, fault, iteration):
         super().__init__(tokens, expected_path)
         self.site_fault, self.iteration = fault, iteration
+        self.end_events = []
 
     def read(self):
+        if self.position in (10, 11):
+            operation = 'read' if self.position == 10 else 'trailing'
+            self.end_events.append(operation)
+            if self.site_fault == 'end_' + operation + '_error':
+                self.read_calls += 1
+                raise ValueError(FAULT_DESCRIPTION)
+            if self.site_fault == 'end_read_false' and self.position == 10:
+                self.read_calls += 1
+                self.position += 1
+                return False
+            if self.site_fault == 'end_trailing_true' and self.position == 11:
+                self.read_calls += 1
+                self.position += 1
+                return True
         if self.position == 2 * self.iteration - 2:
             if self.site_fault == 'read_error':
                 raise ValueError(FAULT_DESCRIPTION)
@@ -28,7 +43,19 @@ class SiteReader(reader_fixture.ControlledReader):
                 return False
         return super().read()
 
+    def close(self):
+        self.end_events.append('close')
+        if self.site_fault == 'end_close_error':
+            raise ValueError(FAULT_DESCRIPTION)
+        return super().close()
+
     def get_member(self, name):
+        if self.position == 11 and name == 'CurrentValueType':
+            self.end_events.append('token')
+            if self.site_fault == 'end_token_error':
+                raise ValueError(FAULT_DESCRIPTION)
+            if self.site_fault == 'end_token_mismatch':
+                return 'String'
         if self.position == 2 * self.iteration - 1:
             if name == 'CurrentValueType':
                 if self.site_fault == 'token_error':
@@ -41,11 +68,16 @@ class SiteReader(reader_fixture.ControlledReader):
 
 
 class SiteTokenNames(reader_fixture.TokenNames):
-    def __init__(self, fault, iteration):
+    def __init__(self, fault, iteration, end_events):
         self.fault, self.iteration = fault, iteration
         self.key_calls = 0
+        self.end_events = end_events
 
     def get_member(self, name):
+        if name == 'ObjectEnd':
+            self.end_events.append('call')
+            if self.fault == 'end_call_error':
+                raise ValueError(FAULT_DESCRIPTION)
         if name == 'PropertyName':
             self.key_calls += 1
             if self.fault == 'call_error' and self.key_calls == self.iteration:
@@ -81,7 +113,7 @@ def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False, expose_con
     vm.register_type('JSONReader', lambda: reader)
     vm.register_type('Structure', lambda: SiteStructure(site_fault, iteration))
     vm.execute('Var JSONValueType, LaunchParameter;')
-    vm.variables['jsonvaluetype'] = SiteTokenNames(site_fault, iteration)
+    vm.variables['jsonvaluetype'] = SiteTokenNames(site_fault, iteration, reader.end_events)
     vm.variables['launchparameter'] = '/tmp/offline/request.json'
     if expose_context_keys:
         # Controlled context only, not a claim about real managed-form members.
@@ -120,6 +152,14 @@ FAULTS = (
     ('current_error', 'current'), ('key_assignment_error', 'current'),
     ('property_error', 'property'), ('property_true', 'property'),
 )
+END_FAULTS = (
+    ('end_call_error', 'call'),
+    ('end_read_error', 'read'), ('end_read_false', 'read'),
+    ('end_token_error', 'token'), ('end_token_mismatch', 'token'),
+    ('end_trailing_error', 'trailing'), ('end_trailing_true', 'trailing'),
+    ('end_close_error', 'close'),
+)
+END_OPERATIONS = ('call', 'read', 'token', 'trailing', 'close')
 
 
 class GeneratedRequestSiteIntegrationTests(unittest.TestCase):
@@ -145,6 +185,7 @@ class GeneratedRequestSiteIntegrationTests(unittest.TestCase):
             self.assertEqual(vm.execute('Result.Count()'), Decimal(5))
             self.assertEqual(reader.read_calls, 13)
             self.assertTrue(reader.closed)
+            self.assertEqual(reader.end_events, list(END_OPERATIONS))
             self.assertEqual(output, [])
             self.assertNotIn('AsyncRequestKeySite', module)
             self.assertNotIn('ASYNC-SITE-CALIBRATION', module)
@@ -171,6 +212,27 @@ class GeneratedRequestSiteIntegrationTests(unittest.TestCase):
                     self.assertEqual(vm.execute('Stage'), 'request_key_call')
                     self.assertEqual(reader.position, 2 * iteration - 2)
                     self.assertEqual(reader.read_calls, 2 * iteration - 1)
+                    self.assertNotIn('result', vm.variables)
+                    self.assertEqual(output, [])
+
+    def test_all_five_end_operations_preserve_order_for_all_eight_cases(self):
+        # Expected positions/call counts are independent of stage assignments:
+        # ObjectStart, five key/value pairs, ObjectEnd, and the trailing EOF.
+        expected = {'call': (10, 11), 'read': (10, 12), 'token': (11, 12),
+                    'trailing': (11, 13), 'close': (12, 13)}
+        for case_id in range(8):
+            for fault, operation in END_FAULTS:
+                with self.subTest(case=case_id, fault=fault):
+                    vm, reader, output, _ = exercise_site(fault, case_id)
+                    self.assertTrue(vm.execute('Caught'))
+                    self.assertEqual(vm.execute('Stage'), 'request_end_' + operation)
+                    self.assertEqual(reader.end_events,
+                                     list(END_OPERATIONS[:END_OPERATIONS.index(operation) + 1]))
+                    position, calls = expected[operation]
+                    if fault in ('end_read_false', 'end_trailing_true'):
+                        position += 1
+                    self.assertEqual((reader.position, reader.read_calls), (position, calls))
+                    self.assertFalse(reader.closed)
                     self.assertNotIn('result', vm.variables)
                     self.assertEqual(output, [])
 

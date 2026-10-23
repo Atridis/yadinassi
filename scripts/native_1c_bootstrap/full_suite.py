@@ -2671,7 +2671,8 @@ ASYNC_VERSION = 1
 ASYNC_MAX_MARKER = 16_384
 # Wire ordinals are independent of the legacy process diagnostic vocabulary.
 # observed_* describes only the stable post-stop capture, not final continuity.
-# Categories are append-only: 26 retains the helper-call stage; 27-30 are retired.
+# Categories are append-only: 0-38 are unchanged; 39-43 localize request end.
+# Category 26 retains the key helper-call stage; 27-30 are retired.
 ASYNC_HOST_STAGES = ('prepare', 'build', 'roundtrip', 'enterprise', 'markers', 'continuity')
 ASYNC_MARKER_STATES = ('not_checked', 'observed_absent', 'observed_invalid', 'observed_valid')
 ASYNC_LOG_CATEGORIES = ('not_checked', 'observed_absent', 'observed_invalid', 'unknown',
@@ -2686,7 +2687,9 @@ ASYNC_LOG_CATEGORIES = ('not_checked', 'observed_absent', 'observed_invalid', 'u
     'entry_request_key_read_first', 'entry_request_key_read_later',
     'entry_request_key_token_first', 'entry_request_key_token_later',
     'entry_request_key_current_first', 'entry_request_key_current_later',
-    'entry_request_key_property_first', 'entry_request_key_property_later')
+    'entry_request_key_property_first', 'entry_request_key_property_later',
+    'entry_request_end_call', 'entry_request_end_read', 'entry_request_end_token',
+    'entry_request_end_trailing', 'entry_request_end_close')
 ASYNC_ENTRY_LOG_MARKERS = {'ASYNC-ENTRY-FAILURE:' + name: index
                          for index, name in enumerate(('request', 'witness', 'initialize', 'entered', 'root',
                              'request_open', 'request_object', 'request_key', 'request_value',
@@ -2696,7 +2699,9 @@ ASYNC_ENTRY_LOG_MARKERS = {'ASYNC-ENTRY-FAILURE:' + name: index
                              'request_key_read_first', 'request_key_read_later',
                              'request_key_token_first', 'request_key_token_later',
                              'request_key_current_first', 'request_key_current_later',
-                             'request_key_property_first', 'request_key_property_later'), 13)}
+                             'request_key_property_first', 'request_key_property_later',
+                             'request_end_call', 'request_end_read', 'request_end_token',
+                             'request_end_trailing', 'request_end_close'), 13)}
 ASYNC_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
 ASYNC_STRINGS = ('7', '17', '11', '12', '21', '22', '31', '33')
 ASYNC_FAILURES = ('none', 'prerequisites_failed', 'stale_evidence', 'invalid_input',
@@ -2922,7 +2927,7 @@ def validate_async_failure_diagnostics(record):
             or type(value) is not list or len(value) != 4
             or not _async_int(value[0], 0, 5)
             or any(not _async_int(item, 0, 3) for item in value[1:3])
-            or not _async_int(value[3], 0, 38)
+            or not _async_int(value[3], 0, 43)
             or (value[0] < 3 and value[1:3] != [0, 0])
             or (value[0] == 0 and value[3] != 0)
             or (value[3] >= 13 and value[0] < 3)
@@ -3199,6 +3204,14 @@ Procedure AsyncExpectRequestKey(Reader, Val Token, ЭтапВхода, Val Index
 EndProcedure
 
 &AtClient
+Procedure AsyncExpectRequestEnd(Reader, Val Token, ЭтапВхода)
+    ЭтапВхода = "request_end_read";
+    If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
+    ЭтапВхода = "request_end_token";
+    If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;
+EndProcedure
+
+&AtClient
 Function AsyncReadRequest(ЭтапВхода)
     Var AsyncRequestKey;
     // Streaming grammar rejects nested values, duplicate keys and trailing data.
@@ -3236,9 +3249,11 @@ Function AsyncReadRequest(ЭтапВхода)
         EndIf;
         Request.Insert(AsyncRequestKey, Reader.CurrentValue);
     EndDo;
-    ЭтапВхода = "request_end";
-    AsyncExpectToken(Reader, JSONValueType.ObjectEnd);
+    ЭтапВхода = "request_end_call";
+    AsyncExpectRequestEnd(Reader, JSONValueType.ObjectEnd, ЭтапВхода);
+    ЭтапВхода = "request_end_trailing";
     If Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
+    ЭтапВхода = "request_end_close";
     Reader.Close();
     ЭтапВхода = "request_fields";
     If Not Request.Property("schema") Or Not Request.Property("version")
@@ -3711,7 +3726,7 @@ EnDpRoCeDuRe
 )
 
 
-ASYNC_FIXTURE_SHA256 = '3d789ced862ca647626a2106b21c2a27f15622cc918b0c3edff80f89c4f6b444'
+ASYNC_FIXTURE_SHA256 = 'd3d3708f0ab82393a689319f1ce1f2b33f6f612da50524055444c3628b084f5f'
 
 
 def async_client_module(case_id: int) -> bytes:

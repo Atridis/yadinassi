@@ -15,6 +15,8 @@ NEW_LABELS = (
     'request_key_current_first', 'request_key_current_later',
     'request_key_property_first', 'request_key_property_later',
 )
+END_LABELS = ('request_end_call', 'request_end_read', 'request_end_token',
+              'request_end_trailing', 'request_end_close')
 LEGACY_CATEGORIES = (
     'not_checked', 'observed_absent', 'observed_invalid', 'unknown',
     'compile_error', 'runtime_error', 'unsupported_api', 'permission_denied',
@@ -31,7 +33,7 @@ LEGACY_CATEGORIES = (
 class GeneratedRequestSiteGuardTests(unittest.TestCase):
     def test_append_only_labels_have_fixed_literal_producers_for_all_cases(self):
         self.assertEqual(suite.ASYNC_LOG_CATEGORIES[:31], LEGACY_CATEGORIES)
-        self.assertEqual(suite.ASYNC_LOG_CATEGORIES[31:], tuple('entry_' + label for label in NEW_LABELS))
+        self.assertEqual(suite.ASYNC_LOG_CATEGORIES[31:39], tuple('entry_' + label for label in NEW_LABELS))
         for code, label in enumerate(NEW_LABELS, 31):
             self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS['ASYNC-ENTRY-FAILURE:' + label], code)
         for case_id in range(8):
@@ -59,6 +61,30 @@ class GeneratedRequestSiteGuardTests(unittest.TestCase):
                 normalized = '\n'.join(line.strip() for line in source.splitlines())
                 self.assertIn('\n'.join(line.strip() for line in block.splitlines()), normalized)
 
+    def test_end_labels_append_after_all_unchanged_legacy_categories(self):
+        self.assertEqual(suite.ASYNC_LOG_CATEGORIES[:39],
+                         LEGACY_CATEGORIES + tuple('entry_' + label for label in NEW_LABELS))
+        self.assertEqual(suite.ASYNC_LOG_CATEGORIES[39:],
+                         tuple('entry_' + label for label in END_LABELS))
+        for code, label in enumerate(END_LABELS, 39):
+            self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS['ASYNC-ENTRY-FAILURE:' + label], code)
+        for case_id in range(8):
+            module = suite.async_client_module(case_id).decode('utf-8-sig')
+            helper = routine(module, 'AsyncExpectRequestEnd')
+            reader = routine(module, 'AsyncReadRequest')
+            self.assertEqual(re.findall(r'ЭтапВхода = "(request_end_[a-z]+)";', helper + reader),
+                             [*END_LABELS[1:3], END_LABELS[0], *END_LABELS[3:]])
+            for source, label, operation in (
+                (reader, 'call', 'AsyncExpectRequestEnd(Reader, JSONValueType.ObjectEnd, ЭтапВхода);'),
+                (helper, 'read', 'If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
+                (helper, 'token', 'If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;'),
+                (reader, 'trailing', 'If Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
+                (reader, 'close', 'Reader.Close();'),
+            ):
+                self.assertIn(f'    ЭтапВхода = "request_end_{label}";\n    {operation}', source)
+            for forbidden in ('ErrorInfo()', 'Сообщить(', 'Try', 'Except'):
+                self.assertNotIn(forbidden, helper + reader)
+
     def test_actual_outer_catch_emits_only_exact_finite_label(self):
         for iteration in range(1, 6):
             bucket = 'first' if iteration == 1 else 'later'
@@ -70,6 +96,15 @@ class GeneratedRequestSiteGuardTests(unittest.TestCase):
                     self.assertNotIn(integration.FAULT_DESCRIPTION, ''.join(output))
         _, _, output, _ = integration.exercise_site('call_error', outer=True)
         self.assertEqual(output, ['ASYNC-ENTRY-FAILURE:request_key_call'])
+
+    def test_actual_outer_catch_emits_only_each_finite_end_label(self):
+        for case_id in range(8):
+            for fault, operation in integration.END_FAULTS:
+                with self.subTest(case=case_id, fault=fault):
+                    _, reader, output, _ = integration.exercise_site(fault, case_id, outer=True)
+                    self.assertEqual(output, ['ASYNC-ENTRY-FAILURE:request_end_' + operation])
+                    self.assertFalse(reader.closed)
+                    self.assertNotIn(integration.FAULT_DESCRIPTION, ''.join(output))
 
 
 if __name__ == '__main__':
