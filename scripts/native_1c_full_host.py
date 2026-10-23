@@ -1552,7 +1552,7 @@ def async_source_identity(source: bytes) -> dict:
         if any('__ASYNC_CASE_' in case for case in cases):
             raise ValueError('async nested placeholder')
         fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
-        if fixture_hash != '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb':
+        if fixture_hash != 'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705':
             raise ValueError('async fixture not pinned')
         modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
         identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
@@ -1804,4 +1804,4 @@ def validate_async_marker_raw(raw, nonce, case_id, phase):
     return data
 
 
-ASYNC_EXPECTED_IDENTITY = {'template': '19e6444a1856d5f4b8769a80f9ed97df0a042559e8255849635dff083dc8aba4', 'modules': ['b72afebe539cd97cd3eebc28c2aaf6866375609f3bb15f6433c69fb2dd5f99f7', '8df02833ca425b23f81c8b318f0af6ac05605d39f4c008b7e753206ed1c5374b', 'bff8fc309d743edd5e2aad989acc69d9fc142cab4f6cb11164edc73a9b6ead57', '311e8e0483ebbb69f34beb1c71d44ce61a56caf362d180c13e1f744ceb5a7aa6', '0f60e947518b7140f56973fccb631e167309ca36d2da10ce41355e9bdf41be61', 'a2b82d56e4f705b0bef66955b35d279a788da1cf2295f28af278d4a381a5f755', '9dd42db7bca81ed3e36ae12602693f8f5e5efcaf71e37a77e5a6e582b03355f9', '028492c644622ed2e8e79d9b65d8f6b8566b2a4e202088272ff0c391e2203df8']}
+ASYNC_EXPECTED_IDENTITY = {'template': 'c60b81e77e69f20ce3bd3ee36ea0d7e44f5bea38639d8ded7e32fab74a9846b6', 'modules': ['80a842b78f20c6a52d7f68f9a8a0a52bde8316a497bc2033c68af4474fcc6c8a', 'd0820a1eed7a700916f6d070e27b19df2b85ba0386273f99d88784a79c7d8fb2', 'ae10664360da0c5242cfd77d1be01ee0fd9c74514598fec1c436635b2e8c3490', '52f4ef3fa979630bc0be401ddfe508a89ed7c1713a1d3b632c5f6f86d7528167', '49aaf7135bf9cf3a25e0c640e6b68936b2a7e1f7c126a0a25259a83e41e996a4', 'da305166b522673f1333c7cfdd375c7857d0cf4959f3c198758f4d82e69dad36', 'd6f5e0f89bbb8972386401504b1b0f9d74d7c5f7e583c391eb1c7e425c370046', '5ff92eac867884b73410f9312ade405cf44ed8b62ce019e53275bd53adaeff8b']}

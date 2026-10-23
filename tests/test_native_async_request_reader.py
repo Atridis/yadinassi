@@ -17,16 +17,26 @@ suite = execution.suite
 class Pairs(list):
     pass
 
-# Controlled API/member and token vocabulary only. This double deliberately
-# models the retained source spelling; it does not verify native API members.
+# Source-bound, exact-spelling doubles only, not a native API alias inventory.
+# Keep the internal JSON token grammar separate from the exposed enum members.
 TOKENS = frozenset(('ObjectStart', 'ObjectEnd', 'PropertyName', 'String',
                     'Number', 'Boolean', 'Null', 'ArrayStart', 'ArrayEnd'))
 
+SOURCE_EN_MEMBERS = frozenset(('ObjectStart', 'PropertyName', 'String', 'Number'))
+
+
 class TokenNames(BSLObject):
     def get_member(self, name):
-        if name not in TOKENS:
-            raise ValueError('Unknown controlled token')
+        if name not in SOURCE_EN_MEMBERS:
+            raise ValueError('Unknown controlled English enum member')
         return name
+
+
+class RussianTokenNames(BSLObject):
+    def get_member(self, name):
+        if name != 'КонецОбъекта':
+            raise ValueError('Unknown controlled Russian enum member')
+        return 'ObjectEnd'
 
 
 def stream_tokens(raw):
@@ -139,8 +149,9 @@ def exercise(raw, launch_path='/tmp/offline/request.json', fault=None, tokens=No
     vm.register_type('JSONReader', lambda: reader)
     if fault in ('request_fields', 'request_nonce', 'request_paths'):
         vm.register_type('Structure', lambda: ControlledStructure(fault))
-    vm.execute('Var JSONValueType, LaunchParameter;')
+    vm.execute('Var JSONValueType, ТипЗначенияJSON, LaunchParameter;')
     vm.variables['jsonvaluetype'] = TokenNames()
+    vm.variables['типзначенияjson'] = RussianTokenNames()
     vm.variables['launchparameter'] = launch_path
     vm.execute(source)
     vm.execute('Stage = "request"; Caught = False; '
@@ -156,6 +167,22 @@ def canonical(**changes):
 
 
 class GeneratedRequestReaderTests(unittest.TestCase):
+    def test_enum_doubles_separate_source_members_from_token_grammar(self):
+        english, russian = TokenNames(), RussianTokenNames()
+        self.assertEqual(russian.get_member('КонецОбъекта'), 'ObjectEnd')
+        self.assertIn('ObjectEnd', TOKENS)
+        for name in SOURCE_EN_MEMBERS:
+            self.assertEqual(english.get_member(name), name)
+        # Reject unused spellings in this source-bound test double only. This
+        # does not claim that native enum names are case-sensitive, nor that
+        # the original English ObjectEnd alias is generally unsupported.
+        for name in (*sorted(TOKENS - SOURCE_EN_MEMBERS), 'КонецОбъекта', 'Unknown'):
+            with self.subTest(namespace='English', member=name), self.assertRaises(ValueError):
+                english.get_member(name)
+        for name in (*sorted(TOKENS), 'КонецМассива', 'Unknown'):
+            with self.subTest(namespace='Russian', member=name), self.assertRaises(ValueError):
+                russian.get_member(name)
+
     def test_canonical_request_runs_actual_bsl(self):
         vm, reader = exercise(canonical())
         self.assertFalse(vm.execute('Caught'))

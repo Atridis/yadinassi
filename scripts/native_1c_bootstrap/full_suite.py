@@ -3248,7 +3248,7 @@ Function AsyncReadRequest(ЭтапВхода)
         Request.Insert(AsyncRequestKey, Reader.CurrentValue);
     EndDo;
     ЭтапВхода = "request_end_call";
-    AsyncRequestEndToken = JSONValueType.ObjectEnd;
+    AsyncRequestEndToken = ТипЗначенияJSON.КонецОбъекта;
     ЭтапВхода = "request_end_read";
     If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
     ЭтапВхода = "request_end_token";
@@ -3728,7 +3728,7 @@ EnDpRoCeDuRe
 )
 
 
-ASYNC_FIXTURE_SHA256 = '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb'
+ASYNC_FIXTURE_SHA256 = 'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705'
 
 
 def async_client_module(case_id: int) -> bytes:

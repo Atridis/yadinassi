@@ -74,13 +74,21 @@ class SiteTokenNames(reader_fixture.TokenNames):
         self.end_events = end_events
 
     def get_member(self, name):
-        if name == 'ObjectEnd':
-            self.end_events.append('call')
-            if self.fault == 'end_call_error':
-                raise ValueError(FAULT_DESCRIPTION)
         if name == 'PropertyName':
             self.key_calls += 1
             if self.fault == 'call_error' and self.key_calls == self.iteration:
+                raise ValueError(FAULT_DESCRIPTION)
+        return super().get_member(name)
+
+
+class SiteRussianTokenNames(reader_fixture.RussianTokenNames):
+    def __init__(self, fault, end_events):
+        self.fault, self.end_events = fault, end_events
+
+    def get_member(self, name):
+        if name == 'КонецОбъекта':
+            self.end_events.append('call')
+            if self.fault == 'end_call_error':
                 raise ValueError(FAULT_DESCRIPTION)
         return super().get_member(name)
 
@@ -112,8 +120,9 @@ def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False, expose_con
     vm = Interpreter(output.append, native_target=LINUX_8_3_27_1508)
     vm.register_type('JSONReader', lambda: reader)
     vm.register_type('Structure', lambda: SiteStructure(site_fault, iteration))
-    vm.execute('Var JSONValueType, LaunchParameter;')
+    vm.execute('Var JSONValueType, ТипЗначенияJSON, LaunchParameter;')
     vm.variables['jsonvaluetype'] = SiteTokenNames(site_fault, iteration, reader.end_events)
+    vm.variables['типзначенияjson'] = SiteRussianTokenNames(site_fault, reader.end_events)
     vm.variables['launchparameter'] = '/tmp/offline/request.json'
     if expose_context_keys:
         # Controlled context only, not a claim about real managed-form members.

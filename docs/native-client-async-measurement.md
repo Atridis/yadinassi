@@ -99,9 +99,9 @@ trailing Read/rejection, and Close respectively. Existing categories 0–38 reta
 their meaning. The end-token expression is now assigned to an explicitly local
 `AsyncRequestEndToken` in `AsyncReadRequest`, before the original Read guard and
 token comparison. These end operations and their labels stay in that one
-routine, without the former `AsyncExpectRequestEnd` helper. The original
-`JSONValueType.ObjectEnd` spelling, token evaluation before reading, validation
-order, and all guards are preserved. Category 39 retains the wire label
+routine, without the former `AsyncExpectRequestEnd` helper. The end-token
+expression now uses `ТипЗначенияJSON.КонецОбъекта`; token evaluation before
+reading, validation order, and all guards are preserved. Category 39 retains the wire label
 `request_end_call` for compatibility; its current operation is the token
 evaluation/local assignment. No new category or schema is added.
 
@@ -125,12 +125,30 @@ nested helper; propagation of a changed scalar stage through that helper's
 escaping exception had not been measured independently on native 1C. Therefore
 category 39 did not prove that the helper was never entered, that Read was never
 attempted, or that the enum member was invalid. Inlining removes that additional
-diagnostic transport boundary while deliberately leaving the enum spelling
-unchanged. It is a localization change, not a verified API correction or a
-successful native measurement. Offline
-controlled failures, all 120 key orders for each of eight modules, strict-negative
-tests, and exact-inverse checks are not native proof of the underlying cause;
-another native measurement is still required.
+diagnostic transport boundary. The subsequent inline
+[run 39953760732](https://github.com/Atridis/yadinassi/actions/runs/39953760732)
+also retained category 39, now immediately before the enum evaluation and local
+assignment in `AsyncReadRequest`. This localizes the remaining failure to that
+operation group, not to a nested helper; it still does not distinguish enum
+lookup from local assignment or establish a general English-alias defect.
+
+The next bounded experiment changes only that expression from
+`JSONValueType.ObjectEnd` to `ТипЗначенияJSON.КонецОбъекта`, plus the corresponding
+fixture/host identity pins. The Russian spelling appears in the vendor's
+[JSON reader example](https://wonderland.v8.1c.ru/blog/sredstva-raboty-s-json/)
+([original code image](https://v8.1c.ru/o7/201410json/1.png)). This is a
+target-specific compatibility experiment, not a claim that the English alias is
+generally invalid or that the change has already succeeded on native 1C. No
+request grammar, measured case, stage, schema, cap, artifact, or CI route changes.
+
+The source-bound offline enum doubles expose the exercised English members and
+that one Russian member separately, mapping it to the unchanged internal
+`ObjectEnd` token. Rejecting unused spellings in those exact-source doubles does
+not model native case sensitivity or prove the full native alias inventory.
+Controlled getter/assignment failures, all 120 key orders for each of eight
+modules, strict-negative tests, and exact-inverse source/pin checks are not
+native proof of the underlying cause; another native measurement is still
+required.
 
 For a failed case, semantic proof stays zero, trace/value/error observations stay
 empty, and the measurement's continuity stays null. Valid diagnostic markers never turn a timed

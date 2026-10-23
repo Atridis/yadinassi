@@ -204,7 +204,16 @@ def without_local_request_key(template):
     return template[:start] + body + template[end:]
 
 
+def without_ru_request_end_token(template):
+    current = '    AsyncRequestEndToken = ТипЗначенияJSON.КонецОбъекта;\n'
+    previous = '    AsyncRequestEndToken = JSONValueType.ObjectEnd;\n'
+    assert template.count(current) == 1
+    assert previous not in template
+    return template.replace(current, previous)
+
+
 def without_inline_request_end(template):
+    template = without_ru_request_end_token(template)
     # Restore the exact previous helper boundary, not just equivalent operations.
     declaration = '    Var AsyncRequestKey, AsyncRequestEndToken;\n'
     assert template.count(declaration) == 1
@@ -271,6 +280,36 @@ def without_request_site_diagnostic(template):
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
+    def test_russian_end_token_expression_is_the_only_template_change(self):
+        fixture = literal_sources()
+        restored = without_ru_request_end_token(fixture['ASYNC_TEMPLATE'])
+        self.assertEqual(hashlib.sha256(restored.encode('utf-8')).hexdigest(),
+                         '19e6444a1856d5f4b8769a80f9ed97df0a042559e8255849635dff083dc8aba4')
+        self.assertEqual(hashlib.sha256(json.dumps(
+            [restored, fixture['ASYNC_CASE_SOURCES']], ensure_ascii=False,
+            separators=(',', ':')).encode('utf-8')).hexdigest(),
+            '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb')
+
+    def test_only_end_token_expression_and_pins_change_production_sources(self):
+        from test_native_async_protocol import full
+        fixture = literal_sources()
+        previous_aggregate = '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb'
+        previous_identity = {'template': '19e6444a1856d5f4b8769a80f9ed97df0a042559e8255849635dff083dc8aba4', 'modules': ['b72afebe539cd97cd3eebc28c2aaf6866375609f3bb15f6433c69fb2dd5f99f7', '8df02833ca425b23f81c8b318f0af6ac05605d39f4c008b7e753206ed1c5374b', 'bff8fc309d743edd5e2aad989acc69d9fc142cab4f6cb11164edc73a9b6ead57', '311e8e0483ebbb69f34beb1c71d44ce61a56caf362d180c13e1f744ceb5a7aa6', '0f60e947518b7140f56973fccb631e167309ca36d2da10ce41355e9bdf41be61', 'a2b82d56e4f705b0bef66955b35d279a788da1cf2295f28af278d4a381a5f755', '9dd42db7bca81ed3e36ae12602693f8f5e5efcaf71e37a77e5a6e582b03355f9', '028492c644622ed2e8e79d9b65d8f6b8566b2a4e202088272ff0c391e2203df8']}
+        source = without_ru_request_end_token(SNIPPET.read_text(encoding='utf-8'))
+        current_pin = 'ASYNC_FIXTURE_SHA256 = ' + repr(fixture['ASYNC_FIXTURE_SHA256'])
+        self.assertEqual(source.count(current_pin), 1)
+        source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
+        self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
+                         '74c402e5ce3060c3e6884e59d1bd8c5c411d9314b4a943e3ee7d0ec516bf915a')
+        host = (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8')
+        self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
+        host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
+        current_identity = 'ASYNC_EXPECTED_IDENTITY = ' + repr(full.ASYNC_EXPECTED_IDENTITY)
+        self.assertEqual(host.count(current_identity), 1)
+        host = host.replace(current_identity, 'ASYNC_EXPECTED_IDENTITY = ' + repr(previous_identity))
+        self.assertEqual(hashlib.sha256(host.encode('utf-8')).hexdigest(),
+                         '6a2ebac9f0b3c024c86b7fd106e2bfacb917227c9b1ac890652b65e89d07e5fd')
+
     def test_inline_end_operations_are_the_only_template_change(self):
         fixture = make_fixture()
         restored = without_inline_request_end(fixture['ASYNC_TEMPLATE'])
@@ -451,7 +490,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         assert 'For Index = 1 To 5 Do' in request
         assert 'If Request.Property(AsyncRequestKey)' in request
         assert 'JSONValueType.PropertyName' in request
-        assert 'JSONValueType.ObjectEnd' in request
+        assert 'ТипЗначенияJSON.КонецОбъекта' in request
         assert 'If Reader.Read() Then Raise' in request
         assert 'AsyncRequestKey = "case"' not in request
         assert 'AsyncRequestKey = "code"' not in request

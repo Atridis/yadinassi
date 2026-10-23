@@ -75,10 +75,11 @@ class GeneratedRequestSiteGuardTests(unittest.TestCase):
                              list(END_LABELS))
             self.assertTrue(reader.startswith('    Var AsyncRequestKey, AsyncRequestEndToken;\n'))
             self.assertEqual(len(re.findall(r'\bAsyncRequestEndToken\b', module)), 3)
-            self.assertEqual(module.count('JSONValueType.ObjectEnd'), 1)
+            self.assertEqual(module.count('ТипЗначенияJSON.КонецОбъекта'), 1)
+            self.assertNotIn('JSONValueType.ObjectEnd', module)
             self.assertNotIn('AsyncExpectRequestEnd', module)
             for label, operation in (
-                ('call', 'AsyncRequestEndToken = JSONValueType.ObjectEnd;'),
+                ('call', 'AsyncRequestEndToken = ТипЗначенияJSON.КонецОбъекта;'),
                 ('read', 'If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
                 ('token', 'If Reader.CurrentValueType <> AsyncRequestEndToken Then Raise "ASYNC-REQUEST"; EndIf;'),
                 ('trailing', 'If Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
