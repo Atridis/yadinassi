@@ -55,8 +55,19 @@ See [object-transfer-measurement.md](../../docs/object-transfer-measurement.md).
 
 ## Module-variable measurement
 
-`module_context_core.bsl` is an uncaptured four-call, nine-record scenario for
-side-local annotated variables and initializer/lifetime observations. Native
-expected values are intentionally absent. Host preflight executes the exact
-restored accepted109 source, not this new scenario. See
-[module-context-measurement.md](../../docs/module-context-measurement.md).
+`module_context_core.bsl` and `module_context_native.json` record the independently
+audited nine-value native capture (run39974330047). The implementation now computes
+all119 whole-source values; new current-head native/CI gates remain required.
+The capture itself was measurement-only, not a full parity pass.
+See [module-context-measurement.md](../../docs/module-context-measurement.md).
+
+## Side-local module-variable implementation update
+
+The independently audited nine-value capture in run39974330047 is now the basis
+for annotated client/server variables and explicit logical-side server initializers.
+Temporary module capture metadata and the host restored-source execution exception
+are superseded: host and native must match all119 values from the full staged
+source. The bounded legacy adapter inverse remains, not as a parity exception.
+Current implementation-head native/four-OS gates are still pending. See
+[the module-context specification](../../docs/module-context-measurement.md) for the default-client mapping, initializer
+selection and exclusions; no form attributes or cross-context imports are added.

@@ -637,6 +637,9 @@ CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}
 # Audited pinned object capture, including named/expression timing; not local expected generation.
 CLIENT_VALUES += ['object.transfer.v1'] + [True, False, 1, 1, 1, False, 2, 21, 23, 23, 2, False, 3, 3, 3, False, 41, 42, 4, False, 5, 51, 51, 51, 51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73, 73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74, 11, 73, 74, 72, 1]
 
+# Native run39974330047: exact side-local module context observations.
+CLIENT_VALUES += ['module.context.v1'] + [10, 100, 111, True, 100, True, 100, True, 11]
+
 CLIENT_FLAGS = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
 PROCESS_CLASSES = ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable')
 
@@ -727,20 +730,6 @@ def client_marker_diagnostics(path: Path, nonce: str) -> dict:
             result['phase'] = 'error'
         return result
     result['phase'] = 'completed'
-    # Temporary native-only side-local module state observations.
-    if (len(values) == len(CLIENT_VALUES) + 10
-            and all(type(a) is type(b) and a == b for a, b in zip(values, CLIENT_VALUES))
-            and values[109] == 'module.context.v1'):
-        measured = []
-        for item in values[110:]:
-            if type(item) is str and item == 'U':
-                measured.append(None)
-            elif type(item) is bool or (type(item) is int and 0 <= item <= 999):
-                measured.append(item)
-            else:
-                break
-        if len(measured) == 9:
-            result['module_context'] = measured
     # The four old client observations precede the fixed local error sentinel.
     if (len(values) == 6 and values[:4] == CLIENT_VALUES[:4]
             and all(type(a) is type(b) for a, b in zip(values[:4], CLIENT_VALUES[:4]))

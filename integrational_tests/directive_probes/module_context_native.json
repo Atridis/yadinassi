@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "native_target": "linux-8.3.27.1508",
+  "run_id": 39974330047,
+  "artifact_id": 12510512037,
+  "artifact_sha256": "b7e993dda35cb8a0752dcb69f7de0357b7266ee481a25ea7c253ed0f65d34a39",
+  "repository": {
+    "commit": "11b484a17304f90aa0c43ca50712406a4585c0b4",
+    "github_run_attempt": "1",
+    "github_run_id": "39974330047",
+    "tree": "187a9c15c8b627a49288f8be72c93cb26a34dbcd"
+  },
+  "source_sha256": "a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17",
+  "module_sha256": "b74d71eadf523f443f47c86a12471d4e16bcfb6d82fa27738c346a3040ff3407",
+  "labels": [
+    "client.initial",
+    "server.initial",
+    "server.nested",
+    "server.undefined",
+    "server.repeated.initial",
+    "escaped.caught",
+    "server.recovery.initial",
+    "server.recovery.undefined",
+    "client.retained"
+  ],
+  "values": [
+    10,
+    100,
+    111,
+    true,
+    100,
+    true,
+    100,
+    true,
+    11
+  ],
+  "capture_acceptance": "rejected_measurement_only"
+}

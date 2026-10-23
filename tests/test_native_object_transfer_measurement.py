@@ -27,11 +27,11 @@ class ObjectTransferParityTests(unittest.TestCase):
         self.assertEqual(labels, self.capture['labels'])
         self.assertEqual(len(labels), 58)
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
-        self.assertEqual(full.CLIENT_VALUES[50:], ['object.transfer.v1'] + self.capture['values'])
+        self.assertEqual(full.CLIENT_VALUES[50:109], ['object.transfer.v1'] + self.capture['values'])
 
     def test_exact_restored_object_source_computes_every_captured_value(self):
         vm = Interpreter(lambda _: self.fail('unexpected output'))
-        vm.execute(full.module_context_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(linux_fixture(ROOT/full.CLIENT_SOURCE).decode('utf-8-sig'))
         values = list(vm.execute('ВычислитьПробу()'))
         normalized = [int(v) if type(v) is Decimal else v for v in values]
         self.assertEqual(normalized, full.CLIENT_VALUES)
@@ -45,7 +45,7 @@ class ObjectTransferParityTests(unittest.TestCase):
         self.assertNotEqual(raw, changed)
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve()/'probe.bsl'; path.write_bytes(changed)
-            with self.assertRaisesRegex(full.FullError, '^source_changed$'):
+            with self.assertRaisesRegex(full.FullError, '^interpreter_failed$'):
                 full.verify_client_interpreter(ROOT, path, full.digest(changed))
 
     def test_strict_typed_native_contract_and_budgets(self):

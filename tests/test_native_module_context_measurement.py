@@ -1,4 +1,4 @@
-"""Finite module-variable measurement; no expected native values are assumed."""
+"""Audited side-local module-variable capture and strict whole-source parity."""
 import copy
 import json
 import os
@@ -10,45 +10,54 @@ from unittest import mock
 from test_native_client_probe import full, suite, ROOT, stage_fixture
 from test_native_directive_witness import linux_fixture
 
-class ModuleContextMeasurementTests(unittest.TestCase):
+class ModuleContextParityTests(unittest.TestCase):
     def setUp(self):
         if os.name=='nt':
             p=mock.patch.object(suite,'secure_bytes',new=stage_fixture.portable_fixture_bytes)
             p.start();self.addCleanup(p.stop)
-    def marker(self,records):
-        return dict(schema=1,nonce='a'*32,phase='completed',witness='client',
-            values=suite.CLIENT_VALUES+['module.context.v1']+records)
-    def test_finite_capture_does_not_grant_acceptance(self):
-        records=[True,False,0,999,10,100,7,'U',11]
+    def test_capture_identity_and_full_contract(self):
+        capture=json.loads((ROOT/'integrational_tests/directive_probes/module_context_native.json').read_text())
+        raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
+        self.assertEqual(full.digest(raw),capture['source_sha256'])
+        self.assertEqual(full.digest(full.generated_module(raw)),capture['module_sha256'])
+        self.assertEqual(full.CLIENT_VALUES[109:],['module.context.v1']+capture['values'])
+        self.assertEqual(full.CLIENT_VALUES,suite.CLIENT_VALUES)
+        self.assertEqual(len(full.CLIENT_VALUES),119)
+        from yadinassi import Interpreter
+        from decimal import Decimal
+        vm=Interpreter(lambda _: self.fail('unexpected output'))
+        vm.execute(raw.decode('utf-8-sig'))
+        actual=[int(v) if type(v) is Decimal else v for v in vm.execute('ВычислитьПробу()')]
+        self.assertEqual(actual,full.CLIENT_VALUES)
+        self.assertEqual([type(v) for v in actual],[type(v) for v in full.CLIENT_VALUES])
+
+    @unittest.skipIf(os.name=='nt','bounded native preflight is POSIX-only')
+    def test_full_source_preflight_and_changed_initializer_rejection(self):
+        raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         with tempfile.TemporaryDirectory() as folder:
-            p=Path(folder).resolve()/'completed.json';p.write_bytes(json.dumps(self.marker(records)).encode())
-            with self.assertRaises(suite.FullError):suite.client_marker(p,'a'*32,'completed')
-            d=suite.client_marker_diagnostics(p,'a'*32)
-            self.assertEqual(d,dict(phase='completed',kind='count',ordinal=109,error_stage=0,
-                module_context=[True,False,0,999,10,100,7,None,11]))
-            self.assertEqual(full.validate_marker_diagnostics(d),d)
-            self.assertEqual(len(full.CLIENT_VALUES),109)
-            self.assertEqual(full.CLIENT_VALUES,suite.CLIENT_VALUES)
-    def test_malformed_or_partial_records_never_export_list(self):
-        good=self.marker([False]*9);cases=[]
-        for bad in ([],[False]*8,[False]*10,['PRIVATE']*9,[1000]*9,[-1]*9,[1.5]*9,[None]*9,[{}]*9):
-            cases.append(self.marker(bad))
-        for change in ({'nonce':'b'*32},{'phase':'error'},{'extra':'PRIVATE'},{'witness':'server'}):
-            cases.append({**good,**change})
-        for index in (0,50,51,108,109):
-            c=copy.deepcopy(good);c['values'][index]='PRIVATE';cases.append(c)
+            p=Path(folder).resolve()/'source.bsl';p.write_bytes(raw)
+            full.verify_client_interpreter(ROOT,p,full.digest(raw))
+            changed=raw.replace(b'ContextServerCounter = 100;',b'ContextServerCounter = 101;')
+            self.assertNotEqual(raw,changed);p.write_bytes(changed)
+            with self.assertRaisesRegex(full.FullError,'^interpreter_failed$'):
+                full.verify_client_interpreter(ROOT,p,full.digest(changed))
+
+    def test_strict_typed_contract_and_removed_capture_metadata(self):
+        marker=dict(schema=1,nonce='a'*32,phase='completed',witness='client',values=suite.CLIENT_VALUES)
         with tempfile.TemporaryDirectory() as folder:
-            p=Path(folder).resolve()/'completed.json'
-            for value in cases:
-                p.write_bytes(json.dumps(value).encode())
-                self.assertNotIn('module_context',suite.client_marker_diagnostics(p,'a'*32))
-            p.write_bytes(b'x'*2049)
-            self.assertNotIn('module_context',suite.client_marker_diagnostics(p,'a'*32))
-        valid=dict(phase='completed',kind='count',ordinal=109,error_stage=0,module_context=[None]*9)
-        for change in ({'phase':'error'},{'kind':'value'},{'ordinal':108},{'error_stage':1},
-                       {'module_context':[None]*8},{'module_context':[True]*10},
-                       {'module_context':['U']*9},{'module_context':[1000]*9}):
-            with self.assertRaises(ValueError):full.validate_marker_diagnostics({**valid,**change})
+            p=Path(folder).resolve()/'completed.json';p.write_bytes(json.dumps(marker).encode())
+            self.assertEqual(suite.client_marker(p,'a'*32,'completed'),marker)
+            for index in range(109,119):
+                values=list(suite.CLIENT_VALUES);v=values[index]
+                values[index]=not v if type(v) is bool else (v+1 if type(v) is int else 'changed')
+                p.write_bytes(json.dumps({**marker,'values':values}).encode())
+                with self.assertRaises(suite.FullError):suite.client_marker(p,'a'*32,'completed')
+                self.assertEqual(suite.client_marker_diagnostics(p,'a'*32)['ordinal'],index)
+        with self.assertRaises(ValueError):
+            full.validate_marker_diagnostics(dict(phase='completed',kind='count',ordinal=109,error_stage=0,module_context=[False]*9))
+        self.assertLess(len(json.dumps(marker,indent=2).encode()),2048)
+        self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,full.MAX_REPORT),(8192,8192,32768))
+
     def test_exact_three_part_inverse_preserves_audited_object_source(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         restored=full.module_context_shared_source(raw)
@@ -83,42 +92,3 @@ class ModuleContextMeasurementTests(unittest.TestCase):
         self.assertEqual(source.count('ContextModuleCall(True);'),1)
         self.assertIn('Var Initial, Nested, WasUndefined;',source)
         self.assertIn('Var First, Second, Third, Failed, Matched;',source)
-    def test_private_marker_bounds_without_cap_changes(self):
-        marker=self.marker([False]*9)
-        self.assertEqual([len(json.dumps(marker,**kwargs).encode()) for kwargs in
-            ({'separators':(',',':')},{},{'indent':2})],[1257,1384,1876])
-        self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,full.MAX_REPORT),(8192,8192,32768))
-    def test_exact_serializer_bounds_reachable_capture_failure(self):
-        import test_native_client_wire_v3 as fixture_module
-        f=fixture_module.ClientWireV3Tests();f.setUp();self.addCleanup(f.doCleanups)
-        stage=copy.deepcopy(f.stage);stage.update(status='failed',failure_kind='invalid_result',failed_case=None)
-        for name in ('dates','values','collections','numbers','watchdog'):
-            stage['client_'+name]=getattr(suite,'empty_'+name+'_report')()
-        for case in stage['cases']:case.update(output_size=209715,message_count=32768)
-        stage['client_probe'].update(status='failed',failure_kind='invalid_result',completed=False,witness_verified=False,
-            marker_diagnostics=dict(phase='completed',kind='count',ordinal=109,error_stage=0,module_context=[False]*9),
-            process_diagnostics=fixture_module.fixtures.process_diagnostics(stage='after_exit',reason='unexpected_processes',
-                classes={'native':100,'display':26,'session_bus':26,'shell':26,'python':26,'other':26,'unreadable':26},zombie_count=256))
-        with tempfile.TemporaryDirectory() as folder:
-            p=Path(folder).resolve()/'stage.json';suite.write_report(p,stage);raw=p.read_bytes()
-            self.assertLessEqual(len(raw),8192)
-            self.assertEqual(full.decode_stage3_wire(full.strict_json(raw,8192)),stage)
-            self.assertEqual(suite.decode_stage_wire(json.loads(raw)),stage)
-        report=copy.deepcopy(f.fixture.envelope['report']);report.update(status='stage3_failed',native_tests_completed=False,stage3=stage)
-        self.assertLessEqual(len(json.dumps(report,indent=2,sort_keys=True).encode()),32768)
-
-    def test_failed_measurement_never_runs_later_client_cases(self):
-        import test_native_client_probe as fixtures
-        f=fixtures.ClientSuiteIntegrationTests();f.setUp();self.addCleanup(f.doCleanups)
-        failed={**f.client,'status':'failed','failure_kind':'invalid_result',
-            'completed':False,'witness_verified':False,
-            'marker_diagnostics':dict(phase='completed',kind='count',ordinal=109,
-                error_stage=0,module_context=[False]*9)}
-        with mock.patch.object(suite,'run_client_probe',return_value=failed) as probe, \
-             mock.patch.object(suite,'run_client_watchdog') as watchdog:
-            result=suite.run_suite(f.launcher,f.platform,f.epf,f.work,f.inputs,fixtures.NONCE,
-                client_probe=True,watchdog_check=True,client_dates=True,client_values=True,
-                client_collections=True,client_numbers=True)
-        probe.assert_called_once();watchdog.assert_not_called()
-        for name in ('dates','values','collections','numbers','watchdog'):
-            self.assertEqual(result['client_'+name],getattr(suite,'empty_'+name+'_report')())

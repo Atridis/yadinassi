@@ -28,7 +28,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
     def test_native_and_host_contracts_match_with_old_values_retained(self):
         self.assertEqual(suite.CLIENT_VALUES, full.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[:4], [42, "client-probe", 3, 6])
-        self.assertEqual(len(full.CLIENT_VALUES), 109)
+        self.assertEqual(len(full.CLIENT_VALUES), 119)
         self.assertEqual(len(set(value.split(":", 1)[0]
                                  for value in full.CLIENT_VALUES[4:15])), 11)
 
@@ -44,19 +44,19 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
             self.assertNotIn('DirectiveServerProfile', source)
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_exact_restored_module_computes_contract_in_real_interpreter(self):
+    def test_exact_staged_module_computes_contract_in_real_interpreter(self):
         source = ROOT / full.CLIENT_SOURCE
         full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()))
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_changed_callee_is_rejected_by_exact_inverse_gate(self):
+    def test_changed_callee_is_rejected_by_exact_source_gate(self):
         source = (ROOT / full.CLIENT_SOURCE).read_bytes()
         changed = source.replace(b"Return A + B;", b"Return A + B + 1;")
         self.assertNotEqual(source, changed)
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / "probe.bsl"
             path.write_bytes(changed)
-            with self.assertRaisesRegex(full.FullError, "^source_changed$"):
+            with self.assertRaisesRegex(full.FullError, "^interpreter_failed$"):
                 full.verify_client_interpreter(ROOT, path, full.digest(changed))
 
     def test_hash_mismatch_never_executes(self):
@@ -177,7 +177,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
 
     def test_real_interpreter_records_literal_stage_without_native_error_text(self):
         from yadinassi import Interpreter
-        source = full.module_context_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig')
+        source = linux_fixture(ROOT / full.CLIENT_SOURCE).decode('utf-8-sig')
         source = source.replace('Return A + B;', 'Raise "PRIVATE_ERROR";')
         vm = Interpreter()
         vm.execute(source)

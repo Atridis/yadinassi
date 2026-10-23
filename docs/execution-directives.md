@@ -6,9 +6,9 @@ Scalar non-Val strict whole-source acceptance passed audited actual-main native
 run 39951594654. The object implementation now follows independently audited
 58-record captures, including named/expression timing. Strict109 whole-source acceptance was independently audited on actual main
 0dbb938 in [run 39969439403](https://github.com/Atridis/yadinassi/actions/runs/39969439403).
-A new [module-variable measurement](module-context-measurement.md) is now isolated
-from that accepted source using an exact inverse; host preflight does not claim
-parity for the new variable scenario. Existing
+The new [side-local module-variable implementation](module-context-measurement.md)
+follows an independently audited nine-value capture. Host preflight now computes
+all119 values from the complete source; current-head native/CI gates remain pending. Existing
 Async work and historical parity modules remain unchanged.
 
 ## Scope and execution model
@@ -79,10 +79,10 @@ parity before measurement.
 
 ## Deliberate limits and required subsequent work
 
-- Annotated module variables are not implemented. Server activation has no
-  client module storage, imports or ready public ThisObject receiver. Unannotated
-  module variables remain client-only. Server locals must not alias client globals.
-  This does not provide the full context-bearing module-state behavior of AtServer.
+- Annotated module variables use side-local storage; explicit logical-side server
+  initializers run per outer activation. Server activation has no copied client
+  module storage, imports or ready public ThisObject receiver. Unannotated
+  variables remain client-only. This is not full context-bearing form state.
 - Scalar and acyclic mutable Array/Structure transfer now have a measured contract.
   Other object types and context-bearing module-state transfer remain required
   next parts, not optional polishing. Broader non-Val sink/default/expression
@@ -236,6 +236,18 @@ The original48 observations and the additional10 named/expression discriminators
 were independently audited as measurement evidence. They define this narrow
 8.3.27.1508 target contract, not universal serialization semantics. The runtime
 implements per-occurrence copying and measured binding timing; strict109 native acceptance was audited on actual main 0dbb938. The new
-module-variable measurement remains unimplemented and is not acceptance. See
+module-variable implementation follows audited measurement evidence, with its
+own current-head strict119 native/CI acceptance still pending. See
 [object-transfer-measurement.md](object-transfer-measurement.md) for exact capture
 identities and the distinction between historical rejected capture and acceptance.
+
+## Side-local module-variable implementation update
+
+The independently audited nine-value capture in run39974330047 is now the basis
+for annotated client/server variables and explicit logical-side server initializers.
+Temporary module capture metadata and the host restored-source execution exception
+are superseded: host and native must match all119 values from the full staged
+source. The bounded legacy adapter inverse remains, not as a parity exception.
+Current implementation-head native/four-OS gates are still pending. See
+[the module-context specification](module-context-measurement.md) for the default-client mapping, initializer
+selection and exclusions; no form attributes or cross-context imports are added.

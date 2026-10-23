@@ -1,81 +1,91 @@
-# Side-local module-variable capture, not form state
+# Side-local module variables, not form state
 
-Status: measurement-only, based on audited main
-`0dbb93818f9cf18e48aa0e493e86557ddd272c58`. No new runtime behavior is implemented.
-The existing 109-value object/scalar witness remains unchanged and strict native
-acceptance intentionally rejects the nine extra observations. This Draft must
-not be readied or merged as measurement-only work.
+Status: local implementation based on independently audited native capture
+[run 39974330047](https://github.com/Atridis/yadinassi/actions/runs/39974330047).
+Current implementation-head native parity and four-platform CI remain required
+before ready/merge. The capture itself was a deliberately rejected measurement,
+not a full parity run: later client suites and watchdog did not start.
 
-## Primary-source boundary
+## Evidence and scope
 
-The [8.3.27 developer guide, §4.8.1.3](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1808293)
-describes client module variables as lasting for the client form lifetime and
-server module variables as lasting for one server call. It forbids NoContext/dual
-annotations on variables. The [form context tutorial](https://1c-dn.com/library/tutorials/practical_developer_guide_form_module_context/)
-distinguishes module variables from form attributes. We therefore do not copy
-client globals into server state or implement forms, databases or network RPC.
-Unannotated standalone root/variables must remain client-default. The standalone
-mapping of explicitly server-only initializer statements is not yet implemented.
+The [8.3.27 developer guide](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1808293)
+§4.8.1.3 describes client module variables as lasting for the client form lifetime
+and server module variables as lasting for one server call. The
+[form-context tutorial](https://1c-dn.com/library/tutorials/practical_developer_guide_form_module_context/)
+distinguishes module variables from form attributes. This interpreter supplies
+logical side-local storage, not forms, form attributes, a database or network RPC.
 
-## Nine observations from four direct calls
+The exact standalone scenario is `integrational_tests/directive_probes/module_context_core.bsl`.
+Four direct client-to-server calls and one nested server call produced:
 
-`integrational_tests/directive_probes/module_context_core.bsl` explicitly declares
-one client variable and two server variables before all routines. Side-guarded
-module-body statements initialize client/server counters at the end of the module.
-Four literal client-to-server calls, including one controlled escaping exception,
-and one nested server helper observe:
+- Client initial: 10; server initial: 100; nested updated value: 111.
+- Initially uninitialized server variable: true.
+- Repeated outer call initial: 100.
+- Escaping exception caught by client: true.
+- Recovery initial: 100; recovery uninitialized variable: true.
+- Retained client value: 11.
 
-1. Client counter before any call.
-2. Server counter at entry, before mutation.
-3. Nested server helper sees and updates the same counter.
-4. The uninitialized server variable is Undefined.
-5. Counter entry on a separate call.
-6. Escaping error is caught and matches a fixed local sentinel.
-7. Counter entry after the escaping error.
-8. Uninitialized server variable after the escaping error.
-9. Client counter retained after all calls.
+These are observations from 1C 8.3.27.1508 Linux/amd64, managed client, file
+infobase, not predictions from the interpreter or universal claims about modes.
+Fixture `module_context_native.json` binds all nine labels/values to source,
+module, ZIP, run and tree. Artifact 12510512037 ZIP SHA256 is
+`b7e993dda35cb8a0752dcb69f7de0357b7266ee481a25ea7c253ed0f65d34a39`.
+Report commit `11b484a17304f90aa0c43ca50712406a4585c0b4` is the PR merge commit,
+with ordered parents main `0dbb93818f9cf18e48aa0e493e86557ddd272c58` and head
+`f8ada04bec5dd530b10a0999a87e0a8bd4c1b711`; its verified tree is
+`187a9c15c8b627a49288f8be72c93cb26a34dbcd`.
 
-All constants are stimulus, not expected native values. No runtime/native model
-is inferred until capture is independently audited. Unexpected top-level failure
-uses the existing error-phase contract; partial records never become public
-observations. Every new temporary is explicitly declared or a parameter. The
-finite list permits only exact Boolean, integer 0..999 or the fixed Undefined
-encoding, never objects, paths or raw exception text.
+## Standalone mapping
 
-## Exact source and unchanged acceptance
+Top-level `&AtClient Var` and `&AtServer Var` (including Russian spellings) select
+independent storage. Unannotated variables and unguarded root statements remain
+client-side. Explicit server declarations never copy all client globals.
 
-The native template adds an exact module-variable prefix, one call and a suffix
-containing mechanically adapted helpers plus side initialization. Its inverse
-requires the full new source hash, exact prefix/suffix and exactly one call;
-restored bytes must hash to the audited source
-`6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120`.
-Host preflight executes this restored 109-value source, not the new variable
-scenario. The entire staged native source is still hashed before and after.
-The four historical parity adapters independently retain their original bytes.
-No generic directive stripping or runtime success claim is involved.
+Each outer client-to-server call starts with fresh Undefined server slots, runs
+its server initializer, then executes the routine. Nested server calls reuse
+that activation. Both normal return and escaping exceptions discard it. Client
+storage persists in its module owner. Initializers run before formal locals are
+installed; an initializer failure does not copy out arguments. Imported modules
+have independent owners, not shared process-global state.
 
-Native accepts only the original 109 values. Temporary public `module_context`
-metadata is allowed only on failed/completed/count/ordinal109, after exact typed
-matching of the whole prefix, fixed sentinel and all nine finite records. A
-malformed or partial list is never exported. Existing nonce/schema/quiet/exit,
-module roundtrip and watchdog gates remain unchanged.
+Server initializer statements must be inside a conditional branch selected only
+for the server and involving logical `AtClient`/`AtServer` symbols (or their
+Russian spellings). The existing expression parser evaluates compound conditions,
+`#Else` and `#ElsIf`; selection is not a textual rewrite. For example, both
+`#If AtServer Then` and the `#Else` branch of `#If AtClient Then` qualify.
+Generic `#If Server` alone retains the previous ignored-root contract. This is
+an explicit standalone compatibility boundary, not native target-flag equivalence.
+An initializer cannot replay unguarded root code or load imports. Client-only
+comment import directives in server-selected root branches remain ignored, as
+before; imports inside server routines remain rejected. Declarations
+belong at module level, not inside initializer statement blocks. Nested conditional compilation can occur inside runtime If/loop bodies without
+ending the enclosing initializer. Different client/server root fragments are
+never joined to complete a partial runtime statement.
 
-## Bounded serialization and next step
+Server variable exports, module receiver access on the server, NoContext and dual
+directives, form attributes and cross-context imports are not added. Client
+variable exports retain their existing behavior. These missing core pieces are
+not described as supported through this narrower module-variable feature.
 
-The fixed 109 prefix plus sentinel and nine maximum-width false observations
-is 119 marker values: compact 1,257, default 1,384 and pretty 1,876 bytes, below
-2,048. Reachable ordinary-client failure serializes to 6,838 bytes below 8,192;
-unit tests prove that later clients/watchdog do not run after that failure.
-Conservatively preserving every audited actual-main public report field plus
-this failed observation metadata is 25,129 bytes including a newline, below
-32,768. This last synthetic shape is budget evidence, not an accepted report.
-No caps are raised. Future Async integration requires a separate combined proof.
+## Strict parity and security gates
 
-After native evidence: decide the bounded server-initializer AST mapping, then
-implement separate side variable registries and outer-server activation lifetime,
-with nested reuse and cleanup after normal/exceptional completion. Retain default
-root client and existing client exports; do not infer support for server variable
-exports, wrong-side accesses or form attributes. Separate compiler-negative
-scenarios may check unsupported annotation/visibility without contaminating this
-positive module. Replace temporary capture with strict whole-source parity before
-ready/merge. Current Async branch/runtime work remains isolated.
+The staged BSL source is unchanged from the audited capture (SHA256
+`a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17`).
+The exact generated module and re-dump SHA256 is
+`b74d71eadf523f443f47c86a12471d4e16bcfb6d82fa27738c346a3040ff3407`.
+
+Temporary public `module_context` metadata is removed. Host preflight now runs
+the entire staged source and independently computes all 119 typed values. Native
+acceptance compares all 119 exactly: prior 109 plus the fixed module sentinel and
+nine captured values. Changed initializers must fail the real interpreter gate.
+No restored-source exception remains in host execution.
+
+The exact three-part inverse (variable prefix, one call, helper/initializer suffix)
+remains only for historical capture identity and four legacy parity adapters.
+It restores the audited prior source byte-for-byte; all four generated adapter
+modules remain unchanged. It is not a generalized directive stripper.
+
+The private marker remains below 2048 bytes under compact, default and pretty
+serialization; stage/report limits remain 8192/32768. Typed equality, nonce,
+managed OnOpen/roundtrip, private-file reader, process and watchdog gates are not
+weakened. Raw errors, paths and module values are not exported as diagnostics.

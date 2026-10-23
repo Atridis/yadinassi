@@ -342,7 +342,18 @@ The implementation passed strict109 on actual main
 with independent source/provenance/native/client/watchdog artifact audit.
 Summary ZIP SHA256 `21d3da17472cfa329e383ec5430c229cb85b8ed184e0fd5ac03e200bf77d94d6`;
 outputs ZIP SHA256 `b2d302e4a996cca812a4c1ef3361cda7408cbfbd4db59651778b6e2110143586`.
-This supersedes the earlier pending-native status. A separate
-[module-variable measurement](module-context-measurement.md) now temporarily
-restores this exact accepted109 source for host preflight, without claiming
-support or parity for the newly appended module-variable scenario.
+This supersedes the earlier pending-native status. The subsequent
+[module-variable implementation](module-context-measurement.md) follows its
+audited nine-value capture and restores whole-source host execution. Its strict119
+current-head native/CI gates remain pending.
+
+## Side-local module-variable implementation update
+
+The independently audited nine-value capture in run39974330047 is now the basis
+for annotated client/server variables and explicit logical-side server initializers.
+Temporary module capture metadata and the host restored-source execution exception
+are superseded: host and native must match all119 values from the full staged
+source. The bounded legacy adapter inverse remains, not as a parity exception.
+Current implementation-head native/four-OS gates are still pending. See
+[the module-context specification](module-context-measurement.md) for the default-client mapping, initializer
+selection and exclusions; no form attributes or cross-context imports are added.
