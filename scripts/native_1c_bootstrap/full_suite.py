@@ -2183,12 +2183,19 @@ def run_async_process(command: list[str], directory: Path, log: Path, timeout: f
             try:
                 code = child.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
+                error = FullError('timeout')
                 try:
                     _stop_group(child)
-                finally:
-                    raise FullError('timeout') from None
-            except BaseException:
-                _stop_group(child)
+                    error.async_process_stopped = True
+                except Exception:
+                    error.async_process_stopped = False
+                raise error from None
+            except BaseException as error:
+                try:
+                    _stop_group(child)
+                    error.async_process_stopped = True
+                except Exception:
+                    error.async_process_stopped = False
                 raise
             if require_clean_tree:
                 # A zero-exit leader is not completion while descendants remain.
@@ -2199,22 +2206,31 @@ def run_async_process(command: list[str], directory: Path, log: Path, timeout: f
                     except ProcessLookupError:
                         break
                     if time.monotonic() >= deadline:
-                        _stop_group(child)
-                        raise FullError('process_failed')
+                        error = FullError('process_failed')
+                        try:
+                            _stop_group(child)
+                            error.async_process_stopped = True
+                        except Exception:
+                            error.async_process_stopped = False
+                        raise error
                     time.sleep(0.02)
             else:
                 _stop_group(child)
     if code:
-        raise FullError('process_failed')
+        error = FullError('process_failed')
+        error.async_process_stopped = True
+        raise error
     if '/DumpResult' in command:
         result = Path(command[command.index('/DumpResult') + 1])
-        data = secure_bytes(result, 128)
         try:
+            data = secure_bytes(result, 128)
             value = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig').strip()
             if not re.fullmatch(r'[+-]?[0-9]+', value) or int(value) != 0:
                 raise ValueError
-        except (ValueError, UnicodeError):
-            raise FullError('invalid_dump_result') from None
+        except (FullError, ValueError, UnicodeError) as cause:
+            error = cause if isinstance(cause, FullError) else FullError('invalid_dump_result')
+            error.async_process_stopped = True
+            raise error from None
 
 
 
@@ -2245,28 +2261,157 @@ def async_require_snapshot(path, saved, limit, *, allow_empty=False):
         raise FullError('stale_evidence')
 
 
+def async_diagnostic_snapshot(path, limit, *, allow_empty=False):
+    """A stable no-follow file observation, including securely observed absence."""
+    def parents():
+        result = []
+        for parent in path.absolute().parents:
+            value = parent.lstat()
+            if not stat.S_ISDIR(value.st_mode):
+                raise FullError('stale_evidence')
+            result.append((value.st_dev, value.st_ino, value.st_mode))
+        return result
+    before = parents()
+    try:
+        result = async_file_snapshot(path, limit, allow_empty=allow_empty)
+    except FileNotFoundError:
+        try:
+            descriptor = _open_no_follow(path)
+        except FileNotFoundError:
+            result = None
+        else:
+            os.close(descriptor)
+            raise FullError('stale_evidence')
+    if before != parents():
+        raise FullError('stale_evidence')
+    return result
+
+
+def async_failure_observation(stage, case_id, nonce, *, stopped, marker_context=None,
+                              log_context=None):
+    """Lossy post-stop observations, never continuing proof or semantic diagnosis.
+
+    No file is reread/rebased by the final emitter. observed_* is historical at
+    this capture only; row proof remains zero and continuity remains null.
+    """
+    result = [stage, 0, 0, 0]
+    if not stopped:
+        return result
+    retained = []
+    marker_snaps = []
+    if marker_context is not None:
+        entered, completed, request, request_snap, started, previous = marker_context
+        for index, (path, phase) in enumerate(((entered, 'entered'), (completed, 'completed')), 1):
+            saved = None
+            try:
+                async_require_snapshot(request, request_snap, 2048)
+                saved = async_diagnostic_snapshot(path, ASYNC_MAX_MARKER)
+                if phase in previous and saved != previous[phase]:
+                    raise FullError('stale_evidence')
+                if saved is None:
+                    result[index] = 1
+                else:
+                    if saved[0][5] < started or saved[0][6] < started or saved[1].startswith(b'\xef\xbb\xbf'):
+                        raise FullError('stale_evidence')
+                    validate_async_marker(strict_json(saved[1], max_depth=5), nonce, case_id, phase)
+                    result[index] = 3
+                retained.append((index, path, saved, ASYNC_MAX_MARKER, False))
+            except Exception:
+                result[index] = 2
+            marker_snaps.append(saved)
+        if result[2] == 3 and (result[1] != 3 or marker_snaps[1][0][5] < marker_snaps[0][0][5]):
+            result[2] = 2
+    if log_context is not None:
+        paths, started = log_context
+        try:
+            from diagnostics import native_text, summarize_text
+            categories, entry_labels = set(), set()
+            present = False
+            for path in paths:
+                saved = async_diagnostic_snapshot(path, MAX_OUTPUT, allow_empty=True)
+                retained.append((3, path, saved, MAX_OUTPUT, True))
+                if saved is None:
+                    continue
+                present = True
+                if saved[0][5] < started or saved[0][6] < started:
+                    raise FullError('stale_evidence')
+                text = native_text(saved[1])
+                for line in text.splitlines():
+                    if 'ASYNC-ENTRY-FAILURE:' in line:
+                        if line not in ASYNC_ENTRY_LOG_MARKERS or stage < 3:
+                            raise FullError('invalid_result')
+                        entry_labels.add(ASYNC_ENTRY_LOG_MARKERS[line])
+                category = summarize_text(text)['category']
+                if category != 'unknown':
+                    categories.add(category)
+            specific = categories - {'runtime_error', 'startup_failed'}
+            if len(entry_labels) > 1 or len(specific) > 1 or 'conflicting_evidence' in categories or (entry_labels and specific):
+                result[3] = 12
+            elif entry_labels:
+                result[3] = next(iter(entry_labels))
+            elif specific:
+                result[3] = ASYNC_LOG_CATEGORIES.index(next(iter(specific)))
+            elif categories:
+                result[3] = 5 if 'runtime_error' in categories else 11
+            else:
+                result[3] = 3 if present else 1
+        except Exception:
+            result[3] = 2
+    # Check all observations again after parsing/classifying the bounded files.
+    # A late replacement cannot turn the first snapshot into accepted evidence.
+    for index, path, saved, limit, allow_empty in retained:
+        try:
+            if async_diagnostic_snapshot(path, limit, allow_empty=allow_empty) != saved:
+                raise FullError('stale_evidence')
+        except Exception:
+            result[index] = 2
+    if marker_context is not None:
+        try:
+            async_require_snapshot(request, request_snap, 2048)
+        except Exception:
+            result[1:3] = [2, 2]
+        if result[2] == 3 and result[1] != 3:
+            result[2] = 2
+    return result
+
+
 def fail_async_process_checkpoint(record, diagnostics=None):
     # Only the last reached row is invalidated; no accepted aggregate survives.
     reached = [r for r in record['cases'] if r[1] != 0]
     row = reached[-1] if reached else record['cases'][0]
     index, module_hash = row[0], row[3]
     record['cases'][index] = [index,2,11,module_hash,0,[],[],[]]
-    record.update(status='failed', failure_kind='process_failed', continuity_sha256=None)
+    record.update(status='failed', failure_kind='process_failed', continuity_sha256=None,
+                  failure_diagnostics=None)
     record['process_diagnostics'] = diagnostics if diagnostics is not None else dict(empty_process_diagnostics(),stage='after_exit',reason='unverified')
 
 
 def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dict, *, deadline: float) -> dict:
     record = empty_async_report()
     current = 0
+    host_stage = 0
+    process_stopped = False
+    marker_context = log_context = None
     modules = [async_client_module(i) for i in range(8)]
     template_hash = digest(ASYNC_TEMPLATE.encode('utf-8'))
     module_hashes = [digest(module) for module in modules]
     retained = []
     def step(command, directory, log):
+        nonlocal process_stopped, log_context
+        process_stopped = False
+        log_context = None
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise FullError('timeout')
-        run_async_process(command,directory,log,min(120,remaining),require_clean_tree=True)
+        native_log = Path(command[command.index('/Out') + 1])
+        absent(native_log, log)
+        log_context = ((native_log, log), time.time_ns())
+        try:
+            run_async_process(command,directory,log,min(120,remaining),require_clean_tree=True)
+        except Exception as error:
+            process_stopped = getattr(error, 'async_process_stopped', False) is True
+            raise
+        process_stopped = True
         if '/DumpResult' in command:
             path = Path(command[command.index('/DumpResult')+1])
             saved = async_file_snapshot(path,128)
@@ -2292,6 +2437,9 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
         retained.append((source_path,source_snapshot,MAX_OUTPUT,False))
         record['template_sha256'] = template_hash
         for current,module in enumerate(modules):
+            host_stage = 0
+            process_stopped = False
+            marker_context = log_context = None
             case = root / ('case-'+str(current))
             absent(case)
             case.mkdir(mode=0o700)
@@ -2320,10 +2468,13 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
             retained.append((module_path,module_snap,MAX_OUTPUT,False))
             client_wiring(src)
             epf = case / 'AsyncClientProbe.epf'
+            host_stage = 1
             step(platform.command('DESIGNER')+['/LoadExternalDataProcessorOrReportFromFiles',str(src/'Launcher.xml'),str(epf),'/Out',str(case/'build.log'),'/DumpResult',str(case/'build.result')],case,case/'build-console.log')
             require_epf(epf)
             retained.append((epf,async_file_snapshot(epf,MAX_OUTPUT),MAX_OUTPUT,False))
             async_require_snapshot(module_path,module_snap,MAX_OUTPUT)
+            host_stage = 2
+            log_context = None
             dumped = case / 'roundtrip'
             dumped.mkdir(mode=0o700)
             step(platform.command('DESIGNER')+['/DumpExternalDataProcessorOrReportToFiles',str(dumped/'Launcher.xml'),str(epf),'/Out',str(case/'dump.log'),'/DumpResult',str(case/'dump.result')],case,case/'dump-console.log')
@@ -2335,6 +2486,8 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
                 path = dumped/relative
                 allow_empty = relative == 'Launcher/Ext/ObjectModule.bsl'
                 retained.append((path,async_file_snapshot(path,MAX_OUTPUT,allow_empty=allow_empty),MAX_OUTPUT,allow_empty))
+            host_stage = 0
+            log_context = None
             entered,completed,request = case/'entered.json',case/'completed.json',case/'request.json'
             absent(entered,completed,request)
             expected = {'schema':1,'version':1,'nonce':nonce,'entered':str(entered),'completed':str(completed)}
@@ -2343,24 +2496,50 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
             if request_snap[1] != json.dumps(expected,sort_keys=True,separators=(',',':')).encode('utf-8') or strict_json(request_snap[1]) != expected or entered.parent != case or completed.parent != case:
                 raise FullError('invalid_input')
             retained.append((request,request_snap,2048,False))
+            host_stage = 5
             for path,saved,limit,allow_empty in retained:
                 async_require_snapshot(path,saved,limit,allow_empty=allow_empty)
+            host_stage = 3
+            absent(entered, completed)
+            marker_pins = {}
+            marker_context = (entered, completed, request, request_snap, time.time_ns(), marker_pins)
+            enterprise_error = None
             try:
                 step(platform.command('ENTERPRISE')+['/RunModeManagedApplication','/VL','ru_RU','/Execute',str(epf),'/C',str(request),'/Out',str(case/'enterprise.log')],case,case/'enterprise-console.log')
+            except Exception as error:
+                enterprise_error = error
+                raise
             finally:
-                record['process_diagnostics'].update(stage='after_exit',reason='unverified')
-                survivors = client_process_snapshot()-baseline
-                if survivors:
-                    record['process_diagnostics'] = unexpected_process_diagnostics(survivors,'after_exit')
-                else:
-                    require_session_bus(Path('/tmp/onec-smoke'),nonce)
-                    record['process_diagnostics'].update(reason='native_not_quiet')
-                    if native_processes_quiet(platform.executable):
-                        record['process_diagnostics'].update(reason='none')
+                try:
+                    record['process_diagnostics'].update(stage='after_exit',reason='unverified')
+                    survivors = client_process_snapshot()-baseline
+                    if survivors:
+                        record['process_diagnostics'] = unexpected_process_diagnostics(survivors,'after_exit')
+                    else:
+                        require_session_bus(Path('/tmp/onec-smoke'),nonce)
+                        record['process_diagnostics'].update(reason='native_not_quiet')
+                        if native_processes_quiet(platform.executable):
+                            record['process_diagnostics'].update(reason='none')
+                except Exception:
+                    if enterprise_error is None:
+                        raise
             if record['process_diagnostics']['reason'] != 'none':
                 raise FullError('process_failed')
-            entered_snap = async_file_snapshot(entered,ASYNC_MAX_MARKER)
-            completed_snap = async_file_snapshot(completed,ASYNC_MAX_MARKER)
+            host_stage = 4
+            marker_pins['entered'] = False
+            try:
+                entered_snap = async_file_snapshot(entered,ASYNC_MAX_MARKER)
+            except FileNotFoundError:
+                marker_pins['entered'] = None
+                raise
+            marker_pins['entered'] = entered_snap
+            marker_pins['completed'] = False
+            try:
+                completed_snap = async_file_snapshot(completed,ASYNC_MAX_MARKER)
+            except FileNotFoundError:
+                marker_pins['completed'] = None
+                raise
+            marker_pins['completed'] = completed_snap
             validate_async_marker(strict_json(entered_snap[1],max_depth=5),nonce,current,'entered')
             completion = validate_async_marker(strict_json(completed_snap[1],max_depth=5),nonce,current,'completed')
             if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
@@ -2369,6 +2548,7 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
             if completion['status'] != 1:
                 raise FullError(ASYNC_FAILURES[completion['failure']])
             record['cases'][current] = [current,1,0,module_hashes[current],63,completion['trace'],completion['values'],completion['errors']]
+        host_stage = 5
         for path,saved,limit,allow_empty in retained:
             async_require_snapshot(path,saved,limit,allow_empty=allow_empty)
         record['continuity_sha256'] = write_async_continuity(root,inputs,nonce,retained)
@@ -2382,11 +2562,25 @@ def run_client_async(platform, root: Path, inputs: Path, nonce: str, hashes: dic
         status = 3 if kind == 'unsupported_observation' else 2
         record['cases'][current] = [current,status,ASYNC_FAILURES.index(kind),module_hashes[current] if record['template_sha256'] else None,0,[],[],[]]
         record.update(status='inconclusive' if status == 3 else 'failed',failure_kind=kind,continuity_sha256=None)
+        record['failure_diagnostics'] = async_failure_observation(
+            host_stage, current, nonce, stopped=process_stopped,
+            marker_context=marker_context, log_context=log_context)
     return record
 # Client Async finite protocol v1. This code is embedded in trusted full_suite.py.
 # Public rows stay compact in summary/provenance; descriptors never cross that boundary.
 ASYNC_VERSION = 1
 ASYNC_MAX_MARKER = 16_384
+# Wire ordinals are independent of the legacy process diagnostic vocabulary.
+# observed_* describes only the stable post-stop capture, not final continuity.
+ASYNC_HOST_STAGES = ('prepare', 'build', 'roundtrip', 'enterprise', 'markers', 'continuity')
+ASYNC_MARKER_STATES = ('not_checked', 'observed_absent', 'observed_invalid', 'observed_valid')
+ASYNC_LOG_CATEGORIES = ('not_checked', 'observed_absent', 'observed_invalid', 'unknown',
+    'compile_error', 'runtime_error', 'unsupported_api', 'permission_denied',
+    'authentication_failed', 'license_unavailable', 'training_restriction',
+    'startup_failed', 'conflicting_evidence', 'entry_request', 'entry_witness',
+    'entry_initialize', 'entry_entered', 'entry_root')
+ASYNC_ENTRY_LOG_MARKERS = {'ASYNC-ENTRY-FAILURE:' + name: index
+                         for index, name in enumerate(('request', 'witness', 'initialize', 'entered', 'root'), 13)}
 ASYNC_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
 ASYNC_STRINGS = ('7', '17', '11', '12', '21', '22', '31', '33')
 ASYNC_FAILURES = ('none', 'prerequisites_failed', 'stale_evidence', 'invalid_input',
@@ -2591,6 +2785,7 @@ def validate_async_marker(value, nonce, case_id, phase):
 def empty_async_report():
     return {'version':1,'status':'not_started','failure_kind':'prerequisites_failed',
             'template_sha256':None,'continuity_sha256':None,'process_diagnostics':empty_process_diagnostics(),
+            'failure_diagnostics':None,
             'cases':[[i,0,1,None,0,[],[],[]] for i in range(8)]}
 
 
@@ -2603,8 +2798,24 @@ def _async_diagnostic(value):
     return wire
 
 
+def validate_async_failure_diagnostics(record):
+    value = record['failure_diagnostics']
+    if value is None:
+        return
+    if (record.get('status') not in ('failed', 'inconclusive')
+            or type(value) is not list or len(value) != 4
+            or not _async_int(value[0], 0, 5)
+            or any(not _async_int(item, 0, 3) for item in value[1:3])
+            or not _async_int(value[3], 0, 17)
+            or (value[0] < 3 and value[1:3] != [0, 0])
+            or (value[0] == 0 and value[3] != 0)
+            or (value[3] >= 13 and value[0] < 3)
+            or (value[2] == 3 and value[1] != 3)):
+        _async_bad()
+
+
 def validate_async_report(record, template_hash, module_hashes):
-    keys = {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','cases'}
+    keys = {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','cases'}
     if (not _async_hash(template_hash) or type(module_hashes) not in (list,tuple) or len(module_hashes) != 8
             or any(not _async_hash(h) for h in module_hashes) or type(record) is not dict or set(record) != keys
             or not _async_int(record['version'],1,1)
@@ -2616,6 +2827,7 @@ def validate_async_report(record, template_hash, module_hashes):
     if (not _async_hash(record['continuity_sha256']) if record['status'] == 'ok' else record['continuity_sha256'] is not None):
         _async_bad()
     _async_diagnostic(record['process_diagnostics'])
+    validate_async_failure_diagnostics(record)
     stopped = False
     failed = None
     observed = 0
@@ -2659,14 +2871,16 @@ def validate_async_report(record, template_hash, module_hashes):
 
 
 def encode_async_wire(record):
-    if type(record) is not dict or 'process_diagnostics' not in record:
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
         _async_bad()
+    validate_async_failure_diagnostics(record)
     return {**record,'process_diagnostics':_async_diagnostic(record['process_diagnostics'])}
 
 
 def decode_async_wire(record):
-    if type(record) is not dict or 'process_diagnostics' not in record:
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
         _async_bad()
+    validate_async_failure_diagnostics(record)
     return {**record,'process_diagnostics':decode_process_wire(record['process_diagnostics'])}
 
 
@@ -2967,9 +3181,12 @@ EndFunction
 
 &НаКлиенте
 Процедура ПриОткрытии(Отказ)
+    ЭтапВхода = "request";
     Попытка
         АсинхЗапрос = AsyncReadRequest();
+        ЭтапВхода = "witness";
         АсинхКонтекст = АсинхКонтекстПробы();
+        ЭтапВхода = "initialize";
         АсинхТрасса = Новый Массив;
         АсинхЗначения = Новый Массив;
         АсинхОшибки = Новый Массив;
@@ -2977,9 +3194,13 @@ EndFunction
         АсинхЗавершено = Ложь;
         АсинхНесовместимо = Ложь;
         АсинхСбой = Ложь;
+        ЭтапВхода = "entered";
         АсинхЗаписатьВход();
+        ЭтапВхода = "root";
         АсинхКореньПробы();
     Исключение
+        // Finite private log witness only, never native semantic evidence.
+        Сообщить("ASYNC-ENTRY-FAILURE:" + ЭтапВхода);
         // No completion and no early exit: external watchdog fails closed.
     КонецПопытки;
 КонецПроцедуры
@@ -3339,7 +3560,7 @@ EnDpRoCeDuRe
 )
 
 
-ASYNC_FIXTURE_SHA256 = 'd271883b3286252cf28a1638c9844023dd05157545296f43f8f984b35f12b1e9'
+ASYNC_FIXTURE_SHA256 = '38571ceb6d0ee7013f1e27f9f03896b91d0faea47a389dab4c0b7f4e4e5eb0b4'
 
 
 def async_client_module(case_id: int) -> bytes:

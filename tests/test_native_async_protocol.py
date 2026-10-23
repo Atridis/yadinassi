@@ -62,7 +62,7 @@ def observation(case, *, scalar_errors=(True,True,True), nested=True, reject_cal
 
 
 def record(**options):
-    return dict(version=1,status='ok',failure_kind='none',template_sha256=H,continuity_sha256=H,
+    return dict(version=1,status='ok',failure_kind='none',template_sha256=H,continuity_sha256=H,failure_diagnostics=None,
                 process_diagnostics=fixtures.process_diagnostics(),
                 cases=[[i,1,0,MODULES[i],63,*observation(i,**options)] for i in range(8)])
 

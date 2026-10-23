@@ -191,6 +191,26 @@ def routine(source, name):
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
+    def test_entry_failure_log_is_finite_private_stage_only(self):
+        handler = routine(make_fixture()['ASYNC_TEMPLATE'], 'ПриОткрытии')
+        stages = re.findall(r'ЭтапВхода = "([a-z]+)";', handler)
+        self.assertEqual(stages, ['request', 'witness', 'initialize', 'entered', 'root'])
+        operations = ['АсинхЗапрос = AsyncReadRequest();',
+                      'АсинхКонтекст = АсинхКонтекстПробы();',
+                      'АсинхТрасса = Новый Массив;',
+                      'АсинхЗаписатьВход();', 'АсинхКореньПробы();']
+        for index, (stage, operation) in enumerate(zip(stages, operations)):
+            start = handler.index('ЭтапВхода = "' + stage + '";')
+            self.assertLess(start, handler.index(operation))
+            if index + 1 < len(stages):
+                self.assertLess(handler.index(operation), handler.index('ЭтапВхода = "' + stages[index + 1] + '";'))
+        catch = handler.split('Исключение', 1)[1]
+        self.assertEqual(re.findall(r'Сообщить\(([^\n]+)\);', catch),
+                         ['"ASYNC-ENTRY-FAILURE:" + ЭтапВхода'])
+        for forbidden in ('ОписаниеОшибки(', 'ИнформацияОбОшибке(',
+                          'ЗавершитьРаботуСистемы(', 'АсинхЗаписатьЗавершение('):
+            self.assertNotIn(forbidden, handler)
+
     def test_sources_are_literal_and_generator_is_fixed(self):
         fixture = make_fixture()
         assert isinstance(fixture['ASYNC_TEMPLATE'], str)
@@ -401,7 +421,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
             'Size', 'StrFind', 'StrLen', 'Type', 'TypeOf', 'ВызватьИсключение',
             'Добавить', 'Если', 'ЗавершитьРаботуСистемы', 'Закрыть', 'ЗаписатьJSON',
             'ИначеЕсли', 'ИнформацияОбОшибке', 'Количество', 'Найти', 'ОткрытьФайл',
-            'СтрДлина', 'СтрРазделить', 'Структура', 'Тип', 'ТипЗнч', 'Цел',
+            'Сообщить', 'СтрДлина', 'СтрРазделить', 'Структура', 'Тип', 'ТипЗнч', 'Цел',
         }
         self.assertEqual(calls, expected)
         self.assertEqual(set(re.findall(r'(?i)\b(?:Новый|New)\s+(\w+)', cleaned)),

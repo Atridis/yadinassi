@@ -43,3 +43,26 @@ The old process timeout remains exactly 120 seconds. Async-only operations use a
 The staged input inventory remains 24 paths. The stage wire cap remains 8192 bytes; summary and provenance caps remain 32768 bytes each. Public output classes remain six existing `.out` files, finite provenance, and finite report. No raw logs, marker files, continuity manifest, database, EPF, or screenshots are exported. Reports explicitly mark measurement purpose and `client_async_parity_claimed: false`.
 
 Offline tests exercise synthetic observations and transport failures. They do not establish native compilation, scheduling, or platform API behavior. Native execution and independent artifact audit remain a separate gate.
+
+## Failure localization, not semantic evidence
+
+Schema 4 also carries `failure_diagnostics`: normally null, or a four-integer tuple
+`[host_stage, entered_observation, completed_observation, native_log_category]`.
+The finite host stages are preparation, build, roundtrip, enterprise, marker
+validation, and continuity. Marker states are not_checked, observed_absent,
+observed_invalid, or observed_valid. These are bounded, stable observations after
+the process group has stopped, not assertions that files remain unchanged until
+publication. They do not replace successful completion or continuity proofs.
+
+The entry wrapper emits only a finite startup-failure label into the existing
+private platform log: request, witness, initialize, entered, or
+root. That label identifies the wrapper operation being attempted, not the
+statement-level cause or Async language behavior. Other native log categories
+are diagnostic classifications, not proof of a particular cause. No raw log
+text, error description, new sidecar, or new artifact class is exported.
+
+For a failed case, semantic proof stays zero, trace/value/error observations stay
+empty, and the measurement's continuity stays null. Valid diagnostic markers never turn a timed
+out or otherwise failed process into accepted measurements. When entry is not
+observed and logs are inconclusive, compilation, startup, and an unobserved
+client failure remain unresolved alternatives.

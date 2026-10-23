@@ -1449,7 +1449,7 @@ def async_source_identity(source: bytes) -> dict:
         if any('__ASYNC_CASE_' in case for case in cases):
             raise ValueError('async nested placeholder')
         fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
-        if fixture_hash != 'd271883b3286252cf28a1638c9844023dd05157545296f43f8f984b35f12b1e9':
+        if fixture_hash != '38571ceb6d0ee7013f1e27f9f03896b91d0faea47a389dab4c0b7f4e4e5eb0b4':
             raise ValueError('async fixture not pinned')
         modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
         identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
@@ -1543,18 +1543,36 @@ def _host_async_diagnostic(value):
     return validate_process_diagnostics(value)
 
 
+def validate_async_failure_diagnostics(data):
+    value = data['failure_diagnostics']
+    if value is None:
+        return
+    require = _host_async_require
+    number = _host_async_number
+    require(data.get('status') in ('failed', 'inconclusive'), 'failure diagnostic applicability')
+    require(type(value) is list and len(value) == 4, 'failure diagnostic fields')
+    stage, entered, completed, category = value
+    require(number(stage, 0, 5) and number(entered, 0, 3)
+            and number(completed, 0, 3) and number(category, 0, 17), 'failure diagnostic codes')
+    require(stage >= 3 or (entered == 0 and completed == 0), 'failure marker applicability')
+    require(stage != 0 or category == 0, 'failure log applicability')
+    require(category < 13 or stage >= 3, 'entry log applicability')
+    require(completed != 3 or entered == 3, 'failure marker order')
+
+
 def validate_client_async(data, template_hash, module_hashes):
     require = _host_async_require
     number = _host_async_number
     require(_host_async_sha(template_hash) and type(module_hashes) in (tuple,list)
             and len(module_hashes) == 8 and all(_host_async_sha(x) for x in module_hashes),'trusted hashes')
-    require(type(data) is dict and set(data) == {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','cases'},'record fields')
+    require(type(data) is dict and set(data) == {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','cases'},'record fields')
     require(number(data['version'],1,1),'version')
     require(type(data['status']) is str and data['status'] in ('not_started','ok','failed','inconclusive'),'status')
     require(type(data['failure_kind']) is str and data['failure_kind'] in HOST_ASYNC_FAILURES,'reason')
     require(data['template_sha256'] is None or _host_async_sha(data['template_sha256']) and data['template_sha256'] == template_hash,'template identity')
     require(_host_async_sha(data['continuity_sha256']) if data['status'] == 'ok' else data['continuity_sha256'] is None,'continuity anchor')
     diag = _host_async_diagnostic(data['process_diagnostics'])
+    validate_async_failure_diagnostics(data)
     require(type(diag['stage']) is str and type(diag['reason']) is str,'diagnostic types')
     rows = data['cases']
     require(type(rows) is list and len(rows) == 8,'eight cases')
@@ -1594,8 +1612,9 @@ def validate_client_async(data, template_hash, module_hashes):
 
 
 def decode_async_wire(record):
-    if type(record) is not dict or 'process_diagnostics' not in record:
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
         raise ValueError('async wire')
+    validate_async_failure_diagnostics(record)
     wire = record['process_diagnostics']
     if (type(wire) is not list or len(wire) != 5 or type(wire[4]) is not list or len(wire[4]) != 7):
         raise ValueError('async process wire')
@@ -1608,8 +1627,9 @@ def decode_async_wire(record):
 
 
 def encode_async_wire(record):
-    if type(record) is not dict or 'process_diagnostics' not in record:
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics'} <= set(record):
         raise ValueError('async wire')
+    validate_async_failure_diagnostics(record)
     diagnostic = _host_async_diagnostic(record['process_diagnostics'])
     names = ('native','display','session_bus','shell','python','other','unreadable')
     encoded = {**record,'process_diagnostics':[diagnostic['stage'],diagnostic['reason'],diagnostic['unexpected_count'],
@@ -1681,4 +1701,4 @@ def validate_async_marker_raw(raw, nonce, case_id, phase):
     return data
 
 
-ASYNC_EXPECTED_IDENTITY = {'template': 'd493141a29130e2f7407d066f7b3348a7e63ab0ba4145a2a228a1da8e1f1212d', 'modules': ['58e9c947dff94fd1b15b5d1bbb944ec969e59765f2a20e6c4ece4311b32be166', 'f9355220b331fe60be9f77bd42dd299057b5560a211c913bfe4cff007ff55882', '7707beec845b7b6cbfca2515966681c90027e17cdd8f17fe5bd10f930150b189', '8b232bdbd31dbf6127124e18f254e4121b53918c98ee0908186aeafed1233b41', 'f6aee30d3747e244892007132532e5a54c2d8940ffe2c0430ee1ad6c43d5c736', '3be80aa6e2c3122da9e04fd5913945ed136b5db057d8d9280e7a1715f7b7b959', '579f91c4ed1c3ab12fd5af8f95a90a0b1af7d8b98cb9eb2c6e7b579daae2f4ba', '5f74f5450fd166de5bb6c193b473003c33a3cd822f7fee2064347a69b31947d8']}
+ASYNC_EXPECTED_IDENTITY = {'template': 'a6df293877c28a19eb70d8bdddcd784145584af874a01886e82e5ea1289c3994', 'modules': ['9c85c13ed0dc58e4796a597aed05c2741012b25d0630cbc3769c2759c35c1e11', '29ee012b309e1389de1ab9fe8b24ae70ba7dd1780713a76ecad24ef83e8c4b05', '2544a9a788e51416a4d8a4cd873b450245db9cd55b4e3960a8f9d2544c0ed23d', 'a4161b735a51c2832fd79c8c032764e0edf94490c488a3e592981e2280555583', 'ba150ad81a0785bd235235ae927717d79f0bd6fa6b10fa2f681703d1ae651e59', 'c025d2c0b7deabca758aa29e3bec2b0396f45789e2982a6bf37b36c0e323964b', '2d533887c41f1bd13a82abbdb84f9075e34836d89b1993c78c1b7976bddd58b6', 'a62a5571290e04e043f6ce4b48199498ecdb0a440323f9e0f6b30cfdd0282e69']}
