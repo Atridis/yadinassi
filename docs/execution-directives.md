@@ -1,9 +1,10 @@
 # Logical execution directives: first bounded implementation
 
-Status: local implementation based on main `be82ce1`, awaiting independent
-review and a genuine end-to-end native witness. Unit results are model tests,
-not evidence of native compatibility. Existing Async measurement work, trusted
-launchers, fixture bytes and CI source inventories are unchanged.
+Status: bounded implementation based on main `be82ce1`, independently reviewed
+and validated by an audited end-to-end native run (see evidence below). Current-
+head rerun and four-OS CI remain release gates. Unit results alone are not native
+evidence. Existing Async measurement work and historical parity fixtures remain
+unchanged.
 
 ## Scope and execution model
 
@@ -110,7 +111,7 @@ root to client and running logical contexts in one process are explicit project
 choices authorized by the user, not a claim that 1C executes standalone scripts
 this way. The original fixed-client behavior is documented in features.md.
 
-## Automated native witness (pending capture)
+## Automated native witness (audited bounded capture)
 
 The ordinary existing `--client-probe` now includes the eleven positive scalar
 observations. Its original four values remain first and unchanged. No workflow
@@ -137,9 +138,20 @@ any future merge must reconcile it explicitly and re-review the hash/inverse,
 never relax either branch's source-binding rules.
 
 Compile-negative and future-state discriminator modules remain separate planned
-measurements, not fabricated captured evidence. Native positive results are
-still uncaptured; a successful audited run on this exact source is required
-before ready/merge. Local unit tests are not that result.
+measurements, not fabricated captured evidence. The positive witness passed in
+[native run 39932617220](https://github.com/Atridis/yadinassi/actions/runs/39932617220)
+for head `46fafb9b9a171925f34a34e164b3a0c69b9bd285`, tree
+`6306a2be0265bb78f3ed947f58f5c3306695246b`. Independent artifact audit verified
+all 24 staged inputs, 50-file interpreter provenance, exact-source fifteen-value
+host execution, native strict marker, module/roundtrip, nonce and process gates.
+Source SHA256: `b98f7cb8e3489fabdd5df6cec8b929b7e059f9931f1fbfedb8d112be53c1f437`;
+module/roundtrip: `ae7275f83f2be4976cfe42f3f7da71384f44c87130c3674c9a2d03e8a4f226b3`.
+All four full client parity counts (841/185/421/402) were retained; existing
+collections typed-map-order equivalence remains, not universal byte equality.
+The current follow-up changes only offline Windows fixture routing and this
+status documentation; runtime and native witness source are unchanged. Full
+four-OS CI and current-head native audit remain release gates. Local tests alone
+are not native evidence.
 
 ### Finite diagnostics after the first native run
 
@@ -182,5 +194,6 @@ of platform Client/Server target flags with standalone Client/Server defaults.
 All fifteen expected typed values are unchanged. The temporary profile helpers,
 extra records and shared-source inverse are removed; the host again executes
 exactly the whole staged form source. The four legacy adapters retain their
-byte-identical modules and pins. A new complete audited native PASS is still
-required; neither the measurement nor local tests satisfy that release gate.
+byte-identical modules and pins. The corrected witness passed the audited run
+listed above. A current-head rerun remains required after the test/docs follow-up;
+neither the earlier measurement-only run nor local tests satisfy that gate.

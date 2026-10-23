@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from test_native_client_probe import suite, full, ROOT
+from test_native_client_probe import suite, full, ROOT, stage_fixture
 
 
 def linux_fixture(path):
@@ -15,6 +15,16 @@ def linux_fixture(path):
 
 
 class NativeDirectiveWitnessTests(unittest.TestCase):
+    def setUp(self):
+        # Pure marker-schema fixtures do not exercise Linux descriptor security.
+        # Match the existing Windows client marker fixture adapter; keep the
+        # production reader and real POSIX security tests unchanged.
+        if os.name == 'nt':
+            reader = mock.patch.object(suite, 'secure_bytes',
+                                       new=stage_fixture.portable_fixture_bytes)
+            reader.start()
+            self.addCleanup(reader.stop)
+
     def test_native_and_host_contracts_match_with_old_values_retained(self):
         self.assertEqual(suite.CLIENT_VALUES, full.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[:4], [42, "client-probe", 3, 6])
@@ -74,7 +84,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
                 values = list(suite.CLIENT_VALUES)
                 values[index] = values[index].split(":", 1)[0] + ": wrong"
                 path.write_text(json.dumps(dict(schema=1, nonce="a" * 32,
-                    phase="completed", witness="client", values=values)))
+                    phase="completed", witness="client", values=values)), encoding="utf-8")
                 with self.subTest(index=index), self.assertRaises(suite.FullError):
                     suite.client_marker(path, "a" * 32, "completed")
 
@@ -107,18 +117,28 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
                 values = list(suite.CLIENT_VALUES)
                 values[0] = changed
                 path.write_text(json.dumps(dict(schema=1, nonce="a" * 32,
-                    phase="completed", witness="client", values=values)))
+                    phase="completed", witness="client", values=values)), encoding="utf-8")
                 with self.subTest(changed=changed), self.assertRaises(suite.FullError):
                     suite.client_marker(path, "a" * 32, "completed")
 
 
 class NativeDirectiveDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        # Pure marker-schema fixtures do not exercise Linux descriptor security.
+        # Match the existing Windows client marker fixture adapter; keep the
+        # production reader and real POSIX security tests unchanged.
+        if os.name == 'nt':
+            reader = mock.patch.object(suite, 'secure_bytes',
+                                       new=stage_fixture.portable_fixture_bytes)
+            reader.start()
+            self.addCleanup(reader.stop)
+
     def diagnose(self, values, phase='completed', **changes):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / 'marker.json'
             marker = dict(schema=1, nonce='a' * 32, phase=phase, witness='client', values=values)
             marker.update(changes)
-            path.write_text(json.dumps(marker))
+            path.write_bytes(json.dumps(marker).encode("utf-8"))
             result = suite.client_marker_diagnostics(path, 'a' * 32)
             full.validate_marker_diagnostics(result)
             return result
