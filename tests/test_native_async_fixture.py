@@ -195,7 +195,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         handler = routine(make_fixture()['ASYNC_TEMPLATE'], 'ПриОткрытии')
         stages = re.findall(r'ЭтапВхода = "([a-z]+)";', handler)
         self.assertEqual(stages, ['request', 'witness', 'initialize', 'entered', 'root'])
-        operations = ['АсинхЗапрос = AsyncReadRequest();',
+        operations = ['АсинхЗапрос = AsyncReadRequest(ЭтапВхода);',
                       'АсинхКонтекст = АсинхКонтекстПробы();',
                       'АсинхТрасса = Новый Массив;',
                       'АсинхЗаписатьВход();', 'АсинхКореньПробы();']
@@ -210,6 +210,40 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         for forbidden in ('ОписаниеОшибки(', 'ИнформацияОбОшибке(',
                           'ЗавершитьРаботуСистемы(', 'АсинхЗаписатьЗавершение('):
             self.assertNotIn(forbidden, handler)
+
+    def test_request_substages_are_fixed_by_reference_without_semantic_changes(self):
+        from test_native_async_protocol import suite
+        template = make_fixture()['ASYNC_TEMPLATE']
+        body = routine(template, 'AsyncReadRequest')
+        labels = ['request_open', 'request_object', 'request_key', 'request_value',
+                  'request_end', 'request_fields', 'request_nonce', 'request_paths']
+        all_labels = ['request', 'witness', 'initialize', 'entered', 'root', *labels]
+        self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS,
+                         {'ASYNC-ENTRY-FAILURE:' + label: 13 + index
+                          for index, label in enumerate(all_labels)})
+        self.assertIn('Function AsyncReadRequest(ЭтапВхода)\n', template)
+        self.assertEqual(re.findall(r'ЭтапВхода = "([a-z_]+)";', body), labels)
+        operations = ['Reader = New JSONReader;', 'Request = New Structure;',
+                      'AsyncExpectToken(Reader, JSONValueType.PropertyName);',
+                      'If Key = "schema" Or Key = "version" Then',
+                      'AsyncExpectToken(Reader, JSONValueType.ObjectEnd);',
+                      'If Not Request.Property("schema")', 'If StrLen(Request.nonce)',
+                      'If StrLen(Request.entered)']
+        for index, (label, operation) in enumerate(zip(labels, operations)):
+            start = body.index('ЭтапВхода = "' + label + '";')
+            self.assertLess(start, body.index(operation))
+            if index + 1 < len(labels):
+                self.assertLess(body.index(operation), body.index('ЭтапВхода = "' + labels[index + 1] + '";'))
+            self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS['ASYNC-ENTRY-FAILURE:' + label], 18 + index)
+        restored = re.sub(r'^\s*ЭтапВхода = "request_[a-z]+";\n', '', template, flags=re.M)
+        restored = restored.replace('Function AsyncReadRequest(ЭтапВхода)', 'Function AsyncReadRequest()')
+        restored = restored.replace('АсинхЗапрос = AsyncReadRequest(ЭтапВхода);', 'АсинхЗапрос = AsyncReadRequest();')
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         'a6df293877c28a19eb70d8bdddcd784145584af874a01886e82e5ea1289c3994')
+        cases = make_fixture()['ASYNC_CASE_SOURCES']
+        self.assertEqual(hashlib.sha256(json.dumps(cases, ensure_ascii=False,
+                         separators=(',', ':')).encode()).hexdigest(),
+                         '09edb17d68c0ff7a5462498b132afa5c2b202912abdcb48e33ae1c676a39c075')
 
     def test_sources_are_literal_and_generator_is_fixed(self):
         fixture = make_fixture()

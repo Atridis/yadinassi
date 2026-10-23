@@ -56,7 +56,7 @@ class AsyncFailureProtocolTests(unittest.TestCase):
 
     def test_every_enum_combination_agrees_between_independent_validators(self):
         self.accept(failed_record())
-        for stage, entered, completed, category in itertools.product(range(6), range(4), range(4), range(18)):
+        for stage, entered, completed, category in itertools.product(range(6), range(4), range(4), range(26)):
             valid = ((stage >= 3 or entered == completed == 0)
                      and (stage != 0 or category == 0)
                      and (category < 13 or stage >= 3)
@@ -67,7 +67,7 @@ class AsyncFailureProtocolTests(unittest.TestCase):
     def test_exact_types_lengths_bounds_missing_and_extra_keys(self):
         for malformed in ({}, (), (), '', True, 0, [], [3, 3, 3], [3, 3, 3, 3, 0]):
             self.reject(failed_record(malformed))
-        for index, maximum in enumerate((5, 3, 3, 17)):
+        for index, maximum in enumerate((5, 3, 3, 25)):
             for item in (True, False, None, '0', 0.0, -1, maximum + 1, [], {}):
                 value = [3, 3, 3, 3]
                 value[index] = item

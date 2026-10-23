@@ -2593,9 +2593,13 @@ ASYNC_LOG_CATEGORIES = ('not_checked', 'observed_absent', 'observed_invalid', 'u
     'compile_error', 'runtime_error', 'unsupported_api', 'permission_denied',
     'authentication_failed', 'license_unavailable', 'training_restriction',
     'startup_failed', 'conflicting_evidence', 'entry_request', 'entry_witness',
-    'entry_initialize', 'entry_entered', 'entry_root')
+    'entry_initialize', 'entry_entered', 'entry_root', 'entry_request_open',
+    'entry_request_object', 'entry_request_key', 'entry_request_value',
+    'entry_request_end', 'entry_request_fields', 'entry_request_nonce', 'entry_request_paths')
 ASYNC_ENTRY_LOG_MARKERS = {'ASYNC-ENTRY-FAILURE:' + name: index
-                         for index, name in enumerate(('request', 'witness', 'initialize', 'entered', 'root'), 13)}
+                         for index, name in enumerate(('request', 'witness', 'initialize', 'entered', 'root',
+                             'request_open', 'request_object', 'request_key', 'request_value',
+                             'request_end', 'request_fields', 'request_nonce', 'request_paths'), 13)}
 ASYNC_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
 ASYNC_STRINGS = ('7', '17', '11', '12', '21', '22', '31', '33')
 ASYNC_FAILURES = ('none', 'prerequisites_failed', 'stale_evidence', 'invalid_input',
@@ -2821,7 +2825,7 @@ def validate_async_failure_diagnostics(record):
             or type(value) is not list or len(value) != 4
             or not _async_int(value[0], 0, 5)
             or any(not _async_int(item, 0, 3) for item in value[1:3])
-            or not _async_int(value[3], 0, 17)
+            or not _async_int(value[3], 0, 25)
             or (value[0] < 3 and value[1:3] != [0, 0])
             or (value[0] == 0 and value[3] != 0)
             or (value[3] >= 13 and value[0] < 3)
@@ -3082,16 +3086,20 @@ Procedure AsyncExpectToken(Reader, Val Token)
 EndProcedure
 
 &AtClient
-Function AsyncReadRequest()
+Function AsyncReadRequest(ЭтапВхода)
     // Streaming grammar rejects nested values, duplicate keys and trailing data.
+    ЭтапВхода = "request_open";
     Reader = New JSONReader;
     Reader.OpenFile(LaunchParameter);
+    ЭтапВхода = "request_object";
     Request = New Structure;
     AsyncExpectToken(Reader, JSONValueType.ObjectStart);
     For Index = 1 To 5 Do
+        ЭтапВхода = "request_key";
         AsyncExpectToken(Reader, JSONValueType.PropertyName);
         Key = Reader.CurrentValue;
         If Request.Property(Key) Then Raise "ASYNC-REQUEST"; EndIf;
+        ЭтапВхода = "request_value";
         If Key = "schema" Or Key = "version" Then
             AsyncExpectToken(Reader, JSONValueType.Number);
             If TypeOf(Reader.CurrentValue) <> Type("Number") Or Reader.CurrentValue <> 1 Then
@@ -3104,18 +3112,22 @@ Function AsyncReadRequest()
         EndIf;
         Request.Insert(Key, Reader.CurrentValue);
     EndDo;
+    ЭтапВхода = "request_end";
     AsyncExpectToken(Reader, JSONValueType.ObjectEnd);
     If Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;
     Reader.Close();
+    ЭтапВхода = "request_fields";
     If Not Request.Property("schema") Or Not Request.Property("version")
         Or Not Request.Property("nonce") Or Not Request.Property("entered")
         Or Not Request.Property("completed") Then Raise "ASYNC-REQUEST"; EndIf;
+    ЭтапВхода = "request_nonce";
     If StrLen(Request.nonce) <> 32 Then Raise "ASYNC-REQUEST"; EndIf;
     For Index = 1 To 32 Do
         If StrFind("0123456789abcdef", Mid(Request.nonce, Index, 1)) = 0 Then
             Raise "ASYNC-REQUEST";
         EndIf;
     EndDo;
+    ЭтапВхода = "request_paths";
     If StrLen(Request.entered) = 0 Or StrLen(Request.entered) > 512
         Or StrLen(Request.completed) = 0 Or StrLen(Request.completed) > 512
         Or Request.entered = Request.completed Then Raise "ASYNC-REQUEST"; EndIf;
@@ -3198,7 +3210,7 @@ EndFunction
 Процедура ПриОткрытии(Отказ)
     ЭтапВхода = "request";
     Попытка
-        АсинхЗапрос = AsyncReadRequest();
+        АсинхЗапрос = AsyncReadRequest(ЭтапВхода);
         ЭтапВхода = "witness";
         АсинхКонтекст = АсинхКонтекстПробы();
         ЭтапВхода = "initialize";
@@ -3575,7 +3587,7 @@ EnDpRoCeDuRe
 )
 
 
-ASYNC_FIXTURE_SHA256 = '38571ceb6d0ee7013f1e27f9f03896b91d0faea47a389dab4c0b7f4e4e5eb0b4'
+ASYNC_FIXTURE_SHA256 = 'f6a4e32a92874a95dab240984fbd82095a73244cc02c00a286c19422e963de94'
 
 
 def async_client_module(case_id: int) -> bytes:

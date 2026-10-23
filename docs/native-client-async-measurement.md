@@ -83,9 +83,12 @@ the process group has stopped, not assertions that files remain unchanged until
 publication. They do not replace successful completion or continuity proofs.
 
 The entry wrapper emits only a finite startup-failure label into the existing
-private platform log: request, witness, initialize, entered, or
-root. That label identifies the wrapper operation being attempted, not the
-statement-level cause or Async language behavior. Other native log categories
+private platform log: request, witness, initialize, entered, or root. Request
+localization additionally distinguishes open, object, key, value, end, fields,
+nonce, and paths operations using fixed request-prefixed labels. These labels
+identify the operation group being attempted, not the statement-level cause or
+Async language behavior. Request validation remains strict; no fallback parser
+or free-form error information is added. Other native log categories
 are diagnostic classifications, not proof of a particular cause. No raw log
 text, error description, new sidecar, or new artifact class is exported.
 
