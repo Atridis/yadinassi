@@ -140,3 +140,20 @@ Compile-negative and future-state discriminator modules remain separate planned
 measurements, not fabricated captured evidence. Native positive results are
 still uncaptured; a successful audited run on this exact source is required
 before ready/merge. Local unit tests are not that result.
+
+### Finite diagnostics after the first native run
+
+The first native run reached the client entry and exited cleanly, with matching
+source/module/roundtrip hashes, but rejected the completion marker. That result
+alone does not distinguish a caught computation error from a typed value mismatch
+and is not accepted directive evidence.
+
+On rejected ordinary-client completion only, `marker_diagnostics` now reports a
+finite phase (`invalid`, `error`, `completed`), mismatch class, zero-based value
+ordinal (0–14, or 15 for excess values), and optional literal operation stage
+(1–11). The BSL witness catches unexpected computation errors into a fixed
+sentinel plus stage number, never error descriptions. Stage order is the eleven
+labels in the positive probe; ordinal 4 is the first directive observation.
+The original exact typed marker equality still rejects every sentinel, partial
+result and mismatch. Metadata cannot grant success, export raw values or replace
+source identity. The four old parity modules remain byte-identical.

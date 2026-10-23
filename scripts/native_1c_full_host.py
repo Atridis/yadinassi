@@ -389,7 +389,37 @@ def validate_process_diagnostics(value):
     return value
 
 
+def validate_marker_diagnostics(value):
+    if (type(value) is not dict
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or type(value['phase']) is not str
+            or value['phase'] not in {'invalid', 'error', 'completed'}
+            or type(value['kind']) is not str
+            or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= 15
+            or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
+        raise ValueError('client marker diagnostics')
+    if value['phase'] != 'completed':
+        valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
+    elif value['kind'] == 'runtime_error':
+        valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
+    elif value['kind'] == 'count':
+        valid = 0 <= value['ordinal'] <= 15 and value['error_stage'] == 0
+    elif value['kind'] in {'type', 'value'}:
+        valid = 0 <= value['ordinal'] < 15 and value['error_stage'] == 0
+    else:
+        valid = value['ordinal'] == -1 and value['error_stage'] == 0
+    if not valid:
+        raise ValueError('client marker diagnostics combination')
+    return value
+
+
 def validate_client_probe(data, source_hash, module_hash):
+    if type(data) is dict and "marker_diagnostics" in data:
+        validate_marker_diagnostics(data["marker_diagnostics"])
+        if data.get("status") != "failed" or data.get("failure_kind") != "invalid_result" or data.get("witness_verified") is not False:
+            raise ValueError("client marker diagnostics outcome")
+        data = {key: value for key, value in data.items() if key != "marker_diagnostics"}
     if (type(data) is not dict
             or set(data) != CLIENT_FLAGS | CLIENT_HASHES | {"status", "failure_kind", "process_diagnostics"}
             or any(type(data[key]) is not bool for key in CLIENT_FLAGS)

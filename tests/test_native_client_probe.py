@@ -358,6 +358,8 @@ class ClientProbeHarness(unittest.TestCase):
                 result = self.run_probe()
                 self.assertEqual(result["status"], "failed")
                 self.assertEqual(result["failure_kind"], "artifact_missing")
+                self.assertNotIn("marker_diagnostics", result)
+                full.validate_client_probe(result, result["source_sha256"], result["module_sha256"])
                 self.assertFalse(result["witness_verified"])
                 self.reset()
 

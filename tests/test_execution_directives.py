@@ -89,7 +89,7 @@ Message(Outer(40));
 
     def test_positive_native_probe_is_only_a_local_prediction(self):
         source = (Path(__file__).resolve().parents[1] /
-                  'integrational_tests/directive_probes/client_server.bsl').read_text()
+                  'integrational_tests/directive_probes/client_server.bsl').read_text(encoding="utf-8")
         self.vm.execute(source)
         self.assertEqual(self.messages, [])
         self.vm.execute('RunDirectiveProbe();')
@@ -231,7 +231,7 @@ Message(S(40));
     def test_import_owner_and_same_module_exports_use_server_registry(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d)
-            (p / 'Side.bsl').write_text('&AtServer\nFunction F(Val X=40) Export Return X+2; EndFunction')
+            (p / 'Side.bsl').write_text('&AtServer\nFunction F(Val X=40) Export Return X+2; EndFunction', encoding="utf-8")
             self.vm.execute('// #Импорт Side.bsl\nMessage(Side.F());', str(p/'root.bsl'))
         self.assertEqual(self.messages, ['42'])
         self.vm.execute('&AtServer\nFunction S() Export Return 7; EndFunction')
@@ -254,13 +254,13 @@ EndFunction
 Function EmptyDescription() Export
  Return ErrorDescription();
 EndFunction
-""")
+""", encoding="utf-8")
                 if nested:
                     (root / 'Middle.bsl').write_text("""// #Импорт Leaf.bsl
 Function Description() Export Return Leaf.Description(); EndFunction
 Function InfoDescription() Export Return Leaf.InfoDescription(); EndFunction
 Function EmptyDescription() Export Return Leaf.EmptyDescription(); EndFunction
-""")
+""", encoding="utf-8")
                 name = 'Middle' if nested else 'Leaf'
                 messages = []
                 vm = Interpreter(messages.append)

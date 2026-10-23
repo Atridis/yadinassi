@@ -103,17 +103,25 @@ EndFunction
 &AtClient
 Function DirectiveWitnessValues()
     Results = New Array;
+    Stage = 1;
+    Try
+    Stage = 1;
     Results.Add("directive.call.add: " + ValueToStringInternal(DirectiveAdd()));
+    Stage = 2;
     Results.Add("directive.preprocessor.server: " + DirectiveSide());
+    Stage = 3;
 #If Client And Not Server Then
     Results.Add("directive.preprocessor.client: client");
 #Else
     Results.Add("directive.preprocessor.client: other");
 #EndIf
+    Stage = 4;
     Results.Add("directive.call.nested: " + DirectiveNested(2));
+    Stage = 5;
     X = 7;
     DirectiveRebind(X);
     Results.Add("directive.param.val: " + ValueToStringInternal(X));
+    Stage = 6;
     Try
         DirectiveFail();
         Results.Add("directive.exception: no-error");
@@ -121,10 +129,21 @@ Function DirectiveWitnessValues()
         Results.Add("directive.exception: " + ValueToStringInternal(
             Find(ErrorDescription(), "directive-controlled-failure") > 0));
     EndTry;
+    Stage = 7;
     Results.Add("directive.return.number: " + ValueToStringInternal(DirectiveScalar(42)));
+    Stage = 8;
     Results.Add("directive.return.string: " + ValueToStringInternal(DirectiveScalar("x")));
+    Stage = 9;
     Results.Add("directive.return.boolean: " + ValueToStringInternal(DirectiveScalar(True)));
+    Stage = 10;
     Results.Add("directive.return.undefined: " + ValueToStringInternal(DirectiveScalar(Undefined)));
+    Stage = 11;
     Results.Add("directive.call.recovery: " + ValueToStringInternal(DirectiveAdd()));
+    Except
+        // Fixed stage only: never export native exception descriptions.
+        Results = New Array;
+        Results.Add("directive.runtime-error");
+        Results.Add(Stage);
+    EndTry;
     Return Results;
 EndFunction
