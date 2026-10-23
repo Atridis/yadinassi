@@ -19,9 +19,10 @@ serializer, cyclic input, database/query, module state, NoContext, dual directiv
 or Async change. Module state remains separate mandatory next work.
 
 Standalone source `integrational_tests/directive_probes/object_transfer_core.bsl`
-is SHA256 `6a218ea202eea46f7ccb41534db3d3228d49435d0bb44598b30eefd891891aae`.
-The integrated adapter keeps all operations/calls in place. It only changes the
-client entry to return a local record array and its recording sink. Standalone
+is SHA256 `9fae5ac7a0a7dc243a65cb124247629cbc04ee7130ab169c1d61933cbbc9d33f`.
+The integrated adapter keeps all operations/calls in place. It changes the
+client entry to return a local record array and its recording sink, and adds
+root-local finite stage assignments plus an outer failure catch (below). Standalone
 Message emits typed diagnostic strings; native integration avoids dialogs and
 records Number/Boolean directly, or the fixed string `U` for Undefined. This
 bounded encoding is not a native semantic expectation. Root remains client.
@@ -207,3 +208,38 @@ Do not weaken the existing strict 50-value acceptance gate or enlarge marker/wir
 caps. Measurement is not an acceptance PASS. After a measured implementation,
 require exact whole-source host/native parity and existing release gates. PR90
 and its integration source/hashes remain untouched by this preparation.
+
+## First capture and finite failure localization
+
+[Run39956179492](https://github.com/Atridis/yadinassi/actions/runs/39956179492)
+reached client entry and exited quietly with exact source/module roundtrip, but
+reported an error-phase marker and no object observations. Summary artifact
+12503210246 has SHA256
+`bc4805c5052cb3278acacaa1b2c4419ee112b709cefd1aec31000a4a0da2a31a`.
+This is not the planned completed-count capture and establishes no object
+transfer semantics or exact error cause.
+
+Source inspection found implicit helper variable `Items`, a native managed-form
+property name. The existing collections adapter already explicitly localizes
+that collision. All new object helper temporaries and generated probe locals
+are now explicitly declared with Var, not renamed one collision at a time.
+A static AST check rejects undeclared assignment targets throughout all sixteen
+measurement routines. This prevents unintended form bindings; it does not prove
+that the earlier error came from that particular assignment. Runtime is unchanged.
+
+The integrated root also tracks a local finite stage before each original
+executable root statement. The exact mapping is committed in
+`integrational_tests/directive_probes/object_transfer_stages.json`, bound to the
+standalone source hash. Stages1..123 identify caller statements; stage0 means
+root setup. An outer catch discards all partial records and returns only the
+fixed `object.runtime-error` sentinel and stage. It never exports raw error text
+or relies on scalar copyback from a throwing helper. A helper callsite stage
+does not establish the failing inner operation.
+
+Only the exact already-matching fifty-value prefix plus this two-value sentinel
+can yield public `object_error_stage` metadata. It is a bounded integer0..123,
+mutually exclusive with the48-value observation list, and valid only for a
+failed completed/count/ordinal50 classification. Strict acceptance still rejects
+it. Known-stage, invalid-type/range, partial-list suppression and injected root
+setup/observer failures are tested. The full observation branch and all caps
+remain unchanged; no new diagnostic infrastructure or native expectations exist.

@@ -399,6 +399,7 @@ EndProcedure
 
 &AtServer
 Function ObjectTransferIndependent(A, B)
+    Var Seen;
     A.Items[0] = 21;
     Seen = B.Items[0];
     B.Items[0] = 23;
@@ -413,6 +414,7 @@ EndFunction
 
 &AtServer
 Procedure ObjectTransferRebind(P)
+    Var Items;
     Items = New Array;
     Items.Add(42);
     P = New Structure("N,Items", 41, Items);
@@ -429,6 +431,7 @@ EndFunction
 
 &AtServer
 Procedure ObjectTransferEscapes(P, Untouched, Val Control)
+    Var Items;
     P.N = 61;
     P.Items[0] = 62;
     Control.N = 63;
@@ -458,6 +461,7 @@ EndFunction
 
 &AtClient
 Function ObjectTransferNew(Val N)
+    Var Items;
     Items = New Array;
     Items.Add(N);
     Return New Structure("N,Items", N, Items);
@@ -485,6 +489,7 @@ EndFunction
 
 &AtClient
 Function ObjectTransferField(Val Value, Val Key)
+    Var Item;
     If TypeOf(Value) <> Type("Structure") Then
         Return Undefined;
     EndIf;
@@ -508,6 +513,7 @@ EndFunction
 
 &AtClient
 Function ObjectTransferLeaf(Val Value, Val Key)
+    Var Item;
     If TypeOf(Value) <> Type("Structure") Then
         Return Undefined;
     EndIf;
@@ -531,6 +537,7 @@ EndProcedure
 
 &AtClient
 Function RunObjectTransferProbe()
+    Var Records, ObjectStage;
     Var X, Y, Kept, Child, Control, Untouched, Result, Seen, Calls;
     Var Failed, Matched, BeforeX, BeforeY, AfterY;
     Var AfterXSibling, AfterXResultLeft, AfterXResultRight;
@@ -538,169 +545,299 @@ Function RunObjectTransferProbe()
 
     Records = New Array;
     Records.Add("object.transfer.v1");
-    ObjectTransferRecord(Records, "entered", True);
-
-    // 1. Val: nested mutation followed by formal rebinding.
-    X = ObjectTransferNew(1);
-    Child = X.Items;
-    Failed = False;
+    ObjectStage = 0;
     Try
-        ObjectTransferVal(X);
+        ObjectStage = 1;
+        ObjectTransferRecord(Records, "entered", True);
+    
+        // 1. Val: nested mutation followed by formal rebinding.
+        ObjectStage = 2;
+        X = ObjectTransferNew(1);
+        ObjectStage = 3;
+        Child = X.Items;
+        ObjectStage = 4;
+        Failed = False;
+        Try
+        ObjectStage = 5;
+            ObjectTransferVal(X);
+        Except
+        ObjectStage = 6;
+            Failed = True;
+        EndTry;
+        ObjectStage = 7;
+        ObjectTransferRecord(Records, "val.error", Failed);
+        ObjectStage = 8;
+        ObjectTransferRecord(Records, "val.root", ObjectTransferField(X, "N"));
+        ObjectStage = 9;
+        ObjectTransferRecord(Records, "val.leaf", ObjectTransferLeaf(X, "Items"));
+        ObjectStage = 10;
+        ObjectTransferRecord(Records, "val.retained", ObjectTransferArrayLeaf(Child));
+    
+        // 2. Two different caller variables initially alias the same object.
+        ObjectStage = 11;
+        X = ObjectTransferNew(2);
+        ObjectStage = 12;
+        Y = X;
+        ObjectStage = 13;
+        Child = X.Items;
+        ObjectStage = 14;
+        Seen = Undefined;
+        ObjectStage = 15;
+        BeforeX = Undefined;
+        ObjectStage = 16;
+        BeforeY = Undefined;
+        ObjectStage = 17;
+        AfterY = Undefined;
+        ObjectStage = 18;
+        Failed = False;
+        Try
+        ObjectStage = 19;
+            Seen = ObjectTransferIndependent(X, Y);
+        ObjectStage = 20;
+            BeforeX = ObjectTransferLeaf(X, "Items");
+        ObjectStage = 21;
+            BeforeY = ObjectTransferLeaf(Y, "Items");
+        ObjectStage = 22;
+            X.Items[0] = 24;
+        ObjectStage = 23;
+            AfterY = ObjectTransferLeaf(Y, "Items");
+        Except
+        ObjectStage = 24;
+            Failed = True;
+        EndTry;
+        ObjectStage = 25;
+        ObjectTransferRecord(Records, "independent.error", Failed);
+        ObjectStage = 26;
+        ObjectTransferRecord(Records, "independent.server.second", ObjectTransferNumber(Seen));
+        ObjectStage = 27;
+        ObjectTransferRecord(Records, "independent.x.before", BeforeX);
+        ObjectStage = 28;
+        ObjectTransferRecord(Records, "independent.y.before", BeforeY);
+        ObjectStage = 29;
+        ObjectTransferRecord(Records, "independent.y.after", AfterY);
+        ObjectStage = 30;
+        ObjectTransferRecord(Records, "independent.retained", ObjectTransferArrayLeaf(Child));
+    
+        // 3. One caller sink repeated; rightmost formal is not mutated or rebound.
+        ObjectStage = 31;
+        X = ObjectTransferNew(3);
+        ObjectStage = 32;
+        Child = X.Items;
+        ObjectStage = 33;
+        Seen = Undefined;
+        ObjectStage = 34;
+        Failed = False;
+        Try
+        ObjectStage = 35;
+            Seen = ObjectTransferRepeated(X, X);
+        Except
+        ObjectStage = 36;
+            Failed = True;
+        EndTry;
+        ObjectStage = 37;
+        ObjectTransferRecord(Records, "repeated.error", Failed);
+        ObjectStage = 38;
+        ObjectTransferRecord(Records, "repeated.server.second", ObjectTransferNumber(Seen));
+        ObjectStage = 39;
+        ObjectTransferRecord(Records, "repeated.leaf", ObjectTransferLeaf(X, "Items"));
+        ObjectStage = 40;
+        ObjectTransferRecord(Records, "repeated.retained", ObjectTransferArrayLeaf(Child));
+    
+        // 4. Explicit non-Val root replacement, with an unpassed old root alias.
+        ObjectStage = 41;
+        X = ObjectTransferNew(4);
+        ObjectStage = 42;
+        Kept = X;
+        ObjectStage = 43;
+        Failed = False;
+        Try
+        ObjectStage = 44;
+            ObjectTransferRebind(X);
+        Except
+        ObjectStage = 45;
+            Failed = True;
+        EndTry;
+        ObjectStage = 46;
+        ObjectTransferRecord(Records, "rebind.error", Failed);
+        ObjectStage = 47;
+        ObjectTransferRecord(Records, "rebind.root", ObjectTransferField(X, "N"));
+        ObjectStage = 48;
+        ObjectTransferRecord(Records, "rebind.leaf", ObjectTransferLeaf(X, "Items"));
+        ObjectStage = 49;
+        ObjectTransferRecord(Records, "rebind.retained", ObjectTransferField(Kept, "N"));
+    
+        // 5. Shared child on input; explicit server sharing on output and return.
+        ObjectStage = 50;
+        Child = New Array;
+        ObjectStage = 51;
+        Child.Add(5);
+        ObjectStage = 52;
+        X = New Structure("Left,Right", Child, Child);
+        ObjectStage = 53;
+        Seen = Undefined;
+        ObjectStage = 54;
+        Result = Undefined;
+        ObjectStage = 55;
+        AfterXSibling = Undefined;
+        ObjectStage = 56;
+        AfterXResultLeft = Undefined;
+        ObjectStage = 57;
+        AfterXResultRight = Undefined;
+        ObjectStage = 58;
+        AfterResultSibling = Undefined;
+        ObjectStage = 59;
+        AfterResultXLeft = Undefined;
+        ObjectStage = 60;
+        AfterResultXRight = Undefined;
+        ObjectStage = 61;
+        Failed = False;
+        Try
+        ObjectStage = 62;
+            Result = ObjectTransferGraph(X, Seen);
+        ObjectStage = 63;
+            X.Left[0] = 52;
+        ObjectStage = 64;
+            AfterXSibling = ObjectTransferLeaf(X, "Right");
+        ObjectStage = 65;
+            AfterXResultLeft = ObjectTransferLeaf(Result, "Left");
+        ObjectStage = 66;
+            AfterXResultRight = ObjectTransferLeaf(Result, "Right");
+        ObjectStage = 67;
+            Result.Left[0] = 53;
+        ObjectStage = 68;
+            AfterResultSibling = ObjectTransferLeaf(Result, "Right");
+        ObjectStage = 69;
+            AfterResultXLeft = ObjectTransferLeaf(X, "Left");
+        ObjectStage = 70;
+            AfterResultXRight = ObjectTransferLeaf(X, "Right");
+        Except
+        ObjectStage = 71;
+            Failed = True;
+        EndTry;
+        ObjectStage = 72;
+        ObjectTransferRecord(Records, "graph.error", Failed);
+        ObjectStage = 73;
+        ObjectTransferRecord(Records, "graph.server.sibling", ObjectTransferNumber(Seen));
+        ObjectStage = 74;
+        ObjectTransferRecord(Records, "graph.x.sibling", AfterXSibling);
+        ObjectStage = 75;
+        ObjectTransferRecord(Records, "graph.result.left.after.x", AfterXResultLeft);
+        ObjectStage = 76;
+        ObjectTransferRecord(Records, "graph.result.right.after.x", AfterXResultRight);
+        ObjectStage = 77;
+        ObjectTransferRecord(Records, "graph.result.sibling", AfterResultSibling);
+        ObjectStage = 78;
+        ObjectTransferRecord(Records, "graph.x.left.after.result", AfterResultXLeft);
+        ObjectStage = 79;
+        ObjectTransferRecord(Records, "graph.x.right.after.result", AfterResultXRight);
+        ObjectStage = 80;
+        ObjectTransferRecord(Records, "graph.retained", ObjectTransferArrayLeaf(Child));
+    
+        // 6. Escaping server failure. Readers handle Undefined before dereferencing.
+        ObjectStage = 81;
+        X = ObjectTransferNew(6);
+        ObjectStage = 82;
+        Kept = X;
+        ObjectStage = 83;
+        Child = X.Items;
+        ObjectStage = 84;
+        Untouched = ObjectTransferNew(7);
+        ObjectStage = 85;
+        Control = ObjectTransferNew(8);
+        ObjectStage = 86;
+        Failed = False;
+        ObjectStage = 87;
+        Matched = False;
+        Try
+        ObjectStage = 88;
+            ObjectTransferEscapes(X, Untouched, Control);
+        Except
+        ObjectStage = 89;
+            Failed = True;
+        ObjectStage = 90;
+            Matched = Find(ErrorDescription(), "object-transfer-core-controlled-failure") > 0;
+        EndTry;
+        ObjectStage = 91;
+        ObjectTransferRecord(Records, "escaped.error", Failed);
+        ObjectStage = 92;
+        ObjectTransferRecord(Records, "escaped.matched", Matched);
+        ObjectStage = 93;
+        ObjectTransferRecord(Records, "escaped.value.undefined", X = Undefined);
+        ObjectStage = 94;
+        ObjectTransferRecord(Records, "escaped.value.leaf", ObjectTransferLeaf(X, "Items"));
+        ObjectStage = 95;
+        ObjectTransferRecord(Records, "escaped.retained.root", ObjectTransferField(Kept, "N"));
+        ObjectStage = 96;
+        ObjectTransferRecord(Records, "escaped.retained.leaf", ObjectTransferArrayLeaf(Child));
+        ObjectStage = 97;
+        ObjectTransferRecord(Records, "escaped.untouched.undefined", Untouched = Undefined);
+        ObjectStage = 98;
+        ObjectTransferRecord(Records, "escaped.untouched.leaf", ObjectTransferLeaf(Untouched, "Items"));
+        ObjectStage = 99;
+        ObjectTransferRecord(Records, "escaped.val.leaf", ObjectTransferLeaf(Control, "Items"));
+    
+        // 7. Earlier Val object handle versus later mutation and rebinding of X.
+        ObjectStage = 100;
+        X = ObjectTransferNew(9);
+        ObjectStage = 101;
+        Child = X.Items;
+        ObjectStage = 102;
+        Calls = 0;
+        ObjectStage = 103;
+        Result = Undefined;
+        ObjectStage = 104;
+        Failed = False;
+        Try
+        ObjectStage = 105;
+            Result = ObjectTransferTiming(X, X, ObjectTransferChange(X, Calls));
+        Except
+        ObjectStage = 106;
+            Failed = True;
+        EndTry;
+        ObjectStage = 107;
+        ObjectTransferRecord(Records, "timing.error", Failed);
+        ObjectStage = 108;
+        ObjectTransferRecord(Records, "timing.early", ObjectTransferField(Result, "Early"));
+        ObjectStage = 109;
+        ObjectTransferRecord(Records, "timing.late", ObjectTransferField(Result, "Late"));
+        ObjectStage = 110;
+        ObjectTransferRecord(Records, "timing.caller", ObjectTransferLeaf(X, "Items"));
+        ObjectStage = 111;
+        ObjectTransferRecord(Records, "timing.retained", ObjectTransferArrayLeaf(Child));
+        ObjectStage = 112;
+        ObjectTransferRecord(Records, "timing.calls", ObjectTransferNumber(Calls));
+    
+        // 8. A server-caught error returns normally; also checks post-failure recovery.
+        ObjectStage = 113;
+        X = ObjectTransferNew(10);
+        ObjectStage = 114;
+        Child = X.Items;
+        ObjectStage = 115;
+        Matched = Undefined;
+        ObjectStage = 116;
+        Failed = False;
+        Try
+        ObjectStage = 117;
+            Matched = ObjectTransferCaught(X);
+        Except
+        ObjectStage = 118;
+            Failed = True;
+        EndTry;
+        ObjectStage = 119;
+        ObjectTransferRecord(Records, "recovery.error", Failed);
+        ObjectStage = 120;
+        ObjectTransferRecord(Records, "recovery.matched", Matched);
+        ObjectStage = 121;
+        ObjectTransferRecord(Records, "recovery.leaf", ObjectTransferLeaf(X, "Items"));
+        ObjectStage = 122;
+        ObjectTransferRecord(Records, "recovery.retained", ObjectTransferArrayLeaf(Child));
+    
+        ObjectStage = 123;
+        ObjectTransferRecord(Records, "complete", True);
     Except
-        Failed = True;
+        Records = New Array;
+        Records.Add("object.runtime-error");
+        Records.Add(ObjectStage);
     EndTry;
-    ObjectTransferRecord(Records, "val.error", Failed);
-    ObjectTransferRecord(Records, "val.root", ObjectTransferField(X, "N"));
-    ObjectTransferRecord(Records, "val.leaf", ObjectTransferLeaf(X, "Items"));
-    ObjectTransferRecord(Records, "val.retained", ObjectTransferArrayLeaf(Child));
-
-    // 2. Two different caller variables initially alias the same object.
-    X = ObjectTransferNew(2);
-    Y = X;
-    Child = X.Items;
-    Seen = Undefined;
-    BeforeX = Undefined;
-    BeforeY = Undefined;
-    AfterY = Undefined;
-    Failed = False;
-    Try
-        Seen = ObjectTransferIndependent(X, Y);
-        BeforeX = ObjectTransferLeaf(X, "Items");
-        BeforeY = ObjectTransferLeaf(Y, "Items");
-        X.Items[0] = 24;
-        AfterY = ObjectTransferLeaf(Y, "Items");
-    Except
-        Failed = True;
-    EndTry;
-    ObjectTransferRecord(Records, "independent.error", Failed);
-    ObjectTransferRecord(Records, "independent.server.second", ObjectTransferNumber(Seen));
-    ObjectTransferRecord(Records, "independent.x.before", BeforeX);
-    ObjectTransferRecord(Records, "independent.y.before", BeforeY);
-    ObjectTransferRecord(Records, "independent.y.after", AfterY);
-    ObjectTransferRecord(Records, "independent.retained", ObjectTransferArrayLeaf(Child));
-
-    // 3. One caller sink repeated; rightmost formal is not mutated or rebound.
-    X = ObjectTransferNew(3);
-    Child = X.Items;
-    Seen = Undefined;
-    Failed = False;
-    Try
-        Seen = ObjectTransferRepeated(X, X);
-    Except
-        Failed = True;
-    EndTry;
-    ObjectTransferRecord(Records, "repeated.error", Failed);
-    ObjectTransferRecord(Records, "repeated.server.second", ObjectTransferNumber(Seen));
-    ObjectTransferRecord(Records, "repeated.leaf", ObjectTransferLeaf(X, "Items"));
-    ObjectTransferRecord(Records, "repeated.retained", ObjectTransferArrayLeaf(Child));
-
-    // 4. Explicit non-Val root replacement, with an unpassed old root alias.
-    X = ObjectTransferNew(4);
-    Kept = X;
-    Failed = False;
-    Try
-        ObjectTransferRebind(X);
-    Except
-        Failed = True;
-    EndTry;
-    ObjectTransferRecord(Records, "rebind.error", Failed);
-    ObjectTransferRecord(Records, "rebind.root", ObjectTransferField(X, "N"));
-    ObjectTransferRecord(Records, "rebind.leaf", ObjectTransferLeaf(X, "Items"));
-    ObjectTransferRecord(Records, "rebind.retained", ObjectTransferField(Kept, "N"));
-
-    // 5. Shared child on input; explicit server sharing on output and return.
-    Child = New Array;
-    Child.Add(5);
-    X = New Structure("Left,Right", Child, Child);
-    Seen = Undefined;
-    Result = Undefined;
-    AfterXSibling = Undefined;
-    AfterXResultLeft = Undefined;
-    AfterXResultRight = Undefined;
-    AfterResultSibling = Undefined;
-    AfterResultXLeft = Undefined;
-    AfterResultXRight = Undefined;
-    Failed = False;
-    Try
-        Result = ObjectTransferGraph(X, Seen);
-        X.Left[0] = 52;
-        AfterXSibling = ObjectTransferLeaf(X, "Right");
-        AfterXResultLeft = ObjectTransferLeaf(Result, "Left");
-        AfterXResultRight = ObjectTransferLeaf(Result, "Right");
-        Result.Left[0] = 53;
-        AfterResultSibling = ObjectTransferLeaf(Result, "Right");
-        AfterResultXLeft = ObjectTransferLeaf(X, "Left");
-        AfterResultXRight = ObjectTransferLeaf(X, "Right");
-    Except
-        Failed = True;
-    EndTry;
-    ObjectTransferRecord(Records, "graph.error", Failed);
-    ObjectTransferRecord(Records, "graph.server.sibling", ObjectTransferNumber(Seen));
-    ObjectTransferRecord(Records, "graph.x.sibling", AfterXSibling);
-    ObjectTransferRecord(Records, "graph.result.left.after.x", AfterXResultLeft);
-    ObjectTransferRecord(Records, "graph.result.right.after.x", AfterXResultRight);
-    ObjectTransferRecord(Records, "graph.result.sibling", AfterResultSibling);
-    ObjectTransferRecord(Records, "graph.x.left.after.result", AfterResultXLeft);
-    ObjectTransferRecord(Records, "graph.x.right.after.result", AfterResultXRight);
-    ObjectTransferRecord(Records, "graph.retained", ObjectTransferArrayLeaf(Child));
-
-    // 6. Escaping server failure. Readers handle Undefined before dereferencing.
-    X = ObjectTransferNew(6);
-    Kept = X;
-    Child = X.Items;
-    Untouched = ObjectTransferNew(7);
-    Control = ObjectTransferNew(8);
-    Failed = False;
-    Matched = False;
-    Try
-        ObjectTransferEscapes(X, Untouched, Control);
-    Except
-        Failed = True;
-        Matched = Find(ErrorDescription(), "object-transfer-core-controlled-failure") > 0;
-    EndTry;
-    ObjectTransferRecord(Records, "escaped.error", Failed);
-    ObjectTransferRecord(Records, "escaped.matched", Matched);
-    ObjectTransferRecord(Records, "escaped.value.undefined", X = Undefined);
-    ObjectTransferRecord(Records, "escaped.value.leaf", ObjectTransferLeaf(X, "Items"));
-    ObjectTransferRecord(Records, "escaped.retained.root", ObjectTransferField(Kept, "N"));
-    ObjectTransferRecord(Records, "escaped.retained.leaf", ObjectTransferArrayLeaf(Child));
-    ObjectTransferRecord(Records, "escaped.untouched.undefined", Untouched = Undefined);
-    ObjectTransferRecord(Records, "escaped.untouched.leaf", ObjectTransferLeaf(Untouched, "Items"));
-    ObjectTransferRecord(Records, "escaped.val.leaf", ObjectTransferLeaf(Control, "Items"));
-
-    // 7. Earlier Val object handle versus later mutation and rebinding of X.
-    X = ObjectTransferNew(9);
-    Child = X.Items;
-    Calls = 0;
-    Result = Undefined;
-    Failed = False;
-    Try
-        Result = ObjectTransferTiming(X, X, ObjectTransferChange(X, Calls));
-    Except
-        Failed = True;
-    EndTry;
-    ObjectTransferRecord(Records, "timing.error", Failed);
-    ObjectTransferRecord(Records, "timing.early", ObjectTransferField(Result, "Early"));
-    ObjectTransferRecord(Records, "timing.late", ObjectTransferField(Result, "Late"));
-    ObjectTransferRecord(Records, "timing.caller", ObjectTransferLeaf(X, "Items"));
-    ObjectTransferRecord(Records, "timing.retained", ObjectTransferArrayLeaf(Child));
-    ObjectTransferRecord(Records, "timing.calls", ObjectTransferNumber(Calls));
-
-    // 8. A server-caught error returns normally; also checks post-failure recovery.
-    X = ObjectTransferNew(10);
-    Child = X.Items;
-    Matched = Undefined;
-    Failed = False;
-    Try
-        Matched = ObjectTransferCaught(X);
-    Except
-        Failed = True;
-    EndTry;
-    ObjectTransferRecord(Records, "recovery.error", Failed);
-    ObjectTransferRecord(Records, "recovery.matched", Matched);
-    ObjectTransferRecord(Records, "recovery.leaf", ObjectTransferLeaf(X, "Items"));
-    ObjectTransferRecord(Records, "recovery.retained", ObjectTransferArrayLeaf(Child));
-
-    ObjectTransferRecord(Records, "complete", True);
     Return Records;
 EndFunction

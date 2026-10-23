@@ -95,8 +95,28 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
             '    ObjectTransferRecord("entered", True);',
             '    Records = New Array;\n    Records.Add("object.transfer.v1");\n    ObjectTransferRecord("entered", True);').replace(
             '    ObjectTransferRecord("', '    ObjectTransferRecord(Records, "')
-        self.assertTrue(expected.endswith('EndProcedure\n'))
-        expected = expected[:-len('EndProcedure\n')] + '    Return Records;\nEndFunction\n'
+        root_start = expected.index('Function RunObjectTransferProbe()')
+        helpers, root = expected[:root_start], expected[root_start:]
+        lines = root.splitlines()
+        # Rebuild from the original operation body before the accumulator adapter.
+        first = next(i for i, line in enumerate(lines) if 'Records = New Array;' in line)
+        pre = lines[:first]
+        pre.insert(1, '    Var Records, ObjectStage;')
+        pre += ['    Records = New Array;', '    Records.Add("object.transfer.v1");',
+                '    ObjectStage = 0;', '    Try']
+        stage = 0
+        rebuilt = pre
+        for line in lines[first + 2:-1]:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('//') and stripped not in {'Try', 'Except', 'EndTry;'}:
+                stage += 1
+                rebuilt.append(f'        ObjectStage = {stage};')
+            rebuilt.append('    ' + line)
+        rebuilt += ['    Except', '        Records = New Array;',
+                    '        Records.Add("object.runtime-error");', '        Records.Add(ObjectStage);',
+                    '    EndTry;', '    Return Records;', 'EndFunction']
+        expected = helpers + '\n'.join(rebuilt) + '\n'
+        self.assertEqual(stage, 123)
         raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
         actual = raw.split(full.CLIENT_OBJECT_MARKER, 1)[1].decode()
         self.assertEqual(actual, expected)
@@ -205,3 +225,81 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
         report = copy.deepcopy(fixture.fixture.envelope['report'])
         report.update(status='stage3_failed', native_tests_completed=False, stage3=stage)
         self.assertLessEqual(len(json.dumps(report, indent=2, sort_keys=True).encode()), 32768)
+
+
+    def test_measurement_locals_are_explicit_in_standalone_and_generated_form(self):
+        from dataclasses import fields
+        from yadinassi import ast
+        from yadinassi.parser import parse
+        def walk(value):
+            if isinstance(value, ast.Node):
+                yield value
+                for field in fields(value):
+                    yield from walk(getattr(value, field.name))
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    yield from walk(item)
+        for relative in (SOURCE, full.CLIENT_SOURCE):
+            routines = [node for node in parse((ROOT / relative).read_text(encoding='utf-8-sig'))
+                        if isinstance(node, ast.Routine)
+                        and (node.name.startswith('ObjectTransfer') or node.name == 'RunObjectTransferProbe')]
+            self.assertEqual(len(routines), 16)
+            for routine in routines:
+                declared = {parameter.name.casefold() for parameter in routine.parameters}
+                for node in walk(routine.body):
+                    if isinstance(node, ast.Var):
+                        declared.update(name.casefold() for name in node.names)
+                assigned = {node.target.name.casefold() for node in walk(routine.body)
+                            if isinstance(node, ast.Assign) and isinstance(node.target, ast.Name)}
+                with self.subTest(source=relative, routine=routine.name):
+                    self.assertLessEqual(assigned, declared)
+
+    def test_stage_map_binds_exact_original_root_statement_locations(self):
+        source = (ROOT / SOURCE).read_text(encoding='utf-8')
+        mapping = json.loads((ROOT / 'integrational_tests/directive_probes/object_transfer_stages.json').read_text(encoding='utf-8'))
+        self.assertEqual(mapping['source_sha256'], full.digest(source.encode()))
+        self.assertEqual([item['id'] for item in mapping['stages']], list(range(1, 124)))
+        for item in mapping['stages']:
+            self.assertEqual(source.splitlines()[item['source_line'] - 1].strip(), item['statement'])
+        generated = (ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8')
+        self.assertEqual([int(x) for x in re.findall(r'ObjectStage = ([0-9]+);', generated)], list(range(124)))
+
+    def test_root_error_discards_partial_observations_and_exports_only_stage(self):
+        from yadinassi import Interpreter
+        source = (ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8-sig')
+        stages = json.loads((ROOT / 'integrational_tests/directive_probes/object_transfer_stages.json').read_text(encoding='utf-8'))['stages']
+        for statement in ('X = ObjectTransferNew(1);',
+                          'ObjectTransferRecord("val.root", ObjectTransferField(X, "N"));'):
+            stage = next(item['id'] for item in stages if item['statement'] == statement)
+            actual = statement.replace('ObjectTransferRecord("', 'ObjectTransferRecord(Records, "')
+            changed = source.replace(actual, 'Raise "PRIVATE-ERROR-TEXT";', 1)
+            vm = Interpreter(lambda _: self.fail('unexpected Message'))
+            vm.execute(changed)
+            self.assertEqual(list(vm.execute('RunObjectTransferProbe()')), ['object.runtime-error', stage])
+            self.assertEqual(vm.execution_context, 'client')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory).resolve() / 'completed.json'
+            for stage in range(124):
+                values = suite.CLIENT_VALUES + ['object.runtime-error', stage]
+                path.write_bytes(json.dumps(self.marker(values)).encode())
+                diagnostic = suite.client_marker_diagnostics(path, 'a' * 32)
+                self.assertEqual(diagnostic, dict(phase='completed', kind='count', ordinal=50,
+                    error_stage=0, object_error_stage=stage))
+                self.assertEqual(full.validate_marker_diagnostics(diagnostic), diagnostic)
+                with self.assertRaises(suite.FullError):
+                    suite.client_marker(path, 'a' * 32, 'completed')
+            for invalid in (-1, 124, True, 1.0, None, 'PRIVATE'):
+                path.write_bytes(json.dumps(self.marker(suite.CLIENT_VALUES + ['object.runtime-error', invalid])).encode())
+                self.assertNotIn('object_error_stage', suite.client_marker_diagnostics(path, 'a' * 32))
+                with self.assertRaises(ValueError):
+                    full.validate_marker_diagnostics(dict(phase='completed', kind='count', ordinal=50,
+                        error_stage=0, object_error_stage=invalid))
+            both = dict(phase='completed', kind='count', ordinal=50, error_stage=0,
+                        object_error_stage=1, object_transfer=[None] * 48)
+            with self.assertRaises(ValueError):
+                full.validate_marker_diagnostics(both)
+
+            for changes in ({'phase': 'error'}, {'kind': 'value'}, {'ordinal': 49}, {'error_stage': 1}):
+                with self.assertRaises(ValueError):
+                    full.validate_marker_diagnostics({**dict(phase='completed', kind='count', ordinal=50,
+                        error_stage=0, object_error_stage=1), **changes})

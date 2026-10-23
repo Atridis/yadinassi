@@ -12,6 +12,7 @@ EndProcedure
 
 &AtServer
 Function ObjectTransferIndependent(A, B)
+    Var Seen;
     A.Items[0] = 21;
     Seen = B.Items[0];
     B.Items[0] = 23;
@@ -26,6 +27,7 @@ EndFunction
 
 &AtServer
 Procedure ObjectTransferRebind(P)
+    Var Items;
     Items = New Array;
     Items.Add(42);
     P = New Structure("N,Items", 41, Items);
@@ -42,6 +44,7 @@ EndFunction
 
 &AtServer
 Procedure ObjectTransferEscapes(P, Untouched, Val Control)
+    Var Items;
     P.N = 61;
     P.Items[0] = 62;
     Control.N = 63;
@@ -71,6 +74,7 @@ EndFunction
 
 &AtClient
 Function ObjectTransferNew(Val N)
+    Var Items;
     Items = New Array;
     Items.Add(N);
     Return New Structure("N,Items", N, Items);
@@ -98,6 +102,7 @@ EndFunction
 
 &AtClient
 Function ObjectTransferField(Val Value, Val Key)
+    Var Item;
     If TypeOf(Value) <> Type("Structure") Then
         Return Undefined;
     EndIf;
@@ -121,6 +126,7 @@ EndFunction
 
 &AtClient
 Function ObjectTransferLeaf(Val Value, Val Key)
+    Var Item;
     If TypeOf(Value) <> Type("Structure") Then
         Return Undefined;
     EndIf;
