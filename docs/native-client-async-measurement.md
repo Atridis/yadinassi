@@ -254,3 +254,48 @@ and exercise parser/descriptor/reference/inventory/DAG failures and late
 replacement. Actual serializer checks retain the 8192-byte stage limit and
 32768-byte summary/provenance limits. A fresh native run and independent audit
 are still required to learn which marker predicate rejected case 6.
+
+### Error-descriptor JSON transport correction
+
+Native run [39961019232](https://github.com/Atridis/yadinassi/actions/runs/39961019232)
+reached the first error-bearing case, case 6, and rejected its completed marker
+with `[1,7,3,31]`: completed phase, JSON-syntax rejection, no descriptor or field
+locator. Cases 0–5 were only provisional observations; this is not an accepted
+complete measurement. The discriminator does not identify a particular byte or
+prove which serializer input caused the malformed marker.
+
+The automatic global `WriteJSON`/`ЗаписатьJSON` API has a documented mapping from
+`Undefined`/`Неопределено` to JSON `null`. `Null` is not in its supported automatic
+input types; unsupported types cause an exception. See the vendor's
+[JSON overview](https://wonderland.v8.1c.ru/blog/sredstva-raboty-s-json/) and
+[Developer Guide](https://1c-dn.com/download-trial/files/guides/developer_guide.pdf),
+§16.2.2.1 (PDF page 1093) and §16.2.2.2 (PDF page 1095).
+The separate XDTO serialization described in §16.2.3 (PDF page 1106) supports
+`Null`, but that is not the global automatic serializer used by this fixture.
+
+The transport correction changes exactly twelve payload sentinels in
+`АсинхПоле` and the guarded initial error fields: eleven `[0, Null]` and one
+`[1, Null]` become the same tagged pairs with `Неопределено` as the BSL payload.
+The JSON payload remains `null`; tag 0 still means unavailable and tag 1 still
+means an observed Undefined field. No tag, descriptor schema, Python validator,
+canonical hash rule, accepted evidence, cap, timeout, process rule, artifact,
+or permission is changed. All eight semantic case bodies are byte-identical,
+including case 3's `Await Null`, and the semantic Null value mapping remains
+`[2,0]`. Only the template/module/aggregate source identity pins change with the
+production source.
+
+Offline tests execute exact generated capture and completion routines against a
+bounded, source-spelling JSON writer double. The double accepts Undefined as
+JSON `null` and rejects BSL Null, including nested inputs; the inverse previous
+fixture therefore fails under the same model. Controlled unavailable getters
+and Undefined-valued fields preserve their distinct tags and fingerprints.
+Quotes, backslashes, CR, LF, tabs, all U+0000–U+001F controls, and Unicode text
+round-trip through a strict serializer without manual escaping. These are
+source-bound model tests, not native API implementation or native Async proof.
+Exact inverse tests restore both reviewed production files after undoing only
+the twelve sentinels and identity pins. Actual production Python serializers
+are still used for the unchanged stage/summary/provenance budget proof.
+
+This is a documented API correction and a hypothesis for the case-6 failure,
+not a proven native repair. A fresh complete native measurement and independent
+audit are still required before any Async parity conclusion or readiness claim.

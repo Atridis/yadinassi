@@ -191,6 +191,15 @@ def routine(source, name):
 
 
 
+def without_error_payload_sentinels(source):
+    # Exact inverse of the twelve transport-only sentinels, not semantic Null.
+    assert source.count('АсинхПара(0, Неопределено)') == 11
+    assert source.count('АсинхПара(1, Неопределено)') == 1
+    assert not re.search(r'АсинхПара\([01], Null\)', source)
+    return re.sub(r'АсинхПара\(([01]), Неопределено\)',
+                  r'АсинхПара(\1, Null)', source)
+
+
 def without_local_request_key(template):
     start = template.index('Function AsyncReadRequest(ЭтапВхода)\n')
     end = template.index('EndFunction', start) + len('EndFunction')
@@ -205,6 +214,7 @@ def without_local_request_key(template):
 
 
 def without_ru_request_end_token(template):
+    template = without_error_payload_sentinels(template)
     current = '    AsyncRequestEndToken = ТипЗначенияJSON.КонецОбъекта;\n'
     previous = '    AsyncRequestEndToken = JSONValueType.ObjectEnd;\n'
     assert template.count(current) == 1
@@ -280,17 +290,45 @@ def without_request_site_diagnostic(template):
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
-    def test_marker_validation_diagnostics_preserve_exact_native_fixture_bytes(self):
+    def test_error_payload_change_restores_exact_reviewed_production_sources(self):
+        from test_native_async_protocol import full
+        fixture = literal_sources()
+        previous_aggregate = 'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705'
+        previous_identity = {'template': 'c60b81e77e69f20ce3bd3ee36ea0d7e44f5bea38639d8ded7e32fab74a9846b6', 'modules': ['80a842b78f20c6a52d7f68f9a8a0a52bde8316a497bc2033c68af4474fcc6c8a', 'd0820a1eed7a700916f6d070e27b19df2b85ba0386273f99d88784a79c7d8fb2', 'ae10664360da0c5242cfd77d1be01ee0fd9c74514598fec1c436635b2e8c3490', '52f4ef3fa979630bc0be401ddfe508a89ed7c1713a1d3b632c5f6f86d7528167', '49aaf7135bf9cf3a25e0c640e6b68936b2a7e1f7c126a0a25259a83e41e996a4', 'da305166b522673f1333c7cfdd375c7857d0cf4959f3c198758f4d82e69dad36', 'd6f5e0f89bbb8972386401504b1b0f9d74d7c5f7e583c391eb1c7e425c370046', '5ff92eac867884b73410f9312ade405cf44ed8b62ce019e53275bd53adaeff8b']}
+        source = without_error_payload_sentinels(SNIPPET.read_text(encoding='utf-8'))
+        current_pin = 'ASYNC_FIXTURE_SHA256 = ' + repr(fixture['ASYNC_FIXTURE_SHA256'])
+        self.assertEqual(source.count(current_pin), 1)
+        source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
+        # Published a61f376 / tree b555f4f, independently frozen before this fix.
+        self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
+                         '902061c106c5cc23d960ce3cd1f87717a4b4655e3d4b28a77007e65502f5199f')
+        host = (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8')
+        self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
+        host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
+        current_identity = 'ASYNC_EXPECTED_IDENTITY = ' + repr(full.ASYNC_EXPECTED_IDENTITY)
+        self.assertEqual(host.count(current_identity), 1)
+        host = host.replace(current_identity, 'ASYNC_EXPECTED_IDENTITY = ' + repr(previous_identity))
+        self.assertEqual(hashlib.sha256(host.encode('utf-8')).hexdigest(),
+                         '1a491166b69ef283f7eca84950bdb0d509517f38bf495f2d1010ccbe266fa760')
+        self.assertEqual(hashlib.sha256(json.dumps(fixture['ASYNC_CASE_SOURCES'], ensure_ascii=False,
+                         separators=(',', ':')).encode('utf-8')).hexdigest(),
+                         '09edb17d68c0ff7a5462498b132afa5c2b202912abdcb48e33ae1c676a39c075')
+        self.assertEqual(fixture['ASYNC_FIXTURE_SHA256'], '83a6e22dbb4788498985e51e06ea610d2a9bc95702852da396cb6d7779bf1c5a')
+        self.assertEqual(full.ASYNC_EXPECTED_IDENTITY, {'template': '4177f7bc3e4690e6a67e48af06db4dba78405bb76f16151867fd006c35ba713f', 'modules': ['9c35b55df6f304166f83535490b7cffe51f0bac3383663fa4d2c201dfd4f3317', '2f1521d54fef7ecd73f8dce7f36f983111ff2fdb98112a89bd47f01988072676', '6e1a01c33d77681426c6d3f0c0d648fde353514edad381ba2c6bd2b586284959', 'a3959ce4beb9fe01cc1d3f3416bdb2ac7ef56ecb9cdcce11c0b41d96f347bc78', 'a5a2d09e4a7be7749121b0a26c30670bcd122d76ae81e6b5158fdb9de7ff2b1b', '761b8ed069ac9451cd9eb918c5e7e7d6d84a9d380155bc56b36ffd05717d76f6', '395dfd07a0171d361fd5c029e6a2400ef8d72097f506e073c75fedb1bc3105f4', '3ac1cd874da474e939006034f5a7216e7d2a26e9f9a9fb87f0c0813b1968a45a']})
+
+    def test_marker_validation_diagnostics_preserve_previous_native_fixture_bytes(self):
         fixture = literal_sources()
         # Pinned from head 7af481f/tree 6ebcb7a before the Python-only
         # diagnostic change, not recomputed from the new implementation.
-        self.assertEqual(hashlib.sha256(fixture['ASYNC_TEMPLATE'].encode('utf-8')).hexdigest(),
+        self.assertEqual(hashlib.sha256(without_error_payload_sentinels(fixture['ASYNC_TEMPLATE']).encode('utf-8')).hexdigest(),
                          'c60b81e77e69f20ce3bd3ee36ea0d7e44f5bea38639d8ded7e32fab74a9846b6')
         self.assertEqual(hashlib.sha256(json.dumps(fixture['ASYNC_CASE_SOURCES'], ensure_ascii=False,
                          separators=(',', ':')).encode('utf-8')).hexdigest(),
                          '09edb17d68c0ff7a5462498b132afa5c2b202912abdcb48e33ae1c676a39c075')
-        self.assertEqual(fixture['ASYNC_FIXTURE_SHA256'],
-                         'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705')
+        self.assertEqual(hashlib.sha256(json.dumps(
+            [without_error_payload_sentinels(fixture['ASYNC_TEMPLATE']), fixture['ASYNC_CASE_SOURCES']],
+            ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest(),
+            'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705')
         source = SNIPPET.read_text(encoding='utf-8')
         functions = [node for node in ast.parse(source).body
                      if isinstance(node, ast.FunctionDef) and node.name == 'async_client_module']
@@ -541,7 +579,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         assert 'ErrorInfo()' not in capture
         assert 'СохраненнаяОшибка.IsErrorOfCategory(ErrorCategory.ConfigurationError)' in capture
         assert 'Категория = АсинхПара(3, 1)' in capture
-        assert 'Категория = АсинхПара(0, Null)' in capture
+        assert 'Категория = АсинхПара(0, Неопределено)' in capture
         assert 'АсинхОшибки.Количество() >= 3' in capture
         bounded = routine(fixture['ASYNC_TEMPLATE'], 'АсинхПоле')
         assert 'СтрДлина(Данные) > 512' in bounded
@@ -749,7 +787,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         )
         self.assertEqual('\n'.join(line[8:] if line.startswith('        ') else line
                                    for line in guarded.strip('\n').splitlines()).strip(), expected)
-        self.assertLess(capture.index('Категория = АсинхПара(0, Null);'),
+        self.assertLess(capture.index('Категория = АсинхПара(0, Неопределено);'),
                         capture.index('СохраненнаяОшибка.IsErrorOfCategory'))
         self.assertEqual(capture.count('Категория = АсинхПара('), 3)
 

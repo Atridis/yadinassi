@@ -1552,7 +1552,7 @@ def async_source_identity(source: bytes) -> dict:
         if any('__ASYNC_CASE_' in case for case in cases):
             raise ValueError('async nested placeholder')
         fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
-        if fixture_hash != 'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705':
+        if fixture_hash != '83a6e22dbb4788498985e51e06ea610d2a9bc95702852da396cb6d7779bf1c5a':
             raise ValueError('async fixture not pinned')
         modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
         identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
@@ -1840,4 +1840,4 @@ def validate_async_marker_raw(raw, nonce, case_id, phase):
     return data
 
 
-ASYNC_EXPECTED_IDENTITY = {'template': 'c60b81e77e69f20ce3bd3ee36ea0d7e44f5bea38639d8ded7e32fab74a9846b6', 'modules': ['80a842b78f20c6a52d7f68f9a8a0a52bde8316a497bc2033c68af4474fcc6c8a', 'd0820a1eed7a700916f6d070e27b19df2b85ba0386273f99d88784a79c7d8fb2', 'ae10664360da0c5242cfd77d1be01ee0fd9c74514598fec1c436635b2e8c3490', '52f4ef3fa979630bc0be401ddfe508a89ed7c1713a1d3b632c5f6f86d7528167', '49aaf7135bf9cf3a25e0c640e6b68936b2a7e1f7c126a0a25259a83e41e996a4', 'da305166b522673f1333c7cfdd375c7857d0cf4959f3c198758f4d82e69dad36', 'd6f5e0f89bbb8972386401504b1b0f9d74d7c5f7e583c391eb1c7e425c370046', '5ff92eac867884b73410f9312ade405cf44ed8b62ce019e53275bd53adaeff8b']}
+ASYNC_EXPECTED_IDENTITY = {'template': '4177f7bc3e4690e6a67e48af06db4dba78405bb76f16151867fd006c35ba713f', 'modules': ['9c35b55df6f304166f83535490b7cffe51f0bac3383663fa4d2c201dfd4f3317', '2f1521d54fef7ecd73f8dce7f36f983111ff2fdb98112a89bd47f01988072676', '6e1a01c33d77681426c6d3f0c0d648fde353514edad381ba2c6bd2b586284959', 'a3959ce4beb9fe01cc1d3f3416bdb2ac7ef56ecb9cdcce11c0b41d96f347bc78', 'a5a2d09e4a7be7749121b0a26c30670bcd122d76ae81e6b5158fdb9de7ff2b1b', '761b8ed069ac9451cd9eb918c5e7e7d6d84a9d380155bc56b36ffd05717d76f6', '395dfd07a0171d361fd5c029e6a2400ef8d72097f506e073c75fedb1bc3105f4', '3ac1cd874da474e939006034f5a7216e7d2a26e9f9a9fb87f0c0813b1968a45a']}
