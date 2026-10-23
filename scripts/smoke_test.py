@@ -2275,6 +2275,37 @@ def check_exported_module_variables(executable, *, directory, env):
           'aliases, Val, mutation after error, collections, self identity, BOM, -c and stdin')
 
 
+def check_side_local_module_variables(executable, *, directory, env):
+    """Replay all nine independently captured module-state observations."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    code = (probes / 'module_context_core.bsl').read_text(encoding='utf-8')
+    code += '\nRunModuleContextProbe();\n'
+    capture = json.loads((probes / 'module_context_native.json').read_text(encoding='utf-8'))
+    if len(capture['labels']) != 9 or len(capture['values']) != 9:
+        raise AssertionError('module context capture width')
+    expected = ''
+    for label, value in zip(capture['labels'], capture['values']):
+        if type(value) is bool:
+            token = '{"B",' + str(int(value)) + '}'
+        elif type(value) is int:
+            token = '{"N",' + str(value) + '}'
+        else:
+            raise AssertionError('module context capture type')
+        expected += 'module.context.core.' + label + ': ' + token + '\n'
+    source = directory / 'МодульныеПеременные.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Side-local module variables failed {arguments!r}: {result!r}')
+    print('Binary side-local module variables passed: all nine native observations, '
+          'initializers, fresh outer calls, nested sharing, exception recovery, client '
+          'persistence, BOM file, -c, stdin and console')
+
+
 def check_extended_exceptions(executable, *, directory, env):
     """Core structured exception flow and unsupported-display REPL recovery."""
     directory.mkdir()
@@ -2345,6 +2376,7 @@ def main() -> None:
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_extended_exceptions(executable, directory=Path(temporary) / "extended-exceptions", env=env)
         check_exported_module_variables(executable, directory=Path(temporary) / "exported-module-variables", env=env)
+        check_side_local_module_variables(executable, directory=Path(temporary) / "side-local-module", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)
@@ -2395,7 +2427,7 @@ def main() -> None:
             '// #Импорт Справочник.Вложенное\n'
             'Сообщить(Справочник.Побочное.ПолучитьСумму(1, 2));\n'
             'Сообщить(Справочник.Вложенное.Другое.Ответ());', encoding="utf-8")
-        client_code = ('#If AtClient And Not Server Then\n&AtClient\n'
+        client_code = ('#If Client And Not Server Then\n&AtClient\n'
                        'Function F() Return 42; EndFunction\nMessage(F());\n'
                        '#Else\n// #Импорт Missing.bsl\nunsupported !!!\n#EndIf\n')
         region_code = ('#Область Модуль\nФункция Ответ()\n'

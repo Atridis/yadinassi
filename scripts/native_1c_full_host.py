@@ -624,6 +624,14 @@ MAX_STAGE_REPORT = 8192
 
 
 def decode_stage3_wire(data):
+    if type(data) is dict and type(data.get("schema")) is int and data["schema"] == 4:
+        if ("client_async" not in data or "client_probe" not in data
+                or any(key in data for key in ("client_dates","client_values","client_collections","client_numbers","client_watchdog"))
+                or len(json.dumps(data,separators=(",",":"),allow_nan=False).encode()) > MAX_STAGE_REPORT):
+            raise ValueError("async wire")
+        base = {key:value for key,value in data.items() if key != "client_async"}
+        base["schema"] = 1
+        return {**decode_stage3_wire(base),"client_async":decode_async_wire(data["client_async"])}
     """Decode lossless schema-2/3 wire; public evidence retains named schema 1.
 
     Schema 1 is the legacy named representation. Schema 2 requires *every*
@@ -679,10 +687,18 @@ def decode_stage3_wire(data):
     return result
 
 
-def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False):
+def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False):
+    raw_schema = data.get("schema") if type(data) is dict else None
+    if client_async:
+        if (not CLIENT_SOURCE in input_hashes or watchdog_check or client_dates or client_values or client_collections or client_numbers or raw_schema != 4):
+            raise ValueError("async requires separate schema4 measurement")
+    elif raw_schema == 4:
+        raise ValueError("unsolicited async schema")
     data = decode_stage3_wire(data)
     client_requested = CLIENT_SOURCE in input_hashes
     expected_keys = {"schema", "nonce", "status", "failure_kind", "failed_case", "input_sha256", "cases"}
+    if client_async:
+        expected_keys.add("client_async")
     if client_numbers:
         if not client_requested:
             raise ValueError("client numbers requires client")
@@ -710,7 +726,7 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
     if type(data["schema"]) is not int or data["schema"] != 1 or data["nonce"] != nonce:
         raise ValueError("stage3 identity")
     status = data["status"]
-    if status not in {"not_started", "failed", "ok"} or data["failure_kind"] not in FAILURES:
+    if status not in {"not_started", "failed", "ok"} or data["failure_kind"] not in (FAILURES | {"unsupported_observation"} if client_async else FAILURES):
         raise ValueError("stage3 status")
     if type(data["input_sha256"]) is not dict:
         raise ValueError("inputs")
@@ -822,6 +838,15 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
             raise ValueError("client numbers missing")
         if status == "not_started" and numbers["status"] != "not_started":
             raise ValueError("client numbers unreached")
+    if client_async:
+        identity = module_hashes["client_async"]
+        measurement = validate_client_async(data["client_async"], identity["template"], identity["modules"])
+        if client["status"] != "ok" and measurement["status"] != "not_started":
+            raise ValueError("async order")
+        if status == "ok" and measurement["status"] != "ok":
+            raise ValueError("async incomplete")
+        if status == "not_started" and measurement["status"] != "not_started":
+            raise ValueError("async unreached")
     if status == "ok":
         if (not prerequisites or seen_incomplete or data["failure_kind"] != "none" or data["failed_case"] is not None):
             raise ValueError("success")
@@ -829,14 +854,15 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
         if (prerequisites or any(case["status"] != "not_started" for case in cases)
                 or data["failure_kind"] != "prerequisites_failed" or data["failed_case"] is not None):
             raise ValueError("not started")
-    elif (not prerequisites or data["failure_kind"] in {"none", "prerequisites_failed"}
+    elif (not prerequisites or data["failure_kind"] == "none"
+            or (data["failure_kind"] == "prerequisites_failed" and not (client_async and measurement["status"] == "failed" and measurement["failure_kind"] == "prerequisites_failed"))
             or (failed and data["failed_case"] != failed[0])
             or (not failed and data["failed_case"] is not None)):
         raise ValueError("failed")
     return data
 
 
-def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False):
+def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False):
     """Return validated report and exact bytes, never the unchecked envelope."""
     try:
         if not re.fullmatch(r"[0-9a-f]{32}", nonce):
@@ -851,7 +877,7 @@ def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes:
         report = report_validator(report_raw, bootstrap=True, full_suite=True)
         prerequisites = bool(report.get("stage2") and report["stage2"]["status"] == "ok")
         stage3 = validate_stage3(report["stage3"], nonce, input_hashes, module_hashes,
-                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers)
+                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
         report["stage3"] = stage3
         if len(json.dumps(report, separators=(",", ":"), ensure_ascii=True).encode()) > MAX_REPORT:
             raise ValueError("expanded report limit")
@@ -1337,6 +1363,14 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
                     "windows_goldens_unchanged": True, "comparison_status": comparison["status"],
                     "native_target": native_target, "comparison_mode": comparison_mode,
                     "acceptance_status": comparison["acceptance_status"], "cases": cases}
+        if "client_async" in report.get("stage3", {}):
+            measurement = validate_client_async(report["stage3"]["client_async"], ASYNC_EXPECTED_IDENTITY["template"], ASYNC_EXPECTED_IDENTITY["modules"])
+            if measurement.get("status") != "ok":
+                raise ValueError("async measurement incomplete")
+            metadata["client_async"] = measurement
+            metadata["client_async_measurement_completed"] = True
+            metadata["client_async_parity_claimed"] = False
+            metadata["purpose"] = "client-async-language-measurement-v1"
         raw = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
         if len(raw) > MAX_REPORT:
             raise ValueError("limit")
@@ -1509,3 +1543,326 @@ def verify_output_artifact(root: Path, expected_hashes: dict[str, str]) -> None:
     finally:
         if directory is not None:
             os.close(directory)
+
+
+# This reads only reviewed literal data from a trusted staged input. It never
+# imports or executes the staged Python to reconstruct the native async module.
+def async_source_identity(source: bytes) -> dict:
+    import ast
+    try:
+        tree = ast.parse(source.decode('utf-8'))
+        names = {'ASYNC_TEMPLATE', 'ASYNC_CASE_SOURCES'}
+        found = {}
+        for node in tree.body:
+            targets = node.targets if isinstance(node, ast.Assign) else []
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id in names:
+                    if len(targets) != 1 or target.id in found:
+                        raise ValueError('duplicate async source')
+                    value = node.value
+                    if target.id == 'ASYNC_TEMPLATE':
+                        if not isinstance(value, ast.Constant) or type(value.value) is not str:
+                            raise ValueError('async template literal')
+                        found[target.id] = value.value
+                    else:
+                        if (not isinstance(value, ast.Tuple) or len(value.elts) != 8
+                                or any(not isinstance(item, ast.Constant) or type(item.value) is not str for item in value.elts)):
+                            raise ValueError('async cases literal')
+                        found[target.id] = tuple(item.value for item in value.elts)
+        if set(found) != names:
+            raise ValueError('async source missing')
+        template, cases = found['ASYNC_TEMPLATE'], found['ASYNC_CASE_SOURCES']
+        if any(template.count(token) != 1 for token in ('__ASYNC_CASE_ID__', '__ASYNC_CASE_SOURCE__')):
+            raise ValueError('async placeholders')
+        if any('__ASYNC_CASE_' in case for case in cases):
+            raise ValueError('async nested placeholder')
+        fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
+        if fixture_hash != '83a6e22dbb4788498985e51e06ea610d2a9bc95702852da396cb6d7779bf1c5a':
+            raise ValueError('async fixture not pinned')
+        modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
+        identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
+        if identity != ASYNC_EXPECTED_IDENTITY:
+            raise ValueError('async module pins')
+        return identity
+    except (SyntaxError, UnicodeError, TypeError, ValueError):
+        raise FullError('native_artifact_evidence_invalid') from None
+# Independent host verifier for client-async finite protocol v1.
+# No stage Python is executed or imported. Only trusted literal source is extracted elsewhere.
+HOST_ASYNC_FAILURES = ('none', 'prerequisites_failed', 'stale_evidence', 'invalid_input', 'invalid_result', 'invalid_dump_result', 'artifact_missing', 'output_mismatch', 'output_limit', 'module_mismatch', 'timeout', 'process_failed', 'unexpected_failure', 'export_failed', 'unsupported_observation')
+HOST_ASYNC_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
+HOST_ASYNC_BASE_EVENTS = ((10, 11, 12, 13, 14, 15, 16, 17, 18), (10, 11, 12, 13, 14, 15, 16, 17, 25, 26), (10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28), (10, 13, 16), (10, 11, 12, 13, 14, 15, 16, 19), (10, 11, 12, 13, 14, 15, 16), (10, 11, 12), (10, 11, 12, 13, 14, 15, 16, 17, 18))
+HOST_ASYNC_EDGES = (((10, 11), (11, 12), (10, 13), (13, 14), (12, 14), (14, 15), (15, 16), (16, 17), (17, 18)), ((10, 11), (11, 12), (12, 25), (25, 26), (26, 13), (13, 14), (14, 17), (10, 15), (15, 16), (16, 17)), ((10, 11), (11, 12), (12, 25), (25, 26), (26, 13), (13, 14), (14, 22), (10, 15), (15, 16), (16, 17), (17, 18), (18, 27), (27, 28), (28, 19), (19, 20), (20, 23), (16, 21), (21, 22), (22, 23), (23, 24)), ((10, 11), (10, 12), (11, 13), (12, 13), (13, 14), (13, 15), (14, 16), (15, 16), (16, 17), (16, 18)), ((10, 11), (11, 12), (12, 13), (11, 14), (14, 16), (10, 15), (15, 16), (16, 17), (16, 18), (17, 19), (18, 19), (13, 19)), ((10, 11), (11, 12), (12, 13), (13, 14), (14, 16), (10, 15), (15, 16)), ((10, 11), (11, 12), (10, 13), (12, 14), (13, 15), (15, 16), (15, 17), (12, 16), (12, 17), (16, 18), (17, 18), (18, 19), (18, 20), (12, 19), (12, 20)), ((10, 11), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17), (17, 18)))
+
+
+def _host_async_require(condition, label):
+    if not condition:
+        raise ValueError('async ' + label)
+
+
+def _host_async_number(value, minimum, maximum):
+    return type(value) is int and minimum <= value <= maximum
+
+
+def _host_async_sha(value):
+    return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+
+def validate_async_case_observation(case_id, trace, values, errors):
+    require = _host_async_require
+    number = _host_async_number
+    require(number(case_id,0,7),'case')
+    require(type(trace) is list and 5 <= len(trace) <= 24,'trace length')
+    require(all(number(token,0,28) for token in trace),'event type')
+    require(trace[:2] == [0,1] and trace[-3:] == [2,3,4],'root boundaries')
+    require(len(trace) == len(set(trace)),'duplicate event')
+    require(type(values) is list and len(values) == HOST_ASYNC_SLOTS[case_id],'slots')
+    require(type(errors) is list and len(errors) <= 3,'errors')
+    for pair in values:
+        require(type(pair) is list and len(pair) == 2,'value pair')
+        tag,payload = pair
+        require(number(tag,0,7) and number(payload,-999999,999999),'value type')
+        ranges = {0:(0,0),1:(0,0),2:(0,0),3:(0,1),4:(-999999,999999),5:(0,7),6:(0,0),7:(0,2)}
+        require(ranges[tag][0] <= payload <= ranges[tag][1],'value payload')
+    for entry in errors:
+        require(type(entry) is list and len(entry) == 7,'error row')
+        require(number(entry[0],0,6) and all(number(x,0,4) for x in entry[1:4])
+                and all(number(x,0,3) for x in entry[4:6]) and _host_async_sha(entry[6]),'error fields')
+    tags = [v[0] for v in values]
+    selected = set(HOST_ASYNC_BASE_EVENTS[case_id]) | {0,1,2,3,4}
+    absent_slots = set()
+    if case_id == 3:
+        for slot,returned,rejected in ((0,11,12),(1,14,15),(2,17,18)):
+            selected.add(rejected if tags[slot] == 7 else returned)
+    if case_id == 4:
+        if tags[1] == 6:
+            selected.add(17)
+        else:
+            selected.add(18)
+            absent_slots.add(2)
+    if case_id == 6:
+        if tags[0] == 7:
+            selected.add(14)
+            absent_slots = {1,2}
+        else:
+            selected |= {13,15,18,17 if tags[1] == 7 else 16,20 if tags[2] == 7 else 19}
+    require(set(trace) == selected,'conditional inventory')
+    seen = set()
+    for token in trace:
+        for before,after in HOST_ASYNC_EDGES[case_id]:
+            if after == token and before in selected:
+                require(before in seen,'causal order')
+        seen.add(token)
+    phases = {3:{0:3,1:4,2:5},6:{0:0,1:1,2:2},7:{2:6}}.get(case_id,{})
+    next_error = 0
+    for index,(tag,payload) in enumerate(values):
+        require((tag == 0) == (index in absent_slots),'not-executed slot')
+        if tag == 7:
+            require(index in phases and payload == next_error and next_error < len(errors),'error ordinal')
+            require(errors[next_error][0] == phases[index],'error phase')
+            next_error += 1
+    require(next_error == len(errors),'unreferenced error')
+    require(case_id != 7 or tags[2] == 7,'handler observation')
+    return trace,values,errors
+
+
+def _host_async_diagnostic(value):
+    _host_async_require(type(value) is dict and set(value) == {'stage','reason','unexpected_count','zombie_count','classes'},'diagnostic keys')
+    _host_async_require(type(value['stage']) is str and type(value['reason']) is str,'diagnostic enums')
+    return validate_process_diagnostics(value)
+
+
+def validate_async_marker_failure(data):
+    """Independent finite failure-only hint validation, never marker acceptance."""
+    value = data['marker_validation_failure']
+    if value is None: return
+    require, number = _host_async_require, _host_async_number
+    hint = data.get('failure_diagnostics')
+    require(data.get('status') == 'failed' and data.get('failure_kind') == 'invalid_result', 'marker failure applicability')
+    require(type(hint) is list and len(hint) == 4 and hint[0] == 4, 'marker failure stage')
+    require(type(value) is list and len(value) == 4, 'marker failure fields')
+    phase,site,descriptor,locator = value
+    require(number(phase,0,1) and number(site,1,42) and number(descriptor,0,3) and number(locator,0,31), 'marker failure codes')
+    require(hint[phase+1] == 2 and (phase == 0 or hint[1] == 3), 'marker failure observation')
+    rows = data.get('cases')
+    require(type(rows) is list and len(rows) == 8, 'marker failure rows')
+    failures = [index for index,row in enumerate(rows) if type(row) is list and len(row) == 8 and row[1:3] == [2,4]]
+    require(len(failures) == 1, 'marker failure case')
+    case_id = failures[0]
+    require(phase == 1 or site in set(range(1,10)) | {42}, 'marker failure phase')
+    if site in range(14,27):
+        require(descriptor < 3, 'marker descriptor ordinal')
+        allowed = ({31} if site in (14,26) else {0} if site == 15 else {1} if site == 16
+                   else set(range(2,10)) | ({31} if site == 25 else set()))
+        require(locator in allowed, 'marker descriptor field')
+    elif site in (34,35):
+        require(descriptor < 3 and locator in range(HOST_ASYNC_SLOTS[case_id]), 'marker reference locator')
+    else:
+        require(descriptor == 3, 'marker descriptor sentinel')
+        if site in (29,38,39): allowed = set(range(29))
+        elif site in (31,32,33,37): allowed = set(range(HOST_ASYNC_SLOTS[case_id]))
+        elif site == 40: allowed = set(range(len(HOST_ASYNC_EDGES[case_id])))
+        elif site == 41: allowed = {2} if case_id == 7 else set()
+        else: allowed = {31}
+        require(locator in allowed, 'marker field locator')
+
+
+def validate_async_failure_diagnostics(data):
+    validate_async_marker_failure(data)
+    value = data['failure_diagnostics']
+    if value is None:
+        return
+    require = _host_async_require
+    number = _host_async_number
+    require(data.get('status') in ('failed', 'inconclusive'), 'failure diagnostic applicability')
+    require(type(value) is list and len(value) == 4, 'failure diagnostic fields')
+    stage, entered, completed, category = value
+    require(number(stage, 0, 5) and number(entered, 0, 3)
+            and number(completed, 0, 3) and number(category, 0, 43), 'failure diagnostic codes')
+    require(stage >= 3 or (entered == 0 and completed == 0), 'failure marker applicability')
+    require(stage != 0 or category == 0, 'failure log applicability')
+    require(category < 13 or stage >= 3, 'entry log applicability')
+    require(completed != 3 or entered == 3, 'failure marker order')
+
+
+def validate_client_async(data, template_hash, module_hashes):
+    require = _host_async_require
+    number = _host_async_number
+    require(_host_async_sha(template_hash) and type(module_hashes) in (tuple,list)
+            and len(module_hashes) == 8 and all(_host_async_sha(x) for x in module_hashes),'trusted hashes')
+    require(type(data) is dict and set(data) == {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','marker_validation_failure','cases'},'record fields')
+    require(number(data['version'],2,2),'version')
+    require(type(data['status']) is str and data['status'] in ('not_started','ok','failed','inconclusive'),'status')
+    require(type(data['failure_kind']) is str and data['failure_kind'] in HOST_ASYNC_FAILURES,'reason')
+    require(data['template_sha256'] is None or _host_async_sha(data['template_sha256']) and data['template_sha256'] == template_hash,'template identity')
+    require(_host_async_sha(data['continuity_sha256']) if data['status'] == 'ok' else data['continuity_sha256'] is None,'continuity anchor')
+    diag = _host_async_diagnostic(data['process_diagnostics'])
+    validate_async_failure_diagnostics(data)
+    require(type(diag['stage']) is str and type(diag['reason']) is str,'diagnostic types')
+    rows = data['cases']
+    require(type(rows) is list and len(rows) == 8,'eight cases')
+    states = []
+    for case_id,row in enumerate(rows):
+        require(type(row) is list and len(row) == 8,'eight fields')
+        cid,status,failure,module,bits,trace,values,errors = row
+        require(number(cid,case_id,case_id) and number(status,0,3) and number(failure,0,14) and number(bits,0,63),'row codes')
+        require(module is None or _host_async_sha(module) and module == module_hashes[case_id],'module identity')
+        states.append(status)
+        if status == 1:
+            require(failure == 0 and bits == 63 and module == module_hashes[case_id],'observed proof')
+            validate_async_case_observation(case_id,trace,values,errors)
+        else:
+            require(bits == 0 and all(type(x) is list and x == [] for x in (trace,values,errors)),'failed private boundary')
+            if status == 0:
+                require(failure == 1 and module is None,'unreached')
+            elif status == 2:
+                require(1 <= failure <= 13,'failed reason')
+            else:
+                require(failure == 14 and module == module_hashes[case_id],'inconclusive')
+    if data['status'] == 'not_started':
+        require(states == [0]*8 and data['failure_kind'] == 'prerequisites_failed'
+                and data['template_sha256'] is None and diag['stage'] == 'not_checked' and diag['reason'] == 'none','unstarted aggregate')
+    elif data['status'] == 'ok':
+        require(states == [1]*8 and data['failure_kind'] == 'none' and data['template_sha256'] == template_hash
+                and diag['stage'] == 'after_exit' and diag['reason'] == 'none','completed aggregate')
+    else:
+        failure_state = 3 if data['status'] == 'inconclusive' else 2
+        require(states.count(failure_state) == 1,'single failure')
+        index = states.index(failure_state)
+        require(states == [1]*index + [failure_state] + [0]*(7-index),'failure prefix')
+        require(data['failure_kind'] == HOST_ASYNC_FAILURES[rows[index][2]],'aggregate reason')
+        if index or rows[index][3] is not None:
+            require(data['template_sha256'] == template_hash,'aggregate identity')
+    return data
+
+
+def decode_async_wire(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
+        raise ValueError('async wire')
+    validate_async_failure_diagnostics(record)
+    wire = record['process_diagnostics']
+    if (type(wire) is not list or len(wire) != 5 or type(wire[4]) is not list or len(wire[4]) != 7):
+        raise ValueError('async process wire')
+    names = ('native','display','session_bus','shell','python','other','unreadable')
+    diagnostic = _host_async_diagnostic({'stage':wire[0],'reason':wire[1],'unexpected_count':wire[2],
+            'zombie_count':wire[3],'classes':dict(zip(names,wire[4]))})
+    if type(diagnostic['stage']) is not str or type(diagnostic['reason']) is not str:
+        raise ValueError('async process wire type')
+    return {**record,'process_diagnostics':diagnostic}
+
+
+def encode_async_wire(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
+        raise ValueError('async wire')
+    validate_async_failure_diagnostics(record)
+    diagnostic = _host_async_diagnostic(record['process_diagnostics'])
+    names = ('native','display','session_bus','shell','python','other','unreadable')
+    encoded = {**record,'process_diagnostics':[diagnostic['stage'],diagnostic['reason'],diagnostic['unexpected_count'],
+            diagnostic['zombie_count'],[diagnostic['classes'][name] for name in names]]}
+    if decode_async_wire(encoded) != record:
+        raise ValueError('async wire roundtrip')
+    return encoded
+
+
+def validate_async_private_descriptor(value):
+    """Independent selected-field check. Not a whole ErrorInfo serializer."""
+    require = _host_async_require
+    number = _host_async_number
+    fields = ('description','code','additional','category','cause','module','line','source')
+    require(type(value) is dict and set(value) == {'schema','phase',*fields},'private keys')
+    require(number(value['schema'],1,1) and number(value['phase'],0,6),'private version')
+    forms = ({0,1,2,3,4},{0,1,2,3,4},{0,1,2,3,4},{0,1,3,5},{0,1,5},{0,2},{0,1,3},{0,2})
+    for field,allowed in zip(fields,forms):
+        pair = value[field]
+        require(type(pair) is list and len(pair) == 2 and number(pair[0],0,5) and pair[0] in allowed,'private tagged field')
+        tag,payload = pair
+        if tag < 2:
+            require(payload is None,'private absent')
+        elif tag == 2:
+            require(type(payload) is str and len(payload) <= 512,'private text')
+            require(len(payload.encode('utf-8')) <= 512,'private text bytes')
+        elif tag == 3:
+            require(number(payload,0,999999),'private integer')
+        elif tag == 4:
+            require(type(payload) is bool,'private boolean')
+        else:
+            require(number(payload,0,1) and payload == (1 if field == 'category' else 0),'private native type')
+    raw = json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')
+    require(len(raw) <= 4096,'private descriptor size')
+    result = [value['phase']]
+    for field,literal in zip(fields,('ASYNC-REJECT','ASYNC-CODE','ASYNC-DETAIL')):
+        tag,payload = value[field]
+        result.append(4 if tag == 0 else 0 if tag == 1 else 1 if payload == '' and tag == 2 else 2 if payload == literal and tag == 2 else 3)
+    category = value['category']
+    result.append(3 if category[0] == 0 else 0 if category[0] == 1 else 1 if category == [3,1] else 2)
+    result.append({0:3,1:0,5:1}[value['cause'][0]])
+    result.append(hashlib.sha256(raw).hexdigest())
+    return result
+
+
+def validate_async_marker_raw(raw, nonce, case_id, phase):
+    """Read with the host's duplicate-key/depth/UTF-8/size security helper."""
+    require = _host_async_require
+    require(type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}',nonce) is not None
+            and _host_async_number(case_id,0,7) and phase in ('entered','completed'),'marker inputs')
+    data = strict_json(raw,16_384)
+    keys = {'schema','nonce','case','phase','witness'}
+    if phase == 'completed':
+        keys |= {'status','failure','trace','values','errors'}
+    require(type(data) is dict and set(data) == keys,'marker keys')
+    require(_host_async_number(data['schema'],1,1) and _host_async_number(data['case'],case_id,case_id)
+            and type(data['nonce']) is str and data['nonce'] == nonce and type(data['phase']) is str and data['phase'] == phase
+            and type(data['witness']) is str and data['witness'] == 'client','marker binding')
+    if phase == 'entered':
+        return data
+    require(_host_async_number(data['status'],1,3) and _host_async_number(data['failure'],0,14),'marker codes')
+    if data['status'] == 1:
+        require(data['failure'] == 0 and type(data['errors']) is list and len(data['errors']) <= 3,'marker success')
+        errors = [validate_async_private_descriptor(x) for x in data['errors']]
+        validate_async_case_observation(case_id,data['trace'],data['values'],errors)
+        return {**data,'errors':errors}
+    require((data['status'] == 2 and 1 <= data['failure'] <= 13) or (data['status'] == 3 and data['failure'] == 14),'marker failure')
+    require(all(type(data[key]) is list and data[key] == [] for key in ('trace','values','errors')),'marker failed privacy')
+    return data
+
+
+ASYNC_EXPECTED_IDENTITY = {'template': '4177f7bc3e4690e6a67e48af06db4dba78405bb76f16151867fd006c35ba713f', 'modules': ['9c35b55df6f304166f83535490b7cffe51f0bac3383663fa4d2c201dfd4f3317', '2f1521d54fef7ecd73f8dce7f36f983111ff2fdb98112a89bd47f01988072676', '6e1a01c33d77681426c6d3f0c0d648fde353514edad381ba2c6bd2b586284959', 'a3959ce4beb9fe01cc1d3f3416bdb2ac7ef56ecb9cdcce11c0b41d96f347bc78', 'a5a2d09e4a7be7749121b0a26c30670bcd122d76ae81e6b5158fdb9de7ff2b1b', '761b8ed069ac9451cd9eb918c5e7e7d6d84a9d380155bc56b36ffd05717d76f6', '395dfd07a0171d361fd5c029e6a2400ef8d72097f506e073c75fedb1bc3105f4', '3ac1cd874da474e939006034f5a7216e7d2a26e9f9a9fb87f0c0813b1968a45a']}

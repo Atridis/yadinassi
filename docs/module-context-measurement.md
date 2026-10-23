@@ -89,3 +89,29 @@ The private marker remains below 2048 bytes under compact, default and pretty
 serialization; stage/report limits remain 8192/32768. Typed equality, nonce,
 managed OnOpen/roundtrip, private-file reader, process and watchdog gates are not
 weakened. Raw errors, paths and module values are not exported as diagnostics.
+
+## Integration with the accepted Async measurement harness
+
+The first strict119 implementation run
+[39979254717](https://github.com/Atridis/yadinassi/actions/runs/39979254717)
+passed independent artifact audit: full-source host119, native119, all four full
+client suites, negative watchdog checkpoint, runtime provenance and all seven
+exports. The six native output bytes and accepted comparison remained identical
+to main0dbb, including the existing eight approved collection map-order records.
+
+The subsequent non-force integration incorporates main
+`870eba923f36f18ef58ae2b8eead13abac8a7d46` (Async measurement harness only, not
+Async language support). All language files and the exact native119 source stay
+unchanged from audited head `967aee88f8615075a98a41b47128e8f116d5a232`.
+Only two existing files require a three-way merge: `full_suite.py` and
+`native_1c_full_host.py`. Their eight Async case sources, identities and validators
+remain unchanged. This does not claim Async interpreter parity.
+
+The actual production serializer bound is recomputed with strict119 ordinary
+values and all372 allowed ordinary diagnostic combinations (previously342):
+stage wire7984/8192 bytes, late public summary31381/32768, early summary27419,
+provenance14311/32768. It covers80 conditional Async paths,216 failure prefixes,
+1744 failure diagnostic encodings and3188 marker-validation variants. The bound
+is conservative, not a new accepted native report. Private ordinary marker
+pretty serialization remains1859/2048. No coverage or caps are reduced/increased.
+The integrated current head still requires a new native audit and four-OS CI.
