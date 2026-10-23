@@ -17,7 +17,15 @@ PROGRAM='Async Function F() Return Await 17; EndFunction\nAsync Procedure Main()
 class AsyncCLITests(unittest.TestCase):
     def cli(self,*args,stdin=None):
         return subprocess.run([sys.executable,'-m','yadinassi',*args],input=stdin,
-                              cwd=ROOT,text=True,capture_output=True,timeout=20)
+                              cwd=ROOT,text=True,encoding="utf-8",capture_output=True,timeout=20)
+
+    def test_transport_is_utf8_under_non_utf8_host_locale(self):
+        # Windows subprocess text decoding otherwise uses cp1252 even when the
+        # child CLI explicitly writes UTF-8. Exercise both stdin and stdout.
+        with patch('subprocess._text_encoding', return_value='cp1252'):
+            result = self.cli('-', stdin='Message("проверка");')
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, 'проверка\n', ''))
 
     def test_command_file_stdin_console_complete(self):
         with tempfile.TemporaryDirectory() as directory:
