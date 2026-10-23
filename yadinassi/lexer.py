@@ -11,6 +11,8 @@ from .preprocessor import ConditionalCompilation, SourceRegions
 
 KEYWORDS: dict[str, str] = {}
 for kind, aliases in {
+    "ASYNC": ("Асинх", "Async"),
+    "AWAIT": ("Ждать", "Await"),
     "EXECUTE": ("Выполнить", "Execute"),
     "GOTO": ("Перейти", "Goto"),
     "TRY": ("Попытка", "Try"),
@@ -49,6 +51,14 @@ for kind, aliases in {
     "VAL": ("Знач", "Val"),
 }.items():
     KEYWORDS.update((alias.casefold(), kind) for alias in aliases)
+
+
+EXECUTION_DIRECTIVES = {
+    "наклиенте": "ATCLIENT", "atclient": "ATCLIENT",
+    "насервере": "ATSERVER", "atserver": "ATSERVER",
+    "насерверебезконтекста": "ATSERVERNOCONTEXT",
+    "atservernocontext": "ATSERVERNOCONTEXT",
+}
 
 
 @dataclass(frozen=True)
@@ -90,13 +100,20 @@ class Lexer:
 
     def tokens(self) -> list[Token]:
         result = []
+        nocontext = self.execution_context == "server_nocontext"
+        declarations_only = self.server_declarations_only or nocontext
+        selected_annotation = "ATSERVERNOCONTEXT" if nocontext else "ATSERVER"
         compilation = ConditionalCompilation(self.source, self.execution_context)
         capturing_server = False
         capturing_variable = False
         capturing_routine = False
         skipped_variable = False
+        skipped_nocontext = False
+        skipped_compilation = None
+        skipped_conditional_depth = 0
         root_fragment = False
         root_depth = 0
+        excluded_root_blocks = []
         client_compilation = ConditionalCompilation(self.source, "client")
         skipping_client = False
         skipped_depth = 0
@@ -105,7 +122,7 @@ class Lexer:
             char = self.peek()
             # Only branches excluded from the default client root may initialize
             # a server activation. Never replay unguarded module statements.
-            server_root = (self.server_declarations_only and compilation.active
+            server_root = (self.server_declarations_only and not nocontext and compilation.active
                            and not client_compilation.active and compilation.logical_guard)
             # An excluded nested preprocessor branch does not terminate its
             # enclosing initializer. Runtime If/loop bodies may span it.
@@ -119,7 +136,9 @@ class Lexer:
             if char.isspace():
                 self.advance()
                 continue
-            if not compilation.active and char != "#":
+            source_active = (skipped_compilation.active
+                             if skipping_client and skipped_nocontext else compilation.active)
+            if not source_active and char != "#":
                 # Excluded lines need not be valid BSL; no imports or annotations run.
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
@@ -127,10 +146,10 @@ class Lexer:
             # The standalone entry point belongs only to the client. A server
             # compilation selects explicitly server-annotated declarations,
             # never a second execution/parse of the root statement section.
-            if (self.server_declarations_only and not capturing_server
+            if (declarations_only and not capturing_server
                     and not skipping_client and char not in "#&"
                     and (not server_root or re.match(
-                        r"(?:Procedure|Function|Процедура|Функция)\b", self.text[self.pos:], re.I))):
+                        r"(?:Async|Асинх|Procedure|Function|Процедура|Функция)\b", self.text[self.pos:], re.I))):
                 # Track unannotated (therefore client) routine boundaries even
                 # after another root statement on the same line. Quoted text
                 # and comments cannot introduce declarations or directives.
@@ -154,9 +173,20 @@ class Lexer:
                     start = self.pos
                     while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
                         self.advance()
-                    if KEYWORDS.get(self.text[start:self.pos].casefold()) in {"FUNCTION", "PROCEDURE"}:
+                    skipped_kind = KEYWORDS.get(self.text[start:self.pos].casefold())
+                    if skipped_kind in {"ASYNC", "FUNCTION", "PROCEDURE"}:
                         skipping_client = True
-                        skipped_depth = 1
+                        skipped_depth = 0 if skipped_kind == "ASYNC" else 1
+                        skipped_nocontext = False
+                    elif nocontext:
+                        # Root statements are omitted, not flattened. A selected
+                        # annotation inside an omitted If/loop/Try is still nested.
+                        ending = {"IF": "ENDIF", "FOR": "ENDDO", "WHILE": "ENDDO",
+                                  "TRY": "ENDTRY"}.get(skipped_kind)
+                        if ending:
+                            excluded_root_blocks.append(ending)
+                        elif excluded_root_blocks and skipped_kind == excluded_root_blocks[-1]:
+                            excluded_root_blocks.pop()
                 else:
                     self.advance()
                 continue
@@ -175,7 +205,9 @@ class Lexer:
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 directive = self.text[start + 2:self.pos].split("//", 1)[0].strip()
-                if (self.server_declarations_only and standalone
+                if skipping_client:
+                    continue
+                if (declarations_only and standalone
                         and re.match(r"#\s*(?:Импорт|Import)\b", directive, re.IGNORECASE)):
                     if capturing_server:
                         raise BSLError("Импорт в серверной подпрограмме не поддерживается",
@@ -206,11 +238,17 @@ class Lexer:
                 previous_depth = len(compilation.stack)
                 client_compilation.process(directive, line, column)
                 if conditional := compilation.process(directive, line, column):
+                    if (skipping_client and skipped_nocontext and
+                            (conditional == "if" or previous_depth > skipped_conditional_depth)):
+                        # A skipped NoContext body still uses its own logical
+                        # selection for structural boundaries. Outer guards only
+                        # select the declaration; they are not part of its body.
+                        skipped_compilation.process(directive, line, column)
                     regions.conditional_boundary(conditional, previous_depth, line, column)
                     continue
                 if not compilation.active:
                     continue
-                if self.server_declarations_only and not capturing_server and not root_fragment:
+                if skipping_client or (declarations_only and not capturing_server and not root_fragment):
                     # Root regions and other root-only directives do not belong
                     # to the server declaration fragment. Conditional nesting
                     # was still processed above to select the right sources.
@@ -243,19 +281,36 @@ class Lexer:
                     raise BSLError("Ожидается директива исполнения на отдельной строке",
                                    self.source, line, column)
                 name = match.group(1).casefold()
-                if self.server_declarations_only and skipping_client:
+                if skipping_client:
                     continue
-                if self.server_declarations_only and not capturing_server and name in {"наклиенте", "atclient"}:
+                kind = EXECUTION_DIRECTIVES.get(name)
+                if kind is None:
+                    raise BSLError(f"Директива {directive} не поддерживается: "
+                                   "доступны &НаКлиенте / &AtClient, &НаСервере / &AtServer "
+                                   "и &НаСервереБезКонтекста / &AtServerNoContext",
+                                   self.source, line, column)
+                if not capturing_server and (
+                        declarations_only and kind != selected_annotation or
+                        not declarations_only and kind == "ATSERVERNOCONTEXT"):
+                    # Each NoContext body belongs solely to its independent
+                    # compilation. Other passes must not parse or import it.
                     skipping_client = True
                     skipped_depth = 0
+                    skipped_nocontext = kind == "ATSERVERNOCONTEXT"
+                    if skipped_nocontext:
+                        skipped_compilation = ConditionalCompilation(self.source, "server_nocontext")
+                        skipped_conditional_depth = len(compilation.stack)
+                    if not declarations_only:
+                        # Retain a declaration skeleton in the client parse so
+                        # nested placement is rejected without lexing its body.
+                        result.append(Token(kind, directive, line, column, self.source,
+                                            self.source_lines[line - 1]))
                     continue
-                if name not in {"наклиенте", "atclient", "насервере", "atserver"}:
-                    raise BSLError(f"Директива {directive} не поддерживается: "
-                                   "доступны &НаКлиенте / &AtClient и &НаСервере / &AtServer",
+                if nocontext and excluded_root_blocks:
+                    raise BSLError("Директива исполнения допустима только перед подпрограммой уровня модуля",
                                    self.source, line, column)
                 value = directive
-                kind = "ATSERVER" if name in {"насервере", "atserver"} else "ATCLIENT"
-                if self.server_declarations_only:
+                if declarations_only:
                     capturing_server = True
             elif char.isalpha() or char == "_":
                 start = self.pos
@@ -305,30 +360,39 @@ class Lexer:
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
             if skipping_client:
                 if skipped_depth == 0 and kind == "VAR":
+                    if skipped_nocontext:
+                        raise BSLError("Директива без контекста недопустима для переменной",
+                                       self.source, line, column)
                     skipped_variable = True
                 if skipped_variable:
                     if kind == ";":
                         skipping_client = skipped_variable = False
                     continue
-                if skipped_depth == 0 and kind not in {"FUNCTION", "PROCEDURE"}:
+                if skipped_depth == 0 and kind not in {"ASYNC", "FUNCTION", "PROCEDURE"}:
                     raise BSLError("После директивы исполнения ожидается объявление процедуры или функции",
                                    self.source, line, column)
                 if kind in {"FUNCTION", "PROCEDURE"}:
+                    if skipped_depth == 0 and skipped_nocontext and not declarations_only:
+                        result.append(Token(kind, value, line, column, self.source,
+                                            self.source_lines[line - 1]))
                     skipped_depth += 1
                 elif kind in {"ENDFUNCTION", "ENDPROCEDURE"}:
                     skipped_depth -= 1
                     if skipped_depth == 0:
                         skipping_client = False
+                        if skipped_nocontext and not declarations_only:
+                            result.append(Token(kind, value, line, column, self.source,
+                                                self.source_lines[line - 1]))
                 continue
             result.append(Token(kind, value, line, column, self.source,
                                         self.source_lines[line - 1]))
-            if self.server_declarations_only and capturing_server and kind in {"FUNCTION", "PROCEDURE"}:
+            if declarations_only and capturing_server and kind in {"FUNCTION", "PROCEDURE"}:
                 capturing_routine = True
-            if self.server_declarations_only and capturing_server and not capturing_routine and kind == "VAR":
+            if declarations_only and capturing_server and not capturing_routine and kind == "VAR":
                 capturing_variable = True
             if capturing_variable and kind == ";":
                 capturing_server = capturing_variable = False
-            if self.server_declarations_only and kind in {"ENDFUNCTION", "ENDPROCEDURE"}:
+            if declarations_only and kind in {"ENDFUNCTION", "ENDPROCEDURE"}:
                 capturing_server = capturing_routine = False
         if root_fragment:
             result.append(Token("SERVERROOTEND", None, self.line, self.column, self.source))

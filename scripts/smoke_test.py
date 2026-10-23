@@ -2306,6 +2306,38 @@ def check_side_local_module_variables(executable, *, directory, env):
           'persistence, BOM file, -c, stdin and console')
 
 
+def check_server_nocontext(executable, *, directory, env):
+    """Replay captured NoContext values with the measured logical-bit projection."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    code = (probes / 'nocontext_core.bsl').read_text(encoding='utf-8')
+    code += '\nRunNoContextProbe();\n'
+    capture = json.loads((probes / 'nocontext_native.json').read_text(encoding='utf-8'))
+    if len(capture['labels']) != 14 or len(capture['values']) != 14:
+        raise AssertionError('NoContext capture width')
+    capture['values'][2] = (1 if capture['values'][2] & 4 else 0) + (2 if capture['values'][2] & 8 else 0)
+    expected = ''
+    for label, value in zip(capture['labels'], capture['values']):
+        if type(value) is bool:
+            token = '{"B",' + str(int(value)) + '}'
+        elif type(value) is int:
+            token = '{"N",' + str(value) + '}'
+        else:
+            raise AssertionError('NoContext capture type')
+        expected += 'nocontext.core.' + label + ': ' + token + '\n'
+    source = directory / 'БезКонтекста.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Server NoContext failed {arguments!r}: {result!r}')
+    print('Binary server NoContext passed: fourteen measured/projection values, normal and '
+          'escaping boundary copyout, same-server references, logical flags, BOM file, -c, '
+          'stdin and console')
+
+
 def check_extended_exceptions(executable, *, directory, env):
     """Core structured exception flow and unsupported-display REPL recovery."""
     directory.mkdir()
@@ -2350,6 +2382,56 @@ def check_extended_exceptions(executable, *, directory, env):
           'omissions, routines, rethrow, BOM file, command flags, stdin and console recovery')
 
 
+ASYNC_PROGRAM = '''Async Function Leaf(x)
+    x = 17;
+    Return Await x;
+EndFunction
+Async Function Reject()
+    Raise("async-smoke", ErrorCategory.ConfigurationError, "async-code", "detail", Undefined);
+EndFunction
+Async Procedure AsyncMain()
+    x = 5;
+    p = Leaf(x);
+    Message(x);
+    Message(TypeOf(p) = Type("Promise"));
+    Message(Await p);
+    Message(Await p);
+    Try
+        failed = Reject();
+        Message("returned");
+        ignored = Await failed;
+    Except
+        Message(ErrorInfo().Description);
+        Message(ErrorInfo().Code);
+    EndTry;
+EndProcedure
+AsyncMain();
+'''
+ASYNC_OUTPUT = '5\nДа\n17\n17\nreturned\nasync-smoke\nasync-code\n'
+
+
+def check_async_language(executable, *, directory, env):
+    """Frozen executable language core, not a fresh native-1C measurement."""
+    directory.mkdir()
+    source = directory / 'АсинхронноеЯдро.bsl'
+    source.write_text(ASYNC_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, ASYNC_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], ASYNC_PROGRAM), ([], ASYNC_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, ASYNC_OUTPUT, ''):
+            raise AssertionError(f'Failed async language {arguments!r}: {result!r}')
+    cycle = ('Var a,b; Async Function A1() x=Await 0; Return Await b; EndFunction '
+             'Async Function B1() x=Await 0; Return Await a; EndFunction a=A1();b=B1();')
+    result = subprocess.run([executable, '-c', cycle], capture_output=True, encoding='utf-8',
+                            cwd=directory, env=env, timeout=30)
+    if (result.returncode != 1 or result.stdout or 'незавершенные' not in result.stderr
+            or 'Traceback' in result.stderr):
+        raise AssertionError(f'Failed async pending lifecycle: {result!r}')
+    print('Binary async language passed: continuations, values, repeat Await, rejection, complete lifecycle')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -2375,8 +2457,10 @@ def main() -> None:
         check_table_checkpoint(executable, directory=Path(temporary) / "table-checkpoint", env=env)
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_extended_exceptions(executable, directory=Path(temporary) / "extended-exceptions", env=env)
+        check_async_language(executable, directory=Path(temporary) / "async-language", env=env)
         check_exported_module_variables(executable, directory=Path(temporary) / "exported-module-variables", env=env)
         check_side_local_module_variables(executable, directory=Path(temporary) / "side-local-module", env=env)
+        check_server_nocontext(executable, directory=Path(temporary) / "server-nocontext", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)

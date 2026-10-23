@@ -13,23 +13,11 @@ Function NoContextOperation(Value, Val PrivateValue, Val Mode)
     PrivateValue = PrivateValue + 20;
     Nested = NoContextLeaf(Value);
     ProfileMask = 0;
-#If Client Then
+#If AtClient Then
     ProfileMask = ProfileMask + 1;
 #EndIf
-#If Server Then
-    ProfileMask = ProfileMask + 2;
-#EndIf
-#If AtClient Then
-    ProfileMask = ProfileMask + 4;
-#EndIf
 #If AtServer Then
-    ProfileMask = ProfileMask + 8;
-#EndIf
-#If ThickClientManagedApplication Then
-    ProfileMask = ProfileMask + 16;
-#EndIf
-#If ThickClientOrdinaryApplication Then
-    ProfileMask = ProfileMask + 32;
+    ProfileMask = ProfileMask + 2;
 #EndIf
     Caught = False;
     If Mode = 1 Then

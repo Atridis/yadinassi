@@ -1,6 +1,9 @@
 """Tree-walking interpreter with persistent state and injectable builtins."""
 
 from decimal import Decimal, localcontext
+from types import GeneratorType
+
+from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
 from pathlib import Path
 from typing import Callable
 
@@ -23,7 +26,7 @@ from .errors import BSLError, BSLRuntimeError
 from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
                          FORBIDDEN_RAISE_CATEGORIES, empty_error_info)
 from .collation import string_key
-from .parser import parse, parse_expression, parse_fragment, validate_labels
+from .parser import parse, parse_expression, parse_fragment, validate_labels, validate_async
 from .lexer import KEYWORDS
 from .maps import BSLFixedMap, BSLMap
 from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
@@ -122,6 +125,8 @@ class Interpreter:
     def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig",
                  native_target: str = WINDOWS_8_3_27_2342):
         self._native_target = validate_native_target(native_target)
+        self._scheduler = Scheduler(self._native_target)
+        self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
@@ -130,6 +135,7 @@ class Interpreter:
         self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
         self._context_stack = ["client"]
+        self._module_context_stack = [True]
         self._client_routine_names: set[str] = set()
         self.module_names: set[str] = set()
         self.exported_variables: set[str] = set()
@@ -183,6 +189,105 @@ class Interpreter:
         self.register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
 
     @property
+    def locals(self):
+        return self._scheduler.active_context.locals.get(self)
+
+    @locals.setter
+    def locals(self, value):
+        if value is None:
+            self._scheduler.active_context.locals.pop(self, None)
+        else:
+            self._scheduler.active_context.locals[self] = value
+
+    @property
+    def _context_stack(self):
+        return self._scheduler.active_context.context_stack
+
+    @_context_stack.setter
+    def _context_stack(self, value):
+        self._scheduler.active_context.context_stack = value
+
+    @property
+    def _module_context_stack(self):
+        return self._scheduler.active_context.module_context_stack
+
+    @_module_context_stack.setter
+    def _module_context_stack(self, value):
+        self._scheduler.active_context.module_context_stack = value
+
+    @property
+    def _has_module_context(self) -> bool:
+        """Task-local module capability, independent of logical server execution."""
+        return self._module_context_stack[-1]
+
+    def _diagnostics(self):
+        return self._scheduler.active_context.state.setdefault(self._diagnostic_owner, {})
+
+    @property
+    def _handled_errors(self):
+        return self._diagnostics().setdefault("_handled_errors", [])
+
+    @_handled_errors.setter
+    def _handled_errors(self, value):
+        self._diagnostics()["_handled_errors"] = value
+
+    @property
+    def _error_info_boundaries(self):
+        return self._diagnostics().setdefault("_error_info_boundaries", [])
+
+    @_error_info_boundaries.setter
+    def _error_info_boundaries(self, value):
+        self._diagnostics()["_error_info_boundaries"] = value
+
+    @property
+    def _eval_depth(self):
+        return self._diagnostics().setdefault("_eval_depth", [0])
+
+    @_eval_depth.setter
+    def _eval_depth(self, value):
+        self._diagnostics()["_eval_depth"] = value
+
+    @property
+    def _execute_depth(self):
+        return self._diagnostics().setdefault("_execute_depth", [0])
+
+    @_execute_depth.setter
+    def _execute_depth(self, value):
+        self._diagnostics()["_execute_depth"] = value
+
+    def _pump_async(self, *, max_steps=100_000):
+        try:
+            self._scheduler.run_until_idle(max_steps=max_steps)
+        except SchedulerLimitError as error:
+            raise BSLRuntimeError("Превышен предел асинхронных возобновлений Yadinassi",
+                                  "<async>", 1, 1) from error
+
+    def run_until_idle(self, *, max_steps=100_000):
+        """Resume queued language work; unresolved host promises remain pending."""
+        before = len(self._scheduler.procedure_errors)
+        self._pump_async(max_steps=max_steps)
+        if len(self._scheduler.procedure_errors) > before:
+            raise self._scheduler.procedure_errors[before]
+
+    def ensure_complete(self):
+        """Reject silent process success while language tasks remain blocked."""
+        if self.pending_promises:
+            raise BSLRuntimeError("Остались незавершенные асинхронные задания",
+                                  "<async>", 1, 1)
+
+    def close(self):
+        """Release suspended frames explicitly at the embedding lifecycle boundary."""
+        self._scheduler.reset()
+
+    @property
+    def pending_promises(self):
+        return self._scheduler.pending
+
+    def visit(self, node: ast.Node) -> object:
+        """Synchronous embedding boundary; language evaluation uses _visit."""
+        return self._scheduler.run_inline(self._visit(node))
+
+    @property
     def native_target(self) -> str:
         """The explicitly selected native checkpoint, shared by this VM's imports."""
         return self._native_target
@@ -221,7 +326,7 @@ class Interpreter:
         return error.info
 
     def _evaluate(self, argument: ast.Node) -> object:
-        value = self.visit(argument)
+        value = (yield from self._visit(argument))
         # Native evidence covers a Number argument 12. Other non-string values
         # are deliberately rejected; do not call arbitrary Python __str__ hooks.
         if type(value) is str:
@@ -244,7 +349,7 @@ class Interpreter:
                 expression = parse_expression(text)
             except BSLError as error:
                 raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
-            return self.visit(expression)
+            return (yield from self._visit(expression))
         except RecursionError:
             raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
         finally:
@@ -252,7 +357,7 @@ class Interpreter:
             self._eval_depth[0] -= 1
 
     def visit_Execute(self, node: ast.Execute) -> None:
-        value = self.visit(node.expression)
+        value = (yield from self._visit(node.expression))
         # Native checkpoint accepts Undefined as an empty fragment, not Number.
         if value is None:
             value = ""
@@ -279,7 +384,7 @@ class Interpreter:
                     lambda value, name=name: scope.__setitem__(name, value))
                 for name, item in scope.items()
             }
-            self.block(program)
+            (yield from self.block(program))
         except RecursionError:
             raise ValueError("Выполнить: превышен предел глубины фрагмента Yadinassi") from None
         finally:
@@ -290,80 +395,87 @@ class Interpreter:
         return self.execute_program(parse(text, source))
 
     def execute_program(self, program: list[ast.Node]) -> object:
+        outermost = not self._scheduler.is_active
+        procedure_errors = len(self._scheduler.procedure_errors)
         with target_context(self.native_target):
             # A diagnostic source label need not name a readable filesystem path.
             if not any(isinstance(node, ast.Import) for node in program):
-                result = self._execute_program(program)
+                result = self._scheduler.run_inline(self._execute_program(program))
             else:
                 source = program[0].token.source if program else "<строка>"
                 path = None if source.startswith("<") else Path(source).resolve()
                 if path is None:
-                    result = self._execute_program(program)
+                    result = self._scheduler.run_inline(self._execute_program(program))
                 else:
                     self._loading.append(path)
                     try:
-                        result = self._execute_program(program)
+                        result = self._scheduler.run_inline(self._execute_program(program))
                     finally:
                         self._loading.pop()
             # Native public fields and routines become available only after the
             # first successful whole module initialization. Later REPL executions
             # keep the same receiver, storage and public availability.
             self._self_module.ready = True
+            if outermost:
+                self._pump_async()
+                if len(self._scheduler.procedure_errors) > procedure_errors:
+                    raise self._scheduler.procedure_errors[procedure_errors]
             return result
 
     def _execute_program(self, program: list[ast.Node]) -> object:
         # Also validate callers supplying an AST directly. No import or declaration
         # effects may precede label resolution.
         validate_labels(program)
-        # Keep decimal arithmetic independent of the embedding application's context.
-        with localcontext() as context:
-            context.prec = 38
-            # Reserve import names before any module initialization effects.
-            names = set(self.imports)
-            names.update(node.filename.split(".")[0].casefold()
-                         for node in program if isinstance(node, ast.Import))
-            for node in program:
-                declared = ([node.name] if isinstance(node, ast.Routine) else
-                            node.names if isinstance(node, ast.Var) else [])
-                if any(name.casefold() in names for name in declared):
+        validate_async(program)
+        # Reserve import names before any module initialization effects.
+        names = set(self.imports)
+        names.update(node.filename.split(".")[0].casefold()
+                     for node in program if isinstance(node, ast.Import))
+        for node in program:
+            declared = ([node.name] if isinstance(node, ast.Routine) else
+                        node.names if isinstance(node, ast.Var) else [])
+            if any(name.casefold() in names for name in declared):
+                token = node.token
+                raise BSLError("Имя импорта конфликтует с объявлением", token.source,
+                               token.line, token.column)
+        routine_sides = {}
+        for node in program:
+            if isinstance(node, ast.Routine):
+                key = node.name.casefold()
+                if key in routine_sides and routine_sides[key] != (node.execution_context, node.module_context):
                     token = node.token
-                    raise BSLError("Имя импорта конфликтует с объявлением", token.source,
-                                   token.line, token.column)
-            routine_sides = {}
-            for node in program:
-                if isinstance(node, ast.Routine):
-                    key = node.name.casefold()
-                    if key in routine_sides and routine_sides[key] != node.execution_context:
-                        token = node.token
-                        raise BSLError("Одноименные подпрограммы разных контекстов в одном модуле пока не поддерживаются",
-                                       token.source, token.line, token.column)
-                    routine_sides[key] = node.execution_context
-                if isinstance(node, ast.Routine) and node.execution_context not in {"client", "server"}:
-                    token = node.token
-                    raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
+                    raise BSLError("Одноименные подпрограммы разных контекстов в одном модуле пока не поддерживаются",
                                    token.source, token.line, token.column)
-            # Register module declarations before executing any module statements.
-            for node in program:
-                if isinstance(node, ast.Routine):
-                    registry = self.server_routines if node.execution_context == "server" else self.routines
-                    opposite = self.routines if node.execution_context == "server" else self.server_routines
-                    opposite.pop(node.name.casefold(), None)
-                    registry[node.name.casefold()] = node
-                elif isinstance(node, ast.ServerInitializer):
-                    self.server_initializers.append(node)
-                elif isinstance(node, ast.Var):
-                    if node.execution_context == "server":
-                        self.server_module_names.update(name.casefold() for name in node.names)
-                        continue
-                    self.exported_variables.update(name.casefold() for name in node.exported_names)
-                    for name in node.names:
-                        self.module_names.add(name.casefold())
-                        self.variables.setdefault(name.casefold(), None)
-            for node in program:
-                if isinstance(node, ast.Import):
-                    self.visit(node)
-            return self.block([node for node in program if not isinstance(node, (ast.Import, ast.ServerInitializer))
-                               and not (isinstance(node, ast.Var) and node.execution_context == "server")])
+                routine_sides[key] = (node.execution_context, node.module_context)
+            if isinstance(node, ast.Routine) and (node.execution_context not in {"client", "server"}
+                    or type(node.module_context) is not bool
+                    or (node.execution_context == "client" and not node.module_context)):
+                token = node.token
+                raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
+                               token.source, token.line, token.column)
+        # Register side-local declarations before any module statement executes.
+        for node in program:
+            if isinstance(node, ast.Routine):
+                registry = self.server_routines if node.execution_context == "server" else self.routines
+                opposite = self.routines if node.execution_context == "server" else self.server_routines
+                opposite.pop(node.name.casefold(), None)
+                registry[node.name.casefold()] = node
+            elif isinstance(node, ast.ServerInitializer):
+                self.server_initializers.append(node)
+            elif isinstance(node, ast.Var):
+                if node.execution_context == "server":
+                    self.server_module_names.update(name.casefold() for name in node.names)
+                    continue
+                self.exported_variables.update(name.casefold() for name in node.exported_names)
+                for name in node.names:
+                    self.module_names.add(name.casefold())
+                    self.variables.setdefault(name.casefold(), None)
+        for node in program:
+            if isinstance(node, ast.Import):
+                yield from self._visit(node)
+        return (yield from self.block([node for node in program
+            if not isinstance(node, (ast.Import, ast.ServerInitializer))
+            and not (isinstance(node, ast.Var) and node.execution_context == "server")]))
 
     def block(self, statements: list[ast.Node]) -> object:
         result = None
@@ -372,7 +484,7 @@ class Interpreter:
         position = 0
         while position < len(statements):
             try:
-                result = self.visit(statements[position])
+                result = (yield from self._visit(statements[position]))
             except _Goto as jump:
                 if jump.name not in labels:
                     raise
@@ -381,10 +493,13 @@ class Interpreter:
                 position += 1
         return result
 
-    def visit(self, node: ast.Node) -> object:
+    def _visit(self, node: ast.Node) -> object:
         try:
             handler = getattr(self, f"visit_{type(node).__name__}")
-            return handler(node)
+            result = handler(node)
+            if isinstance(result, GeneratorType):
+                return (yield from result)
+            return result
         except BSLError:
             raise
         except (ArithmeticError, ValueError, TypeError, IndexError, RecursionError) as error:
@@ -405,7 +520,7 @@ class Interpreter:
         if self.locals is not None and name in self.locals:
             value = self.locals[name]
             return value.get() if isinstance(value, _Reference) else value
-        if name in self.variables and (self.locals is None or name in self.module_names):
+        if self._has_module_context and name in self.variables and (self.locals is None or name in self.module_names):
             return self.variables[name]
         if name in self.imports:
             raise TypeError(f"Имя модуля допустимо только при вызове его подпрограммы: {node.name}")
@@ -414,6 +529,8 @@ class Interpreter:
         if name in self.functions:
             return self.functions[name]
         if name in ("thisobject", "этотобъект"):
+            if not self._has_module_context:
+                raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
             return self._self_module
         if name in ("символы", "chars"):
             return CHARS
@@ -436,23 +553,23 @@ class Interpreter:
         raise ValueError(f"Переменная или функция не определена: {node.name}")
 
     def visit_Group(self, node: ast.Group) -> object:
-        return self.visit(node.expression)
+        return (yield from self._visit(node.expression))
 
     def visit_Unary(self, node: ast.Unary) -> object:
-        value = self.visit(node.operand)
+        value = (yield from self._visit(node.operand))
         if node.operator == "NOT":
             return not boolean(value)
         value = require_number(value)
         return value if node.operator == "+" else value.copy_negate()
 
     def visit_Binary(self, node: ast.Binary) -> object:
-        left = self.visit(node.left)
+        left = (yield from self._visit(node.left))
         operator = node.operator
         if operator == "AND":
-            return boolean(left) and boolean(self.visit(node.right))
+            return boolean(left) and boolean((yield from self._visit(node.right)))
         if operator == "OR":
-            return boolean(left) or boolean(self.visit(node.right))
-        right = self.visit(node.right)
+            return boolean(left) or boolean((yield from self._visit(node.right)))
+        right = (yield from self._visit(node.right))
         if operator in ("=", "<>", "<", "<=", ">", ">="):
             if type(left) is dates.BSLDate:
                 left.require_known()
@@ -507,11 +624,11 @@ class Interpreter:
         raise ValueError(f"Неизвестный оператор: {operator}")
 
     def visit_Conditional(self, node: ast.Conditional) -> object:
-        branch = node.when_true if boolean(self.visit(node.condition)) else node.when_false
-        return self.visit(branch)
+        branch = node.when_true if boolean((yield from self._visit(node.condition))) else node.when_false
+        return (yield from self._visit(branch))
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
-        value = self.receiver(node.object)
+        value = (yield from self.receiver(node.object))
         if type(value) is _Module:
             return value.get_member(node.name)
         if not isinstance(value, BSLObject):
@@ -519,18 +636,18 @@ class Interpreter:
         return value.get_member(node.name)
 
     def visit_Index(self, node: ast.Index) -> object:
-        value = self.visit(node.object)
+        value = (yield from self._visit(node.object))
         if type(value) is BSLChars:
-            return value.get_index(self.visit(node.index))
+            return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
-        index = self.visit(node.index)
+        index = (yield from self._visit(node.index))
         if isinstance(value, (BSLFixedMap, *_TABLE_COLLECTIONS)):
             return value.get_index(index)
         return value.get(index)
 
     def visit_Call(self, node: ast.Call) -> object:
-        return self.call(node, require_value=True)
+        return (yield from self.call(node, require_value=True))
 
     def call(self, node: ast.Call, *, require_value: bool) -> object:
         callee = self.ungroup(node.callee)
@@ -558,7 +675,7 @@ class Interpreter:
                     owner = known_receiver.interpreter
                     routine = known_receiver.routine(callee.name)
         if routine is not None:
-            return self.call_routine(routine, node.arguments, owner, require_value=require_value)
+            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value))
         # Existing host calls reject omitted arguments before receiver effects.
         # Native table/list methods need optional holes; admit them only for a known
         # exact built-in receiver (a variable or its Columns property). We never
@@ -575,15 +692,15 @@ class Interpreter:
                  and registered.function is not strings.str_find)):
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
-            receiver = table_receiver if table_optional is not None else self.receiver(callee.object)
+            receiver = table_receiver if table_optional is not None else (yield from self.receiver(callee.object))
             if type(receiver) is _Module:
-                return self.call_routine(receiver.routine(callee.name), node.arguments,
-                                         receiver.interpreter, require_value=require_value)
+                return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
+                                         receiver.interpreter, require_value=require_value))
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
             function = receiver.get_method(callee.name)
         else:
-            function = self.visit(node.callee)
+            function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
         if function.function is fill_property_values:
@@ -604,12 +721,9 @@ class Interpreter:
         if function.function is _eval_marker:
             if len(node.arguments) != 1:
                 raise TypeError("Вычислить ожидает 1 аргумент")
-            return self._evaluate(node.arguments[0])
-        if function.function is strings.str_find:
-            return function(*(strings._OMITTED if isinstance(argument, ast.OmittedArgument)
-                              else self.visit(argument) for argument in node.arguments))
+            return (yield from self._evaluate(node.arguments[0]))
+        defaults = None
         if table_optional is not None:
-            defaults = None
             if type(table_receiver) is BSLValueTableColumnCollection:
                 defaults = ("", None, "", Decimal(0))
                 if callee.name.casefold() in {"insert", "вставить"}:
@@ -618,15 +732,17 @@ class Interpreter:
                 defaults = (None, "", False)
                 if callee.name.casefold() in {"insert", "вставить"}:
                     defaults = (None,) + defaults
-            return function(*((defaults[index] if defaults is not None else None)
-                              if isinstance(argument, ast.OmittedArgument) else self.visit(argument)
-                              for index, argument in enumerate(node.arguments)))
-        if function.function is fill_property_values:
-            return function(*(None if isinstance(argument, ast.OmittedArgument)
-                              else self.visit(argument) for argument in node.arguments))
-        return function(*(self.argument(argument) if index in function.reference_parameters
-                          else self.visit(argument)
-                          for index, argument in enumerate(node.arguments)))
+        values = []
+        for index, argument in enumerate(node.arguments):
+            if isinstance(argument, ast.OmittedArgument):
+                value = (strings._OMITTED if function.function is strings.str_find else
+                         defaults[index] if defaults is not None else None)
+            elif index in function.reference_parameters:
+                value = (yield from self.argument(argument))
+            else:
+                value = (yield from self._visit(argument))
+            values.append(value)
+        return function(*values)
 
     def known_receiver(self, node: ast.Node) -> object:
         """Read explicit receiver storage only, never factories or arbitrary fields."""
@@ -654,7 +770,7 @@ class Interpreter:
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
         imported = self.import_receiver(node)
-        return imported if imported is not None else self.visit(node)
+        return imported if imported is not None else (yield from self._visit(node))
 
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
@@ -704,10 +820,16 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
-        if function.execution_context not in {"client", "server"}:
+        if function.is_async and function.execution_context != "client":
+            raise ValueError("Асинхронные подпрограммы допустимы только на клиенте")
+        if (function.execution_context not in {"client", "server"}
+                or type(function.module_context) is not bool
+                or (function.execution_context == "client" and not function.module_context)):
             raise ValueError("Подпрограмма требует неподдерживаемый контекст исполнения")
         if self._logical_side == "server" and function.execution_context == "client":
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
+        if not self._has_module_context and function.module_context:
+            raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
         crossing = self._logical_side == "client" and function.execution_context == "server"
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
@@ -734,12 +856,12 @@ class Interpreter:
         for index, parameter in enumerate(function.parameters):
             argument = arguments[index] if index < len(arguments) else None
             if argument is None or isinstance(argument, ast.OmittedArgument):
-                value = self.visit(parameter.default) if parameter.default is not None else None
+                value = (yield from self._visit(parameter.default)) if parameter.default is not None else None
             else:
                 if crossing and isinstance(self.ungroup(argument), ast.Name):
-                    value = self.argument(argument)
+                    value = (yield from self.argument(argument))
                 else:
-                    value = self.visit(argument) if parameter.by_value else self.argument(argument)
+                    value = (yield from self._visit(argument)) if parameter.by_value or function.is_async else (yield from self.argument(argument))
             name = parameter.name.casefold()
             if crossing and not parameter.by_value:
                 # A named caller formal may itself alias a property/index.
@@ -761,22 +883,26 @@ class Interpreter:
             names = list(bindings)
             copied = self._copy_context_packet([bindings[name] for name in names])
             bindings = dict(zip(names, copied))
-            owner = owner._new_server_activation()
-            # Module storage is initialized before parameter locals are installed.
-            # Exceptions escape without copy-out and the detached activation dies.
-            owner._context_stack.append("server")
-            try:
-                for initializer in owner.server_initializers:
-                    owner.block(initializer.body)
-            finally:
-                owner._context_stack.pop()
+            owner = (owner._new_server_activation() if function.module_context else
+                     owner._new_server_activation(module_context=False))
+        if function.is_async:
+            promise = self._scheduler.start(owner._async_body(function, bindings),
+                                            procedure=not function.is_function)
+            return promise if function.is_function else None
         previous = owner.locals
-        owner.locals = bindings
+        # Fresh server module initialization precedes formal parameter storage.
+        # One cleanup boundary encloses BOTH initializer and routine execution.
+        owner.locals = None if crossing else bindings
         owner._context_stack.append(function.execution_context)
+        owner._module_context_stack.append(function.module_context)
         try:
+            if crossing:
+                for initializer in owner.server_initializers:
+                    yield from owner.block(initializer.body)
+                owner.locals = bindings
             result = None
             try:
-                owner.block(function.body)
+                (yield from owner.block(function.body))
             except _Return as returned:
                 result = returned.value
             if crossing:
@@ -791,8 +917,33 @@ class Interpreter:
                     reference.set(value)
             return result
         finally:
+            owner._module_context_stack.pop()
             owner._context_stack.pop()
             owner.locals = previous
+            if crossing:
+                self._scheduler.active_context.state.pop(owner._diagnostic_owner, None)
+
+    def _async_body(self, function: ast.Routine, bindings: dict):
+        previous = self.locals
+        self.locals = bindings
+        self._context_stack.append("client")
+        self._module_context_stack.append(True)
+        try:
+            try:
+                yield from self.block(function.body)
+            except _Return as returned:
+                return returned.value
+            return None
+        finally:
+            self._module_context_stack.pop()
+            self._context_stack.pop()
+            self.locals = previous
+
+    def visit_Await(self, node: ast.Await):
+        value = yield from self._visit(node.operand)
+        # Even settled promises suspend in the measured client profile.
+        # Scalar operands also resume as themselves; no synchronous unwrap.
+        return (yield AwaitRequest(value))
 
     @staticmethod
     def _copy_context_packet(values: list[object]) -> list[object]:
@@ -832,15 +983,16 @@ class Interpreter:
 
         return [copy(value, 0) for value in values]
 
-    def _new_server_activation(self) -> "Interpreter":
+    def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
         server = Interpreter(self.output, encoding=self.encoding, native_target=self.native_target)
+        server._scheduler = self._scheduler
         server._logical_side = "server"
         server._context_stack = self._context_stack
         server.routines = self.server_routines.copy()
-        server.module_names = self.server_module_names.copy()
+        server.module_names = self.server_module_names.copy() if module_context else set()
         server.variables = dict.fromkeys(server.module_names)
-        server.server_initializers = self.server_initializers.copy()
+        server.server_initializers = self.server_initializers.copy() if module_context else []
         server._client_routine_names = set(self.routines)
         # Keep server-bound core helpers. Copy registered host functions while
         # rebinding this interpreter's methods, never retaining client frames.
@@ -874,15 +1026,15 @@ class Interpreter:
             name = node.name.casefold()
             if self.locals is not None and name in self.locals:
                 scope = self.locals
-            elif name in self.variables and (self.locals is None or name in self.module_names):
+            elif self._has_module_context and name in self.variables and (self.locals is None or name in self.module_names):
                 scope = self.variables
             else:
-                return self.visit(node)
+                return (yield from self._visit(node))
             if isinstance(scope[name], _Reference):
                 return scope[name]
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
-            owner = self.receiver(node.object)
+            owner = (yield from self.receiver(node.object))
             if type(owner) is _Module:
                 owner.get_member(node.name)
                 return _Reference(lambda: owner.get_member(node.name),
@@ -903,10 +1055,10 @@ class Interpreter:
             return _Reference(lambda: owner.get_member(node.name),
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
-            owner = self.visit(node.object)
+            owner = (yield from self._visit(node.object))
             if not isinstance(owner, _COLLECTIONS):
                 raise TypeError("Индексирование поддерживается только для коллекций")
-            index = self.visit(node.index)
+            index = (yield from self._visit(node.index))
             getter = owner.get_index if isinstance(owner, (BSLFixedMap, *_TABLE_COLLECTIONS)) else owner.get
             # Native PR47: bad array indices / absent structure properties fail
             # before entry; a mutable map's missing key is a valid output slot.
@@ -914,7 +1066,7 @@ class Interpreter:
             setter = owner.set_index if isinstance(owner, _TABLE_COLLECTIONS) else owner.set
             return _Reference(lambda: getter(index), lambda value: setter(index, value))
         # Literals and computed expressions have no caller storage to rebind.
-        return self.visit(node)
+        return (yield from self._visit(node))
 
     @staticmethod
     def ungroup(node: ast.Node) -> ast.Node:
@@ -927,18 +1079,23 @@ class Interpreter:
         if factory is not None and factory.function is BSLTypeDescription:
             # The observed descriptor overloads use positional qualifier holes.
             # Other host constructors retain their explicit omission rejection.
-            return factory(*(None if isinstance(argument, ast.OmittedArgument)
-                             else self.visit(argument) for argument in node.arguments))
+            values = []
+            for argument in node.arguments:
+                values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from self._visit(argument)))
+            return factory(*values)
         self.reject_host_omissions(node.arguments)
         if factory is None:
             raise ValueError(f"Тип не определен: {node.name}")
-        return factory(*(self.visit(argument) for argument in node.arguments))
+        values = []
+        for argument in node.arguments:
+            values.append((yield from self._visit(argument)))
+        return factory(*values)
 
     def visit_DynamicNew(self, node: ast.DynamicNew) -> object:
         # Expressions follow the same left-to-right evaluation as host calls.
         # EDT root_New explicitly says to ignore a non-array second value.
-        value_type = self.visit(node.type_expression)
-        parameters = self.visit(node.parameters) if node.parameters is not None else None
+        value_type = (yield from self._visit(node.type_expression))
+        parameters = (yield from self._visit(node.parameters)) if node.parameters is not None else None
         if type(value_type) is BSLType:
             name = value_type.value
         elif type(value_type) is str:
@@ -954,32 +1111,33 @@ class Interpreter:
 
     def visit_Assign(self, node: ast.Assign) -> None:
         if isinstance(node.target, ast.Name):
-            self.set_variable(node.target.name, self.visit(node.value))
+            self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
-            value = self.receiver(node.target.object)
+            value = (yield from self.receiver(node.target.object))
             if isinstance(node.target, ast.Attribute):
                 if type(value) is not _Module and not isinstance(value, BSLObject):
                     raise TypeError("Значение не имеет методов или свойств")
-                value.set_member(node.target.name, self.visit(node.value))
+                value.set_member(node.target.name, (yield from self._visit(node.value)))
             else:
                 if type(value) is BSLChars:
-                    value.set_index(self.visit(node.target.index), self.visit(node.value))
+                    value.set_index((yield from self._visit(node.target.index)), (yield from self._visit(node.value)))
                     return
                 if not isinstance(value, _COLLECTIONS):
                     raise TypeError("Индексирование поддерживается только для коллекций")
-                index = self.visit(node.target.index)
+                index = (yield from self._visit(node.target.index))
                 setter = value.set_index if isinstance(value, _TABLE_COLLECTIONS) else value.set
-                setter(index, self.visit(node.value))
+                setter(index, (yield from self._visit(node.value)))
 
     def set_variable(self, name: str, value: object) -> None:
         name = name.casefold()
         if (name in ("thisobject", "этотобъект")
                 and not (self.locals is not None and name in self.locals)
-                and not (name in self.variables and (self.locals is None or name in self.module_names))):
+                and not (self._has_module_context and name in self.variables
+                         and (self.locals is None or name in self.module_names))):
             raise ValueError(f"Нельзя присвоить значение свойству только для чтения: {name}")
         if name in self.imports and self.locals is None:
             raise ValueError(f"Нельзя присвоить значение имени импорта: {name}")
-        if self.locals is None or (name in self.module_names and name not in self.locals):
+        if self.locals is None or (self._has_module_context and name in self.module_names and name not in self.locals):
             self.variables[name] = value
         elif isinstance(self.locals.get(name), _Reference):
             self.locals[name].set(value)
@@ -1064,6 +1222,8 @@ class Interpreter:
                 raise ValueError(f"Не удалось прочитать модуль {path}: {error}") from None
             child = Interpreter(self.output, encoding=self.encoding,
                                 native_target=self.native_target)
+            child._scheduler = self._scheduler
+            child._diagnostic_owner = self._diagnostic_owner
             child.functions = self.functions.copy()
             child.types = self.types.copy()
             child._context_stack = self._context_stack
@@ -1091,7 +1251,7 @@ class Interpreter:
 
     def visit_Try(self, node: ast.Try) -> None:
         try:
-            self.block(node.body)
+            (yield from self.block(node.body))
         except BSLRuntimeError as error:
             # 1C discards parent diagnostic information on entering a nested handler.
             # Keep frames for reliable unwinding, but never revive their stale errors.
@@ -1099,7 +1259,7 @@ class Interpreter:
                 self._handled_errors[index] = None
             self._handled_errors.append(error)
             try:
-                self.block(node.handler)
+                (yield from self.block(node.handler))
             finally:
                 self._handled_errors.pop()
 
@@ -1113,12 +1273,13 @@ class Interpreter:
                 raise ValueError("Повторный вызов исключения после вложенного обработчика "
                                  "пока не поддерживается; используйте явное сообщение")
             raise error
-        message = to_string(self.visit(node.value))
+        message = to_string((yield from self._visit(node.value)))
         arguments = node.optional_arguments or []
         if len(arguments) > 4:
             raise TypeError("ВызватьИсключение ожидает не более 5 аргументов")
-        values = [None if isinstance(argument, ast.OmittedArgument) else self.visit(argument)
-                  for argument in arguments]
+        values = []
+        for argument in arguments:
+            values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from self._visit(argument)))
         values.extend([None] * (4 - len(values)))
         category, code, additional, cause = values
         if category is not None:
@@ -1155,14 +1316,14 @@ class Interpreter:
         raise BSLRuntimeError(message, token.source, token.line, token.column, info=info)
 
     def visit_Return(self, node: ast.Return) -> None:
-        raise _Return(self.visit(node.value) if node.value is not None else None)
+        raise _Return((yield from self._visit(node.value)) if node.value is not None else None)
 
     def visit_ExpressionStatement(self, node: ast.ExpressionStatement) -> object:
         expression = self.ungroup(node.expression)
         if isinstance(expression, ast.Call):
             # A procedure is allowed only when its result is discarded.
-            return self.call(expression, require_value=False)
-        return self.visit(node.expression)
+            return (yield from self.call(expression, require_value=False))
+        return (yield from self._visit(node.expression))
 
     def visit_Var(self, node: ast.Var) -> None:
         if self.locals is None and any(name.casefold() in self.imports for name in node.names):
@@ -1172,14 +1333,14 @@ class Interpreter:
 
     def visit_If(self, node: ast.If) -> None:
         for condition, body in node.branches:
-            if boolean(self.visit(condition)):
-                self.block(body)
+            if boolean((yield from self._visit(condition))):
+                (yield from self.block(body))
                 return
-        self.block(node.otherwise)
+        (yield from self.block(node.otherwise))
 
     def iteration(self, body: list[ast.Node]) -> bool:
         try:
-            self.block(body)
+            (yield from self.block(body))
         except _Continue:
             pass
         except _Break:
@@ -1187,17 +1348,17 @@ class Interpreter:
         return True
 
     def visit_For(self, node: ast.For) -> None:
-        start = require_number(self.visit(node.start))
-        end = require_number(self.visit(node.end))
+        start = require_number((yield from self._visit(node.start)))
+        end = require_number((yield from self._visit(node.end)))
         name = node.name.casefold()
         self.set_variable(name, start)
         while require_number(self.visit_Name(ast.Name(node.token, name))) <= end:
-            if not self.iteration(node.body):
+            if not (yield from self.iteration(node.body)):
                 break
             self.set_variable(name, require_number(self.visit_Name(ast.Name(node.token, name))) + Decimal(1))
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
-        collection = self.visit(node.collection)
+        collection = (yield from self._visit(node.collection))
         if (not isinstance(collection, _COLLECTIONS)
                 and type(collection) is not BSLRoundModes
                 and type(collection) is not BSLSearchDirections
@@ -1205,12 +1366,12 @@ class Interpreter:
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         for item in collection:
             self.set_variable(node.name, item)
-            if not self.iteration(node.body):
+            if not (yield from self.iteration(node.body)):
                 break
 
     def visit_While(self, node: ast.While) -> None:
-        while boolean(self.visit(node.condition)):
-            if not self.iteration(node.body):
+        while boolean((yield from self._visit(node.condition))):
+            if not (yield from self.iteration(node.body)):
                 break
 
     def visit_Break(self, node: ast.Break) -> None:

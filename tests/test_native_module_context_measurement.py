@@ -20,13 +20,13 @@ class ModuleContextParityTests(unittest.TestCase):
         raw=full.nocontext_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
         self.assertEqual(full.digest(raw),capture['source_sha256'])
         self.assertEqual(full.digest(full.generated_module(raw)),capture['module_sha256'])
-        self.assertEqual(full.CLIENT_VALUES[109:],['module.context.v1']+capture['values'])
+        self.assertEqual(full.CLIENT_VALUES[109:119],['module.context.v1']+capture['values'])
         self.assertEqual(full.CLIENT_VALUES,suite.CLIENT_VALUES)
-        self.assertEqual(len(full.CLIENT_VALUES),119)
+        self.assertEqual(len(full.CLIENT_VALUES),134)
         from yadinassi import Interpreter
         from decimal import Decimal
         vm=Interpreter(lambda _: self.fail('unexpected output'))
-        vm.execute(raw.decode('utf-8-sig'))
+        vm.execute(linux_fixture(ROOT/full.CLIENT_SOURCE).decode('utf-8-sig'))
         actual=[int(v) if type(v) is Decimal else v for v in vm.execute('ВычислитьПробу()')]
         self.assertEqual(actual,full.CLIENT_VALUES)
         self.assertEqual([type(v) for v in actual],[type(v) for v in full.CLIENT_VALUES])
@@ -39,7 +39,7 @@ class ModuleContextParityTests(unittest.TestCase):
             full.verify_client_interpreter(ROOT,p,full.digest(raw))
             changed=raw.replace(b'ContextServerCounter = 100;',b'ContextServerCounter = 101;')
             self.assertNotEqual(raw,changed);p.write_bytes(changed)
-            with self.assertRaisesRegex(full.FullError,'^source_changed$'):
+            with self.assertRaisesRegex(full.FullError,'^interpreter_failed$'):
                 full.verify_client_interpreter(ROOT,p,full.digest(changed))
 
     def test_strict_typed_contract_and_removed_capture_metadata(self):

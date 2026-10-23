@@ -117,4 +117,5 @@ pretty serialization remains1859/2048. No coverage or caps are reduced/increased
 The integrated head passed independent native audit in run39982661042 and all
 eight push/PR OS jobs before merge. Actual-main native run39987049433 also passed
 independent audit with unchanged119, four-client and watchdog evidence. The next
-[NoContext measurement](nocontext-measurement.md) is separate and is not full parity.
+[bounded NoContext implementation](nocontext-measurement.md) requires a fresh
+strict134 whole-source native audit; its historical rejected captures are not full parity.

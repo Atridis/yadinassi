@@ -584,6 +584,9 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                         payloads.clear()
                         report["comparison"] = FULL.compare_outputs(ROOT, capture, report["stage3"], input_hashes,
                             native_target=native_target, comparison_mode=comparison_mode, runtime_evidence=report)
+                        if client_async:
+                            report["async_comparison"] = FULL.compare_async_runtime(
+                                ROOT, capture.parent, report, input_hashes)
                     report["windows_goldens_unchanged"] = FULL.windows_fingerprints(ROOT) == baseline
                     if not report["windows_goldens_unchanged"]:
                         raise FULL.FullError("windows_goldens_changed")
@@ -651,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--client-numbers-parity", action="store_true",
                         help="Also require private full client/server numbers byte parity")
     parser.add_argument("--client-async-measurement", action="store_true",
-                        help="Separate finite client Async language measurement, not interpreter parity; incompatible with parity/watchdog extras")
+                        help="Compare eight finite client Async language cases with this staged interpreter; incompatible with other parity/watchdog extras")
     parser.add_argument("--client-probe", action="store_true",
                         help="Also require fresh managed-form client-only execution proof")
     parser.add_argument("--export-native-outputs", action="store_true",
@@ -761,6 +764,13 @@ def main(argv: list[str] | None = None) -> int:
         report["purpose"] = "client-async-language-measurement-v1"
         report["client_async_measurement_completed"] = bool(success and report.get("probe", {}).get("stage3", {}).get("client_async", {}).get("status") == "ok")
         report["client_async_parity_claimed"] = False
+        try:
+            FULL.validate_semantic_context(report.get("probe", {}), IMAGE)
+            result = FULL.validate_async_comparison(report.get("probe", {}).get("async_comparison"))
+            success = bool(success and result["status"] == "matched")
+            report["client_async_parity_claimed"] = success
+        except FULL.FullError:
+            success = False
     report["smoke_completed"] = success
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -776,6 +786,8 @@ def main(argv: list[str] | None = None) -> int:
             report["probe"]["native_output_artifact_ready"] = False
             report["error"] = str(error)
             report["smoke_completed"] = success = False
+            if args.client_async_measurement:
+                report["client_async_parity_claimed"] = False
             rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
             report_within_limit = len(rendered.encode("utf-8")) <= MAX_OUTPUT
             if not report_within_limit:

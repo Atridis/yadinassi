@@ -396,7 +396,8 @@ class Host:
             command = self.vm.visit(node.expression)
             first = len(self.events)
             try:
-                return original_execute(node)
+                # Execute is a continuation; record after its body, not generator creation.
+                return (yield from original_execute(node))
             finally:
                 self.command_events.append((command, self.events[first:]))
 

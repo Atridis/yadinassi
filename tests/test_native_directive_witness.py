@@ -28,7 +28,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
     def test_native_and_host_contracts_match_with_old_values_retained(self):
         self.assertEqual(suite.CLIENT_VALUES, full.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[:4], [42, "client-probe", 3, 6])
-        self.assertEqual(len(full.CLIENT_VALUES), 119)
+        self.assertEqual(len(full.CLIENT_VALUES), 134)
         self.assertEqual(len(set(value.split(":", 1)[0]
                                  for value in full.CLIENT_VALUES[4:15])), 11)
 
@@ -56,7 +56,7 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / "probe.bsl"
             path.write_bytes(changed)
-            with self.assertRaisesRegex(full.FullError, "^source_changed$"):
+            with self.assertRaisesRegex(full.FullError, "^interpreter_failed$"):
                 full.verify_client_interpreter(ROOT, path, full.digest(changed))
 
     def test_hash_mismatch_never_executes(self):

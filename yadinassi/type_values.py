@@ -24,7 +24,11 @@ from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
 from .value_lists import BSLValueList, BSLValueListItem
 
 
+from .async_runtime import Promise
+
+
 _VALUE_TYPES = (
+    (Promise, BSLType.PROMISE, "Promise"),
     (BSLErrorInfo, BSLType.ERROR_INFO, "ErrorInfo"),
     (BSLErrorCategory, BSLType.ERROR_CATEGORY, "ErrorCategory"),
     (BSLXMLStringProcessingManager, BSLType.XML_STRING_PROCESSING_MANAGER, "XMLStringProcessingManager"),

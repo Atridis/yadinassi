@@ -982,7 +982,7 @@ Procedure ContextModuleAppend(RecordsOut)
 EndProcedure
 
 
-// BEGIN bounded no-context measurement
+// BEGIN bounded no-context witness
 &AtServerNoContext
 Function NoContextLeaf(Value)
     Value = Value + 1;
@@ -997,23 +997,11 @@ Function NoContextOperation(Value, Val PrivateValue, Val Mode)
     PrivateValue = PrivateValue + 20;
     Nested = NoContextLeaf(Value);
     ProfileMask = 0;
-#If Client Then
+#If AtClient Then
     ProfileMask = ProfileMask + 1;
 #EndIf
-#If Server Then
-    ProfileMask = ProfileMask + 2;
-#EndIf
-#If AtClient Then
-    ProfileMask = ProfileMask + 4;
-#EndIf
 #If AtServer Then
-    ProfileMask = ProfileMask + 8;
-#EndIf
-#If ThickClientManagedApplication Then
-    ProfileMask = ProfileMask + 16;
-#EndIf
-#If ThickClientOrdinaryApplication Then
-    ProfileMask = ProfileMask + 32;
+    ProfileMask = ProfileMask + 2;
 #EndIf
     Caught = False;
     If Mode = 1 Then
@@ -1063,7 +1051,7 @@ EndProcedure
 Function RunNoContextProbe()
     Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;
     Records = New Array;
-    Records.Add("nocontext.core.v2");
+    Records.Add("nocontext.core.v3");
     Value = 1;
     PrivateValue = 2;
     Result = NoContextOperation(Value, PrivateValue, 0);

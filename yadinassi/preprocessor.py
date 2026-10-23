@@ -32,11 +32,16 @@ class _Branch:
 
 class ConditionalCompilation:
     def __init__(self, source: str, execution_context: str = "client"):
-        if execution_context not in {"client", "server"}:
+        if execution_context not in {"client", "server", "server_nocontext"}:
             raise ValueError("Unknown execution context")
         self.source = source
         self.symbols = {name: value == (execution_context == "client")
                         for name, value in SYMBOLS.items()}
+        if execution_context == "server_nocontext":
+            # NoContext is a compilation profile, not a preprocessor symbol.
+            # Keep the standalone server target; only its logical flags differ.
+            for name in ("наклиенте", "atclient", "насервере", "atserver"):
+                self.symbols[name] = False
         self.stack: list[_Branch] = []
 
     @property

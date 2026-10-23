@@ -1,5 +1,7 @@
 """Recursive-descent statements and precedence-climbing expressions."""
 
+from dataclasses import fields
+
 from . import ast
 from .errors import BSLError, IncompleteInput
 from .lexer import Lexer, Token
@@ -21,6 +23,7 @@ class Parser:
         self.block_depth = 0
         self.handler_depth = 0
         self.routine_kind: str | None = None
+        self.routine_is_async = False
         self.parameter_names: set[str] = set()
 
     @property
@@ -66,17 +69,32 @@ class Parser:
                 statements.append(ast.ServerInitializer(token, body))
                 continue
             execution_context = "client"
-            annotation = self.accept("ATCLIENT") or self.accept("ATSERVER")
+            module_context = True
+            annotation = (self.accept("ATCLIENT") or self.accept("ATSERVER")
+                          or self.accept("ATSERVERNOCONTEXT"))
             if annotation:
-                execution_context = "server" if annotation.kind == "ATSERVER" else "client"
-                if self.current.kind not in ("FUNCTION", "PROCEDURE", "VAR"):
+                module_context = annotation.kind != "ATSERVERNOCONTEXT"
+                execution_context = "client" if annotation.kind == "ATCLIENT" else "server"
+                annotation_context = execution_context if module_context else "server_nocontext"
+                if not module_context and self.current.kind == "VAR":
+                    self.fail("Директива без контекста недопустима для переменной")
+                if self.current.kind not in ("ASYNC", "FUNCTION", "PROCEDURE", "VAR"):
                     self.fail("После директивы исполнения ожидается объявление процедуры, функции или переменной")
-                if self.compilation_context and execution_context != self.compilation_context:
+                if self.compilation_context and annotation_context != self.compilation_context:
+                    if self.accept("ASYNC"):
+                        if self.current.kind not in ("FUNCTION", "PROCEDURE"):
+                            self.fail("После Асинх ожидается процедура или функция")
                     ending = ";" if self.current.kind == "VAR" else "END" + self.current.kind
                     while self.current.kind not in {ending, "EOF"}:
                         self.pos += 1
                     self.expect(ending)
                     continue
+            async_token = self.accept("ASYNC")
+            if async_token:
+                if self.current.kind not in ("FUNCTION", "PROCEDURE"):
+                    self.fail("После Асинх ожидается процедура или функция")
+                if execution_context != "client":
+                    self.fail("Асинх поддерживается только на клиенте")
             if self.current.kind in ("FUNCTION", "PROCEDURE"):
                 token = self.current
                 kind = token.kind
@@ -89,14 +107,19 @@ class Parser:
                 parameters = self.parameters()
                 exported = bool(self.accept("EXPORT"))
                 self.routine_kind = kind
+                self.routine_is_async = bool(async_token)
                 self.parameter_names = {parameter.name.casefold() for parameter in parameters}
                 try:
                     body = self.block({"END" + kind})
                     self.expect("END" + kind)
                 finally:
                     self.routine_kind = None
+                    self.routine_is_async = False
                     self.parameter_names = set()
-                statements.append(ast.Routine(token, name, parameters, kind == "FUNCTION", exported, body, execution_context))
+                statements.append(ast.Routine(
+                    token, name, parameters, kind == "FUNCTION", exported, body,
+                    execution_context=execution_context, is_async=bool(async_token),
+                    module_context=module_context))
                 # Routine brackets are not statements and need no semicolon.
                 continue
             node = self.statement()
@@ -111,6 +134,7 @@ class Parser:
                 self.fail("Ожидается ';' между операторами")
         self.expect("EOF")
         validate_labels(statements)
+        validate_async(statements)
         return statements
 
     def parameters(self) -> list[ast.Parameter]:
@@ -199,11 +223,11 @@ class Parser:
         if self.accept("GOTO"):
             self.expect("~")
             return ast.Goto(token, self.expect("IDENT").value)
-        if token.kind in {"ATCLIENT", "ATSERVER"}:
+        if token.kind in {"ATCLIENT", "ATSERVER", "ATSERVERNOCONTEXT"}:
             self.fail("Директива исполнения допустима только перед подпрограммой уровня модуля")
         if token.kind == "IMPORT":
             self.fail("Импорт допустим только на уровне модуля")
-        if token.kind in ("FUNCTION", "PROCEDURE"):
+        if token.kind in ("ASYNC", "FUNCTION", "PROCEDURE"):
             self.fail("Процедуры и функции допустимы только на уровне модуля")
         if self.accept("RETURN"):
             if self.routine_kind is None:
@@ -324,7 +348,15 @@ class Parser:
 
     def expression(self, minimum: int = 1) -> ast.Node:
         token = self.current
-        if token.kind in ("+", "-", "NOT"):
+        if token.kind == "AWAIT":
+            if not self.routine_is_async:
+                self.fail("Ждать допустимо только внутри асинхронной подпрограммы клиента")
+            self.pos += 1
+            # Bounded implementation: Await binds like a numeric unary operator.
+            # Calls/member/index access belong to its operand; group a compound
+            # operand explicitly. Native binary-operator precedence is unverified.
+            left = ast.Await(token, self.expression(6))
+        elif token.kind in ("+", "-", "NOT"):
             self.pos += 1
             # NOT binds less tightly than comparisons, but more tightly than AND.
             left = ast.Unary(token, token.kind, self.expression(3 if token.kind == "NOT" else 6))
@@ -421,6 +453,47 @@ class Parser:
         return arguments
 
 
+
+def validate_async(statements: list[ast.Node]) -> None:
+    """Validate async scope even for caller-supplied ASTs, before any effects.
+
+    Walk expression fields and all branches, including unreachable bodies. Routine
+    parameter defaults are outside the async body and cannot contain Await.
+    """
+    def fail(node: ast.Node, message: str) -> None:
+        token = node.token
+        raise BSLError(message, token.source, token.line, token.column)
+
+    def visit(value: object, in_routine: bool = False, is_async: bool = False,
+              top_level: bool = False) -> None:
+        if isinstance(value, ast.ServerInitializer):
+            if not top_level:
+                fail(value, "Серверный инициализатор допустим только на уровне модуля")
+            # Initializers have their own synchronous server scope, never the
+            # enclosing caller's async permission (including supplied ASTs).
+            visit(value.body, False, False)
+        elif isinstance(value, ast.Routine):
+            if in_routine or not top_level:
+                fail(value, "Процедуры и функции допустимы только на уровне модуля")
+            if type(value.is_async) is not bool:
+                fail(value, "Признак асинхронной подпрограммы должен быть булевым")
+            if value.is_async and (value.execution_context != "client" or not value.module_context):
+                fail(value, "Асинх поддерживается только на клиенте")
+            visit(value.parameters, True, False)
+            visit(value.body, True, value.is_async)
+        elif isinstance(value, ast.Node):
+            if isinstance(value, ast.Await) and not is_async:
+                fail(value, "Ждать допустимо только внутри асинхронной подпрограммы клиента")
+            for field in fields(value):
+                if field.name != "token":
+                    visit(getattr(value, field.name), in_routine, is_async)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                visit(item, in_routine, is_async, top_level)
+
+    visit(statements, top_level=True)
+
+
 def validate_labels(statements: list[ast.Node]) -> None:
     """Resolve one routine/module at a time, before any execution side effects.
 
@@ -472,11 +545,15 @@ def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
     server_tokens = Lexer(text, source, execution_context="server",
                           server_declarations_only=True).tokens()
     server = Parser(server_tokens, "server").parse()
+    nocontext_tokens = Lexer(text, source, execution_context="server_nocontext").tokens()
+    nocontext = Parser(nocontext_tokens, "server_nocontext").parse()
     return [node for node in client if not (
         isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
     )] + [node for node in server if (
         isinstance(node, ast.ServerInitializer) or
         isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
+    )] + [node for node in nocontext if (
+        isinstance(node, ast.Routine) and not node.module_context
     )]
 
 
@@ -493,7 +570,8 @@ def parse_fragment(text: str, source: str = "<Выполнить>") -> list[ast.
     tokens = Lexer(text, source, allow_directives=False).tokens()
     # Reject declarations anywhere, including unreachable branches, before effects.
     for token in tokens:
-        if token.kind in {"VAR", "FUNCTION", "PROCEDURE", "ATCLIENT", "ATSERVER", "IMPORT"}:
+        if token.kind in {"VAR", "ASYNC", "FUNCTION", "PROCEDURE", "ATCLIENT",
+                          "ATSERVER", "ATSERVERNOCONTEXT", "IMPORT"}:
             raise BSLError("Выполнить: объявления и импорт недопустимы",
                            token.source, token.line, token.column)
     # A fresh parser intentionally has no surrounding routine/loop/handler/labels.

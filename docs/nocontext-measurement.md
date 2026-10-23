@@ -1,119 +1,144 @@
-# Bounded NoContext measurement, not language support
+# Bounded server NoContext implementation and evidence
 
-This isolated measurement starts from audited main
-`e83eb60f5b3aee19b774aa04e6c8286cbde48fa4` (tree
-`5e0b0cb0047afb62ceff2530f772cfad52220021`). Runtime, parser and lexer are
-unchanged: `AtServerNoContext` remains unsupported locally. No native expected
-values are guessed. No ready/merge or full parity claim applies to this stage.
+`&AtServerNoContext / &НаСервереБезКонтекста` now denotes server execution
+without module-context capability. This is not an alias of `&AtServer`.
+The standalone entry point and unannotated routines remain client code.
+The implementation follows two independently audited captures on native
+8.3.27.1508, Linux/amd64, managed application, file infobase. The final changed
+source still requires a fresh strict134 native run and four-OS CI before merge.
+No forms, form attributes, database, query engine or network RPC are implemented.
 
-## Source and purpose
+## Compiler and visibility
 
-`integrational_tests/directive_probes/nocontext_core.bsl` contains six literal
-client calls: four direct calls to an `AtServerNoContext` routine and two calls
-to an `AtServer` wrapper which itself invokes that routine. A second NoContext
-helper changes its scalar reference parameter. Explicit formal/local declarations
-prevent accidental managed-form property bindings.
+The compiler selects a separate NoContext body. Its logical `AtClient` and
+`AtServer` predicates are both false, while runtime execution remains on the
+server. Standalone target defaults remain `Client=False, Server=True` for this
+profile. They are not equated with the measured platform file-mode flags.
+There is no invented `#If AtServerNoContext` keyword.
 
-Fourteen observations, in source order:
+NoContext annotations apply only to top-level procedures/functions, not `Var`.
+NoContext routines can call other NoContext routines, but cannot read module
+variables or access the implicit ThisObject/ЭтотОбъект module receiver, or call
+context-bearing server/client routines. Explicit parameter/local names can still
+shadow that receiver name. The call restriction
+is checked before actual-argument effects. Parameters and locals remain visible;
+a local assignment cannot write hidden module storage. `Execute` and `Eval`
+retain the same capability restriction. Unsupported dual directives still fail.
+Same-name routines from different context families in one compilation are
+rejected before root effects; a later persistent execution can replace a routine.
 
-1. normal.nested: nested result returned through the direct call.
-2. normal.private: callee's modified Val parameter.
-3. normal.profile: six independently compiled preprocessor flags inside NoContext.
-4. normal.caller: client non-Val value after normal return.
-5. normal.val.caller: client Val value after normal return.
-6. caught.matched: controlled exception handled inside NoContext.
-7. caught.caller: client non-Val value after that normal completion.
-8. escape.caught: caller caught the matching controlled exception.
-9. escape.caller: client value after escaping exception.
-10. context.normal.value: server wrapper's local value after a normal NoContext call.
-11. context.escape.value: server wrapper's local value after a throwing NoContext call.
-12. context.escape.caught: wrapper caught the matching controlled exception.
-13. recovery.initial: subsequent direct call's input observation.
-14. recovery.caller: client value after subsequent normal return.
+These visibility restrictions follow the primary
+[8.3.27 Developer Guide, §4.8.1.3](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1808293),
+which distinguishes out-of-context server methods from form-context methods,
+excludes module variables, and lists allowed callees. The guide's
+§4.8.1.2 separately enumerates preprocessor symbols. Command-module
+`AtClientAtServer` and managed-form `AtClientAtServerNoContext` remain future,
+distinct features; no common-module API support is implied here.
 
-All caller sink observations occur after the call or EndTry. Recording accepts
-its value by Val and only appends it; it cannot modify the observed caller sink.
-This distinguishes boundary transfer from same-side NoContext nesting without
-repeating the previously measured object/alias matrix.
+## Calls, parameters and errors
 
-## Honest measurement protocol
+A client-to-NoContext call creates a detached logical server activation and uses
+the existing bounded scalar/acyclic mutable Array/Structure packet contract:
+named actuals are read after argument effects, expression results are retained,
+packet occurrences are copied independently, and all outputs are validated
+before normal-only positional copyout. An escaping exception suppresses
+client-boundary copyout. Existing unsupported sink/type/cycle limits remain.
 
-The existing client form computes the original119 values first, then appends
-`nocontext.core.v2` and14 observations. Native strict119 equality remains unchanged
-and rejects the extra records. Only a complete exact119 prefix, exact sentinel,
-exact134 total count and14 bounded values (Undefined transported as `U`, Boolean,
-integer0..999, except the profile slot requires an exact integer0..63) can yield the finite public `nocontext` diagnostic. Invalid or partial
-vectors export no observations. Raw exceptions, strings, paths and objects never
-enter the public diagnostic. Schema, nonce, source/roundtrip, process ownership,
-quiet-exit and private-file checks stay active. Later client suites/watchdog are
-not reached after this deliberate ordinary-probe failure; they must not be claimed
-as passing in this measurement run.
+Calls from a context-bearing server routine into NoContext, and nested
+NoContext calls, are same-side calls. They preserve ordinary local references,
+including writes made before an escaping exception. They do not create another
+client/server packet boundary. Returning or throwing restores caller capability
+and diagnostics; imported client entry points cannot leak client error handlers.
 
-Host preflight executes the **hash-restored original119 source**, not the new
-NoContext helpers. The inverse removes exactly one pinned call and the complete
-pinned helper block immediately before the unchanged module initializer tail, then requires the audited old source hash. A changed
-helper or initializer fails the exact source gate. The four legacy parity modules
-remain byte-identical to main. Native-only additions are not falsely presented as
-local/runtime parity; after evidence-driven implementation this temporary capture
-must be removed and replaced by strict whole-source native/runtime comparison.
+## Initializer boundary: not a measured native guarantee
 
-The total is134 values (119 + sentinel +14). Private marker pretty-JSON majorant is2035
-bytes, below the unchanged2048-byte limit. Production serializer bounds are8071/8192 wire bytes,31673/32768 late
-summary,27711 early summary and14311/32768 provenance. The Async bound
-also includes the longest14-value diagnostic (False except the typed two-digit mask), even alongside unreachable later
-results. Caps are not raised and Async literal fixtures are unchanged.
+A direct NoContext activation has no module-variable storage and does not replay
+the standalone explicit-server initializer. A NoContext call nested inside an
+existing server activation hides that activation's storage without rerunning or
+resetting it. This is the bounded autonomous no-module-context policy, covered
+by local regression tests, not an independently established native initializer
+lifetime result. The primary visibility rule alone does not prove every platform
+initialization side effect. Full native initializer behavior remains an explicit
+compatibility gap; arbitrary root statements and imports are never replayed.
 
-## Remaining architecture discriminator
+The earlier unconditional-raising initializer preparation was not a valid probe:
+it could fail during form construction before client entry. It was never
+published or used as evidence. A future initializer experiment must observe a
+bounded effect around actual calls, not infer semantics from startup failure.
 
-NoContext must have a distinct module-context capability, not just a server alias.
-The official8.3.27 guide §4.8.1.3 forbids module-variable access and Var annotations
-for NoContext; it permits calls to other no-context routines, not context-bearing
-server methods. Dual NoContext will need independent compilation on each side.
-AtClientAtServer belongs to command modules and is not claimed by this managed-form
-capture. Primary source:
-https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1808293
+## Audited captures
 
-This first capture does not prove whether direct NoContext invocation runs the
-server module initializer. A separate local preparation module uses an explicit
-server initializer raising one controlled error and compares direct NoContext
-with context-bearing calls. It cannot be appended to this119 module without
-breaking its earlier context calls. Its runner/protocol still requires separate
-review; it is not part of this capture or claimed as evidence. Compile-negative
-cases likewise need an independently proved compiler classification; a modal
-failure or generic process timeout is not compiler evidence.
+The source contains six literal client calls: four direct NoContext calls and
+two calls to a context-bearing server wrapper. A second NoContext helper mutates
+its scalar reference. Explicit locals avoid accidental managed-form properties.
+All caller sink observations occur after return or EndTry; the Val recorder
+cannot modify the observed sink.
 
-## Audited first capture and one compiler-profile discriminator
-
-Run [39992325017](https://github.com/Atridis/yadinassi/actions/runs/39992325017)
-produced independently audited artifact12518806153, ZIP SHA256
+Initial [run39992325017](https://github.com/Atridis/yadinassi/actions/runs/39992325017)
+used head09dbc33a, treec597d5cc and sourceacebb0bf. Artifact12518806153 ZIP SHA256:
 `7505db8d495779ddf3ff012a7ab40927153cd953f0d088df4dc4861c0dd3238d`.
-Head09dbc33a/treec597d5cc/sourceacebb0bf had the first14 vector
-`[12,22,false,12,2,true,16,true,6,14,14,true,7,18]`.
-The third value was a Boolean from `#If AtServer`: it was false. The remaining
-observations establish this target's normal/caught copyout, suppressed escaping
-client-boundary copyout, and retained same-server wrapper local changes after an
-escaping NoContext call. This was rejected measurement, not full parity; later
-client suites and watchdog did not run.
+Its vector was `[12,22,false,12,2,true,16,true,6,14,14,true,7,18]`.
+The third value was the independently compiled `AtServer` predicate.
 
-The v2 measurement changes only that third observation to a six-bit integer:
-Client=1, Server=2, AtClient=4, AtServer=8,
-ThickClientManagedApplication=16, ThickClientOrdinaryApplication=32.
-Each bit has its own independent #If block, with no Else chain or assumed
-relationship. The other thirteen observations and six direct call paths are
-unchanged. The third slot rejects Boolean, Undefined and out-of-range values.
-The versioned sentinel prevents the historical Boolean record being mistaken
-for a new mask. The mask is not yet measured and no value is predicted.
+Profile [run39994534264](https://github.com/Atridis/yadinassi/actions/runs/39994534264)
+used head548be3cb, treeb2dd8925 and sourcef87f6a48. Artifact12518298908 ZIP SHA256:
+`156aa2f8190df6757e34a77a5e6b2db8bce501db4ecea7e6b23f88e94bd38fa2`.
+Its vector was `[12,22,19,12,2,true,16,true,6,14,14,true,7,18]`.
+Mask19 means Client1 + Server2 + ThickClientManagedApplication16;
+AtClient4, AtServer8 and ThickClientOrdinaryApplication32 were false.
+Each bit had its own conditional, not an Else chain. These are target-specific
+observations, not a universal flag model or evidence of client execution.
 
-The primary8.3.27 guide §4.8.1.2 enumerates the preprocessor keywords and includes
-these six. It does not list AtServerNoContext/НаСервереБезКонтекста there;
-§4.8.1.3 separately lists that name as an ampersand compilation directive.
-No undocumented #If symbol is added, and documentation absence is not presented
-as a native compile-negative experiment. Target compilation flags and runtime
-logical side remain distinct; the first false AtServer bit does not mean this
-server directive executed a client RPC or establish the other flags.
+The other thirteen slots were unchanged: nested12, private22, caller12,
+Val-caller2, caughtTrue, caught-caller16, escapedTrue, escaped-caller6,
+server-wrapper-normal14, server-wrapper-escape14, wrapper-caughtTrue,
+recovery-input7 and recovery-caller18.
 
-The separate unconditional-raising initializer preparation is not a validated
-probe: it could fail at form construction before client entry. It is not included
-or used as evidence. Initializer/context-access restrictions can follow explicit
-primary documentation, clearly distinguished from measured facts; any future
-native initializer probe must use a bounded observable effect, not startup failure.
+Both captures deliberately failed strict119 equality because of extra values.
+Their completed marker phase is not successful probe validation. Later client
+parity suites and watchdog were not started. Neither capture is full parity.
+Source/module/roundtrip, nonce, all24 staged pins, interpreter provenance and six
+baseline server cases were independently audited, together with the restored119
+host preflight. The PR merge commits bind the same reviewed source trees.
+
+## Final strict witness and release gate
+
+The final source replaces the six target bits with only logical AtClient/AtServer
+bits, both expected false from the audited profile. Other thirteen observations
+are unchanged. The v3 sentinel prevents confusion with earlier captures.
+The strict contract is134 values: original119 + sentinel +14 observations.
+The zero logical mask is a projection of measured bits into new source, not a
+claim that this new source has already passed native validation.
+
+Temporary public capture payloads and restored-source host execution are removed.
+Host preflight executes the entire exact staged source, independently computing
+all134 typed values; native must satisfy the same strict contract. Finite failure
+diagnostics never accept mismatches. The hash-bound inverse remains only for
+legacy adapter construction and must restore the exact old a3e4fd9b source;
+all four historical generated modules remain byte-identical. No generalized
+strip, security-reader relaxation, cap increase or reduced coverage is allowed.
+Production serializer checks cover417 finite failure variants: wire7,984/8,192,
+late public report32,159/32,768, early28,197 and provenance15,011/32,768 bytes.
+These conservative shapes are local bound proofs, not accepted native reports.
+Fresh current-head native134, four client parity runs, watchdog, provenance audit
+and four-OS CI remain required before ready/merge. Async fixture semantics and
+standalone target defaults are unchanged.
+
+## Async runtime integration
+
+The implementation is integrated on actual main
+`ad12e6db946805e9dd4663a4af45c85dbbc49646` (tree
+`2f9724eb378aa4e687b395e6037581cfd6f4b9d5`). Module capability belongs to
+`ExecutionContext`, not a shared interpreter instance: task creation copies the
+stack, task resumption restores its own view, and routine cleanup pops it even
+when initialization or execution fails. Detached diagnostic owners are removed
+on the same outer cleanup path. Client Async routines retain module capability;
+NoContext/server Async declarations and Await in NoContext bodies remain invalid.
+
+Local composition regressions cover interleaved suspended client callers,
+NoContext copyout/escaping errors after Await, initializer recovery, implicit
+receiver hiding and detached-owner lifetime. These are not additional native
+observations of asynchronous server methods. The existing eight source-bound
+Async cases and comparator remain unchanged. Current-tree acceptance requires
+both strict134 native/host parity and a fresh source-bound Async8 run, plus
+four-OS CI; historical acceptance of either parent cannot substitute for it.

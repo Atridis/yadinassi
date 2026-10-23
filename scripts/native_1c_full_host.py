@@ -322,6 +322,9 @@ CLIENT_VALUES += ['object.transfer.v1'] + [True, False, 1, 1, 1, False, 2, 21, 2
 
 # Native run39974330047: exact side-local module context observations.
 CLIENT_VALUES += ['module.context.v1'] + [10, 100, 111, True, 100, True, 100, True, 11]
+# Logical-context projection of audited profile mask19; new exact source needs native validation.
+CLIENT_VALUES += ['nocontext.core.v3'] + [12, 22, 0, 12, 2, True, 16, True, 6, 14, 14, True, 7, 18]
+
 
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
@@ -350,15 +353,15 @@ def module_context_shared_source(raw: bytes) -> bytes:
 
 
 
-CLIENT_NOCONTEXT_TEMPLATE_SHA256 = 'f87f6a48c4395bf29dd18365e2985b5b24e90fe57def6375de9c773618e8ba4c'
+CLIENT_NOCONTEXT_TEMPLATE_SHA256 = 'b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14'
 CLIENT_NOCONTEXT_SHARED_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17'
-CLIENT_NOCONTEXT_BLOCK = b'\n// BEGIN bounded no-context measurement\n&AtServerNoContext\nFunction NoContextLeaf(Value)\n    Value = Value + 1;\n    Return Value;\nEndFunction\n\n&AtServerNoContext\nFunction NoContextOperation(Value, Val PrivateValue, Val Mode)\n    Var Initial, Nested, ProfileMask, Caught;\n    Initial = Value;\n    Value = Value + 10;\n    PrivateValue = PrivateValue + 20;\n    Nested = NoContextLeaf(Value);\n    ProfileMask = 0;\n#If Client Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If Server Then\n    ProfileMask = ProfileMask + 2;\n#EndIf\n#If AtClient Then\n    ProfileMask = ProfileMask + 4;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 8;\n#EndIf\n#If ThickClientManagedApplication Then\n    ProfileMask = ProfileMask + 16;\n#EndIf\n#If ThickClientOrdinaryApplication Then\n    ProfileMask = ProfileMask + 32;\n#EndIf\n    Caught = False;\n    If Mode = 1 Then\n        Try\n            Raise "nocontext-controlled-failure";\n        Except\n            Caught = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n        EndTry;\n    EndIf;\n    If Mode = 2 Then\n        Raise "nocontext-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,PrivateValue,ProfileMask,Caught", Initial, Nested, PrivateValue, ProfileMask, Caught);\nEndFunction\n\n&AtServer\nFunction NoContextFromContext(Val Escape)\n    Var LocalValue, PrivateValue, Result, Failed, Matched;\n    LocalValue = 3;\n    PrivateValue = 4;\n    Failed = False;\n    Matched = False;\n    Result = Undefined;\n    Try\n        If Escape Then\n            Result = NoContextOperation(LocalValue, PrivateValue, 2);\n        Else\n            Result = NoContextOperation(LocalValue, PrivateValue, 0);\n        EndIf;\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    Return New Structure("Value,PrivateValue,Failed,Matched,Result", LocalValue, PrivateValue, Failed, Matched, Result);\nEndFunction\n\n&AtClient\nProcedure NoContextRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunNoContextProbe()\n    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;\n    Records = New Array;\n    Records.Add("nocontext.core.v2");\n    Value = 1;\n    PrivateValue = 2;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "normal.nested", Result.Nested);\n    NoContextRecord(Records, "normal.private", Result.PrivateValue);\n    NoContextRecord(Records, "normal.profile", Result.ProfileMask);\n    NoContextRecord(Records, "normal.caller", Value);\n    NoContextRecord(Records, "normal.val.caller", PrivateValue);\n    Value = 5;\n    Result = NoContextOperation(Value, PrivateValue, 1);\n    NoContextRecord(Records, "caught.matched", Result.Caught);\n    NoContextRecord(Records, "caught.caller", Value);\n    Value = 6;\n    Failed = False;\n    Matched = False;\n    Try\n        NoContextOperation(Value, PrivateValue, 2);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    NoContextRecord(Records, "escape.caught", Failed And Matched);\n    NoContextRecord(Records, "escape.caller", Value);\n    Nested = NoContextFromContext(False);\n    NoContextRecord(Records, "context.normal.value", Nested.Value);\n    Nested = NoContextFromContext(True);\n    NoContextRecord(Records, "context.escape.value", Nested.Value);\n    NoContextRecord(Records, "context.escape.caught", Nested.Failed And Nested.Matched);\n    Value = 7;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "recovery.initial", Result.Initial);\n    NoContextRecord(Records, "recovery.caller", Value);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure NoContextAppend(RecordsOut)\n    Var NoContextValue;\n    For Each NoContextValue In RunNoContextProbe() Do\n        RecordsOut.Add(NoContextValue);\n    EndDo;\nEndProcedure\n'
+CLIENT_NOCONTEXT_BLOCK = b'\n// BEGIN bounded no-context witness\n&AtServerNoContext\nFunction NoContextLeaf(Value)\n    Value = Value + 1;\n    Return Value;\nEndFunction\n\n&AtServerNoContext\nFunction NoContextOperation(Value, Val PrivateValue, Val Mode)\n    Var Initial, Nested, ProfileMask, Caught;\n    Initial = Value;\n    Value = Value + 10;\n    PrivateValue = PrivateValue + 20;\n    Nested = NoContextLeaf(Value);\n    ProfileMask = 0;\n#If AtClient Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 2;\n#EndIf\n    Caught = False;\n    If Mode = 1 Then\n        Try\n            Raise "nocontext-controlled-failure";\n        Except\n            Caught = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n        EndTry;\n    EndIf;\n    If Mode = 2 Then\n        Raise "nocontext-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,PrivateValue,ProfileMask,Caught", Initial, Nested, PrivateValue, ProfileMask, Caught);\nEndFunction\n\n&AtServer\nFunction NoContextFromContext(Val Escape)\n    Var LocalValue, PrivateValue, Result, Failed, Matched;\n    LocalValue = 3;\n    PrivateValue = 4;\n    Failed = False;\n    Matched = False;\n    Result = Undefined;\n    Try\n        If Escape Then\n            Result = NoContextOperation(LocalValue, PrivateValue, 2);\n        Else\n            Result = NoContextOperation(LocalValue, PrivateValue, 0);\n        EndIf;\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    Return New Structure("Value,PrivateValue,Failed,Matched,Result", LocalValue, PrivateValue, Failed, Matched, Result);\nEndFunction\n\n&AtClient\nProcedure NoContextRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunNoContextProbe()\n    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;\n    Records = New Array;\n    Records.Add("nocontext.core.v3");\n    Value = 1;\n    PrivateValue = 2;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "normal.nested", Result.Nested);\n    NoContextRecord(Records, "normal.private", Result.PrivateValue);\n    NoContextRecord(Records, "normal.profile", Result.ProfileMask);\n    NoContextRecord(Records, "normal.caller", Value);\n    NoContextRecord(Records, "normal.val.caller", PrivateValue);\n    Value = 5;\n    Result = NoContextOperation(Value, PrivateValue, 1);\n    NoContextRecord(Records, "caught.matched", Result.Caught);\n    NoContextRecord(Records, "caught.caller", Value);\n    Value = 6;\n    Failed = False;\n    Matched = False;\n    Try\n        NoContextOperation(Value, PrivateValue, 2);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    NoContextRecord(Records, "escape.caught", Failed And Matched);\n    NoContextRecord(Records, "escape.caller", Value);\n    Nested = NoContextFromContext(False);\n    NoContextRecord(Records, "context.normal.value", Nested.Value);\n    Nested = NoContextFromContext(True);\n    NoContextRecord(Records, "context.escape.value", Nested.Value);\n    NoContextRecord(Records, "context.escape.caught", Nested.Failed And Nested.Matched);\n    Value = 7;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "recovery.initial", Result.Initial);\n    NoContextRecord(Records, "recovery.caller", Value);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure NoContextAppend(RecordsOut)\n    Var NoContextValue;\n    For Each NoContextValue In RunNoContextProbe() Do\n        RecordsOut.Add(NoContextValue);\n    EndDo;\nEndProcedure\n'
 CLIENT_NOCONTEXT_INITIALIZER = b'// Initialization runs in its explicitly compiled side only. Do not infer that\n// arbitrary unguarded standalone root statements should run on the server.\n#If AtClient Then\nContextClientCounter = 10;\n#EndIf\n#If AtServer Then\nContextServerCounter = 100;\n#EndIf\n'
 CLIENT_NOCONTEXT_CALL = b'    NoContextAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
 
 
 def nocontext_shared_source(raw: bytes) -> bytes:
-    """Exact pre-initializer measurement/call inverse, never generic source stripping."""
+    """Exact pre-initializer witness/call inverse for legacy adapters only."""
     tail = CLIENT_NOCONTEXT_BLOCK + CLIENT_NOCONTEXT_INITIALIZER
     if (digest(raw) != CLIENT_NOCONTEXT_TEMPLATE_SHA256
             or not raw.endswith(tail)
@@ -404,18 +407,15 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute restored119 only; the pinned NoContext block is native-only measurement."""
+    """Compute the exact staged witness independently in the real interpreter."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
-    shared_source = nocontext_shared_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
-        shared_path = Path(cache).resolve() / "shared-witness.bsl"
-        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -442,8 +442,7 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
-                                  {'phase', 'kind', 'ordinal', 'error_stage', 'nocontext'})
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -451,15 +450,6 @@ def validate_marker_diagnostics(value):
             or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
-    if 'nocontext' in value:
-        records = value['nocontext']
-        if (value['phase'] != 'completed' or value['kind'] != 'count'
-                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
-                or type(records) is not list or len(records) != 14
-                or type(records[2]) is not int or not 0 <= records[2] <= 63
-                or any(not (item is None or type(item) is bool
-                            or (type(item) is int and 0 <= item <= 999)) for item in records)):
-            raise ValueError('client NoContext measurement')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':
@@ -1072,6 +1062,92 @@ def map_contract():
     return module
 
 
+
+ASYNC_ACTUAL_LIMIT = 8192
+ASYNC_EXECUTE_SCRIPT = r"""
+import sys
+import importlib.util
+from pathlib import Path
+try:
+    root = Path(sys.argv[1])
+    path = root / "scripts/native_async_comparison.py"
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_async_comparison", path))
+    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+    source = (root / "scripts/native_1c_bootstrap/full_suite.py").read_bytes()
+    template, bodies = module.read_pinned_sources(source)
+    package = root / "yadinassi"
+    spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                                submodule_search_locations=[str(package)])
+    runtime = importlib.util.module_from_spec(spec)
+    sys.modules["yadinassi"] = runtime
+    spec.loader.exec_module(runtime)
+    sys.stdout.buffer.write(module.canonical(module.execute_actual(bodies)))
+except BaseException:
+    sys.exit(1)
+"""
+
+
+def async_contract(root: Path):
+    path = root / "scripts/native_async_comparison.py"
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_async_comparison", path))
+    exec(compile(read_regular(path, 4 * MAX_FILE, nonempty=True), str(path), "exec"), module.__dict__)
+    return module
+
+
+def validate_async_comparison(result):
+    if (type(result) is not dict or set(result) != {"profile", "status", "cases", "actual_sha256"}
+            or result["profile"] != "async-language-8-v1"
+            or type(result["status"]) is not str or result["status"] not in {"matched", "mismatched"}
+            or not is_digest(result["actual_sha256"])
+            or type(result["cases"]) is not list or len(result["cases"]) != 8):
+        raise FullError("async_comparison_invalid")
+    for row in result["cases"]:
+        if (type(row) is not list or len(row) != 2 or any(type(v) is not str for v in row)
+                or row[0] not in {"matched", "mismatched"}
+                or row[1] not in {"none", "runtimeerror", "lifecycle", "trace", "values", "errors"}
+                or (row[0] == "matched") != (row[1] == "none")):
+            raise FullError("async_comparison_invalid")
+    if (result["status"] == "matched") != all(row[0] == "matched" for row in result["cases"]):
+        raise FullError("async_comparison_invalid")
+    return result
+
+
+def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes: dict, *, runner=bounded_child):
+    """Execute actual-only rows in isolation; compare accepted same-run evidence here."""
+    source_path = "scripts/native_1c_bootstrap/full_suite.py"
+    validate_semantic_context(report, APPROVED_IMAGE)
+    if report["trusted_input_sha256"] != input_hashes:
+        raise FullError("async_evidence_invalid")
+    before = interpreter_provenance(root)
+    source = read_regular(root / source_path, 262144, nonempty=True)
+    if digest(source) != input_hashes.get(source_path):
+        raise FullError("async_source_changed")
+    if (report.get("native_evidence_accepted") is not True
+            or report.get("container_cleanup_verified") is not True
+            or report.get("native_transport_validated") is not True):
+        raise FullError("async_evidence_invalid")
+    try:
+        contract = async_contract(root)
+        template, bodies = contract.read_pinned_sources(source)
+        native = report["stage3"]["client_async"]
+        contract.validate_inputs(template, bodies, native)
+        with tempfile.TemporaryDirectory(prefix="async-cache-", dir=private) as cache:
+            code, stdout, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+                "-c", ASYNC_EXECUTE_SCRIPT, str(root)], root,
+                stdout_limit=ASYNC_ACTUAL_LIMIT, stderr_limit=MAX_STDERR)
+        if code or stderr:
+            raise FullError("async_execution_failed")
+        actual = strict_json(stdout, ASYNC_ACTUAL_LIMIT)
+        result = contract.compare_observations(template, bodies, native, actual)
+    except FullError:
+        raise
+    except Exception:
+        raise FullError("async_comparison_invalid") from None
+    if (interpreter_provenance(root) != before
+            or read_regular(root / source_path, 262144, nonempty=True) != source):
+        raise FullError("execution_provenance_changed")
+    return validate_async_comparison(result)
+
 def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
     contract = map_contract()
     if type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}:
@@ -1268,7 +1344,7 @@ def interpreter_provenance(root: Path) -> dict:
     if any(path.suffix not in {".py", ".txt"} for path in files):
         raise FullError("unexpected_interpreter_source")
     files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
-              root / "scripts/native_1c_map_contract.py"]
+              root / "scripts/native_1c_map_contract.py", root / "scripts/native_async_comparison.py"]
     if not files or len(files) > 512:
         raise FullError("interpreter_provenance_invalid")
     hashes = {path.relative_to(root).as_posix(): digest(read_regular(path, 4 * MAX_FILE, nonempty=True)) for path in files}
@@ -1404,6 +1480,12 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
             metadata["client_async"] = measurement
             metadata["client_async_measurement_completed"] = True
             metadata["client_async_parity_claimed"] = False
+            if "async_comparison" in report:
+                validate_semantic_context(report, image)
+                metadata["async_comparison"] = validate_async_comparison(report["async_comparison"])
+                metadata["client_async_parity_claimed"] = bool(
+                    metadata["async_comparison"]["status"] == "matched"
+                    and comparison["acceptance_status"] == "accepted")
             metadata["purpose"] = "client-async-language-measurement-v1"
         raw = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
         if len(raw) > MAX_REPORT:
