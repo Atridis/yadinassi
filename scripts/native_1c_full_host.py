@@ -296,9 +296,80 @@ def generated_module(source: bytes) -> bytes:
 
 
 CLIENT_SOURCE = "scripts/native_1c_bootstrap/client_probe.bsl"
+# Exact finite witness contract, independently executed by the host interpreter.
+CLIENT_VALUES = [
+    42,
+    'client-probe',
+    3,
+    6,
+    'directive.call.add: {"N",42}',
+    'directive.preprocessor.server: server',
+    'directive.preprocessor.client: client',
+    'directive.call.nested: server',
+    'directive.param.val: {"N",7}',
+    'directive.exception: {"B",1}',
+    'directive.return.number: {"N",42}',
+    'directive.return.string: {"S","x"}',
+    'directive.return.boolean: {"B",1}',
+    'directive.return.undefined: {"U"}',
+    'directive.call.recovery: {"N",42}',
+]
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
+
+
+CLIENT_EXECUTE_SCRIPT = r'''
+import sys
+import re
+import importlib.util
+from pathlib import Path
+# Load only the verified package, not arbitrary modules beside the checkout.
+package = Path(sys.argv[1]) / "yadinassi"
+spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                            submodule_search_locations=[str(package)])
+module = importlib.util.module_from_spec(spec)
+sys.modules["yadinassi"] = module
+spec.loader.exec_module(module)
+Interpreter = module.Interpreter
+
+import json
+from decimal import Decimal
+vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")))
+vm.execute(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
+values = list(vm.execute("ВычислитьПробу()"))
+result = []
+for value in values:
+    if type(value) is Decimal and value.is_finite() and value == value.to_integral_value():
+        result.append(int(value))
+    elif type(value) is str:
+        result.append(value)
+    else:
+        raise RuntimeError("unexpected witness type")
+sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+'''
+
+
+
+def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
+    """Execute the exact native form source, calling only its finite computation.
+
+    Native separately validates the same typed values and exact module roundtrip.
+    This is bounded witness parity, not a full client/server platform claim.
+    """
+    raw = read_regular(source, MAX_FILE, nonempty=True)
+    if digest(raw) != source_hash:
+        raise FullError("source_changed")
+    runner = bounded_child if runner is None else runner
+    with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        code, output, stderr = runner(
+            [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+    expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
+    if code != 0 or stderr or output != expected:
+        raise FullError("interpreter_failed")
+    if read_regular(source, MAX_FILE, nonempty=True) != raw:
+        raise FullError("source_changed")
 
 
 def validate_process_diagnostics(value):

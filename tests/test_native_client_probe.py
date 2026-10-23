@@ -44,7 +44,7 @@ def process_diagnostics(*, stage="after_exit", reason="none", classes=None, zomb
 
 def marker(phase, *, nonce=NONCE):
     return {"schema": 1, "nonce": nonce, "phase": phase, "witness": "client",
-            "values": [] if phase == "entered" else [42, "client-probe", 3, 6]}
+            "values": [] if phase == "entered" else list(suite.CLIENT_VALUES)}
 
 
 def write_marker(path, phase):
@@ -514,7 +514,7 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
                 self.assertEqual(caught.exception.code, 2)
                 run.assert_not_called()
 
-    def test_probe_source_is_client_only_with_explicit_witness_and_nonmodal_stall(self):
+    def test_probe_source_has_client_entry_and_bounded_server_witness_and_nonmodal_stall(self):
         source = (ROOT / suite.CLIENT_SOURCE).read_text(encoding="utf-8-sig")
         self.assertEqual(source.count("&НаКлиенте"), 4)
         self.assertIn("#Если Клиент Тогда", source)
@@ -523,7 +523,10 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
         self.assertIn('Запрос.mode = "stall"', source)
         self.assertIn("Пока Истина Цикл", source)
         self.assertIn("ЗавершитьРаботуСистемы(Ложь)", source)
-        for forbidden in ("&НаСервере", "ЗапуститьТестНаСервере", "ВнешниеОбработки.Создать",
+        self.assertEqual(source.count("&AtServer"), 5)
+        self.assertEqual(source.count("&НаСервере"), 1)
+        self.assertIn("Function DirectiveWitnessValues()", source)
+        for forbidden in ("ЗапуститьТестНаСервере", "ВнешниеОбработки.Создать",
                           "SecurityTypes=None", "ЗащитаОтОпасныхДействий", "UnsafeOperationProtection"):
             self.assertNotIn(forbidden, source)
 

@@ -99,7 +99,8 @@ class _Module:
         self.interpreter.variables[key] = value
 
     def routine(self, name: str) -> ast.Routine:
-        routine = self.interpreter.routines.get(name.casefold())
+        routine = (self.interpreter.routines.get(name.casefold()) or
+                   self.interpreter.server_routines.get(name.casefold()))
         if not self.ready or routine is None or not routine.exported:
             raise ValueError(f"Метод объекта не обнаружен: {name}")
         return routine
@@ -120,6 +121,10 @@ class Interpreter:
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
+        self.server_routines: dict[str, ast.Routine] = {}
+        self._logical_side = "client"
+        self._context_stack = ["client"]
+        self._client_routine_names: set[str] = set()
         self.module_names: set[str] = set()
         self.exported_variables: set[str] = set()
         self._self_module = _Module(self)
@@ -178,8 +183,8 @@ class Interpreter:
 
     @property
     def execution_context(self) -> str:
-        """Standalone root code, routines and imports run in the client context only."""
-        return "client"
+        """Current logical side; standalone entry points always start as client."""
+        return self._context_stack[-1]
 
     def register_function(self, name: str, function: Callable, *aliases: str,
                           returns_value: bool = True) -> None:
@@ -318,10 +323,26 @@ class Interpreter:
                     token = node.token
                     raise BSLError("Имя импорта конфликтует с объявлением", token.source,
                                    token.line, token.column)
+            routine_sides = {}
+            for node in program:
+                if isinstance(node, ast.Routine):
+                    key = node.name.casefold()
+                    if key in routine_sides and routine_sides[key] != node.execution_context:
+                        token = node.token
+                        raise BSLError("Одноименные подпрограммы разных контекстов в одном модуле пока не поддерживаются",
+                                       token.source, token.line, token.column)
+                    routine_sides[key] = node.execution_context
+                if isinstance(node, ast.Routine) and node.execution_context not in {"client", "server"}:
+                    token = node.token
+                    raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
+                                   token.source, token.line, token.column)
             # Register module declarations before executing any module statements.
             for node in program:
                 if isinstance(node, ast.Routine):
-                    self.routines[node.name.casefold()] = node
+                    registry = self.server_routines if node.execution_context == "server" else self.routines
+                    opposite = self.routines if node.execution_context == "server" else self.server_routines
+                    opposite.pop(node.name.casefold(), None)
+                    registry[node.name.casefold()] = node
                 elif isinstance(node, ast.Var):
                     self.exported_variables.update(name.casefold() for name in node.exported_names)
                     for name in node.names:
@@ -376,7 +397,7 @@ class Interpreter:
             return self.variables[name]
         if name in self.imports:
             raise TypeError(f"Имя модуля допустимо только при вызове его подпрограммы: {node.name}")
-        if name in self.routines:
+        if name in self.routines or name in self.server_routines:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
@@ -501,8 +522,12 @@ class Interpreter:
 
     def call(self, node: ast.Call, *, require_value: bool) -> object:
         callee = self.ungroup(node.callee)
-        routine = (self.routines.get(callee.name.casefold())
+        routine = ((self.routines.get(callee.name.casefold()) or
+                    self.server_routines.get(callee.name.casefold()))
                    if isinstance(callee, ast.Name) else None)
+        if (isinstance(callee, ast.Name) and routine is None
+                and callee.name.casefold() in self._client_routine_names):
+            raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
         owner = self
         has_omissions = any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
         known_receiver = None
@@ -667,8 +692,13 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
-        if function.execution_context != owner.execution_context:
+        if function.execution_context not in {"client", "server"}:
             raise ValueError("Подпрограмма требует неподдерживаемый контекст исполнения")
+        if self._logical_side == "server" and function.execution_context == "client":
+            raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
+        crossing = self._logical_side == "client" and function.execution_context == "server"
+        if crossing and any(not parameter.by_value for parameter in function.parameters):
+            raise ValueError("Межконтекстные параметры без Знач пока не поддерживаются")
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
         required = max((index + 1 for index, parameter in enumerate(function.parameters)
@@ -686,16 +716,58 @@ class Interpreter:
                 value = self.visit(parameter.default) if parameter.default is not None else None
             else:
                 value = self.visit(argument) if parameter.by_value else self.argument(argument)
+            if crossing:
+                self._check_context_scalar(value)
             bindings[parameter.name.casefold()] = value
+        if crossing:
+            owner = owner._new_server_activation()
         previous = owner.locals
         owner.locals = bindings
+        owner._context_stack.append(function.execution_context)
         try:
             owner.block(function.body)
         except _Return as returned:
+            if crossing:
+                self._check_context_scalar(returned.value)
             return returned.value
         finally:
+            owner._context_stack.pop()
             owner.locals = previous
         return None
+
+    @staticmethod
+    def _check_context_scalar(value: object) -> None:
+        # Explicit first-step boundary. Do not pass mutable Python/BSL objects
+        # by identity where the platform would serialize and copy them.
+        if value is not None and type(value) not in (str, bool, Decimal):
+            raise TypeError("Межконтекстная передача пока поддерживает только Строка, Число, Булево и Неопределено")
+
+    def _new_server_activation(self) -> "Interpreter":
+        """Fresh logical server call, not a real server or a form context."""
+        server = Interpreter(self.output, encoding=self.encoding, native_target=self.native_target)
+        server._logical_side = "server"
+        server._context_stack = self._context_stack
+        server.routines = self.server_routines.copy()
+        server._client_routine_names = set(self.routines)
+        # Keep server-bound core helpers. Copy registered host functions while
+        # rebinding this interpreter's methods, never retaining client frames.
+        for name, function in self.functions.items():
+            callback = function.function
+            # Imports may carry core callbacks bound to an ancestor module.
+            # Match exact implementation identities, not the current owner or
+            # a user callback's name, so client diagnostic frames never leak.
+            core_helpers = {Interpreter._message, Interpreter._error_description,
+                            Interpreter._error_info}
+            if getattr(callback, "__func__", None) in core_helpers:
+                callback = getattr(server, callback.__name__)
+            server.functions[name] = HostFunction(function.name, callback,
+                                                  reference_parameters=function.reference_parameters,
+                                                  returns_value=function.returns_value)
+        server.types = self.types.copy()
+        # Module variables, imports and the public module receiver have no
+        # cross-context contract in this first slice. Never alias client state.
+        server._self_module.ready = False
+        return server
 
     @staticmethod
     def reject_host_omissions(arguments: list[ast.Node]) -> None:
@@ -901,6 +973,7 @@ class Interpreter:
                                 native_target=self.native_target)
             child.functions = self.functions.copy()
             child.types = self.types.copy()
+            child._context_stack = self._context_stack
             child._module_cache = self._module_cache
             child._loading = self._loading
             child._handled_errors = self._handled_errors
