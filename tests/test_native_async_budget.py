@@ -17,7 +17,7 @@ A call-side rejection omits both Awaits, so at most SIX errors can coexist.
 The failure-only diagnostic tuple has 1743 legal encodings, plus null; its
 longest compact encoding is ten bytes. The late majorant includes that tuple
 even alongside every completed observation, a deliberately unreachable bound.
-The standard client's 60 finite marker diagnostics are bounded independently;
+The standard client's 165 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
 No native process or external action is invoked by these tests.
 """
@@ -280,7 +280,7 @@ def proof_results():
         actual_provenance_boundary_bytes=len(files['provenance.json']),
         conditional_paths=80, failure_prefix_variants=216,
         failure_diagnostic_variants=1744, maximum_failure_diagnostic_wire_bytes=10,
-        standard_marker_diagnostic_variants=60,
+        standard_marker_diagnostic_variants=165,
         maximum_simultaneous_errors=6, maximum_trace_events_per_case=24,
         staged_paths=24, artifact_classes=7)
 
@@ -458,8 +458,15 @@ class AsyncBudgetTests(unittest.TestCase):
             'directive.return.string: {"S","x"}',
             'directive.return.boolean: {"B",1}',
             'directive.return.undefined: {"U"}',
-            'directive.call.recovery: {"N",42}']
-        self.assertEqual(len(expected), 15)
+            'directive.call.recovery: {"N",42}',
+            'copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}',
+            '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}',
+            '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}',
+            '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}',
+            '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}',
+            '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}',
+            '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
+        self.assertEqual(len(expected), 50)
         self.assertEqual(suite.CLIENT_VALUES, expected)
         self.assertEqual(full.CLIENT_VALUES, expected)
         maximum = maximum_standard_marker_diagnostics()
@@ -469,16 +476,16 @@ class AsyncBudgetTests(unittest.TestCase):
         for phase, kind, ordinal, error_stage in itertools.product(
                 ('invalid', 'error', 'completed'),
                 ('none', 'count', 'type', 'value', 'runtime_error'),
-                range(-1, 16), range(12)):
+                range(-1, 52), range(12)):
             diagnostic = dict(phase=phase, kind=kind, ordinal=ordinal, error_stage=error_stage)
             if phase != 'completed':
                 allowed = kind == 'none' and ordinal == -1 and error_stage == 0
             elif kind == 'runtime_error':
                 allowed = 1 <= error_stage <= 11 and ordinal == error_stage + 3
             elif kind == 'count':
-                allowed = 0 <= ordinal <= 15 and error_stage == 0
+                allowed = 0 <= ordinal <= 50 and error_stage == 0
             elif kind in ('type', 'value'):
-                allowed = 0 <= ordinal < 15 and error_stage == 0
+                allowed = 0 <= ordinal < 50 and error_stage == 0
             else:
                 allowed = ordinal == -1 and error_stage == 0
             if not allowed:
@@ -506,11 +513,12 @@ class AsyncBudgetTests(unittest.TestCase):
             self.assertFalse(public['client_async_parity_claimed'])
             self.assertEqual(s['client_async'], suite.empty_async_report())
             self.assertNotIn(b'directive.', wire + summary)
+            self.assertNotIn(b'copyback.core.', wire + summary)
             self.assertLessEqual(len(wire), CAPS['stage_wire'])
             self.assertLessEqual(len(summary), CAPS['public_summary'])
             with self.assertRaises(full.FullError):
                 full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], b''), result, smoke.IMAGE)
-        self.assertEqual(count, 60)
+        self.assertEqual(count, 165)
 
     def test_process_counter_width_bound_is_derived_not_independent_maxima(self):
         # DP over seven nonnegative counters with a <=256 sum proves 16

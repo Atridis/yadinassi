@@ -70,20 +70,23 @@ class GeneratedRequestSiteGuardTests(unittest.TestCase):
             self.assertEqual(suite.ASYNC_ENTRY_LOG_MARKERS['ASYNC-ENTRY-FAILURE:' + label], code)
         for case_id in range(8):
             module = suite.async_client_module(case_id).decode('utf-8-sig')
-            helper = routine(module, 'AsyncExpectRequestEnd')
             reader = routine(module, 'AsyncReadRequest')
-            self.assertEqual(re.findall(r'ЭтапВхода = "(request_end_[a-z]+)";', helper + reader),
-                             [*END_LABELS[1:3], END_LABELS[0], *END_LABELS[3:]])
-            for source, label, operation in (
-                (reader, 'call', 'AsyncExpectRequestEnd(Reader, JSONValueType.ObjectEnd, ЭтапВхода);'),
-                (helper, 'read', 'If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
-                (helper, 'token', 'If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;'),
-                (reader, 'trailing', 'If Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
-                (reader, 'close', 'Reader.Close();'),
+            self.assertEqual(re.findall(r'ЭтапВхода = "(request_end_[a-z]+)";', reader),
+                             list(END_LABELS))
+            self.assertTrue(reader.startswith('    Var AsyncRequestKey, AsyncRequestEndToken;\n'))
+            self.assertEqual(len(re.findall(r'\bAsyncRequestEndToken\b', module)), 3)
+            self.assertEqual(module.count('JSONValueType.ObjectEnd'), 1)
+            self.assertNotIn('AsyncExpectRequestEnd', module)
+            for label, operation in (
+                ('call', 'AsyncRequestEndToken = JSONValueType.ObjectEnd;'),
+                ('read', 'If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
+                ('token', 'If Reader.CurrentValueType <> AsyncRequestEndToken Then Raise "ASYNC-REQUEST"; EndIf;'),
+                ('trailing', 'If Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;'),
+                ('close', 'Reader.Close();'),
             ):
-                self.assertIn(f'    ЭтапВхода = "request_end_{label}";\n    {operation}', source)
+                self.assertIn(f'    ЭтапВхода = "request_end_{label}";\n    {operation}', reader)
             for forbidden in ('ErrorInfo()', 'Сообщить(', 'Try', 'Except'):
-                self.assertNotIn(forbidden, helper + reader)
+                self.assertNotIn(forbidden, reader)
 
     def test_actual_outer_catch_emits_only_exact_finite_label(self):
         for iteration in range(1, 6):

@@ -1,9 +1,9 @@
-# Logical execution directive measurements (not captured)
+# Logical execution directive probes and captured scalar subset
 
-These are independent managed-form module sources for a future explicitly
-reviewed native runner. They are not dynamic Execute fragments. Nothing in the
-current trusted launcher, CI inputs, expected outputs or PR90 async harness was
-changed to execute them. No source here is accepted native evidence.
+These are literal managed-form source modules, not dynamic Execute fragments.
+The positive client/server and scalar-copyback bodies are integrated into the
+ordinary source-bound client probe. Compile-negative and state probes remain
+uncaptured independent modules. PR90 async code is unchanged.
 
 - `client_server.bsl`: invoke literal `RunDirectiveProbe` on the client after
   module creation. Eleven labeled records observe call direction, default scalar
@@ -25,11 +25,17 @@ compiler phase. Do not update historical fixtures or loosen parity. The positive
 source can be run locally by appending `RunDirectiveProbe();` only as a unit test
 of the proposed model; such output must never become a native expected fixture.
 
-The automated ordinary client probe now carries an equivalent eleven-observation
-positive witness in `scripts/native_1c_bootstrap/client_probe.bsl`. The host
-independently executes that exact form source through the interpreter before the
-native invocation. Both must satisfy the same finite typed contract. Existing
-client proof and four client parity scenarios remain intact; no async branch or
-new runner is used. See `docs/execution-directives.md` for source binding and the
-strict inverse that preserves the original parity template. Negative/future
-modules above remain independent measurements, not part of this positive gate.
+The ordinary client probe executes the equivalent Val/context and scalar-copyback
+bodies. Host preflight independently executes the exact whole staged source;
+native must satisfy the same strict 50-value contract. Historical four-client
+parity adapter modules and pins remain unchanged. Temporary capture-only public
+payload and shared-source preflight exception have been removed.
+
+`scalar_copyback_core.bsl` supplies twelve operations and 34 ordered records.
+`scalar_copyback_core.native.json` stores the independently audited bounded
+observations and exact source/tree/run/summary ZIP provenance, not generated
+interpreter predictions. The capture itself intentionally failed old acceptance;
+a new runtime/native PASS remains necessary. Its platform8.3.27.1508 target and
+the official-guide discrepancy are documented in
+`docs/scalar-copyback-measurement.md`. Negative/future modules above are not
+included in this scalar acceptance claim.

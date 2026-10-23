@@ -204,6 +204,32 @@ def without_local_request_key(template):
     return template[:start] + body + template[end:]
 
 
+def without_inline_request_end(template):
+    # Restore the exact previous helper boundary, not just equivalent operations.
+    declaration = '    Var AsyncRequestKey, AsyncRequestEndToken;\n'
+    assert template.count(declaration) == 1
+    template = template.replace(declaration, '    Var AsyncRequestKey;\n')
+    inline = ('    AsyncRequestEndToken = JSONValueType.ObjectEnd;\n'
+              '    ЭтапВхода = "request_end_read";\n'
+              '    If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;\n'
+              '    ЭтапВхода = "request_end_token";\n'
+              '    If Reader.CurrentValueType <> AsyncRequestEndToken Then Raise "ASYNC-REQUEST"; EndIf;\n')
+    assert template.count(inline) == 1
+    template = template.replace(inline,
+        '    AsyncExpectRequestEnd(Reader, JSONValueType.ObjectEnd, ЭтапВхода);\n')
+    assert 'AsyncRequestEndToken' not in template
+    helper = ('&AtClient\nProcedure AsyncExpectRequestEnd(Reader, Val Token, ЭтапВхода)\n'
+              '    ЭтапВхода = "request_end_read";\n'
+              '    If Not Reader.Read() Then Raise "ASYNC-REQUEST"; EndIf;\n'
+              '    ЭтапВхода = "request_end_token";\n'
+              '    If Reader.CurrentValueType <> Token Then Raise "ASYNC-REQUEST"; EndIf;\n'
+              'EndProcedure\n\n')
+    insertion = '&AtClient\nFunction AsyncReadRequest(ЭтапВхода)\n'
+    assert template.count(insertion) == 1
+    assert 'Procedure AsyncExpectRequestEnd' not in template
+    return template.replace(insertion, helper + insertion)
+
+
 def without_request_end_diagnostic(template):
     helper = ('&AtClient\nProcedure AsyncExpectRequestEnd(Reader, Val Token, ЭтапВхода)\n'
               '    ЭтапВхода = "request_end_read";\n'
@@ -245,9 +271,19 @@ def without_request_site_diagnostic(template):
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
+    def test_inline_end_operations_are_the_only_template_change(self):
+        fixture = make_fixture()
+        restored = without_inline_request_end(fixture['ASYNC_TEMPLATE'])
+        self.assertEqual(hashlib.sha256(restored.encode('utf-8')).hexdigest(),
+                         'cdef1ae4d6fc78de8e14e81e87dd67795c0c2c8f20ecb72aefabf338f48bdb89')
+        self.assertEqual(hashlib.sha256(json.dumps(
+            [restored, fixture['ASYNC_CASE_SOURCES']], ensure_ascii=False,
+            separators=(',', ':')).encode('utf-8')).hexdigest(),
+            'd3d3708f0ab82393a689319f1ce1f2b33f6f612da50524055444c3628b084f5f')
+
     def test_end_diagnostics_are_the_only_template_change(self):
         fixture = make_fixture()
-        restored = without_request_end_diagnostic(fixture['ASYNC_TEMPLATE'])
+        restored = without_request_end_diagnostic(without_inline_request_end(fixture['ASYNC_TEMPLATE']))
         # Exact inverse binds all reader operations, remaining routines and cases
         # to the reviewed local-key template, independently of the new pins.
         self.assertEqual(hashlib.sha256(restored.encode('utf-8')).hexdigest(),
@@ -259,7 +295,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
 
     def test_local_request_key_is_the_only_template_change(self):
         fixture = make_fixture()
-        template = without_request_end_diagnostic(fixture['ASYNC_TEMPLATE'])
+        template = without_request_end_diagnostic(without_inline_request_end(fixture['ASYNC_TEMPLATE']))
         body = routine(template, 'AsyncReadRequest')
         self.assertTrue(body.startswith('    Var AsyncRequestKey;\n'))
         self.assertEqual(len(re.findall(r'\bAsyncRequestKey\b', template)), 9)
@@ -297,7 +333,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
 
     def test_request_substages_are_fixed_by_reference_without_semantic_changes(self):
         from test_native_async_protocol import suite
-        template = without_request_end_diagnostic(make_fixture()['ASYNC_TEMPLATE'])
+        template = without_request_end_diagnostic(without_inline_request_end(make_fixture()['ASYNC_TEMPLATE']))
         body = routine(without_request_site_diagnostic(without_local_request_key(template)), 'AsyncReadRequest')
         labels = ['request_open', 'request_object', 'request_key', 'request_value',
                   'request_end', 'request_fields', 'request_nonce', 'request_paths']

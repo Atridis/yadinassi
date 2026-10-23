@@ -1,8 +1,9 @@
 # Logical execution directives: first bounded implementation
 
 Status: bounded implementation based on main `be82ce1`, independently reviewed
-and validated by an audited end-to-end native run (see evidence below). Current-
-head rerun and four-OS CI remain release gates. Unit results alone are not native
+and validated for the Val slice by audited native runs (see evidence below).
+Scalar non-Val implementation follows an audited capture and awaits its own
+strict whole-source runtime/native acceptance. Unit results alone are not native
 evidence. Existing Async measurement work and historical parity fixtures remain
 unchanged.
 
@@ -14,12 +15,23 @@ Client code can call it synchronously in an isolated logical server activation.
 This is an interpreter context, not a 1C server, network transport, form, database
 or query engine. There is no CLI server mode and native_target is independent.
 
-The first slice accepts only `String`, `Number`, `Boolean` and `Undefined` at
-client/server boundaries. Every formal parameter of a crossed call must be
-`Val / Знач`; scalar defaults and omitted optional arguments are supported.
-Non-Val parameters are rejected before argument evaluation. Arguments are
-computed left to right in the caller; unsupported object values are rejected
-before callee execution. Non-scalar results are rejected on return.
+Cross-side transfer accepts only `String`, `Number`, `Boolean` and `Undefined`.
+Val parameters retain caller-side left-to-right value evaluation, including
+existing defaults. Non-Val parameters now accept explicit named caller storage:
+each formal gets a detached scalar input after all actual-expression effects.
+On normal completion, every non-Val formal is copied out in parameter order,
+including unchanged formals; repeated actuals therefore use the rightmost formal.
+All result/outgoing values are validated before any caller write. Escaping server
+exceptions perform no copyout; an exception caught on the server followed by a
+normal return still permits copyout. Same-side references are not used to cross
+the boundary. Property/index sinks, including forwarded references, and
+unmeasured non-Val forms remain explicitly unsupported; object transfer is still rejected.
+
+This is the measured **8.3.27.1508 Linux/amd64 managed file-infobase** subset, not
+a universal claim for other targets. The official guide's alias/exception rules
+disagree with this capture; see [scalar-copyback-measurement.md](scalar-copyback-measurement.md)
+for exact evidence, interpretation and limits. File mode identifies the capture;
+it is not an explanation for the documentation discrepancy.
 
 Same-side server calls reuse ordinary call semantics, including recursion and
 ordinary reference parameters. They do not create a new outer activation.
@@ -57,10 +69,11 @@ parity before measurement.
   client module storage, imports or ready public ThisObject receiver. Unannotated
   module variables remain client-only. Server locals must not alias client globals.
   This does not provide the full context-bearing module-state behavior of AtServer.
-- Non-Val copy-in/copy-out and object serialization are required next parts of
-  this direction, not optional edge polishing. They must not be implemented as
-  ordinary live Python/BSL references. Copyback after an exception needs a native
-  discriminator before implementation.
+- Common named-variable scalar non-Val copyback is now the measured second
+  slice. Object serialization and context-bearing module-state transfer remain
+  required next parts, not optional polishing. Neither may be implemented as
+  ordinary live Python/BSL references. Broader non-Val sink/default/expression
+  forms need their own bounded contract before support is claimed.
 - Server variable lifetime, nested server state, module exports and cross-module
   server dispatch require a separately measured state contract. Current imported
   server routines are callable from the client through the existing exported
@@ -113,14 +126,15 @@ this way. The original fixed-client behavior is documented in features.md.
 
 ## Automated native witness (audited bounded capture)
 
-The ordinary existing `--client-probe` now includes the eleven positive scalar
-observations. Its original four values remain first and unchanged. No workflow
+The ordinary existing `--client-probe` includes eleven Val/context observations
+and the 34 captured scalar-copyback observations plus their fixed version label.
+Its original four values remain first and unchanged. No workflow
 flag, image, process timeout, credential boundary, manual dispatch, database
 query or async runner changes are required. Literal managed-form client code
 calls literal server methods, never `Execute(text)`.
 
-Before the native invocation, the host runs the exact staged form source through
-our interpreter in the existing bounded, credential-free isolated subprocess,
+Before the native invocation, the host runs the exact whole staged form source
+through our interpreter in the existing bounded, credential-free subprocess,
 calling only `ВычислитьПробу()`. Its computed typed values must equal the finite
 contract. The native marker independently must equal that same typed contract,
 with nonce, client OnOpen wiring, source/module/roundtrip hashes, clean process
@@ -130,7 +144,8 @@ The native marker remains private under existing policy; the public report
 retains verified completion and source identity, not unvalidated raw output.
 
 The mixed template has a new exact hash. A narrowly checked inverse removes only
-the appended witness and its one call, then verifies the original template hash
+the appended Val and copyback witness suffixes and their two call blocks,
+then verifies the original template hash
 `4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328`.
 All four existing parity adapters keep their original pins and produce identical
 client-only modules. The separate PR90 async harness also touches this template;
@@ -148,10 +163,11 @@ Source SHA256: `b98f7cb8e3489fabdd5df6cec8b929b7e059f9931f1fbfedb8d112be53c1f437
 module/roundtrip: `ae7275f83f2be4976cfe42f3f7da71384f44c87130c3674c9a2d03e8a4f226b3`.
 All four full client parity counts (841/185/421/402) were retained; existing
 collections typed-map-order equivalence remains, not universal byte equality.
-The current follow-up changes only offline Windows fixture routing and this
-status documentation; runtime and native witness source are unchanged. Full
-four-OS CI and current-head native audit remain release gates. Local tests alone
-are not native evidence.
+The subsequent Windows fixture/docs-only correction was validated on actual
+main `1c3582a22f6a434bf10fd51c779ff5a15b2a2a42` by audited native run
+[39939471860](https://github.com/Atridis/yadinassi/actions/runs/39939471860) and
+four-OS run [39939471865](https://github.com/Atridis/yadinassi/actions/runs/39939471865).
+This is historical Val-slice evidence, not acceptance of the new copyback implementation.
 
 ### Finite diagnostics after the first native run
 
@@ -162,7 +178,7 @@ and is not accepted directive evidence.
 
 On rejected ordinary-client completion only, `marker_diagnostics` now reports a
 finite phase (`invalid`, `error`, `completed`), mismatch class, zero-based value
-ordinal (0–14, or 15 for excess values), and optional literal operation stage
+ordinal (0–49, or 50 for excess values), and optional literal operation stage
 (1–11). The BSL witness catches unexpected computation errors into a fixed
 sentinel plus stage number, never error descriptions. Stage order is the eleven
 labels in the positive probe; ordinal 4 is the first directive observation.
@@ -191,9 +207,10 @@ evidence, not accepted parity or a reason to change standalone defaults.
 The positive witness now tests logical side with AtServer And Not AtClient and
 AtClient And Not AtServer. Its matching subset explicitly excludes equivalence
 of platform Client/Server target flags with standalone Client/Server defaults.
-All fifteen expected typed values are unchanged. The temporary profile helpers,
-extra records and shared-source inverse are removed; the host again executes
-exactly the whole staged form source. The four legacy adapters retain their
-byte-identical modules and pins. The corrected witness passed the audited run
-listed above. A current-head rerun remains required after the test/docs follow-up;
-neither the earlier measurement-only run nor local tests satisfy that gate.
+The first fifteen typed values remain unchanged. The earlier profile-only
+helpers were removed before the audited Val run. The 34 audited copyback
+observations and fixed version label now extend strict acceptance to 50 values;
+the host executes that exact same complete source. Temporary capture diagnostics
+and the shared-source interpreter inverse have been removed. The legacy parity
+adapter inverse remains exact and byte-preserving. A new strict full native run,
+four-OS CI and independent audit are required before this implementation merges.

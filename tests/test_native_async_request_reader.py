@@ -17,6 +17,8 @@ suite = execution.suite
 class Pairs(list):
     pass
 
+# Controlled API/member and token vocabulary only. This double deliberately
+# models the retained source spelling; it does not verify native API members.
 TOKENS = frozenset(('ObjectStart', 'ObjectEnd', 'PropertyName', 'String',
                     'Number', 'Boolean', 'Null', 'ArrayStart', 'ArrayEnd'))
 

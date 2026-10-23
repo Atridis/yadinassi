@@ -314,6 +314,9 @@ CLIENT_VALUES = [
     'directive.return.undefined: {"U"}',
     'directive.call.recovery: {"N",42}',
 ]
+# Audited pinned native scalar-copyback capture, not interpreter-generated data.
+CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
+
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
@@ -352,10 +355,9 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Execute the exact native form source, calling only its finite computation.
+    """Execute the exact whole native form source and its finite typed witness.
 
-    Native separately validates the same typed values and exact module roundtrip.
-    This is bounded witness parity, not a full client/server platform claim.
+    Native independently validates the same values and exact module roundtrip.
     """
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
@@ -396,7 +398,7 @@ def validate_marker_diagnostics(value):
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
             or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
-            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= 15
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
     if value['phase'] != 'completed':
@@ -404,9 +406,9 @@ def validate_marker_diagnostics(value):
     elif value['kind'] == 'runtime_error':
         valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
     elif value['kind'] == 'count':
-        valid = 0 <= value['ordinal'] <= 15 and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] <= len(CLIENT_VALUES) and value['error_stage'] == 0
     elif value['kind'] in {'type', 'value'}:
-        valid = 0 <= value['ordinal'] < 15 and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] < len(CLIENT_VALUES) and value['error_stage'] == 0
     else:
         valid = value['ordinal'] == -1 and value['error_stage'] == 0
     if not valid:
@@ -1550,7 +1552,7 @@ def async_source_identity(source: bytes) -> dict:
         if any('__ASYNC_CASE_' in case for case in cases):
             raise ValueError('async nested placeholder')
         fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
-        if fixture_hash != 'd3d3708f0ab82393a689319f1ce1f2b33f6f612da50524055444c3628b084f5f':
+        if fixture_hash != '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb':
             raise ValueError('async fixture not pinned')
         modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
         identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
@@ -1802,4 +1804,4 @@ def validate_async_marker_raw(raw, nonce, case_id, phase):
     return data
 
 
-ASYNC_EXPECTED_IDENTITY = {'template': 'cdef1ae4d6fc78de8e14e81e87dd67795c0c2c8f20ecb72aefabf338f48bdb89', 'modules': ['57afae8e0f8b52fd417fed483813b9940cb73f5a395516deffc32be401547ef9', 'b5fba4e64f723d58fbca3316ff2117960e4689abd3c51ce41e1981808306a061', 'b73b4f43fafeef0f106b6b4c423ee7f1df191248f593431250779e5565a572ee', '6cac648aafc0394bb7116c5459b5d263920cd79c324f911b16c7b99012d0b274', '1adc54eac069c86e96833d870e7956b52d72810696d6ecfeb2adc2f3ab11379a', '651b6628bf65bf804402bba3b17cf30d83b2f3b583f3d6a29ea0bbbd9efd9029', '27c585e9d6fc5408675a09592ad168601a925bef0f4048cb5ad8c51f9c265a44', '7fc612db59eced36f87768b07ffce41ca694c73b16da94c7652b28aa1914db1d']}
+ASYNC_EXPECTED_IDENTITY = {'template': '19e6444a1856d5f4b8769a80f9ed97df0a042559e8255849635dff083dc8aba4', 'modules': ['b72afebe539cd97cd3eebc28c2aaf6866375609f3bb15f6433c69fb2dd5f99f7', '8df02833ca425b23f81c8b318f0af6ac05605d39f4c008b7e753206ed1c5374b', 'bff8fc309d743edd5e2aad989acc69d9fc142cab4f6cb11164edc73a9b6ead57', '311e8e0483ebbb69f34beb1c71d44ce61a56caf362d180c13e1f744ceb5a7aa6', '0f60e947518b7140f56973fccb631e167309ca36d2da10ce41355e9bdf41be61', 'a2b82d56e4f705b0bef66955b35d279a788da1cf2295f28af278d4a381a5f755', '9dd42db7bca81ed3e36ae12602693f8f5e5efcaf71e37a77e5a6e582b03355f9', '028492c644622ed2e8e79d9b65d8f6b8566b2a4e202088272ff0c391e2203df8']}

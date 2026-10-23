@@ -1,0 +1,161 @@
+{
+  "schema": 1,
+  "target": {
+    "platform_version": "8.3.27.1508",
+    "os": "Linux",
+    "architecture": "amd64",
+    "client": "thick-managed",
+    "infobase": "file"
+  },
+  "capture": {
+    "repository": "Atridis/yadinassi",
+    "run_id": 39944524944,
+    "head": "4ab2f25c4fa834f97c3037b2b6723a2aeb283be5",
+    "tree": "e8c8de8de369145d42c96d3474fa0a4b1d12a71c",
+    "summary_artifact_id": 12497771050,
+    "summary_zip_sha256": "b5cc52786344468500083531e1a14daaf3415c0826fc58b402bdb5eaf92a606c",
+    "source_sha256": "52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c",
+    "module_roundtrip_sha256": "285d66599e70ccd1f4ff6761bd9e171fef40dedd5cae3bdb05ce45f3a0b059cc",
+    "marker_phase": "completed",
+    "acceptance": "rejected_measurement_only",
+    "independently_audited": true
+  },
+  "observations": [
+    {
+      "label": "entered",
+      "value": true
+    },
+    {
+      "label": "success.error",
+      "value": false
+    },
+    {
+      "label": "success.value",
+      "value": 43
+    },
+    {
+      "label": "val.error",
+      "value": false
+    },
+    {
+      "label": "val.value",
+      "value": 1
+    },
+    {
+      "label": "function.error",
+      "value": false
+    },
+    {
+      "label": "function.result",
+      "value": 97
+    },
+    {
+      "label": "function.value",
+      "value": 43
+    },
+    {
+      "label": "caught.error",
+      "value": false
+    },
+    {
+      "label": "caught.matched",
+      "value": true
+    },
+    {
+      "label": "caught.value",
+      "value": 47
+    },
+    {
+      "label": "escaped.caught",
+      "value": true
+    },
+    {
+      "label": "escaped.matched",
+      "value": true
+    },
+    {
+      "label": "escaped.value",
+      "value": 1
+    },
+    {
+      "label": "escaped.untouched",
+      "value": 2
+    },
+    {
+      "label": "escaped.val",
+      "value": 3
+    },
+    {
+      "label": "alias.independent.error",
+      "value": false
+    },
+    {
+      "label": "alias.independent.second",
+      "value": 1
+    },
+    {
+      "label": "alias.independent.value",
+      "value": 1
+    },
+    {
+      "label": "alias.rightmost.error",
+      "value": false
+    },
+    {
+      "label": "alias.rightmost.value",
+      "value": 52
+    },
+    {
+      "label": "alias.unchanged-right.error",
+      "value": false
+    },
+    {
+      "label": "alias.unchanged-right.value",
+      "value": 1
+    },
+    {
+      "label": "alias.self-assignment.error",
+      "value": false
+    },
+    {
+      "label": "alias.self-assignment.value",
+      "value": 1
+    },
+    {
+      "label": "alias.reverted.error",
+      "value": false
+    },
+    {
+      "label": "alias.reverted.value",
+      "value": 1
+    },
+    {
+      "label": "timing.error",
+      "value": false
+    },
+    {
+      "label": "timing.signature",
+      "value": 192
+    },
+    {
+      "label": "timing.value",
+      "value": 9
+    },
+    {
+      "label": "timing.calls",
+      "value": 2
+    },
+    {
+      "label": "recovery.error",
+      "value": false
+    },
+    {
+      "label": "recovery.value",
+      "value": 43
+    },
+    {
+      "label": "complete",
+      "value": true
+    }
+  ]
+}

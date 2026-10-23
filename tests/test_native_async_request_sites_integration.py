@@ -117,10 +117,11 @@ def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False, expose_con
     vm.variables['launchparameter'] = '/tmp/offline/request.json'
     if expose_context_keys:
         # Controlled context only, not a claim about real managed-form members.
-        vm.execute('Var Key, AsyncRequestKey;')
+        vm.execute('Var Key, AsyncRequestKey, AsyncRequestEndToken;')
         vm.variables['key'] = 'unchanged context Key'
         vm.variables['asyncrequestkey'] = 'unchanged outer AsyncRequestKey'
-    if site_fault == 'key_assignment_error' or expose_context_keys:
+        vm.variables['asyncrequestendtoken'] = 'unchanged outer AsyncRequestEndToken'
+    if site_fault in ('key_assignment_error', 'end_assignment_error') or expose_context_keys:
         normal_set_variable = vm.set_variable
         def set_variable(name, value):
             if expose_context_keys and name.casefold() == 'key':
@@ -129,6 +130,11 @@ def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False, expose_con
                 if expose_context_keys:
                     assert vm.locals is not None and 'asyncrequestkey' in vm.locals
                 if site_fault == 'key_assignment_error' and reader.position == 2 * iteration - 1:
+                    raise ValueError(FAULT_DESCRIPTION)
+            if name.casefold() == 'asyncrequestendtoken':
+                if expose_context_keys:
+                    assert vm.locals is not None and 'asyncrequestendtoken' in vm.locals
+                if site_fault == 'end_assignment_error':
                     raise ValueError(FAULT_DESCRIPTION)
             return normal_set_variable(name, value)
         vm.set_variable = set_variable
@@ -154,6 +160,7 @@ FAULTS = (
 )
 END_FAULTS = (
     ('end_call_error', 'call'),
+    ('end_assignment_error', 'call'),
     ('end_read_error', 'read'), ('end_read_false', 'read'),
     ('end_token_error', 'token'), ('end_token_mismatch', 'token'),
     ('end_trailing_error', 'trailing'), ('end_trailing_true', 'trailing'),
@@ -172,6 +179,7 @@ class GeneratedRequestSiteIntegrationTests(unittest.TestCase):
                 self.assertEqual(vm.execute('Result.nonce'), 'a' * 32)
                 self.assertEqual(vm.variables['key'], 'unchanged context Key')
                 self.assertEqual(vm.variables['asyncrequestkey'], 'unchanged outer AsyncRequestKey')
+                self.assertEqual(vm.variables['asyncrequestendtoken'], 'unchanged outer AsyncRequestEndToken')
                 self.assertEqual(reader.read_calls, 13)
                 self.assertTrue(reader.closed)
                 self.assertIsNone(vm.locals)

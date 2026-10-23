@@ -28,9 +28,9 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
     def test_native_and_host_contracts_match_with_old_values_retained(self):
         self.assertEqual(suite.CLIENT_VALUES, full.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[:4], [42, "client-probe", 3, 6])
-        self.assertEqual(len(full.CLIENT_VALUES), 15)
+        self.assertEqual(len(full.CLIENT_VALUES), 50)
         self.assertEqual(len(set(value.split(":", 1)[0]
-                                 for value in full.CLIENT_VALUES[4:])), 11)
+                                 for value in full.CLIENT_VALUES[4:15])), 11)
 
     def test_positive_witness_uses_execution_context_not_platform_target_flags(self):
         for relative in (full.CLIENT_SOURCE,
@@ -67,7 +67,10 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
         runner.assert_not_called()
 
     def test_child_failure_stderr_and_wrong_typed_result_fail_closed(self):
-        source = ROOT / full.CLIENT_SOURCE
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        source = Path(temporary.name).resolve() / "probe.bsl"
+        source.write_bytes(linux_fixture(ROOT / full.CLIENT_SOURCE))
         good = json.dumps(full.CLIENT_VALUES, ensure_ascii=False,
                           separators=(",", ":")).encode()
         for result in [(1, good, b""), (0, good, b"error"),
@@ -153,7 +156,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
         self.assertEqual(self.diagnose(['PRIVATE'], phase='error')['phase'], 'invalid')
 
     def test_first_mismatch_count_type_value_never_exports_payload(self):
-        for index in range(15):
+        for index in range(len(suite.CLIENT_VALUES)):
             for replacement, kind in [(None, 'type'), ('PRIVATE', 'value' if index >= 4 or index == 1 else 'type')]:
                 values = list(suite.CLIENT_VALUES)
                 values[index] = replacement
@@ -161,7 +164,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
                 self.assertEqual(result, dict(phase='completed', kind=kind, ordinal=index, error_stage=0))
                 self.assertNotIn('PRIVATE', json.dumps(result))
         self.assertEqual(self.diagnose(suite.CLIENT_VALUES[:7])['ordinal'], 7)
-        self.assertEqual(self.diagnose(suite.CLIENT_VALUES + [0])['ordinal'], 15)
+        self.assertEqual(self.diagnose(suite.CLIENT_VALUES + [0])['ordinal'], len(suite.CLIENT_VALUES))
 
     def test_fixed_bsl_error_stage_is_bounded_and_not_success(self):
         for stage in range(1, 12):
@@ -178,13 +181,13 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
         source = source.replace('Return A + B;', 'Raise "PRIVATE_ERROR";')
         vm = Interpreter()
         vm.execute(source)
-        values = list(vm.execute('ВычислитьПробу()'))
-        self.assertEqual(values[4:], ['directive.runtime-error', 1])
+        values = list(vm.execute('DirectiveWitnessValues()'))
+        self.assertEqual(values, ['directive.runtime-error', 1])
         self.assertNotIn('PRIVATE_ERROR', str(values))
 
     def test_host_rejects_unknown_unbounded_and_inconsistent_metadata(self):
         good = dict(phase='completed', kind='runtime_error', ordinal=4, error_stage=1)
-        for changes in ({'phase': 'PRIVATE'}, {'kind': 'PRIVATE'}, {'ordinal': 16},
+        for changes in ({'phase': 'PRIVATE'}, {'kind': 'PRIVATE'}, {'ordinal': len(suite.CLIENT_VALUES) + 1},
                         {'ordinal': True}, {'error_stage': 12}, {'error_stage': True},
                         {'extra': 'PRIVATE'}, {'ordinal': 5}, {'phase': 'error'}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
