@@ -18,7 +18,7 @@ Fourteen observations, in source order:
 
 1. normal.nested: nested result returned through the direct call.
 2. normal.private: callee's modified Val parameter.
-3. normal.server: independently compiled AtServer branch inside NoContext.
+3. normal.profile: six independently compiled preprocessor flags inside NoContext.
 4. normal.caller: client non-Val value after normal return.
 5. normal.val.caller: client Val value after normal return.
 6. caught.matched: controlled exception handled inside NoContext.
@@ -39,10 +39,10 @@ repeating the previously measured object/alias matrix.
 ## Honest measurement protocol
 
 The existing client form computes the original119 values first, then appends
-`nocontext.core.v1` and14 observations. Native strict119 equality remains unchanged
+`nocontext.core.v2` and14 observations. Native strict119 equality remains unchanged
 and rejects the extra records. Only a complete exact119 prefix, exact sentinel,
 exact134 total count and14 bounded values (Undefined transported as `U`, Boolean,
-integer0..999) can yield the finite public `nocontext` diagnostic. Invalid or partial
+integer0..999, except the profile slot requires an exact integer0..63) can yield the finite public `nocontext` diagnostic. Invalid or partial
 vectors export no observations. Raw exceptions, strings, paths and objects never
 enter the public diagnostic. Schema, nonce, source/roundtrip, process ownership,
 quiet-exit and private-file checks stay active. Later client suites/watchdog are
@@ -57,10 +57,10 @@ remain byte-identical to main. Native-only additions are not falsely presented a
 local/runtime parity; after evidence-driven implementation this temporary capture
 must be removed and replaced by strict whole-source native/runtime comparison.
 
-The total is134 values (119 + sentinel +14). Private marker pretty-JSON majorant is2038
-bytes, below the unchanged2048-byte limit. Production serializer bounds are8074/8192 wire bytes,31676/32768 late
-summary,27714 early summary and14311/32768 provenance. The Async bound
-also includes the longest14-value diagnostic, even alongside unreachable later
+The total is134 values (119 + sentinel +14). Private marker pretty-JSON majorant is2035
+bytes, below the unchanged2048-byte limit. Production serializer bounds are8071/8192 wire bytes,31673/32768 late
+summary,27711 early summary and14311/32768 provenance. The Async bound
+also includes the longest14-value diagnostic (False except the typed two-digit mask), even alongside unreachable later
 results. Caps are not raised and Async literal fixtures are unchanged.
 
 ## Remaining architecture discriminator
@@ -81,3 +81,39 @@ breaking its earlier context calls. Its runner/protocol still requires separate
 review; it is not part of this capture or claimed as evidence. Compile-negative
 cases likewise need an independently proved compiler classification; a modal
 failure or generic process timeout is not compiler evidence.
+
+## Audited first capture and one compiler-profile discriminator
+
+Run [39992325017](https://github.com/Atridis/yadinassi/actions/runs/39992325017)
+produced independently audited artifact12518806153, ZIP SHA256
+`7505db8d495779ddf3ff012a7ab40927153cd953f0d088df4dc4861c0dd3238d`.
+Head09dbc33a/treec597d5cc/sourceacebb0bf had the first14 vector
+`[12,22,false,12,2,true,16,true,6,14,14,true,7,18]`.
+The third value was a Boolean from `#If AtServer`: it was false. The remaining
+observations establish this target's normal/caught copyout, suppressed escaping
+client-boundary copyout, and retained same-server wrapper local changes after an
+escaping NoContext call. This was rejected measurement, not full parity; later
+client suites and watchdog did not run.
+
+The v2 measurement changes only that third observation to a six-bit integer:
+Client=1, Server=2, AtClient=4, AtServer=8,
+ThickClientManagedApplication=16, ThickClientOrdinaryApplication=32.
+Each bit has its own independent #If block, with no Else chain or assumed
+relationship. The other thirteen observations and six direct call paths are
+unchanged. The third slot rejects Boolean, Undefined and out-of-range values.
+The versioned sentinel prevents the historical Boolean record being mistaken
+for a new mask. The mask is not yet measured and no value is predicted.
+
+The primary8.3.27 guide §4.8.1.2 enumerates the preprocessor keywords and includes
+these six. It does not list AtServerNoContext/НаСервереБезКонтекста there;
+§4.8.1.3 separately lists that name as an ampersand compilation directive.
+No undocumented #If symbol is added, and documentation absence is not presented
+as a native compile-negative experiment. Target compilation flags and runtime
+logical side remain distinct; the first false AtServer bit does not mean this
+server directive executed a client RPC or establish the other flags.
+
+The separate unconditional-raising initializer preparation is not a validated
+probe: it could fail at form construction before client entry. It is not included
+or used as evidence. Initializer/context-access restrictions can follow explicit
+primary documentation, clearly distinguished from measured facts; any future
+native initializer probe must use a bounded observable effect, not startup failure.

@@ -20,27 +20,28 @@ class NoContextMeasurementTests(unittest.TestCase):
 
     def test_finite_capture_and_strict_rejection(self):
         for item in (False, True, 0, 999, 'U'):
-            value = self.marker(full.CLIENT_VALUES + ['nocontext.core.v1'] + [item]*14)
+            value = self.marker(full.CLIENT_VALUES + ['nocontext.core.v2'] + [item,item,63]+[item]*11)
             with tempfile.TemporaryDirectory() as folder:
                 p = Path(folder).resolve()/'completed.json'
                 p.write_bytes(json.dumps(value).encode())
                 with self.assertRaises(suite.FullError): suite.client_marker(p, 'a'*32, 'completed')
                 observed = suite.client_marker_diagnostics(p, 'a'*32)
                 self.assertEqual(observed, dict(phase='completed', kind='count', ordinal=119,
-                    error_stage=0, nocontext=[None if item == 'U' else item]*14))
+                    error_stage=0, nocontext=[None if item == 'U' else item]*2+[63]+[None if item == 'U' else item]*11))
                 full.validate_marker_diagnostics(observed)
             self.assertLessEqual(len(json.dumps(value, indent=2).encode()), 2048)
 
     def test_malformed_partial_or_unbound_values_are_not_exported(self):
-        valid = full.CLIENT_VALUES + ['nocontext.core.v1'] + [False]*14
+        valid = full.CLIENT_VALUES + ['nocontext.core.v2'] + [False,False,63]+[False]*11
         changed_prefix = list(valid); changed_prefix[0] = 43
         for values in (valid[:-1], valid+[False], changed_prefix,
                        valid[:-1]+['PRIVATE'], valid[:-1]+[1000], valid[:-1]+[-1],
-                       valid[:-1]+[0.5], valid[:-1]+[None], valid[:-1]+[{}]):
+                       valid[:-1]+[0.5], valid[:-1]+[None], valid[:-1]+[{}],
+                       valid[:122]+[False]+valid[123:], valid[:122]+[64]+valid[123:]):
             with tempfile.TemporaryDirectory() as folder:
                 p = Path(folder).resolve()/'completed.json'; p.write_bytes(json.dumps(self.marker(values)).encode())
                 self.assertNotIn('nocontext', suite.client_marker_diagnostics(p, 'a'*32))
-        for records in ([False]*13, [False]*15, [True]*13+[1000], [True]*13+['PRIVATE']):
+        for records in ([False]*13, [False]*15, [True]*13+[1000], [True]*13+['PRIVATE'], [False]*14, [False,False,64]+[False]*11):
             with self.assertRaises(ValueError): full.validate_marker_diagnostics(dict(
                 phase='completed', kind='count', ordinal=119, error_stage=0, nocontext=records))
 
@@ -69,7 +70,7 @@ class NoContextMeasurementTests(unittest.TestCase):
             'If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;').replace(
             'Procedure RunNoContextProbe() Export','Function RunNoContextProbe()').replace(
             '    Var Value, PrivateValue, Result, Failed, Matched, Nested;',
-            '    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;\n    Records = New Array;\n    Records.Add("nocontext.core.v1");').replace(
+            '    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;\n    Records = New Array;\n    Records.Add("nocontext.core.v2");').replace(
             '    NoContextRecord("','    NoContextRecord(Records, "').rstrip()
         self.assertTrue(helpers.endswith('EndProcedure'))
         helpers=helpers[:-len('EndProcedure')]+'    Return Records;\nEndFunction\n'
@@ -94,6 +95,15 @@ class NoContextMeasurementTests(unittest.TestCase):
         self.assertLess(raw.index(b'Function NoContextOperation'),raw.index(tail))
         self.assertLess(raw.index(b'Procedure NoContextAppend'),raw.index(tail))
         self.assertEqual(raw.count(tail),1)
+
+    def test_six_flags_are_independent_and_mask_bounds_are_typed(self):
+        source=(ROOT/'integrational_tests/directive_probes/nocontext_core.bsl').read_text()
+        names=('Client','Server','AtClient','AtServer','ThickClientManagedApplication','ThickClientOrdinaryApplication')
+        for bit,name in enumerate(names):
+            self.assertEqual(source.count('#If '+name+' Then\n    ProfileMask = ProfileMask + '+str(2**bit)+';\n#EndIf'),1)
+        self.assertNotIn('#If AtServerNoContext',source)
+        for mask in range(64):
+            full.validate_marker_diagnostics(dict(phase='completed',kind='count',ordinal=119,error_stage=0,nocontext=[False,False,mask]+[False]*11))
 
     def test_legacy_module_bytes_match_audited_main(self):
         hashes={'dates':'52b307cda539370ec0a7f5f28fbd22e0454934df2a287dcb2eb8e22f9f734d8e',

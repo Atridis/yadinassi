@@ -23,7 +23,7 @@ that row and all later rows with empty, failed/unreached observations. This keep
 all production applicability checks active; no validator is patched for size.
 The standard client's 372 finite marker diagnostics are bounded independently;
 both majorants include the longest diagnostic even when it is unreachable.
-The temporary14-element NoContext vector is bounded with all False, longer
+The temporary14-element NoContext vector is bounded with False except the typed two-digit mask, longer
 than every allowed null, boolean or integer0..999 element.
 No native process or external action is invoked by these tests.
 """
@@ -158,7 +158,7 @@ def maximum_process_diagnostics():
 def maximum_standard_marker_diagnostics():
     # False is the longest allowed finite measurement element (vs null/int0..999).
     return dict(phase='completed', kind='count', ordinal=119, error_stage=0,
-                nocontext=[False] * 14)
+                nocontext=[False, False, 63] + [False] * 11)
 
 
 def bind_identity(value):

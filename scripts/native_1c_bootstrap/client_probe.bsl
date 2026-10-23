@@ -991,14 +991,29 @@ EndFunction
 
 &AtServerNoContext
 Function NoContextOperation(Value, Val PrivateValue, Val Mode)
-    Var Initial, Nested, ServerSide, Caught;
+    Var Initial, Nested, ProfileMask, Caught;
     Initial = Value;
     Value = Value + 10;
     PrivateValue = PrivateValue + 20;
     Nested = NoContextLeaf(Value);
-    ServerSide = False;
+    ProfileMask = 0;
+#If Client Then
+    ProfileMask = ProfileMask + 1;
+#EndIf
+#If Server Then
+    ProfileMask = ProfileMask + 2;
+#EndIf
+#If AtClient Then
+    ProfileMask = ProfileMask + 4;
+#EndIf
 #If AtServer Then
-    ServerSide = True;
+    ProfileMask = ProfileMask + 8;
+#EndIf
+#If ThickClientManagedApplication Then
+    ProfileMask = ProfileMask + 16;
+#EndIf
+#If ThickClientOrdinaryApplication Then
+    ProfileMask = ProfileMask + 32;
 #EndIf
     Caught = False;
     If Mode = 1 Then
@@ -1011,7 +1026,7 @@ Function NoContextOperation(Value, Val PrivateValue, Val Mode)
     If Mode = 2 Then
         Raise "nocontext-controlled-failure";
     EndIf;
-    Return New Structure("Initial,Nested,PrivateValue,ServerSide,Caught", Initial, Nested, PrivateValue, ServerSide, Caught);
+    Return New Structure("Initial,Nested,PrivateValue,ProfileMask,Caught", Initial, Nested, PrivateValue, ProfileMask, Caught);
 EndFunction
 
 &AtServer
@@ -1048,13 +1063,13 @@ EndProcedure
 Function RunNoContextProbe()
     Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;
     Records = New Array;
-    Records.Add("nocontext.core.v1");
+    Records.Add("nocontext.core.v2");
     Value = 1;
     PrivateValue = 2;
     Result = NoContextOperation(Value, PrivateValue, 0);
     NoContextRecord(Records, "normal.nested", Result.Nested);
     NoContextRecord(Records, "normal.private", Result.PrivateValue);
-    NoContextRecord(Records, "normal.server", Result.ServerSide);
+    NoContextRecord(Records, "normal.profile", Result.ProfileMask);
     NoContextRecord(Records, "normal.caller", Value);
     NoContextRecord(Records, "normal.val.caller", PrivateValue);
     Value = 5;
