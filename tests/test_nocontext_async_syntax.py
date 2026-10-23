@@ -19,11 +19,12 @@ Function Detached() Return 3; EndFunction''')
                           for node in nodes],
                          [('Client', 'client', True, True), ('Server', 'server', False, True),
                           ('Detached', 'server', False, False)])
-        self.assertEqual([field.name for field in fields(ast.Routine)][-2:],
-                         ['is_async', 'module_context'])
+        self.assertEqual([field.name for field in fields(ast.Routine)][-3:],
+                         ['is_async', 'module_context', 'is_dual'])
         legacy = ast.Routine(nodes[0].token, 'Legacy', [], True, False, [], 'client', True)
         self.assertTrue(legacy.is_async)
         self.assertTrue(legacy.module_context)
+        self.assertFalse(legacy.is_dual)
 
     def test_async_no_context_is_rejected_in_its_own_compilation(self):
         for directive, declaration in (

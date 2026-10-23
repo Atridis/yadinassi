@@ -58,6 +58,8 @@ EXECUTION_DIRECTIVES = {
     "насервере": "ATSERVER", "atserver": "ATSERVER",
     "насерверебезконтекста": "ATSERVERNOCONTEXT",
     "atservernocontext": "ATSERVERNOCONTEXT",
+    "наклиентенасерверебезконтекста": "ATCLIENTATSERVERNOCONTEXT",
+    "atclientatservernocontext": "ATCLIENTATSERVERNOCONTEXT",
 }
 
 
@@ -100,15 +102,18 @@ class Lexer:
 
     def tokens(self) -> list[Token]:
         result = []
-        nocontext = self.execution_context == "server_nocontext"
+        dual = self.execution_context in {"dual_client", "dual_server"}
+        nocontext = self.execution_context == "server_nocontext" or dual
         declarations_only = self.server_declarations_only or nocontext
-        selected_annotation = "ATSERVERNOCONTEXT" if nocontext else "ATSERVER"
+        selected_annotation = ("ATCLIENTATSERVERNOCONTEXT" if dual else
+                               "ATSERVERNOCONTEXT" if nocontext else "ATSERVER")
         compilation = ConditionalCompilation(self.source, self.execution_context)
         capturing_server = False
         capturing_variable = False
         capturing_routine = False
         skipped_variable = False
         skipped_nocontext = False
+        skipped_dual = False
         skipped_compilation = None
         skipped_conditional_depth = 0
         root_fragment = False
@@ -143,9 +148,9 @@ class Lexer:
                 while self.peek() and self.peek() not in "\r\n":
                     self.advance()
                 continue
-            # The standalone entry point belongs only to the client. A server
-            # compilation selects explicitly server-annotated declarations,
-            # never a second execution/parse of the root statement section.
+            # The standalone entry point belongs only to the client. Additional
+            # profiles select their annotated declarations, never a second
+            # execution/parse of the root statement section.
             if (declarations_only and not capturing_server
                     and not skipping_client and char not in "#&"
                     and (not server_root or re.match(
@@ -177,7 +182,7 @@ class Lexer:
                     if skipped_kind in {"ASYNC", "FUNCTION", "PROCEDURE"}:
                         skipping_client = True
                         skipped_depth = 0 if skipped_kind == "ASYNC" else 1
-                        skipped_nocontext = False
+                        skipped_nocontext = skipped_dual = False
                     elif nocontext:
                         # Root statements are omitted, not flattened. A selected
                         # annotation inside an omitted If/loop/Try is still nested.
@@ -282,23 +287,32 @@ class Lexer:
                                    self.source, line, column)
                 name = match.group(1).casefold()
                 if skipping_client:
+                    if skipped_dual and skipped_depth == 0:
+                        raise BSLError("После директивы исполнения ожидается объявление процедуры или функции",
+                                       self.source, line, column)
                     continue
                 kind = EXECUTION_DIRECTIVES.get(name)
                 if kind is None:
                     raise BSLError(f"Директива {directive} не поддерживается: "
-                                   "доступны &НаКлиенте / &AtClient, &НаСервере / &AtServer "
-                                   "и &НаСервереБезКонтекста / &AtServerNoContext",
+                                   "доступны &НаКлиенте / &AtClient, &НаСервере / &AtServer, "
+                                   "&НаСервереБезКонтекста / &AtServerNoContext "
+                                   "и &НаКлиентеНаСервереБезКонтекста / &AtClientAtServerNoContext",
                                    self.source, line, column)
                 if not capturing_server and (
                         declarations_only and kind != selected_annotation or
-                        not declarations_only and kind == "ATSERVERNOCONTEXT"):
+                        not declarations_only and kind in {"ATSERVERNOCONTEXT", "ATCLIENTATSERVERNOCONTEXT"}):
                     # Each NoContext body belongs solely to its independent
                     # compilation. Other passes must not parse or import it.
                     skipping_client = True
                     skipped_depth = 0
-                    skipped_nocontext = kind == "ATSERVERNOCONTEXT"
+                    skipped_dual = kind == "ATCLIENTATSERVERNOCONTEXT"
+                    skipped_nocontext = kind == "ATSERVERNOCONTEXT" or skipped_dual
                     if skipped_nocontext:
-                        skipped_compilation = ConditionalCompilation(self.source, "server_nocontext")
+                        skipped_profile = "server_nocontext"
+                        if skipped_dual:
+                            side = "client" if self.execution_context in {"client", "dual_client"} else "server"
+                            skipped_profile = "dual_" + side
+                        skipped_compilation = ConditionalCompilation(self.source, skipped_profile)
                         skipped_conditional_depth = len(compilation.stack)
                     if not declarations_only:
                         # Retain a declaration skeleton in the client parse so
@@ -359,6 +373,11 @@ class Lexer:
                         continue
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
             if skipping_client:
+                if skipped_depth == 0 and skipped_dual and kind == "ASYNC":
+                    # Explicit project boundary, including declarations present
+                    # only under ordinary logical-client/server guards.
+                    raise BSLError("Асинх для двойной подпрограммы без контекста пока не поддерживается",
+                                   self.source, line, column)
                 if skipped_depth == 0 and kind == "VAR":
                     if skipped_nocontext:
                         raise BSLError("Директива без контекста недопустима для переменной",

@@ -162,6 +162,7 @@ class Routine(Node):
     execution_context: str = "client"
     is_async: bool = False
     module_context: bool = True
+    is_dual: bool = False
 
 
 @dataclass

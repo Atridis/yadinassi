@@ -289,13 +289,39 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_dual_measurement(source, *, host=False):
+    """Test-only exact inverse retaining all historical whole-source/Async pins."""
+    def replace_once(old, new):
+        nonlocal source
+        assert source.count(old) == 1
+        source = source.replace(old, new, 1)
+    replace_once("\n# One exact dense witness, projected from the audited nine-slot native capture.\n"
+                 "CLIENT_VALUES += ['dual.v1:000032017000017041000032017']\n", '')
+    if host:
+        pin = re.search(r"CLIENT_WITNESS_SOURCE_SHA256 = '[0-9a-f]{64}'\n\n\n", source).group()
+        replace_once(pin, '')
+        replace_once('if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:',
+                     'if digest(raw) != source_hash:')
+        expected = '146793000907b969dc07ca264053dbb6d54c9272a844cb9eb0176e59d85d1d66'
+    else:
+        start = source.index('# Exact historical-adapter inverse only; the host executes the full strict witness.')
+        end = source.index('def nocontext_shared_source', start)
+        source = source[:start] + source[end:]
+        replace_once('    template = dual_shared_source(template)\n', '')
+        current = re.search(r"CLIENT_DIRECTIVE_TEMPLATE_SHA256 = '[0-9a-f]{64}'", source).group()
+        replace_once(current, "CLIENT_DIRECTIVE_TEMPLATE_SHA256 = 'b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14'")
+        expected = '52a70f617764363af50897c0246658a2e4047785d6349b1527d24b76976be251'
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == expected
+    return source
+
+
 class AsyncFixtureSourcesTest(unittest.TestCase):
     def test_error_payload_change_restores_exact_reviewed_production_sources(self):
         from test_native_async_protocol import full
         fixture = literal_sources()
         previous_aggregate = 'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705'
         previous_identity = {'template': 'c60b81e77e69f20ce3bd3ee36ea0d7e44f5bea38639d8ded7e32fab74a9846b6', 'modules': ['80a842b78f20c6a52d7f68f9a8a0a52bde8316a497bc2033c68af4474fcc6c8a', 'd0820a1eed7a700916f6d070e27b19df2b85ba0386273f99d88784a79c7d8fb2', 'ae10664360da0c5242cfd77d1be01ee0fd9c74514598fec1c436635b2e8c3490', '52f4ef3fa979630bc0be401ddfe508a89ed7c1713a1d3b632c5f6f86d7528167', '49aaf7135bf9cf3a25e0c640e6b68936b2a7e1f7c126a0a25259a83e41e996a4', 'da305166b522673f1333c7cfdd375c7857d0cf4959f3c198758f4d82e69dad36', 'd6f5e0f89bbb8972386401504b1b0f9d74d7c5f7e583c391eb1c7e425c370046', '5ff92eac867884b73410f9312ade405cf44ed8b62ce019e53275bd53adaeff8b']}
-        source = without_error_payload_sentinels(SNIPPET.read_text(encoding='utf-8'))
+        source = without_error_payload_sentinels(without_dual_measurement(SNIPPET.read_text(encoding='utf-8')))
         current_pin = 'ASYNC_FIXTURE_SHA256 = ' + repr(fixture['ASYNC_FIXTURE_SHA256'])
         self.assertEqual(source.count(current_pin), 1)
         source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
@@ -305,7 +331,7 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         # historical production-source pin; Async literal sources stay identical.
         self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
                          'd6d33aa4a86e118061881bc8903ec76990ed5d5486e7304768b539dc336366a3')
-        host = (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8')
+        host = without_dual_measurement((REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8'), host=True)
         self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
         host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
         current_identity = 'ASYNC_EXPECTED_IDENTITY = ' + repr(full.ASYNC_EXPECTED_IDENTITY)
@@ -359,13 +385,13 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         # exact main 0dbb938 ordinary witness and module119 integration plus pinned temporary NoContext measurement.
         previous_aggregate = '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb'
         previous_identity = {'template': '19e6444a1856d5f4b8769a80f9ed97df0a042559e8255849635dff083dc8aba4', 'modules': ['b72afebe539cd97cd3eebc28c2aaf6866375609f3bb15f6433c69fb2dd5f99f7', '8df02833ca425b23f81c8b318f0af6ac05605d39f4c008b7e753206ed1c5374b', 'bff8fc309d743edd5e2aad989acc69d9fc142cab4f6cb11164edc73a9b6ead57', '311e8e0483ebbb69f34beb1c71d44ce61a56caf362d180c13e1f744ceb5a7aa6', '0f60e947518b7140f56973fccb631e167309ca36d2da10ce41355e9bdf41be61', 'a2b82d56e4f705b0bef66955b35d279a788da1cf2295f28af278d4a381a5f755', '9dd42db7bca81ed3e36ae12602693f8f5e5efcaf71e37a77e5a6e582b03355f9', '028492c644622ed2e8e79d9b65d8f6b8566b2a4e202088272ff0c391e2203df8']}
-        source = without_ru_request_end_token(SNIPPET.read_text(encoding='utf-8'))
+        source = without_ru_request_end_token(without_dual_measurement(SNIPPET.read_text(encoding='utf-8')))
         current_pin = 'ASYNC_FIXTURE_SHA256 = ' + repr(fixture['ASYNC_FIXTURE_SHA256'])
         self.assertEqual(source.count(current_pin), 1)
         source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
         self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
                          '0a0bb4cc7c5a4acea0b378fb21a5684448381db4234870f67774df1bd21c3aca')
-        host = (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8')
+        host = without_dual_measurement((REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8'), host=True)
         self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
         host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
         current_identity = 'ASYNC_EXPECTED_IDENTITY = ' + repr(full.ASYNC_EXPECTED_IDENTITY)

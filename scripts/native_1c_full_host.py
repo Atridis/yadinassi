@@ -325,6 +325,9 @@ CLIENT_VALUES += ['module.context.v1'] + [10, 100, 111, True, 100, True, 100, Tr
 # Logical-context projection of audited profile mask19; new exact source needs native validation.
 CLIENT_VALUES += ['nocontext.core.v3'] + [12, 22, 0, 12, 2, True, 16, True, 6, 14, 14, True, 7, 18]
 
+# One exact dense witness, projected from the audited nine-slot native capture.
+CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
+
 
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
@@ -406,10 +409,13 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 
+CLIENT_WITNESS_SOURCE_SHA256 = 'c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413'
+
+
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
     """Compute the exact staged witness independently in the real interpreter."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
-    if digest(raw) != source_hash:
+    if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:
         raise FullError("source_changed")
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:

@@ -17,12 +17,12 @@ class ModuleContextParityTests(unittest.TestCase):
             p.start();self.addCleanup(p.stop)
     def test_capture_identity_and_full_contract(self):
         capture=json.loads((ROOT/'integrational_tests/directive_probes/module_context_native.json').read_text())
-        raw=full.nocontext_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
+        raw=full.nocontext_shared_source(suite.dual_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
         self.assertEqual(full.digest(raw),capture['source_sha256'])
         self.assertEqual(full.digest(full.generated_module(raw)),capture['module_sha256'])
         self.assertEqual(full.CLIENT_VALUES[109:119],['module.context.v1']+capture['values'])
         self.assertEqual(full.CLIENT_VALUES,suite.CLIENT_VALUES)
-        self.assertEqual(len(full.CLIENT_VALUES),134)
+        self.assertEqual(len(full.CLIENT_VALUES),135)
         from yadinassi import Interpreter
         from decimal import Decimal
         vm=Interpreter(lambda _: self.fail('unexpected output'))
@@ -39,7 +39,7 @@ class ModuleContextParityTests(unittest.TestCase):
             full.verify_client_interpreter(ROOT,p,full.digest(raw))
             changed=raw.replace(b'ContextServerCounter = 100;',b'ContextServerCounter = 101;')
             self.assertNotEqual(raw,changed);p.write_bytes(changed)
-            with self.assertRaisesRegex(full.FullError,'^interpreter_failed$'):
+            with self.assertRaisesRegex(full.FullError,'^source_changed$'):
                 full.verify_client_interpreter(ROOT,p,full.digest(changed))
 
     def test_strict_typed_contract_and_removed_capture_metadata(self):
@@ -59,7 +59,7 @@ class ModuleContextParityTests(unittest.TestCase):
         self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,full.MAX_REPORT),(8192,8192,32768))
 
     def test_exact_three_part_inverse_preserves_audited_object_source(self):
-        raw=full.nocontext_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
+        raw=full.nocontext_shared_source(suite.dual_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
         restored=full.module_context_shared_source(raw)
         self.assertEqual(restored,suite.module_context_shared_source(raw))
         self.assertEqual(full.digest(restored),'6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120')

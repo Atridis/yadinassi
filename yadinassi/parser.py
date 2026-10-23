@@ -70,12 +70,17 @@ class Parser:
                 continue
             execution_context = "client"
             module_context = True
+            is_dual = False
             annotation = (self.accept("ATCLIENT") or self.accept("ATSERVER")
-                          or self.accept("ATSERVERNOCONTEXT"))
+                          or self.accept("ATSERVERNOCONTEXT")
+                          or self.accept("ATCLIENTATSERVERNOCONTEXT"))
             if annotation:
-                module_context = annotation.kind != "ATSERVERNOCONTEXT"
-                execution_context = "client" if annotation.kind == "ATCLIENT" else "server"
-                annotation_context = execution_context if module_context else "server_nocontext"
+                is_dual = annotation.kind == "ATCLIENTATSERVERNOCONTEXT"
+                module_context = annotation.kind not in {"ATSERVERNOCONTEXT", "ATCLIENTATSERVERNOCONTEXT"}
+                execution_context = ("client" if annotation.kind == "ATCLIENT" or
+                                     is_dual and self.compilation_context == "dual_client" else "server")
+                annotation_context = ("dual_" + execution_context if is_dual else
+                                      execution_context if module_context else "server_nocontext")
                 if not module_context and self.current.kind == "VAR":
                     self.fail("Директива без контекста недопустима для переменной")
                 if self.current.kind not in ("ASYNC", "FUNCTION", "PROCEDURE", "VAR"):
@@ -93,6 +98,8 @@ class Parser:
             if async_token:
                 if self.current.kind not in ("FUNCTION", "PROCEDURE"):
                     self.fail("После Асинх ожидается процедура или функция")
+                if is_dual:
+                    self.fail("Асинх для двойной подпрограммы без контекста пока не поддерживается")
                 if execution_context != "client":
                     self.fail("Асинх поддерживается только на клиенте")
             if self.current.kind in ("FUNCTION", "PROCEDURE"):
@@ -119,7 +126,7 @@ class Parser:
                 statements.append(ast.Routine(
                     token, name, parameters, kind == "FUNCTION", exported, body,
                     execution_context=execution_context, is_async=bool(async_token),
-                    module_context=module_context))
+                    module_context=module_context, is_dual=is_dual))
                 # Routine brackets are not statements and need no semicolon.
                 continue
             node = self.statement()
@@ -223,7 +230,7 @@ class Parser:
         if self.accept("GOTO"):
             self.expect("~")
             return ast.Goto(token, self.expect("IDENT").value)
-        if token.kind in {"ATCLIENT", "ATSERVER", "ATSERVERNOCONTEXT"}:
+        if token.kind in {"ATCLIENT", "ATSERVER", "ATSERVERNOCONTEXT", "ATCLIENTATSERVERNOCONTEXT"}:
             self.fail("Директива исполнения допустима только перед подпрограммой уровня модуля")
         if token.kind == "IMPORT":
             self.fail("Импорт допустим только на уровне модуля")
@@ -477,6 +484,13 @@ def validate_async(statements: list[ast.Node]) -> None:
                 fail(value, "Процедуры и функции допустимы только на уровне модуля")
             if type(value.is_async) is not bool:
                 fail(value, "Признак асинхронной подпрограммы должен быть булевым")
+            if type(value.is_dual) is not bool:
+                fail(value, "Признак двойной подпрограммы должен быть булевым")
+            if value.is_dual:
+                if value.module_context is not False or value.execution_context not in {"client", "server"}:
+                    fail(value, "Двойная подпрограмма требует сторону клиента или сервера без контекста")
+                if value.is_async:
+                    fail(value, "Асинх для двойной подпрограммы без контекста пока не поддерживается")
             if value.is_async and (value.execution_context != "client" or not value.module_context):
                 fail(value, "Асинх поддерживается только на клиенте")
             visit(value.parameters, True, False)
@@ -547,6 +561,12 @@ def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
     server = Parser(server_tokens, "server").parse()
     nocontext_tokens = Lexer(text, source, execution_context="server_nocontext").tokens()
     nocontext = Parser(nocontext_tokens, "server_nocontext").parse()
+    # Side selection and logical context are independent. Compile two bodies,
+    # retaining the original function token as their shared family provenance.
+    dual = []
+    for profile in ("dual_client", "dual_server"):
+        tokens = Lexer(text, source, execution_context=profile).tokens()
+        dual.extend(Parser(tokens, profile).parse())
     return [node for node in client if not (
         isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
     )] + [node for node in server if (
@@ -554,7 +574,7 @@ def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
         isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
     )] + [node for node in nocontext if (
         isinstance(node, ast.Routine) and not node.module_context
-    )]
+    )] + [node for node in dual if isinstance(node, ast.Routine) and node.is_dual]
 
 
 def parse_expression(text: str, source: str = "<Вычислить>") -> ast.Node:
@@ -571,7 +591,7 @@ def parse_fragment(text: str, source: str = "<Выполнить>") -> list[ast.
     # Reject declarations anywhere, including unreachable branches, before effects.
     for token in tokens:
         if token.kind in {"VAR", "ASYNC", "FUNCTION", "PROCEDURE", "ATCLIENT",
-                          "ATSERVER", "ATSERVERNOCONTEXT", "IMPORT"}:
+                          "ATSERVER", "ATSERVERNOCONTEXT", "ATCLIENTATSERVERNOCONTEXT", "IMPORT"}:
             raise BSLError("Выполнить: объявления и импорт недопустимы",
                            token.source, token.line, token.column)
     # A fresh parser intentionally has no surrounding routine/loop/handler/labels.

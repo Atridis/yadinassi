@@ -110,6 +110,12 @@ class _Module:
                    self.interpreter.server_routines.get(name.casefold()))
         if not self.ready or routine is None or not routine.exported:
             raise ValueError(f"Метод объекта не обнаружен: {name}")
+        if routine.is_dual:
+            # Native form-module Export does not expose dual NoContext through
+            # ThisObject. This bounded standalone slice also excludes imported
+            # and stored module receivers; it does not define a general native
+            # common-module export policy.
+            raise ValueError("Двухконтекстная подпрограмма через объект модуля пока не поддерживается")
         return routine
 
 
@@ -137,6 +143,9 @@ class Interpreter:
         self._context_stack = ["client"]
         self._module_context_stack = [True]
         self._client_routine_names: set[str] = set()
+        # Family tombstones survive a missing side, including detached servers,
+        # so an unavailable variant can never fall through to a host function.
+        self._dual_routine_names: set[str] = set()
         self.module_names: set[str] = set()
         self.exported_variables: set[str] = set()
         self._self_module = _Module(self)
@@ -438,29 +447,44 @@ class Interpreter:
                 token = node.token
                 raise BSLError("Имя импорта конфликтует с объявлением", token.source,
                                token.line, token.column)
-        routine_sides = {}
+        routine_groups: dict[str, list[ast.Routine]] = {}
         for node in program:
             if isinstance(node, ast.Routine):
-                key = node.name.casefold()
-                if key in routine_sides and routine_sides[key] != (node.execution_context, node.module_context):
+                if not self._valid_routine_context(node):
                     token = node.token
-                    raise BSLError("Одноименные подпрограммы разных контекстов в одном модуле пока не поддерживаются",
+                    raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
                                    token.source, token.line, token.column)
-                routine_sides[key] = (node.execution_context, node.module_context)
-            if isinstance(node, ast.Routine) and (node.execution_context not in {"client", "server"}
-                    or type(node.module_context) is not bool
-                    or (node.execution_context == "client" and not node.module_context)):
-                token = node.token
-                raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
+                routine_groups.setdefault(node.name.casefold(), []).append(node)
+        for group in routine_groups.values():
+            first = group[0]
+            if len(group) > 1 and (not all(node.is_dual for node in group)
+                    or len(group) > 2
+                    or len({node.execution_context for node in group}) != len(group)
+                    or len({(node.token.source, node.token.line, node.token.column,
+                             node.token.kind) for node in group}) != 1):
+                token = first.token
+                raise BSLError("Одноименные подпрограммы разных объявлений в одном модуле пока не поддерживаются",
                                token.source, token.line, token.column)
-        # Register side-local declarations before any module statement executes.
+        # Preflight the whole incoming program before publishing any replacement.
+        # A declaration family replaces both old sides and its availability marker
+        # atomically, even when preprocessing retained only one new dual variant.
+        routines = self.routines.copy()
+        server_routines = self.server_routines.copy()
+        dual_names = self._dual_routine_names.copy()
+        for key, group in routine_groups.items():
+            routines.pop(key, None)
+            server_routines.pop(key, None)
+            dual_names.discard(key)
+            if group[0].is_dual:
+                dual_names.add(key)
+            for node in group:
+                registry = server_routines if node.execution_context == "server" else routines
+                registry[key] = node
+        self.routines, self.server_routines = routines, server_routines
+        self._dual_routine_names = dual_names
+        # Register side-local storage before any module statement executes.
         for node in program:
-            if isinstance(node, ast.Routine):
-                registry = self.server_routines if node.execution_context == "server" else self.routines
-                opposite = self.routines if node.execution_context == "server" else self.server_routines
-                opposite.pop(node.name.casefold(), None)
-                registry[node.name.casefold()] = node
-            elif isinstance(node, ast.ServerInitializer):
+            if isinstance(node, ast.ServerInitializer):
                 self.server_initializers.append(node)
             elif isinstance(node, ast.Var):
                 if node.execution_context == "server":
@@ -524,7 +548,7 @@ class Interpreter:
             return self.variables[name]
         if name in self.imports:
             raise TypeError(f"Имя модуля допустимо только при вызове его подпрограммы: {node.name}")
-        if name in self.routines or name in self.server_routines:
+        if name in self.routines or name in self.server_routines or name in self._dual_routine_names:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
@@ -630,6 +654,7 @@ class Interpreter:
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
         if type(value) is _Module:
+            self._require_module_storage_context()
             return value.get_member(node.name)
         if not isinstance(value, BSLObject):
             raise TypeError("Значение не имеет методов или свойств")
@@ -649,11 +674,33 @@ class Interpreter:
     def visit_Call(self, node: ast.Call) -> object:
         return (yield from self.call(node, require_value=True))
 
+    @staticmethod
+    def _valid_routine_context(function: ast.Routine) -> bool:
+        return (function.execution_context in {"client", "server"}
+                and type(function.module_context) is bool
+                and type(function.is_dual) is bool
+                and type(function.is_async) is bool
+                and (not function.is_dual or
+                     (not function.module_context and not function.is_async))
+                and (function.execution_context != "client" or
+                     function.module_context or function.is_dual))
+
+    def _resolve_routine(self, name: str) -> ast.Routine | None:
+        key = name.casefold()
+        candidates = (self.routines.get(key), self.server_routines.get(key))
+        if key in self._dual_routine_names or any(
+                node is not None and node.is_dual for node in candidates):
+            # Detached servers store their server routines in .routines. Select
+            # by declaration metadata, never by the dictionary's historical name.
+            for node in candidates:
+                if node is not None and node.is_dual and node.execution_context == self.execution_context:
+                    return node
+            raise ValueError(f"Двухконтекстная подпрограмма недоступна на стороне {self.execution_context}: {name}")
+        return candidates[0] or candidates[1]
+
     def call(self, node: ast.Call, *, require_value: bool) -> object:
         callee = self.ungroup(node.callee)
-        routine = ((self.routines.get(callee.name.casefold()) or
-                    self.server_routines.get(callee.name.casefold()))
-                   if isinstance(callee, ast.Name) else None)
+        routine = self._resolve_routine(callee.name) if isinstance(callee, ast.Name) else None
         if (isinstance(callee, ast.Name) and routine is None
                 and callee.name.casefold() in self._client_routine_names):
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
@@ -755,6 +802,7 @@ class Interpreter:
         if isinstance(node, ast.Attribute):
             parent = self.known_receiver(node.object)
             if type(parent) is _Module:
+                self._require_module_storage_context()
                 return parent.get_member(node.name)
             if type(parent) is BSLValueTable and node.name.casefold() in {"колонки", "columns"}:
                 return parent.columns
@@ -771,6 +819,13 @@ class Interpreter:
         """Use one explicit import-or-value receiver route for all member access."""
         imported = self.import_receiver(node)
         return imported if imported is not None else (yield from self._visit(node))
+
+    def _require_module_storage_context(self) -> None:
+        # A supplied module receiver cannot restore missing module capability.
+        # Guard source-level access, not _Module's low-level getters: an explicit
+        # field reference already bound by the caller keeps ordinary semantics.
+        if not self._has_module_context:
+            raise ValueError("Хранилище модуля недоступно в подпрограмме без контекста")
 
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
@@ -822,15 +877,16 @@ class Interpreter:
                      owner: "Interpreter", *, require_value: bool) -> object:
         if function.is_async and function.execution_context != "client":
             raise ValueError("Асинхронные подпрограммы допустимы только на клиенте")
-        if (function.execution_context not in {"client", "server"}
-                or type(function.module_context) is not bool
-                or (function.execution_context == "client" and not function.module_context)):
+        if not self._valid_routine_context(function):
             raise ValueError("Подпрограмма требует неподдерживаемый контекст исполнения")
-        if self._logical_side == "server" and function.execution_context == "client":
+        caller_side = self.execution_context
+        if function.is_dual and function.execution_context != caller_side:
+            raise ValueError(f"Двухконтекстная подпрограмма недоступна на стороне {caller_side}: {function.name}")
+        if caller_side == "server" and function.execution_context == "client":
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
         if not self._has_module_context and function.module_context:
             raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
-        crossing = self._logical_side == "client" and function.execution_context == "server"
+        crossing = caller_side == "client" and function.execution_context == "server"
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
         required = max((index + 1 for index, parameter in enumerate(function.parameters)
@@ -994,6 +1050,7 @@ class Interpreter:
         server.variables = dict.fromkeys(server.module_names)
         server.server_initializers = self.server_initializers.copy() if module_context else []
         server._client_routine_names = set(self.routines)
+        server._dual_routine_names = self._dual_routine_names.copy()
         # Keep server-bound core helpers. Copy registered host functions while
         # rebinding this interpreter's methods, never retaining client frames.
         for name, function in self.functions.items():
@@ -1036,6 +1093,7 @@ class Interpreter:
         if isinstance(node, ast.Attribute):
             owner = (yield from self.receiver(node.object))
             if type(owner) is _Module:
+                self._require_module_storage_context()
                 owner.get_member(node.name)
                 return _Reference(lambda: owner.get_member(node.name),
                                   lambda value: owner.set_member(node.name, value))
@@ -1115,6 +1173,8 @@ class Interpreter:
         else:
             value = (yield from self.receiver(node.target.object))
             if isinstance(node.target, ast.Attribute):
+                if type(value) is _Module:
+                    self._require_module_storage_context()
                 if type(value) is not _Module and not isinstance(value, BSLObject):
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, (yield from self._visit(node.value)))

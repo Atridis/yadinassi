@@ -53,7 +53,7 @@ class ScalarCopybackParityTests(unittest.TestCase):
         expected = ['copyback.core.v1'] + [token(entry['value']) for entry in data['observations']]
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[15:50], expected)
-        self.assertEqual(len(full.CLIENT_VALUES), 134)
+        self.assertEqual(len(full.CLIENT_VALUES), 135)
         # Historical scalar capture identity; the whole current source additionally
         # contains the separately captured object operations.
         self.assertEqual(data['capture']['source_sha256'],

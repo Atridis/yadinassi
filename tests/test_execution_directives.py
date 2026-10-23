@@ -286,7 +286,7 @@ EndTry;
         for code in ('&AtServer\nx=1;',
                      '&AtServer\n&AtClient\nProcedure P() EndProcedure',
                      'Procedure P()\n&AtServer\nProcedure S() EndProcedure\nEndProcedure',
-                     '&AtClientAtServerNoContext\nProcedure S() EndProcedure'):
+                     '&AtClientAtServer\nProcedure S() EndProcedure'):
             with self.subTest(code=code), self.assertRaises(BSLError):
                 parse(code)
 

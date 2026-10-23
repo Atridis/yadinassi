@@ -11,7 +11,7 @@ follows an independently audited nine-value capture. Host preflight now computes
 all119 values from the complete source on audited main e83eb60f. The new
 [bounded NoContext implementation](nocontext-measurement.md) follows two audited
 captures and restores complete-source host execution with a strict134 contract;
-fresh current-head native/four-OS gates remain pending. Existing
+actual-main native134 and four-OS gates passed on69e9 (runs40012722981/40012722910). Existing
 Async work and historical parity modules remain unchanged.
 
 ## Scope and execution model
@@ -259,3 +259,12 @@ implementation requires a fresh strict134 acceptance and does not retroactively
 extend that historical119 acceptance. See
 [the module-context specification](module-context-measurement.md) for the default-client mapping, initializer
 selection and exclusions; no form attributes or cross-context imports are added.
+
+### Bounded dual NoContext
+
+[The dual implementation](dual-directive-measurement.md) follows independently
+audited nine-value native evidence. Separate client/server bodies inherit execution
+side but never module capability; matching dual calls do not create packet/RPC
+boundaries. A strict135 dense source-bound contract replaces temporary capture.
+Async dual and exported module-receiver calls remain explicit subset restrictions;
+new whole-source native/Async8/OS acceptance remains required.

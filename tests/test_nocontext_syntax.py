@@ -214,13 +214,12 @@ EndProcedure
             with self.subTest(text=text), self.assertRaises(BSLError):
                 parse('&AtServerNoContext\nFunction F()\n' + text + '\nEndFunction')
 
-    def test_pending_annotations_and_no_dual_directives(self):
+    def test_pending_annotations_and_no_context_bearing_dual_directives(self):
         for text in ('&AtServerNoContext', '&НаСервереБезКонтекста\n// comment',
                      '&AtServerNoContext\nFunction F()'):
             with self.subTest(text=text), self.assertRaises(IncompleteInput):
                 parse(text)
-        for directive in ('&AtClientAtServerNoContext', '&НаКлиентеНаСервереБезКонтекста',
-                          '&AtClientAtServer', '&НаКлиентеНаСервере'):
+        for directive in ('&AtClientAtServer', '&НаКлиентеНаСервере'):
             with self.subTest(directive=directive), self.assertRaises(BSLError):
                 parse(directive + '\nProcedure P() EndProcedure')
         for prefix in ('&AtServerNoContext\n&AtClient', '&AtServer\n&AtServerNoContext',
