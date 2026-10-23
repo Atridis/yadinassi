@@ -322,6 +322,26 @@ CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
 
 
+CLIENT_OBJECT_TEMPLATE_SHA256 = '8d14c6a1b626e3d671ff564ae7ccfa5df5b436768764ace4ef9d08bb58aa1aed'
+CLIENT_SHARED_TEMPLATE_SHA256 = '52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c'
+CLIENT_OBJECT_MARKER = b'\n// BEGIN bounded object transfer measurement\n'
+CLIENT_OBJECT_CALL = b'    For Each ObjectTransferValue In RunObjectTransferProbe() Do\n        \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f.\xd0\x94\xd0\xbe\xd0\xb1\xd0\xb0\xd0\xb2\xd0\xb8\xd1\x82\xd1\x8c(ObjectTransferValue);\n    EndDo;\n'
+
+
+def client_interpreter_source(raw: bytes) -> bytes:
+    """Exact inverse of native-only object measurement, not a general rewriter."""
+    if CLIENT_OBJECT_MARKER not in raw:
+        return raw
+    if (digest(raw) != CLIENT_OBJECT_TEMPLATE_SHA256
+            or raw.count(CLIENT_OBJECT_MARKER) != 1
+            or raw.count(CLIENT_OBJECT_CALL) != 1):
+        raise FullError('source_changed')
+    restored = raw.split(CLIENT_OBJECT_MARKER, 1)[0].replace(CLIENT_OBJECT_CALL, b'', 1)
+    if digest(restored) != CLIENT_SHARED_TEMPLATE_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
 CLIENT_EXECUTE_SCRIPT = r'''
 import sys
 import re
@@ -355,18 +375,22 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Execute the exact whole native form source and its finite typed witness.
+    """Compute the exact hash-restored fifty-value witness during measurement.
 
-    Native independently validates the same values and exact module roundtrip.
+    Appended native-only object helpers are not interpreter parity evidence.
+    Native strict acceptance stays unchanged and rejects extra observations.
     """
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
         raise FullError("source_changed")
+    shared_source = client_interpreter_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        shared_path = Path(cache).resolve() / "shared-witness.bsl"
+        shared_path.write_bytes(shared_source)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(shared_path)], root)
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -393,7 +417,8 @@ def validate_process_diagnostics(value):
 
 def validate_marker_diagnostics(value):
     if (type(value) is not dict
-            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or set(value) not in ({'phase', 'kind', 'ordinal', 'error_stage'},
+                                  {'phase', 'kind', 'ordinal', 'error_stage', 'object_transfer'})
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -401,6 +426,14 @@ def validate_marker_diagnostics(value):
             or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
+    if 'object_transfer' in value:
+        records = value['object_transfer']
+        if (value['phase'] != 'completed' or value['kind'] != 'count'
+                or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
+                or type(records) is not list or len(records) != 48
+                or any(not (item is None or type(item) is bool
+                            or (type(item) is int and 0 <= item <= 999)) for item in records)):
+            raise ValueError('client object transfer measurement')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
     elif value['kind'] == 'runtime_error':

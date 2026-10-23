@@ -2,9 +2,11 @@
 
 Status: bounded implementation based on main `be82ce1`, independently reviewed
 and validated for the Val slice by audited native runs (see evidence below).
-Scalar non-Val implementation follows an audited capture and awaits its own
-strict whole-source runtime/native acceptance. Unit results alone are not native
-evidence. Existing Async measurement work and historical parity fixtures remain
+Scalar non-Val strict whole-source acceptance passed audited actual-main native
+run 39951594654. The current object-transfer extension is measurement-only;
+see [object-transfer-measurement.md](object-transfer-measurement.md). Its host
+preflight temporarily computes the exact hash-restored fifty-value scalar source,
+not native-only object helpers. Unit results alone are not native evidence. Existing Async measurement work and historical parity fixtures remain
 unchanged.
 
 ## Scope and execution model
@@ -124,7 +126,7 @@ root to client and running logical contexts in one process are explicit project
 choices authorized by the user, not a claim that 1C executes standalone scripts
 this way. The original fixed-client behavior is documented in features.md.
 
-## Automated native witness (audited bounded capture)
+## Accepted scalar native witness (PR92 history)
 
 The ordinary existing `--client-probe` includes eleven Val/context observations
 and the 34 captured scalar-copyback observations plus their fixed version label.
@@ -133,7 +135,7 @@ flag, image, process timeout, credential boundary, manual dispatch, database
 query or async runner changes are required. Literal managed-form client code
 calls literal server methods, never `Execute(text)`.
 
-Before the native invocation, the host runs the exact whole staged form source
+For the accepted scalar stage, the host ran the exact whole staged form source
 through our interpreter in the existing bounded, credential-free subprocess,
 calling only `ВычислитьПробу()`. Its computed typed values must equal the finite
 contract. The native marker independently must equal that same typed contract,
@@ -143,8 +145,8 @@ witness parity by equality to the same contract, not by trusting labels alone.
 The native marker remains private under existing policy; the public report
 retains verified completion and source identity, not unvalidated raw output.
 
-The mixed template has a new exact hash. A narrowly checked inverse removes only
-the appended Val and copyback witness suffixes and their two call blocks,
+The scalar template had a new exact hash. Its narrowly checked legacy inverse
+removed the appended Val/copyback suffixes and their two call blocks,
 then verifies the original template hash
 `4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328`.
 All four existing parity adapters keep their original pins and produce identical
@@ -209,8 +211,20 @@ AtClient And Not AtServer. Its matching subset explicitly excludes equivalence
 of platform Client/Server target flags with standalone Client/Server defaults.
 The first fifteen typed values remain unchanged. The earlier profile-only
 helpers were removed before the audited Val run. The 34 audited copyback
-observations and fixed version label now extend strict acceptance to 50 values;
-the host executes that exact same complete source. Temporary capture diagnostics
-and the shared-source interpreter inverse have been removed. The legacy parity
-adapter inverse remains exact and byte-preserving. A new strict full native run,
-four-OS CI and independent audit are required before this implementation merges.
+observations and fixed version label extend scalar acceptance to 50 values.
+PR92 passed exact complete-source execution, full native audit and four-OS CI
+before merge; its temporary capture diagnostics/shared inverse were removed.
+The current object measurement below introduces a separate bounded inverse and
+finite diagnostics, without claiming whole-source object parity. The legacy
+parity adapter inverse remains exact and byte-preserving.
+
+## Current object measurement boundary
+
+PR92 scalar copyback is merged and its actual-main native evidence audited.
+The next object measurement appends eight calls/48 finite observations without
+implementing object transfer. The existing strict fifty-value acceptance rejects
+extras. Host execution currently uses an exact full-hash inverse to the accepted
+scalar source, not whole-source object parity. The legacy parity inverse also
+removes the appended object call block; all four modules remain byte-identical.
+See [object-transfer-measurement.md](object-transfer-measurement.md) for the
+bounded encoding, unchanged caps, source relationship and release gates.

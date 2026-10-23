@@ -54,15 +54,14 @@ class ScalarCopybackParityTests(unittest.TestCase):
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[15:], expected)
         self.assertEqual(len(full.CLIENT_VALUES), 50)
-        # The exact captured native source now runs through the interpreter too.
-        self.assertEqual(full.digest(linux_fixture(ROOT / full.CLIENT_SOURCE)),
+        # The exact captured scalar source remains the measured shared witness.
+        self.assertEqual(full.digest(full.client_interpreter_source(linux_fixture(ROOT / full.CLIENT_SOURCE))),
                          data['capture']['source_sha256'])
-        self.assertFalse(hasattr(full, 'client_interpreter_source'))
 
-    def test_whole_source_interpreter_computes_all_captured_values(self):
+    def test_hash_restored_scalar_source_computes_all_captured_values(self):
         from yadinassi import Interpreter
         vm = Interpreter(lambda value: self.fail('unexpected Message'))
-        vm.execute((ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8-sig'))
+        vm.execute(full.client_interpreter_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig'))
         actual = list(vm.execute('ВычислитьПробу()'))
         self.assertEqual(actual, suite.CLIENT_VALUES)
         self.assertEqual(vm.execution_context, 'client')

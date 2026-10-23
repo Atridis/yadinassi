@@ -39,3 +39,13 @@ a new runtime/native PASS remains necessary. Its platform8.3.27.1508 target and
 the official-guide discrepancy are documented in
 `docs/scalar-copyback-measurement.md`. Negative/future modules above are not
 included in this scalar acceptance claim.
+
+## Object-transfer measurement
+
+`object_transfer_core.bsl` is an uncaptured eight-call/48-record source. Its
+mechanically integrated counterpart preserves calls and operations but accumulates
+bounded primitive records instead of opening Message dialogs. Current runtime
+still rejects object boundaries. No native expected object fixture exists.
+See [object-transfer-measurement.md](../../docs/object-transfer-measurement.md).
+The scalar capture/parity described above is accepted historical PR92 evidence;
+current host preflight hash-restores that scalar source during object measurement.

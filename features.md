@@ -5275,8 +5275,8 @@ replay восстанавливает точный исходный текст, 
 ## Логические клиентские и серверные директивы: скалярные параметры
 
 Val-этап подтвержден нативным end-to-end прогоном и проверкой после merge PR91.
-Следующий scalar non-Val этап основан на отдельном проверенном измерении;
-приемка измененного runtime требует нового strict whole-source native PASS.
+Scalar non-Val этап PR92 основан на проверенном измерении и прошел strict
+whole-source native PASS с независимым audit, включая actual main run39951594654.
 Полная поддержка платформенных директив пока не заявляется.
 
 Корневой скрипт, неаннотированные процедуры и `&НаКлиенте / &AtClient` остаются
@@ -5304,9 +5304,17 @@ infobase. Правила alias/exception в official guide расходятся 
 Подробности: [execution-directives.md](docs/execution-directives.md) и
 [scalar-copyback-measurement.md](docs/scalar-copyback-measurement.md). Native
 наблюдения сохранены с точными run/tree/source/ZIP hashes, не получены из нашего
-интерпретатора. Временные measurement diagnostics/shared-source exception удалены:
-host снова исполняет весь exact staged source, native независимо сверяет все
-50 typed values. Исторические четыре parity-модуля/pins побайтно сохранены.
+интерпретатора. При приемке PR92 временные scalar measurement diagnostics и
+shared-source exception были удалены: host исполнил весь exact staged source,
+native независимо сверил все 50 typed values. Исторические четыре parity-модуля/pins побайтно сохранены.
 AtClient/AtServer проверяют контекст; эквивалентность platform Client/Server
 flags standalone defaults не заявляется. PR90 не менялся. Full CI/native audit
 остаются обязательными до ready/merge.
+
+Текущий следующий этап object transfer пока только измерительный: восемь прямых
+client→server вызовов и 48 ограниченных наблюдений, без реализации объектов.
+Строгие 50 scalar values не изменены; дополнительные записи отклоняют успех.
+Host временно исполняет exact hash-restored scalar source, не новые object helpers.
+[object-transfer-measurement.md](docs/object-transfer-measurement.md) задает
+проверяемую связь исходников, finite metadata и неизмененные лимиты. Нативные
+expected object values не придуманы, PR90 не меняется.

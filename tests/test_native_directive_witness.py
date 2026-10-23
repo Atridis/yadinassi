@@ -44,19 +44,19 @@ class NativeDirectiveWitnessTests(unittest.TestCase):
             self.assertNotIn('DirectiveServerProfile', source)
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_exact_native_module_computes_contract_in_real_interpreter(self):
+    def test_exact_restored_shared_module_computes_contract_in_real_interpreter(self):
         source = ROOT / full.CLIENT_SOURCE
         full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()))
 
     @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
-    def test_changed_callee_is_rejected_by_real_interpreter_gate(self):
+    def test_changed_callee_is_rejected_by_exact_inverse_gate(self):
         source = (ROOT / full.CLIENT_SOURCE).read_bytes()
         changed = source.replace(b"Return A + B;", b"Return A + B + 1;")
         self.assertNotEqual(source, changed)
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / "probe.bsl"
             path.write_bytes(changed)
-            with self.assertRaisesRegex(full.FullError, "^interpreter_failed$"):
+            with self.assertRaisesRegex(full.FullError, "^source_changed$"):
                 full.verify_client_interpreter(ROOT, path, full.digest(changed))
 
     def test_hash_mismatch_never_executes(self):
