@@ -2,6 +2,7 @@
 # Runs only inside the separately approved, isolated, digest-pinned image.
 # Stage two runs only with the explicit fixed --bootstrap-simple-epf argument.
 set -euo pipefail
+SECONDS=0
 umask 077
 exec 2>/dev/null
 ONEC=/opt/1cv8t/x86_64/8.3.27.1508/1cv8t
@@ -24,7 +25,12 @@ client_dates=false
 client_values=false
 client_collections=false
 client_numbers=false
+client_async=false
 client_args=()
+if [ "$#" -eq 5 ] && [ "${5}" = --client-async-measurement ] && [ "${4}" = --client-probe ]; then
+    client_async=true
+    set -- "$1" "$2" "$3" "$4"
+fi
 if { [ "$#" -eq 5 ] || [ "$#" -eq 6 ] || [ "$#" -eq 7 ] || [ "$#" -eq 8 ] || [ "$#" -eq 9 ]; } && [ "${!#}" = --client-numbers-parity ] && [ "${4}" = --client-probe ]; then
     client_numbers=true
     set -- "${@:1:$(($# - 1))}"
@@ -48,6 +54,9 @@ fi
 if [ "$#" -eq 4 ] && [ "${4}" = --client-probe ]; then
     client_probe=true
     client_args=(--client-probe)
+    if [ "$client_async" = true ]; then
+        client_args+=(--client-async-measurement)
+    fi
     if [ "$watchdog_check" = true ]; then
         client_args+=(--client-watchdog-check)
     fi
@@ -105,7 +114,7 @@ PYSTOPBUS
         printf '{"schema":1,"status":"python_unsupported"}\n'
     else
         python3 - "$result" "$stage" "$libraries_resolved" "$display_started" \
-          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" "$client_dates" "$client_values" "$client_collections" "$client_numbers" "$bus_cleanup_failed" <<'PY'
+          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" "$client_dates" "$client_values" "$client_collections" "$client_numbers" "$client_async" "$bus_cleanup_failed" <<'PY'
 import hashlib
 import json
 import os
@@ -114,7 +123,11 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce, client_mode, watchdog_mode, dates_mode, values_mode, collections_mode, numbers_mode, bus_cleanup_failed = sys.argv[1:]
+emitter_args = sys.argv[1:]
+async_mode = emitter_args.pop(15) if len(emitter_args) == 17 else "false"
+if async_mode not in {"false", "true"}:
+    raise ValueError("async mode")
+code, stage, libraries, display, created, dumped, bootstrap, full_mode, nonce, client_mode, watchdog_mode, dates_mode, values_mode, collections_mode, numbers_mode, bus_cleanup_failed = emitter_args
 report = {
     "schema": 1,
     "status": "ok" if code == "0" else stage + "_failed",
@@ -201,7 +214,7 @@ if bootstrap == "true":
 if full_mode == "true":
     sys.path.insert(0, "/smoke/bootstrap")
     import full_suite
-    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true")
+    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true", **({"client_async": True} if async_mode == "true" else {}))
     try:
         path = Path("/tmp/onec-smoke/stage3-report.json")
         if path.exists() or path.is_symlink():
@@ -210,7 +223,7 @@ if full_mode == "true":
         elif (report.get("stage2") or {}).get("status") == "ok":
             suite.update(status="failed", failure_kind="unexpected_failure")
     except Exception:
-        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true")
+        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true", **({"client_async": True} if async_mode == "true" else {}))
         suite.update(status="failed", failure_kind="export_failed")
     report["stage3"] = suite
     # A failed stage-three exit is not a failed bootstrap; preserve both outcomes.
@@ -229,6 +242,12 @@ if full_mode == "true":
     if client_mode == "true" and bus_cleanup_failed == "true" and suite["status"] == "ok":
         report["status"] = "stage3_failed"
         full_suite.fail_client_process_checkpoint(suite, watchdog_mode == "true")
+    if async_mode == "true" and report["status"] == "ok" and suite["status"] == "ok":
+        try:
+            full_suite.final_async_evidence_check(Path("/tmp/onec-smoke") / ("stage3-" + nonce) / "client-async", Path("/smoke"), nonce, suite["client_async"]["continuity_sha256"])
+        except (full_suite.FullError, OSError):
+            report["status"] = "stage3_failed"
+            full_suite.fail_client_process_checkpoint(suite, False)
     report["native_tests_completed"] = report["status"] == "ok" and suite["status"] == "ok"
     raw = full_suite.build_envelope(
         report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
@@ -255,6 +274,20 @@ done
 mkdir -p "$HOME" "$XDG_RUNTIME_DIR" /tmp/onec-smoke/config /tmp/.X11-unix
 chmod 700 "$HOME" "$XDG_RUNTIME_DIR" /tmp/onec-smoke
 chmod 1777 /tmp/.X11-unix
+if [ "$client_async" = true ]; then
+    python3 - "$SECONDS" "$invocation_nonce" <<'PYASYNCDEADLINE'
+import json
+from pathlib import Path
+import sys
+import time
+elapsed = int(sys.argv[1])
+if not 0 <= elapsed <= 2340:
+    raise SystemExit(1)
+# One second conservative rounding plus60 seconds cleanup outside this deadline.
+with Path('/tmp/onec-smoke/async-deadline.json').open('x', encoding='utf-8') as output:
+    json.dump({'schema': 1, 'nonce': sys.argv[2], 'deadline': int(time.monotonic() + 2339 - elapsed)}, output)
+PYASYNCDEADLINE
+fi
 
 stage=libraries
 LC_ALL=C timeout --signal=TERM --kill-after=5s 15s ldd "$ONEC" > /tmp/onec-smoke/ldd.log 2>&1

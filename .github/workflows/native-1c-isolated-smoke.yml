@@ -7,7 +7,18 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened]
   push:
-    branches: [main]
+    branches: [main, codex/native-client-async-reviewed]
+  workflow_dispatch:
+    inputs:
+      client_async_measurement:
+        description: Run the separately approved bounded async client measurement
+        type: boolean
+        required: true
+        default: false
+      reviewed_sha:
+        description: Exact reviewed 40-character commit SHA on the selected same-repository branch
+        type: string
+        required: true
 
 permissions: {}
 
@@ -25,6 +36,7 @@ jobs:
       - name: Validate owner, repository, event and revision without checkout
         env:
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}
         shell: bash
         run: |
           python3 -I -B - <<'PYTHON'
@@ -38,6 +50,7 @@ jobs:
           REPOSITORY_ID = 359770628
           OWNER = "Atridis"
           OWNER_ID = 30860798
+          ASYNC_REVIEWED_REF = "refs/heads/codex/native-client-async-reviewed"
           PR_ACTIONS = frozenset({"opened", "synchronize", "reopened"})
           MAX_EVENT_BYTES = 8 * 1024 * 1024
 
@@ -109,13 +122,53 @@ jobs:
                   require(is_sha(base.get("sha")) and is_sha(head.get("sha")), "pr_revisions_invalid")
                   return "pull_request"
               if context.get("GITHUB_EVENT_NAME") == "push":
-                  require(context.get("GITHUB_REF") == "refs/heads/main" and event.get("ref") == "refs/heads/main",
+                  ref = context.get("GITHUB_REF")
+                  require(ref in ("refs/heads/main", ASYNC_REVIEWED_REF) and event.get("ref") == ref,
                           "push_ref_not_approved")
+                  if ref == ASYNC_REVIEWED_REF:
+                      # Deliberately advancing this exact owner-only branch opts in the reviewed SHA.
+                      # Branch naming is not a security boundary against repository/workflow editors.
+                      require(event.get("forced") is False, "push_forced_or_invalid")
+                      require(context.get("GITHUB_REF_TYPE") == "branch"
+                              and context.get("GITHUB_BASE_REF") == "" and context.get("GITHUB_HEAD_REF") == "",
+                              "push_reviewed_context_invalid")
+                      require(context.get("GITHUB_WORKFLOW_REF") == f"{REPOSITORY}/.github/workflows/native-1c-isolated-smoke.yml@{ref}"
+                              and context.get("GITHUB_WORKFLOW_SHA") == context["GITHUB_SHA"],
+                              "push_workflow_revision_mismatch")
                   require(event.get("deleted") is False, "push_deleted_or_invalid")
                   require(event.get("after") == context["GITHUB_SHA"]
                           and object_value(event.get("head_commit")).get("id") == context["GITHUB_SHA"],
                           "push_revision_mismatch")
                   return "push"
+              if context.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+                  # This owner-only opt-in attests review of an immutable same-repo revision.
+                  # It is not a security boundary against edits to this workflow or policy.
+                  inputs = object_value(event.get("inputs"))
+                  require(set(inputs) == {"client_async_measurement", "reviewed_sha"}
+                          and inputs.get("client_async_measurement") == "true",
+                          "dispatch_inputs_not_approved")
+                  try:
+                      typed_inputs = json.loads(context.get("NATIVE_DISPATCH_INPUTS", ""), object_pairs_hook=unique_object)
+                  except (ValueError, TypeError, RecursionError):
+                      raise PolicyError("dispatch_inputs_not_approved") from None
+                  require(type(typed_inputs) is dict and set(typed_inputs) == set(inputs)
+                          and typed_inputs.get("client_async_measurement") is True
+                          and typed_inputs.get("reviewed_sha") == inputs.get("reviewed_sha"),
+                          "dispatch_inputs_not_approved")
+                  require(is_sha(inputs.get("reviewed_sha")) and inputs["reviewed_sha"] == context["GITHUB_SHA"],
+                          "dispatch_revision_mismatch")
+                  ref = context.get("GITHUB_REF")
+                  require(type(ref) is str and re.fullmatch(r"refs/heads/[A-Za-z0-9][A-Za-z0-9._/-]{0,239}", ref) is not None
+                          and ".." not in ref and "//" not in ref and not ref.endswith(("/", "."))
+                          and all(not part.startswith(".") and not part.endswith(".lock") for part in ref.split("/"))
+                          and context.get("GITHUB_REF_TYPE") == "branch"
+                          and context.get("GITHUB_BASE_REF") == "" and context.get("GITHUB_HEAD_REF") == ""
+                          and event.get("ref") in (ref, ref.removeprefix("refs/heads/")),
+                          "dispatch_ref_not_approved")
+                  require(context.get("GITHUB_WORKFLOW_REF") == f"{REPOSITORY}/.github/workflows/native-1c-isolated-smoke.yml@{ref}"
+                          and context.get("GITHUB_WORKFLOW_SHA") == context["GITHUB_SHA"],
+                          "dispatch_workflow_revision_mismatch")
+                  return "workflow_dispatch"
               raise PolicyError("event_not_approved")
 
 
@@ -150,7 +203,7 @@ jobs:
           PYTHON
 
   smoke:
-    name: Native 1C six scenarios
+    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement' || 'Native 1C six scenarios' }}
     needs: eligibility
     if: >-
       needs.eligibility.result == 'success' &&
@@ -161,7 +214,8 @@ jobs:
       github.actor_id == '30860798' &&
       github.triggering_actor == 'Atridis' &&
       ((github.event_name == 'pull_request' && github.base_ref == 'main') ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/native-client-async-reviewed')) ||
+       (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/') && inputs.client_async_measurement == true))
     permissions:
       contents: read
       packages: read
@@ -178,6 +232,7 @@ jobs:
       - name: Verify immutable checkout and ordered merge parents
         env:
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}
         run: python3 -I -B scripts/native_1c_ci_policy.py bind
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
@@ -186,10 +241,18 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
       - name: Run approved digest with no network, ports or credentials
         id: native
+        if: github.event_name != 'workflow_dispatch' && !(github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
         run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-watchdog-check --client-dates-parity --client-values-parity --client-collections-parity --client-numbers-parity --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1
+      - name: Measure approved async client with the same isolated digest
+        id: native_async
+        if: (github.event_name == 'workflow_dispatch' && inputs.client_async_measurement == true) || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-async-measurement --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1
       - name: Upload only validated finite comparison report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -199,7 +262,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Upload explicitly approved exact native test outputs
-        if: always() && steps.native.outputs.native_outputs_ready == 'true'
+        if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: native-1c-six-scenario-outputs
@@ -215,7 +278,7 @@ jobs:
           retention-days: 7
 
   verdict:
-    name: Native 1C required verdict
+    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}
     if: always()
     needs: [eligibility, smoke]
     permissions: {}
