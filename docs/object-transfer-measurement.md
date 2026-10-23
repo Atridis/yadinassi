@@ -243,3 +243,43 @@ failed completed/count/ordinal50 classification. Strict acceptance still rejects
 it. Known-stage, invalid-type/range, partial-list suppression and injected root
 setup/observer failures are tested. The full observation branch and all caps
 remain unchanged; no new diagnostic infrastructure or native expectations exist.
+
+## Audited capture and one architecture-essential timing discriminator
+
+Run [39958307601](https://github.com/Atridis/yadinassi/actions/runs/39958307601)
+produced the complete original 48 observations. Its summary artifact12502983241
+has SHA256 `ac9a2bf09ee04e7294856eff9688e5e02952e1f8fe827271dbda3bb06ee1e209`.
+Independent audit verified all319 source blobs,24 staged hashes, runtime provenance,
+module/roundtrip identity, nonce/schema, shared-source host50 and six unchanged
+server cases. Report PR merge commit `cc1e9aacd33cf92162463ed4f782b427687cc275`
+has the same tree `4644b555cb9f2e3e78226063a2303d243eb2e7da` as head90f797ee.
+This was measurement only: marker phase completed, but validation completed=false,
+witness_verified=false; later client parity and watchdog were not started.
+Explicit locals removed the earlier failure in this run, without proving its
+particular cause.
+
+The original timing call observed named Val Early=73, non-Val Late=73, caller=73,
+retained old graph=72, Calls=1. The preceding scalar timing used an expression
+result for its first Val argument, so it did not settle named-Val timing.
+One additional direct client-to-server call now distinguishes named object,
+retained object alias, object expression result, named scalar and scalar expression
+result before a final argument mutates the old object and rebinds both caller
+variables. Ten additional primitive observations include caller/retained state and
+an exactly-once counter. No native expected values are guessed for this new call.
+The original48 labels and operations remain in order, including their completion
+label at ordinal47; the new labels occupy48..57. The new suffix is not interpreted
+as completed evidence unless all58 records pass the finite decoder.
+
+This section supersedes the earlier measurement counts: nine server operations,
+19 explicitly localized routines,58 observations,109 total marker values including
+the unchanged strict50 prefix and one sentinel. Source-bound root stages now span
+0..141. The private marker maximum is1335 bytes compact,1452 default and1904 pretty,
+under the unchanged2048 limit. The reachable failed-stage wire test is7132/8192.
+Conservatively retaining every old actual-main public field while adding all58
+worst-width values gives26059/32768 bytes; that synthetic shape is a serialization
+budget proof, not an accepted report. The strict50 acceptance gate, shared-source
+inverse, four historical client adapters, runtime and all caps remain unchanged.
+A separate Windows-only pure request-binding test uses the existing portable
+fixture reader, so binding negatives are exercised rather than accidentally
+passing through descriptor/path identity rejection. Production secure reads are
+unchanged; the precise differing Windows stat field was not captured.

@@ -36,11 +36,26 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
 
     def observations(self, values=None):
         if values is None:
-            values = [None, False, True, 0, 999, 1] * 8
+            values = [None, False, True, 0, 999, 1] * 9 + [None, False, True, 0]
         return suite.CLIENT_VALUES + ['object.transfer.v1'] + [encode_observation(x) for x in values]
 
+    def test_mixed_timing_has_one_direct_call_and_ten_distinct_observations(self):
+        source = (ROOT / SOURCE).read_text(encoding='utf-8')
+        self.assertEqual(labels()[47], 'complete')
+        self.assertEqual(labels()[48:], ['mixed.error', 'mixed.named.object',
+            'mixed.alias.object', 'mixed.expression.object', 'mixed.named.scalar',
+            'mixed.expression.scalar', 'mixed.caller.object', 'mixed.caller.scalar',
+            'mixed.retained', 'mixed.calls'])
+        self.assertEqual(source.count('Result = ObjectTransferMixedTiming(X, Kept, '
+            'ObjectTransferIdentity(X), Scalar, ObjectTransferIdentity(Scalar), '
+            'ObjectTransferChangeBoth(X, Scalar, Calls));'), 1)
+        self.assertIn('&AtServer\nFunction ObjectTransferMixedTiming(Val NamedObject, '
+            'Val AliasObject, Val ExpressionObject, Val NamedScalar, Val ExpressionScalar, Val Token)', source)
+        self.assertIn('&AtClient\nFunction ObjectTransferIdentity(Val Value)', source)
+        self.assertIn('&AtClient\nFunction ObjectTransferChangeBoth(X, Scalar, Calls)', source)
+
     def test_capture_is_finite_and_does_not_grant_native_acceptance(self):
-        records = [None, False, True, 0, 999, 1] * 8
+        records = [None, False, True, 0, 999, 1] * 9 + [None, False, True, 0]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory).resolve() / 'completed.json'
             path.write_bytes(json.dumps(self.marker(self.observations(records))).encode())
@@ -74,12 +89,12 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
 
     def test_host_accepts_only_bounded_failed_count_metadata(self):
         valid = dict(phase='completed', kind='count', ordinal=50, error_stage=0,
-                     object_transfer=[None] * 48)
+                     object_transfer=[None] * 58)
         for changes in ({'phase': 'error'}, {'kind': 'value'}, {'ordinal': 49},
-                        {'error_stage': 1}, {'object_transfer': [None] * 47},
-                        {'object_transfer': [None] * 49}, {'object_transfer': 'PRIVATE'},
-                        {'object_transfer': [1.0] * 48}, {'object_transfer': [1000] * 48},
-                        {'object_transfer': [-1] * 48}, {'object_transfer': ['PRIVATE'] * 48}):
+                        {'error_stage': 1}, {'object_transfer': [None] * 57},
+                        {'object_transfer': [None] * 59}, {'object_transfer': 'PRIVATE'},
+                        {'object_transfer': [1.0] * 58}, {'object_transfer': [1000] * 58},
+                        {'object_transfer': [-1] * 58}, {'object_transfer': ['PRIVATE'] * 58}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 full.validate_marker_diagnostics({**valid, **changes})
         self.assertEqual(full.validate_marker_diagnostics(valid), valid)
@@ -116,12 +131,12 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
                     '        Records.Add("object.runtime-error");', '        Records.Add(ObjectStage);',
                     '    EndTry;', '    Return Records;', 'EndFunction']
         expected = helpers + '\n'.join(rebuilt) + '\n'
-        self.assertEqual(stage, 123)
+        self.assertEqual(stage, 141)
         raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
         actual = raw.split(full.CLIENT_OBJECT_MARKER, 1)[1].decode()
         self.assertEqual(actual, expected)
-        self.assertEqual(len(labels()), 48)
-        self.assertEqual(len(set(labels())), 48)
+        self.assertEqual(len(labels()), 58)
+        self.assertEqual(len(set(labels())), 58)
         self.assertEqual(re.findall(r'ObjectTransferRecord\(Records, "([^"]+)"', actual), labels())
         self.assertNotIn('Message(', actual)
         shared = full.client_interpreter_source(raw)
@@ -140,13 +155,13 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
         vm.execute((ROOT / SOURCE).read_text(encoding='utf-8'))
         self.assertEqual(messages, [])
         vm.execute('RunObjectTransferProbe()')
-        self.assertEqual(len(messages), 48)
+        self.assertEqual(len(messages), 58)
         by_label = dict(zip(labels(), messages))
         for label in labels():
             if label.endswith('.error'):
                 self.assertTrue(by_label[label].endswith('{"B",1}'), label)
         self.assertTrue(messages[0].endswith('{"B",1}'))
-        self.assertTrue(messages[-1].endswith('{"B",1}'))
+        self.assertTrue(messages[47].endswith('{"B",1}'))
         self.assertEqual(vm.execution_context, 'client')
         integrated = Interpreter(lambda _: self.fail('unexpected dialog'))
         integrated.execute((ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8-sig'))
@@ -164,7 +179,7 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
 
     def test_private_marker_budget_does_not_require_larger_caps(self):
         # Maximum permitted token length, independent of expected native values.
-        marker = self.marker(self.observations([False] * 48))
+        marker = self.marker(self.observations([False] * 58))
         self.assertLess(len(json.dumps(marker, separators=(',', ':')).encode()), 2048)
         self.assertLess(len(json.dumps(marker).encode()), 2048)
         self.assertLess(len(json.dumps(marker, indent=2).encode()), 2048)
@@ -179,7 +194,7 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
         failed = {**fixture.client, 'status': 'failed', 'failure_kind': 'invalid_result',
                   'completed': False, 'witness_verified': False,
                   'marker_diagnostics': dict(phase='completed', kind='count', ordinal=50,
-                                            error_stage=0, object_transfer=[False] * 48)}
+                                            error_stage=0, object_transfer=[False] * 58)}
         with mock.patch.object(suite, 'run_client_probe', return_value=failed) as probe, \
                 mock.patch.object(suite, 'run_client_watchdog') as watchdog:
             result = suite.run_suite(fixture.launcher, fixture.platform, fixture.epf,
@@ -209,7 +224,7 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
         stage['client_probe'].update(status='failed', failure_kind='invalid_result',
             completed=False, witness_verified=False,
             marker_diagnostics=dict(phase='completed', kind='count', ordinal=50,
-                error_stage=0, object_transfer=[False] * 48),
+                error_stage=0, object_transfer=[False] * 58),
             process_diagnostics=wire_fixture.fixtures.process_diagnostics(
                 stage='after_exit', reason='unexpected_processes',
                 classes={'native': 100, 'display': 26, 'session_bus': 26, 'shell': 26,
@@ -218,7 +233,7 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
             path = Path(directory).resolve() / 'stage3.json'
             suite.write_report(path, stage)
             raw = path.read_bytes()
-            self.assertEqual(len(raw), 7072)
+            self.assertEqual(len(raw), 7132)
             self.assertLessEqual(len(raw), 8192)
             self.assertEqual(full.decode_stage3_wire(full.strict_json(raw, 8192)), stage)
             self.assertEqual(suite.decode_stage_wire(json.loads(raw)), stage)
@@ -243,7 +258,7 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
             routines = [node for node in parse((ROOT / relative).read_text(encoding='utf-8-sig'))
                         if isinstance(node, ast.Routine)
                         and (node.name.startswith('ObjectTransfer') or node.name == 'RunObjectTransferProbe')]
-            self.assertEqual(len(routines), 16)
+            self.assertEqual(len(routines), 19)
             for routine in routines:
                 declared = {parameter.name.casefold() for parameter in routine.parameters}
                 for node in walk(routine.body):
@@ -258,11 +273,11 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
         source = (ROOT / SOURCE).read_text(encoding='utf-8')
         mapping = json.loads((ROOT / 'integrational_tests/directive_probes/object_transfer_stages.json').read_text(encoding='utf-8'))
         self.assertEqual(mapping['source_sha256'], full.digest(source.encode()))
-        self.assertEqual([item['id'] for item in mapping['stages']], list(range(1, 124)))
+        self.assertEqual([item['id'] for item in mapping['stages']], list(range(1, 142)))
         for item in mapping['stages']:
             self.assertEqual(source.splitlines()[item['source_line'] - 1].strip(), item['statement'])
         generated = (ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8')
-        self.assertEqual([int(x) for x in re.findall(r'ObjectStage = ([0-9]+);', generated)], list(range(124)))
+        self.assertEqual([int(x) for x in re.findall(r'ObjectStage = ([0-9]+);', generated)], list(range(142)))
 
     def test_root_error_discards_partial_observations_and_exports_only_stage(self):
         from yadinassi import Interpreter
@@ -279,7 +294,7 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
             self.assertEqual(vm.execution_context, 'client')
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory).resolve() / 'completed.json'
-            for stage in range(124):
+            for stage in range(142):
                 values = suite.CLIENT_VALUES + ['object.runtime-error', stage]
                 path.write_bytes(json.dumps(self.marker(values)).encode())
                 diagnostic = suite.client_marker_diagnostics(path, 'a' * 32)
@@ -288,14 +303,14 @@ class ObjectTransferMeasurementTests(unittest.TestCase):
                 self.assertEqual(full.validate_marker_diagnostics(diagnostic), diagnostic)
                 with self.assertRaises(suite.FullError):
                     suite.client_marker(path, 'a' * 32, 'completed')
-            for invalid in (-1, 124, True, 1.0, None, 'PRIVATE'):
+            for invalid in (-1, 142, True, 1.0, None, 'PRIVATE'):
                 path.write_bytes(json.dumps(self.marker(suite.CLIENT_VALUES + ['object.runtime-error', invalid])).encode())
                 self.assertNotIn('object_error_stage', suite.client_marker_diagnostics(path, 'a' * 32))
                 with self.assertRaises(ValueError):
                     full.validate_marker_diagnostics(dict(phase='completed', kind='count', ordinal=50,
                         error_stage=0, object_error_stage=invalid))
             both = dict(phase='completed', kind='count', ordinal=50, error_stage=0,
-                        object_error_stage=1, object_transfer=[None] * 48)
+                        object_error_stage=1, object_transfer=[None] * 58)
             with self.assertRaises(ValueError):
                 full.validate_marker_diagnostics(both)
 

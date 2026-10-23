@@ -322,7 +322,7 @@ CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
 
 
-CLIENT_OBJECT_TEMPLATE_SHA256 = '0256d31b20fbaec17ff864721cd25eabea8ed1692d67e028ea1f89ff89bf76ff'
+CLIENT_OBJECT_TEMPLATE_SHA256 = '6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120'
 CLIENT_SHARED_TEMPLATE_SHA256 = '52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c'
 CLIENT_OBJECT_MARKER = b'\n// BEGIN bounded object transfer measurement\n'
 CLIENT_OBJECT_CALL = b'    For Each ObjectTransferValue In RunObjectTransferProbe() Do\n        \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f.\xd0\x94\xd0\xbe\xd0\xb1\xd0\xb0\xd0\xb2\xd0\xb8\xd1\x82\xd1\x8c(ObjectTransferValue);\n    EndDo;\n'
@@ -431,7 +431,7 @@ def validate_marker_diagnostics(value):
         records = value['object_transfer']
         if (value['phase'] != 'completed' or value['kind'] != 'count'
                 or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
-                or type(records) is not list or len(records) != 48
+                or type(records) is not list or len(records) != 58
                 or any(not (item is None or type(item) is bool
                             or (type(item) is int and 0 <= item <= 999)) for item in records)):
             raise ValueError('client object transfer measurement')
@@ -439,7 +439,7 @@ def validate_marker_diagnostics(value):
         stage = value['object_error_stage']
         if (value['phase'] != 'completed' or value['kind'] != 'count'
                 or value['ordinal'] != len(CLIENT_VALUES) or value['error_stage'] != 0
-                or type(stage) is not int or not 0 <= stage <= 123):
+                or type(stage) is not int or not 0 <= stage <= 141):
             raise ValueError('client object error stage')
     if value['phase'] != 'completed':
         valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0

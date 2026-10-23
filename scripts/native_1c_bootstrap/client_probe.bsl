@@ -535,9 +535,29 @@ Procedure ObjectTransferRecord(Records, Val Label, Val Value)
     EndIf;
 EndProcedure
 
+&AtServer
+Function ObjectTransferMixedTiming(Val NamedObject, Val AliasObject, Val ExpressionObject, Val NamedScalar, Val ExpressionScalar, Val Token)
+    Return New Structure("NamedObject,AliasObject,ExpressionObject,NamedScalar,ExpressionScalar", NamedObject.Items[0], AliasObject.Items[0], ExpressionObject.Items[0], NamedScalar, ExpressionScalar);
+EndFunction
+
+&AtClient
+Function ObjectTransferIdentity(Val Value)
+    Return Value;
+EndFunction
+
+&AtClient
+Function ObjectTransferChangeBoth(X, Scalar, Calls)
+    Calls = Calls + 1;
+    X.Items[0] = 72;
+    X = ObjectTransferNew(73);
+    Scalar = 74;
+    Return 75;
+EndFunction
+
 &AtClient
 Function RunObjectTransferProbe()
     Var Records, ObjectStage;
+    Var Scalar;
     Var X, Y, Kept, Child, Control, Untouched, Result, Seen, Calls;
     Var Failed, Matched, BeforeX, BeforeY, AfterY;
     Var AfterXSibling, AfterXResultLeft, AfterXResultRight;
@@ -834,6 +854,47 @@ Function RunObjectTransferProbe()
     
         ObjectStage = 123;
         ObjectTransferRecord(Records, "complete", True);
+    
+        // 9. Named storage versus expression results before a later argument effect.
+        ObjectStage = 124;
+        X = ObjectTransferNew(9);
+        ObjectStage = 125;
+        Kept = X;
+        ObjectStage = 126;
+        Scalar = 11;
+        ObjectStage = 127;
+        Calls = 0;
+        ObjectStage = 128;
+        Result = Undefined;
+        ObjectStage = 129;
+        Failed = False;
+        Try
+        ObjectStage = 130;
+            Result = ObjectTransferMixedTiming(X, Kept, ObjectTransferIdentity(X), Scalar, ObjectTransferIdentity(Scalar), ObjectTransferChangeBoth(X, Scalar, Calls));
+        Except
+        ObjectStage = 131;
+            Failed = True;
+        EndTry;
+        ObjectStage = 132;
+        ObjectTransferRecord(Records, "mixed.error", Failed);
+        ObjectStage = 133;
+        ObjectTransferRecord(Records, "mixed.named.object", ObjectTransferField(Result, "NamedObject"));
+        ObjectStage = 134;
+        ObjectTransferRecord(Records, "mixed.alias.object", ObjectTransferField(Result, "AliasObject"));
+        ObjectStage = 135;
+        ObjectTransferRecord(Records, "mixed.expression.object", ObjectTransferField(Result, "ExpressionObject"));
+        ObjectStage = 136;
+        ObjectTransferRecord(Records, "mixed.named.scalar", ObjectTransferField(Result, "NamedScalar"));
+        ObjectStage = 137;
+        ObjectTransferRecord(Records, "mixed.expression.scalar", ObjectTransferField(Result, "ExpressionScalar"));
+        ObjectStage = 138;
+        ObjectTransferRecord(Records, "mixed.caller.object", ObjectTransferLeaf(X, "Items"));
+        ObjectStage = 139;
+        ObjectTransferRecord(Records, "mixed.caller.scalar", ObjectTransferNumber(Scalar));
+        ObjectStage = 140;
+        ObjectTransferRecord(Records, "mixed.retained", ObjectTransferLeaf(Kept, "Items"));
+        ObjectStage = 141;
+        ObjectTransferRecord(Records, "mixed.calls", ObjectTransferNumber(Calls));
     Except
         Records = New Array;
         Records.Add("object.runtime-error");

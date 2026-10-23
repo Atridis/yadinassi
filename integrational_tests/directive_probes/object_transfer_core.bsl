@@ -1,6 +1,6 @@
 // Uncaptured measurement source. No native expected values are present.
 // Invoke RunObjectTransferProbe literally on the client after module creation.
-// Eight literal server calls; 48 fixed primitive observations, all below 1000.
+// Nine literal server calls; 58 fixed primitive observations, all below 1000.
 // No module state, Execute, explicit database calls, RPC implementation or async.
 
 &AtServer
@@ -144,8 +144,28 @@ Procedure ObjectTransferRecord(Val Label, Val Value)
     Message("object.transfer.core." + Label + ": " + ValueToStringInternal(Value));
 EndProcedure
 
+&AtServer
+Function ObjectTransferMixedTiming(Val NamedObject, Val AliasObject, Val ExpressionObject, Val NamedScalar, Val ExpressionScalar, Val Token)
+    Return New Structure("NamedObject,AliasObject,ExpressionObject,NamedScalar,ExpressionScalar", NamedObject.Items[0], AliasObject.Items[0], ExpressionObject.Items[0], NamedScalar, ExpressionScalar);
+EndFunction
+
+&AtClient
+Function ObjectTransferIdentity(Val Value)
+    Return Value;
+EndFunction
+
+&AtClient
+Function ObjectTransferChangeBoth(X, Scalar, Calls)
+    Calls = Calls + 1;
+    X.Items[0] = 72;
+    X = ObjectTransferNew(73);
+    Scalar = 74;
+    Return 75;
+EndFunction
+
 &AtClient
 Procedure RunObjectTransferProbe() Export
+    Var Scalar;
     Var X, Y, Kept, Child, Control, Untouched, Result, Seen, Calls;
     Var Failed, Matched, BeforeX, BeforeY, AfterY;
     Var AfterXSibling, AfterXResultLeft, AfterXResultRight;
@@ -315,4 +335,27 @@ Procedure RunObjectTransferProbe() Export
     ObjectTransferRecord("recovery.retained", ObjectTransferArrayLeaf(Child));
 
     ObjectTransferRecord("complete", True);
+
+    // 9. Named storage versus expression results before a later argument effect.
+    X = ObjectTransferNew(9);
+    Kept = X;
+    Scalar = 11;
+    Calls = 0;
+    Result = Undefined;
+    Failed = False;
+    Try
+        Result = ObjectTransferMixedTiming(X, Kept, ObjectTransferIdentity(X), Scalar, ObjectTransferIdentity(Scalar), ObjectTransferChangeBoth(X, Scalar, Calls));
+    Except
+        Failed = True;
+    EndTry;
+    ObjectTransferRecord("mixed.error", Failed);
+    ObjectTransferRecord("mixed.named.object", ObjectTransferField(Result, "NamedObject"));
+    ObjectTransferRecord("mixed.alias.object", ObjectTransferField(Result, "AliasObject"));
+    ObjectTransferRecord("mixed.expression.object", ObjectTransferField(Result, "ExpressionObject"));
+    ObjectTransferRecord("mixed.named.scalar", ObjectTransferField(Result, "NamedScalar"));
+    ObjectTransferRecord("mixed.expression.scalar", ObjectTransferField(Result, "ExpressionScalar"));
+    ObjectTransferRecord("mixed.caller.object", ObjectTransferLeaf(X, "Items"));
+    ObjectTransferRecord("mixed.caller.scalar", ObjectTransferNumber(Scalar));
+    ObjectTransferRecord("mixed.retained", ObjectTransferLeaf(Kept, "Items"));
+    ObjectTransferRecord("mixed.calls", ObjectTransferNumber(Calls));
 EndProcedure
