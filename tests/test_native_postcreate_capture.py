@@ -121,21 +121,22 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
         self.assertEqual(self.report['comparison']['status'], 'failed')
         self.assertEqual(self.report['comparison']['acceptance_status'], 'rejected')
 
-    def test_unmodified_real_source_is_now_156_success_not_the_failure_fixture(self):
+    def test_complete_source_keeps_success_and_measurement_before_postcreate(self):
         code, actual, stderr = self.success_response
         self.assertEqual((code, stderr), (0, b''))
         rows = actual.splitlines()
-        self.assertEqual(len(rows), 156)
-        self.assertEqual(rows[136], BEGIN)
-        self.assertEqual(tuple(row.split(b':', 1)[0].decode() for row in rows[137:155]),
+        self.assertEqual(len(rows), 157)
+        self.assertRegex(rows[136], rb'^omit\.v1:(?:[SE][0-9]{4}){9}$')
+        self.assertEqual(rows[137], BEGIN)
+        self.assertEqual(tuple(row.split(b':', 1)[0].decode() for row in rows[138:156]),
                          full.POST_CREATE_LABELS)
         self.assertEqual(rows[-1], OK)
         self.assertNotEqual(self.failure_source, self.original_source)
 
-    def test_actual_missing_export_138_exit3_survives_comparison_and_seven_file_packaging(self):
+    def test_actual_missing_export_exit3_keeps_measurement_and_seven_file_packaging(self):
         code, actual, stderr = self.actual_response
         self.assertEqual((code, stderr), (3, b''))
-        self.assertEqual(len(actual.splitlines()), 138)
+        self.assertEqual(len(actual.splitlines()), 139)
         self.assertEqual(actual.splitlines()[-2:], [BEGIN, ERROR])
         self.assert_rejected_host(self.compare())
         files = self.artifacts()

@@ -330,6 +330,8 @@ EXPORTED_POSTCREATE_PROBE_BLOCKS = (
 
 def without_exported_postcreate_probes(text):
     """Restore every byte of the audited 136-record source, never its output."""
+    if any(boundary in text for pair in TRAILING_OMITTED_PROBE_BLOCKS for boundary in pair):
+        text = without_trailing_omitted_probes(text)
     if not text.startswith(EXPORTED_POSTCREATE_DIRECTIVE) or text.count(EXPORTED_POSTCREATE_DIRECTIVE) != 1:
         raise ValueError('exported post-create directive changed')
     text = text[len(EXPORTED_POSTCREATE_DIRECTIVE):]
@@ -343,4 +345,36 @@ def without_exported_postcreate_probes(text):
     if (git_blob(raw) != EXPORTED_POSTCREATE_BASE_BLOB
             or hashlib.sha256(raw).hexdigest() != EXPORTED_POSTCREATE_BASE_SHA256):
         raise ValueError('exported post-create baseline source binding changed')
+    return text
+
+
+# Measurement-only additions to the complete 136-record initialization source.
+# This projection is only for historical/checkpoint replay, never live comparison.
+TRAILING_OMITTED_BASE_BLOB = '0393cf93cf5380b0231a9b36ce067e3af682d532'
+TRAILING_OMITTED_BASE_SHA256 = '21d53297530d86c260b75659f7fdab2e35acddf82e53ab9056f9991a4195a3ab'
+TRAILING_OMITTED_SOURCE_SHA256 = 'b1862eb7569e23e054c4abc14711a4faa53b1e26fd16212502317e592caf98a3'
+TRAILING_OMITTED_PROBE_BLOCKS = (
+    ('// Begin trailing omitted argument checkpoint declarations.\n',
+     '// End trailing omitted argument checkpoint declarations.\n\n'),
+    ('// Begin trailing omitted argument checkpoint helpers.\n',
+     '// End trailing omitted argument checkpoint helpers.\n\n'),
+    ('// Begin trailing omitted argument checkpoint observations.\n',
+     '// End trailing omitted argument checkpoint observations.\n'),
+)
+
+
+def without_trailing_omitted_probes(text):
+    """Restore every byte of the prior source; never trim observed output."""
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != TRAILING_OMITTED_SOURCE_SHA256:
+        raise ValueError('trailing omitted source binding changed')
+    for start, end in TRAILING_OMITTED_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('trailing omitted probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8')
+    if (git_blob(raw) != TRAILING_OMITTED_BASE_BLOB
+            or hashlib.sha256(raw).hexdigest() != TRAILING_OMITTED_BASE_SHA256):
+        raise ValueError('trailing omitted baseline source binding changed')
     return text
