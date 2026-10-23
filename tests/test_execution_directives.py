@@ -169,7 +169,7 @@ Counter = 42; Message(S()); Message(Counter);
 ''')
         self.assertEqual(self.messages, ['7', '42'])
 
-    def test_non_val_boundary_is_explicit_before_effects(self):
+    def test_non_val_expression_boundary_is_explicit_before_effects(self):
         self.vm.execute('&AtServer\nProcedure S(X) EndProcedure')
         calls = []
         self.vm.register_function('Effect', lambda: calls.append('effect'))

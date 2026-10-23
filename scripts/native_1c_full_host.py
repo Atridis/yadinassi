@@ -314,6 +314,9 @@ CLIENT_VALUES = [
     'directive.return.undefined: {"U"}',
     'directive.call.recovery: {"N",42}',
 ]
+# Audited pinned native scalar-copyback capture, not interpreter-generated data.
+CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
+
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
@@ -352,10 +355,9 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Execute the exact native form source, calling only its finite computation.
+    """Execute the exact whole native form source and its finite typed witness.
 
-    Native separately validates the same typed values and exact module roundtrip.
-    This is bounded witness parity, not a full client/server platform claim.
+    Native independently validates the same values and exact module roundtrip.
     """
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash:
@@ -396,7 +398,7 @@ def validate_marker_diagnostics(value):
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
             or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
-            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= 15
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
     if value['phase'] != 'completed':
@@ -404,9 +406,9 @@ def validate_marker_diagnostics(value):
     elif value['kind'] == 'runtime_error':
         valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
     elif value['kind'] == 'count':
-        valid = 0 <= value['ordinal'] <= 15 and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] <= len(CLIENT_VALUES) and value['error_stage'] == 0
     elif value['kind'] in {'type', 'value'}:
-        valid = 0 <= value['ordinal'] < 15 and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] < len(CLIENT_VALUES) and value['error_stage'] == 0
     else:
         valid = value['ordinal'] == -1 and value['error_stage'] == 0
     if not valid:

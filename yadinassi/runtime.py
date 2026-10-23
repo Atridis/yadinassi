@@ -72,6 +72,10 @@ class _Return(Exception):
         self.value = value
 
 
+class _VariableReference(_Reference):
+    """Named dictionary storage, preserving its provenance through forwarding."""
+
+
 class _Module:
     """A stable, explicit public module receiver, never a platform/Python object."""
 
@@ -268,7 +272,7 @@ class Interpreter:
             # may see them, but does not leak its own new names back to this one.
             scope = self.variables if previous is None else previous
             self.locals = {
-                name: item if isinstance(item, _Reference) else _Reference(
+                name: item if isinstance(item, _Reference) else _VariableReference(
                     lambda name=name: scope[name],
                     lambda value, name=name: scope.__setitem__(name, value))
                 for name, item in scope.items()
@@ -697,8 +701,6 @@ class Interpreter:
         if self._logical_side == "server" and function.execution_context == "client":
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
         crossing = self._logical_side == "client" and function.execution_context == "server"
-        if crossing and any(not parameter.by_value for parameter in function.parameters):
-            raise ValueError("Межконтекстные параметры без Знач пока не поддерживаются")
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
         required = max((index + 1 for index, parameter in enumerate(function.parameters)
@@ -707,33 +709,67 @@ class Interpreter:
             raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                             f"получено {len(arguments)}")
         validate_labels(function.body)
+        if crossing:
+            # The measured copy-in/copy-out slice covers named variable actuals.
+            # Reject properties, indexes, expressions and omitted non-Val slots
+            # before evaluating even an earlier, otherwise supported argument.
+            for index, parameter in enumerate(function.parameters):
+                if not parameter.by_value and (index >= len(arguments) or
+                        not isinstance(self.ungroup(arguments[index]), ast.Name)):
+                    raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
         # Bind left to right in the caller's frame. Val snapshots the value,
-        # while ordinary parameters keep a live alias to assignable storage.
+        # while ordinary same-side parameters keep a live storage alias.
         bindings = {}
+        copyback: list[tuple[str, _VariableReference]] = []
         for index, parameter in enumerate(function.parameters):
             argument = arguments[index] if index < len(arguments) else None
             if argument is None or isinstance(argument, ast.OmittedArgument):
                 value = self.visit(parameter.default) if parameter.default is not None else None
             else:
                 value = self.visit(argument) if parameter.by_value else self.argument(argument)
-            if crossing:
+            name = parameter.name.casefold()
+            if crossing and not parameter.by_value:
+                # A named caller formal may itself alias a property/index.
+                # Only dictionary variable storage has a safe copy-out setter;
+                # do not let forwarding widen the supported sink boundary.
+                if not isinstance(value, _VariableReference):
+                    raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
+                copyback.append((name, value))
+            elif crossing:
                 self._check_context_scalar(value)
-            bindings[parameter.name.casefold()] = value
+            bindings[name] = value
         if crossing:
+            # Native 8.3.27.1508: non-Val values are read after all actual
+            # expression effects, independently even for repeated storage.
+            for name, reference in copyback:
+                value = reference.get()
+                self._check_context_scalar(value)
+                bindings[name] = value
             owner = owner._new_server_activation()
         previous = owner.locals
         owner.locals = bindings
         owner._context_stack.append(function.execution_context)
         try:
-            owner.block(function.body)
-        except _Return as returned:
+            result = None
+            try:
+                owner.block(function.body)
+            except _Return as returned:
+                result = returned.value
             if crossing:
-                self._check_context_scalar(returned.value)
-            return returned.value
+                # Validate the entire outgoing packet before touching caller
+                # storage. Escaping errors never reach this normal-return path.
+                self._check_context_scalar(result)
+                outgoing = [(reference, bindings[name]) for name, reference in copyback]
+                for _, value in outgoing:
+                    self._check_context_scalar(value)
+                # Every non-Val formal participates, including unchanged values.
+                # Positional order makes the rightmost repeated actual win.
+                for reference, value in outgoing:
+                    reference.set(value)
+            return result
         finally:
             owner._context_stack.pop()
             owner.locals = previous
-        return None
 
     @staticmethod
     def _check_context_scalar(value: object) -> None:
@@ -787,7 +823,7 @@ class Interpreter:
                 return self.visit(node)
             if isinstance(scope[name], _Reference):
                 return scope[name]
-            return _Reference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
+            return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = self.receiver(node.object)
             if type(owner) is _Module:
