@@ -31,7 +31,8 @@ from unittest import mock
 
 import test_native_async_protocol as protocol
 from test_native_1c_full_host import fixture, NONCE
-from test_native_1c_smoke import smoke, bootstrap_report
+from test_native_1c_smoke import (smoke, bootstrap_report, read_staging_fixture,
+                                  _USE_SYNTHETIC_STAGING_READER)
 
 suite, full = protocol.suite, protocol.full
 H = 'f' * 64
@@ -282,7 +283,11 @@ class AsyncBudgetTests(unittest.TestCase):
         self.assertEqual(suite.decode_stage_wire(suite.encode_stage_wire(legacy)), legacy)
 
     def test_measurement_is_separate_and_default_full_options_are_preserved(self):
-        with tempfile.TemporaryDirectory() as directory:
+        # Only copied Windows fixtures use the existing offline adapter.
+        # Linux keeps the real production descriptor and identity checks.
+        reader = (mock.patch.object(smoke.FULL, 'read_regular', side_effect=read_staging_fixture)
+                  if _USE_SYNTHETIC_STAGING_READER else contextlib.nullcontext())
+        with reader, tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'inputs'
             hashes = smoke.stage_inputs(path, full_suite=True, client_probe=True)
             self.assertEqual(len(hashes), 24)
