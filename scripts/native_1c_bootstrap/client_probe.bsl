@@ -26,6 +26,8 @@
     Для Каждого Наблюдение Из DirectiveWitnessValues() Цикл
         Значения.Добавить(Наблюдение);
     КонецЦикла;
+    Значения.Добавить("directive.profile.client:" + DirectiveClientProfile());
+    Значения.Добавить("directive.profile.server:" + DirectiveServerProfile());
     Возврат Значения;
 КонецФункции
 
@@ -147,3 +149,77 @@ Function DirectiveWitnessValues()
     EndTry;
     Return Results;
 EndFunction
+
+// BEGIN native-only predefined-symbol measurement
+&AtClient
+Function DirectiveClientProfile()
+    Bits = "";
+#If Client Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If Server Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If AtClient Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If AtServer Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If ThickClientManagedApplication Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If ThickClientOrdinaryApplication Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+    Return Bits;
+EndFunction
+
+&AtServer
+Function DirectiveServerProfile()
+    Bits = "";
+#If Client Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If Server Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If AtClient Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If AtServer Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If ThickClientManagedApplication Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+#If ThickClientOrdinaryApplication Then
+    Bits = Bits + "1";
+#Else
+    Bits = Bits + "0";
+#EndIf
+    Return Bits;
+EndFunction
+
