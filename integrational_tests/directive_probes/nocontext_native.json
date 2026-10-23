@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "native_target": "linux-8.3.27.1508",
+  "mode": "managed application, file infobase",
+  "run_id": 39994534264,
+  "artifact_id": 12518298908,
+  "artifact_sha256": "156aa2f8190df6757e34a77a5e6b2db8bce501db4ecea7e6b23f88e94bd38fa2",
+  "repository": {
+    "commit": "d46ea4d52170a4d9de3e966d0b6f620f018cf2d2",
+    "head": "548be3cbebf9fb9a6756ec9389c20d05411151c7",
+    "tree": "b2dd89254dd31e074166e5ee31e7d943cb1cbdfe"
+  },
+  "source_sha256": "f87f6a48c4395bf29dd18365e2985b5b24e90fe57def6375de9c773618e8ba4c",
+  "module_sha256": "9cc724171b449a1f0b83f880c57d50782c794817df54e3b265e56d1e4aefc03d",
+  "labels": [
+    "normal.nested",
+    "normal.private",
+    "normal.profile",
+    "normal.caller",
+    "normal.val.caller",
+    "caught.matched",
+    "caught.caller",
+    "escape.caught",
+    "escape.caller",
+    "context.normal.value",
+    "context.escape.value",
+    "context.escape.caught",
+    "recovery.initial",
+    "recovery.caller"
+  ],
+  "values": [
+    12,
+    22,
+    19,
+    12,
+    2,
+    true,
+    16,
+    true,
+    6,
+    14,
+    14,
+    true,
+    7,
+    18
+  ],
+  "profile_bits": {
+    "Client": 1,
+    "Server": 2,
+    "AtClient": 4,
+    "AtServer": 8,
+    "ThickClientManagedApplication": 16,
+    "ThickClientOrdinaryApplication": 32
+  },
+  "capture_acceptance": "rejected_measurement_only",
+  "current_source_projection": "Only logical AtClient/AtServer bits retained; both zero. Requires fresh native134 acceptance; target flags not equated to standalone defaults."
+}

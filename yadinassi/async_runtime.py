@@ -18,6 +18,7 @@ from .native_targets import target_context, validate_native_target
 class ExecutionContext:
     locals: dict[object, dict | None] = field(default_factory=dict)
     context_stack: list[str] = field(default_factory=lambda: ['client'])
+    module_context_stack: list[bool] = field(default_factory=lambda: [True])
     state: dict[object, dict] = field(default_factory=dict)
 
 
@@ -173,7 +174,8 @@ class Scheduler:
 
     def start(self, generator, *, procedure=False):
         promise = self.new_pending()
-        context = ExecutionContext(context_stack=list(self.active_context.context_stack))
+        context = ExecutionContext(context_stack=list(self.active_context.context_stack),
+                                   module_context_stack=list(self.active_context.module_context_stack))
         task = _Task(generator, promise, context)
         self._tasks.add(task)
         if procedure:

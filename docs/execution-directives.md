@@ -8,7 +8,10 @@ run 39951594654. The object implementation now follows independently audited
 0dbb938 in [run 39969439403](https://github.com/Atridis/yadinassi/actions/runs/39969439403).
 The new [side-local module-variable implementation](module-context-measurement.md)
 follows an independently audited nine-value capture. Host preflight now computes
-all119 values from the complete source; current-head native/CI gates remain pending. Existing
+all119 values from the complete source on audited main e83eb60f. The new
+[bounded NoContext implementation](nocontext-measurement.md) follows two audited
+captures and restores complete-source host execution with a strict134 contract;
+fresh current-head native/four-OS gates remain pending. Existing
 Async work and historical parity modules remain unchanged.
 
 ## Scope and execution model
@@ -91,8 +94,9 @@ parity before measurement.
   server dispatch require a separately measured state contract. Current imported
   server routines are callable from the client through the existing exported
   module syntax, but server routines cannot import client module state.
-- AtServerNoContext follows after the context-bearing state contract exists;
-  treating AtServer as an alias of NoContext would hide missing semantics.
+- AtServerNoContext now has a separate no-module-context capability and compiler
+  profile. Its bounded initialization policy and remaining native proof gap are
+  explicit in the NoContext specification; it is not an AtServer alias.
 - Dual-context routines need independently compiled client/server bodies and
   appropriate context visibility. AtClientAtServer is not an alias of the
   managed-form AtClientAtServerNoContext directive.
@@ -237,7 +241,8 @@ were independently audited as measurement evidence. They define this narrow
 8.3.27.1508 target contract, not universal serialization semantics. The runtime
 implements per-occurrence copying and measured binding timing; strict109 native acceptance was audited on actual main 0dbb938. The new
 module-variable implementation follows audited measurement evidence, with its
-own current-head strict119 native/CI acceptance still pending. See
+strict119 pre-merge native/CI gates passed, followed by audited actual-main
+native run39987049433. See
 [object-transfer-measurement.md](object-transfer-measurement.md) for exact capture
 identities and the distinction between historical rejected capture and acceptance.
 
@@ -248,6 +253,9 @@ for annotated client/server variables and explicit logical-side server initializ
 Temporary module capture metadata and the host restored-source execution exception
 are superseded: host and native must match all119 values from the full staged
 source. The bounded legacy adapter inverse remains, not as a parity exception.
-Current implementation-head native/four-OS gates are still pending. See
+That implementation merged after its native/four-OS gates passed; actual-main
+native run39987049433 was independently audited. The later NoContext
+implementation requires a fresh strict134 acceptance and does not retroactively
+extend that historical119 acceptance. See
 [the module-context specification](module-context-measurement.md) for the default-client mapping, initializer
 selection and exclusions; no form attributes or cross-context imports are added.

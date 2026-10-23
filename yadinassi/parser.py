@@ -69,12 +69,18 @@ class Parser:
                 statements.append(ast.ServerInitializer(token, body))
                 continue
             execution_context = "client"
-            annotation = self.accept("ATCLIENT") or self.accept("ATSERVER")
+            module_context = True
+            annotation = (self.accept("ATCLIENT") or self.accept("ATSERVER")
+                          or self.accept("ATSERVERNOCONTEXT"))
             if annotation:
-                execution_context = "server" if annotation.kind == "ATSERVER" else "client"
+                module_context = annotation.kind != "ATSERVERNOCONTEXT"
+                execution_context = "client" if annotation.kind == "ATCLIENT" else "server"
+                annotation_context = execution_context if module_context else "server_nocontext"
+                if not module_context and self.current.kind == "VAR":
+                    self.fail("Директива без контекста недопустима для переменной")
                 if self.current.kind not in ("ASYNC", "FUNCTION", "PROCEDURE", "VAR"):
                     self.fail("После директивы исполнения ожидается объявление процедуры, функции или переменной")
-                if self.compilation_context and execution_context != self.compilation_context:
+                if self.compilation_context and annotation_context != self.compilation_context:
                     if self.accept("ASYNC"):
                         if self.current.kind not in ("FUNCTION", "PROCEDURE"):
                             self.fail("После Асинх ожидается процедура или функция")
@@ -110,7 +116,10 @@ class Parser:
                     self.routine_kind = None
                     self.routine_is_async = False
                     self.parameter_names = set()
-                statements.append(ast.Routine(token, name, parameters, kind == "FUNCTION", exported, body, execution_context, bool(async_token)))
+                statements.append(ast.Routine(
+                    token, name, parameters, kind == "FUNCTION", exported, body,
+                    execution_context=execution_context, is_async=bool(async_token),
+                    module_context=module_context))
                 # Routine brackets are not statements and need no semicolon.
                 continue
             node = self.statement()
@@ -214,7 +223,7 @@ class Parser:
         if self.accept("GOTO"):
             self.expect("~")
             return ast.Goto(token, self.expect("IDENT").value)
-        if token.kind in {"ATCLIENT", "ATSERVER"}:
+        if token.kind in {"ATCLIENT", "ATSERVER", "ATSERVERNOCONTEXT"}:
             self.fail("Директива исполнения допустима только перед подпрограммой уровня модуля")
         if token.kind == "IMPORT":
             self.fail("Импорт допустим только на уровне модуля")
@@ -468,7 +477,7 @@ def validate_async(statements: list[ast.Node]) -> None:
                 fail(value, "Процедуры и функции допустимы только на уровне модуля")
             if type(value.is_async) is not bool:
                 fail(value, "Признак асинхронной подпрограммы должен быть булевым")
-            if value.is_async and value.execution_context != "client":
+            if value.is_async and (value.execution_context != "client" or not value.module_context):
                 fail(value, "Асинх поддерживается только на клиенте")
             visit(value.parameters, True, False)
             visit(value.body, True, value.is_async)
@@ -536,11 +545,15 @@ def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
     server_tokens = Lexer(text, source, execution_context="server",
                           server_declarations_only=True).tokens()
     server = Parser(server_tokens, "server").parse()
+    nocontext_tokens = Lexer(text, source, execution_context="server_nocontext").tokens()
+    nocontext = Parser(nocontext_tokens, "server_nocontext").parse()
     return [node for node in client if not (
         isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
     )] + [node for node in server if (
         isinstance(node, ast.ServerInitializer) or
         isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"
+    )] + [node for node in nocontext if (
+        isinstance(node, ast.Routine) and not node.module_context
     )]
 
 
@@ -557,7 +570,8 @@ def parse_fragment(text: str, source: str = "<Выполнить>") -> list[ast.
     tokens = Lexer(text, source, allow_directives=False).tokens()
     # Reject declarations anywhere, including unreachable branches, before effects.
     for token in tokens:
-        if token.kind in {"VAR", "ASYNC", "FUNCTION", "PROCEDURE", "ATCLIENT", "ATSERVER", "IMPORT"}:
+        if token.kind in {"VAR", "ASYNC", "FUNCTION", "PROCEDURE", "ATCLIENT",
+                          "ATSERVER", "ATSERVERNOCONTEXT", "IMPORT"}:
             raise BSLError("Выполнить: объявления и импорт недопустимы",
                            token.source, token.line, token.column)
     # A fresh parser intentionally has no surrounding routine/loop/handler/labels.

@@ -161,6 +161,7 @@ class Routine(Node):
     body: list[Node]
     execution_context: str = "client"
     is_async: bool = False
+    module_context: bool = True
 
 
 @dataclass

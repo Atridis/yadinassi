@@ -42,8 +42,7 @@ class ClientContextTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('F()'), Decimal(7))
 
     def test_invalid_annotations_fail_before_module_side_effects(self):
-        directives = ['&НаСервереБезКонтекста',
-                      '&AtServerNoContext', '&НаКлиентеНаСервере', '&AtClientAtServer',
+        directives = ['&НаКлиентеНаСервере', '&AtClientAtServer',
                       '&НаКлиентеНаСервереБезКонтекста', '&AtClientAtServerNoContext',
                       '&Unknown', '&AtClient()', '&AtClient Procedure P() EndProcedure']
         for directive in directives:
@@ -202,7 +201,7 @@ server-only !!!
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             side = root / 'Side.bsl'
-            side.write_text('Message("bad");\n&AtServerNoContext\nProcedure P() EndProcedure', encoding='utf-8')
+            side.write_text('Message("bad");\n&AtClientAtServerNoContext\nProcedure P() EndProcedure', encoding='utf-8')
             with self.assertRaises(BSLError) as caught:
                 self.vm.execute('// #Импорт Side.bsl\nMessage("bad root");', str(root / 'Main.bsl'))
             self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 2))

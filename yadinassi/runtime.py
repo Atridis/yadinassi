@@ -135,6 +135,7 @@ class Interpreter:
         self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
         self._context_stack = ["client"]
+        self._module_context_stack = [True]
         self._client_routine_names: set[str] = set()
         self.module_names: set[str] = set()
         self.exported_variables: set[str] = set()
@@ -205,6 +206,19 @@ class Interpreter:
     @_context_stack.setter
     def _context_stack(self, value):
         self._scheduler.active_context.context_stack = value
+
+    @property
+    def _module_context_stack(self):
+        return self._scheduler.active_context.module_context_stack
+
+    @_module_context_stack.setter
+    def _module_context_stack(self, value):
+        self._scheduler.active_context.module_context_stack = value
+
+    @property
+    def _has_module_context(self) -> bool:
+        """Task-local module capability, independent of logical server execution."""
+        return self._module_context_stack[-1]
 
     def _diagnostics(self):
         return self._scheduler.active_context.state.setdefault(self._diagnostic_owner, {})
@@ -428,12 +442,14 @@ class Interpreter:
         for node in program:
             if isinstance(node, ast.Routine):
                 key = node.name.casefold()
-                if key in routine_sides and routine_sides[key] != node.execution_context:
+                if key in routine_sides and routine_sides[key] != (node.execution_context, node.module_context):
                     token = node.token
                     raise BSLError("Одноименные подпрограммы разных контекстов в одном модуле пока не поддерживаются",
                                    token.source, token.line, token.column)
-                routine_sides[key] = node.execution_context
-            if isinstance(node, ast.Routine) and node.execution_context not in {"client", "server"}:
+                routine_sides[key] = (node.execution_context, node.module_context)
+            if isinstance(node, ast.Routine) and (node.execution_context not in {"client", "server"}
+                    or type(node.module_context) is not bool
+                    or (node.execution_context == "client" and not node.module_context)):
                 token = node.token
                 raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
                                token.source, token.line, token.column)
@@ -504,7 +520,7 @@ class Interpreter:
         if self.locals is not None and name in self.locals:
             value = self.locals[name]
             return value.get() if isinstance(value, _Reference) else value
-        if name in self.variables and (self.locals is None or name in self.module_names):
+        if self._has_module_context and name in self.variables and (self.locals is None or name in self.module_names):
             return self.variables[name]
         if name in self.imports:
             raise TypeError(f"Имя модуля допустимо только при вызове его подпрограммы: {node.name}")
@@ -513,6 +529,8 @@ class Interpreter:
         if name in self.functions:
             return self.functions[name]
         if name in ("thisobject", "этотобъект"):
+            if not self._has_module_context:
+                raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
             return self._self_module
         if name in ("символы", "chars"):
             return CHARS
@@ -804,10 +822,14 @@ class Interpreter:
                      owner: "Interpreter", *, require_value: bool) -> object:
         if function.is_async and function.execution_context != "client":
             raise ValueError("Асинхронные подпрограммы допустимы только на клиенте")
-        if function.execution_context not in {"client", "server"}:
+        if (function.execution_context not in {"client", "server"}
+                or type(function.module_context) is not bool
+                or (function.execution_context == "client" and not function.module_context)):
             raise ValueError("Подпрограмма требует неподдерживаемый контекст исполнения")
         if self._logical_side == "server" and function.execution_context == "client":
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
+        if not self._has_module_context and function.module_context:
+            raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
         crossing = self._logical_side == "client" and function.execution_context == "server"
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
@@ -861,7 +883,8 @@ class Interpreter:
             names = list(bindings)
             copied = self._copy_context_packet([bindings[name] for name in names])
             bindings = dict(zip(names, copied))
-            owner = owner._new_server_activation()
+            owner = (owner._new_server_activation() if function.module_context else
+                     owner._new_server_activation(module_context=False))
         if function.is_async:
             promise = self._scheduler.start(owner._async_body(function, bindings),
                                             procedure=not function.is_function)
@@ -871,6 +894,7 @@ class Interpreter:
         # One cleanup boundary encloses BOTH initializer and routine execution.
         owner.locals = None if crossing else bindings
         owner._context_stack.append(function.execution_context)
+        owner._module_context_stack.append(function.module_context)
         try:
             if crossing:
                 for initializer in owner.server_initializers:
@@ -893,6 +917,7 @@ class Interpreter:
                     reference.set(value)
             return result
         finally:
+            owner._module_context_stack.pop()
             owner._context_stack.pop()
             owner.locals = previous
             if crossing:
@@ -902,6 +927,7 @@ class Interpreter:
         previous = self.locals
         self.locals = bindings
         self._context_stack.append("client")
+        self._module_context_stack.append(True)
         try:
             try:
                 yield from self.block(function.body)
@@ -909,6 +935,7 @@ class Interpreter:
                 return returned.value
             return None
         finally:
+            self._module_context_stack.pop()
             self._context_stack.pop()
             self.locals = previous
 
@@ -956,16 +983,16 @@ class Interpreter:
 
         return [copy(value, 0) for value in values]
 
-    def _new_server_activation(self) -> "Interpreter":
+    def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
         server = Interpreter(self.output, encoding=self.encoding, native_target=self.native_target)
         server._scheduler = self._scheduler
         server._logical_side = "server"
         server._context_stack = self._context_stack
         server.routines = self.server_routines.copy()
-        server.module_names = self.server_module_names.copy()
+        server.module_names = self.server_module_names.copy() if module_context else set()
         server.variables = dict.fromkeys(server.module_names)
-        server.server_initializers = self.server_initializers.copy()
+        server.server_initializers = self.server_initializers.copy() if module_context else []
         server._client_routine_names = set(self.routines)
         # Keep server-bound core helpers. Copy registered host functions while
         # rebinding this interpreter's methods, never retaining client frames.
@@ -999,7 +1026,7 @@ class Interpreter:
             name = node.name.casefold()
             if self.locals is not None and name in self.locals:
                 scope = self.locals
-            elif name in self.variables and (self.locals is None or name in self.module_names):
+            elif self._has_module_context and name in self.variables and (self.locals is None or name in self.module_names):
                 scope = self.variables
             else:
                 return (yield from self._visit(node))
@@ -1105,11 +1132,12 @@ class Interpreter:
         name = name.casefold()
         if (name in ("thisobject", "этотобъект")
                 and not (self.locals is not None and name in self.locals)
-                and not (name in self.variables and (self.locals is None or name in self.module_names))):
+                and not (self._has_module_context and name in self.variables
+                         and (self.locals is None or name in self.module_names))):
             raise ValueError(f"Нельзя присвоить значение свойству только для чтения: {name}")
         if name in self.imports and self.locals is None:
             raise ValueError(f"Нельзя присвоить значение имени импорта: {name}")
-        if self.locals is None or (name in self.module_names and name not in self.locals):
+        if self.locals is None or (self._has_module_context and name in self.module_names and name not in self.locals):
             self.variables[name] = value
         elif isinstance(self.locals.get(name), _Reference):
             self.locals[name].set(value)

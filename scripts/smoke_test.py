@@ -2306,6 +2306,38 @@ def check_side_local_module_variables(executable, *, directory, env):
           'persistence, BOM file, -c, stdin and console')
 
 
+def check_server_nocontext(executable, *, directory, env):
+    """Replay captured NoContext values with the measured logical-bit projection."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    code = (probes / 'nocontext_core.bsl').read_text(encoding='utf-8')
+    code += '\nRunNoContextProbe();\n'
+    capture = json.loads((probes / 'nocontext_native.json').read_text(encoding='utf-8'))
+    if len(capture['labels']) != 14 or len(capture['values']) != 14:
+        raise AssertionError('NoContext capture width')
+    capture['values'][2] = (1 if capture['values'][2] & 4 else 0) + (2 if capture['values'][2] & 8 else 0)
+    expected = ''
+    for label, value in zip(capture['labels'], capture['values']):
+        if type(value) is bool:
+            token = '{"B",' + str(int(value)) + '}'
+        elif type(value) is int:
+            token = '{"N",' + str(value) + '}'
+        else:
+            raise AssertionError('NoContext capture type')
+        expected += 'nocontext.core.' + label + ': ' + token + '\n'
+    source = directory / 'БезКонтекста.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Server NoContext failed {arguments!r}: {result!r}')
+    print('Binary server NoContext passed: fourteen measured/projection values, normal and '
+          'escaping boundary copyout, same-server references, logical flags, BOM file, -c, '
+          'stdin and console')
+
+
 def check_extended_exceptions(executable, *, directory, env):
     """Core structured exception flow and unsupported-display REPL recovery."""
     directory.mkdir()
@@ -2428,6 +2460,7 @@ def main() -> None:
         check_async_language(executable, directory=Path(temporary) / "async-language", env=env)
         check_exported_module_variables(executable, directory=Path(temporary) / "exported-module-variables", env=env)
         check_side_local_module_variables(executable, directory=Path(temporary) / "side-local-module", env=env)
+        check_server_nocontext(executable, directory=Path(temporary) / "server-nocontext", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)
