@@ -1,6 +1,7 @@
 """Synthetic controller fixtures, not evidence from a native 1C installation."""
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import importlib.util
@@ -46,6 +47,7 @@ class FixtureNative:
     def __init__(self,provenance,fail=None):
         self.events=[]; self.provenance=provenance; self.dbs={}; self.reference=False
         self.fail=fail; self.clean=(True,True); self.controller=None
+    def begin_stage(self,stage): pass
     def event(self,*args):
         self.events.append(args)
         if self.fail==self.controller.stage and args[0]!='cleanup':
@@ -169,6 +171,128 @@ class LifecycleTests(unittest.TestCase):
         backend.seed=lambda: (_ for _ in ()).throw(RuntimeError('SECRET native path /tmp/private'))
         raw=protocol.encode(controller.run())
         self.assertNotIn(b'SECRET',raw); self.assertNotIn(b'/tmp/private',raw)
+
+
+class SeedDiagnosticTests(unittest.TestCase):
+    """Synthetic launch-boundary injection; no native command is executed."""
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name).resolve()
+        self.identity=provenance(); self.native=stage.Native(NONCE,self.identity)
+        self.native.root=self.root; self.native.artifacts=self.root/'artifacts'; self.native.artifacts.mkdir()
+        self.native.evidence=self.root/'evidence'; self.native.evidence.mkdir()
+        self.native.v1=self.root/'v1'; self.native.v2=self.root/'v2'
+        self.native.begin_stage('seed_v1')
+        self.launches=[]
+
+    def platform(self, failed=None, exception=None):
+        stack=contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        for name in ('budgets','preflight'):
+            stack.enter_context(mock.patch.object(self.native,name))
+        stack.enter_context(mock.patch.object(self.native,'quiescent',return_value=True))
+        stack.enter_context(mock.patch.object(self.native,'cleanup',return_value=(True,True)))
+        for name in ('zero_result','inject','promote_v2','verify_redump'):
+            stack.enter_context(mock.patch.object(stage,name))
+        stack.enter_context(mock.patch.object(stage,'native_file_summary',return_value=physical()))
+        stack.enter_context(mock.patch.object(stage,'regular_bytes',return_value=b'{}'))
+        stack.enter_context(mock.patch.object(stage,'marker',return_value={'actual_version':protocol.VERSION}))
+        def launch(*args,**kwargs):
+            operation=self.native.seed_pending
+            self.assertEqual(self.native.seed_launched,operation)
+            self.launches.append(operation)
+            if operation==failed and exception is not None: raise exception
+            child=mock.Mock(); code=53 if operation==failed else 0
+            child.poll.return_value=code; child.wait.return_value=code
+            return child
+        return stack.enter_context(mock.patch.object(stage.subprocess,'Popen',side_effect=launch))
+
+    def test_each_seed_command_nonzero_is_identified_and_dependencies_stop(self):
+        for operation in protocol.SEED_OPERATIONS:
+            with self.subTest(operation=operation):
+                # Use a fresh native instance/evidence directory for every run.
+                self.native.counter+=10; self.launches.clear()
+                with self.platform(failed=operation):
+                    report=stage.Controller(self.native,protocol.empty_report(NONCE,self.identity)).run()
+                self.assertEqual(report['failed_stage'],'seed_v1')
+                self.assertEqual(report['failure_kind'],'seed_'+operation+'_process_failed')
+                self.assertEqual(self.launches,list(protocol.SEED_OPERATIONS[:protocol.SEED_OPERATIONS.index(operation)+1]))
+                self.assertEqual(report['snapshots'],[]); self.assertEqual(report['artifacts'],[])
+                self.assertEqual(self.native.stage,'cleanup')
+                self.assertIsNone(self.native.seed_pending); self.assertIsNone(self.native.seed_launched)
+                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity)
+
+    def test_prelaunch_failure_is_not_labeled_as_a_launched_operation(self):
+        launch=self.platform()
+        with mock.patch.object(self.native,'budgets',side_effect=OracleError('artifact_limit')):
+            report=stage.Controller(self.native,protocol.empty_report(NONCE,self.identity)).run()
+        self.assertEqual(report['failure_kind'],'artifact_limit'); launch.assert_not_called()
+        self.assertIsNone(self.native.seed_pending); self.assertIsNone(self.native.seed_launched)
+
+    def test_metadata_preparation_does_not_inherit_dump_launch(self):
+        self.platform()
+        with mock.patch.object(stage,'inject',side_effect=ValueError('SECRET /private/config.xml')):
+            report=stage.Controller(self.native,protocol.empty_report(NONCE,self.identity)).run()
+        self.assertEqual(self.launches,['create','dump_empty'])
+        self.assertEqual(report['failure_kind'],'metadata_rejected')
+        raw=protocol.encode(report)
+        self.assertNotIn(b'SECRET',raw); self.assertNotIn(b'/private',raw)
+
+    def test_postlaunch_result_validation_retains_operation(self):
+        self.platform()
+        with mock.patch.object(stage,'zero_result',side_effect=OracleError('invalid_dump_result')):
+            report=stage.Controller(self.native,protocol.empty_report(NONCE,self.identity)).run()
+        self.assertEqual(report['failure_kind'],'seed_create_invalid_dump_result')
+
+    def test_launch_exception_is_finite_and_never_exports_text(self):
+        self.platform(failed='apply',exception=OSError('SECRET /private/native.log'))
+        report=stage.Controller(self.native,protocol.empty_report(NONCE,self.identity)).run()
+        self.assertEqual(report['failure_kind'],'seed_apply_unexpected_failure')
+        raw=protocol.encode(report)
+        self.assertNotIn(b'SECRET',raw); self.assertNotIn(b'/private',raw)
+        protocol.validate_report(raw,nonce=NONCE,provenance=self.identity)
+
+    def test_success_clears_context_before_next_stage(self):
+        self.platform(); self.native.seed()
+        self.assertEqual(self.launches,list(protocol.SEED_OPERATIONS))
+        self.assertIsNone(self.native.seed_pending); self.assertIsNone(self.native.seed_launched)
+        self.native.seed_pending='apply'; self.native.seed_launched='apply'
+        self.native.begin_stage('baseline')
+        self.assertIsNone(self.native.seed_pending); self.assertIsNone(self.native.seed_launched)
+        child=mock.Mock(); child.poll.return_value=1; child.wait.return_value=1
+        with mock.patch.object(stage.subprocess,'Popen',return_value=child),self.assertRaises(OracleError) as error:
+            self.native.process(['synthetic'],'later-command')
+        self.assertEqual(error.exception.kind,'process_failed')
+
+    def test_operation_context_rejects_unknown_boolean_and_wrong_stage(self):
+        for operation in ('unknown',False,True,None,1):
+            with self.subTest(operation=operation),self.assertRaises(OracleError):
+                with self.native.seed_command(operation): self.fail('entered invalid context')
+        for name in protocol.STAGES:
+            if name=='seed_v1': continue
+            self.native.begin_stage(name)
+            with self.subTest(stage=name),self.assertRaises(OracleError):
+                with self.native.seed_command('create'): self.fail('entered non-seed context')
+
+    def test_controller_rejects_stale_seed_failure_in_later_stage(self):
+        identity=provenance(); backend=FixtureNative(identity)
+        controller=stage.Controller(backend,protocol.empty_report(NONCE,identity)); backend.controller=controller
+        backend.freeze=lambda *args: (_ for _ in ()).throw(stage.SeedCommandError('process_failed','apply'))
+        report=controller.run()
+        self.assertEqual(report['failed_stage'],'baseline')
+        self.assertEqual(report['failure_kind'],'unexpected_failure')
+        protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=identity)
+
+    def test_primary_seed_failure_survives_native_cleanup_failure(self):
+        self.platform(failed='import')
+        with mock.patch.object(self.native,'cleanup',return_value=(False,False)):
+            report=stage.Controller(self.native,protocol.empty_report(NONCE,self.identity)).run()
+        self.assertEqual(report['failure_kind'],'seed_import_process_failed')
+        self.assertEqual(report['failed_stage'],'seed_v1')
+        self.assertEqual(report['stages'][-1]['status'],'failed')
+        self.assertFalse(report['cleanup']['native_processes_stopped'])
+        self.assertFalse(report['cleanup']['raw_files_removed']); self.assertFalse(report['accepted'])
+        protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity)
 
 
 @unittest.skipUnless(os.name=='posix' and hasattr(os,'O_NOFOLLOW'), 'native file safety requires POSIX')

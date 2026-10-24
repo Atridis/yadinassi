@@ -6,6 +6,7 @@ No interpreter/parser implementation and no native payload export live here.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -21,7 +22,8 @@ import time
 
 sys.dont_write_bytecode = True
 from protocol import (ARTIFACTS, CHECKS, COMPARISONS, FAILURES, IMAGE, LANE, MAX_REPORT_BYTES,
-    STAGES, VERSION, decode, empty_report, encode, expected_logical, logical_from_marker,
+    SEED_FAILURE_CATEGORIES, SEED_FAILURES, SEED_OPERATIONS, STAGES, VERSION,
+    decode, empty_report, encode, expected_logical, logical_from_marker,
     marker, require, validate_logical, validate_report)
 from snapshots import (OracleError, MAX_FILE_BYTES, MAX_LIVE_BYTES, budget_check, clone_database,
     compare_files, compare_pair, file_summary, freeze_database)
@@ -34,6 +36,15 @@ COMMAND_SECONDS = 120
 WORK_SECONDS = 2340
 MAX_LOG_BYTES = 1048576
 MAX_LOG_TOTAL = 16777216
+
+
+class SeedCommandError(OracleError):
+    """Internal fixed launch context; only Controller may encode it publicly."""
+    def __init__(self, kind, operation):
+        require(type(operation) is str and operation in SEED_OPERATIONS
+                and type(kind) is str and kind in SEED_FAILURE_CATEGORIES, 'invalid_input')
+        super().__init__(kind)
+        self.operation=operation
 
 
 def absent(*paths):
@@ -158,6 +169,28 @@ class Native:
         self.deadline=time.monotonic()+WORK_SECONDS
         self.baseline=None; self.initial=None; self.services=[]; self.counter=0
         self.v1=ROOT/'metadata-v1'; self.v2=ROOT/'metadata-v2'
+        self.stage='preflight'; self.seed_pending=None; self.seed_launched=None
+
+    def begin_stage(self, stage):
+        require(type(stage) is str and stage in STAGES, 'invalid_input')
+        self.stage=stage
+        # Never let an earlier seed launch relabel a later-stage failure.
+        self.seed_pending=None; self.seed_launched=None
+
+    @contextmanager
+    def seed_command(self, operation):
+        require(self.stage=='seed_v1' and type(operation) is str
+                and operation in SEED_OPERATIONS and self.seed_pending is None, 'invalid_input')
+        self.seed_pending=operation; self.seed_launched=None
+        try:
+            yield
+        except BaseException as error:
+            kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
+            if self.stage=='seed_v1' and self.seed_launched==operation and kind in SEED_FAILURE_CATEGORIES:
+                raise SeedCommandError(kind,operation) from None
+            raise
+        finally:
+            self.seed_pending=None; self.seed_launched=None
 
     def remaining(self):
         remaining=self.deadline-time.monotonic()
@@ -180,6 +213,10 @@ class Native:
         console=self.evidence/f'{self.counter:03}-{label}-console.log'
         absent(console)
         with console.open('xb') as log:
+            if self.seed_pending is not None:
+                require(native and self.stage=='seed_v1' and self.seed_pending in SEED_OPERATIONS, 'invalid_input')
+                # This is the launch boundary, not success or proof of an infobase.
+                self.seed_launched=self.seed_pending
             child=subprocess.Popen(args,cwd=self.evidence,stdin=subprocess.DEVNULL,
                 stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             deadline=min(self.deadline,time.monotonic()+COMMAND_SECONDS)
@@ -283,18 +320,24 @@ class Native:
             control.unlink(missing_ok=True); result.unlink(missing_ok=True)
 
     def seed(self):
-        database=self.create_db('seed')
+        with self.seed_command('create'):
+            database=self.create_db('seed')
         native=self.root/'native-empty'; absent(native)
-        self.batch(database,['/DumpConfigToFiles',str(native),'-Format','Hierarchical'],'dump-empty',None)
+        with self.seed_command('dump_empty'):
+            self.batch(database,['/DumpConfigToFiles',str(native),'-Format','Hierarchical'],'dump-empty',None)
         try:
             inject(native,self.v1,nonce=self.nonce,evidence=self.evidence)
             promote_v2(self.v1,self.v2)
         except (ValueError,OSError):
             raise OracleError('metadata_rejected') from None
-        self.batch(database,['/LoadConfigFromFiles',str(self.v1)],'seed-import',None)
-        self.batch(database,['/UpdateDBCfg'],'seed-apply',None)
-        self.redump(database,1,user=None)
-        self.enterprise(database,'bootstrap')
+        with self.seed_command('import'):
+            self.batch(database,['/LoadConfigFromFiles',str(self.v1)],'seed-import',None)
+        with self.seed_command('apply'):
+            self.batch(database,['/UpdateDBCfg'],'seed-apply',None)
+        with self.seed_command('redump'):
+            self.redump(database,1,user=None)
+        with self.seed_command('bootstrap'):
+            self.enterprise(database,'bootstrap')
         return database
 
     def redump(self, database, version, user=SETUP_USER):
@@ -461,6 +504,7 @@ class Controller:
         try:
             for stage in STAGES[:-1]:
                 self.stage=stage
+                self.backend.begin_stage(stage)
                 if stage=='preflight': self.backend.preflight()
                 elif stage=='seed_v1': database=self.backend.seed()
                 elif stage=='baseline':
@@ -490,15 +534,19 @@ class Controller:
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
+            if isinstance(error,SeedCommandError):
+                kind=('seed_' + error.operation + '_' + kind) if self.stage=='seed_v1' else 'unexpected_failure'
+            if kind in SEED_FAILURES and self.stage!='seed_v1': kind='unexpected_failure'
             self.report.update(status='failed',failed_stage=self.stage,failure_kind=kind)
             self.report['stages'][STAGES.index(self.stage)]['status']='failed'
         finally:
+            self.backend.begin_stage('cleanup')
             processes,files=self.backend.cleanup()
             self.report['cleanup'].update(native_processes_stopped=processes,raw_files_removed=files)
             entry=self.report['stages'][-1]
             entry['checks']={'native_processes_stopped':processes,'raw_files_removed':files}
             entry['status']='ok' if processes and files else 'failed'
-            if not(processes and files):
+            if not(processes and files) and self.report['status']=='ok':
                 self.report.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified')
             if self.report['status']!='ok': self.report['artifacts']=[]
         return self.report

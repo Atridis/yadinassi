@@ -61,8 +61,12 @@ def container_command(staged,name,nonce):
         '/bin/bash','--noprofile','--norc','/oracle/probe.sh','--invocation-nonce',nonce]
 
 
-def fail_report(report,kind,stage='preflight'):
-    report.update(status='failed',failed_stage=stage,failure_kind=kind,accepted=False)
+def fail_report(report,kind,stage='preflight',*,preserve_primary=False):
+    # Cleanup has its own checks; do not erase a validated primary failure.
+    preserve=(preserve_primary and stage=='cleanup' and kind=='cleanup_unverified'
+              and report['status']=='failed' and report['failed_stage']!='cleanup')
+    if not preserve:
+        report.update(status='failed',failed_stage=stage,failure_kind=kind,accepted=False)
     entry=report['stages'][STAGES.index(stage)]
     entry['status']='failed'
     entry['checks']=({key:report['cleanup'][key] for key in CHECKS[stage]} if stage=='cleanup'
@@ -127,7 +131,7 @@ def run_oracle(temp_root):
         report['cleanup'].update(native_processes_stopped=True,raw_files_removed=True)
     report['cleanup'].update(container_removed=container_removed,private_staging_removed=private_removed)
     if not container_removed or not private_removed:
-        fail_report(report,'cleanup_unverified','cleanup')
+        fail_report(report,'cleanup_unverified','cleanup',preserve_primary=validated)
     elif not attempted or not validated:
         entry=report['stages'][-1]; entry['status']='ok'; entry['checks']={key:True for key in CHECKS['cleanup']}
     report['accepted']=report['status']=='ok' and all(report['cleanup'].values())

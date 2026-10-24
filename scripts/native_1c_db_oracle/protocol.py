@@ -52,6 +52,16 @@ FAILURES = frozenset({'none', 'invalid_input', 'provenance_mismatch', 'permissio
     'logical_mismatch', 'snapshot_not_quiescent', 'snapshot_changed', 'invalid_header',
     'cleanup_unverified', 'metadata_rejected', 'version_mismatch', 'unexpected_failure',
     'registry_credentials_missing', 'container_unavailable', 'transport_invalid'})
+# Seed launch diagnostics are a finite enum, never native text or numeric exit data.
+SEED_OPERATIONS = ('create', 'dump_empty', 'import', 'apply', 'redump', 'bootstrap')
+SEED_FAILURE_CATEGORIES = frozenset({'invalid_input', 'permission_mismatch',
+    'process_failed', 'timeout', 'invalid_dump_result', 'stale_evidence',
+    'artifact_missing', 'artifact_limit', 'invalid_marker', 'logical_mismatch',
+    'snapshot_not_quiescent', 'snapshot_changed', 'metadata_rejected',
+    'version_mismatch', 'unexpected_failure'})
+SEED_FAILURES = frozenset('seed_' + operation + '_' + category
+    for operation in SEED_OPERATIONS for category in SEED_FAILURE_CATEGORIES)
+FAILURES = FAILURES | SEED_FAILURES
 LOGICAL_KEYS = {'count','code','payload','amount','deletion_mark','same_reference',
     'payload_length','amount_digits','amount_scale','designer_version','applied_version',
     'user','role_verified','nonprivileged'}
@@ -186,7 +196,10 @@ def validate_report(raw, *, nonce, provenance, final=False):
     require(type(report['schema']) is int and report['schema'] == SCHEMA and report['lane'] == LANE
             and report['nonce'] == nonce and re.fullmatch('[0-9a-f]{32}',nonce) is not None)
     validate_provenance(report['provenance'], provenance)
-    require(report['status'] in ('ok','failed') and report['failure_kind'] in FAILURES)
+    require(report['status'] in ('ok','failed') and type(report['failure_kind']) is str
+            and report['failure_kind'] in FAILURES)
+    if report['failure_kind'] in SEED_FAILURES:
+        require(report['status']=='failed' and report['failed_stage']=='seed_v1')
     require(type(report['accepted']) is bool)
     require(type(report['stages']) is list and len(report['stages']) == len(STAGES))
     failed = []

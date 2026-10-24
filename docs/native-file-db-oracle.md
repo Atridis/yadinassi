@@ -150,6 +150,19 @@ exists, including a rejected run; it does not mean native success. Only
 gates passed. A failed cleanup may be diagnosed in this finite report but cannot
 produce accepted evidence.
 
+Seed failures may use only the fixed `seed_<operation>_<category>` enum, with
+operations `create`, `dump_empty`, `import`, `apply`, `redump`, and `bootstrap`
+and the existing finite native-failure categories listed in `protocol.py`.
+The operation is recorded immediately before its launch attempt and cleared at
+scope/stage transitions. Pre-launch failures and metadata preparation between
+commands retain the generic category. `process_failed` proves a nonzero native
+exit, not its numeric exit value or cause. Launch context is not proof of command
+success. These diagnostics are accepted only for a failed `seed_v1` stage; no
+new keys, raw logs, exception strings, native paths, or exit text are emitted.
+A primary failure remains visible if cleanup also fails; separate cleanup
+checks/stage still fail, and acceptance remains false. Later stages cannot
+inherit a seed-operation label.
+
 Version 1 deliberately classifies all binary headers as unknown and page analysis
 as unsupported. Differences are streamed as **64 KiB byte windows, not pages**.
 Changed/added/removed bytes, size deltas and bounded sample indices are validated.

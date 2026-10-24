@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 import unittest
+from unittest import mock
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts/native_1c_db_oracle'))
@@ -11,6 +12,17 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import protocol
 from snapshots import OracleError
 from test_native_1c_db_oracle_stage import NONCE,fixture_report,provenance
+
+SEED_OPERATIONS = ('create','dump_empty','import','apply','redump','bootstrap')
+SEED_FAILURE_CATEGORIES = frozenset({
+    'invalid_input','permission_mismatch','process_failed','timeout','invalid_dump_result',
+    'stale_evidence','artifact_missing','artifact_limit','invalid_marker','logical_mismatch',
+    'snapshot_not_quiescent','snapshot_changed','metadata_rejected','version_mismatch',
+    'unexpected_failure',
+})
+SEED_FAILURES = frozenset(f'seed_{operation}_{category}'
+    for operation in SEED_OPERATIONS for category in SEED_FAILURE_CATEGORIES)
+PRIVATE = 'PRIVATE-SYNTHETIC-NATIVE-DATA'
 
 
 class ProtocolTests(unittest.TestCase):
@@ -70,6 +82,108 @@ class ProtocolTests(unittest.TestCase):
     def test_failure_never_exposes_ready_artifact(self):
         failed,_=fixture_report('delete'); failed['artifacts']=copy.deepcopy(self.good['artifacts'])
         with self.assertRaises(OracleError): self.check(failed)
+
+    def test_seed_failure_vocabulary_is_exact_fixed_native_cross_product(self):
+        self.assertEqual(protocol.SEED_OPERATIONS,SEED_OPERATIONS)
+        self.assertEqual(protocol.SEED_FAILURE_CATEGORIES,SEED_FAILURE_CATEGORIES)
+        self.assertEqual(protocol.SEED_FAILURES,SEED_FAILURES)
+        self.assertEqual(len(SEED_FAILURES),90)
+        self.assertEqual({value for value in protocol.FAILURES if value.startswith('seed_')},SEED_FAILURES)
+        self.assertTrue(SEED_FAILURES <= protocol.FAILURES)
+
+    def test_every_seed_failure_roundtrips_only_as_unaccepted_seed_diagnosis(self):
+        source,_=fixture_report('seed_v1')
+        for kind in sorted(SEED_FAILURES):
+            for final in (False,True):
+                with self.subTest(kind=kind,final=final):
+                    value=copy.deepcopy(source); value['failure_kind']=kind
+                    if final:
+                        value['cleanup'].update(container_removed=True,private_staging_removed=True)
+                    observed=self.check(value,final)
+                    self.assertEqual(observed,value)
+                    self.assertEqual(observed['failed_stage'],'seed_v1')
+                    self.assertEqual(observed['stages'][1]['status'],'failed')
+                    self.assertFalse(observed['accepted'])
+                    for key in ('artifacts','snapshots','comparisons'):
+                        self.assertEqual(observed[key],[])
+                    self.assertNotIn(PRIVATE,protocol.encode(observed).decode())
+
+    def test_seed_failure_rejects_unknown_and_nonstring_values_without_echo(self):
+        source,_=fixture_report('seed_v1')
+        unsupported = (protocol.FAILURES - SEED_FAILURES - SEED_FAILURE_CATEGORIES)
+        values = [None,True,False,0,1,1.5,[],{},[PRIVATE],{'raw':PRIVATE},
+            '',PRIVATE,'seed_unknown_process_failed','seed_create_process_failed_'+PRIVATE,
+            'seed_create_process_failed\n'+PRIVATE,'seed_create_'+PRIVATE,
+            'seed_create_seed_create_process_failed',
+            *(f'seed_{operation}_{category}' for operation in SEED_OPERATIONS
+              for category in sorted(unsupported))]
+        for kind in values:
+            with self.subTest(kind=kind):
+                value=copy.deepcopy(source); value['failure_kind']=kind
+                with self.assertRaises(OracleError) as caught:
+                    self.check(value)
+                self.assertEqual(caught.exception.kind,'transport_invalid')
+                self.assertNotIn(PRIVATE,str(caught.exception))
+
+    def test_failure_kind_requires_exact_string_even_for_decoder_objects(self):
+        class StringSubclass(str):
+            pass
+        source,_=fixture_report('seed_v1')
+        for kind in ('process_failed','seed_create_process_failed'):
+            with self.subTest(kind=kind):
+                source['failure_kind']=StringSubclass(kind)
+                with mock.patch.object(protocol,'decode',return_value=source),self.assertRaises(OracleError):
+                    self.check(source)
+
+    def test_seed_composites_cannot_appear_in_success_or_other_failed_stages(self):
+        for stage in protocol.STAGES:
+            if stage=='seed_v1':
+                continue
+            if stage=='cleanup':
+                source=copy.deepcopy(self.good)
+                source.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified',artifacts=[])
+                source['stages'][-1]['status']='failed'
+                source['stages'][-1]['checks']['raw_files_removed']=False
+                source['cleanup']['raw_files_removed']=False
+            else:
+                source,_=fixture_report(stage)
+            self.check(source)
+            for kind in sorted(SEED_FAILURES):
+                with self.subTest(stage=stage,kind=kind):
+                    value=copy.deepcopy(source); value['failure_kind']=kind
+                    with self.assertRaises(OracleError): self.check(value)
+        for kind in sorted(SEED_FAILURES):
+            with self.subTest(stage='success',kind=kind):
+                value=copy.deepcopy(self.good); value['failure_kind']=kind
+                with self.assertRaises(OracleError): self.check(value)
+
+    def test_seed_failure_requires_failed_primary_seed_not_just_failed_cleanup(self):
+        source=copy.deepcopy(self.good)
+        source.update(status='failed',failed_stage='seed_v1',failure_kind='seed_bootstrap_invalid_marker',artifacts=[])
+        source['stages'][-1]['status']='failed'
+        source['stages'][-1]['checks']['raw_files_removed']=False
+        source['cleanup']['raw_files_removed']=False
+        for state in ('ok','not_started'):
+            with self.subTest(seed_state=state):
+                value=copy.deepcopy(source); seed=value['stages'][1]
+                seed['status']=state
+                seed['checks']={key:state=='ok' for key in protocol.CHECKS['seed_v1']}
+                with self.assertRaises(OracleError): self.check(value)
+
+    def test_primary_seed_failure_and_independent_cleanup_failure_are_valid(self):
+        source,_=fixture_report('seed_v1')
+        for kind in sorted(SEED_FAILURES):
+            with self.subTest(kind=kind):
+                value=copy.deepcopy(source); value['failure_kind']=kind
+                value['stages'][-1]['status']='failed'
+                value['stages'][-1]['checks']['raw_files_removed']=False
+                value['cleanup'].update(raw_files_removed=False,container_removed=False,
+                                        private_staging_removed=False)
+                observed=self.check(value,True)
+                self.assertEqual(observed['failure_kind'],kind)
+                self.assertEqual(observed['failed_stage'],'seed_v1')
+                self.assertFalse(observed['accepted'])
+                self.assertEqual(observed['artifacts'],[])
 
     def test_no_observations_for_unexecuted_stages(self):
         failed,_=fixture_report('preflight')
