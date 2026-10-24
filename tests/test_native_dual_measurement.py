@@ -268,10 +268,11 @@ class DualWitnessTests(SyntheticFilesystemCase):
         self.assertNotRegex(tail.decode(),r'(?im)^\s*(?:Function|Procedure|Var|Функция|Процедура|Перем)\b')
         self.assertNotIn(tail,linux_fixture(ROOT/SOURCE))
 
-    def test_all_four_historical_modules_remain_exact(self):
+    def test_three_historical_modules_and_current_collections_are_pinned(self):
         hashes = {'dates':'52b307cda539370ec0a7f5f28fbd22e0454934df2a287dcb2eb8e22f9f734d8e',
             'values':'814858ce2af10afc86882ec719a19f41589effabb71b83882d94d6077d90e824',
-            'collections':'225d4f9d617872d821fcfcbe18c4bad7a0b2e43dda54aad6b9dbb02e7b3f01f0',
+            # Collections now includes the source-only EXCLUDE measurement, not native parity.
+            'collections':'b8d28abf2a28f7ff11958f9f3a31a966e3032484b8f0cf7d316b24ef8fb847e8',
             'numbers':'271be42fcb2df2ad497c5e8ba1edcfe94e24779f00820ba3a7191eddc60eb7f2'}
         raw = linux_fixture(ROOT/full.CLIENT_SOURCE)
         for name, expected in hashes.items():

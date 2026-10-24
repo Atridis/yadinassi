@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 import unittest
 
-from scripts.native_historical_replay import without_fill_include_probes, FILL_INCLUDE_PROBE_BLOCKS
+from scripts.native_historical_replay import without_fill_exclude_probes, without_fill_include_probes, FILL_INCLUDE_PROBE_BLOCKS
 from yadinassi import Interpreter
 from yadinassi.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508, current_native_target
 
@@ -21,7 +21,7 @@ CASES = (
 class FillIncludeCheckpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        cls.source = without_fill_exclude_probes((ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig'))
         cls.original = without_fill_include_probes(cls.source)
 
     def test_exact_828_source_inverse_and_transport_only_normalization(self):

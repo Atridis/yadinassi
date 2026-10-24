@@ -119,10 +119,11 @@ class NoContextWitnessTests(unittest.TestCase):
         for name in ('Client','Server','ThickClientManagedApplication','ThickClientOrdinaryApplication','AtServerNoContext'):
             self.assertNotIn('#If '+name+' Then',source)
 
-    def test_legacy_module_bytes_match_audited_main(self):
+    def test_legacy_modules_and_source_only_collections_are_pinned(self):
         hashes={'dates':'52b307cda539370ec0a7f5f28fbd22e0454934df2a287dcb2eb8e22f9f734d8e',
             'values':'814858ce2af10afc86882ec719a19f41589effabb71b83882d94d6077d90e824',
-            'collections':'225d4f9d617872d821fcfcbe18c4bad7a0b2e43dda54aad6b9dbb02e7b3f01f0',
+            # Collections now includes the source-only EXCLUDE measurement, not native parity.
+            'collections':'b8d28abf2a28f7ff11958f9f3a31a966e3032484b8f0cf7d316b24ef8fb847e8',
             'numbers':'271be42fcb2df2ad497c5e8ba1edcfe94e24779f00820ba3a7191eddc60eb7f2'}
         for name, expected in hashes.items():
             actual=getattr(suite,'client_'+name+'_module')(linux_fixture(ROOT/f'integrational_tests/tests/{name}.bsl'),linux_fixture(ROOT/full.CLIENT_SOURCE))

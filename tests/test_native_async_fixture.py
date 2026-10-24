@@ -289,6 +289,150 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_exclude_order_measurement(source, *, host=False):
+    """Test-only inverse of the exact reviewed PR87 collections delta.
+
+    Whole input/output pins reject unrelated drift. Only named adapter tables,
+    the four literal EXCLUDE checks and explicit host lines are reversed; no
+    Async literals, protocol code or historical expected hashes are rewritten.
+    """
+    current, historical = (
+        ('6f46ca44455dc2143dccd2bdbbcc52642fc70fe0a053c37a8f1b3d740021d8ba',
+         '93fb5e833fab672b985c3f3c5a961ad0abb4279e3bd82e4c37992b0c062b1f3c') if host else
+        ('518a75c7aa4027ad692e853d3361bfc5e13a5c3829a5cafee0ebf72238c2cc43',
+         '2331a79996c930885858630417ed75cde1a0a827d604ffa38ce4200277cbc135'))
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == current
+
+    def replace_once(text, old, new):
+        assert text.count(old) == 1
+        return text.replace(old, new, 1)
+
+    if host:
+        replacements = (
+            ((
+                'COLLECTIONS_SOURCE_SHA256 = "42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb"\n'
+            ), (
+                'COLLECTIONS_SOURCE_SHA256 = "e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232"\n'
+            )),
+            ((
+                '                or type(data["message_count"]) is not int or data["message_count"] != 854\n'
+            ), (
+                '                or type(data["message_count"]) is not int or data["message_count"] != 841\n'
+            )),
+            ((
+                '                or type(server_case["message_count"]) is not int or server_case["message_count"] != 854):\n'
+            ), (
+                '                or type(server_case["message_count"]) is not int or server_case["message_count"] != 841):\n'
+            )),
+            ((
+                '                or not is_int(mismatch["count"], 854) or mismatch["count"] < 1\n'
+                '                or not is_int(mismatch["first"], 854) or mismatch["first"] < 1\n'
+                '                or mismatch["count"] > 855 - mismatch["first"]\n'
+            ), (
+                '                or not is_int(mismatch["count"], 841) or mismatch["count"] < 1\n'
+                '                or not is_int(mismatch["first"], 841) or mismatch["first"] < 1\n'
+                '                or mismatch["count"] > 842 - mismatch["first"]\n'
+            )),
+            ((
+                '                or any(not is_int(value, 854) or value < 1 for value in mismatch["ordinals"])\n'
+            ), (
+                '                or any(not is_int(value, 841) or value < 1 for value in mismatch["ordinals"])\n'
+            )),
+            ((
+                '                or mismatch["count"] - len(mismatch["ordinals"]) > 854 - mismatch["ordinals"][-1]):\n'
+            ), (
+                '                or mismatch["count"] - len(mismatch["ordinals"]) > 841 - mismatch["ordinals"][-1]):\n'
+            )),
+            ((
+                '            or not is_int(result["records"], 854) or not is_int(result["byte_equal_records"], result["records"])\n'
+            ), (
+                '            or not is_int(result["records"], 841) or not is_int(result["byte_equal_records"], result["records"])\n'
+            )),
+            ((
+                '        if (result["reason"] != "none" or result["records"] != 854\n'
+                '                or result["byte_equal_records"] + len(result["accepted_labels"]) != 854\n'
+                '                or raw_matched != (result["byte_equal_records"] == 854)):\n'
+            ), (
+                '        if (result["reason"] != "none" or result["records"] != 841\n'
+                '                or result["byte_equal_records"] + len(result["accepted_labels"]) != 841\n'
+                '                or raw_matched != (result["byte_equal_records"] == 841)):\n'
+            )),
+        )
+        for new, old in replacements:
+            source = replace_once(source, new, old)
+    else:
+        source = replace_once(source,
+            "CLIENT_COLLECTIONS_SOURCE_SHA256 = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'",
+            "CLIENT_COLLECTIONS_SOURCE_SHA256 = 'e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232'")
+        source = replace_once(source, 'CLIENT_COLLECTIONS_MESSAGE_COUNT = 854',
+                              'CLIENT_COLLECTIONS_MESSAGE_COUNT = 841')
+        nodes = [node for node in ast.parse(source).body
+                 if isinstance(node, ast.FunctionDef) and node.name == 'client_collections_module']
+        assert len(nodes) == 1
+        current_adapter = ast.get_source_segment(source, nodes[0])
+        adapter = current_adapter
+        for new, old in (
+            ('All 118 source helpers', 'All 116 source helpers'),
+            ('    body_start = 2823\n', '    body_start = 2766\n'),
+            ('    if (len(lines) != 3894\n', '    if (len(lines) != 3820\n'),
+            ("            or lines[9] != '    Перем Приемник, Источник, Статус, ЗначениеMissing, ЕстьMissing;\\n'\n", ''),
+            ("                     if re.match(r'^\\s*Перем\\s', line)) != (1, 9)\n",
+             "                     if re.match(r'^\\s*Перем\\s', line)) != (1,)\n"),
+        ):
+            adapter = replace_once(adapter, new, old)
+        exclude_checks = (
+            '    # Preserve exact new observer/setup text under a top-level-hash rebase too.\n'
+            '    exclude_blocks = (\n'
+            "        ('// Begin FillPropertyValues EXCLUDE source-order discriminator helpers.\\n', '// End FillPropertyValues EXCLUDE source-order discriminator helpers.\\n\\n',\n"
+            "         '4b79c88f666e55e19a704a1258da7fde10fe7e1f8731290808a27bcc5ab0484e'),\n"
+            "        ('// Begin FillPropertyValues EXCLUDE checkpoint helpers.\\n', '// End FillPropertyValues EXCLUDE checkpoint helpers.\\n\\n',\n"
+            "         'ba8891f93141eea9d2c799b21840031b1fa930ca6fb741022682599f89b22ea8'),\n"
+            "        ('// Begin FillPropertyValues EXCLUDE checkpoint observations.\\n', '// End FillPropertyValues EXCLUDE checkpoint observations.\\n',\n"
+            "         '789686567bbc3c47165c84aee9d617436f34b2295f59484068d8049a70fd906a'),\n"
+            "        ('// Begin FillPropertyValues EXCLUDE source-order discriminator observations.\\n', '// End FillPropertyValues EXCLUDE source-order discriminator observations.\\n',\n"
+            "         '7c10421d010312075ecaf0de592e2f17e04055c9d7ef47f1f797737324c3221c'),\n"
+            '    )\n'
+            '    for begin, finish, expected in exclude_blocks:\n'
+            '        if original.count(begin) != 1 or original.count(finish) != 1:\n'
+            "            raise FullError('invalid_input')\n"
+            '        content = begin + original.split(begin, 1)[1].split(finish, 1)[0] + finish\n'
+            "        if digest(content.encode('utf-8')) != expected:\n"
+            "            raise FullError('invalid_input')\n"
+        )
+        adapter = replace_once(adapter, exclude_checks, '')
+        # The exact two inserted helpers occupy 57 source lines before every
+        # pre-existing helper. The first region stays at line 3. Two added helper
+        # declarations/endings are removed, never arbitrary dictionary entries.
+        additions = {
+            'declarations': (
+                "        8: 'Процедура ПроверитьПозициюИсключения(Знач Позиция)\\n',\n",
+                "        36: 'Процедура ПроверитьСписокИсключения(Знач Метка, Знач Наличие, Знач Список)\\n',\n"),
+            'endings': ("        31: 'КонецПроцедуры\\n',\n", "        59: 'КонецПроцедуры\\n',\n"),
+        }
+        for name, expected_count in (('declarations', 116), ('endings', 116),
+                                     ('sites', 16), ('regions', 16), ('local_declarations', 4)):
+            begin = '    ' + name + ' = {\n'
+            assert adapter.count(begin) == 1
+            old_body = adapter.split(begin, 1)[1].split('    }\n', 1)[0]
+            body = old_body
+            for entry in additions.get(name, ()):
+                body = replace_once(body, entry, '')
+            lines = body.splitlines(keepends=True)
+            assert len(lines) == expected_count
+            restored = []
+            for line in lines:
+                match = re.fullmatch(r'        ([0-9]+)(: [^\n]+\n)', line)
+                assert match is not None
+                index = int(match[1])
+                assert index >= 64 or (name == 'regions' and index == 3)
+                restored.append('        ' + str(index - 57 if index >= 64 else index) + match[2])
+            adapter = replace_once(adapter, begin + old_body + '    }\n',
+                                   begin + ''.join(restored) + '    }\n')
+        source = replace_once(source, current_adapter, adapter)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == historical
+    return source
+
+
 def without_dual_measurement(source, *, host=False):
     """Test-only exact inverse retaining all historical whole-source/Async pins."""
     def replace_once(old, new):
@@ -316,12 +460,42 @@ def without_dual_measurement(source, *, host=False):
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
+    def test_exclude_inverse_restores_exact_immutable_main_and_rejects_drift(self):
+        # Independent immutable main 1378109 whole-source pins, not current pins.
+        for path, host, expected in (
+            (SNIPPET, False, '2331a79996c930885858630417ed75cde1a0a827d604ffa38ce4200277cbc135'),
+            (REPOSITORY / 'scripts/native_1c_full_host.py', True,
+             '93fb5e833fab672b985c3f3c5a961ad0abb4279e3bd82e4c37992b0c062b1f3c'),
+        ):
+            current = path.read_text(encoding='utf-8')
+            restored = without_exclude_order_measurement(current, host=host)
+            self.assertEqual(hashlib.sha256(restored.encode('utf-8')).hexdigest(), expected)
+            self.assertNotEqual(restored, current)
+            async_definition = ('def validate_async_case_observation(' if host
+                                else 'def async_client_module(')
+            self.assertEqual(current.count(async_definition), 1)
+            mutants = [current + '\n', current.replace('854', '853', 1),
+                       current.replace(async_definition, 'def changed_async_definition(', 1),
+                       restored]
+            if not host:
+                mutants += [current.replace('        64:', '        65:', 1),
+                            current.replace('4b79c88f666e55e19a704a1258da7fde10fe7e1f8731290808a27bcc5ab0484e',
+                                            '0' * 64, 1)]
+            for index, mutant in enumerate(mutants):
+                with self.subTest(host=host, mutation=index):
+                    self.assertTrue(mutant != current, "control must mutate source")
+                    with self.assertRaises(AssertionError):
+                        without_exclude_order_measurement(mutant, host=host)
+            with self.assertRaises(AssertionError):
+                without_exclude_order_measurement(current, host=not host)
+
     def test_error_payload_change_restores_exact_reviewed_production_sources(self):
         from test_native_async_protocol import full
         fixture = literal_sources()
         previous_aggregate = 'dc3cd3368ef737d4566eec13e9a4103f5fc26ff3c44ba4fc3d06bcd2adba3705'
         previous_identity = {'template': 'c60b81e77e69f20ce3bd3ee36ea0d7e44f5bea38639d8ded7e32fab74a9846b6', 'modules': ['80a842b78f20c6a52d7f68f9a8a0a52bde8316a497bc2033c68af4474fcc6c8a', 'd0820a1eed7a700916f6d070e27b19df2b85ba0386273f99d88784a79c7d8fb2', 'ae10664360da0c5242cfd77d1be01ee0fd9c74514598fec1c436635b2e8c3490', '52f4ef3fa979630bc0be401ddfe508a89ed7c1713a1d3b632c5f6f86d7528167', '49aaf7135bf9cf3a25e0c640e6b68936b2a7e1f7c126a0a25259a83e41e996a4', 'da305166b522673f1333c7cfdd375c7857d0cf4959f3c198758f4d82e69dad36', 'd6f5e0f89bbb8972386401504b1b0f9d74d7c5f7e583c391eb1c7e425c370046', '5ff92eac867884b73410f9312ade405cf44ed8b62ce019e53275bd53adaeff8b']}
-        source = without_error_payload_sentinels(without_dual_measurement(SNIPPET.read_text(encoding='utf-8')))
+        source = without_error_payload_sentinels(without_dual_measurement(
+            without_exclude_order_measurement(SNIPPET.read_text(encoding='utf-8'))))
         current_pin = 'ASYNC_FIXTURE_SHA256 = ' + repr(fixture['ASYNC_FIXTURE_SHA256'])
         self.assertEqual(source.count(current_pin), 1)
         source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
@@ -331,7 +505,8 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         # historical production-source pin; Async literal sources stay identical.
         self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
                          'd6d33aa4a86e118061881bc8903ec76990ed5d5486e7304768b539dc336366a3')
-        host = without_dual_measurement((REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8'), host=True)
+        host = without_dual_measurement(without_exclude_order_measurement(
+            (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8'), host=True), host=True)
         self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
         host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
         current_identity = 'ASYNC_EXPECTED_IDENTITY = ' + repr(full.ASYNC_EXPECTED_IDENTITY)
@@ -385,13 +560,15 @@ class AsyncFixtureSourcesTest(unittest.TestCase):
         # exact main 0dbb938 ordinary witness and module119 integration plus pinned temporary NoContext measurement.
         previous_aggregate = '6ecaab71ff8e580a26da2a30d3fb35e9aea4a37d2bd690008e42fa8e806532bb'
         previous_identity = {'template': '19e6444a1856d5f4b8769a80f9ed97df0a042559e8255849635dff083dc8aba4', 'modules': ['b72afebe539cd97cd3eebc28c2aaf6866375609f3bb15f6433c69fb2dd5f99f7', '8df02833ca425b23f81c8b318f0af6ac05605d39f4c008b7e753206ed1c5374b', 'bff8fc309d743edd5e2aad989acc69d9fc142cab4f6cb11164edc73a9b6ead57', '311e8e0483ebbb69f34beb1c71d44ce61a56caf362d180c13e1f744ceb5a7aa6', '0f60e947518b7140f56973fccb631e167309ca36d2da10ce41355e9bdf41be61', 'a2b82d56e4f705b0bef66955b35d279a788da1cf2295f28af278d4a381a5f755', '9dd42db7bca81ed3e36ae12602693f8f5e5efcaf71e37a77e5a6e582b03355f9', '028492c644622ed2e8e79d9b65d8f6b8566b2a4e202088272ff0c391e2203df8']}
-        source = without_ru_request_end_token(without_dual_measurement(SNIPPET.read_text(encoding='utf-8')))
+        source = without_ru_request_end_token(without_dual_measurement(
+            without_exclude_order_measurement(SNIPPET.read_text(encoding='utf-8'))))
         current_pin = 'ASYNC_FIXTURE_SHA256 = ' + repr(fixture['ASYNC_FIXTURE_SHA256'])
         self.assertEqual(source.count(current_pin), 1)
         source = source.replace(current_pin, 'ASYNC_FIXTURE_SHA256 = ' + repr(previous_aggregate))
         self.assertEqual(hashlib.sha256(source.encode('utf-8')).hexdigest(),
                          '0a0bb4cc7c5a4acea0b378fb21a5684448381db4234870f67774df1bd21c3aca')
-        host = without_dual_measurement((REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8'), host=True)
+        host = without_dual_measurement(without_exclude_order_measurement(
+            (REPOSITORY / 'scripts' / 'native_1c_full_host.py').read_text(encoding='utf-8'), host=True), host=True)
         self.assertEqual(host.count(fixture['ASYNC_FIXTURE_SHA256']), 1)
         host = host.replace(fixture['ASYNC_FIXTURE_SHA256'], previous_aggregate)
         current_identity = 'ASYNC_EXPECTED_IDENTITY = ' + repr(full.ASYNC_EXPECTED_IDENTITY)

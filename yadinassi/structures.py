@@ -206,13 +206,32 @@ def fill_property_values(target: object, source: object,
         return
 
     excluded = set()
+    deferred_key = None
     if exclude is not None:
+        defer_missing_target = (current_native_target() == LINUX_8_3_27_1508
+                                and type(source) is BSLStructure)
         for name, key in selected_names(exclude):
-            if key not in target._items or key not in source._items:
-                # EDT parameter/description disagree about source-only absence.
-                # Do not invent mutation timing for this unprobed error path.
+            if key not in source._items:
                 raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+            if key not in target._items:
+                # Native run 40048537592 measures one mutable source-only key,
+                # appearing exactly once in EXCLUDE. Keep mixed-invalid shapes
+                # and fixed-source/default-target calls guarded before writes.
+                if not defer_missing_target or deferred_key is not None:
+                    raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+                deferred_key = key
             excluded.add(key)
+    if deferred_key is not None:
+        if source._items.keys() - target._items.keys() != {deferred_key}:
+            raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+        # Only this measured error path follows source insertion order. Earlier
+        # common, nonexcluded writes survive; do not change valid copy paths.
+        for key, (_, value) in source._items.items():
+            if key == deferred_key:
+                raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+            if key in target._items and key not in excluded:
+                target._items[key] = target._items[key][0], value
+        return
     for key, (name, _) in target._items.items():
         if key in source._items and key not in excluded:
             # Preserve target spelling and composition, and share value references.

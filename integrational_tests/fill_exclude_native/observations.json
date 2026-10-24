@@ -1,0 +1,209 @@
+{
+  "status": "audited_native_capture_not_fresh_runtime_acceptance",
+  "native_run": 40048537592,
+  "native_run_attempt": 1,
+  "native_run_url": "https://github.com/Atridis/yadinassi/actions/runs/40048537592",
+  "head_sha": "93553e7149dd7c10f218c3e26d025a8d1053cb46",
+  "checkout_sha": "00e748d0da56ebf8b60703c5881b8e334165ff12",
+  "tree_sha": "fc76a3e050a455d3a2f185a9f19d80ab3522e293",
+  "platform": "Linux 1C 8.3.27.1508",
+  "contexts": [
+    "server",
+    "managed-client"
+  ],
+  "source_sha256": "42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb",
+  "output_sha256": "ac37b8113282a5624f71a9608fa9db38f14db0045f4501915c008c3f9e0c133a",
+  "output_bytes": 233298,
+  "server_and_managed_client_message_count": 854,
+  "previous_messages": 841,
+  "record_count": 13,
+  "records": [
+    {
+      "ordinal": 842,
+      "label": "fill.exclude-missing.target-only.missing",
+      "record": "fill.exclude-missing.target-only.missing: [error;{\"N\",1};{\"N\",2};{\"N\",3};{\"N\",4};{\"B\",1};{\"N\",4}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 2,
+        "copy": 3,
+        "target_count": 4,
+        "target_missing": true,
+        "target_missing_value": 4
+      }
+    },
+    {
+      "ordinal": 843,
+      "label": "fill.exclude-missing.target-only.missing-first",
+      "record": "fill.exclude-missing.target-only.missing-first: [error;{\"N\",1};{\"N\",2};{\"N\",3};{\"N\",4};{\"B\",1};{\"N\",4}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 2,
+        "copy": 3,
+        "target_count": 4,
+        "target_missing": true,
+        "target_missing_value": 4
+      }
+    },
+    {
+      "ordinal": 844,
+      "label": "fill.exclude-missing.target-only.first-missing",
+      "record": "fill.exclude-missing.target-only.first-missing: [error;{\"N\",1};{\"N\",2};{\"N\",3};{\"N\",4};{\"B\",1};{\"N\",4}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 2,
+        "copy": 3,
+        "target_count": 4,
+        "target_missing": true,
+        "target_missing_value": 4
+      }
+    },
+    {
+      "ordinal": 845,
+      "label": "fill.exclude-missing.source-only.missing",
+      "record": "fill.exclude-missing.source-only.missing: [error;{\"N\",10};{\"N\",20};{\"N\",30};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 10,
+        "last": 20,
+        "copy": 30,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 846,
+      "label": "fill.exclude-missing.source-only.missing-first",
+      "record": "fill.exclude-missing.source-only.missing-first: [error;{\"N\",1};{\"N\",20};{\"N\",30};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 20,
+        "copy": 30,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 847,
+      "label": "fill.exclude-missing.source-only.first-missing",
+      "record": "fill.exclude-missing.source-only.first-missing: [error;{\"N\",1};{\"N\",20};{\"N\",30};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 20,
+        "copy": 30,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 848,
+      "label": "fill.exclude-missing.neither.missing",
+      "record": "fill.exclude-missing.neither.missing: [error;{\"N\",1};{\"N\",2};{\"N\",3};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 2,
+        "copy": 3,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 849,
+      "label": "fill.exclude-missing.neither.missing-first",
+      "record": "fill.exclude-missing.neither.missing-first: [error;{\"N\",1};{\"N\",2};{\"N\",3};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 2,
+        "copy": 3,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 850,
+      "label": "fill.exclude-missing.neither.first-missing",
+      "record": "fill.exclude-missing.neither.first-missing: [error;{\"N\",1};{\"N\",2};{\"N\",3};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 2,
+        "copy": 3,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 851,
+      "label": "fill.exclude-missing.control.first",
+      "record": "fill.exclude-missing.control.first: [ok;{\"N\",1};{\"N\",20};{\"N\",30};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "ok",
+        "first": 1,
+        "last": 20,
+        "copy": 30,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 852,
+      "label": "fill.exclude-missing.control.first-last",
+      "record": "fill.exclude-missing.control.first-last: [ok;{\"N\",1};{\"N\",2};{\"N\",30};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "ok",
+        "first": 1,
+        "last": 2,
+        "copy": 30,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 853,
+      "label": "fill.exclude-source-order.source-only.first",
+      "record": "fill.exclude-source-order.source-only.first: [error;{\"N\",1};{\"N\",2};{\"N\",3};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 1,
+        "last": 2,
+        "copy": 3,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    },
+    {
+      "ordinal": 854,
+      "label": "fill.exclude-source-order.source-only.between",
+      "record": "fill.exclude-source-order.source-only.between: [error;{\"N\",10};{\"N\",2};{\"N\",3};{\"N\",3};{\"B\",0};{\"U\"}]",
+      "state": {
+        "status": "error",
+        "first": 10,
+        "last": 2,
+        "copy": 3,
+        "target_count": 3,
+        "target_missing": false,
+        "target_missing_value": null
+      }
+    }
+  ],
+  "limits": [
+    "These 13 finite observations establish no general 1C traversal algorithm or Windows behavior.",
+    "The captured run predates the runtime correction and rejected four EXCLUDE differences; this fixture is evidence, not a fresh native validation of the correction.",
+    "Server and managed-client complete output identity was independently audited from this source-bound run."
+  ]
+}

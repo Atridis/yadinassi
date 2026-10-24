@@ -12,7 +12,7 @@ SPEC = importlib.util.spec_from_file_location(
 contract = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(contract)
 
-SOURCE = "e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232"
+SOURCE = "42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb"
 MAP = b"3d48feae-a9c6-4c5a-a099-9eb6477630c6"
 FIXED_MAP = b"220455ea-6c85-4513-996f-bbe79ed07774"
 ARRAY = b"51e7a0d2-530b-11d4-b98a-008048da3034"
@@ -65,7 +65,7 @@ def nested(pairs):
 
 
 def records(pairs=PAIRS):
-    rows = [(f"record.{number}", b"ok") for number in range(1, 842)]
+    rows = [(f"record.{number}", b"ok") for number in range(1, 855)]
     for ordinal, base in BASES:
         before = mapping(pairs) if ordinal != 303 else nested(pairs)
         after = mapping(tuple(reversed(pairs))) if ordinal != 303 else nested(tuple(reversed(pairs)))
@@ -117,7 +117,7 @@ class MapContractTests(unittest.TestCase):
                 self.assertEqual(result["status"], "equivalent", result)
                 expected = [] if permutation == PAIRS else list(contract.ELIGIBLE_LABELS)
                 self.assertEqual(result["accepted_labels"], expected)
-                self.assertEqual(result["byte_equal_records"], 841 - len(expected))
+                self.assertEqual(result["byte_equal_records"], 854 - len(expected))
 
     def test_alternate_legitimate_typed_bindings_and_counts(self):
         extra_array = (scalar("L"), sequence(ARRAY, (string("a"), string("b"))))
@@ -232,7 +232,7 @@ class MapContractTests(unittest.TestCase):
         a, b = records(pairs), records(pairs[::-1])
         result = self.compare(a, b)
         self.assertEqual(result["status"], "equivalent", result)
-        self.assertEqual(result["records"], 841)
+        self.assertEqual(result["records"], 854)
         self.assertNotIn("PRIVATE", json.dumps(result))
 
     def test_complete_payload_consumption_and_pair_arity(self):
@@ -259,15 +259,38 @@ class MapContractTests(unittest.TestCase):
 
     def test_nonscoped_records_remain_byte_exact_including_other_maps(self):
         original = records()
-        for ordinal in (1, 275, 282, 295, 296, 297, 298, 299, 300, 301, 302, 314, *range(759, 842)):
+        for ordinal in (1, 275, 282, 295, 296, 297, 298, 299, 300, 301, 302, 314, *range(759, 855)):
             self.reject(original, change(original, ordinal, b"different"), "ineligible_difference")
         a = change(original, 100, mapping(PAIRS))
         b = change(original, 100, mapping(PAIRS[::-1]))
         self.reject(a, b, "ineligible_difference")
 
+    def test_all_thirteen_exclude_records_remain_byte_strict(self):
+        # These are synthetic payloads, not native expectations. Every EXCLUDE
+        # label stays outside the unchanged eight-label typed-Map allowance.
+        labels = ["fill.exclude-missing." + variant + "." + name
+                  for variant in ("target-only", "source-only", "neither")
+                  for name in ("missing", "missing-first", "first-missing")]
+        labels += ["fill.exclude-missing.control.first", "fill.exclude-missing.control.first-last",
+                   "fill.exclude-source-order.source-only.first",
+                   "fill.exclude-source-order.source-only.between"]
+        rows = records()
+        for ordinal, label in enumerate(labels, 842):
+            self.assertNotIn(label, contract.ELIGIBLE_LABELS)
+            rows = change(rows, ordinal, b'error;{"N",1};{"N",2};{"N",3};{"N",3};{"B",0};{"U"}', label)
+        self.assertEqual(self.compare(rows)["status"], "equivalent")
+        for ordinal in range(842, 855):
+            self.reject(rows, change(rows, ordinal,
+                b'error;{"N",10};{"N",20};{"N",30};{"N",3};{"B",0};{"U"}'),
+                "ineligible_difference")
+
     def test_historical_length_and_hash_cannot_claim_appended_checkpoint(self):
         self.reject(records()[:797], reason="record_mismatch")
         self.reject(records()[:828], reason="record_mismatch")
+        for count, digest in ((841, "e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232"),
+                              (852, "fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9")):
+            self.reject(records()[:count], reason="record_mismatch")
+            self.assertEqual(self.compare(records(), source=digest)["reason"], "source_mismatch")
         self.assertEqual(self.compare(records(), source="b3bf181de84a575335ce7e4794ced459ad252eb7853cc42095fb62521dc6a409")["reason"], "source_mismatch")
         result = self.compare(records(), source=
             "f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a")

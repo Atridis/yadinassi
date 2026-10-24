@@ -15,9 +15,9 @@ import test_native_1c_full_stage as fixtures
 suite = fixtures.suite
 ROOT = fixtures.REPOSITORY
 NONCE = fixtures.NONCE
-COUNT = 841
-DECLARATIONS = (7, 23, 56, 88, 97, 106, 111, 141, 160, 165, 181, 185, 192, 200, 208, 217, 281, 285, 301, 354, 434, 456, 477, 504, 527, 537, 541, 565, 579, 584, 592, 604, 628, 669, 684, 698, 867, 880, 970, 981, 987, 993, 1006, 1017, 1063, 1095, 1219, 1229, 1235, 1245, 1269, 1307, 1336, 1351, 1384, 1394, 1430, 1439, 1447, 1466, 1476, 1498, 1506, 1536, 1579, 1618, 1661, 1682, 1738, 1758, 1793, 1814, 1861, 1888, 1896, 1916, 1943, 1954, 1961, 1998, 2010, 2097, 2104, 2124, 2135, 2151, 2177, 2196, 2209, 2238, 2252, 2260, 2283, 2293, 2301, 2342, 2352, 2371, 2405, 2424, 2432, 2454, 2463, 2469, 2475, 2482, 2489, 2495, 2500, 2505, 2510, 2521, 2527, 2636, 2663, 2676)
-SITES = (107, 545, 556, 558, 561, 3591, 3629, 3679, 3709, 3722, 3733, 3741, 3746, 3769, 3771, 3803)
+COUNT = 854
+DECLARATIONS = (8, 36, 64, 80, 113, 145, 154, 163, 168, 198, 217, 222, 238, 242, 249, 257, 265, 274, 338, 342, 358, 411, 491, 513, 534, 561, 584, 594, 598, 622, 636, 641, 649, 661, 685, 726, 741, 755, 924, 937, 1027, 1038, 1044, 1050, 1063, 1074, 1120, 1152, 1276, 1286, 1292, 1302, 1326, 1364, 1393, 1408, 1441, 1451, 1487, 1496, 1504, 1523, 1533, 1555, 1563, 1593, 1636, 1675, 1718, 1739, 1795, 1815, 1850, 1871, 1918, 1945, 1953, 1973, 2000, 2011, 2018, 2055, 2067, 2154, 2161, 2181, 2192, 2208, 2234, 2253, 2266, 2295, 2309, 2317, 2340, 2350, 2358, 2399, 2409, 2428, 2462, 2481, 2489, 2511, 2520, 2526, 2532, 2539, 2546, 2552, 2557, 2562, 2567, 2578, 2584, 2693, 2720, 2733)
+SITES = (164, 602, 613, 615, 618, 3648, 3686, 3736, 3766, 3779, 3790, 3798, 3803, 3826, 3828, 3860)
 CAPTURE = 'КоллекцииКлиентЗахват'
 VARIABLES = ('Выход', 'КоллекцииКлиентСообщения', 'КоллекцииКлиентСимволы')
 LOCAL_DECLARATIONS = {
@@ -66,7 +66,7 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
 
     def test_source_template_and_message_count_are_pinned(self):
         self.assertEqual(suite.digest(self.source),
-                         'e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232')
+                         '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb')
         self.assertEqual(suite.digest(self.template),
                          '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328')
         self.assertEqual(suite.digest(self.source), suite.CLIENT_COLLECTIONS_SOURCE_SHA256)
@@ -86,9 +86,19 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(suite.FullError, '^invalid_input$'):
             suite.client_collections_module(crlf, self.template)
 
+    def test_historical_exclude_sources_cannot_claim_current_native_route(self):
+        from scripts.native_historical_replay import (
+            without_fill_exclude_order_probes, without_fill_exclude_probes,
+        )
+        for inverse in (without_fill_exclude_order_probes, without_fill_exclude_probes):
+            source = inverse(self.source.decode('utf-8-sig')).encode('utf-8-sig')
+            with self.subTest(inverse=inverse.__name__), self.assertRaisesRegex(
+                    suite.FullError, '^invalid_input$'):
+                suite.client_collections_module(source, self.template)
+
     def test_descriptor_helper_pins_fail_under_rebased_hash(self):
         lines = self.source.splitlines(keepends=True)
-        for index in (2636, 2661, 2663, 2674, 2676, 2763, 3803):
+        for index in (2693, 2718, 2720, 2731, 2733, 2820, 3860):
             changed = lines.copy()
             changed[index] = b'// removed descriptor source pin\n'
             source = b''.join(changed)
@@ -99,7 +109,7 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
 
     def test_fill_include_helper_pins_fail_under_rebased_hash(self):
         lines = self.source.splitlines(keepends=True)
-        for index in (7, 19):
+        for index in (64, 76):
             changed = lines.copy()
             changed[index] = b'// removed INCLUDE helper source pin\n'
             source = b''.join(changed)
@@ -107,6 +117,32 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
                     suite, 'CLIENT_COLLECTIONS_SOURCE_SHA256', suite.digest(source)):
                 with self.assertRaisesRegex(suite.FullError, '^invalid_input$'):
                     suite.client_collections_module(source, self.template)
+
+    def test_exclude_observer_and_order_pins_fail_with_raw_or_rebased_hash(self):
+        # These exact source-only observations remain byte-strict even when a
+        # future edit deliberately updates only the outer source hash.
+        mutants = (
+            ('Missing,First,Last,Copy', 'First,Missing,Last,Copy'),
+            ('First,Missing,Last,Copy', 'First,Last,Missing,Copy'),
+            ('Неопределено, "Missing");', 'Неопределено, "First");'),
+            ('Перем Приемник, Источник, Статус, ЗначениеMissing, ЕстьMissing;',
+             'Перем Приемник, Источник, Статус, ЗначениеMissing;'),
+            ('ЗначениеВСтрокуВнутр(Приемник.Copy)', 'ЗначениеВСтрокуВнутр(Приемник.Last)'),
+            ('ПроверитьПозициюИсключения("first");', 'ПроверитьПозициюИсключения("between");'),
+            ('ПроверитьПозициюИсключения("between");', 'ПроверитьПозициюИсключения("first");'),
+            ('// End FillPropertyValues EXCLUDE source-order discriminator helpers.', '// removed'),
+            ('// End FillPropertyValues EXCLUDE checkpoint observations.', '// removed'),
+            ('Приемник.Вставить("Missing", 4);', 'Приемник.Вставить("Missing", 5);'),
+        )
+        for before, after in mutants:
+            source = self.source.replace(before.encode(), after.encode(), 1)
+            self.assertNotEqual(source, self.source)
+            for rebase in (False, True):
+                with self.subTest(before=before, rebase=rebase), mock.patch.object(
+                        suite, 'CLIENT_COLLECTIONS_SOURCE_SHA256',
+                        suite.digest(source) if rebase else suite.digest(self.source)):
+                    with self.assertRaisesRegex(suite.FullError, '^invalid_input$'):
+                        suite.client_collections_module(source, self.template)
 
     def test_raw_source_tampering_is_rejected_without_normalization(self):
         lines = self.source.splitlines(keepends=True)
@@ -153,9 +189,9 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
         # Future source rebasing must deliberately revisit these shape checks too.
         lines = self.source.splitlines(keepends=True)
         replacements = [(4, 'Процедура Подмена()\n'.encode()),
-                        (2631, 'КонецПроцедуры\n'.encode()),
-                        (107, lines[107].replace('Строка'.encode(), 'String'.encode())),
-                        (2766, lines[2767]),
+                        (2688, 'КонецПроцедуры\n'.encode()),
+                        (164, lines[164].replace('Строка'.encode(), 'String'.encode())),
+                        (2823, lines[2824]),
                         (1, 'Перем ДругойВыход;\n'.encode()),
                         (3, '#Область Другая\n'.encode()),
                         (190, '#Если Клиент Тогда\n'.encode()),
@@ -218,7 +254,7 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
         first, rest = restored.split('\n', 1)
         restored = first + '\nПерем Выход;\n' + rest
         self.assertEqual(restored.encode('utf-8-sig'), self.source)
-        self.assertEqual(len(restored.splitlines()), 3820)
+        self.assertEqual(len(restored.splitlines()), 3894)
         self.assertEqual(len(re.findall(r'^#', restored, re.M)), 16)
         self.assertEqual(module.count('Перем Выход;'), 1)
         self.assertTrue(module.startswith('&НаКлиенте\nПерем Выход;\n'))
@@ -229,7 +265,7 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
     def test_all_declarations_and_calls_are_direct_client_only_without_new_conversion(self):
         module = self.module()
         declarations = re.findall(r'^([^\n]+)\n((?:Процедура|Функция|Перем) [^\n]+)', module, re.M)
-        self.assertEqual(len(declarations), 125)
+        self.assertEqual(len(declarations), 127)
         self.assertTrue(all(directive == '&НаКлиенте' for directive, _ in declarations))
         self.assertNotIn('&НаСервере', module)
         self.assertNotIn('Сообщить(', module)
@@ -237,7 +273,7 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
             self.assertEqual(re.findall(conversion, module),
                              re.findall(conversion, self.source.decode()))
         self.assertIn('КоллекцииКлиентСообщения.Добавить(Текст);', module)
-        self.assertIn('КоллекцииКлиентСообщения.Количество() >= 841', module)
+        self.assertIn('КоллекцииКлиентСообщения.Количество() >= 854', module)
         self.assertIn(f'> {(suite.MAX_OUTPUT - COUNT) // 4}', module)
         self.assertIn('КоллекцииКлиентВыполнить();', module)
         self.assertIn('Возврат КоллекцииКлиентСообщения;', module)
@@ -264,7 +300,7 @@ class ClientCollectionsAdapterTests(unittest.TestCase):
         vm.execute(interpreter_module(self.module()))
         captured = list(vm.execute('ВычислитьПробу()'))
         self.assertEqual(captured, expected)
-        self.assertEqual(len(captured), 841)
+        self.assertEqual(len(captured), 854)
         self.assertEqual(vm.execute('Объект'), 'form-object-sentinel')
         self.assertEqual(vm.execute('Элементы'), 'form-items-sentinel')
 

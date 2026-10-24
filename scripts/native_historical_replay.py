@@ -32,6 +32,66 @@ def without_field_reference_probes(text):
     return text
 
 
+FILL_EXCLUDE_ORDER_PROBE_BLOCKS = (
+    ('// Begin FillPropertyValues EXCLUDE source-order discriminator helpers.\n',
+     '// End FillPropertyValues EXCLUDE source-order discriminator helpers.\n\n'),
+    ('// Begin FillPropertyValues EXCLUDE source-order discriminator observations.\n',
+     '// End FillPropertyValues EXCLUDE source-order discriminator observations.\n'),
+)
+
+
+def without_fill_exclude_order_probes(text):
+    """Restore the exact 852-record PR87 source, never truncate native outputs."""
+    raw = text.encode('utf-8')
+    if not raw.startswith(b'\xef\xbb\xbf'):
+        raw = b'\xef\xbb\xbf' + raw
+    if hashlib.sha256(raw).hexdigest() != '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb':
+        raise ValueError('fill exclude order source binding changed')
+    for start, end in FILL_EXCLUDE_ORDER_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('fill exclude order probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8')
+    if not raw.startswith(b'\xef\xbb\xbf'):
+        raw = b'\xef\xbb\xbf' + raw
+    if hashlib.sha256(raw).hexdigest() != 'fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9':
+        raise ValueError('fill exclude order baseline binding changed')
+    return text
+
+
+FILL_EXCLUDE_PROBE_BLOCKS = (
+    ('// Begin FillPropertyValues EXCLUDE checkpoint helpers.\n',
+     '// End FillPropertyValues EXCLUDE checkpoint helpers.\n\n'),
+    ('// Begin FillPropertyValues EXCLUDE checkpoint observations.\n',
+     '// End FillPropertyValues EXCLUDE checkpoint observations.\n'),
+)
+
+
+def without_fill_exclude_probes(text):
+    """Restore all 841 records' source; never truncate observed output."""
+    if any(boundary in text for pair in FILL_EXCLUDE_ORDER_PROBE_BLOCKS for boundary in pair):
+        text = without_fill_exclude_order_probes(text)
+    raw = text.encode('utf-8')
+    if not raw.startswith(b'\xef\xbb\xbf'):
+        raw = b'\xef\xbb\xbf' + raw
+    if hashlib.sha256(raw).hexdigest() != 'fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9':
+        raise ValueError('fill exclude source binding changed')
+    for start, end in FILL_EXCLUDE_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('fill exclude probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8')
+    if not raw.startswith(b'\xef\xbb\xbf'):
+        raw = b'\xef\xbb\xbf' + raw
+    if hashlib.sha256(raw).hexdigest() != 'e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232':
+        raise ValueError('fill exclude baseline source binding changed')
+    return text
+
+
 FILL_INCLUDE_PROBE_BLOCKS = (
     ('// Begin FillPropertyValues INCLUDE checkpoint helpers.\n',
      '// End FillPropertyValues INCLUDE checkpoint helpers.\n\n'),
@@ -42,6 +102,8 @@ FILL_INCLUDE_PROBE_BLOCKS = (
 
 def without_fill_include_probes(text):
     """Restore all 828 native-verified records' source with an exact byte pin."""
+    if any(boundary in text for pair in (*FILL_EXCLUDE_ORDER_PROBE_BLOCKS, *FILL_EXCLUDE_PROBE_BLOCKS) for boundary in pair):
+        text = without_fill_exclude_probes(text)
     for start, end in FILL_INCLUDE_PROBE_BLOCKS:
         if text.count(start) != 1 or text.count(end) != 1:
             raise ValueError('fill include probe boundaries changed')
