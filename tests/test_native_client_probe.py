@@ -168,6 +168,10 @@ class ClientProbeHarness(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / source, path)
         if os.name == "nt":
+            # Model the reviewed LF source in this private synthetic copy even
+            # when Git checked it out with CRLF; production bytes stay strict.
+            path = self.inputs / suite.CLIENT_TARGET
+            path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
             reader = mock.patch.object(suite, "secure_bytes", new=stage_fixture.portable_fixture_bytes)
             reader.start()
             self.addCleanup(reader.stop)
@@ -181,7 +185,11 @@ class ClientProbeHarness(unittest.TestCase):
         self.run_error = None
         self.quiet = True
         self.request = None
+        # Preserve historical strict135 orchestration paths at an explicit test
+        # boundary. Production Date/Null measurement rejects every completion;
+        # this fixture's synthetic success is not measurement/native evidence.
         for patcher in (
+                mock.patch.object(suite, "date_null_client_marker", new=suite.client_marker),
                 mock.patch.object(suite, "run_process", side_effect=self.fake_native),
                 mock.patch.object(suite, "native_processes_quiet", side_effect=lambda _: self.quiet if "enterprise" in self.events else True),
                 mock.patch.object(suite, "client_process_baseline", return_value=set()),
@@ -525,7 +533,10 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
         self.assertIn('Запрос.mode = "stall"', source)
         self.assertIn("Пока Истина Цикл", source)
         self.assertIn("ЗавершитьРаботуСистемы(Ложь)", source)
-        self.assertEqual(source.count("&AtServer"), 35)  # prior32 plus dual server variable/context/NoContext callers
+        # Prior 35 declarations remain, plus eight Date/Null measurement calls.
+        self.assertEqual(source.count("&AtServer"), 43)
+        baseline = full.date_null_shared_source(source.encode("utf-8")).decode("utf-8")
+        self.assertEqual(baseline.count("&AtServer"), 35)
         self.assertEqual(source.count("&НаСервере"), 1)
         self.assertIn("Function DirectiveWitnessValues()", source)
         for forbidden in ("ЗапуститьТестНаСервере", "ВнешниеОбработки.Создать",
@@ -1098,7 +1109,12 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
     def setUp(self):
         stage_fixture.FullSuiteHarness.setUp(self)
         path = self.inputs / suite.CLIENT_TARGET
-        path.write_bytes((ROOT / suite.CLIENT_SOURCE).read_bytes())
+        # The probe itself is mocked in this historical success-path fixture.
+        # Its identities must not claim acceptance of current Date/Null capture.
+        current = (ROOT / suite.CLIENT_SOURCE).read_bytes()
+        if os.name == "nt":
+            current = current.replace(b"\r\n", b"\n")
+        path.write_bytes(full.date_null_shared_source(current))
         source = path.read_bytes()
         module = suite.generated_module(source)
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": suite.digest(source),
