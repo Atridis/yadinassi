@@ -390,7 +390,7 @@ class NativeBoundaryTests(unittest.TestCase):
     def test_empty_native_exports_fail_at_boundary_before_later_commands(self):
         for identifier,switch,suffix in (('cf_v1','/DumpCfg','.cf'),('dt_updated','/DumpIB','.dt')):
             target=self.native.artifacts/(identifier+suffix)
-            with self.subTest(identifier=identifier),mock.patch.object(self.native,'budgets'), \
+            with self.subTest(identifier=identifier),mock.patch.object(self.native,'quiescent',return_value=True),mock.patch.object(self.native,'budgets'), \
                 mock.patch.object(self.native,'batch',side_effect=lambda *args: target.write_bytes(b'')):
                 with self.assertRaises(OracleError) as failure: self.native.export(self.db,identifier,switch)
                 self.assertEqual(failure.exception.kind,'artifact_missing')
@@ -398,7 +398,7 @@ class NativeBoundaryTests(unittest.TestCase):
 
     def test_empty_native_database_cannot_be_frozen(self):
         (self.db/'1Cv8.1CD').write_bytes(b'')
-        with mock.patch.object(stage,'freeze_database') as freeze:
+        with mock.patch.object(self.native,'quiescent',return_value=True),mock.patch.object(stage,'freeze_database') as freeze:
             with self.assertRaises(OracleError) as failure: self.native.freeze(self.db,'baseline')
             self.assertEqual(failure.exception.kind,'artifact_missing'); freeze.assert_not_called()
 
@@ -410,7 +410,7 @@ class NativeBoundaryTests(unittest.TestCase):
         source=frozen/'1Cv8.1CD'; source.write_bytes(b'data'); source.chmod(0o400); frozen.chmod(0o500)
         self.addCleanup(lambda: frozen.chmod(0o700))
         runtime=self.root/'runtime'; runtime.mkdir(); (runtime/'xauth').write_bytes(b'12345')
-        with mock.patch.object(stage,'MAX_LIVE_BYTES',12),mock.patch.object(stage,'clone_database') as clone:
+        with mock.patch.object(self.native,'quiescent',return_value=True),mock.patch.object(stage,'MAX_LIVE_BYTES',12),mock.patch.object(stage,'clone_database') as clone:
             with self.assertRaises(OracleError) as failure: self.native.clone('baseline','observer')
             self.assertEqual(failure.exception.kind,'artifact_limit'); clone.assert_not_called()
             self.assertFalse((self.native.artifacts/'observer').exists())
@@ -1195,9 +1195,51 @@ class BasenameControllerTests(unittest.TestCase):
             native=stage.Native(NONCE,identity);native.stage=changes.get('stage','baseline')
             native.root=changes.get('root',stage.ROOT);native.artifacts=changes.get('artifacts',stage.ROOT/'artifacts')
             database=native.artifacts/changes.get('database','seed');identifier=changes.get('identifier','baseline')
-            with self.subTest(changes=changes),mock.patch.object(stage,'native_file_summary',return_value=physical()),                     mock.patch.object(native,'budgets'),mock.patch.object(native,'remove'),                     mock.patch.object(stage,'freeze_database',return_value=physical()) as freeze:
+            with self.subTest(changes=changes),mock.patch.object(native,'quiescent',return_value=True),mock.patch.object(stage,'native_file_summary',return_value=physical()),                     mock.patch.object(native,'budgets'),mock.patch.object(native,'remove'),                     mock.patch.object(stage,'freeze_database',return_value=physical()) as freeze:
                 native.freeze(database,identifier)
                 self.assertIs(freeze.call_args.kwargs['capture_source_name'],expected)
                 self.assertEqual(freeze.call_args.args,(database,native.artifacts/identifier))
+
+
+
+class NativePayloadCensusTests(unittest.TestCase):
+    def test_every_native_payload_entrypoint_checks_census_before_any_read(self):
+        native=stage.Native(NONCE,provenance());database=native.artifacts/'seed'
+        actions=(('physical_summary',(database/'1Cv8.1CD',)),('create_db',('seed',)),
+                 ('freeze',(database,'baseline')),('clone',('baseline','observer')),
+                 ('artifact',('cf_v1',)),('export',(database,'cf_v1','/DumpCfg')),
+                 ('compare',('baseline','create_control','created')),
+                 ('compare_pair',('loaded','applied')))
+        for method,args in actions:
+            with self.subTest(method=method),contextlib.ExitStack() as stack:
+                stack.enter_context(mock.patch.object(native,'quiescent',return_value=False))
+                for helper in ('budgets','batch','process'):
+                    stack.enter_context(mock.patch.object(native,helper))
+                for helper in ('absent','zero_result'):
+                    stack.enter_context(mock.patch.object(stage,helper))
+                probes=[stack.enter_context(mock.patch.object(stage,name)) for name in
+                        ('native_file_summary','file_summary','freeze_database','clone_database','compare_files','compare_pair')]
+                with self.assertRaises(OracleError) as failure:getattr(native,method)(*args)
+                self.assertEqual(failure.exception.kind,'snapshot_not_quiescent')
+                for probe in probes:probe.assert_not_called()
+
+    def test_summary_census_precedes_payload_hashing_and_preserves_result(self):
+        native=stage.Native(NONCE,provenance());events=[];expected=physical()
+        def quiet():events.append('census');return True
+        def summary(path):events.append('payload');return expected
+        with mock.patch.object(native,'quiescent',side_effect=quiet),                 mock.patch.object(stage,'native_file_summary',side_effect=summary):
+            self.assertEqual(native.physical_summary(native.artifacts/'seed'/'1Cv8.1CD'),expected)
+        self.assertEqual(events,['census','payload'])
+
+    def test_comparison_census_precedes_every_frozen_payload_read(self):
+        native=stage.Native(NONCE,provenance())
+        for method,helper,args in (('compare','compare_files',('baseline','create_control','created')),
+                                   ('compare_pair','compare_pair',('loaded','applied'))):
+            events=[]
+            def quiet():events.append('census');return True
+            def compare(*paths):events.append('payload');return {'synthetic':True}
+            with self.subTest(method=method),mock.patch.object(native,'quiescent',side_effect=quiet),                     mock.patch.object(stage,helper,side_effect=compare):
+                self.assertEqual(getattr(native,method)(*args),{'synthetic':True})
+                self.assertEqual(events,['census','payload'])
 
 if __name__=='__main__': unittest.main()

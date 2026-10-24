@@ -30,6 +30,31 @@ def stat_fields(info, **changes):
     return SimpleNamespace(**fields)
 
 
+def normalize_fixture_owners(test):
+    """Model fixed native UID/GID 1000 without chown or host-dependent policy."""
+    real_stat, real_fstat, real_scandir = os.stat, os.fstat, os.scandir
+    def owned(info):
+        return stat_fields(info, st_uid=1000, st_gid=1000)
+    class Entry:
+        def __init__(self, entry):
+            self.entry = entry
+        def __getattr__(self, name):
+            return getattr(self.entry, name)
+        def stat(self, **kwargs):
+            return owned(self.entry.stat(**kwargs))
+    @contextmanager
+    def scandir(path):
+        with real_scandir(path) as entries:
+            yield (Entry(entry) for entry in entries)
+    for name, replacement in (
+            ("stat", lambda *a, **kw: owned(real_stat(*a, **kw))),
+            ("fstat", lambda *a, **kw: owned(real_fstat(*a, **kw))),
+            ("scandir", scandir)):
+        patch = mock.patch.object(snapshots.os, name, side_effect=replacement)
+        patch.start()
+        test.addCleanup(patch.stop)
+
+
 class DatabaseEntryValidationTests(unittest.TestCase):
     def info(self, **changes):
         fields = dict(st_mode=stat.S_IFREG | 0o600, st_nlink=1, st_size=0,
@@ -164,7 +189,7 @@ class DatabaseEntryValidationTests(unittest.TestCase):
 
 
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
-class CflInventoryTests(unittest.TestCase):
+class AncillaryInventoryTests(unittest.TestCase):
     NAMES = ("1Cv8.1CD.cfl", "1Cv8tmp.1CD.cfl", "1Cv8.1CL.cfl", "1Cv8tmp.1CL.cfl", "1Cv8snc.1CL.cfl")
 
     def setUp(self):
@@ -178,29 +203,7 @@ class CflInventoryTests(unittest.TestCase):
         self.db.write_bytes(self.data)
         self.frozen = self.root / "frozen"
 
-        # Model the fixed Linux fixture owner on any supported POSIX CI host.
-        # Never chown files, derive policy from the host uid, or change its caps.
-        real_stat, real_fstat, real_scandir = os.stat, os.fstat, os.scandir
-        def owned(info):
-            return stat_fields(info, st_uid=1000, st_gid=1000)
-        class Entry:
-            def __init__(self, entry):
-                self.entry = entry
-            def __getattr__(self, name):
-                return getattr(self.entry, name)
-            def stat(self, **kwargs):
-                return owned(self.entry.stat(**kwargs))
-        @contextmanager
-        def scandir(path):
-            with real_scandir(path) as entries:
-                yield (Entry(entry) for entry in entries)
-        for name, replacement in (
-                ("stat", lambda *a, **kw: owned(real_stat(*a, **kw))),
-                ("fstat", lambda *a, **kw: owned(real_fstat(*a, **kw))),
-                ("scandir", scandir)):
-            patch = mock.patch.object(snapshots.os, name, side_effect=replacement)
-            patch.start()
-            self.addCleanup(patch.stop)
+        normalize_fixture_owners(self)
 
     def cleanup(self):
         for current, directories, _ in os.walk(self.root):
@@ -292,12 +295,19 @@ class CflInventoryTests(unittest.TestCase):
                 self.assertFalse((self.root / "observer").exists())
                 path.unlink()
 
-    def test_nonempty_cfl_is_rejected_without_reading_or_creating_destination(self):
+    def test_nonempty_root_sidecar_is_accepted_without_reading_its_content(self):
         path = self.cfl()
         path.write_bytes(b"PRIVATE CONTENT")
-        with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("must not read")):
-            self.assert_entry("cfl_database", "owned_regular_nonzero")
-        self.assertFalse(self.frozen.exists())
+        inode = path.stat().st_ino
+        real_read = snapshots.os.read
+        def read(descriptor, length):
+            self.assertNotEqual(os.fstat(descriptor).st_ino, inode)
+            return real_read(descriptor, length)
+        with mock.patch.object(snapshots.os, "read", side_effect=read):
+            result = self.freeze()
+        self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
+        self.assertEqual(path.read_bytes(), b"PRIVATE CONTENT")
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
     def test_owner_group_and_invalid_metadata_are_rejected(self):
         self.cfl()
@@ -338,76 +348,59 @@ class CflInventoryTests(unittest.TestCase):
         self.assert_entry("cfl_database", "directory")
         self.assertFalse(self.frozen.exists())
 
-    def test_case_suffix_unknown_and_session_history_remain_rejected(self):
-        for name in ("1cv8.1cd.cfl", "1Cv8.1CD.CFL", "1Cv8.1CD.cfl.extra",
-                     "unknown.cfl", "1Cv8snc.1CD.cfl", "1Cv8snc.1CD",
-                     "1Cv8snc.1CL", "1Cv8SNC.1CL.cfl", "1Cv8snc.1CL.cfl.extra"):
-            with self.subTest(name=name):
-                path = self.cfl(name)
-                expected = "session_history" if name == "1Cv8snc.1CD" else "other"
-                self.assert_entry(expected, "owned_regular_zero")
-                path.unlink()
+    def test_case_suffix_unknown_and_session_history_are_structurally_accepted(self):
+        names = ("1cv8.1cd.cfl", "1Cv8.1CD.CFL", "1Cv8.1CD.cfl.extra",
+                 "unknown.cfl", "1Cv8snc.1CD.cfl", "1Cv8snc.1CD",
+                 "1Cv8snc.1CL", "1Cv8SNC.1CL.cfl", "1Cv8snc.1CL.cfl.extra")
+        for name in names:
+            self.cfl(name).write_bytes(b"PRIVATE SIDECAR")
+        result = self.freeze()
+        self.assertEqual(result["bytes"], len(self.data))
+        for name in names:
+            self.assertNotIn(name, str(result))
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
-    def test_existing_database_and_log_root_rejects_are_typed(self):
+    def test_database_and_log_symlink_rejects_are_typed(self):
         self.db.unlink()
         self.db.symlink_to("/dev/zero")
         self.assert_entry("database", "symlink")
         self.db.unlink()
         self.db.write_bytes(self.data)
         log = self.source / "1Cv8Log"
-        log.write_bytes(b"private")
-        self.assert_entry("event_log", "owned_regular_nonzero")
-        log.unlink()
         log.symlink_to(self.root, target_is_directory=True)
         self.assert_entry("event_log", "symlink")
 
-    def test_opt_in_captures_one_owned_empty_basename_without_reading_or_acceptance(self):
-        real_open = snapshots.os.open
-        for name in ("1Cv8", "1Cv8.1CL", "1Cv8tmp.1CD", "1Cv8tmp.1CL",
-                     "1Cv8snc.1CD", "1Cv8unknown_-", "1Cv8" + "A" * 48):
-            with self.subTest(name=name):
-                path = self.cfl(name)
-                def open_file(opened, *args, **kwargs):
-                    self.assertNotEqual(opened, name)
-                    return real_open(opened, *args, **kwargs)
-                with mock.patch.object(snapshots.os, "open", side_effect=open_file), \
-                        mock.patch.object(snapshots.os, "read",
-                                          side_effect=AssertionError("must not read")):
-                    error = self.assert_kind("invalid_input", lambda: self.freeze(
-                        capture_source_name=True))
-                self.assertIsInstance(error, snapshots.DatabaseEntryError)
-                self.assertEqual(vars(error), {"kind": "invalid_input", "basename": name,
-                                              "entry_class": snapshots.diagnostic_entry_class(name),
-                                              "shape": "owned_regular_zero"})
-                self.assertFalse(self.frozen.exists())
-                self.assertEqual(path.stat().st_size, 0)
-                path.unlink()
+    def test_legacy_capture_flag_does_not_emit_accepted_empty_names(self):
+        names = ("1Cv8", "1Cv8.1CL", "1Cv8tmp.1CD", "1Cv8tmp.1CL",
+                 "1Cv8snc.1CD", "1Cv8unknown_-", "1Cv8" + "A" * 48)
+        for name in names:
+            self.cfl(name)
+        result = self.freeze(capture_source_name=True)
+        self.assertEqual(set(result), {"bytes", "sha256", "header", "page_analysis"})
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
-    def test_default_and_explicit_false_never_capture_eligible_basename(self):
+    def test_capture_flag_does_not_change_structural_admission(self):
         self.cfl("1Cv8.1CL")
-        self.assert_entry("base_1cl", "owned_regular_zero", lambda: snapshots.freeze_database(
-            self.source, self.frozen, quiescent=lambda: True))
-        self.assert_entry("base_1cl", "owned_regular_zero", lambda: self.freeze(
-            capture_source_name=False))
-        self.assertFalse(self.frozen.exists())
+        for index, capture in enumerate((False, True)):
+            self.frozen = self.root / f"frozen-{index}"
+            result = self.freeze(capture_source_name=capture)
+            self.assertEqual(set(result), {"bytes", "sha256", "header", "page_analysis"})
 
-    def test_opt_in_still_rejects_invalid_basenames_without_retaining_them(self):
-        for name in ("1cv8.1CL", "private", "1Cv8.1CL\n", "1Cv8é", "1Cv8\\file",
-                     "1Cv8:file", "1Cv8" + "A" * 49, "1Cv8" + "A" * 50):
-            with self.subTest(name=name):
-                path = self.cfl(name)
-                self.assert_entry("other", "owned_regular_zero", lambda: self.freeze(
-                    capture_source_name=True))
-                self.assertFalse(self.frozen.exists())
-                path.unlink()
+    def test_diagnostic_basename_rules_do_not_limit_structural_admission(self):
+        names = ("1cv8.1CL", "private", "1Cv8.1CL\n", "1Cv8é", "1Cv8\\file",
+                 "1Cv8:file", "1Cv8" + "A" * 49, "1Cv8" + "A" * 50)
+        for name in names:
+            self.cfl(name)
+        result = self.freeze(capture_source_name=True)
+        self.assertEqual(result["bytes"], len(self.data))
+        self.assertEqual(set(result), {"bytes", "sha256", "header", "page_analysis"})
 
-    def test_opt_in_never_captures_nonzero_unowned_or_link_metadata(self):
+    def test_opt_in_never_captures_unowned_or_invalid_metadata(self):
         name = "1Cv8.1CL"
         self.cfl(name)
         real_scandir = snapshots.os.scandir
         for changes, shape in (({"st_uid": 0}, "unowned_regular_zero"),
                                ({"st_gid": 0}, "unowned_regular_zero"),
-                               ({"st_size": 1}, "owned_regular_nonzero"),
                                ({"st_uid": 0, "st_size": 1}, "unowned_regular_nonzero"),
                                ({"st_size": -1}, "invalid_size"),
                                ({"st_nlink": 0}, "link_count"),
@@ -446,22 +439,13 @@ class CflInventoryTests(unittest.TestCase):
         self.assert_entry("base_1cl", "directory", lambda: self.freeze(capture_source_name=True))
         self.assertFalse(self.frozen.exists())
 
-    def test_opt_in_does_not_capture_database_log_cfl_or_nested_log_rejection(self):
+    def test_opt_in_does_not_capture_database_or_nested_log_rejection(self):
         self.db.unlink()
         self.db.symlink_to("/dev/zero")
         self.assert_entry("database", "symlink", lambda: self.freeze(capture_source_name=True))
         self.db.unlink()
         self.db.write_bytes(self.data)
         log = self.source / "1Cv8Log"
-        log.touch()
-        self.assert_entry("event_log", "owned_regular_zero", lambda: self.freeze(
-            capture_source_name=True))
-        log.unlink()
-        cfl = self.cfl()
-        cfl.write_bytes(b"private")
-        self.assert_entry("cfl_database", "owned_regular_nonzero", lambda: self.freeze(
-            capture_source_name=True))
-        cfl.unlink()
         log.mkdir()
         (log / "1Cv8.1CL").symlink_to("/dev/zero")
         error = self.assert_kind("invalid_input", lambda: self.freeze(capture_source_name=True))
@@ -489,12 +473,12 @@ class CflInventoryTests(unittest.TestCase):
         self.assertEqual(vars(error), {"kind": "invalid_input"})
         self.assertFalse(self.frozen.exists())
 
-    def test_inventory_capture_requires_true_and_live_source_mode(self):
+    def test_capture_flag_cannot_relax_strict_frozen_inventory(self):
         self.cfl("1Cv8.1CL")
         with snapshots._directory(self.source) as descriptor:
-            for capture in (False, None, 1, "true"):
-                self.assert_entry("base_1cl", "owned_regular_zero", lambda: snapshots._database_contents(
-                    descriptor, capture_zero_name=capture))
+            inventories = [snapshots._database_contents(descriptor, capture_zero_name=capture)
+                           for capture in (False, True, None, 1, "true")]
+            self.assertTrue(all(value == inventories[0] for value in inventories))
             self.assert_entry("base_1cl", "owned_regular_zero", lambda: snapshots._database_contents(
                 descriptor, allow_ancillary=False, capture_zero_name=True))
 
@@ -517,7 +501,7 @@ class CflInventoryTests(unittest.TestCase):
         self.assertTrue(all(capture is False for _, capture in calls))
         self.assertEqual(set(result), {"bytes", "sha256", "header", "page_analysis"})
 
-    def test_destination_and_both_source_rechecks_cannot_capture_new_entries(self):
+    def test_destination_and_both_source_rechecks_reject_new_entries(self):
         original = snapshots._database_contents
         for index in (2, 3, 4):
             with self.subTest(inventory=index):
@@ -532,8 +516,9 @@ class CflInventoryTests(unittest.TestCase):
                         self.assertIs(kwargs.get("capture_zero_name", False), False)
                     return original(descriptor, **kwargs)
                 with mock.patch.object(snapshots, "_database_contents", side_effect=inventory):
-                    self.assert_entry("base_1cl", "owned_regular_zero", lambda: self.freeze(
-                        capture_source_name=True))
+                    error = self.assert_kind("invalid_input" if index == 3 else "snapshot_changed",
+                                             lambda: self.freeze(capture_source_name=True))
+                self.assertFalse(hasattr(error, "basename"))
                 self.assertEqual(calls, index)
                 self.frozen.chmod(0o700)
                 path.unlink()
@@ -549,7 +534,7 @@ class CflInventoryTests(unittest.TestCase):
 
     def test_empty_cfl_never_substitutes_for_before_or_after_quiescence(self):
         self.cfl()
-        for index, results in enumerate(([False], [True, False])):
+        for index, results in enumerate(([False], [True, False], [True, True, False])):
             with self.subTest(results=results):
                 self.frozen = self.root / f"frozen-{index}"
                 quiet = mock.Mock(side_effect=results)
@@ -571,14 +556,14 @@ class CflInventoryTests(unittest.TestCase):
                     return True
                 self.assert_kind("snapshot_changed", lambda: self.freeze(quiescent=quiescent))
 
-    def test_nonempty_content_after_initial_inventory_is_rejected(self):
+    def test_sidecar_size_change_after_initial_inventory_is_rejected(self):
         path = self.cfl()
         real_write = snapshots._write_all
         def write(descriptor, block):
             real_write(descriptor, block)
             path.write_bytes(b"PRIVATE MUTATION")
         with mock.patch.object(snapshots, "_write_all", side_effect=write):
-            self.assert_entry("cfl_database", "owned_regular_nonzero")
+            self.assert_kind("snapshot_changed", self.freeze)
 
     def test_empty_same_path_replacement_after_inventory_is_snapshot_changed(self):
         path = self.cfl()
@@ -626,6 +611,242 @@ class CflInventoryTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertFalse(self.frozen.exists())
 
+    def test_shared_ancillary_caps_are_not_increased(self):
+        self.assertEqual(snapshots.MAX_ANCILLARY_BYTES, 16 * 1024 * 1024)
+        self.assertEqual(snapshots.MAX_ANCILLARY_FILES, 64)
+        self.assertEqual(snapshots.MAX_ANCILLARY_ENTRIES, 128)
+        self.assertEqual(snapshots.MAX_ANCILLARY_DEPTH, 2)
+        self.assertEqual(snapshots.MAX_TREE_ENTRIES, 4096)
+        self.assertEqual(snapshots.MAX_TREE_DEPTH, 16)
+
+    def test_root_sidecars_and_nested_logs_are_never_read_hashed_or_chmodded(self):
+        side = self.cfl("arbitrary-private-sidecar")
+        side.write_bytes(b"PRIVATE ROOT SIDECAR")
+        log = self.source / "1Cv8Log"
+        nested = log / "one" / "two"
+        nested.mkdir(parents=True)
+        (nested / "arbitrary-private-log").write_bytes(b"PRIVATE NESTED LOG")
+        private_paths = (side, log, log / "one", nested, nested / "arbitrary-private-log")
+        before = {path: snapshots._signature(path.stat()) for path in private_paths}
+        private_inodes = {path.stat().st_ino for path in private_paths}
+        real_read, real_digest, real_chmod = snapshots.os.read, snapshots._digest, snapshots.os.fchmod
+        def no_private(action):
+            def checked(descriptor, *args):
+                self.assertNotIn(os.fstat(descriptor).st_ino, private_inodes)
+                return action(descriptor, *args)
+            return checked
+        with mock.patch.object(snapshots.os, "read", side_effect=no_private(real_read)), \
+                mock.patch.object(snapshots, "_digest", side_effect=no_private(real_digest)), \
+                mock.patch.object(snapshots.os, "fchmod", side_effect=no_private(real_chmod)):
+            result = self.freeze()
+            clone = self.root / "observer"
+            snapshots.clone_database(self.frozen, clone, budget_root=self.root)
+        self.assertEqual({path: snapshots._signature(path.stat()) for path in private_paths}, before)
+        self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
+        self.assertNotIn("private", str(result))
+        for directory in (self.frozen, clone):
+            self.assertEqual([entry.name for entry in directory.iterdir()], ["1Cv8.1CD"])
+
+    def test_inventory_itself_never_reads_or_hashes_even_nonempty_ancillary_files(self):
+        self.cfl("root-private").write_bytes(b"ROOT")
+        log = self.source / "1Cv8Log"
+        log.mkdir()
+        (log / "event-private").write_bytes(b"LOG")
+        with snapshots._directory(self.source) as descriptor, \
+                mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no payload I/O")), \
+                mock.patch.object(snapshots, "_digest", side_effect=AssertionError("no digest")):
+            inventory = snapshots._database_contents(descriptor)
+        self.assertEqual(set(inventory), {(), ("root-private",), ("1Cv8Log",),
+                                          ("1Cv8Log", "event-private")})
+        self.assertTrue(all(value[1] is None for value in inventory.values()))
+        self.assertNotIn(("1Cv8.1CD",), inventory)
+
+    def test_shared_file_count_accepts_64_and_rejects_65_across_root_and_logs(self):
+        log = self.source / "1Cv8Log"
+        log.mkdir()
+        for index in range(32):
+            self.cfl(f"root-{index}")
+            (log / f"log-{index}").touch()
+        with snapshots._directory(self.source) as descriptor:
+            snapshots._database_contents(descriptor)
+            (log / "one-too-many").touch()
+            self.assert_kind("artifact_limit", lambda: snapshots._database_contents(descriptor))
+        self.assertFalse(self.frozen.exists())
+
+    def test_shared_entry_count_includes_root_sidecars_and_log_root(self):
+        self.cfl("one-root-file")
+        log = self.source / "1Cv8Log"
+        log.mkdir()
+        for index in range(snapshots.MAX_ANCILLARY_ENTRIES - 2):
+            (log / f"empty-{index}").mkdir()
+        with snapshots._directory(self.source) as descriptor:
+            inventory = snapshots._database_contents(descriptor)
+            self.assertEqual(len(inventory), snapshots.MAX_ANCILLARY_ENTRIES + 1)  # Plus source root.
+            (log / "one-too-many").mkdir()
+            self.assert_kind("artifact_limit", lambda: snapshots._database_contents(descriptor))
+        self.assertFalse(self.frozen.exists())
+
+    def test_shared_byte_limit_is_metadata_only_and_exact_across_root_and_logs(self):
+        side = self.cfl("root-private")
+        log = self.source / "1Cv8Log"
+        log.mkdir()
+        event = log / "event-private"
+        half = snapshots.MAX_ANCILLARY_BYTES // 2
+        for path in (side, event):
+            with path.open("wb") as stream:
+                stream.truncate(half)
+        with snapshots._directory(self.source) as descriptor, \
+                mock.patch.object(snapshots.os, "read", side_effect=AssertionError("metadata only")):
+            snapshots._database_contents(descriptor)
+            with event.open("r+b") as stream:
+                stream.truncate(half + 1)
+            self.assert_kind("artifact_limit", lambda: snapshots._database_contents(descriptor))
+        self.assertFalse(self.frozen.exists())
+
+    def test_root_sidecar_cannot_exceed_existing_raw_file_or_live_budget(self):
+        side = self.cfl("root-private")
+        with side.open("wb") as stream:
+            stream.truncate(snapshots.MAX_FILE_BYTES + 1)
+        with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("must not read")):
+            self.assert_kind("artifact_limit", self.freeze)
+        side.write_bytes(b"private")
+        with mock.patch.object(snapshots, "MAX_LIVE_BYTES", len(self.data) * 2 + side.stat().st_size - 1):
+            self.assert_kind("artifact_limit", self.freeze)
+        self.assertFalse(self.frozen.exists())
+
+    def test_wrong_owner_or_group_rejects_nested_regular_files_and_directories(self):
+        log = self.source / "1Cv8Log"
+        nested = log / "nested"
+        nested.mkdir(parents=True)
+        event = nested / "private"
+        event.write_bytes(b"NONEMPTY")
+        real_scandir = snapshots.os.scandir
+        for target in (log, nested, event):
+            for field in ("st_uid", "st_gid"):
+                with self.subTest(target=target.name, field=field):
+                    inode = target.stat().st_ino
+                    @contextmanager
+                    def scandir(descriptor):
+                        with real_scandir(descriptor) as entries:
+                            entries = list(entries)
+                        for entry in entries:
+                            info = entry.stat(follow_symlinks=False)
+                            if info.st_ino == inode:
+                                entry.stat = lambda info=info, **kw: stat_fields(info, **{field: 0})
+                        yield iter(entries)
+                    with mock.patch.object(snapshots.os, "scandir", side_effect=scandir), \
+                            mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                        self.assert_kind("invalid_input", self.freeze)
+        self.assertFalse(self.frozen.exists())
+
+    def test_source_root_owner_and_group_are_checked_without_chown(self):
+        inode = self.source.stat().st_ino
+        real_fstat = snapshots.os.fstat
+        for field in ("st_uid", "st_gid"):
+            def fstat(descriptor):
+                info = real_fstat(descriptor)
+                return stat_fields(info, **{field: 0}) if info.st_ino == inode else info
+            with mock.patch.object(snapshots.os, "fstat", side_effect=fstat), \
+                    mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                self.assert_kind("invalid_input", self.freeze)
+        self.assertFalse(self.frozen.exists())
+
+    def test_directory_owner_change_is_compared_even_with_identical_other_fields(self):
+        log = self.source / "1Cv8Log"
+        log.mkdir()
+        real_stat = snapshots.os.stat
+        def stat_path(path, *args, **kwargs):
+            info = real_stat(path, *args, **kwargs)
+            return (stat_fields(info, st_gid=0)
+                    if path == "1Cv8Log" and kwargs.get("dir_fd") is not None else info)
+        with mock.patch.object(snapshots.os, "stat", side_effect=stat_path):
+            self.assert_kind("snapshot_changed", self.freeze)
+        self.assertFalse(self.frozen.exists())
+
+    def test_root_owner_change_during_inventory_is_compared_explicitly(self):
+        with snapshots._directory(self.source) as descriptor:
+            real_fstat = snapshots.os.fstat
+            calls = 0
+            def fstat(opened):
+                nonlocal calls
+                info = real_fstat(opened)
+                if opened == descriptor:
+                    calls += 1
+                    if calls > 1:
+                        return stat_fields(info, st_uid=0)
+                return info
+            with mock.patch.object(snapshots.os, "fstat", side_effect=fstat):
+                self.assert_kind("snapshot_changed", lambda: snapshots._database_contents(descriptor))
+
+    def test_ancillary_mode_change_between_inventory_passes_is_rejected(self):
+        side = self.cfl("private-sidecar")
+        real_write = snapshots._write_all
+        changed = False
+        def write(descriptor, block):
+            nonlocal changed
+            real_write(descriptor, block)
+            if not changed:
+                changed = True
+                side.chmod(0o400)
+        with mock.patch.object(snapshots, "_write_all", side_effect=write):
+            self.assert_kind("snapshot_changed", self.freeze)
+        self.assertTrue(changed)
+
+    def test_arbitrary_nonempty_sidecar_in_frozen_source_is_rejected_before_reading(self):
+        self.freeze()
+        self.frozen.chmod(0o700)
+        (self.frozen / "arbitrary-private-sidecar").write_bytes(b"PRIVATE")
+        clone = self.root / "observer"
+        with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+            self.assert_entry("other", "owned_regular_nonzero", lambda: snapshots.clone_database(
+                self.frozen, clone, budget_root=self.root))
+        self.assertFalse(clone.exists())
+
+    def test_initial_census_follows_stable_database_open_and_precedes_all_reads(self):
+        real_open, real_read = snapshots.os.open, snapshots.os.read
+        database_opened = False
+        checks = 0
+        reads = 0
+        def opened(name, *args, **kwargs):
+            nonlocal database_opened
+            descriptor = real_open(name, *args, **kwargs)
+            if name == "1Cv8.1CD" and os.fstat(descriptor).st_ino == self.db.stat().st_ino:
+                database_opened = True
+            return descriptor
+        def quiet():
+            nonlocal checks
+            self.assertTrue(database_opened)
+            if checks == 0:
+                self.assertEqual(reads, 0)
+                self.assertFalse(self.frozen.exists())
+            checks += 1
+            return True
+        def read(descriptor, size):
+            nonlocal reads
+            self.assertGreaterEqual(checks, 1)
+            reads += 1
+            return real_read(descriptor, size)
+        with mock.patch.object(snapshots.os, "open", side_effect=opened), \
+                mock.patch.object(snapshots.os, "read", side_effect=read):
+            self.freeze(quiescent=quiet)
+        self.assertEqual(checks, 3)
+        self.assertGreater(reads, 0)
+
+    def test_ancestor_identity_change_is_rejected_even_when_leaf_inode_is_preserved(self):
+        ancestor = self.root / "ancestor"
+        ancestor.mkdir()
+        leaf = ancestor / "leaf"
+        leaf.mkdir()
+        old = self.root / "old-ancestor"
+        with self.assertRaises(snapshots.OracleError) as failure:
+            with snapshots._directory(leaf) as descriptor:
+                original = snapshots._identity(os.fstat(descriptor))
+                ancestor.rename(old)
+                ancestor.mkdir()
+                (old / "leaf").rename(leaf)
+                self.assertEqual(snapshots._identity(leaf.stat()), original)
+        self.assertEqual(failure.exception.kind, "snapshot_changed")
+
 
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
 class SnapshotTests(unittest.TestCase):
@@ -639,6 +860,7 @@ class SnapshotTests(unittest.TestCase):
         self.data = b"synthetic fixture, not a native database" * 4000
         self.db.write_bytes(self.data)
         self.frozen = self.root / "frozen"
+        normalize_fixture_owners(self)
 
     def _cleanup(self):
         # Frozen directories deliberately have no write permission.
@@ -672,7 +894,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(summary, {
             "bytes": len(self.data), "sha256": hashlib.sha256(self.data).hexdigest(),
             "header": "unknown", "page_analysis": "unsupported"})
-        self.assertEqual(quiet.call_count, 2)
+        self.assertEqual(quiet.call_count, 3)
         self.assertEqual(self.db.read_bytes(), self.data)
         self.assertEqual(self.db.stat().st_mtime_ns, before.st_mtime_ns)
         self.assertEqual(self.db.stat().st_ino, before.st_ino)
@@ -694,15 +916,21 @@ class SnapshotTests(unittest.TestCase):
         self.assert_kind("invalid_input", lambda: snapshots.clone_database(
             self.source, self.root / "observer", budget_root=self.root))
 
-    def test_false_quiescence_rejected_before_copy(self):
+    def test_false_initial_quiescence_rejected_before_any_payload_read_or_destination(self):
         quiet = mock.Mock(return_value=False)
-        self.assert_kind("snapshot_not_quiescent", lambda: self.freeze(quiescent=quiet))
+        with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("must not read")):
+            self.assert_kind("snapshot_not_quiescent", lambda: self.freeze(quiescent=quiet))
         self.assertEqual(quiet.call_count, 1)
-        self.assertEqual((self.frozen / "1Cv8.1CD").stat().st_size, 0)
+        self.assertFalse(self.frozen.exists())
 
-    def test_false_quiescence_after_copy_rejected(self):
-        self.assert_kind("snapshot_not_quiescent", lambda: self.freeze(
-            quiescent=mock.Mock(side_effect=[True, False])))
+    def test_quiescence_still_required_immediately_before_and_after_copy(self):
+        for index, values in enumerate(([True, False], [True, True, False])):
+            self.frozen = self.root / f"frozen-{index}"
+            quiet = mock.Mock(side_effect=values)
+            self.assert_kind("snapshot_not_quiescent", lambda: self.freeze(quiescent=quiet))
+            self.assertEqual(quiet.call_count, len(values))
+            expected_size = 0 if len(values) == 2 else len(self.data)
+            self.assertEqual((self.frozen / "1Cv8.1CD").stat().st_size, expected_size)
 
     def test_truthy_nonboolean_is_not_quiescence(self):
         self.assert_kind("snapshot_not_quiescent", lambda: self.freeze(quiescent=lambda: 1))
@@ -813,13 +1041,12 @@ class SnapshotTests(unittest.TestCase):
         os.mkfifo(self.db)
         self.assert_kind("invalid_input", self.freeze)
 
-    def test_every_unexpected_sidefile_is_rejected(self):
+    def test_owned_regular_sidefiles_are_metadata_only_without_name_whitelist(self):
         for name in ("1Cv8.1CL", "lock", "extra.log"):
-            with self.subTest(name=name):
-                side = self.source / name
-                side.write_bytes(b"")
-                self.assert_kind("invalid_input", self.freeze)
-                side.unlink()
+            (self.source / name).write_bytes(b"PRIVATE SYNTHETIC SIDECAR")
+        result = self.freeze()
+        self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
     def test_extra_directory_is_rejected(self):
         (self.source / "extra").mkdir()
@@ -944,9 +1171,11 @@ class SnapshotTests(unittest.TestCase):
         (self.source / "1Cv8Log").mkdir()
         self.assert_kind("snapshot_not_quiescent", lambda: self.freeze(quiescent=lambda: False))
 
-    def test_known_log_name_must_be_a_real_directory(self):
-        (self.source / "1Cv8Log").write_bytes(b"not a directory")
-        self.assert_kind("invalid_input", self.freeze)
+    def test_log_basename_can_be_regular_metadata_only_sidecar(self):
+        (self.source / "1Cv8Log").write_bytes(b"PRIVATE SIDECAR NOT A DIRECTORY")
+        result = self.freeze()
+        self.assertEqual(result["bytes"], len(self.data))
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
     def test_log_directory_symlink_is_rejected(self):
         (self.source / "1Cv8Log").symlink_to(self.root, target_is_directory=True)
@@ -1029,9 +1258,10 @@ class SnapshotTests(unittest.TestCase):
             self.assert_kind("snapshot_changed", self.freeze)
         self.assertEqual(log.stat().st_mtime_ns, initial.st_mtime_ns)
 
-    def test_log_hash_recheck_rejects_change_even_when_timestamps_are_mocked_stable(self):
+    def test_metadata_only_boundary_does_not_claim_to_detect_identical_metadata_changes(self):
         log = self.log()
-        real_write, real_signature = snapshots._write_all, snapshots._signature
+        inode = log.stat().st_ino
+        real_write, real_signature, real_read = snapshots._write_all, snapshots._signature, snapshots.os.read
         changed = False
         def write(descriptor, block):
             nonlocal changed
@@ -1042,10 +1272,16 @@ class SnapshotTests(unittest.TestCase):
                     stream.write(b"!")
         def stable_signature(info):
             value = real_signature(info)
-            return value[:-2] + (0, 0)
+            return value[:-2] + (0, 0) if info.st_ino == inode else value
+        def read(descriptor, length):
+            self.assertNotEqual(os.fstat(descriptor).st_ino, inode)
+            return real_read(descriptor, length)
         with mock.patch.object(snapshots, "_write_all", side_effect=write), \
-                mock.patch.object(snapshots, "_signature", side_effect=stable_signature):
-            self.assert_kind("snapshot_changed", self.freeze)
+                mock.patch.object(snapshots, "_signature", side_effect=stable_signature), \
+                mock.patch.object(snapshots.os, "read", side_effect=read):
+            result = self.freeze()
+        self.assertTrue(changed)
+        self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
 
     def test_new_log_file_during_copy_is_rejected(self):
         self.log()
@@ -1056,22 +1292,27 @@ class SnapshotTests(unittest.TestCase):
         with mock.patch.object(snapshots, "_write_all", side_effect=write):
             self.assert_kind("snapshot_changed", self.freeze)
 
-    def test_log_read_mutation_is_rejected_during_initial_inventory(self):
+    def test_log_metadata_mutation_during_initial_inventory_is_rejected(self):
         log = self.log()
         target_inode = log.stat().st_ino
-        real_digest = snapshots._digest
-        def digest(descriptor, size):
-            result = real_digest(descriptor, size)
-            if os.fstat(descriptor).st_ino == target_inode:
-                log.write_bytes(b"!" * size)
-            return result
-        with mock.patch.object(snapshots, "_digest", side_effect=digest):
+        real_open = snapshots.os.open
+        changed = False
+        def opened(name, flags, *args, **kwargs):
+            nonlocal changed
+            descriptor = real_open(name, flags, *args, **kwargs)
+            if os.fstat(descriptor).st_ino == target_inode and not changed:
+                changed = True
+                log.write_bytes(b"changed metadata")
+            return descriptor
+        with mock.patch.object(snapshots.os, "open", side_effect=opened), \
+                mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads yet")):
             self.assert_kind("snapshot_changed", self.freeze)
+        self.assertTrue(changed)
         self.assertFalse(self.frozen.exists())
 
-    def test_unknown_sibling_remains_rejected_even_with_known_log(self):
+    def test_unknown_directory_remains_rejected_even_with_known_log(self):
         self.log()
-        (self.source / "1Cv8.1CL").write_bytes(b"")
+        (self.source / "1Cv8.1CL").mkdir()
         self.assert_kind("invalid_input", self.freeze)
 
     def test_log_injection_into_frozen_source_is_not_accepted_for_clone(self):

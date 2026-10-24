@@ -432,6 +432,11 @@ class Native:
         self.process(self.command('DESIGNER',database,user)+operation+['/Out',str(log),'/DumpResult',str(result)],label)
         zero_result(result)
 
+    def physical_summary(self,path):
+        # Census precedes the first database/artifact payload read, not just copying.
+        require(self.quiescent(),'snapshot_not_quiescent')
+        return native_file_summary(path)
+
     def create_db(self, name):
         database=self.artifacts/name; absent(database)
         self.budgets(MAX_FILE_BYTES)
@@ -439,7 +444,7 @@ class Native:
         absent(result,log)
         self.process([str(ONEC),'CREATEINFOBASE',f'File="{database}";','/Lru',
             '/Out',str(log),'/DumpResult',str(result)],'create')
-        zero_result(result); native_file_summary(database/'1Cv8.1CD')
+        zero_result(result); self.physical_summary(database/'1Cv8.1CD')
         return database
 
     def enterprise(self, database, operation):
@@ -491,7 +496,7 @@ class Native:
 
     def freeze(self, database, identifier):
         target=self.artifacts/identifier
-        self.budgets(native_file_summary(database/'1Cv8.1CD')['bytes'])
+        self.budgets(self.physical_summary(database/'1Cv8.1CD')['bytes'])
         capture=(self.stage=='baseline' and identifier=='baseline'
                  and self.root==ROOT and self.artifacts==ROOT/'artifacts'
                  and database==self.artifacts/'seed'
@@ -504,7 +509,7 @@ class Native:
 
     def clone(self, identifier, label):
         target=self.artifacts/label
-        self.budgets(native_file_summary(self.artifacts/identifier/'1Cv8.1CD')['bytes'])
+        self.budgets(self.physical_summary(self.artifacts/identifier/'1Cv8.1CD')['bytes'])
         clone_database(self.artifacts/identifier,target,budget_root=self.root)
         self.budgets()
         return target
@@ -537,9 +542,11 @@ class Native:
         self.enterprise(database,operation)
 
     def compare(self,source,control,treatment):
+        require(self.quiescent(),'snapshot_not_quiescent')
         return compare_files(*(self.artifacts/name/'1Cv8.1CD' for name in (source,control,treatment)))
 
     def compare_pair(self,source,treatment):
+        require(self.quiescent(),'snapshot_not_quiescent')
         return compare_pair(*(self.artifacts/name/'1Cv8.1CD' for name in (source,treatment)))
 
     def export_configs(self):
@@ -558,10 +565,10 @@ class Native:
         target=self.artifacts/(identifier+suffix); absent(target)
         self.budgets(MAX_FILE_BYTES)
         self.batch(database,[switch,str(target)],'export-'+identifier)
-        return native_file_summary(target)
+        return self.physical_summary(target)
 
     def artifact(self,identifier):
-        return native_file_summary(self.artifacts/(identifier+('.dt' if identifier=='dt_updated' else '.cf')))
+        return self.physical_summary(self.artifacts/(identifier+('.dt' if identifier=='dt_updated' else '.cf')))
 
     def load_cf(self,database,version):
         self.batch(database,['/LoadCfg',str(self.artifacts/f'cf_v{version}.cf')],'load-cf')

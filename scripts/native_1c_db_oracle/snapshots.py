@@ -30,8 +30,8 @@ DATABASE_NAME = "1Cv8.1CD"
 # Official event-log location, not permission to parse or export its contents:
 # https://kb.1ci.com/1C_Enterprise_Platform/FAQ/Administration/DBMS/Data_structure_in_1C_Enterprise_8/?language=en
 ANCILLARY_NAME = "1Cv8Log"
-# Exact, case-sensitive source-only metadata exceptions. These files are never
-# read, copied, or exported, and their presence is not proof of quiescence.
+# Exact, case-sensitive diagnostic classes only, not an admission whitelist.
+# Ancillary admission is structural; presence is not proof of quiescence.
 _CFL_CLASSES = {
     "1Cv8.1CD.cfl": "cfl_database",
     "1Cv8tmp.1CD.cfl": "cfl_temp_database",
@@ -171,21 +171,27 @@ def _regular(info: os.stat_result, *, entry_class: str | None = None) -> None:
 
 @contextmanager
 def _directory(path: Path) -> Iterator[int]:
-    """Walk every component with O_NOFOLLOW; never resolve a symlink ancestor."""
+    """Anchor every component with O_NOFOLLOW and retain ancestor identities."""
     path = _path(path)
-    descriptor = None
+    descriptors = []
+    components = []
     try:
         descriptor = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        descriptors.append(descriptor)
         for component in path.parts[1:]:
             child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                             dir_fd=descriptor)
-            os.close(descriptor)
+            descriptors.append(child)
+            components.append((descriptor, component, _identity(os.fstat(child))))
             descriptor = child
         yield descriptor
+        for parent, component, identity in components:
+            if _identity(os.stat(component, dir_fd=parent, follow_symlinks=False)) != identity:
+                raise OracleError("snapshot_changed")
     except OSError:
         raise OracleError("invalid_input") from None
     finally:
-        if descriptor is not None:
+        for descriptor in reversed(descriptors):
             os.close(descriptor)
 
 
@@ -326,86 +332,87 @@ def budget_check(root: Path, additional: int = 0) -> int:
 
 def _database_contents(descriptor: int, *, allow_ancillary: bool = True,
                        capture_zero_name: bool = False) -> dict:
-    """Private stable inventory; ancillary content and digests never escape.
+    """Private metadata-only inventory of this fixed synthetic configuration.
 
-    Only the optional event-log directory and five exact empty, single-link CFL
-    files owned by uid/gid 1000 are tolerated in a live source. CFL content is
-    never read; no ancillary entry is copied into a snapshot or clone.
-    Presence/absence is not quiescence evidence.
-    These stricter limits do not increase the raw-file or cumulative-live caps.
-    Opted-in diagnostics can name only one rejected, owned empty root entry.
+    Live sources allow owned, single-link regular root sidecars of any name
+    except the exact database payload, plus the bounded 1Cv8Log directory tree.
+    All ancillary entries share the same byte/file/entry limits. Their content
+    is NEVER read, hashed, copied, or exported. This replaces the old log-content
+    hash boundary; it cannot detect content changes with identical metadata.
+    Frozen sources and all destinations remain strictly database-only.
+    ``capture_zero_name`` is retained for the failure diagnostic API, but no
+    owned empty regular sidecar is rejected for its basename or emitted.
     """
+    def signature(info: os.stat_result) -> tuple:
+        # Compare owners explicitly, rather than relying on ctime to reflect them.
+        return _signature(info) + (info.st_uid, info.st_gid)
+
+    def owned_directory(info: os.stat_result) -> None:
+        if not stat.S_ISDIR(info.st_mode) or (info.st_uid, info.st_gid) != (1000, 1000):
+            raise OracleError("invalid_input")
+
     root_before = os.fstat(descriptor)
-    inventory = {(): (_signature(root_before), None)}
+    owned_directory(root_before)
+    inventory = {(): (signature(root_before), None)}
     files = entries_count = total = 0
 
-    def cfl(name: str, initial: os.stat_result) -> None:
+    def count_entry() -> None:
+        nonlocal entries_count
+        entries_count += 1
+        if entries_count > MAX_ANCILLARY_ENTRIES:
+            raise OracleError("artifact_limit")
+
+    def ancillary_file(parent: int, name: str, relative: tuple,
+                       initial: os.stat_result, *, root_entry: bool = False) -> None:
+        nonlocal files, total
         shape = _entry_shape(initial)
-        if shape != "owned_regular_zero":
-            raise DatabaseEntryError(_entry_class(name), shape)
-
-        def signature(info: os.stat_result) -> tuple:
-            # Ownership is deliberately checked in addition to the full file
-            # signature, not inferred from ctime or the running user's uid.
-            return _signature(info) + (info.st_uid, info.st_gid)
-
+        if shape not in ("owned_regular_zero", "owned_regular_nonzero"):
+            if root_entry:
+                raise DatabaseEntryError(_entry_class(name), shape)
+            raise OracleError("invalid_input")
+        _regular(initial)
+        files += 1
+        total += initial.st_size
+        if files > MAX_ANCILLARY_FILES or total > MAX_ANCILLARY_BYTES:
+            raise OracleError("artifact_limit")
         expected = signature(initial)
         child = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                        dir_fd=descriptor)
+                        dir_fd=parent)
         try:
             if signature(os.fstat(child)) != expected:
                 raise OracleError("snapshot_changed")
-            current = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            current = os.stat(name, dir_fd=parent, follow_symlinks=False)
             if (signature(current) != expected or
                     signature(os.fstat(child)) != expected):
                 raise OracleError("snapshot_changed")
-            inventory[(name,)] = (expected, None)
+            inventory[relative] = (expected, None)
         finally:
             os.close(child)
 
     def walk(parent: int, name: str, relative: tuple, initial: os.stat_result,
              depth: int) -> None:
-        nonlocal files, entries_count, total
         if depth > MAX_ANCILLARY_DEPTH:
             raise OracleError("artifact_limit")
-        if not stat.S_ISDIR(initial.st_mode):
-            raise OracleError("invalid_input")
-        child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        owned_directory(initial)
+        expected = signature(initial)
+        child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                        dir_fd=parent)
         try:
-            if _signature(os.fstat(child)) != _signature(initial):
+            if signature(os.fstat(child)) != expected:
                 raise OracleError("snapshot_changed")
-            inventory[relative] = (_signature(initial), None)
+            inventory[relative] = (expected, None)
             with os.scandir(child) as children:
                 for entry in children:
-                    entries_count += 1
-                    if entries_count > MAX_ANCILLARY_ENTRIES:
-                        raise OracleError("artifact_limit")
+                    count_entry()
                     info = entry.stat(follow_symlinks=False)
                     key = relative + (entry.name,)
                     if stat.S_ISDIR(info.st_mode):
                         walk(child, entry.name, key, info, depth + 1)
-                        continue
-                    _regular(info)
-                    files += 1
-                    total += info.st_size
-                    if files > MAX_ANCILLARY_FILES or total > MAX_ANCILLARY_BYTES:
-                        raise OracleError("artifact_limit")
-                    reader = os.open(entry.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                                     dir_fd=child)
-                    try:
-                        if _signature(os.fstat(reader)) != _signature(info):
-                            raise OracleError("snapshot_changed")
-                        digest = _digest(reader, info.st_size)
-                        current = os.stat(entry.name, dir_fd=child, follow_symlinks=False)
-                        if (_signature(current) != _signature(info) or
-                                _signature(os.fstat(reader)) != _signature(info)):
-                            raise OracleError("snapshot_changed")
-                        inventory[key] = (_signature(info), digest)
-                    finally:
-                        os.close(reader)
+                    else:
+                        ancillary_file(child, entry.name, key, info)
             current = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            if (_signature(current) != _signature(initial) or
-                    _signature(os.fstat(child)) != _signature(initial)):
+            if (signature(current) != expected or
+                    signature(os.fstat(child)) != expected):
                 raise OracleError("snapshot_changed")
         finally:
             os.close(child)
@@ -417,21 +424,17 @@ def _database_contents(descriptor: int, *, allow_ancillary: bool = True,
             if entry.name == DATABASE_NAME:
                 _regular(info, entry_class="database")
                 database_seen = True
-            elif entry.name == ANCILLARY_NAME and allow_ancillary:
-                if not stat.S_ISDIR(info.st_mode):
-                    raise DatabaseEntryError("event_log", _entry_shape(info))
-                walk(descriptor, entry.name, (entry.name,), info, 0)
-            elif entry.name in _CFL_CLASSES and allow_ancillary:
-                cfl(entry.name, info)
+            elif allow_ancillary:
+                count_entry()
+                if entry.name == ANCILLARY_NAME and stat.S_ISDIR(info.st_mode):
+                    walk(descriptor, entry.name, (entry.name,), info, 0)
+                else:
+                    ancillary_file(descriptor, entry.name, (entry.name,), info, root_entry=True)
             else:
-                shape = _entry_shape(info)
-                basename = (entry.name if capture_zero_name is True and allow_ancillary
-                            and shape == "owned_regular_zero"
-                            and valid_diagnostic_basename(entry.name) else None)
-                raise DatabaseEntryError(_entry_class(entry.name), shape, basename=basename)
+                raise DatabaseEntryError(_entry_class(entry.name), _entry_shape(info))
     if not database_seen:
         raise OracleError("invalid_input")
-    if _signature(os.fstat(descriptor)) != _signature(root_before):
+    if signature(os.fstat(descriptor)) != signature(root_before):
         raise OracleError("snapshot_changed")
     return inventory
 
@@ -464,6 +467,9 @@ def _copy_database(source: Path, destination: Path, root: Path,
         with _file(source_file) as (reader, initial, source_parent):
             if not frozen and initial.st_mode & 0o222:
                 raise OracleError("invalid_input")
+            # Census must precede even the first database-payload read.
+            if quiescent is not None:
+                _quiescent(quiescent)
             before_digest = _digest(reader, initial.st_size)
             _unchanged(source_file, reader, initial, source_parent)
             budget_check(root, initial.st_size)
@@ -537,7 +543,8 @@ def freeze_database(source_dir: Path, dest_dir: Path, *,
     """Freeze a closed database; source and destination must be direct siblings.
 
     Their private parent is the live-byte budget root. ``quiescent`` must prove
-    all owned native workers have exited, immediately before and after copy.
+    all owned native workers have exited before the first payload read, and
+    immediately before and after copy.
     A marker, unchanged mtime, or sleep is not an acceptable implementation.
     Optional basename diagnostics apply only to the first source inventory;
     they never authorize an otherwise rejected entry or inspect its content.
