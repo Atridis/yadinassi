@@ -36,7 +36,7 @@ def parsed(names):
     # Size-limit tests need no fabricated raw physical layout. Real-reader tests
     # below independently cover the collection point and completed parse.
     return SimpleNamespace(tables=tuple(SimpleNamespace(name=name) for name in names),
-                           usage=SimpleNamespace(tables=len(names)))
+                           usage=SimpleNamespace(tables=len(names), total_blob_bytes=comparison.MAX_CENSUS_BLOB_BYTES))
 
 
 def native(names=('Physical',)):
@@ -164,7 +164,7 @@ class BoundFailureTests(unittest.TestCase):
         failure = missing_failure(['_Physical', 'physical', 'physical'])
         report, backend = fixture(failure); check(report)
         capture = report['storage_contract']
-        self.assertEqual(capture['schema'], 2)
+        self.assertEqual(capture['schema'], 3)
         self.assertEqual(capture['status'], 'failed')
         self.assertEqual(report['failure_kind'], 'catalog_comparison_failed')
         self.assertEqual(report['failed_stage'], 'baseline')
@@ -172,7 +172,9 @@ class BoundFailureTests(unittest.TestCase):
         self.assertEqual(report['native_compatibility'], 'not_claimed')
         self.assertFalse(report['accepted'])
         self.assertEqual(backend.compare_catalog.call_count, 1)
-        self.assertEqual(capture['name_diagnostic']['reader_tables'], ['_Physical', 'physical', 'physical'])
+        self.assertEqual(capture['name_census']['reader_table_count'], 3)
+        self.assertEqual(capture['name_census']['reader_name_characters'], 25)
+        self.assertNotIn('name_diagnostic', capture)
         raw = protocol.encode(capture)
         for private in (b'PRIVATE_FIELD', b'fields', b'raw_descriptor', b'Undocumented', b'indexes', b'files'):
             self.assertNotIn(private, raw)
@@ -199,7 +201,7 @@ class BoundFailureTests(unittest.TestCase):
             lambda c: c['postimage'].update(storage_version=[8, 2, 14, 0]),
             lambda c: c['postimage'].update(storage_version=[8, 3, 8, False]),
             lambda c: c['postimage'].update(page_size=4096), lambda c: c['postimage'].update(raw='PRIVATE'),
-            lambda c: c['name_diagnostic'].update(reader_tables=['Physical'])]
+            lambda c: c['name_census'].update(reader_table_count=True)]
         for index, edit in enumerate(edits):
             report = copy.deepcopy(good); edit(report['storage_contract'])
             with self.subTest(index=index), self.assertRaises(OracleError): check(report)
@@ -246,6 +248,7 @@ class BoundFailureTests(unittest.TestCase):
             report, _ = fixture(cleanup=cleanup); check(report)
             self.assertEqual(report['storage_contract'], BARE)
             self.assertNotIn(b'name_diagnostic', protocol.encode(report))
+            self.assertNotIn(b'name_census', protocol.encode(report))
             self.assertEqual(report['reader_validation'], 'failed')
             self.assertEqual(report['failure_kind'], 'catalog_comparison_failed')
 
@@ -271,7 +274,7 @@ class BoundFailureTests(unittest.TestCase):
             failure = comparison.ComparisonFailure(category, code, capture=missing_failure().capture)
             report, _ = fixture(failure); check(report)
             self.assertEqual(report['storage_contract'], {'schema': 1, 'status': 'failed', 'category': category, 'code': code})
-        failure = missing_failure(); failure.capture['name_diagnostic']['status'] = 'partial'
+        failure = missing_failure(); failure.capture['name_census']['status'] = 'partial'
         report, _ = fixture(failure); check(report)
         self.assertEqual(report['storage_contract'], BARE)
 
@@ -286,6 +289,7 @@ class BoundFailureTests(unittest.TestCase):
             self.assertIsNone(report['storage_contract'])
             self.assertNotIn(b'PRIVATE', protocol.encode(report))
             self.assertNotIn(b'name_diagnostic', protocol.encode(report))
+            self.assertNotIn(b'name_census', protocol.encode(report))
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX pinned native harness boundary')
@@ -325,8 +329,10 @@ class NativeCollectionTests(unittest.TestCase):
         self.assertEqual(capture['token'], self.calls[0][2])
         self.assertEqual(capture['origin']['sha256'], hashlib.sha256(self.pre.full_bytes()).hexdigest())
         self.assertEqual(capture['postimage']['sha256'], hashlib.sha256(self.post.full_bytes()).hexdigest())
-        self.assertEqual(capture['name_diagnostic']['reader_tables'], ['_Physical', 'physical', 'physical'])
-        self.assertEqual(capture['name_diagnostic']['parser_table_count'], 3)
+        self.assertEqual(capture['name_census']['reader_table_count'], 3)
+        self.assertEqual(capture['name_census']['reader_name_characters'], 25)
+        self.assertNotIn('name_diagnostic', capture)
+        self.assertEqual(capture['name_census']['parser_table_count'], 3)
         self.assertFalse((self.artifacts/'auditor').exists())
         self.assertFalse((self.artifacts/'auditor_frozen').exists())
         self.assertEqual((self.artifacts/'baseline'/'1Cv8.1CD').read_bytes(), self.pre.full_bytes())
@@ -341,7 +347,7 @@ class NativeCollectionTests(unittest.TestCase):
         for side_effect, code in [(changed, 'postimage_changed'),
                                   (reader.InvalidStructure('descriptor_utf8'), 'descriptor_utf8')]:
             with mock.patch.object(snapshots, 'inspect_frozen_catalog', side_effect=side_effect), \
-                 mock.patch.object(comparison, 'name_diagnostic', side_effect=AssertionError('must not collect')) as collect, \
+                 mock.patch.object(comparison, 'name_census', side_effect=AssertionError('must not collect')) as collect, \
                  self.assertRaises(comparison.ComparisonFailure) as caught:
                 self.native.compare_catalog('baseline')
             self.assertEqual(caught.exception.code, code)
@@ -368,23 +374,25 @@ class NativeCollectionTests(unittest.TestCase):
                  ({2: descriptor(fields='{"Field","X",0,0,0,""},{"Field","X",0,0,0,""}')}, 'duplicate_field')]
         for descriptions, code in cases:
             self.post = Source().ready(descriptions)
-            with mock.patch.object(comparison, 'name_diagnostic', side_effect=AssertionError('must not collect')) as collect, \
+            with mock.patch.object(comparison, 'name_census', side_effect=AssertionError('must not collect')) as collect, \
                  self.assertRaises(comparison.ComparisonFailure) as caught:
                 self.native.compare_catalog('baseline')
             self.assertEqual(caught.exception.code, code)
             self.assertIsNone(caught.exception.capture)
             collect.assert_not_called()
 
-    def test_unsupported_identifier_after_real_parse_yields_only_finite_failure(self):
+    def test_unsupported_identifier_after_real_parse_yields_complete_counts_only(self):
         self.post = Source().ready({2: descriptor('not-supported')})
         with self.assertRaises(comparison.ComparisonFailure) as caught: self.native.compare_catalog('baseline')
-        self.assertEqual((caught.exception.category, caught.exception.code), ('unsupported_layout', 'diagnostic_identifier'))
-        self.assertIsNone(caught.exception.capture)
+        self.assertEqual((caught.exception.category, caught.exception.code), ('name_mismatch', 'missing_table'))
+        self.assertEqual(caught.exception.capture['name_census']['reader_invalid_identifier_count'], 1)
+        self.assertEqual(caught.exception.capture['name_census']['policy_flags'], ['reader_identifier'])
+        self.assertNotIn(b'not-supported', protocol.encode(caught.exception.capture))
         self.assertEqual(len(self.calls), 1)
 
     def test_success_still_has_only_original_filtered_projection(self):
         self.post = Source().ready({2: descriptor(), 3: descriptor('not-supported')})
-        with mock.patch.object(comparison, 'name_diagnostic', side_effect=AssertionError('must not collect')) as collect:
+        with mock.patch.object(comparison, 'name_census', side_effect=AssertionError('must not collect')) as collect:
             evidence = self.native.compare_catalog('baseline')
         collect.assert_not_called()
         self.assertEqual(evidence['reader'], existing.projection())
@@ -406,8 +414,10 @@ def maximum_name_capture():
     item['origin']['bytes'] = snapshots.MAX_FILE_BYTES
     item['postimage']['bytes'] = snapshots.MAX_FILE_BYTES
     baseline = fixtures.physical('baseline'); baseline['bytes'] = snapshots.MAX_FILE_BYTES
-    return comparison.missing_table_failure(parsed(names), item, nonce=NONCE,
-        provenance=existing.identity(), baseline=baseline).capture
+    # Historical schema-2 fixture only; the active producer now emits counts.
+    return {'schema': 2, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
+        **comparison.capture_binding(item, nonce=NONCE, provenance=existing.identity(), baseline=baseline),
+        'name_diagnostic': comparison.name_diagnostic(parsed(names), native(selected))}
 
 
 class DiagnosticBudgetTests(unittest.TestCase):

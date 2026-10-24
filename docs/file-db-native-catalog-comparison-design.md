@@ -92,3 +92,40 @@ failure removes it. It remains failed and `native_compatibility=not_claimed`.
 The executable proof must charge the complete report and the enforced 12288-byte
 capture ceiling, not only the new name lists. Local tests and review do not
 replace a fresh source-bound native diagnostic run.
+
+## Complete counts-only follow-up measurement
+
+The names-only revision at b7dc636317241818871749463419e417d3f28e12 rejected
+native run 40123903700 with a bare diagnostic limit. That report cannot choose
+between inventory count and aggregate name length or reveal a later hidden
+identifier violation. The next separate source candidate therefore measures
+all counters and policy blockers in one pass, without changing any cap.
+
+Its active missing-table path emits capture schema 3 with the original strict
+name mismatch, existing source/nonce/token/origin/postimage binding, and a
+complete counts-only census. It exports no name list even if one would fit.
+Native tables remain 1..4; parsed tables are bounded by the unchanged 4096-table
+reader limit, each decoded string by 65536 UTF-8 bytes, and total name bytes by
+the reader's at-most-16-MiB charged BLOB payload. Character totals, maxima,
+identifier-invalid counts and parser/inventory equality are bounded and checked.
+Deadlines apply during long scans. No parser, native call, row, field or mapping
+behavior changes.
+
+Exact hypothetical schema-2 capture size is derived from a small encoded
+binding/count skeleton, each string's incremental JSON escaped length and array
+commas, not a large name-list serialization. Tests compare that arithmetic with
+the real serializer on valid, escaped, control, BMP and astral examples. All true
+policy flags are emitted together: table limit, aggregate characters, native
+identifier subset, reader identifier subset and capture bytes. Validators check
+all derivable counter/range/flag relationships but cannot reconstruct hidden
+names or authenticate producer-only observations from the counters alone.
+
+Only required successful cleanup permits the bound census to survive; otherwise
+it is reduced to a bare finite failure. Status remains failed and compatibility
+not claimed. Both fixed counter-capture and complete-report maximums must pass
+executable proofs under unchanged 12288/32768-byte caps before publication.
+
+The executable independent-maxima proof bounds the counts-only capture at 1491
+bytes and its small hypothetical-name skeleton at 1051 bytes. The enclosing
+report maximum remains 29821 bytes including newline, within unchanged caps.
+These bounds do not establish actual native counts or resolve the mismatch.

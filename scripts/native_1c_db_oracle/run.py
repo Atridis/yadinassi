@@ -692,7 +692,8 @@ class Native:
                     if type(error) is comparison.ComparisonFailure and (error.category, error.code) == ('name_mismatch', 'missing_table'):
                         raise comparison.missing_table_failure(catalog,
                             {'marker': data, 'origin': origin, 'postimage': summary},
-                            nonce=self.nonce, provenance=self.provenance, baseline=baseline) from None
+                            nonce=self.nonce, provenance=self.provenance, baseline=baseline,
+                            before_scan=self.remaining) from None
                     raise
                 evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
             except BaseException:

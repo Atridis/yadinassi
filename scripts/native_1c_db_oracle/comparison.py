@@ -1,8 +1,9 @@
 """Schema-4 exact filtered name comparison, never general native compatibility.
 
 The parser receives no native names. Only its completed immutable catalog is
-projected here. A bound missing-table rejection may export the complete bounded
-table-name inventory of the disposable fixture, never fields or raw descriptors.
+projected here. The active bound missing-table rejection exports a complete
+counts-only census, never names, fields or raw descriptors. Schema-2 name
+inventories remain supported only for historical local fixtures.
 Historical v2/v3 envelopes are not accepted or upgraded.
 """
 from __future__ import annotations
@@ -28,6 +29,18 @@ MAX_CAPTURE_BYTES = 12288
 MAX_DIAGNOSTIC_TABLES = 64
 MAX_DIAGNOSTIC_CHARACTERS = 2048
 NAME_SCOPE = 'own_synthetic_disposable_database'
+# Existing reader defaults, not new or enlarged parser limits.
+CENSUS_LIMITS = reader.CatalogLimits()
+MAX_CENSUS_TABLES = CENSUS_LIMITS.max_tables
+MAX_CENSUS_NAME_BYTES = CENSUS_LIMITS.max_string_bytes
+MAX_CENSUS_BLOB_BYTES = CENSUS_LIMITS.max_total_blob_bytes
+MAX_NAME_CAPTURE_SKELETON_BYTES = 2048
+# Worst-case JSON surrogate-pair cost per character, quotes/commas per name,
+# and the independently bounded skeleton. Observation only, never allocation.
+MAX_HYPOTHETICAL_NAME_CAPTURE_BYTES = (12 * (MAX_CENSUS_BLOB_BYTES + MAX_TABLES * MAX_TEXT)
+    + 3 * (MAX_CENSUS_TABLES + MAX_TABLES) + MAX_NAME_CAPTURE_SKELETON_BYTES)
+POLICY_FLAGS = ('reader_table_limit', 'name_character_limit', 'native_identifier',
+                'reader_identifier', 'capture_byte_limit')
 BINDING_KEYS = {'operation', 'nonce', 'token', 'source_manifest_sha256',
     'reader_source_sha256', 'actual_version', 'origin', 'postimage'}
 VERDICT = 'filtered_table_field_names_match'
@@ -255,11 +268,179 @@ def validate_name_diagnostic(value):
     return value
 
 
-def missing_table_failure(catalog, evidence, *, nonce, provenance, baseline):
-    names = name_diagnostic(catalog, evidence['marker']['storage_names'])
-    capture = {'schema': 2, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
-        **capture_binding(evidence, nonce=nonce, provenance=provenance, baseline=baseline),
-        'name_diagnostic': names}
+def census_add(left, right, maximum):
+    """Checked arithmetic also rejects bools; never retain partial diagnostics."""
+    if not integer(left, maximum) or not integer(right, maximum) or left > maximum - right:
+        raise ComparisonFailure('resource_limit', 'diagnostic_limit')
+    return left + right
+
+
+def name_wire_metrics(name, *, native=False, before_scan=None):
+    """One bounded scan: strict UTF-8 bytes, exact ensure_ascii JSON bytes, grammar.
+
+    Match protocol.encode without allocating an encoded name. Native marker
+    strings are printable BMP; reader strings originate from strict UTF-8.
+    Controls/quotes/astral reader names are observations, not new identifiers.
+    """
+    if type(name) is not str:
+        raise ComparisonFailure('structural_rejection', 'invalid_projection')
+    limit = MAX_TEXT if native else MAX_CENSUS_NAME_BYTES
+    if len(name) > limit:
+        raise ComparisonFailure('resource_limit', 'diagnostic_limit')
+    if native and not name:
+        raise ComparisonFailure('structural_rejection', 'invalid_projection')
+    valid = 1 <= len(name) <= MAX_TEXT
+    utf8 = 0; wire = 2  # JSON string quotes.
+    for index, char in enumerate(name):
+        if before_scan is not None and index % 1024 == 0:
+            before_scan()
+        code = ord(char)
+        if 0xd800 <= code <= 0xdfff or (native and (not 32 <= code <= 0xffff or not char.isprintable())):
+            raise ComparisonFailure('structural_rejection', 'invalid_projection')
+        utf8 += 1 if code < 0x80 else 2 if code < 0x800 else 3 if code <= 0xffff else 4
+        if utf8 > limit * (3 if native else 1):
+            raise ComparisonFailure('resource_limit', 'diagnostic_limit')
+        if char in ('"', '\\', '\b', '\f', '\n', '\r', '\t'):
+            wire += 2
+        else:
+            wire += 1 if 32 <= code < 127 else 6 if code <= 0xffff else 12
+        allowed = char == '_' or 'A' <= char <= 'Z' or 'a' <= char <= 'z'
+        if not allowed and not (index > 0 and '0' <= char <= '9'):
+            valid = False
+    if before_scan is not None:
+        before_scan()
+    return utf8, wire, not valid
+
+
+def hypothetical_name_capture_base(binding, native_count, reader_count, parser_count):
+    """Only fixed-size empty arrays are serialized; item order cannot affect size."""
+    skeleton = {'schema': 2, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
+        **binding, 'name_diagnostic': {'target': TARGET, 'scope': NAME_SCOPE, 'status': 'complete',
+            'native_tables': [], 'reader_tables': [], 'native_table_count': native_count,
+            'reader_table_count': reader_count, 'parser_table_count': parser_count}}
+    size = len(encode(skeleton))
+    require(size <= MAX_NAME_CAPTURE_SKELETON_BYTES, 'artifact_limit')
+    return size + max(0, native_count - 1) + max(0, reader_count - 1)
+
+
+def census_policy_flags(value):
+    conditions = (value['reader_table_count'] > MAX_DIAGNOSTIC_TABLES,
+        value['total_name_characters'] > MAX_DIAGNOSTIC_CHARACTERS,
+        value['native_invalid_identifier_count'] > 0, value['reader_invalid_identifier_count'] > 0,
+        value['hypothetical_name_capture_bytes'] > MAX_CAPTURE_BYTES)
+    return [flag for flag, present in zip(POLICY_FLAGS, conditions) if present]
+
+
+def name_census(catalog, native, binding, *, before_scan=None):
+    """Complete counts after the real parse/missing-table trigger; no name copies.
+
+    Check containers/counters before traversal, and character budgets before each
+    string scan. Even malformed synthetic objects cannot request unbounded work.
+    """
+    tables = getattr(catalog, 'tables', None); usage = getattr(catalog, 'usage', None)
+    selected = native.get('tables') if type(native) is dict else None
+    if type(tables) is not tuple or type(selected) is not list:
+        raise ComparisonFailure('structural_rejection', 'invalid_projection')
+    count = len(tables); native_count = len(selected)
+    if not 1 <= native_count <= MAX_TABLES or count > MAX_CENSUS_TABLES:
+        raise ComparisonFailure('resource_limit', 'diagnostic_limit')
+    parser_count = getattr(usage, 'tables', None); blob_bytes = getattr(usage, 'total_blob_bytes', None)
+    if (not integer(parser_count, MAX_CENSUS_TABLES) or parser_count != count
+            or not integer(blob_bytes, MAX_CENSUS_BLOB_BYTES)):
+        raise ComparisonFailure('structural_rejection', 'invalid_projection')
+    if before_scan is not None:
+        before_scan()
+    size = hypothetical_name_capture_base(binding, native_count, count, parser_count)
+    value = {'target': TARGET, 'scope': NAME_SCOPE, 'status': 'complete_counts_only',
+        'trigger_category': 'name_mismatch', 'trigger_code': 'missing_table',
+        'native_table_count': native_count, 'reader_table_count': count, 'parser_table_count': parser_count}
+    for side, collection in (('native', selected), ('reader', tables)):
+        characters = maximum = invalid = utf8 = 0
+        for table in collection:
+            name = table.get('name') if side == 'native' and type(table) is dict else (
+                getattr(table, 'name', None) if side == 'reader' else None)
+            if type(name) is not str:
+                raise ComparisonFailure('structural_rejection', 'invalid_projection')
+            bound = MAX_TABLES * MAX_TEXT if side == 'native' else blob_bytes
+            characters = census_add(characters, len(name), bound)
+            name_utf8, name_wire, name_invalid = name_wire_metrics(name, native=side == 'native', before_scan=before_scan)
+            utf8 = census_add(utf8, name_utf8, MAX_TABLES * MAX_TEXT * 3 if side == 'native' else blob_bytes)
+            maximum = max(maximum, len(name)); invalid += name_invalid
+            size = census_add(size, name_wire, MAX_HYPOTHETICAL_NAME_CAPTURE_BYTES)
+        value[side + '_name_characters'] = characters
+        value[side + '_max_name_characters'] = maximum
+        value[side + '_invalid_identifier_count'] = invalid
+    value['total_name_characters'] = census_add(value['native_name_characters'],
+        value['reader_name_characters'], MAX_CENSUS_BLOB_BYTES + MAX_TABLES * MAX_TEXT)
+    value['hypothetical_name_capture_bytes'] = size
+    value['policy_flags'] = census_policy_flags(value)
+    validate_name_census(value, binding)
+    return value
+
+
+def validate_name_census(value, binding):
+    # Syntax checks recompute only derivable constraints/flags. Private name
+    # contents, exact escaped size, and the actual missing-table trigger still
+    # require the pinned producer flow and archive digest/provenance, not these
+    # self-reported counters (just like producer-only token/postimage claims).
+    exact(value, {'target', 'scope', 'status', 'trigger_category', 'trigger_code',
+        'native_table_count', 'reader_table_count', 'parser_table_count',
+        'native_name_characters', 'reader_name_characters', 'total_name_characters',
+        'native_max_name_characters', 'reader_max_name_characters',
+        'native_invalid_identifier_count', 'reader_invalid_identifier_count',
+        'hypothetical_name_capture_bytes', 'policy_flags'})
+    require(value['target'] == TARGET and value['scope'] == NAME_SCOPE
+            and value['status'] == 'complete_counts_only'
+            and value['trigger_category'] == 'name_mismatch' and value['trigger_code'] == 'missing_table')
+    native_count = value['native_table_count']; reader_count = value['reader_table_count']
+    require(integer(native_count, MAX_TABLES, 1) and integer(reader_count, MAX_CENSUS_TABLES)
+            and integer(value['parser_table_count'], MAX_CENSUS_TABLES)
+            and value['parser_table_count'] == reader_count)
+    for side, count, limit in (('native', native_count, MAX_TEXT),
+                               ('reader', reader_count, MAX_CENSUS_NAME_BYTES)):
+        characters = value[side + '_name_characters']; maximum = value[side + '_max_name_characters']
+        invalid = value[side + '_invalid_identifier_count']
+        require(integer(characters, min(count * limit, MAX_CENSUS_BLOB_BYTES))
+                and integer(maximum, limit) and integer(invalid, count))
+        require(maximum <= characters <= count * maximum)
+        valid = count - invalid
+        # Valid identifiers occupy 1..min(64, observed maximum) characters;
+        # invalid reader names may occupy 0..maximum. At least one name must
+        # attain that maximum, which determines the exact lower bound below.
+        require(characters <= valid * min(MAX_TEXT, maximum) + invalid * maximum)
+        if not count:
+            require(characters == maximum == invalid == 0)
+        elif side == 'native':
+            require(maximum >= 1 and characters >= maximum + count - 1)
+        elif maximum == 0:
+            require(characters == 0 and invalid == count)
+        elif maximum > MAX_TEXT:
+            require(invalid > 0 and characters >= maximum + valid)
+        else:
+            require(characters >= maximum + max(valid - 1, 0))
+    native_chars = value['native_name_characters']; reader_chars = value['reader_name_characters']
+    require(integer(value['total_name_characters'], MAX_CENSUS_BLOB_BYTES + MAX_TABLES * MAX_TEXT)
+            and value['total_name_characters'] == native_chars + reader_chars)
+    size = value['hypothetical_name_capture_bytes']
+    require(integer(size, MAX_HYPOTHETICAL_NAME_CAPTURE_BYTES))
+    base = hypothetical_name_capture_base(binding, native_count, reader_count, reader_count)
+    minimum = base + 2 * (native_count + reader_count) + native_chars + reader_chars
+    maximum = base + 2 * (native_count + reader_count)
+    maximum += native_chars * (6 if value['native_invalid_identifier_count'] else 1)
+    maximum += reader_chars * (12 if value['reader_invalid_identifier_count'] else 1)
+    require(minimum <= size <= maximum)
+    require(type(value['policy_flags']) is list and value['policy_flags'] == census_policy_flags(value))
+    return value
+
+
+def missing_table_failure(catalog, evidence, *, nonce, provenance, baseline, before_scan=None):
+    # Validate bounded native collections/strings before capture_binding encodes
+    # the already producer-validated marker. Reader names are never encoded.
+    validate_projection(evidence['marker']['storage_names'])
+    binding = capture_binding(evidence, nonce=nonce, provenance=provenance, baseline=baseline)
+    census = name_census(catalog, evidence['marker']['storage_names'], binding, before_scan=before_scan)
+    capture = {'schema': 3, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
+        **binding, 'name_census': census}
     try:
         require(len(encode(capture)) <= MAX_CAPTURE_BYTES, 'artifact_limit')
     except OracleError as error:
@@ -300,8 +481,10 @@ def validate_binding(capture, report, *, nonce, provenance, final=False):
 
 
 def validate_failure_capture(capture, report, *, nonce, provenance, final=False):
-    exact(capture, {'schema', 'status', 'category', 'code', 'name_diagnostic'} | BINDING_KEYS)
-    require(type(capture['schema']) is int and capture['schema'] == 2
+    require(type(capture) is dict and type(capture.get('schema')) is int and capture['schema'] in (2, 3))
+    payload = 'name_diagnostic' if capture['schema'] == 2 else 'name_census'
+    exact(capture, {'schema', 'status', 'category', 'code', payload} | BINDING_KEYS)
+    require(type(capture['schema']) is int and capture['schema'] in (2, 3)
             and capture['status'] == 'failed' and capture['category'] == 'name_mismatch'
             and capture['code'] == 'missing_table' and report['status'] == 'failed'
             and report['failure_kind'] == 'catalog_comparison_failed'
@@ -309,7 +492,10 @@ def validate_failure_capture(capture, report, *, nonce, provenance, final=False)
             and [item['id'] for item in report['snapshots']] == ['baseline'])
     require(len(encode(capture)) <= MAX_CAPTURE_BYTES, 'artifact_limit')
     validate_binding(capture, report, nonce=nonce, provenance=provenance, final=final)
-    validate_name_diagnostic(capture['name_diagnostic'])
+    if capture['schema'] == 2:
+        validate_name_diagnostic(capture['name_diagnostic'])
+    else:
+        validate_name_census(capture['name_census'], {key: capture[key] for key in BINDING_KEYS})
 
 
 def discard_capture(report, failure=None):
@@ -329,7 +515,7 @@ def discard_capture(report, failure=None):
                                          provenance=report['provenance'])
                 require((failure.category, failure.code) == ('name_mismatch', 'missing_table'))
             except OracleError:
-                pass  # Failed cleanup or binding never releases names.
+                pass  # Failed cleanup or binding never releases diagnostic data.
             else:
                 report['storage_contract'] = failure.capture
     elif (report.get('status') == 'failed' and report.get('failure_kind') == 'catalog_comparison_failed'
@@ -337,7 +523,9 @@ def discard_capture(report, failure=None):
           and type(old) is dict and type(old.get('schema')) is int
           and ((old['schema'] == 1 and set(old) == {'schema', 'status', 'category', 'code'})
                or (old['schema'] == 2 and set(old) == {'schema', 'status', 'category', 'code',
-                                                       'name_diagnostic'} | BINDING_KEYS))
+                                                       'name_diagnostic'} | BINDING_KEYS)
+               or (old['schema'] == 3 and set(old) == {'schema', 'status', 'category', 'code',
+                                                       'name_census'} | BINDING_KEYS))
           and old['status'] == 'failed'
           and type(old['category']) is str and old['category'] in DIAGNOSTICS
           and type(old['code']) is str and old['code'] in DIAGNOSTICS[old['category']]):
@@ -374,7 +562,7 @@ def validate_report(raw, *, nonce, provenance, final=False):
         if capture is None:
             require(report['reader_validation'] in ('not_run', 'failed', 'discarded'))
             return report
-        if type(capture) is dict and type(capture.get('schema')) is int and capture['schema'] == 2:
+        if type(capture) is dict and type(capture.get('schema')) is int and capture['schema'] in (2, 3):
             validate_failure_capture(capture, report, nonce=nonce, provenance=provenance, final=final)
             return report
         exact(capture, {'schema', 'status', 'category', 'code'})

@@ -192,7 +192,51 @@ mutation failures, complete name matching, cleanup and report limits. These are
 local mechanics, not native compilation or native physical compatibility. The
 approved comparison design is in [the focused design note](file-db-native-catalog-comparison-design.md).
 
-### Complete names-only diagnostic for a rejected synthetic comparison
+### Complete counts-only census after a rejected comparison
+
+Run 40123903700 at commit `b7dc636317241818871749463419e417d3f28e12`
+rejected with `resource_limit/diagnostic_limit` and exported no names or binding
+capture. The preceding fail-fast policy could hide whether table count, aggregate
+name length, or a later unsupported identifier blocked the complete inventory.
+No actual count or cause is inferred from that bare failure.
+
+The current measurement path instead emits exact capture schema 3 only after
+the completed, stable reader result and original strict `missing_table`
+rejection. It remains failed and records that original name mismatch. It exports
+no names, even when they would fit. The census covers every parsed table under
+the unchanged reader limits: at most 4096 tables, 65536 UTF-8 bytes per string,
+and 16 MiB aggregate BLOB payload. It counts native/reader/parser tables,
+per-side and combined name characters, maximum lengths, invalid identifiers,
+and exact hypothetical complete schema-2 capture bytes. Parser count must equal
+the actual inventory length; integer widths and cumulative work are bounded
+before loops and allocation, with deadline checks during long scans.
+
+The hypothetical size is computed from a small binding/count skeleton plus
+incremental JSON string escaping and array commas. It never constructs or
+serializes the full name inventory. Controls, quotes, backslashes, BMP and
+supplementary characters are charged exactly as the real ASCII-escaping JSON
+serializer; impossible UTF-8 parser strings fail finitely. Counting invalid
+identifiers does not broaden the existing ASCII identifier subset.
+
+Every applicable old export-policy flag is reported together: reader table count
+above 64, combined characters above 2048, invalid native identifiers, invalid
+reader identifiers, and hypothetical capture bytes above 12288. Flags are
+canonical and derived from the complete counters, not a guess at the first
+historical failure. They may be empty while the original name mismatch still
+rejects. No limit is increased and no partial name list is exported.
+
+The same source/nonce/token/origin/postimage binding and cleanup gates apply.
+Late cleanup failure strips the counters and binding to the original bare finite
+failure. An offline validator recomputes ranges, sums and policy flags but cannot
+recover the private names, reproduce their exact encoded size from aggregate
+counts, or authenticate sole producer values from syntax. Those facts require
+pinned producer control flow and archive digest/provenance. The complete report
+retains its 32768-byte cap and the capture its 12288-byte cap. The independent-
+maxima counter-capture bound is 1491 bytes; the small name-capture skeleton is
+bounded by 1051 bytes, and the complete-report bound remains 29821 bytes
+including newline. These local proofs are not a native compatibility result.
+
+### Previous complete names-only diagnostic
 
 Native run 40122436147 on commit
 `85bc9328e2368ca1fd9a8141c8657a109cb71fa6` reached the completed reader and

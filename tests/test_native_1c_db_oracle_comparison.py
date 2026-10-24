@@ -564,7 +564,7 @@ class NativeProjectionSourceTests(unittest.TestCase):
                 code = ("import sys; sys.path.insert(0, sys.argv[1]); import run, comparison, filedb_catalog; "
                         "assert 'yadinassi' not in sys.modules; "
                         "assert run.filedb_catalog is comparison.reader is filedb_catalog; "
-                        "assert comparison.SCHEMA == 4; print('standalone')")
+                        "assert comparison.SCHEMA == 4; sys.stdout.buffer.write(b'standalone\\n')")
                 result = subprocess.run([sys.executable, '-I', '-B', '-c', code, str(staged)],
                                         capture_output=True, timeout=30, check=False)
                 self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8'))
