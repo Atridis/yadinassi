@@ -1,13 +1,16 @@
 # Synthetic native file-database oracle, version 4
 
 Version 4 runs the independent physical-catalog reader against the baseline
-native auditor's frozen post-session image and compares only complete physical
-table/field-name projections for `Справочник.NativeOracleItems`. An accepted
-report carries the narrow `reader_validation=filtered_table_field_names_match`;
-`native_compatibility=not_claimed` remains explicit. It does not prove row access,
-field-type mappings, B-trees, runtime DB operations, general 1CD support or writes.
-Local parser/BSL tests are not a native result: a fresh source-bound native run
-and independent review remain required for this exact revision.
+native auditor's frozen post-session image and applies the fixture-only
+`comparison_policy=exact_tables_ascii_fields_v1` to `Справочник.NativeOracleItems`:
+table names match exactly, complete ASCII field identifiers match bijectively
+without collisions, and both raw spellings are preserved.
+An accepted report carries matched capture schema 5 and
+`reader_validation=filtered_table_ascii_field_identifiers_match`, requires
+independently reviewed source-bound native evidence and all lifecycle/cleanup
+gates, and retains `native_compatibility=not_claimed`; it does not establish row
+access, field-type mappings, B-trees, runtime DB operations, general 1CD support
+or writes.
 
 The existing 13 stages, 11 snapshots, CRUD lifecycle, opaque CF/DT summaries,
 isolation and caps remain unchanged. Historical v1/v2/v3 reports retain their
