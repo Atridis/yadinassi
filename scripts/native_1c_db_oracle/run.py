@@ -1,0 +1,527 @@
+#!/usr/bin/env python3
+"""Disposable, serialized native oracle. Never read a caller's database.
+
+Every observation/export uses a throwaway clone of an already frozen snapshot.
+No interpreter/parser implementation and no native payload export live here.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import time
+
+sys.dont_write_bytecode = True
+from protocol import (ARTIFACTS, CHECKS, COMPARISONS, FAILURES, IMAGE, LANE, MAX_REPORT_BYTES,
+    STAGES, VERSION, decode, empty_report, encode, expected_logical, logical_from_marker,
+    marker, require, validate_logical, validate_report)
+from snapshots import (OracleError, MAX_FILE_BYTES, MAX_LIVE_BYTES, budget_check, clone_database,
+    compare_files, compare_pair, file_summary, freeze_database)
+from inject_metadata import CRUD_USER, SETUP_USER, inject, promote_v2, verify_redump
+
+ONEC = Path('/opt/1cv8t/x86_64/8.3.27.1508/1cv8t')
+ROOT = Path('/tmp/onec-db-oracle')
+INPUTS = Path('/oracle')
+COMMAND_SECONDS = 120
+WORK_SECONDS = 2340
+MAX_LOG_BYTES = 1048576
+MAX_LOG_TOTAL = 16777216
+
+
+def absent(*paths):
+    require(not any(path.exists() or path.is_symlink() for path in paths), 'stale_evidence')
+
+
+def regular_bytes(path, limit):
+    try:
+        info=path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and 0 < info.st_size <= limit, 'artifact_limit')
+        fd=os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd,'rb') as stream:
+            opened=os.fstat(stream.fileno())
+            require((opened.st_dev,opened.st_ino)==(info.st_dev,info.st_ino),'stale_evidence')
+            raw=stream.read(limit+1)
+        require(0 < len(raw) <= limit,'artifact_limit')
+        return raw
+    except OSError:
+        raise OracleError('artifact_missing') from None
+
+
+def native_file_summary(path):
+    summary=file_summary(path)
+    require(summary['bytes']>0,'artifact_missing')
+    return summary
+
+
+def zero_result(path):
+    raw=regular_bytes(path,128)
+    try:
+        value=raw.decode('utf-16' if raw[:2] in (b'\xff\xfe',b'\xfe\xff') else 'utf-8-sig').strip()
+        require(re.fullmatch('[+-]?[0-9]+',value) is not None and int(value)==0,'invalid_dump_result')
+    except UnicodeError:
+        raise OracleError('invalid_dump_result') from None
+
+
+
+def sandbox_bytes(root, reserve=0):
+    """Account all private tmpfs regular files, including native HOME/temp.
+
+    Descriptor-relative traversal never follows a link. Only the two explicitly
+    owned sockets are allowed. Temporary entry removal is tolerated by this live
+    monitor; none of this replaces closed-process snapshot consistency checks.
+    """
+    require(type(reserve) is int and 0 <= reserve <= MAX_LIVE_BYTES,'artifact_limit')
+    sockets={'.X11-unix/X99','runtime/session-bus/bus'}
+    total=0; entries=0
+    def walk(descriptor,prefix,depth):
+        nonlocal total,entries
+        require(depth<=16,'artifact_limit')
+        with os.scandir(descriptor) as children:
+            for entry in children:
+                entries+=1; require(entries<=4096,'artifact_limit')
+                try: info=entry.stat(follow_symlinks=False)
+                except FileNotFoundError: continue
+                relative=prefix+entry.name
+                if stat.S_ISDIR(info.st_mode):
+                    try:
+                        child=os.open(entry.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
+                    except FileNotFoundError: continue
+                    try:
+                        actual=os.fstat(child)
+                        require((actual.st_dev,actual.st_ino)==(info.st_dev,info.st_ino),'snapshot_changed')
+                        walk(child,relative+'/',depth+1)
+                    finally: os.close(child)
+                elif stat.S_ISSOCK(info.st_mode):
+                    require(relative in sockets and info.st_nlink==1,'invalid_input')
+                else:
+                    require(stat.S_ISREG(info.st_mode) and info.st_nlink==1,'invalid_input')
+                    require(0<=info.st_size<=MAX_FILE_BYTES,'artifact_limit')
+                    total+=info.st_size
+                    require(total+reserve<=MAX_LIVE_BYTES,'artifact_limit')
+    try:
+        descriptor=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try: walk(descriptor,'',0)
+        finally: os.close(descriptor)
+    except OSError:
+        raise OracleError('invalid_input') from None
+    return total
+
+
+def process_snapshot():
+    """PID + /proc starttime prevents accepting PID reuse as a live baseline."""
+    result=set()
+    for path in Path('/proc').iterdir():
+        if not path.name.isdecimal():
+            continue
+        try:
+            value=(path/'stat').read_text(encoding='ascii')
+            # comm may contain spaces/parentheses; fields after its last ')' start at state.
+            fields=value[value.rfind(')')+2:].split()
+            require(len(fields)>=20,'snapshot_not_quiescent')
+            result.add((int(path.name),fields[19]))
+        except FileNotFoundError:
+            continue
+        except (OSError,UnicodeError,ValueError):
+            raise OracleError('snapshot_not_quiescent') from None
+    return result
+
+
+def kill_identity(identity):
+    pid,started=identity
+    if identity not in process_snapshot():
+        return
+    require(pid not in (1,os.getpid()),'cleanup_unverified')
+    try:
+        fd=os.pidfd_open(pid)
+        try:
+            if identity in process_snapshot():
+                signal.pidfd_send_signal(fd,signal.SIGKILL)
+        finally:
+            os.close(fd)
+    except ProcessLookupError:
+        pass
+
+
+class Native:
+    def __init__(self, nonce, provenance):
+        self.nonce=nonce; self.provenance=provenance
+        self.root=ROOT; self.artifacts=ROOT/'artifacts'; self.evidence=ROOT/'evidence'
+        self.budget_base=Path('/tmp')
+        self.deadline=time.monotonic()+WORK_SECONDS
+        self.baseline=None; self.initial=None; self.services=[]; self.counter=0
+        self.v1=ROOT/'metadata-v1'; self.v2=ROOT/'metadata-v2'
+
+    def remaining(self):
+        remaining=self.deadline-time.monotonic()
+        require(remaining>0,'timeout')
+        return remaining
+
+    def budgets(self, reserve=0):
+        sandbox_bytes(self.budget_base,reserve)
+        logs=[p for p in self.root.rglob('*') if p.is_file() and p.suffix in ('.log','.result')]
+        require(all(p.stat().st_size<=MAX_LOG_BYTES for p in logs)
+                and sum(p.stat().st_size for p in logs)<=MAX_LOG_TOTAL,'artifact_limit')
+
+    def quiescent(self):
+        return self.baseline is not None and process_snapshot()==self.baseline
+
+    def process(self, args, label, *, native=True):
+        self.remaining(); self.budgets()
+        require(not native or self.quiescent(),'snapshot_not_quiescent')
+        self.counter+=1
+        console=self.evidence/f'{self.counter:03}-{label}-console.log'
+        absent(console)
+        with console.open('xb') as log:
+            child=subprocess.Popen(args,cwd=self.evidence,stdin=subprocess.DEVNULL,
+                stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+            deadline=min(self.deadline,time.monotonic()+COMMAND_SECONDS)
+            try:
+                while child.poll() is None:
+                    require(time.monotonic()<deadline,'timeout')
+                    if native: self.budgets()
+                    time.sleep(.05)
+                code=child.wait()
+                require(code==0,'process_failed')
+            finally:
+                if child.poll() is None:
+                    try: os.killpg(child.pid,signal.SIGKILL)
+                    except ProcessLookupError: pass
+                    child.wait(timeout=5)
+        # Marker, success exit and stable mtime do not certify quiescence.
+        if native:
+            # Allow --init to reap already-exiting helpers; never copy while they remain.
+            settle=min(self.deadline,time.monotonic()+5)
+            while not self.quiescent():
+                require(time.monotonic()<settle,'snapshot_not_quiescent')
+                time.sleep(.02)
+        self.budgets()
+
+    def preflight(self):
+        require(os.geteuid()==1000 and sys.version_info>=(3,10) and ONEC.is_file()
+                and os.access(ONEC,os.X_OK),'unsupported_platform_command')
+        require(hasattr(os,'pidfd_open') and hasattr(signal,'pidfd_send_signal'),'unsupported_platform_command')
+        absent(self.root); self.root.mkdir(mode=0o700)
+        self.artifacts.mkdir(mode=0o700); self.evidence.mkdir(mode=0o700)
+        for directory in (self.root/'home',self.root/'temp',Path('/tmp/runtime')):
+            absent(directory); directory.mkdir(mode=0o700)
+        os.environ['HOME']=str(self.root/'home')
+        os.environ['TMPDIR']=str(self.root/'temp')
+        self.initial=process_snapshot()
+        self.process(['ldd',str(ONEC)],'libraries',native=False)
+        library_log=self.evidence/'001-libraries-console.log'
+        require(b'not found' not in regular_bytes(library_log,65536),'unsupported_platform_command')
+        xdir=Path('/tmp/.X11-unix'); xdir.mkdir(mode=0o1777,exist_ok=True)
+        auth=Path('/tmp/runtime/xauth')
+        self.process(['xauth','-f',str(auth),'add',':99','MIT-MAGIC-COOKIE-1',secrets.token_hex(16)],'xauth',native=False)
+        os.environ['XAUTHORITY']=str(auth)
+        busdir=Path('/tmp/runtime/session-bus'); busdir.mkdir(mode=0o700)
+        address='unix:path='+str(busdir/'bus')
+        os.environ['DBUS_SESSION_BUS_ADDRESS']=address
+        commands=[['Xtigervnc',':99','-geometry','1280x800','-depth','24','-rfbport','-1','-nolisten','tcp','-auth',str(auth)],
+            ['/usr/bin/dbus-daemon','--session','--nofork','--nopidfile','--nosyslog','--address='+address]]
+        for index,args in enumerate(commands):
+            log=(self.evidence/f'service-{index}.log').open('xb')
+            child=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+            self.services.append((child,log))
+        deadline=min(self.deadline,time.monotonic()+10)
+        while True:
+            require(all(child.poll() is None for child,_ in self.services),'process_failed')
+            result=subprocess.run(['xdpyinfo','-display',':99'],stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=2,check=False)
+            if result.returncode==0 and (busdir/'bus').is_socket():
+                break
+            require(time.monotonic()<deadline,'timeout'); time.sleep(.1)
+        self.baseline=process_snapshot()
+
+    def command(self, mode, database, user=SETUP_USER):
+        self.remaining()
+        require(database.parent==self.artifacts and not database.is_symlink(),'invalid_input')
+        args=[str(ONEC),mode,'/F',str(database)]
+        if user is not None:
+            require(user in (SETUP_USER,CRUD_USER),'invalid_input'); args+=['/N',user]
+        return args+['/AppAutoCheckVersion-','/DisableStartupDialogs','/DisableStartupMessages','/L','ru']
+
+    def batch(self, database, operation, label, user=SETUP_USER):
+        result=self.evidence/f'{self.counter+1:03}-{label}.result'
+        log=self.evidence/f'{self.counter+1:03}-{label}.log'
+        absent(result,log)
+        self.process(self.command('DESIGNER',database,user)+operation+['/Out',str(log),'/DumpResult',str(result)],label)
+        zero_result(result)
+
+    def create_db(self, name):
+        database=self.artifacts/name; absent(database)
+        self.budgets(MAX_FILE_BYTES)
+        result=self.evidence/f'{self.counter+1:03}-create.result'; log=self.evidence/f'{self.counter+1:03}-create.log'
+        absent(result,log)
+        self.process([str(ONEC),'CREATEINFOBASE',f'File="{database}";','/Lru',
+            '/Out',str(log),'/DumpResult',str(result)],'create')
+        zero_result(result); native_file_summary(database/'1Cv8.1CD')
+        return database
+
+    def enterprise(self, database, operation):
+        token=secrets.token_hex(16)
+        control=self.evidence/'control.json'; result=self.evidence/'result.json'
+        absent(control,result)
+        control.write_text(json.dumps({'schema':1,'nonce':self.nonce,'token':token,'operation':operation}),encoding='utf-8')
+        user=None if operation=='bootstrap' else (SETUP_USER if operation=='audit' else CRUD_USER)
+        try:
+            log=self.evidence/f'{self.counter+1:03}-{operation}.log'; absent(log)
+            self.process(self.command('ENTERPRISE',database,user)+['/RunModeManagedApplication',
+                '/C',token,'/Out',str(log)],operation)
+            data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation)
+            self.provenance['actual_version']=data['actual_version']
+            return data
+        finally:
+            control.unlink(missing_ok=True); result.unlink(missing_ok=True)
+
+    def seed(self):
+        database=self.create_db('seed')
+        native=self.root/'native-empty'; absent(native)
+        self.batch(database,['/DumpConfigToFiles',str(native),'-Format','Hierarchical'],'dump-empty',None)
+        try:
+            inject(native,self.v1,nonce=self.nonce,evidence=self.evidence)
+            promote_v2(self.v1,self.v2)
+        except (ValueError,OSError):
+            raise OracleError('metadata_rejected') from None
+        self.batch(database,['/LoadConfigFromFiles',str(self.v1)],'seed-import',None)
+        self.batch(database,['/UpdateDBCfg'],'seed-apply',None)
+        self.redump(database,1,user=None)
+        self.enterprise(database,'bootstrap')
+        return database
+
+    def redump(self, database, version, user=SETUP_USER):
+        target=self.root/f'redump-{self.counter+1:03}'; absent(target)
+        self.batch(database,['/DumpConfigToFiles',str(target),'-Format','Hierarchical'],'redump',user)
+        try:
+            verify_redump(self.v1 if version==1 else self.v2,target,version=version)
+        except (ValueError,OSError):
+            raise OracleError('metadata_rejected') from None
+        finally:
+            if target.exists(): shutil.rmtree(target)
+
+    def freeze(self, database, identifier):
+        target=self.artifacts/identifier
+        self.budgets(native_file_summary(database/'1Cv8.1CD')['bytes'])
+        summary=freeze_database(database,target,quiescent=self.quiescent)
+        self.budgets()
+        self.remove(database)
+        return summary
+
+    def clone(self, identifier, label):
+        target=self.artifacts/label
+        self.budgets(native_file_summary(self.artifacts/identifier/'1Cv8.1CD')['bytes'])
+        clone_database(self.artifacts/identifier,target,budget_root=self.root)
+        self.budgets()
+        return target
+
+    def remove(self, path):
+        require(self.quiescent(),'snapshot_not_quiescent')
+        if path.exists():
+            require(path.parent==self.artifacts and not path.is_symlink(),'invalid_input')
+            path.chmod(0o700)
+            shutil.rmtree(path)
+
+    def discard(self,*identifiers):
+        for identifier in identifiers: self.remove(self.artifacts/identifier)
+
+    def observe(self, identifier, designer):
+        database=self.clone(identifier,'observer')
+        try:
+            # Designer redump and runtime read are separate clone sessions. Neither touches frozen bytes.
+            self.redump(database,designer)
+            data=self.enterprise(database,'observe')
+            return logical_from_marker(data,designer)
+        finally: self.remove(database)
+
+    def audit(self, identifier):
+        database=self.clone(identifier,'auditor')
+        try: self.enterprise(database,'audit')
+        finally: self.remove(database)
+
+    def mutate(self,database,operation):
+        self.enterprise(database,operation)
+
+    def compare(self,source,control,treatment):
+        return compare_files(*(self.artifacts/name/'1Cv8.1CD' for name in (source,control,treatment)))
+
+    def compare_pair(self,source,treatment):
+        return compare_pair(*(self.artifacts/name/'1Cv8.1CD' for name in (source,treatment)))
+
+    def export_configs(self):
+        for version in (1,2):
+            database=self.clone('baseline','producer')
+            try:
+                if version==2:
+                    self.batch(database,['/LoadConfigFromFiles',str(self.v2)],'producer-v2-import')
+                    self.batch(database,['/UpdateDBCfg'],'producer-v2-apply')
+                    self.redump(database,2)
+                self.export(database,'cf_v'+str(version),'/DumpCfg')
+            finally: self.remove(database)
+
+    def export(self,database,identifier,switch):
+        suffix='.dt' if identifier=='dt_updated' else '.cf'
+        target=self.artifacts/(identifier+suffix); absent(target)
+        self.budgets(MAX_FILE_BYTES)
+        self.batch(database,[switch,str(target)],'export-'+identifier)
+        return native_file_summary(target)
+
+    def artifact(self,identifier):
+        return native_file_summary(self.artifacts/(identifier+('.dt' if identifier=='dt_updated' else '.cf')))
+
+    def load_cf(self,database,version):
+        self.batch(database,['/LoadCfg',str(self.artifacts/f'cf_v{version}.cf')],'load-cf')
+
+    def apply(self,database):
+        self.batch(database,['/UpdateDBCfg'],'apply-cf')
+
+    def dump_dt(self):
+        database=self.clone('applied','dumper')
+        try: self.export(database,'dt_updated','/DumpIB')
+        finally: self.remove(database)
+
+    def restore(self):
+        database=self.create_db('restore-target')
+        self.batch(database,['/RestoreIB',str(self.artifacts/'dt_updated.dt')],'restore',None)
+        # Deliberately no /UpdateDBCfg. Restored config must stand on its own.
+        return database
+
+    def cleanup(self):
+        success=True
+        try:
+            if self.baseline is not None:
+                for identity in process_snapshot()-self.baseline:
+                    kill_identity(identity)
+            for child,log in reversed(self.services):
+                if child.poll() is None:
+                    try: os.killpg(child.pid,signal.SIGKILL)
+                    except ProcessLookupError: pass
+                child.wait(timeout=5); log.close()
+            if self.initial is not None:
+                deadline=time.monotonic()+5
+                while process_snapshot()!=self.initial and time.monotonic()<deadline:
+                    for identity in process_snapshot()-self.initial:
+                        kill_identity(identity)
+                    time.sleep(.02)
+                success=process_snapshot()==self.initial
+        except BaseException:
+            success=False
+        removed=False
+        try:
+            if self.root.exists():
+                for path in self.root.rglob('*'):
+                    if path.is_dir() and not path.is_symlink(): path.chmod(0o700)
+                shutil.rmtree(self.root)
+            for directory in (Path('/tmp/runtime'),):
+                if directory.exists(): shutil.rmtree(directory)
+            removed=not self.root.exists()
+        except OSError: pass
+        return success,removed
+
+
+class Controller:
+    """Lifecycle orchestration, injectable only for offline tests, not a CLI backend."""
+    def __init__(self, backend, report):
+        self.backend=backend; self.report=report; self.stage='preflight'
+
+    def done(self,stage):
+        entry=self.report['stages'][STAGES.index(stage)]
+        entry['status']='ok'; entry['checks']={key:True for key in CHECKS[stage]}
+
+    def snapshot(self,database,identifier):
+        summary=self.backend.freeze(database,identifier)
+        logical=self.backend.observe(identifier,expected_logical(identifier)['designer_version'])
+        validate_logical(logical,identifier)
+        self.report['snapshots'].append({'id':identifier,'physical':summary,'logical':logical,
+            'quiescent':True,'copy_verified':True})
+
+    def paired(self,stage,operation):
+        source,control,treatment=COMPARISONS[stage]
+        for target,action in ((control,'observe'),(treatment,operation)):
+            database=self.backend.clone(source,'writer')
+            if stage=='load_cf': self.backend.load_cf(database,1 if target==control else 2)
+            else: self.backend.mutate(database,action)
+            self.snapshot(database,target)
+        self.report['comparisons'].append({'id':stage,'kind':'matched_control','source':source,'control':control,'treatment':treatment,
+            'physical':self.backend.compare(source,control,treatment)})
+        self.backend.discard(control)
+
+    def artifact(self,identifier):
+        self.report['artifacts'].append({'id':identifier,'status':'ok','source':ARTIFACTS[identifier],
+            'physical':self.backend.artifact(identifier)})
+
+    def run(self):
+        try:
+            for stage in STAGES[:-1]:
+                self.stage=stage
+                if stage=='preflight': self.backend.preflight()
+                elif stage=='seed_v1': database=self.backend.seed()
+                elif stage=='baseline':
+                    self.snapshot(database,'baseline'); self.backend.audit('baseline')
+                elif stage in ('create','update','load_cf','delete'):
+                    self.paired(stage,{'create':'create','update':'update','delete':'delete'}.get(stage,stage))
+                    if stage=='update': self.backend.discard('created')
+                    elif stage=='load_cf': self.backend.discard('updated')
+                    elif stage=='delete': self.backend.discard('applied')
+                elif stage=='apply_cf':
+                    database=self.backend.clone('loaded','writer')
+                    self.backend.apply(database)
+                    self.snapshot(database,'applied')
+                    self.report['comparisons'].append({'id':'apply_cf','kind':'observational',
+                        'source':'loaded','control':None,'treatment':'applied',
+                        'physical':self.backend.compare_pair('loaded','applied')})
+                    self.backend.discard('loaded')
+                elif stage=='export_cf':
+                    self.backend.export_configs(); self.artifact('cf_v1'); self.artifact('cf_v2')
+                    self.backend.discard('baseline')
+                elif stage=='dump_dt': self.backend.dump_dt(); self.artifact('dt_updated')
+                elif stage=='restore_dt': self.snapshot(self.backend.restore(),'restored')
+                elif stage=='verify_restore':
+                    self.backend.audit('restored')
+                    validate_logical(self.backend.observe('deleted',2),'deleted')
+                self.done(stage)
+            self.report.update(status='ok',failed_stage=None,failure_kind='none')
+        except BaseException as error:
+            kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
+            self.report.update(status='failed',failed_stage=self.stage,failure_kind=kind)
+            self.report['stages'][STAGES.index(self.stage)]['status']='failed'
+        finally:
+            processes,files=self.backend.cleanup()
+            self.report['cleanup'].update(native_processes_stopped=processes,raw_files_removed=files)
+            entry=self.report['stages'][-1]
+            entry['checks']={'native_processes_stopped':processes,'raw_files_removed':files}
+            entry['status']='ok' if processes and files else 'failed'
+            if not(processes and files):
+                self.report.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified')
+            if self.report['status']!='ok': self.report['artifacts']=[]
+        return self.report
+
+
+def main():
+    # No arbitrary paths, external DB/config/dump arguments, legacy flags or environment backend selection.
+    if len(sys.argv)!=3 or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
+        return 2
+    nonce=sys.argv[2]
+    try:
+        from inputs import verify_inputs
+        provenance=verify_inputs(INPUTS,nonce)
+        report=empty_report(nonce,provenance)
+        report=Controller(Native(nonce,provenance),report).run()
+        raw=encode(report)
+        validate_report(raw,nonce=nonce,provenance=provenance)
+        sys.stdout.buffer.write(raw+b'\n'); sys.stdout.buffer.flush()
+        return 0 if report['status']=='ok' else 1
+    except BaseException:
+        # Never emit arbitrary native exceptions, paths or text, even on protocol failures.
+        return 1
+
+
+if __name__=='__main__':
+    raise SystemExit(main())

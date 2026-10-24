@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Rights xmlns="http://v8.1c.ru/8.2/roles" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20" xsi:type="Rights">
+<setForNewObjects>false</setForNewObjects>
+<setForAttributesByDefault>false</setForAttributesByDefault>
+<independentRightsOfChildObjects>false</independentRightsOfChildObjects>
+<object><name>Configuration.@@CONFIGURATION_NAME@@</name>
+<right><name>Administration</name><value>true</value></right>
+<right><name>DataAdministration</name><value>true</value></right>
+<right><name>ThickClient</name><value>true</value></right>
+<right><name>MainWindowModeNormal</name><value>true</value></right>
+</object>
+</Rights>

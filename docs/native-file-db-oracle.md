@@ -1,0 +1,187 @@
+# Synthetic native file-database oracle, version 1
+
+Status: implementation and offline fixtures, **not yet native evidence**. This is
+an independent opt-in experiment, not a 1CD/CF/DT parser, writer, or runtime DB
+implementation. Existing six-scenario outputs, caps, goldens, bootstrap and CI
+acceptance remain unchanged.
+
+The original fixture contains one non-hierarchical catalog, NativeOracleItems:
+Code `K1`, Payload String(32), Amount Number(9,2). The only v2 schema change is
+Payload String(64), retaining every object/attribute UUID, role and module.
+There are no registers, third-party configurations, supplied binary inputs or
+production data. Native 1C is the generator and semantic oracle, not a dependency
+of a future independent database implementation.
+
+## Invocation and reviewed CI
+
+From a clean, immutable checkout, the only supported host invocation is:
+
+```sh
+python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --output native-db-oracle/report.json
+```
+
+The host requires the existing GHCR_USER/GHCR_TOKEN credentials for the approved
+image pull. It removes them from the environment before external processes,
+uses a private registry configuration only for login/pull, deletes it, and runs
+the image without credentials. It refuses external database/config/dump paths,
+legacy full-suite/client/export flags, stale output, unverified git identity,
+untracked source changes, source-hash changes, or unexpected staged files.
+
+The separate workflow `.github/workflows/native-1c-file-db-oracle.yml` runs only
+when the exact owner-reviewed branch `codex/native-file-db-oracle-reviewed` is
+advanced. Admission binds the owner/repository numeric IDs, sender, actor,
+triggering actor, event SHA, workflow SHA, branch and immutable checkout. There
+is no manual-dispatch dependency. Normal main/PR builds and the existing Async
+reviewed branch do not opt into this lane. Top-level and eligibility permissions
+are empty; the native job has only contents:read and packages:read. Existing
+pinned actions and package credentials are reused; no authentication policy,
+package visibility, or access settings are changed.
+
+The admission checks are not a privacy boundary against a changed workflow or
+the existing package grant to this public repository. Review the exact revision
+before advancing the dedicated branch. This document does not authorize doing
+so. The first candidate was based on main
+`724ea9354f5c42772c69ffea967dfd7a070fedef`, tree
+`201f76220182a9efb9f091cb664f1fca0c3ee16d`; actual execution records its own full
+checkout commit/tree and exact staged source hashes, never that historical
+baseline by assumption.
+
+## Lifecycle and observations
+
+1. Create a fresh file infobase, obtain the platform's empty XML, inject only the
+   original reviewed fixture, import, apply, redump and verify it.
+2. Bootstrap exactly two users. Setup has the separate bounded administrator
+   role; measured catalog operations use only NativeOracleCatalogCRUD. Runtime
+   code verifies the current singleton role and non-privileged execution.
+3. Freeze an empty v1 baseline. Fresh-session reads and the separate admin user
+   inventory audit run on disposable clones, never the frozen bytes.
+4. Create `K1 / alpha / 1.25`; update the same reference to `beta / -2.50`.
+   Each operation has a same-predecessor read/no-op control and a reopened
+   observer clone. Exact decimal strings are emitted only after numeric equality.
+5. Export v1 and v2 CF on disposable producers. The producer imports/applies v2;
+   the measured database is not changed early.
+6. Load v2 CF into the measured branch. Verify designer v2 by a redump on a clone,
+   while a fresh runtime session still reports applied v1 and the updated row.
+   The matched control reloads v1 from the same updated predecessor.
+7. Apply configuration separately. Freeze before any auxiliary operation, then
+   verify runtime v2 and preserved reference/data. Its physical before/after
+   comparison is explicitly **observational, with control=null**. No documented
+   exit-only Designer batch command has been established, so this prototype
+   does not fabricate an open/close control or substitute an export/check for it.
+8. Dump DT from a clone of the frozen applied state. Physically delete the row in
+   the original branch with a matched no-op control. A deletion mark is not enough:
+   both the full catalog count and saved-reference query must be empty.
+9. Restore DT into a distinct fresh database. Never run UpdateDBCfg after restore.
+   Freeze first; verify v2 metadata, updated values, preserved reference, exact
+   roles/users and continued absence of the row in the original deleted branch.
+10. Stop/reap owned processes, remove raw files, remove the container, and verify
+    private host staging removal before marking evidence accepted.
+
+The finite report has 13 ordered stage records, 11 ordered snapshots and five
+comparisons: four matched controls (create/update/load/delete), one observational
+apply pair. All accepted states are checked again by the host against the exact
+expected lifecycle. Failed runs stop dependent execution, retain only validated
+partial observations and expose no ready CF/DT artifact summaries.
+
+Setup alone uses the privileged SessionModule and never performs catalog CRUD.
+The ordinary dispatcher is a non-privileged server common module. CRUD does not
+receive Administration, DataAdministration, FullAccess, interactive external
+processor permissions or hidden extra roles. User authentication and dangerous-
+action protection defaults are not assigned or relaxed. A separate named setup
+user audit checks the global two-user inventory, avoiding permission widening
+just to make that inventory available to CRUD. See the pinned original XML shape
+and rights references in `scripts/native_1c_db_oracle/metadata/SOURCES.md`.
+
+## Isolation, consistency and budgets
+
+The exact approved image digest is
+`ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728`.
+Isolation retains no network, UID/GID 1000, read-only root/inputs, no writable
+host mount, no image logging, private IPC, dropped capabilities, no-new-privileges,
+2 CPUs/2 GiB memory, 256 PIDs, 1024 FDs and the existing 1 GiB /tmp tmpfs. No
+packages or third-party code are installed. A private authenticated display and
+private session bus are owned by the controller; no host socket is attached.
+
+Native commands run serially. Process-group wait plus PID/start-time census
+must prove no native worker survives before every snapshot. A completed marker,
+zero DumpResult, stable mtime, sleep or matching hash alone is insufficient.
+Only a regular, single-link `1Cv8.1CD` is copied from a closed database directory.
+The documented optional sibling `1Cv8Log` directory has a private stable inventory
+limited to 16 MiB, 64 files, 128 entries and depth 2; its contents are never copied
+or reported. Links, special files, changing inventories, and every other sibling
+name (including unreviewed lockfiles) fail closed. Log presence or absence never
+substitutes for process quiescence. Snapshot source identity/size/mtime/
+ctime and two source digests must agree; destination bytes are read back and
+hashed. Frozen files/directories are read-only. Observer/export/native reopening
+uses writable clones. Source copies are never silently overwritten.
+
+Limits are independent of, and do not raise, the existing lane's limits:
+
+- 64 MiB per raw file, 512 MiB cumulative regular files across the private /tmp,
+  including native HOME, TMPDIR, metadata, caches and evidence. Only the two
+  explicitly owned X11/session-bus socket paths are admitted as special entries.
+- 1 MiB per native log, 16 MiB total native logs.
+- 32 KiB complete public report and container transport, no binary payloads.
+- 120 seconds maximum per native command, one 2340-second work deadline, and
+  a 2400-second host container deadline including cleanup reserve.
+
+The initial plan has about 49 native launches after omission of the unsupported
+apply no-op and its observer sessions. A roughly 30-second allocation per launch
+leaves time for setup, bounded streaming copies and cleanup within the existing
+40-minute container ceiling. This is a budgeting assumption, not measured native
+latency or a guarantee that every command can consume its individual maximum.
+The total deadline always wins; exhaustion fails closed, never increases caps.
+The 50-minute CI job includes registry setup/pull and teardown outside that run.
+
+## What leaves the container
+
+Only strict JSON containing fixed stage/state enums, booleans, exact expected
+logical tokens, bounded numeric counters, hashes and sizes. The report binds a
+fresh 32-hex nonce, commit/tree, source hashes, pinned image, linux/amd64, fixed
+ru_RU.UTF-8/Etc/UTC and measured SystemInfo.AppVersion `8.3.27.1508`.
+
+No 1CD/CF/DT file, native log, raw error, XML/redump, UUID/reference, path,
+credential, binary prefix, base64, arbitrary native string or page-digest map is
+transported. The workflow uploads exactly `native-db-oracle/report.json` after
+strict validation and a descriptor-relative no-follow exclusive write on the
+POSIX CI host. `report_ready=true` means that safe finite diagnostic report
+exists, including a rejected run; it does not mean native success. Only
+`accepted=true` means all native, semantic, transport, provenance and cleanup
+gates passed. A failed cleanup may be diagnosed in this finite report but cannot
+produce accepted evidence.
+
+Version 1 deliberately classifies all binary headers as unknown and page analysis
+as unsupported. Differences are streamed as **64 KiB byte windows, not pages**.
+Changed/added/removed bytes, size deltas and bounded sample indices are validated.
+Control/treatment overlap is an observation, not causal subtraction or proof of
+row-page locations. Deletion need not shrink a database; a restored DB need not
+match its source bytes. CF and DT are distinct artifact kinds and are not assumed
+to share a 1CD layout. This lane makes no format-parser completeness claim.
+
+## Capability gates and offline validation
+
+Official 8.3.27 documents support the intended commercial-platform batch command
+families: [configuration import/export](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.4._Configurations_and_extensions/?language=tr),
+[DumpIB/RestoreIB](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.2._Dumping_restoring_infobase/?language=es),
+and [DumpResult](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.17._Other_parameters/?language=tr).
+They do not establish that this exact training binary accepts the original XML,
+all Russian API spellings, narrow rights/default authentication, or every switch.
+Those remain native compilation/runtime gates until an accepted run. An error
+is not evidence of its cause; do not automatically broaden rights, alter defaults,
+add speculative flags, or treat a successful local parse as native proof.
+
+Run offline tests from the repository root:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_native_1c_db_oracle_*.py'
+python3 -m unittest discover -s tests
+```
+
+Offline fixtures mock the platform boundary or synthesize byte strings. They
+exercise lifecycle ordering, failed commands/markers, stale evidence, exact
+report schemas, non-finite/duplicate JSON, source mutations, live-writer gates,
+symlink/hard-link/side-file rejection, budgets, separate role/metadata definitions,
+cleanup rejection, reviewed-push policy and unchanged legacy gates. Native-only
+POSIX filesystem checks are skipped on unsupported hosts; portable validators
+and orchestration tests still run. None of these tests executes 1C or licenses a
+claim of native success.
