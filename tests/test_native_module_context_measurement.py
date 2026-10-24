@@ -1,4 +1,4 @@
-"""Audited module-variable capture and restored-baseline strict135 parity."""
+"""Audited module-variable capture and exact whole-source strict136 parity."""
 import copy
 import json
 import os
@@ -22,17 +22,18 @@ class ModuleContextParityTests(unittest.TestCase):
         self.assertEqual(full.digest(full.generated_module(raw)),capture['module_sha256'])
         self.assertEqual(full.CLIENT_VALUES[109:119],['module.context.v1']+capture['values'])
         self.assertEqual(full.CLIENT_VALUES,suite.CLIENT_VALUES)
-        self.assertEqual(len(full.CLIENT_VALUES),135)
+        self.assertEqual(len(full.CLIENT_VALUES),136)
+        self.assertEqual(full.CLIENT_VALUES[135:], ['dn.v1:22222277'])
         from yadinassi import Interpreter
         from decimal import Decimal
         vm=Interpreter(lambda _: self.fail('unexpected output'))
-        vm.execute(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(linux_fixture(ROOT/full.CLIENT_SOURCE).decode('utf-8-sig'))
         actual=[int(v) if type(v) is Decimal else v for v in vm.execute('ВычислитьПробу()')]
         self.assertEqual(actual,full.CLIENT_VALUES)
         self.assertEqual([type(v) for v in actual],[type(v) for v in full.CLIENT_VALUES])
 
     @unittest.skipIf(os.name=='nt','bounded native preflight is POSIX-only')
-    def test_restored_baseline_preflight_and_changed_initializer_rejection(self):
+    def test_whole_source_preflight_and_changed_initializer_rejection(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         with tempfile.TemporaryDirectory() as folder:
             p=Path(folder).resolve()/'source.bsl';p.write_bytes(raw)
@@ -45,17 +46,17 @@ class ModuleContextParityTests(unittest.TestCase):
     def test_strict_typed_contract_and_removed_capture_metadata(self):
         marker=dict(schema=1,nonce='a'*32,phase='completed',witness='client',values=suite.CLIENT_VALUES)
         with tempfile.TemporaryDirectory() as folder:
-            p=Path(folder).resolve()/'completed.json';p.write_bytes(json.dumps(marker).encode())
+            p=Path(folder).resolve()/'completed.json';p.write_bytes(json.dumps(marker,separators=(',', ':')).encode())
             self.assertEqual(suite.client_marker(p,'a'*32,'completed'),marker)
             for index in range(109,119):
                 values=list(suite.CLIENT_VALUES);v=values[index]
                 values[index]=not v if type(v) is bool else (v+1 if type(v) is int else 'changed')
-                p.write_bytes(json.dumps({**marker,'values':values}).encode())
+                p.write_bytes(json.dumps({**marker,'values':values},separators=(',', ':')).encode())
                 with self.assertRaises(suite.FullError):suite.client_marker(p,'a'*32,'completed')
                 self.assertEqual(suite.client_marker_diagnostics(p,'a'*32)['ordinal'],index)
         with self.assertRaises(ValueError):
             full.validate_marker_diagnostics(dict(phase='completed',kind='count',ordinal=109,error_stage=0,module_context=[False]*9))
-        self.assertLess(len(json.dumps(marker,indent=2).encode()),2048)
+        self.assertLess(len(json.dumps(marker,separators=(',', ':')).encode()),2048)
         self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,full.MAX_REPORT),(8192,8192,32768))
 
     def test_exact_three_part_inverse_preserves_audited_object_source(self):
