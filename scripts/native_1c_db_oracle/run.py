@@ -36,6 +36,7 @@ from snapshots import (DatabaseEntryError, ENTRY_CLASSES, ENTRY_SHAPES, OracleEr
     MAX_FILE_BYTES, MAX_LIVE_BYTES, budget_check, clone_database,
     compare_files, compare_pair, diagnostic_entry_class, file_summary, freeze_database,
     valid_diagnostic_basename)
+import contract
 from inject_metadata import CRUD_USER, SETUP_USER, inject, promote_v2, verify_redump
 
 ONEC = Path('/opt/1cv8t/x86_64/8.3.27.1508/1cv8t')
@@ -516,6 +517,8 @@ class Native:
 
     def enterprise(self, database, operation):
         require(type(operation) is str and 'enterprise_'+operation in COMMAND_STAGES,'invalid_input')
+        if operation == 'audit_contract':
+            require(self.stage == 'baseline', 'invalid_input')
         with self.command_context('enterprise_'+operation):
             return self._enterprise(database,operation)
 
@@ -525,14 +528,17 @@ class Native:
         completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
         absent(control,result,completion,pending)
         control.write_text(json.dumps({'schema':1,'nonce':self.nonce,'token':token,'operation':operation}),encoding='utf-8')
-        user=None if operation=='bootstrap' else (SETUP_USER if operation=='audit' else CRUD_USER)
+        user=None if operation=='bootstrap' else (SETUP_USER if operation in ('audit','audit_contract') else CRUD_USER)
         try:
             log=self.evidence/f'{self.counter+1:03}-{operation}.log'; absent(log)
             self.process(self.command('ENTERPRISE',database,user)+['/RunModeManagedApplication',
                 '/C',token,'/Out',str(log)],operation)
+            if operation == 'audit_contract':
+                absent(pending)
             finished=completion_marker(regular_bytes(completion,4096),nonce=self.nonce,token=token,operation=operation)
             if finished['status']=='error':
-                error=OracleError('process_failed'); error.oracle_site='result'; error.bsl_phase=finished['phase']
+                kind = ('artifact_limit' if operation == 'audit_contract' and finished['phase'] == 'contract_limit' else 'process_failed')
+                error=OracleError(kind); error.oracle_site='result'; error.bsl_phase=finished['phase']
                 raise error
             data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation)
             self.provenance['actual_version']=data['actual_version']
@@ -632,6 +638,11 @@ class Native:
     def audit(self, identifier):
         with self.temporary_clone(identifier,'auditor') as database:
             self.enterprise(database,'audit')
+
+    def audit_contract(self, identifier):
+        require(self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
+        with self.temporary_clone(identifier, 'auditor') as database:
+            return self.enterprise(database, 'audit_contract')
 
     def mutate(self,database,operation):
         self.enterprise(database,operation)
@@ -781,7 +792,12 @@ class Controller:
                 if stage=='preflight': self.backend.preflight()
                 elif stage=='seed_v1': database=self.backend.seed()
                 elif stage=='baseline':
-                    self.snapshot(database,'baseline'); self.baseline_step('audit',self.backend.audit,'baseline')
+                    self.snapshot(database,'baseline')
+                    if self.report['schema'] == contract.SCHEMA:
+                        data = self.baseline_step('audit', self.backend.audit_contract, 'baseline')
+                        self.report['storage_contract'] = contract.bind_capture(data, self.report)
+                    else:
+                        self.baseline_step('audit', self.backend.audit, 'baseline')
                 elif stage in ('create','update','load_cf','delete'):
                     self.paired(stage,{'create':'create','update':'update','delete':'delete'}.get(stage,stage))
                     if stage=='update': self.backend.discard('created')
@@ -841,7 +857,9 @@ class Controller:
             entry['status']='ok' if processes and files else 'failed'
             if not(processes and files) and self.report['status']=='ok':
                 self.report.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified')
-            if self.report['status']!='ok': self.report['artifacts']=[]
+            if self.report['status']!='ok':
+                self.report['artifacts']=[]
+                contract.discard_capture(self.report)
             if not(processes and files) or self.report['status']=='ok':
                 self.report.pop('rejected_basename',None)
                 self.report.pop('failure_context',None)
@@ -856,10 +874,10 @@ def main():
     try:
         from inputs import verify_inputs
         provenance=verify_inputs(INPUTS,nonce)
-        report=empty_report(nonce,provenance)
+        report=contract.empty_report(nonce,provenance)
         report=Controller(Native(nonce,provenance),report).run()
         raw=encode(report)
-        validate_report(raw,nonce=nonce,provenance=provenance)
+        contract.validate_report(raw,nonce=nonce,provenance=provenance)
         sys.stdout.buffer.write(raw+b'\n'); sys.stdout.buffer.flush()
         return 0 if report['status']=='ok' else 1
     except BaseException:

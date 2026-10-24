@@ -45,7 +45,7 @@ def _load(name, path):
 # and generic module names so collection order cannot redirect unrelated tests.
 _saved_path = sys.path[:]
 _saved_bytecode = sys.dont_write_bytecode
-_names = ('protocol', 'snapshots', 'inputs', 'inject_metadata', 'inject_modules', 'native_1c_smoke', 'filedb')
+_names = ('contract', 'protocol', 'snapshots', 'inputs', 'inject_metadata', 'inject_modules', 'native_1c_smoke', 'filedb')
 _saved_modules = {name: sys.modules.get(name) for name in _names}
 try:
     sys.path[:0] = [str(HELPERS), str(ROOT / 'scripts'), str(ROOT / 'scripts/native_1c_bootstrap')]
@@ -55,6 +55,7 @@ try:
     host = _load('db_oracle_security_host', ROOT / 'scripts/native_1c_db_oracle.py')
     inputs = importlib.import_module('inputs')
     protocol = importlib.import_module('protocol')
+    contract = importlib.import_module('contract')
     OracleError = importlib.import_module('snapshots').OracleError
 finally:
     sys.path[:] = _saved_path
@@ -97,7 +98,7 @@ class SourceCase(unittest.TestCase):
     def setUp(self):
         # verify_inputs deliberately imports its validator lazily. Keep that
         # binding scoped to this test instead of mutating suite import state.
-        protocol_import = mock.patch.dict(sys.modules, {'protocol': protocol})
+        protocol_import = mock.patch.dict(sys.modules, {'protocol': protocol, 'contract': contract, 'inputs': inputs})
         protocol_import.start()
         self.addCleanup(protocol_import.stop)
         self.temporary = tempfile.TemporaryDirectory()
@@ -136,7 +137,7 @@ class InputSecurityTests(SourceCase):
             'yadinassi/storage/filedb.py': 'filedb.py',
             'scripts/native_1c_db_oracle.py': 'host.py',
             **{'scripts/native_1c_db_oracle/' + name: name for name in (
-                'probe.sh', 'run.py', 'protocol.py', 'snapshots.py', 'inject_metadata.py', 'inputs.py',
+                'probe.sh', 'run.py', 'contract.py', 'protocol.py', 'snapshots.py', 'inject_metadata.py', 'inputs.py',
                 'metadata/Catalog.xml', 'metadata/CommonModule.xml', 'metadata/Role.xml',
                 'metadata/SetupRights.xml', 'metadata/CRUDRights.xml', 'modules/SessionModule.bsl',
                 'modules/ManagedApplicationModule.bsl', 'modules/NativeOracleServer.bsl')},
@@ -282,6 +283,23 @@ class ContainerCommandTests(SourceCase):
 
 
 class HostSecurityTests(SourceCase):
+    def fixture_report(self, fail=None):
+        report, backend = fixtures.fixture_report(fail)
+        actual = report['provenance']['actual_version']
+        report['provenance'] = copy.deepcopy(self.identity)
+        report['provenance']['actual_version'] = actual
+        report.update(schema=contract.SCHEMA, lane=contract.LANE, storage_contract=None,
+                      reader_validation='not_run', native_compatibility='not_claimed')
+        if report['status'] == 'ok':
+            shape = {'schema': 1, 'target': contract.TARGET,
+                     'nesting': 'observed_value_tables_only',
+                     'tables': [{'parent': None, 'via_column': None,
+                                 'columns': [{'name': 'Fixture', 'types': ['String']}]}]}
+            report['storage_contract'] = contract.bind_capture({'operation': 'audit_contract',
+                'nonce': NONCE, 'token': 'd' * 32, 'metadata_version': 1,
+                'actual_version': protocol.VERSION, 'storage_shape': shape}, report)
+        return report, backend
+
     def setUp(self):
         super().setUp()
         self.work = self.root / 'work'; self.work.mkdir()
@@ -340,7 +358,7 @@ class HostSecurityTests(SourceCase):
             self.assertEqual(seconds, 2400); self.assertEqual(limit, 32768)
             if payload is not None:
                 return exit_code, payload
-            report, _ = fixtures.fixture_report()
+            report, _ = self.fixture_report()
             report['provenance'] = copy.deepcopy(self.identity)
             report['provenance']['actual_version'] = protocol.VERSION
             return exit_code, protocol.encode(report)
@@ -444,23 +462,23 @@ class HostSecurityTests(SourceCase):
                 self.assertEqual(report['failed_stage'], 'cleanup')
                 self.assertEqual(report['stages'][-1]['status'], 'failed')
                 self.assertEqual(report['artifacts'], [])
-                protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+                contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
                 make_writable(self.work)
                 for child in self.work.iterdir(): shutil.rmtree(child)
 
     def seed_failure(self, kind):
-        report, _ = fixtures.fixture_report('seed_v1')
+        report, _ = self.fixture_report('seed_v1')
         report['provenance'] = copy.deepcopy(self.identity)
         report['failure_kind'] = kind
         return report
 
     def baseline_failure(self, kind):
-        report, _ = fixtures.fixture_report('baseline')
+        report, _ = self.fixture_report('baseline')
         report['provenance'] = copy.deepcopy(self.identity)
         report['provenance']['actual_version'] = protocol.VERSION
         report['failure_kind'] = kind
         if type(kind) is str and kind.startswith('baseline_audit_'):
-            report['snapshots'] = copy.deepcopy(fixtures.fixture_report()[0]['snapshots'][:1])
+            report['snapshots'] = copy.deepcopy(self.fixture_report()[0]['snapshots'][:1])
         return report
 
     def test_baseline_diagnosis_preserved_with_independent_host_cleanup(self):
@@ -473,7 +491,7 @@ class HostSecurityTests(SourceCase):
                     self.assertEqual(report['failure_kind'],kind)
                     self.assertEqual(report['failed_stage'],'baseline')
                     self.assertFalse(report['accepted']);self.assertEqual(report['artifacts'],[])
-                    protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                    contract.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
                     self.assertNotIn(PRIVATE,protocol.encode(report).decode())
                     make_writable(self.work)
                     for child in self.work.iterdir():shutil.rmtree(child)
@@ -507,10 +525,10 @@ class HostSecurityTests(SourceCase):
         self.assertLessEqual(self.output.stat().st_size,32768)
         self.assertNotIn(PRIVATE,self.output.read_text())
         self.assertEqual(self.github_output.read_text(),'report_ready=true\n')
-        protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+        contract.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
 
     def test_command_context_requires_all_host_cleanup_and_provenance(self):
-        original,_=fixtures.fixture_report('create')
+        original,_=self.fixture_report('create')
         original['provenance']=copy.deepcopy(self.identity)
         original['provenance']['actual_version']=protocol.VERSION
         original['failure_context']={'operation':'enterprise_create','site':'result','bsl_phase':'write','region':None,'reason':None}
@@ -522,7 +540,7 @@ class HostSecurityTests(SourceCase):
                 self.assertEqual('failure_context' in report,not options)
                 self.assertFalse(report['accepted'])
                 self.assertEqual(report['failure_kind'],'provenance_mismatch' if options.get('changed_provenance') else 'process_failed')
-                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                contract.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
                 make_writable(self.work)
                 for child in self.work.iterdir():shutil.rmtree(child)
         for context in (True,{'raw':PRIVATE},{**original['failure_context'],'bsl_phase':PRIVATE}):
@@ -532,7 +550,7 @@ class HostSecurityTests(SourceCase):
             self.assertFalse(report['accepted'])
 
     def test_snapshot_entry_context_is_stripped_on_late_host_failure(self):
-        value,_=fixtures.fixture_report('restore_dt')
+        value,_=self.fixture_report('restore_dt')
         value['provenance']=copy.deepcopy(self.identity);value['provenance']['actual_version']=protocol.VERSION
         value['failure_kind']='invalid_input'
         value['failure_context']={'operation':'snapshot_freeze','site':'operation','bsl_phase':None,
@@ -544,7 +562,7 @@ class HostSecurityTests(SourceCase):
                 self.assertEqual('failure_context' in report,not options)
                 self.assertEqual(report['failure_kind'],'provenance_mismatch' if options.get('changed_provenance') else 'invalid_input')
                 self.assertFalse(report['accepted'])
-                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                contract.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
                 make_writable(self.work)
                 for child in self.work.iterdir():shutil.rmtree(child)
 
@@ -560,7 +578,7 @@ class HostSecurityTests(SourceCase):
                 report=self.invoke(payload=protocol.encode(self.basename_failure(name)),exit_code=1)
                 self.assertEqual(report['rejected_basename'],name)
                 self.assertTrue(all(report['cleanup'].values()));self.assertFalse(report['accepted'])
-                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                contract.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
 
     def test_late_container_private_and_provenance_failures_strip_basename(self):
         cases=({'cleanup_bad':True},{'fail':'rm'},{'fail':'ps'},{'private_cleanup_bad':True},
@@ -575,7 +593,7 @@ class HostSecurityTests(SourceCase):
                 else:self.assertEqual(report['failure_kind'],'provenance_mismatch')
                 self.assertFalse(report['accepted'])
                 self.assertNotIn('1Cv8.test',protocol.encode(report).decode())
-                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                contract.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
                 make_writable(self.work)
                 for child in self.work.iterdir():shutil.rmtree(child)
 
@@ -585,7 +603,7 @@ class HostSecurityTests(SourceCase):
             value=self.basename_failure();value['rejected_basename']=name;payloads.append((value,1))
         for name in ('1Cv8.1CD','1Cv8.1CD.cfl','1Cv8Log','1Cv8snc.1CL.cfl'):
             payloads.append((self.basename_failure(name),1))
-        value,_=fixtures.fixture_report();value['provenance']=copy.deepcopy(self.identity)
+        value,_=self.fixture_report();value['provenance']=copy.deepcopy(self.identity)
         value['provenance']['actual_version']=protocol.VERSION;value['rejected_basename']='1Cv8.test';payloads.append((value,0))
         for key in ('native_processes_stopped','raw_files_removed'):
             value=self.basename_failure();value['cleanup'][key]=False
@@ -610,7 +628,7 @@ class HostSecurityTests(SourceCase):
                 self.assertEqual([path.name for path in self.output.parent.iterdir()],['report.json'])
                 self.assertLessEqual(self.output.stat().st_size,32768)
                 self.assertNotIn(PRIVATE,self.output.read_text())
-                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                contract.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
                 self.output.unlink();self.github_output.unlink();make_writable(self.work)
                 for child in self.work.iterdir():shutil.rmtree(child)
 
@@ -629,7 +647,7 @@ class HostSecurityTests(SourceCase):
                 for key in ('snapshots', 'comparisons', 'artifacts'):
                     self.assertEqual(report[key], [])
                 self.assertNotIn(PRIVATE, protocol.encode(report).decode())
-                protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+                contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
 
     def test_host_cleanup_failure_preserves_primary_seed_and_records_cleanup_independently(self):
         kinds = [f'seed_{operation}_process_failed' for operation in protocol.SEED_OPERATIONS]
@@ -658,7 +676,7 @@ class HostSecurityTests(SourceCase):
                     self.assertFalse(report['accepted'])
                     self.assertEqual(report['artifacts'], [])
                     self.assertNotIn(PRIVATE, protocol.encode(report).decode())
-                    protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+                    contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
                     make_writable(self.work)
                     for child in self.work.iterdir(): shutil.rmtree(child)
 
@@ -678,7 +696,7 @@ class HostSecurityTests(SourceCase):
                 self.assertEqual(report['cleanup'], {'native_processes_stopped': False, 'raw_files_removed': False,
                     'container_removed': False, 'private_staging_removed': True})
                 self.assertFalse(report['accepted']); self.assertEqual(report['artifacts'], [])
-                protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+                contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
 
     def test_unvalidated_seed_diagnosis_never_survives_as_primary_or_leaks(self):
         malformed = [PRIVATE, 'seed_create_' + PRIVATE, 'seed_create_none',
@@ -691,12 +709,12 @@ class HostSecurityTests(SourceCase):
                      'seed_bootstrap_inventory_poll_home_symlink_' + PRIVATE,
                      'seed_bootstrap_inventory_poll_/private/' + PRIVATE + '_symlink']
         payloads = [(self.seed_failure(kind), 1) for kind in malformed]
-        wrong_stage, _ = fixtures.fixture_report('create')
+        wrong_stage, _ = self.fixture_report('create')
         wrong_stage['provenance'] = copy.deepcopy(self.identity)
         wrong_stage['failure_kind'] = 'seed_create_process_failed'
         wrong_inventory_stage = copy.deepcopy(wrong_stage)
         wrong_inventory_stage['failure_kind'] = 'seed_bootstrap_inventory_poll_home_symlink'
-        success, _ = fixtures.fixture_report()
+        success, _ = self.fixture_report()
         success['provenance'] = copy.deepcopy(self.identity)
         success['provenance']['actual_version'] = protocol.VERSION
         success['failure_kind'] = 'seed_bootstrap_inventory_poll_home_symlink'
@@ -712,13 +730,13 @@ class HostSecurityTests(SourceCase):
                     self.assertNotEqual(report['failed_stage'], 'seed_v1')
                     self.assertFalse(report['accepted']); self.assertEqual(report['artifacts'], [])
                     self.assertNotIn(PRIVATE, protocol.encode(report).decode())
-                    protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+                    contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
 
     def test_native_cleanup_failure_cannot_be_overridden_by_host_cleanup(self):
-        report, _ = fixtures.fixture_report()
+        report, _ = self.fixture_report()
         report['provenance'] = copy.deepcopy(self.identity)
         report['provenance']['actual_version'] = protocol.VERSION
-        report.update(status='failed', failed_stage='cleanup', failure_kind='cleanup_unverified', artifacts=[])
+        report.update(status='failed', failed_stage='cleanup', failure_kind='cleanup_unverified', artifacts=[], storage_contract=None)
         report['cleanup']['raw_files_removed'] = False
         report['stages'][-1]['status'] = 'failed'
         report['stages'][-1]['checks']['raw_files_removed'] = False
@@ -734,7 +752,7 @@ class HostSecurityTests(SourceCase):
         self.assertFalse(report['accepted']); self.assertEqual(report['artifacts'], [])
 
     def test_mismatched_exit_and_forged_or_raw_or_oversize_payload_never_leaks(self):
-        good, _ = fixtures.fixture_report()
+        good, _ = self.fixture_report()
         good['provenance'] = copy.deepcopy(self.identity); good['provenance']['actual_version'] = protocol.VERSION
         forged = copy.deepcopy(good); forged['nonce'] = 'b' * 32
         rawfield = copy.deepcopy(good); rawfield['raw'] = PRIVATE
@@ -784,7 +802,7 @@ class HostSecurityTests(SourceCase):
         self.assertEqual([path.name for path in self.output.parent.iterdir()], ['report.json'])
         self.assertLessEqual(self.output.stat().st_size, 32768)
         self.assertNotIn(PRIVATE, self.output.read_text())
-        protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+        contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
 
     @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')
     def test_bootstrap_inventory_exports_only_finite_diagnosis_and_independent_cleanup(self):
@@ -806,7 +824,7 @@ class HostSecurityTests(SourceCase):
         self.assertEqual([path.name for path in self.output.parent.iterdir()], ['report.json'])
         self.assertLessEqual(self.output.stat().st_size, 32768)
         self.assertNotIn(PRIVATE, self.output.read_text())
-        protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+        contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
 
     @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')
     def test_malformed_inventory_and_raw_details_are_never_exported(self):
@@ -833,7 +851,7 @@ class HostSecurityTests(SourceCase):
                 self.assertEqual(self.github_output.read_text(), 'report_ready=true\n')
                 self.assertEqual([path.name for path in self.output.parent.iterdir()], ['report.json'])
                 self.assertLessEqual(self.output.stat().st_size, 32768)
-                protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+                contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
                 self.output.unlink(); self.github_output.unlink()
 
     @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')

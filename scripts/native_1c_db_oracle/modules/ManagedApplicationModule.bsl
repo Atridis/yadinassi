@@ -43,13 +43,13 @@
     Если Ответ.status <> "ok" И Ответ.status <> "error" Тогда
         ВызватьИсключение "invalid_marker";
     КонецЕсли;
-    Если Ответ.operation <> "dispatch" И Ответ.operation <> "bootstrap" И Ответ.operation <> "audit"
+    Если Ответ.operation <> "dispatch" И Ответ.operation <> "bootstrap" И Ответ.operation <> "audit" И Ответ.operation <> "audit_contract"
         И Ответ.operation <> "observe" И Ответ.operation <> "create" И Ответ.operation <> "update"
         И Ответ.operation <> "delete" Тогда
         ВызватьИсключение "invalid_marker";
     КонецЕсли;
     ФазаИзвестна = Ложь;
-    Для Каждого Фаза Из СтрРазделить("dispatch,control,marker,metadata,identity,precondition,begin,create_object,set_code,set_payload,set_amount,write,reference_capture,commit,reference_uuid,reference_write,reference_read,get_object,delete_object,readback,serialize,complete", ",") Цикл
+    Для Каждого Фаза Из СтрРазделить("dispatch,control,marker,metadata,identity,contract_call,contract_scan,contract_limit,precondition,begin,create_object,set_code,set_payload,set_amount,write,reference_capture,commit,reference_uuid,reference_write,reference_read,get_object,delete_object,readback,serialize,complete", ",") Цикл
         Если Ответ.phase = Фаза Тогда
             ФазаИзвестна = Истина;
         КонецЕсли;
