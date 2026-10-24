@@ -1,7 +1,7 @@
 """Finite public file-DB oracle protocol. No native bytes or text cross this boundary.
 
-This module and synthetic fixture tests are not native evidence. Version 1 does
-not parse a database header: 64 KiB byte windows are deliberately not pages.
+This module and synthetic fixture tests are not native evidence. Version 2 adds
+bounded frozen 1CD header facts; 64 KiB byte windows are deliberately not pages.
 """
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from pathlib import Path
 from snapshots import (ENTRY_CLASSES, ENTRY_SHAPES, MAX_FILE_BYTES, OracleError,
     diagnostic_entry_class, valid_diagnostic_basename, validate_comparison, validate_pair)
 
-SCHEMA = 1
-LANE = 'native-file-db-oracle-v1'
+SCHEMA = 2
+LANE = 'native-file-db-oracle-v2'
 MAX_REPORT_BYTES = 32768
 IMAGE = 'ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728'
 VERSION = '8.3.27.1508'
@@ -216,6 +216,24 @@ def physical(value):
     require(value['header'] == 'unknown' and value['page_analysis'] == 'unsupported')
 
 
+def database_physical(value):
+    exact(value, {'bytes','sha256','header','page_analysis'})
+    require(integer(value['bytes'], minimum=1) and digest(value['sha256'])
+            and value['page_analysis'] == 'unsupported')
+    header = value['header']
+    exact(header, {'status','version','page_size','page_count'})
+    require(type(header['status']) is str and header['status']=='header_layout_match')
+    version = header['version']
+    require(type(version) is list and len(version)==4
+            and all(type(part) is int for part in version)
+            and tuple(version) in ((8,2,14,0),(8,3,8,0)))
+    require(type(header['page_size']) is int
+            and header['page_size'] in (4096,8192,16384,32768,65536)
+            and (version != [8,2,14,0] or header['page_size']==4096))
+    require(integer(header['page_count'], (1 << 32)-1, minimum=3)
+            and header['page_count'] * header['page_size'] == value['bytes'])
+
+
 def expected_logical(identifier):
     require(identifier in SNAPSHOTS)
     empty = identifier in ('baseline','create_control','deleted')
@@ -331,7 +349,7 @@ def validate_report(raw, *, nonce, provenance, final=False):
         exact(item, {'id','physical','logical','quiescent','copy_verified'})
         require(item['id'] in SNAPSHOTS and item['id'] not in ids)
         ids.append(item['id'])
-        physical(item['physical']); validate_logical(item['logical'],item['id'])
+        database_physical(item['physical']); validate_logical(item['logical'],item['id'])
         require(item['quiescent'] is True and item['copy_verified'] is True)
     require(ids == list(SNAPSHOTS[:len(ids)]))
     if report['failure_kind'] in BASELINE_FAILURES:
