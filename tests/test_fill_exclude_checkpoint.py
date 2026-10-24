@@ -67,13 +67,16 @@ class FillExcludeCheckpointTests(unittest.TestCase):
             self.assertEqual(new[:841], old)
             self.assertEqual([row.split(':', 1)[0] for row in new[841:]],
                              ['fill.exclude-missing.' + label for label, _, _ in CASES])
-            # These assertions protect the unchanged interpreter guards only.
-            # Historical Linux native source-only cases differ after mutation;
-            # no interpreter prediction is used as a native expected result.
+            # Linux source-only states are measured in runs39836204865 and
+            # 40048537592. Windows/default retain their earlier upfront guard;
+            # the separate runtime fixture binds all thirteen native records.
             for index, row in enumerate(new[841:850]):
                 presence = '{"B",1};{"N",4}' if index < 3 else '{"B",0};{"U"}'
                 count = 4 if index < 3 else 3
-                self.assertTrue(row.endswith(f'[error;{{"N",1}};{{"N",2}};{{"N",3}};{{"N",{count}}};{presence}]'), row)
+                first, last, copied = 1, 2, 3
+                if target == LINUX_8_3_27_1508 and 3 <= index < 6:
+                    first, last, copied = (10 if index == 3 else 1), 20, 30
+                self.assertTrue(row.endswith(f'[error;{{"N",{first}}};{{"N",{last}}};{{"N",{copied}}};{{"N",{count}}};{presence}]'), row)
             self.assertTrue(new[-2].endswith('[ok;{"N",1};{"N",20};{"N",30};{"N",3};{"B",0};{"U"}]'))
             self.assertTrue(new[-1].endswith('[ok;{"N",1};{"N",2};{"N",30};{"N",3};{"B",0};{"U"}]'))
         self.assertEqual(current_native_target(), WINDOWS_8_3_27_2342)

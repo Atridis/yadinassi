@@ -1606,13 +1606,13 @@ Windows evidence claim; no evidence is inferred for any excluded category.
 
 ### Deferred PR87 EXCLUDE compatibility measurement
 
-This is a source-only checkpoint, not an EXCLUDE runtime change or a claim of
-new native parity. It restores the original 11 PR87 observations unchanged and
-adds only two source-insertion-order observations. Collections has 854 records:
-841 prior records, the exact 11-record PR87 suffix, then two new records. The
-current EXCLUDE upfront guard and the eight existing typed-Map allowances are
-unchanged. Every EXCLUDE record remains byte-strict and is ineligible for those
-allowances; a measured mismatch must remain a failure, not become an exception.
+The original source-only checkpoint restored the 11 PR87 observations unchanged
+and added only two source-insertion-order observations. That native source stays
+unchanged in the bounded Linux runtime correction below. Collections has 854
+records: 841 prior records, the exact 11-record PR87 suffix, then two new records.
+The eight existing typed-Map allowances are unchanged. Every EXCLUDE record
+remains byte-strict and is ineligible for those allowances; a measured mismatch
+must remain a failure, not become an exception.
 
 The original matrix uses fresh mutable target/source structures with
 `First,Last,Copy` values `1,2,3` / `10,20,30`. `Missing` exists only in the target,
@@ -1636,7 +1636,7 @@ Native source-only `Missing` failed after changing First/Last/Copy to 10/20/30;
 20/30. The other eight EXCLUDE records matched the interpreter. Those three
 partial-mutation mismatches correctly failed parity: validating a historical
 capture does not turn its rejected comparison into acceptance. There is no
-Windows EXCLUDE measurement and no new first/between native result yet.
+Windows EXCLUDE measurement. The subsequent first/between capture is described below.
 
 In that historical source, Missing was inserted last in every source-only case.
 That cannot distinguish copying common fields before late validation from
@@ -1662,8 +1662,48 @@ regenerated historical fixtures. Tests preserve all 841 and 852 prefix records
 on both interpreter targets. Separate synthetic upfront-validation,
 copy-then-validate and insertion-order-traversal policies prove that the three
 cases discriminate those alternatives; neither synthetic states nor interpreter
-predictions are native expectations. Fresh full client/server output and audited
-provenance for this exact 854-record source are still required before interpreting
-the new cases or designing a separately scoped runtime change. No new output
-fixture, comparison relaxation, workflow, protocol, security limit or Map
-allowance is introduced by this measurement.
+predictions are native expectations. The fresh full client/server capture below
+supplies the required evidence for the narrow runtime correction, rather than
+extrapolating it from the original last-position cases. No comparison relaxation,
+workflow, protocol, security-limit or Map-allowance change is introduced.
+
+#### Audited capture and bounded Linux runtime correction
+
+Linux 8.3.27.1508 run
+[40048537592](https://github.com/Atridis/yadinassi/actions/runs/40048537592),
+attempt 1, used head `93553e7149dd7c10f218c3e26d025a8d1053cb46`, synthetic checkout
+`00e748d0da56ebf8b60703c5881b8e334165ff12`, and source tree
+`fc76a3e050a455d3a2f185a9f19d80ab3522e293`. Its complete 854-record native server
+output and managed-client output were identical and independently audited against
+source, generated modules, staged inputs, version, nonce/security/cleanup gates
+and the original comparison. The native collections output SHA-256 is
+`ac37b8113282a5624f71a9608fa9db38f14db0045f4501915c008c3f9e0c133a`
+(233,298 bytes). All original eleven EXCLUDE observations match the old capture.
+With `Missing` first, between and last in source construction order, the caught
+error retains First/Last/Copy values `1/2/3`, `10/2/3` and `10/20/30`, respectively.
+The measurement run correctly rejected the then-unchanged interpreter; auditing
+that capture did not retroactively turn its original comparison into acceptance.
+
+The runtime change applies only to explicit target `linux-8.3.27.1508`, mutable
+Structure-to-Structure calls, with exactly one source-only key appearing exactly
+once in EXCLUDE. All other excluded names must exist in both structures. After
+prevalidation, that narrow error path follows source insertion order, preserving
+preceding common nonexcluded writes and raising on the source-only key. The
+three measured positions constrain this implementation; they do not establish a
+universal native traversal algorithm or error precedence for other inputs.
+
+Unmeasured mixed shapes remain guarded before any writes: an excluded name
+missing from the source, malformed/empty/whitespace tokens, more than one
+source-only key, repeated or case-aliased occurrences of the deferred key, or
+additional source-only nonexcluded companions. Fixed source/target behavior,
+Windows/default targets, INCLUDE, simultaneous lists, and all existing
+no-deferred-key paths remain unchanged. Tests label retained restrictions as
+compatibility guards, not measured native prohibitions.
+
+`integrational_tests/fill_exclude_native/collections.out` preserves the exact full
+native output; `observations.json` contains only bounded capture identities and
+thirteen extracted observations, not raw public report/provenance metadata.
+Runtime tests compare all thirteen states byte-for-byte and require the full854
+replay to pass the unchanged eight-label typed-Map comparator. Old fixtures,
+native BSL, generated-module pins, strict135 witness, harness, caps, protocol and
+workflows remain unchanged. The binary must be rebuilt for this runtime change.

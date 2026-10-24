@@ -189,8 +189,8 @@ class FillExcludeOrderCheckpointTests(unittest.TestCase):
                 self.assertEqual(outputs[2][:852], outputs[1])
                 self.assertEqual(outputs[2][844].split(':', 1)[0], LAST_LABEL)
                 self.assertEqual(tuple(row.split(':', 1)[0] for row in outputs[2][852:]), LABELS)
-                # Shape only. Fresh native observations, not these predictions,
-                # must establish the first/between states for a runtime change.
+                # Shape only here. The separate runtime tests bind these states
+                # to the independently audited native run40048537592 fixture.
                 for row in outputs[2][852:]:
                     self.assertRegex(row, r': \[(?:ok|error);\{"N",-?\d+\};\{"N",-?\d+\};'
                                           r'\{"N",-?\d+\};\{"N",\d+\};\{"B",[01]\};'
