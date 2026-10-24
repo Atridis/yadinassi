@@ -289,6 +289,21 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_date_null_measurement(source, *, host=False):
+    """Exact test-only inverse, before every unchanged historical source pin."""
+    inventory = json.loads((REPOSITORY / 'tests/fixtures/date_null_measurement/'
+                            'harness-source-inverse.json').read_text(encoding='utf-8'))
+    path = ('scripts/native_1c_full_host.py' if host
+            else 'scripts/native_1c_bootstrap/full_suite.py')
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
 def without_exclude_order_measurement(source, *, host=False):
     """Test-only inverse of the exact reviewed PR87 collections delta.
 
@@ -296,6 +311,7 @@ def without_exclude_order_measurement(source, *, host=False):
     the four literal EXCLUDE checks and explicit host lines are reversed; no
     Async literals, protocol code or historical expected hashes are rewritten.
     """
+    source = without_date_null_measurement(source, host=host)
     current, historical = (
         ('6f46ca44455dc2143dccd2bdbbcc52642fc70fe0a053c37a8f1b3d740021d8ba',
          '93fb5e833fab672b985c3f3c5a961ad0abb4279e3bd82e4c37992b0c062b1f3c') if host else
