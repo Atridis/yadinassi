@@ -56,10 +56,16 @@ def hypothetical(names, selected, bound=None):
             'native_table_count': len(selected), 'reader_table_count': len(names), 'parser_table_count': len(names)}}
 
 
+def counter_capture(names=('private_reader',), selected=('PrivateNative',)):
+    # Explicit historical schema-3 fixture, independent of active producer choice.
+    return {'schema': 3, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
+        **binding(), 'name_census': census(names, selected)}
+
+
 def max_counter_capture():
     # Independent maxima, including mutually exclusive widths. This proves the
     # complete schema size, not authenticity/attainability of fabricated counts.
-    capture = failure().capture
+    capture = counter_capture()
     capture['origin']['bytes'] = snapshots.MAX_FILE_BYTES
     capture['postimage']['bytes'] = snapshots.MAX_FILE_BYTES
     value = capture['name_census']
@@ -85,17 +91,17 @@ class CompleteCensusTests(unittest.TestCase):
             'hypothetical_name_capture_bytes': len(protocol.encode(hypothetical(
                 ['other_private', 'other_private', 'Case_Private'], ['Native_Private', '_N']))),
             'policy_flags': []})
-        raw = protocol.encode(failure().capture)
+        raw = protocol.encode(counter_capture())
         self.assertNotIn(b'private_reader', raw); self.assertNotIn(b'PrivateNative', raw)
         self.assertNotIn(b'native_tables', raw); self.assertNotIn(b'reader_tables', raw)
 
-    def test_64_65_and_4096_tables_are_complete_not_truncated(self):
-        for count in (0, 64, 65, 4096):
+    def test_64_65_128_129_and_4096_tables_are_complete_not_truncated(self):
+        for count in (0, 64, 65, 128, 129, 4096):
             value = census(['R'] * count, ['N'])
             self.assertEqual(value['reader_table_count'], count)
             self.assertEqual(value['parser_table_count'], count)
             self.assertEqual(value['reader_name_characters'], count)
-            self.assertEqual('reader_table_limit' in value['policy_flags'], count > 64)
+            self.assertEqual('reader_table_limit' in value['policy_flags'], count > 128)
             self.assertEqual('capture_byte_limit' in value['policy_flags'],
                              value['hypothetical_name_capture_bytes'] > 12288)
         self.assertEqual(census([], ['N'])['reader_max_name_characters'], 0)
@@ -225,6 +231,162 @@ class CompleteCensusTests(unittest.TestCase):
         self.assertEqual(checks.call_count, 3)  # At characters 0, 1024, 2048.
         report, _ = previous.fixture(OracleError('timeout')); previous.check(report)
         self.assertIsNone(report['storage_contract']); self.assertNotIn(b'name_census', protocol.encode(report))
+
+
+class ProducerChoiceTests(unittest.TestCase):
+    def test_complete_census_once_precedes_complete_names_and_exact_encoding(self):
+        order = []; original_census = comparison.name_census; original_names = comparison.name_diagnostic
+        def collect(*args, **kwargs):
+            order.append('census'); return original_census(*args, **kwargs)
+        def names(*args, **kwargs):
+            self.assertEqual(order, ['census'])
+            order.append('names'); return original_names(*args, **kwargs)
+        before_scan = mock.Mock()
+        with mock.patch.object(comparison, 'name_census', side_effect=collect) as count, \
+             mock.patch.object(comparison, 'name_diagnostic', side_effect=names) as inventory:
+            result = failure(['Reader', 'Reader', '_Other'], ['Native'], before_scan=before_scan)
+        count.assert_called_once(); inventory.assert_called_once(); before_scan.assert_called()
+        self.assertEqual(order, ['census', 'names'])
+        self.assertEqual(result.capture, hypothetical(['Reader', 'Reader', '_Other'], ['Native']))
+        self.assertEqual(len(protocol.encode(result.capture)),
+                         census(['Reader', 'Reader', '_Other'], ['Native'])['hypothetical_name_capture_bytes'])
+
+    def test_measured_67_table_shape_is_only_a_synthetic_counts_and_size_witness(self):
+        # Reproduce counts/lengths and seven-digit byte widths, NOT any physical
+        # name, digest, token, or actual catalog from the audited native run.
+        names = ['R' * 27] + ['R' * 16] * 5 + ['R' * 15] * 61
+        selected = ['N' * 11]
+        evidence = existing.evidence(); evidence['marker']['storage_names'] = previous.native(selected)
+        evidence['origin']['bytes'] = evidence['postimage']['bytes'] = 128 * 8192
+        baseline = previous.fixtures.physical('baseline'); baseline['bytes'] = 128 * 8192
+        bound = comparison.capture_binding(evidence, nonce=existing.NONCE,
+            provenance=existing.identity(), baseline=baseline)
+        value = comparison.name_census(parsed(names), previous.native(selected), bound)
+        self.assertEqual((value['native_table_count'], value['reader_table_count'], value['parser_table_count']), (1, 67, 67))
+        self.assertEqual((value['native_name_characters'], value['reader_name_characters'], value['total_name_characters']),
+                         (11, 1022, 1033))
+        self.assertEqual((value['native_max_name_characters'], value['reader_max_name_characters']), (11, 27))
+        self.assertEqual((value['native_invalid_identifier_count'], value['reader_invalid_identifier_count']), (0, 0))
+        self.assertEqual(value['hypothetical_name_capture_bytes'], 2280)
+        self.assertEqual(value['policy_flags'], [])
+        with mock.patch.object(comparison, 'MAX_DIAGNOSTIC_TABLES', 64):
+            self.assertEqual(comparison.census_policy_flags(value), ['reader_table_limit'])
+        result = comparison.missing_table_failure(parsed(names), evidence, nonce=existing.NONCE,
+            provenance=existing.identity(), baseline=baseline)
+        self.assertEqual((result.category, result.code), ('name_mismatch', 'missing_table'))
+        self.assertEqual(result.capture, hypothetical(names, selected, bound))
+        self.assertEqual(len(protocol.encode(result.capture)), 2280)
+
+    def test_128_names_are_complete_and_129_falls_back_without_partial_inventory(self):
+        self.assertEqual(comparison.MAX_DIAGNOSTIC_TABLES, 128)
+        for count in (0, 64, 65, 67, 128, 129, 4096):
+            names = ['Reader'] * count
+            with self.subTest(count=count):
+                result = failure(names, ['Native'])
+                report, _ = previous.fixture(result); previous.check(report)
+                self.assertEqual((result.category, result.code), ('name_mismatch', 'missing_table'))
+                self.assertFalse(report['accepted'])
+                self.assertEqual(report['reader_validation'], 'failed')
+                self.assertEqual(report['native_compatibility'], 'not_claimed')
+                capture = result.capture
+                if count <= 128:
+                    self.assertEqual(capture['schema'], 2)
+                    self.assertEqual(capture['name_diagnostic']['reader_tables'], names)
+                    self.assertEqual(capture['name_diagnostic']['reader_table_count'], count)
+                    self.assertEqual(capture['name_diagnostic']['parser_table_count'], count)
+                    self.assertNotIn('name_census', capture)
+                else:
+                    self.assertEqual(capture['schema'], 3)
+                    self.assertEqual(capture['name_census']['reader_table_count'], count)
+                    self.assertEqual(capture['name_census']['parser_table_count'], count)
+                    self.assertIn('reader_table_limit', capture['name_census']['policy_flags'])
+                    for private in (b'"Reader"', b'"Native"', b'native_tables', b'reader_tables', b'name_diagnostic'):
+                        self.assertNotIn(private, protocol.encode(capture))
+
+    def test_2048_names_fit_but_2049_keeps_complete_counters_only(self):
+        self.assertEqual(comparison.MAX_DIAGNOSTIC_CHARACTERS, 2048)
+        for last, total in (('R' * 31, 2048), ('R' * 32, 2049)):
+            result = failure(['R' * 31] * 63 + [last], ['N' * 64])
+            capture = result.capture
+            with self.subTest(total=total):
+                if total == 2048:
+                    self.assertEqual(capture['schema'], 2)
+                    names = capture['name_diagnostic']
+                    self.assertEqual(sum(map(len, names['native_tables'] + names['reader_tables'])), total)
+                else:
+                    self.assertEqual(capture['schema'], 3)
+                    self.assertEqual(capture['name_census']['total_name_characters'], total)
+                    self.assertEqual(capture['name_census']['policy_flags'], ['name_character_limit'])
+                    self.assertNotIn('name_diagnostic', capture)
+
+    def test_any_identifier_flag_skips_name_allocation_and_retains_complete_counts(self):
+        cases = [(['Valid', name], ['Native'], 'reader_identifier') for name in
+                 ('', '1Bad', 'a-b', 'a b', 'a.b', 'a\\b', 'a"b', 'a\n', '\x00', 'é', '🙂', 'R' * 65)]
+        cases += [(['Reader'], [name], 'native_identifier') for name in ('1Bad', 'a-b', 'a"b', 'a\\b', 'é')]
+        for names, selected, flag in cases:
+            with self.subTest(names=repr(names), selected=repr(selected)), \
+                 mock.patch.object(comparison, 'name_diagnostic', side_effect=AssertionError('must not copy names')):
+                result = failure(names, selected)
+            capture = result.capture
+            self.assertEqual(capture['schema'], 3)
+            self.assertEqual(capture['name_census']['reader_table_count'], len(names))
+            self.assertEqual(capture['name_census']['native_table_count'], len(selected))
+            self.assertEqual(capture['name_census']['policy_flags'], [flag])
+            self.assertNotIn('name_diagnostic', capture)
+            report, _ = previous.fixture(result); previous.check(report)
+            self.assertFalse(report['accepted'])
+
+    def test_encoded_size_flag_never_serializes_oversized_names(self):
+        empty = census([''], ['N'])['hypothetical_name_capture_bytes']
+        for target in (12288, 12289):
+            name = 'R' * (target - empty)
+            with mock.patch.object(comparison, 'name_diagnostic', side_effect=AssertionError('must not copy names')):
+                result = failure([name], ['N'])
+            capture = result.capture
+            self.assertEqual(capture['schema'], 3)
+            self.assertEqual(capture['name_census']['hypothetical_name_capture_bytes'], target)
+            self.assertEqual('capture_byte_limit' in capture['name_census']['policy_flags'], target > 12288)
+            self.assertNotIn(name.encode('ascii'), protocol.encode(capture))
+
+    def test_encoded_cap_alone_selects_counts_fallback(self):
+        # Lower only this test's cap so otherwise valid names can isolate the
+        # final policy flag; the real 12288-byte cap remains pinned elsewhere.
+        selected = ['N' + str(index) + 'x' * 62 for index in range(4)]
+        with mock.patch.object(comparison, 'MAX_CAPTURE_BYTES', 2400), \
+             mock.patch.object(comparison, 'name_diagnostic', side_effect=AssertionError('must not copy names')):
+            result = failure(['R' * 14] * 128, selected)
+        self.assertEqual(result.capture['schema'], 3)
+        self.assertEqual(result.capture['name_census']['policy_flags'], ['capture_byte_limit'])
+        self.assertLess(len(protocol.encode(result.capture)), 2400)
+        self.assertNotIn('name_diagnostic', result.capture)
+
+    def test_actual_name_capture_is_still_encoded_and_capped_after_preflight(self):
+        encoder = comparison.encode
+        for raise_limit in (False, True):
+            def oversized(value):
+                if value.get('schema') == 2 and value['name_diagnostic']['native_tables']:
+                    if raise_limit: raise OracleError('artifact_limit')
+                    return encoder(value) + b' ' * comparison.MAX_CAPTURE_BYTES
+                return encoder(value)
+            with self.subTest(raise_limit=raise_limit), mock.patch.object(comparison, 'encode', side_effect=oversized), \
+                 self.assertRaises(comparison.ComparisonFailure) as caught:
+                failure(['Reader'], ['Native'])
+            self.assertEqual((caught.exception.category, caught.exception.code), ('resource_limit', 'diagnostic_limit'))
+            self.assertIsNone(caught.exception.capture)
+
+    def test_actual_name_encoding_must_equal_complete_census_measurement(self):
+        encoder = comparison.encode
+        for delta in (-1, 1):
+            def inconsistent(value):
+                raw = encoder(value)
+                if value.get('schema') == 2 and value['name_diagnostic']['native_tables']:
+                    return raw[:-1] if delta < 0 else raw + b' '
+                return raw
+            with self.subTest(delta=delta), mock.patch.object(comparison, 'encode', side_effect=inconsistent), \
+                 self.assertRaises(comparison.ComparisonFailure) as caught:
+                failure(['Reader'], ['Native'])
+            self.assertEqual((caught.exception.category, caught.exception.code), ('structural_rejection', 'invalid_projection'))
+            self.assertIsNone(caught.exception.capture)
 
 
 class WireSizeTests(unittest.TestCase):
@@ -375,17 +537,20 @@ class CensusValidationTests(unittest.TestCase):
     def test_all_flags_empty_does_not_change_strict_failure_or_acceptance(self):
         report, _ = previous.fixture(failure(['Reader'], ['Native'])); previous.check(report)
         capture = report['storage_contract']
-        self.assertEqual(capture['schema'], 3); self.assertEqual(capture['name_census']['policy_flags'], [])
+        self.assertEqual(census(['Reader'], ['Native'])['policy_flags'], [])
+        self.assertEqual(capture['schema'], 2)
+        self.assertEqual(capture['name_diagnostic']['reader_tables'], ['Reader'])
+        self.assertEqual(capture['name_diagnostic']['native_tables'], ['Native'])
         self.assertEqual((capture['category'], capture['code']), ('name_mismatch', 'missing_table'))
         self.assertEqual(report['native_compatibility'], 'not_claimed'); self.assertFalse(report['accepted'])
 
-    def test_legacy_complete_name_capture_remains_syntax_compatible_but_not_active(self):
-        capture = previous.maximum_name_capture()
-        # Replace only the maximal-width origin with the fixture's real baseline.
-        capture['origin']['bytes'] = existing.evidence()['origin']['bytes']
+    def test_historical_counts_capture_remains_valid_even_when_all_names_fit(self):
+        capture = counter_capture()
+        self.assertEqual(capture['name_census']['policy_flags'], [])
         report, _ = previous.fixture(comparison.ComparisonFailure('name_mismatch', 'missing_table', capture=capture))
         previous.check(report)
-        self.assertEqual(failure().capture['schema'], 3)
+        self.assertEqual(report['storage_contract']['schema'], 3)
+        self.assertEqual(failure().capture['schema'], 2)
 
 
 class CensusBudgetTests(unittest.TestCase):

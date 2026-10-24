@@ -192,7 +192,47 @@ mutation failures, complete name matching, cleanup and report limits. These are
 local mechanics, not native compilation or native physical compatibility. The
 approved comparison design is in [the focused design note](file-db-native-catalog-comparison-design.md).
 
-### Complete counts-only census after a rejected comparison
+### Measured complete names with counts-only fallback
+
+The independently audited census run
+[40125667143](https://github.com/Atridis/yadinassi/actions/runs/40125667143),
+head `9285723e58c3d4a756b59939a3c7dd743622c6b0`, observed 1 native and 67
+parsed table names, 1033 combined name characters, no unsupported identifiers,
+and a 2280-byte hypothetical complete names capture. Its sole policy flag was
+the former 64-table diagnostic limit. It remained failed/missing_table and
+revealed no actual name. Report SHA-256:
+`64df535b4b84a74275e3e596015069da099577e0806ae938e12ee09c7744cf7a`.
+These fixture measurements are not universal bounds or proof of a prior run's
+first failing branch.
+
+The measured local output policy now permits up to 128 parsed table names,
+providing room above the observed 67. This is not a platform schema limit or a
+reader-limit increase. The combined 2048-character ceiling, exact ASCII grammar,
+12288-byte capture and 32768-byte report ceilings remain unchanged.
+
+After the same real-reader/postimage checks and strict missing-table rejection,
+the producer first computes the complete census described below. Only when all
+current policy flags are false does it emit the complete schema-2 names capture:
+all selected native names and all parsed names, sorted with parser duplicates
+preserved, exact counts and existing source/clone/postimage bindings. It checks
+the actual encoded size again. Otherwise it emits the complete schema-3
+counts-only failure, with all blockers and no names. No branch truncates,
+normalizes, selects likely candidates, accepts a partial match or changes the
+failure into success. Late cleanup failure removes either diagnostic.
+
+The attainable maximum complete names capture is 3491 bytes; the counts-only
+upper bound remains 1491 and its small hypothetical-name skeleton remains 1051.
+The universal complete-report upper bound remains 29821 bytes including newline,
+not the smaller bound for a names-only failure slot. Actual encoded name-capture
+bytes must equal the census measurement before release. Historical census flags
+remain interpreted with their original pinned source policy; the old 67-table
+limit flag is never silently migrated into the new 128-table policy.
+
+A fresh source-bound names artifact is still required before any actual spelling
+or mapping explanation is used. The observed counts do not authorize guessing
+physical names or changing the parser/comparison policy.
+
+### Counts-only census used to choose the output policy
 
 Run 40123903700 at commit `b7dc636317241818871749463419e417d3f28e12`
 rejected with `resource_limit/diagnostic_limit` and exported no names or binding
@@ -200,9 +240,9 @@ capture. The preceding fail-fast policy could hide whether table count, aggregat
 name length, or a later unsupported identifier blocked the complete inventory.
 No actual count or cause is inferred from that bare failure.
 
-The current measurement path instead emits exact capture schema 3 only after
-the completed, stable reader result and original strict `missing_table`
-rejection. It remains failed and records that original name mismatch. It exports
+The counts-only predecessor emitted exact capture schema 3 after the
+completed, stable reader result and original strict `missing_table` rejection.
+The same census now supplies the current producer decision and fallback. It remains failed and records that original name mismatch. It exports
 no names, even when they would fit. The census covers every parsed table under
 the unchanged reader limits: at most 4096 tables, 65536 UTF-8 bytes per string,
 and 16 MiB aggregate BLOB payload. It counts native/reader/parser tables,
@@ -218,8 +258,9 @@ supplementary characters are charged exactly as the real ASCII-escaping JSON
 serializer; impossible UTF-8 parser strings fail finitely. Counting invalid
 identifiers does not broaden the existing ASCII identifier subset.
 
-Every applicable old export-policy flag is reported together: reader table count
-above 64, combined characters above 2048, invalid native identifiers, invalid
+Every applicable export-policy flag is reported together: reader table count
+above the source-pinned diagnostic ceiling (formerly 64, now 128), combined
+characters above 2048, invalid native identifiers, invalid
 reader identifiers, and hypothetical capture bytes above 12288. Flags are
 canonical and derived from the complete counters, not a guess at the first
 historical failure. They may be empty while the original name mismatch still

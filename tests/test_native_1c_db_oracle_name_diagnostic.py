@@ -86,16 +86,16 @@ class NameInventoryTests(unittest.TestCase):
         self.assertEqual(value['native_table_count'], 1)
 
     def test_count_caps_checked_before_copy_and_failure_has_no_partial_names(self):
-        for names, selected in ((['R'] * 65, ['N']), ([], []), ([], ['N'+str(i) for i in range(5)])):
+        for names, selected in ((['R'] * 129, ['N']), ([], []), ([], ['N'+str(i) for i in range(5)])):
             with self.subTest(reader=len(names), native=len(selected)), self.assertRaises(comparison.ComparisonFailure) as caught:
                 comparison.name_diagnostic(parsed(names), native(selected))
             self.assertEqual((caught.exception.category, caught.exception.code), ('resource_limit', 'diagnostic_limit'))
             self.assertIsNone(caught.exception.capture)
-        value = comparison.name_diagnostic(parsed(['R']*64), native(['A', 'B', 'C', 'D']))
-        self.assertEqual(value['reader_table_count'], 64)
+        value = comparison.name_diagnostic(parsed(['R']*128), native(['A', 'B', 'C', 'D']))
+        self.assertEqual(value['reader_table_count'], 128)
 
     def test_parser_count_must_equal_complete_inventory_not_subset(self):
-        for count in (0, 2, True, -1, 65):
+        for count in (0, 2, True, -1, 129):
             catalog = parsed(['Reader']); catalog.usage.tables = count
             with self.subTest(count=count), self.assertRaises(comparison.ComparisonFailure) as caught:
                 comparison.name_diagnostic(catalog, native())
@@ -136,7 +136,7 @@ class NameInventoryTests(unittest.TestCase):
             lambda d: d.update(parser_table_count=True), lambda d: d.update(reader_tables=('A', 'B', 'B')),
             lambda d: d.update(reader_tables=['A', 'B', '\u0410']),
             lambda d: d.update(native_tables=['C'*64]*5, native_table_count=5),
-            lambda d: d.update(reader_tables=['R']*65, reader_table_count=65, parser_table_count=65),
+            lambda d: d.update(reader_tables=['R']*129, reader_table_count=129, parser_table_count=129),
             lambda d: d.update(reader_tables=['R'*64]*64, reader_table_count=64, parser_table_count=64)]
         for index, edit in enumerate(edits):
             value = copy.deepcopy(good); edit(value)
@@ -164,7 +164,7 @@ class BoundFailureTests(unittest.TestCase):
         failure = missing_failure(['_Physical', 'physical', 'physical'])
         report, backend = fixture(failure); check(report)
         capture = report['storage_contract']
-        self.assertEqual(capture['schema'], 3)
+        self.assertEqual(capture['schema'], 2)
         self.assertEqual(capture['status'], 'failed')
         self.assertEqual(report['failure_kind'], 'catalog_comparison_failed')
         self.assertEqual(report['failed_stage'], 'baseline')
@@ -172,9 +172,10 @@ class BoundFailureTests(unittest.TestCase):
         self.assertEqual(report['native_compatibility'], 'not_claimed')
         self.assertFalse(report['accepted'])
         self.assertEqual(backend.compare_catalog.call_count, 1)
-        self.assertEqual(capture['name_census']['reader_table_count'], 3)
-        self.assertEqual(capture['name_census']['reader_name_characters'], 25)
-        self.assertNotIn('name_diagnostic', capture)
+        self.assertEqual(capture['name_diagnostic']['reader_table_count'], 3)
+        self.assertEqual(capture['name_diagnostic']['native_tables'], ['Physical'])
+        self.assertEqual(capture['name_diagnostic']['reader_tables'], ['_Physical', 'physical', 'physical'])
+        self.assertNotIn('name_census', capture)
         raw = protocol.encode(capture)
         for private in (b'PRIVATE_FIELD', b'fields', b'raw_descriptor', b'Undocumented', b'indexes', b'files'):
             self.assertNotIn(private, raw)
@@ -184,7 +185,6 @@ class BoundFailureTests(unittest.TestCase):
         self.assertFalse(report['accepted'])
 
     def test_each_binding_and_exact_shape_checked_independently(self):
-        good, _ = fixture()
         edits = [lambda c: c.update(schema=True), lambda c: c.update(status='matched'),
             lambda c: c.update(category='structural_rejection'), lambda c: c.update(code='duplicate_table'),
             lambda c: c.update(operation='audit'), lambda c: c.update(nonce='b'*32),
@@ -201,11 +201,13 @@ class BoundFailureTests(unittest.TestCase):
             lambda c: c['postimage'].update(storage_version=[8, 2, 14, 0]),
             lambda c: c['postimage'].update(storage_version=[8, 3, 8, False]),
             lambda c: c['postimage'].update(page_size=4096), lambda c: c['postimage'].update(raw='PRIVATE'),
-            lambda c: c['name_census'].update(reader_table_count=True)]
-        for index, edit in enumerate(edits):
-            report = copy.deepcopy(good); edit(report['storage_contract'])
-            with self.subTest(index=index), self.assertRaises(OracleError): check(report)
-        with mock.patch.object(comparison, 'MAX_CAPTURE_BYTES', 100), self.assertRaises(OracleError): check(good)
+            lambda c: c['name_diagnostic' if c['schema'] == 2 else 'name_census'].update(reader_table_count=True)]
+        for count in (1, 129):
+            good, _ = fixture(missing_failure(['Reader'] * count))
+            for index, edit in enumerate(edits):
+                report = copy.deepcopy(good); edit(report['storage_contract'])
+                with self.subTest(index=index), self.assertRaises(OracleError): check(report)
+            with mock.patch.object(comparison, 'MAX_CAPTURE_BYTES', 100), self.assertRaises(OracleError): check(good)
 
     def test_marker_nonce_token_origin_and_source_bound_before_retention(self):
         for section, key, value in [('marker', 'nonce', 'b'*32), ('marker', 'token', 'b'*32),
@@ -215,11 +217,12 @@ class BoundFailureTests(unittest.TestCase):
             with self.subTest(section=section, key=key), self.assertRaises(OracleError):
                 comparison.missing_table_failure(parsed(['Reader']), item, nonce=NONCE,
                     provenance=existing.identity(), baseline=fixtures.physical('baseline'))
-        failure = missing_failure(); report, _ = fixture(failure)
-        provenance = copy.deepcopy(report['provenance']); provenance['sources'][comparison.READER_SOURCE] = 'd'*64
-        report['provenance'] = provenance
-        with self.assertRaises(OracleError):
-            comparison.validate_report(protocol.encode(report), nonce=NONCE, provenance=provenance)
+        for count in (1, 129):
+            failure = missing_failure(['Reader'] * count); report, _ = fixture(failure)
+            provenance = copy.deepcopy(report['provenance']); provenance['sources'][comparison.READER_SOURCE] = 'd'*64
+            report['provenance'] = provenance
+            with self.assertRaises(OracleError):
+                comparison.validate_report(protocol.encode(report), nonce=NONCE, provenance=provenance)
 
     def test_wrong_report_failure_stage_or_success_cannot_carry_diagnostic(self):
         good, _ = fixture()
@@ -244,29 +247,31 @@ class BoundFailureTests(unittest.TestCase):
             check(report)
 
     def test_native_and_raw_cleanup_each_strip_capture_and_binding_to_original_bare(self):
-        for cleanup in ((False, True), (True, False), (False, False)):
-            report, _ = fixture(cleanup=cleanup); check(report)
-            self.assertEqual(report['storage_contract'], BARE)
-            self.assertNotIn(b'name_diagnostic', protocol.encode(report))
-            self.assertNotIn(b'name_census', protocol.encode(report))
-            self.assertEqual(report['reader_validation'], 'failed')
-            self.assertEqual(report['failure_kind'], 'catalog_comparison_failed')
+        for count in (1, 129):
+            for cleanup in ((False, True), (True, False), (False, False)):
+                report, _ = fixture(missing_failure(['Reader'] * count), cleanup=cleanup); check(report)
+                self.assertEqual(report['storage_contract'], BARE)
+                self.assertNotIn(b'name_diagnostic', protocol.encode(report))
+                self.assertNotIn(b'name_census', protocol.encode(report))
+                self.assertEqual(report['reader_validation'], 'failed')
+                self.assertEqual(report['failure_kind'], 'catalog_comparison_failed')
 
     def test_host_cleanup_each_requires_all_four_and_strips_names(self):
         spec = importlib.util.spec_from_file_location('name_diagnostic_host', ROOT/'scripts/native_1c_db_oracle.py')
         host = importlib.util.module_from_spec(spec); spec.loader.exec_module(host)
-        for failed in ('native_processes_stopped', 'raw_files_removed', 'container_removed', 'private_staging_removed'):
-            report, _ = fixture()
-            report['cleanup'] = dict.fromkeys(report['cleanup'], True)
-            report['cleanup'][failed] = False
-            if failed in report['stages'][-1]['checks']:
-                report['stages'][-1]['checks'][failed] = False
-                report['stages'][-1]['status'] = 'failed'
-            with self.subTest(failed=failed), self.assertRaises(OracleError): check(report, True)
-            host.fail_report(report, 'cleanup_unverified', 'cleanup', preserve_primary=True)
-            check(report, True)
-            self.assertEqual(report['storage_contract'], BARE)
-            self.assertFalse(report['accepted'])
+        for count in (1, 129):
+            for failed in ('native_processes_stopped', 'raw_files_removed', 'container_removed', 'private_staging_removed'):
+                report, _ = fixture(missing_failure(['Reader'] * count))
+                report['cleanup'] = dict.fromkeys(report['cleanup'], True)
+                report['cleanup'][failed] = False
+                if failed in report['stages'][-1]['checks']:
+                    report['stages'][-1]['checks'][failed] = False
+                    report['stages'][-1]['status'] = 'failed'
+                with self.subTest(failed=failed), self.assertRaises(OracleError): check(report, True)
+                host.fail_report(report, 'cleanup_unverified', 'cleanup', preserve_primary=True)
+                check(report, True)
+                self.assertEqual(report['storage_contract'], BARE)
+                self.assertFalse(report['accepted'])
 
     def test_invalid_attached_capture_never_released_and_other_failures_stay_bare(self):
         for category, code in [('name_mismatch', 'duplicate_table'), ('resource_limit', 'diagnostic_limit'),
@@ -274,7 +279,7 @@ class BoundFailureTests(unittest.TestCase):
             failure = comparison.ComparisonFailure(category, code, capture=missing_failure().capture)
             report, _ = fixture(failure); check(report)
             self.assertEqual(report['storage_contract'], {'schema': 1, 'status': 'failed', 'category': category, 'code': code})
-        failure = missing_failure(); failure.capture['name_census']['status'] = 'partial'
+        failure = missing_failure(); failure.capture['name_diagnostic']['status'] = 'partial'
         report, _ = fixture(failure); check(report)
         self.assertEqual(report['storage_contract'], BARE)
 
@@ -329,10 +334,11 @@ class NativeCollectionTests(unittest.TestCase):
         self.assertEqual(capture['token'], self.calls[0][2])
         self.assertEqual(capture['origin']['sha256'], hashlib.sha256(self.pre.full_bytes()).hexdigest())
         self.assertEqual(capture['postimage']['sha256'], hashlib.sha256(self.post.full_bytes()).hexdigest())
-        self.assertEqual(capture['name_census']['reader_table_count'], 3)
-        self.assertEqual(capture['name_census']['reader_name_characters'], 25)
-        self.assertNotIn('name_diagnostic', capture)
-        self.assertEqual(capture['name_census']['parser_table_count'], 3)
+        self.assertEqual(capture['name_diagnostic']['reader_table_count'], 3)
+        self.assertEqual(capture['name_diagnostic']['native_tables'], ['Physical'])
+        self.assertEqual(capture['name_diagnostic']['reader_tables'], ['_Physical', 'physical', 'physical'])
+        self.assertNotIn('name_census', capture)
+        self.assertEqual(capture['name_diagnostic']['parser_table_count'], 3)
         self.assertFalse((self.artifacts/'auditor').exists())
         self.assertFalse((self.artifacts/'auditor_frozen').exists())
         self.assertEqual((self.artifacts/'baseline'/'1Cv8.1CD').read_bytes(), self.pre.full_bytes())
@@ -403,32 +409,30 @@ class NativeCollectionTests(unittest.TestCase):
 def maximum_name_capture():
     """An attainable names maximum, with independently maximal binding widths.
 
-    Every accepted name is ASCII without JSON escapes. Four native and 64 reader
+    Every accepted name is ASCII without JSON escapes. Four native and 128 reader
     names maximize per-item punctuation and decimal count widths; all 2048 name
     characters are consumed. Every other field is fixed or fixed-width, except
     file sizes, which use the largest allowed decimal width. No subbudget only.
     """
     selected = ['N'+str(index)+'x'*62 for index in range(4)]
-    names = ['R'*28]*64
+    names = ['R'*14]*128
     item = existing.evidence(); item['marker']['storage_names'] = native(selected)
     item['origin']['bytes'] = snapshots.MAX_FILE_BYTES
     item['postimage']['bytes'] = snapshots.MAX_FILE_BYTES
     baseline = fixtures.physical('baseline'); baseline['bytes'] = snapshots.MAX_FILE_BYTES
-    # Historical schema-2 fixture only; the active producer now emits counts.
-    return {'schema': 2, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
-        **comparison.capture_binding(item, nonce=NONCE, provenance=existing.identity(), baseline=baseline),
-        'name_diagnostic': comparison.name_diagnostic(parsed(names), native(selected))}
+    return comparison.missing_table_failure(parsed(names), item, nonce=NONCE,
+        provenance=existing.identity(), baseline=baseline).capture
 
 
 class DiagnosticBudgetTests(unittest.TestCase):
     def test_direct_complete_names_capture_maximum_and_finite_enum_bounds(self):
         capture = maximum_name_capture()
         value = capture['name_diagnostic']
-        self.assertEqual((len(value['native_tables']), len(value['reader_tables'])), (4, 64))
+        self.assertEqual((len(value['native_tables']), len(value['reader_tables'])), (4, 128))
         self.assertEqual(sum(map(len, value['native_tables'] + value['reader_tables'])), 2048)
         comparison.validate_name_diagnostic(value)
         size = len(protocol.encode(capture))
-        self.assertEqual(size, 3297)
+        self.assertEqual(size, 3491)
         self.assertLessEqual(size, comparison.MAX_CAPTURE_BYTES)
         self.assertEqual(comparison.MAX_CAPTURE_BYTES, 12288)
         for category, codes in comparison.DIAGNOSTICS.items():
@@ -446,6 +450,8 @@ class DiagnosticBudgetTests(unittest.TestCase):
         self.assertEqual(size, 29821)
         self.assertLess(size, protocol.MAX_REPORT_BYTES)
         self.assertEqual(protocol.MAX_REPORT_BYTES, 32768)
+        # Replace that complete slot by the independently attained name bound.
+        self.assertEqual(size - comparison.MAX_CAPTURE_BYTES + len(protocol.encode(maximum_name_capture())), 21024)
 
     def test_new_fixture_text_io_uses_explicit_utf8(self):
         tree = ast.parse(Path(__file__).read_text(encoding='utf-8'))

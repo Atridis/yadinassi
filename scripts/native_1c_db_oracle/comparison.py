@@ -1,9 +1,9 @@
 """Schema-4 exact filtered name comparison, never general native compatibility.
 
 The parser receives no native names. Only its completed immutable catalog is
-projected here. The active bound missing-table rejection exports a complete
-counts-only census, never names, fields or raw descriptors. Schema-2 name
-inventories remain supported only for historical local fixtures.
+projected here. The bound missing-table rejection exports complete schema-2
+names only when every diagnostic policy fits; otherwise a complete schema-3
+counts-only census. Neither form exports fields or raw descriptors.
 Historical v2/v3 envelopes are not accepted or upgraded.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ MAX_TEXT = 64
 MAX_TEXT_UNITS = 512
 MAX_PROJECTION_BYTES = 4096
 MAX_CAPTURE_BYTES = 12288
-MAX_DIAGNOSTIC_TABLES = 64
+MAX_DIAGNOSTIC_TABLES = 128
 MAX_DIAGNOSTIC_CHARACTERS = 2048
 NAME_SCOPE = 'own_synthetic_disposable_database'
 # Existing reader defaults, not new or enlarged parser limits.
@@ -435,14 +435,22 @@ def validate_name_census(value, binding):
 
 def missing_table_failure(catalog, evidence, *, nonce, provenance, baseline, before_scan=None):
     # Validate bounded native collections/strings before capture_binding encodes
-    # the already producer-validated marker. Reader names are never encoded.
+    # the already producer-validated marker. Census first, without name copies;
+    # only a complete inventory inside every policy may then be serialized.
     validate_projection(evidence['marker']['storage_names'])
     binding = capture_binding(evidence, nonce=nonce, provenance=provenance, baseline=baseline)
     census = name_census(catalog, evidence['marker']['storage_names'], binding, before_scan=before_scan)
-    capture = {'schema': 3, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
-        **binding, 'name_census': census}
+    if census['policy_flags']:
+        capture = {'schema': 3, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
+            **binding, 'name_census': census}
+    else:
+        capture = {'schema': 2, 'status': 'failed', 'category': 'name_mismatch', 'code': 'missing_table',
+            **binding, 'name_diagnostic': name_diagnostic(catalog, evidence['marker']['storage_names'])}
     try:
-        require(len(encode(capture)) <= MAX_CAPTURE_BYTES, 'artifact_limit')
+        size = len(encode(capture))
+        require(size <= MAX_CAPTURE_BYTES, 'artifact_limit')
+        if capture['schema'] == 2 and size != census['hypothetical_name_capture_bytes']:
+            raise ComparisonFailure('structural_rejection', 'invalid_projection')
     except OracleError as error:
         if error.kind == 'artifact_limit':
             raise ComparisonFailure('resource_limit', 'diagnostic_limit') from None

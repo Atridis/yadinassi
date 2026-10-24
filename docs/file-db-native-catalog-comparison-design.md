@@ -65,7 +65,7 @@ do not establish a native comparison result; the fresh exact-source native run
 and independent artifact audit remain required. The production reader is
 unchanged from PR #102.
 
-## Rejected-run names diagnostic
+## Historical 64-table rejected-run names diagnostic
 
 The first native comparison, run 40122436147 at PR #103 head
 `85bc9328e2368ca1fd9a8141c8657a109cb71fa6`, rejected with
@@ -93,7 +93,7 @@ The executable proof must charge the complete report and the enforced 12288-byte
 capture ceiling, not only the new name lists. Local tests and review do not
 replace a fresh source-bound native diagnostic run.
 
-## Complete counts-only follow-up measurement
+## Historical counts-only follow-up measurement
 
 The names-only revision at b7dc636317241818871749463419e417d3f28e12 rejected
 native run 40123903700 with a bare diagnostic limit. That report cannot choose
@@ -129,3 +129,35 @@ The executable independent-maxima proof bounds the counts-only capture at 1491
 bytes and its small hypothetical-name skeleton at 1051 bytes. The enclosing
 report maximum remains 29821 bytes including newline, within unchanged caps.
 These bounds do not establish actual native counts or resolve the mismatch.
+
+## Measured 128-table output policy and conditional names
+
+Independent audit of run 40125667143 at
+`9285723e58c3d4a756b59939a3c7dd743622c6b0` measured native/reader/parser counts
+1/67/67, combined characters 1033, zero invalid identifiers, and exact hypothetical
+names-capture size 2280. Only the prior 64-table policy was exceeded. Its report
+SHA-256 is `64df535b4b84a74275e3e596015069da099577e0806ae938e12ee09c7744cf7a`.
+No actual name or mismatch cause is inferred from those counts.
+
+The next separate candidate raises only that local diagnostic table ceiling to
+128. It leaves grammar, combined 2048 characters, capture 12288 bytes,
+report 32768 bytes, all reader budgets, strict comparison, native code and cleanup
+unchanged. The complete census runs first. If every policy fits, return the full
+schema-2 bound names-only failure; otherwise return the schema-3 bound counts-only
+failure with all blockers and no names. Both preserve the original missing_table
+rejection, never truncate and never claim native compatibility. Actual encoded
+capture size is checked again before releasing a names capture.
+
+This is a measured supported-subset policy, not a universal table-count fact.
+Tests cover the observed 67-table shape without inventing names, 128/129 boundaries,
+2048/2049 characters, invalid identifiers, complete census fallback, duplicate
+preservation, exact computed/encoded sizes, source/postimage bindings and every
+cleanup gate. A new maximum names-capture proof and unchanged whole-report proof
+are required. Only a fresh independently audited artifact can establish the
+actual name spellings before any mapping correction is considered.
+
+The new attainable names-capture maximum is 3491 bytes, while counter/skeleton
+bounds remain 1491/1051 and the universal whole-report maximum remains 29821
+including newline. Actual encoded schema-2 bytes must equal the complete census
+measurement. Historical policy flags are validated with their original source,
+never silently reinterpreted under the new 128-table supported subset.
