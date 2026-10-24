@@ -52,7 +52,8 @@ FAILURES = frozenset({'none', 'invalid_input', 'provenance_mismatch', 'permissio
     'stale_evidence', 'artifact_missing', 'artifact_limit', 'invalid_marker',
     'logical_mismatch', 'snapshot_not_quiescent', 'snapshot_changed', 'invalid_header',
     'cleanup_unverified', 'metadata_rejected', 'version_mismatch', 'unexpected_failure',
-    'registry_credentials_missing', 'container_unavailable', 'transport_invalid'})
+    'registry_credentials_missing', 'container_unavailable', 'transport_invalid',
+    'catalog_comparison_failed'})
 # Seed launch diagnostics are a finite enum, never native text or numeric exit data.
 SEED_OPERATIONS = ('create', 'dump_empty', 'import', 'apply', 'redump', 'bootstrap')
 SEED_FAILURE_CATEGORIES = frozenset({'invalid_input', 'permission_mismatch',
@@ -259,9 +260,11 @@ def validate_logical(value, identifier):
                 for key,wanted in expected.items()), 'logical_mismatch')
 
 
-def marker(raw, *, nonce, token, operation):
+def marker(raw, *, nonce, token, operation, contract_version=3):
     data = decode(raw)
-    exact(data, MARKER_KEYS | ({'storage_shape'} if operation == 'audit_contract' else set()))
+    require(type(contract_version) is int and contract_version in (3, 4), 'invalid_marker')
+    payload = 'storage_shape' if contract_version == 3 else 'storage_names'
+    exact(data, MARKER_KEYS | ({payload} if operation == 'audit_contract' else set()))
     require(data['schema'] == 1 and type(data['schema']) is int and data['nonce'] == nonce
             and data['token'] == token and data['operation'] == operation and data['status'] == 'ok', 'invalid_marker')
     require(data['actual_version'] == VERSION, 'version_mismatch')
@@ -284,9 +287,13 @@ def marker(raw, *, nonce, token, operation):
             and type(data['amount_digits']) is int and data['amount_digits'] == 9
             and type(data['amount_scale']) is int and data['amount_scale'] == 2, 'logical_mismatch')
     if operation == 'audit_contract':
-        from contract import validate_shape
         require(data['metadata_version'] == 1, 'logical_mismatch')
-        validate_shape(data['storage_shape'])
+        if contract_version == 3:
+            from contract import validate_shape
+            validate_shape(data['storage_shape'])
+        else:
+            from comparison import validate_projection
+            validate_projection(data['storage_names'])
     return data
 
 

@@ -588,6 +588,84 @@ def freeze_database(source_dir: Path, dest_dir: Path, *,
         raise OracleError("snapshot_changed") from None
 
 
+def inspect_frozen_catalog(frozen_dir: Path, *, quiescent: Callable[[], bool],
+                           read_catalog: Callable, limits,
+                           before_read: Callable[[], None] | None = None) -> tuple[dict, object]:
+    """Inspect one immutable post-session image through a pinned descriptor.
+
+    The caller supplies the source-pinned standalone reader and its limits,
+    proves process-census quiescence, and binds the returned bytes/digest to the
+    preceding freeze summary. Neither the reader nor its callback owns the fd.
+    Only the reader result stays private; no catalog contents enter a summary.
+
+    The same fd spans both full hashes and every positioned reader access.
+    Even a reader failure is released only after final integrity/quiescence
+    checks and descriptor cleanup. The caller must validate any reader error's
+    exact class/code before publishing a finite diagnostic, never its text.
+    """
+    if (not callable(quiescent) or not callable(read_catalog)
+            or before_read is not None and not callable(before_read)):
+        raise OracleError("invalid_input")
+    frozen = _path(frozen_dir)
+    path = frozen / DATABASE_NAME
+    reader_error = None
+    try:
+        with _directory(frozen) as directory:
+            if os.fstat(directory).st_mode & 0o222:
+                raise OracleError("invalid_input")
+            inventory = _database_contents(directory, allow_ancillary=False)
+            with _file(path) as (descriptor, initial, parent):
+                if initial.st_mode & 0o222:
+                    raise OracleError("invalid_input")
+                if _identity(os.fstat(parent)) != _identity(os.fstat(directory)):
+                    raise OracleError("snapshot_changed")
+                _quiescent(quiescent)  # Before even the first hash payload read.
+                try:
+                    digest = _digest(descriptor, initial.st_size)
+                    _unchanged(path, descriptor, initial, parent)
+                    active = True
+
+                    def positioned(offset: int, length: int) -> bytes:
+                        if (not active or type(offset) is not int or type(length) is not int
+                                or offset < 0 or length < 0 or offset > initial.st_size
+                                or length > initial.st_size - offset):
+                            raise OracleError("invalid_input")
+                        if before_read is not None:
+                            try:
+                                before_read()
+                            except OracleError:
+                                raise
+                            except Exception:
+                                raise OracleError("unexpected_failure") from None
+                        try:
+                            return os.pread(descriptor, length, offset)
+                        except OSError:
+                            raise OracleError("snapshot_changed") from None
+
+                    try:
+                        catalog = read_catalog(positioned, initial.st_size, limits=limits)
+                    except BaseException as error:
+                        # Let directory context managers check ancestors on normal
+                        # exit too, before propagating the private reader failure.
+                        reader_error = error
+                    finally:
+                        active = False
+                        repeated = _digest(descriptor, initial.st_size)
+                        _unchanged(path, descriptor, initial, parent)
+                        if repeated != digest:
+                            raise OracleError("snapshot_changed")
+                        if _database_contents(directory, allow_ancillary=False) != inventory:
+                            raise OracleError("snapshot_changed")
+                        _check_directory(frozen, directory)
+                finally:
+                    _quiescent(quiescent)
+    except OSError:
+        raise OracleError("snapshot_changed") from None
+    if reader_error is not None:
+        raise reader_error
+    return {"bytes": initial.st_size, "sha256": digest}, catalog
+
+
 def clone_database(frozen_dir: Path, dest_dir: Path, *, budget_root: Path) -> None:
     """Create a fresh writable native-use clone of an immutable frozen source."""
     source, destination, root = _path(frozen_dir), _path(dest_dir), _path(budget_root)

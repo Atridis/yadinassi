@@ -2,7 +2,8 @@
 """Disposable, serialized native oracle. Never read a caller's database.
 
 Every observation/export uses a throwaway clone of an already frozen snapshot.
-No interpreter/parser implementation and no native payload export live here.
+The standalone reader examines only the closed, frozen post-audit clone.
+No interpreter runtime or unrestricted native payload export is loaded.
 """
 from __future__ import annotations
 
@@ -37,6 +38,8 @@ from snapshots import (DatabaseEntryError, ENTRY_CLASSES, ENTRY_SHAPES, OracleEr
     compare_files, compare_pair, diagnostic_entry_class, file_summary, freeze_database,
     valid_diagnostic_basename)
 import contract
+import comparison
+import filedb_catalog
 from inject_metadata import CRUD_USER, SETUP_USER, inject, promote_v2, verify_redump
 
 ONEC = Path('/opt/1cv8t/x86_64/8.3.27.1508/1cv8t')
@@ -311,7 +314,7 @@ class Native:
         self.baseline=None; self.initial=None; self.services=[]; self.counter=0
         self.v1=ROOT/'metadata-v1'; self.v2=ROOT/'metadata-v2'
         self.stage='preflight'; self.seed_pending=None; self.seed_launched=None
-        self.home_anchor=None
+        self.home_anchor=None; self.reader_attempted=False
 
     def begin_stage(self, stage):
         require(type(stage) is str and stage in STAGES, 'invalid_input')
@@ -515,15 +518,16 @@ class Native:
         zero_result(result); self.physical_summary(database/'1Cv8.1CD')
         return database
 
-    def enterprise(self, database, operation):
+    def enterprise(self, database, operation, *, token=None):
         require(type(operation) is str and 'enterprise_'+operation in COMMAND_STAGES,'invalid_input')
         if operation == 'audit_contract':
             require(self.stage == 'baseline', 'invalid_input')
         with self.command_context('enterprise_'+operation):
-            return self._enterprise(database,operation)
+            return self._enterprise(database,operation,token=token)
 
-    def _enterprise(self, database, operation):
-        token=secrets.token_hex(16)
+    def _enterprise(self, database, operation, *, token=None):
+        token=secrets.token_hex(16) if token is None else token
+        require(type(token) is str and re.fullmatch('[0-9a-f]{32}',token) is not None,'invalid_input')
         control=self.evidence/'control.json'; result=self.evidence/'result.json'
         completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
         absent(control,result,completion,pending)
@@ -540,7 +544,8 @@ class Native:
                 kind = ('artifact_limit' if operation == 'audit_contract' and finished['phase'] == 'contract_limit' else 'process_failed')
                 error=OracleError(kind); error.oracle_site='result'; error.bsl_phase=finished['phase']
                 raise error
-            data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation)
+            data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation,
+                        contract_version=comparison.SCHEMA)
             self.provenance['actual_version']=data['actual_version']
             return data
         finally:
@@ -643,6 +648,66 @@ class Native:
         require(self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
         with self.temporary_clone(identifier, 'auditor') as database:
             return self.enterprise(database, 'audit_contract')
+
+    def compare_catalog(self, identifier):
+        """One existing native audit; independent parser reads only its closed postimage."""
+        require(self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
+        with self.temporary_clone(identifier, 'auditor') as database:
+            baseline = self.physical_summary(self.artifacts / identifier / '1Cv8.1CD')
+            origin = self.physical_summary(database / '1Cv8.1CD')
+            if origin != baseline:
+                raise comparison.ComparisonFailure('io_or_change', 'origin_changed')
+            # Pin the fresh token and fixed clone identity to the checked origin
+            # before launch, not merely to the report's original baseline later.
+            token = secrets.token_hex(16)
+            origin = {**origin, 'clone': 'auditor', 'nonce': self.nonce, 'token': token}
+            data = self.enterprise(database, 'audit_contract', token=token)
+            frozen = self.artifacts / 'auditor_frozen'
+            absent(frozen)
+            try:
+                with self.command_context('snapshot_freeze'):
+                    self.budgets(self.physical_summary(database / '1Cv8.1CD')['bytes'])
+                    postimage = freeze_database(database, frozen, quiescent=self.quiescent)
+                    self.budgets()
+                try:
+                    from snapshots import inspect_frozen_catalog
+                    self.reader_attempted = True
+                    summary, catalog = inspect_frozen_catalog(frozen, quiescent=self.quiescent,
+                        read_catalog=filedb_catalog.read_catalog, limits=filedb_catalog.CatalogLimits(),
+                        before_read=self.remaining)
+                except filedb_catalog.CatalogError as error:
+                    raise comparison.reader_failure(error) from None
+                except OracleError as error:
+                    if error.kind in ('snapshot_changed', 'snapshot_not_quiescent', 'artifact_missing', 'invalid_input'):
+                        raise comparison.ComparisonFailure('io_or_change', error.kind) from None
+                    if error.kind == 'artifact_limit':
+                        raise comparison.ComparisonFailure('resource_limit', 'projection_limit') from None
+                    raise
+                if summary != {key: postimage[key] for key in ('bytes', 'sha256')}:
+                    raise comparison.ComparisonFailure('io_or_change', 'postimage_changed')
+                # The complete parse above has never seen native names.
+                try:
+                    native, projected = comparison.project_catalog_ascii_fields(catalog, data['storage_names'])
+                except comparison.ComparisonFailure as error:
+                    if type(error) is comparison.ComparisonFailure and (error.category, error.code) == ('name_mismatch', 'missing_table'):
+                        raise comparison.missing_table_failure(catalog,
+                            {'marker': data, 'origin': origin, 'postimage': summary},
+                            nonce=self.nonce, provenance=self.provenance, baseline=baseline,
+                            before_scan=self.remaining) from None
+                    if type(error) is comparison.ComparisonFailure and (error.category, error.code) == ('name_mismatch', 'field_names_differ'):
+                        raise comparison.field_names_ascii_fields_failure(catalog,
+                            {'marker': data, 'origin': origin, 'postimage': summary},
+                            nonce=self.nonce, provenance=self.provenance, baseline=baseline,
+                            before_scan=self.remaining) from None
+                    raise
+                evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
+            except BaseException:
+                try: self.remove(frozen)
+                except BaseException: pass
+                raise
+            else:
+                self.remove(frozen)
+                return evidence
 
     def mutate(self,database,operation):
         self.enterprise(database,operation)
@@ -785,6 +850,7 @@ class Controller:
             'physical':self.backend.artifact(identifier)})
 
     def run(self):
+        comparison_failure = None
         try:
             for stage in STAGES[:-1]:
                 self.stage=stage
@@ -793,7 +859,12 @@ class Controller:
                 elif stage=='seed_v1': database=self.backend.seed()
                 elif stage=='baseline':
                     self.snapshot(database,'baseline')
-                    if self.report['schema'] == contract.SCHEMA:
+                    if self.report['schema'] == comparison.SCHEMA:
+                        comparison.require_ascii_field_policy(self.report)
+                        data = self.baseline_step('audit', self.backend.compare_catalog, 'baseline')
+                        self.report['storage_contract'] = comparison.bind_ascii_fields_capture(data, self.report)
+                        self.report['reader_validation'] = comparison.VERDICT
+                    elif self.report['schema'] == contract.SCHEMA:
                         data = self.baseline_step('audit', self.backend.audit_contract, 'baseline')
                         self.report['storage_contract'] = contract.bind_capture(data, self.report)
                     else:
@@ -822,8 +893,12 @@ class Controller:
                 self.done(stage)
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
+            if type(error) is comparison.ComparisonFailure and self.stage == 'baseline':
+                comparison_failure = error
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
-            if isinstance(error,BaselineInputError):
+            if type(error) is comparison.ComparisonFailure:
+                kind = 'catalog_comparison_failed' if self.stage == 'baseline' else 'unexpected_failure'
+            elif isinstance(error,BaselineInputError):
                 kind=('baseline_' + error.operation + ('_invalid_input' if error.entry_class is None else
                     '_entry_' + error.entry_class + '_' + error.shape)) if self.stage=='baseline' else 'unexpected_failure'
             elif isinstance(error,BootstrapInventoryError):
@@ -860,6 +935,9 @@ class Controller:
             if self.report['status']!='ok':
                 self.report['artifacts']=[]
                 contract.discard_capture(self.report)
+                if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
+                    self.report['reader_validation'] = 'failed'
+                comparison.discard_capture(self.report, comparison_failure)
             if not(processes and files) or self.report['status']=='ok':
                 self.report.pop('rejected_basename',None)
                 self.report.pop('failure_context',None)
@@ -874,10 +952,10 @@ def main():
     try:
         from inputs import verify_inputs
         provenance=verify_inputs(INPUTS,nonce)
-        report=contract.empty_report(nonce,provenance)
+        report=comparison.empty_report(nonce,provenance)
         report=Controller(Native(nonce,provenance),report).run()
         raw=encode(report)
-        contract.validate_report(raw,nonce=nonce,provenance=provenance)
+        comparison.validate_report(raw,nonce=nonce,provenance=provenance)
         sys.stdout.buffer.write(raw+b'\n'); sys.stdout.buffer.flush()
         return 0 if report['status']=='ok' else 1
     except BaseException:

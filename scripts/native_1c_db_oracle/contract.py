@@ -117,9 +117,9 @@ def validate_report(raw, *, nonce, provenance, final=False):
     require(EXTRA_KEYS <= set(report) and report['reader_validation'] == 'not_run'
             and report['native_compatibility'] == 'not_claimed')
     # The exact source inventory is essential to the whole-report size proof.
-    from inputs import SOURCE_FILES
+    from inputs import LEGACY_V3_SOURCE_FILES
     require(type(provenance.get('sources')) is dict
-            and set(provenance['sources']) == set(SOURCE_FILES), 'provenance_mismatch')
+            and set(provenance['sources']) == set(LEGACY_V3_SOURCE_FILES), 'provenance_mismatch')
     require(provenance.get('image') == lifecycle.IMAGE
             and provenance.get('platform') == 'linux/amd64'
             and provenance.get('locale') == 'ru_RU.UTF-8'

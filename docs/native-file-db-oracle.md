@@ -1,14 +1,20 @@
-# Synthetic native file-database oracle, version 3
+# Synthetic native file-database oracle, version 4
 
-Version 3 adds a bounded native storage-shape contract probe, not acceptance of
-an independent physical-catalog reader. `reader_validation=not_run` and
-`native_compatibility=not_claimed` remain explicit, including on accepted reports.
-Header checks, local parser tests and synthetic BSL execution are not evidence
-that this exact source compiled or completed on native 1C. A fresh source-bound
-native run and independent review remain required. The existing 13 stages,
-11 snapshots, CRUD lifecycle, opaque CF/DT summaries, isolation and caps remain.
-Historical v1/v2 reports retain their historical meaning and cannot be upgraded
-into v3 shape evidence.
+Version 4 runs the independent physical-catalog reader against the baseline
+native auditor's frozen post-session image and applies the fixture-only
+`comparison_policy=exact_tables_ascii_fields_v1` to `Справочник.NativeOracleItems`:
+table names match exactly, complete ASCII field identifiers match bijectively
+without collisions, and both raw spellings are preserved.
+An accepted report carries matched capture schema 5 and
+`reader_validation=filtered_table_ascii_field_identifiers_match`, requires
+independently reviewed source-bound native evidence and all lifecycle/cleanup
+gates, and retains `native_compatibility=not_claimed`; it does not establish row
+access, field-type mappings, B-trees, runtime DB operations, general 1CD support
+or writes.
+
+The existing 13 stages, 11 snapshots, CRUD lifecycle, opaque CF/DT summaries,
+isolation and caps remain unchanged. Historical v1/v2/v3 reports retain their
+historical meaning and are never upgraded into a physical-name comparison.
 
 The original fixture contains one non-hierarchical catalog, NativeOracleItems:
 Code `K1`, Payload String(32), Amount Number(9,2). The only metadata-v2 change is
@@ -59,7 +65,9 @@ baseline by assumption.
    role; measured catalog operations use only NativeOracleCatalogCRUD. Runtime
    code verifies the current singleton role and non-privileged execution.
 3. Freeze an empty v1 baseline. Fresh-session reads and the separate admin user
-   inventory/shape audit run on disposable clones, never the frozen bytes.
+   inventory/storage-name audit run on disposable clones, never the frozen bytes.
+   After that audit closes, only the independent reader inspects a private frozen
+   copy of its post-session image; this is not an extra lifecycle snapshot.
 4. Create `K1 / alpha / 1.25`; update the same reference to `beta / -2.50`.
    Each operation has a same-predecessor read/no-op control and a reopened
    observer clone. Exact decimal strings are emitted only after numeric equality.
@@ -114,9 +122,311 @@ All summaries retain `page_analysis=unsupported`; comparison windows remain
 cleanup acceptance are unchanged. Historical v1 reports must be audited with
 their matching source revision, not silently accepted as v2 header evidence.
 
-## Version 3 bounded storage-shape contract
+## Version 4 fixture-only physical field identity
 
-The current host accepts only `schema=3`,
+The current host accepts only `schema=4`,
+`lane=native-file-db-catalog-compare-dbms-names-true-ascii-fields-v1`, mandatory
+`projection_mode=dbms_names_true` and
+`comparison_policy=exact_tables_ascii_fields_v1`. Its strict validator retains every v2
+lifecycle check, requires the exact current staged-source inventory, and rejects
+historical v2/v3 transports rather than converting them.
+
+The baseline `audit_contract` operation still uses Setup's existing identity and
+nonprivileged module. It makes exactly one filtered experimental
+`ПолучитьСтруктуруХраненияБазыДанных(Отбор, Истина)` call for our own catalog,
+as described below. No native invocation, schema/data mutation, privilege, user,
+UI step, external processor, retry or unfiltered fallback is added. The requisite
+column names were
+measured by schema-3 run 40116987010. After checking declared/runtime types, the
+projection reads only `ИмяТаблицыХранения`, nested `Поля`, and each field's
+`ИмяПоляХранения`. It exports no metadata/logical names, tablespaces, indexes,
+type values, row contents, or arbitrary scalar cells.
+
+The native projection and independent reader projection each contain only the
+fixed target and complete `{name, fields:[...]}` entries. Raw names are retained unchanged. Table names are exact and
+case-sensitive; the explicitly versioned fixture policy below compares complete
+ASCII field identifiers using temporary ASCII-case keys. Raw duplicates and key
+collisions are rejected before set/dictionary conversion. No prefix stripping or
+type-code mapping occurs. Native tables must each match exactly one parsed table
+and all its complete field identifiers under that policy;
+extra unrelated catalog tables stay private in a successful comparison. The
+strictly bounded synthetic-only failure diagnostic below is a separate exception
+for table names or complete selected field-name sets, never descriptor bodies,
+field values or row data. Ordering is
+canonicalized only for comparison. Unsupported naming conventions fail honestly, never by accepting a
+partial match or applying an undocumented normalization.
+
+The writable auditor clone's pre-launch digest must equal the frozen baseline.
+Its fresh nonce/token are bound to that origin before the native launch. After
+completion and process-census quiescence, the existing hardened freezer creates
+a private read-only `auditor_frozen` postimage. The reader is staged standalone
+as source-pinned `filedb_catalog.py`, without importing the Interpreter/package.
+A hardened helper opens the frozen file once and uses that descriptor for
+SHA-256 before, every positioned reader access, and SHA-256 after. Both digests
+must equal the verified freeze summary; source/inode/mode/inventory/ancestor and
+final process-census checks apply even on reader failure. Only after a complete
+independent parse are native names used to select owned tables for comparison.
+Both private clones are removed before the capture can be accepted.
+
+The capture explicitly distinguishes baseline origin from the audited clone's
+closed post-session image. It does not assert byte identity with baseline or the
+file while native code was executing. Source-manifest and reader-source hashes,
+operation nonce/token, actual platform version, origin/postimage sizes/digests,
+exact storage version 8.3.8.0 and 8192-byte pages bind the comparison.
+
+Per projection: at most four tables, 32 fields per table/64 total, 64 allowed BMP
+units per name, 512 name units total, and 4096 encoded bytes. Empty/duplicate
+names, incomplete enumeration, unexpected types and exhaustion fail closed,
+without truncation. Both projections replace the historical shape payload; the
+entire capture has its own 12288-byte ceiling. The unchanged full report ceiling
+is 32768 bytes. The executable whole-envelope proof includes all 20 staged
+source paths/hashes, maximal lifecycle snapshots/comparisons/opaque summaries,
+longest finite enums and diagnostic fields, both projections and postimage
+bindings, cleanup and final newline. The exact upper bound is 29949 bytes,
+leaving 2819 bytes below the unchanged ceiling. Changing source inventory or
+outer widths requires a new complete proof, not only a sub-payload check.
+
+An accepted report requires the narrow match verdict and every original
+lifecycle/cleanup gate. Failed comparisons ordinarily retain validated finite
+category/code pairs: unsupported layout, conservative sharing policy, structural
+rejection, resource exhaustion, source I/O/change, or name mismatch. Arbitrary
+`CatalogError.code` values and exception text are never exported. A later
+lifecycle/cleanup failure removes both projections and discards the successful
+verdict. `not_run`, `failed`, and `discarded` do not mean physical-reader success.
+All reports retain broad `native_compatibility=not_claimed`.
+
+Tests cover actual current BSL projection under a controlled interpreter,
+actual unchanged reader execution on a synthetic frozen descriptor, binding and
+mutation failures, complete name matching, cleanup and report limits. These are
+local mechanics, not native compilation or native physical compatibility. The
+approved comparison design is in [the focused design note](file-db-native-catalog-comparison-design.md).
+
+### Measured fixture-only ASCII field-identifier policy
+
+The audited field diagnostic
+[40128721635](https://github.com/Atridis/yadinassi/actions/runs/40128721635)
+observed exact table `_Reference53` on both sides. Its complete seven native
+fields `_Code`, `_Fld54`, `_Fld55`, `_IDRRef`, `_Marked`, `_PredefinedID`,
+`_Version` corresponded to the seven uppercase descriptor spellings. Report
+SHA-256: `0955badeeeb2f5947a0825ba2f50ac037ac394b832aa69a395cd4e8e5997217e`.
+The strict comparison remained failed. Reader source preserves physical spelling;
+no parser uppercasing produced this observation.
+
+The new `exact_tables_ascii_fields_v1` policy is a measured supported subset only
+for this own synthetic NativeOracleItems, explicit-True, platform 8.3.27.1508,
+file 8.3.8.0/8192 lane. It is not a universal database identifier rule or a change
+to BSL string/value behavior. Accessible official sources do not establish a
+universal physical field-case equivalence contract.
+
+Table names remain exact and unique. Both field lists must be complete and
+nonempty. Every field first satisfies `[A-Za-z_][A-Za-z0-9_]{0,63}`; a temporary
+key maps only ASCII a-z to A-Z. Reject raw duplicates and same-side key collisions
+before reduction, then require a bijection of complete keys. Non-ASCII names,
+Unicode lookalikes, missing/extra/empty fields and table-case differences reject.
+No prefix stripping, trimming, field omission or Unicode casefold is allowed.
+
+New matched capture schema 5 and verdict
+`filtered_table_ascii_field_identifiers_match` explicitly distinguish policy
+identity from identical raw spelling. The capture includes the policy and both
+unaltered projections; it never substitutes transformed names. Old strict
+projection/comparison/binding functions stay intact, with separate policy routes.
+Old lanes and matched captures are not upgraded. The same source/nonce/token,
+origin/postimage and cleanup checks apply, and `native_compatibility=not_claimed`
+remains mandatory. New-policy field failure captures must genuinely fail this
+policy, not merely differ in raw case. A fresh independently audited run must
+establish the new policy outcome before even this narrow agreement is claimed.
+The conservative matched schema-5 capture bound is 7724 bytes; the complete
+field-failure capture bound stays 7902, both below 12288. The universal report
+bound is 29949 including newline, with 2819 bytes under the unchanged 32768 cap.
+These are independent upper bounds, not a claim that every maxima combination
+is an accepted ASCII-policy projection.
+
+### Complete selected field-name failure observation
+
+The independently audited explicit-True run
+[40127847477](https://github.com/Atridis/yadinassi/actions/runs/40127847477)
+failed with `name_mismatch/field_names_differ` and all cleanup gates true. Its
+report SHA-256 is
+`2be2ece201508b750f219cf61f249ac67bde13cf262bb2e595a53fcbeee17b02`.
+That code can mean an early empty reader field list or final exact inequality;
+it reveals neither field spellings nor proof that every selected table matched.
+
+The new capture-schema-4 failure diagnostic exports only complete native and
+reader selected table/field-name projections for the same own synthetic catalog.
+It independently requires exact unique parser lookup for every selected table,
+identical complete table-name sets, unique fields and actual field inequality.
+Only its failure-only reader projection may contain empty field lists. The
+native and successful-comparison validators remain nonempty and unchanged.
+No values, types, rows, indexes, unrelated fields or raw descriptors are copied.
+No normalization, mapping, field omission or native-call change is added.
+
+Both projections retain all existing name/collection/4096-byte limits. The
+capture retains original failed status/category/code and the same source,
+nonce/token, origin and frozen-postimage binding. Missing/duplicate selected
+tables, duplicate fields, invalid names or exhausted limits cannot yield partial
+diagnostics. Late cleanup removes the capture. Acceptance stays false and broad
+native compatibility remains unclaimed; an independent fresh artifact is needed
+to identify the actual difference.
+The independent-maxima field capture is 7902 bytes under its unchanged 12288-byte
+cap. With the new policy envelope, the universal complete-report bound is 29949
+including newline; it charges the full capture slot and leaves 2819 bytes under
+32768.
+
+### Historical explicit filtered DBMSNames=True experiment
+
+Run [40126820961](https://github.com/Atridis/yadinassi/actions/runs/40126820961)
+returned native `Reference53`, absent from the complete physical-name inventory,
+which instead contained exactly one `_Reference53`. The source-bound report
+remained failed/missing_table and established no field parity. Its SHA-256 is
+`ccc3b68ecbefb3a54cc97a22a8733e0a036bd3f44d6227837ed9597a3e38ea5c`.
+
+The next source uses exactly one filtered experimental call
+`ПолучитьСтруктуруХраненияБазыДанных(Отбор, Истина)` for its own synthetic catalog.
+[Official release notes](https://1c-dn.com/library/v8update_639420419_changes_that_require_modification_of_configuration_and_administrative_settings/)
+confirm Boolean `DBMSNames`, but accessible primary evidence did not establish
+position/default/True/file-mode behavior. Those semantics are measured, not
+assumed. There is no fallback, name conversion or comparison relaxation.
+
+A distinct exact schema-4 lane
+`native-file-db-catalog-compare-dbms-names-true-v4` and required
+`projection_mode = "dbms_names_true"` distinguish the experiment from the prior
+one-argument source. The mode labels the requested argument; source digests pin
+the actual native code. The same declared/runtime column checks, clone and
+postimage binding, table/field equality, limits and cleanup apply. Historical
+one-argument artifacts remain validated by their original source. A new native
+artifact is required before any exact table/field agreement can be claimed.
+The mandatory mode and longer lane add 52 bytes: the universal complete-report
+bound is 29873 including newline, below the unchanged 32768-byte ceiling;
+capture/projection/name/counter bounds are unchanged.
+
+### Measured complete names with counts-only fallback
+
+The independently audited census run
+[40125667143](https://github.com/Atridis/yadinassi/actions/runs/40125667143),
+head `9285723e58c3d4a756b59939a3c7dd743622c6b0`, observed 1 native and 67
+parsed table names, 1033 combined name characters, no unsupported identifiers,
+and a 2280-byte hypothetical complete names capture. Its sole policy flag was
+the former 64-table diagnostic limit. It remained failed/missing_table and
+revealed no actual name. Report SHA-256:
+`64df535b4b84a74275e3e596015069da099577e0806ae938e12ee09c7744cf7a`.
+These fixture measurements are not universal bounds or proof of a prior run's
+first failing branch.
+
+The measured local output policy now permits up to 128 parsed table names,
+providing room above the observed 67. This is not a platform schema limit or a
+reader-limit increase. The combined 2048-character ceiling, exact ASCII grammar,
+12288-byte capture and 32768-byte report ceilings remain unchanged.
+
+After the same real-reader/postimage checks and strict missing-table rejection,
+the producer first computes the complete census described below. Only when all
+current policy flags are false does it emit the complete schema-2 names capture:
+all selected native names and all parsed names, sorted with parser duplicates
+preserved, exact counts and existing source/clone/postimage bindings. It checks
+the actual encoded size again. Otherwise it emits the complete schema-3
+counts-only failure, with all blockers and no names. No branch truncates,
+normalizes, selects likely candidates, accepts a partial match or changes the
+failure into success. Late cleanup failure removes either diagnostic.
+
+The attainable maximum complete names capture is 3491 bytes; the counts-only
+upper bound remains 1491 and its small hypothetical-name skeleton remains 1051.
+With the current mode and policy discriminators, the universal complete-report
+upper bound is 29949 bytes including newline,
+not the smaller bound for a names-only failure slot. Actual encoded name-capture
+bytes must equal the census measurement before release. Historical census flags
+remain interpreted with their original pinned source policy; the old 67-table
+limit flag is never silently migrated into the new 128-table policy.
+
+A fresh source-bound names artifact is still required before any actual spelling
+or mapping explanation is used. The observed counts do not authorize guessing
+physical names or changing the parser/comparison policy.
+
+### Counts-only census used to choose the output policy
+
+Run 40123903700 at commit `b7dc636317241818871749463419e417d3f28e12`
+rejected with `resource_limit/diagnostic_limit` and exported no names or binding
+capture. The preceding fail-fast policy could hide whether table count, aggregate
+name length, or a later unsupported identifier blocked the complete inventory.
+No actual count or cause is inferred from that bare failure.
+
+The counts-only predecessor emitted exact capture schema 3 after the
+completed, stable reader result and original strict `missing_table` rejection.
+The same census now supplies the current producer decision and fallback. It remains failed and records that original name mismatch. It exports
+no names, even when they would fit. The census covers every parsed table under
+the unchanged reader limits: at most 4096 tables, 65536 UTF-8 bytes per string,
+and 16 MiB aggregate BLOB payload. It counts native/reader/parser tables,
+per-side and combined name characters, maximum lengths, invalid identifiers,
+and exact hypothetical complete schema-2 capture bytes. Parser count must equal
+the actual inventory length; integer widths and cumulative work are bounded
+before loops and allocation, with deadline checks during long scans.
+
+The hypothetical size is computed from a small binding/count skeleton plus
+incremental JSON string escaping and array commas. It never constructs or
+serializes the full name inventory. Controls, quotes, backslashes, BMP and
+supplementary characters are charged exactly as the real ASCII-escaping JSON
+serializer; impossible UTF-8 parser strings fail finitely. Counting invalid
+identifiers does not broaden the existing ASCII identifier subset.
+
+Every applicable export-policy flag is reported together: reader table count
+above the source-pinned diagnostic ceiling (formerly 64, now 128), combined
+characters above 2048, invalid native identifiers, invalid
+reader identifiers, and hypothetical capture bytes above 12288. Flags are
+canonical and derived from the complete counters, not a guess at the first
+historical failure. They may be empty while the original name mismatch still
+rejects. No limit is increased and no partial name list is exported.
+
+The same source/nonce/token/origin/postimage binding and cleanup gates apply.
+Late cleanup failure strips the counters and binding to the original bare finite
+failure. An offline validator recomputes ranges, sums and policy flags but cannot
+recover the private names, reproduce their exact encoded size from aggregate
+counts, or authenticate sole producer values from syntax. Those facts require
+pinned producer control flow and archive digest/provenance. The complete report
+retains its 32768-byte cap and the capture its 12288-byte cap. The independent-
+maxima counter-capture bound is 1491 bytes; the small name-capture skeleton is
+bounded by 1051 bytes, and the current explicit-mode/policy complete-report bound is 29949 bytes
+including newline. These local proofs are not a native compatibility result.
+
+### Previous complete names-only diagnostic
+
+Native run 40122436147 on commit
+`85bc9328e2368ca1fd9a8141c8657a109cb71fa6` reached the completed reader and
+postimage check, then failed baseline with `name_mismatch/missing_table`.
+Its finite failure report contains no names and cannot establish the actual
+naming or mapping cause. It is not native comparison acceptance.
+
+A separate exact failure-capture variant (`storage_contract.schema=2`) may retain
+a complete names-only observation for this specific rejection. The report stays
+schema 4, status failed, reader failed and native compatibility not claimed.
+The capture binds the same source manifest, reader source, operation nonce/token,
+platform version, baseline auditor origin and closed frozen postimage as the
+comparison. This is restricted to the harness's own synthetic disposable DB,
+not an external or production database.
+
+The diagnostic contains the complete selected native table-name list (1..4) and
+complete parsed table-name inventory (0..64), sorted without silently removing
+parser duplicates. Counts must equal list lengths. Every name must match
+`[A-Za-z_][A-Za-z0-9_]{0,63}` and both lists together may contain at most 2048
+ASCII characters. All names are observed literally. There is no case conversion,
+prefix stripping, candidate selection, relation classifier, field-name export,
+row value, raw descriptor, index byte, physical offset or interpretation of an
+unmatched name. A limit or unsupported identifier produces a finite failure
+without any partial name inventory. The existing capture/report caps still apply.
+
+The diagnostic is allowed only after the complete independent parse and exact
+same-descriptor postimage checks. Required native/raw cleanup must pass before
+container output; all four cleanup checks must pass before final host output.
+Any cleanup failure strips the names and binding to a bare finite failure.
+The strict missing-table predicate and cross-field bindings are revalidated,
+so a syntactically valid inventory cannot turn failure into acceptance. The
+producer checks the actual launch token and freeze/read digest equality; an
+offline validator cannot independently authenticate a sole token or postimage
+digest merely from valid syntax. Their authenticity also relies on pinned
+producer control flow and archived artifact digest/provenance evidence. These names
+can reveal spelling differences; their absence cannot prove incorrect root
+mapping, and they never authorize normalization or parser changes.
+
+## Historical version 3 bounded storage-shape contract
+
+The historical version-3 host accepted only `schema=3`,
 `lane=native-file-db-shape-contract-v3`. Its strict validator reuses every v2
 lifecycle check without accepting or converting a historical v2 transport.
 Successful reports additionally require `storage_contract.status=shape_captured`.
@@ -179,8 +489,8 @@ Focused tests also run the exact BSL shape helpers under the project's controlle
 Python interpreter: discovered nested tables, private scalar exclusion, zero-row
 uncertainty, cycles, repeated aliases and row/text exhaustion. These are synthetic
 source tests only. They do not establish native compilation, native API output,
-physical table names or semantic reader agreement. A separately scoped future
-allowlisted schema-value oracle is needed for physical-name comparison.
+physical table names or semantic reader agreement. Version 4 implements the separately scoped physical-name comparison above;
+historical shape evidence alone never establishes that comparison.
 
 Setup alone uses the privileged SessionModule and never performs catalog CRUD.
 The ordinary dispatcher is a non-privileged server common module. CRUD does not
@@ -268,19 +578,21 @@ The 50-minute CI job includes registry setup/pull and teardown outside that run.
 
 Only strict JSON containing fixed stage/state enums, booleans, exact expected
 logical tokens, bounded numeric counters, hashes and sizes, plus the narrowly
-bounded column/type strings and signature relationships described above. The report binds a
+bounded own-catalog physical table/field names described above. The report binds a
 fresh 32-hex nonce, commit/tree, source hashes, pinned image, linux/amd64, fixed
 ru_RU.UTF-8/Etc/UTC and measured SystemInfo.AppVersion `8.3.27.1508`.
 
 No 1CD/CF/DT file, native log, raw error, XML/redump, UUID/reference, path,
 credential, binary prefix, base64, unrestricted native string or page-digest map is
-transported. The only newly permitted native strings are bounded column names
-and declared type names from the selected synthetic catalog shape. The workflow uploads exactly `native-db-oracle/report.json` after
+transported. The only additional version-4 native strings are the allowlisted storage-table
+and storage-field names for the selected synthetic catalog; raw descriptors and
+unrelated catalog names remain private. The workflow uploads exactly `native-db-oracle/report.json` after
 strict validation and a descriptor-relative no-follow exclusive write on the
 POSIX CI host. `report_ready=true` means that safe finite diagnostic report
 exists, including a rejected run; it does not mean native success. Only
-`accepted=true` means all defined lifecycle, shape-capture, transport, provenance
-and cleanup gates passed, not reader or general native compatibility. A failed cleanup may be diagnosed in this finite report but cannot
+`accepted=true` in version 4 means all defined lifecycle, exact filtered
+physical-name comparison, transport, provenance and cleanup gates passed, not
+general native compatibility or row/type/index/write correctness. A failed cleanup may be diagnosed in this finite report but cannot
 produce accepted evidence.
 
 Seed failures may use only the fixed `seed_<operation>_<category>` enum, with
@@ -453,12 +765,14 @@ fixed phase. It is written to a fixed pending filename, closed, checked again fo
 an existing destination, then moved within the same directory. This is a
 close-then-move publication sequence, not a claim about native filesystem atomicity
 or a general no-replace primitive. The host accepts semantic success only with an
-`ok`/`complete` completion **and** the strict success result marker. The v3
-`audit_contract` result additionally requires its bounded shape object.
+`ok`/`complete` completion **and** the strict success result marker. The production version-4 `audit_contract` result requires its bounded
+`storage_names` projection. The marker decoder selects version 4 explicitly and
+requires its exact mutually exclusive key set; historical shape fixtures use
+the separately selected version-3 shape marker, not an automatic fallback.
 An error completion never becomes success even when `result.json` exists. Missing,
 stale, malformed or incomplete completion fails closed. Private marker files,
-arbitrary exception text and native paths are not exported. V3 exports only the
-fresh `audit_contract` correlation token inside its explicitly bound capture;
+arbitrary exception text and native paths are not exported. Versions 3/4 export only the
+fresh `audit_contract` correlation token inside their explicitly bound capture;
 other launch tokens remain private.
 
 A failed report may include one finite `failure_context` object: command operation,
@@ -467,7 +781,8 @@ reason. Context is lexically attached to the failing operation and bound to its
 stage; it is never a sticky previous-command label. Inventory classifications are
 preserved outside seed as well. The public field requires all four cleanup flags;
 late host teardown/provenance failure strips it. The historical v2 context-only change did not alter successful report keys;
-v3 has the separately versioned shape fields described above. A timeout command/site identifies the supervised command, not
+v3 has historical shape fields and v4 has the separately versioned comparison
+fields described above. A timeout command/site identifies the supervised command, not
 its internal cause or whether a transaction committed. A caught BSL phase records
 the last source-assigned boundary, not native error text or proof of rollback.
 

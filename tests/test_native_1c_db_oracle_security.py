@@ -45,7 +45,7 @@ def _load(name, path):
 # and generic module names so collection order cannot redirect unrelated tests.
 _saved_path = sys.path[:]
 _saved_bytecode = sys.dont_write_bytecode
-_names = ('contract', 'protocol', 'snapshots', 'inputs', 'inject_metadata', 'inject_modules', 'native_1c_smoke', 'filedb')
+_names = ('comparison', 'filedb_catalog', 'contract', 'protocol', 'snapshots', 'inputs', 'inject_metadata', 'inject_modules', 'native_1c_smoke', 'filedb')
 _saved_modules = {name: sys.modules.get(name) for name in _names}
 try:
     sys.path[:0] = [str(HELPERS), str(ROOT / 'scripts'), str(ROOT / 'scripts/native_1c_bootstrap')]
@@ -55,7 +55,8 @@ try:
     host = _load('db_oracle_security_host', ROOT / 'scripts/native_1c_db_oracle.py')
     inputs = importlib.import_module('inputs')
     protocol = importlib.import_module('protocol')
-    contract = importlib.import_module('contract')
+    contract = importlib.import_module('comparison')
+    historical_contract = importlib.import_module('contract')
     OracleError = importlib.import_module('snapshots').OracleError
 finally:
     sys.path[:] = _saved_path
@@ -96,9 +97,10 @@ def make_writable(root):
 
 class SourceCase(unittest.TestCase):
     def setUp(self):
-        # verify_inputs deliberately imports its validator lazily. Keep that
-        # binding scoped to this test instead of mutating suite import state.
-        protocol_import = mock.patch.dict(sys.modules, {'protocol': protocol, 'contract': contract, 'inputs': inputs})
+        # verify_inputs and versioned markers deliberately import validators
+        # lazily. Scope both lanes correctly without relying on collection order.
+        protocol_import = mock.patch.dict(sys.modules, {'protocol': protocol,
+            'contract': historical_contract, 'comparison': contract, 'inputs': inputs})
         protocol_import.start()
         self.addCleanup(protocol_import.stop)
         self.temporary = tempfile.TemporaryDirectory()
@@ -135,9 +137,10 @@ class InputSecurityTests(SourceCase):
     def test_exact_reviewed_source_manifest_and_hashes(self):
         expected = {
             'yadinassi/storage/filedb.py': 'filedb.py',
+            'yadinassi/storage/filedb_catalog.py': 'filedb_catalog.py',
             'scripts/native_1c_db_oracle.py': 'host.py',
             **{'scripts/native_1c_db_oracle/' + name: name for name in (
-                'probe.sh', 'run.py', 'contract.py', 'protocol.py', 'snapshots.py', 'inject_metadata.py', 'inputs.py',
+                'probe.sh', 'run.py', 'contract.py', 'comparison.py', 'protocol.py', 'snapshots.py', 'inject_metadata.py', 'inputs.py',
                 'metadata/Catalog.xml', 'metadata/CommonModule.xml', 'metadata/Role.xml',
                 'metadata/SetupRights.xml', 'metadata/CRUDRights.xml', 'modules/SessionModule.bsl',
                 'modules/ManagedApplicationModule.bsl', 'modules/NativeOracleServer.bsl')},
@@ -288,16 +291,23 @@ class HostSecurityTests(SourceCase):
         actual = report['provenance']['actual_version']
         report['provenance'] = copy.deepcopy(self.identity)
         report['provenance']['actual_version'] = actual
-        report.update(schema=contract.SCHEMA, lane=contract.LANE, storage_contract=None,
+        report.update(schema=contract.SCHEMA, lane=contract.LANE, projection_mode=contract.PROJECTION_MODE,
+                      comparison_policy=contract.COMPARISON_POLICY, storage_contract=None,
                       reader_validation='not_run', native_compatibility='not_claimed')
         if report['status'] == 'ok':
-            shape = {'schema': 1, 'target': contract.TARGET,
-                     'nesting': 'observed_value_tables_only',
-                     'tables': [{'parent': None, 'via_column': None,
-                                 'columns': [{'name': 'Fixture', 'types': ['String']}]}]}
-            report['storage_contract'] = contract.bind_capture({'operation': 'audit_contract',
-                'nonce': NONCE, 'token': 'd' * 32, 'metadata_version': 1,
-                'actual_version': protocol.VERSION, 'storage_shape': shape}, report)
+            names = {'schema': 1, 'target': contract.TARGET,
+                     'tables': [{'name': 'SyntheticOwned', 'fields': ['SyntheticField']}]}
+            native = {'schema': 1, 'nonce': NONCE, 'token': 'd'*32, 'operation': 'audit_contract',
+                'status': 'ok', 'actual_version': protocol.VERSION, 'user': 'NativeOracleSetup',
+                'role_verified': True, 'nonprivileged': True, 'users_verified': True,
+                'metadata_version': 1, 'payload_length': 32, 'amount_digits': 9, 'amount_scale': 2,
+                **{key: None for key in ('count', 'code', 'payload', 'amount', 'deletion_mark', 'same_reference')},
+                'storage_names': names}
+            origin = {'clone': 'auditor', 'nonce': NONCE, 'token': 'd'*32,
+                **{key: report['snapshots'][0]['physical'][key] for key in ('bytes', 'sha256')}}
+            report['storage_contract'] = contract.bind_ascii_fields_capture({'marker': native, 'origin': origin,
+                'postimage': {'bytes': 32768, 'sha256': 'f'*64}, 'reader': names}, report)
+            report['reader_validation'] = contract.VERDICT
         return report, backend
 
     def setUp(self):
@@ -736,7 +746,7 @@ class HostSecurityTests(SourceCase):
         report, _ = self.fixture_report()
         report['provenance'] = copy.deepcopy(self.identity)
         report['provenance']['actual_version'] = protocol.VERSION
-        report.update(status='failed', failed_stage='cleanup', failure_kind='cleanup_unverified', artifacts=[], storage_contract=None)
+        report.update(status='failed', failed_stage='cleanup', failure_kind='cleanup_unverified', artifacts=[], storage_contract=None, reader_validation='discarded')
         report['cleanup']['raw_files_removed'] = False
         report['stages'][-1]['status'] = 'failed'
         report['stages'][-1]['checks']['raw_files_removed'] = False
@@ -745,6 +755,25 @@ class HostSecurityTests(SourceCase):
         self.assertTrue(observed['cleanup']['container_removed'])
         self.assertTrue(observed['cleanup']['private_staging_removed'])
         self.assertEqual(observed['artifacts'], [])
+
+    def test_validated_comparison_failure_keeps_only_finite_diagnostic_during_teardown(self):
+        for cleanup_bad in (False, True):
+            report, _ = self.fixture_report('create')
+            report.update(failed_stage='baseline', failure_kind='catalog_comparison_failed',
+                          reader_validation='failed', storage_contract={'schema': 1, 'status': 'failed',
+                          'category': 'name_mismatch', 'code': 'missing_table'})
+            report['stages'][2]['status'] = 'failed'
+            report['stages'][3]['status'] = 'not_started'
+            report['stages'][3]['checks'] = {key: False for key in protocol.CHECKS['create']}
+            contract.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity)
+            self.events.clear(); self.configs.clear()
+            observed = self.invoke(payload=protocol.encode(report), exit_code=1, cleanup_bad=cleanup_bad)
+            self.assertEqual(observed['failure_kind'], 'catalog_comparison_failed')
+            self.assertEqual(observed['failed_stage'], 'baseline')
+            self.assertEqual(observed['reader_validation'], 'failed')
+            self.assertEqual(observed['storage_contract'], report['storage_contract'])
+            self.assertFalse(observed['accepted'])
+            contract.validate_report(protocol.encode(observed), nonce=NONCE, provenance=self.identity, final=True)
 
     def test_provenance_change_after_execution_prevents_acceptance(self):
         report = self.invoke(changed_provenance=True)

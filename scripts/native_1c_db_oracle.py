@@ -24,7 +24,7 @@ sys.path.insert(0,str(HELPERS))
 sys.path.insert(0,str(ROOT/'yadinassi/storage'))
 from protocol import (CHECKS, IMAGE, MAX_REPORT_BYTES, STAGES, decode,
     encode, require)
-from contract import empty_report, validate_report, discard_capture
+from comparison import empty_report, validate_report, discard_capture
 from snapshots import OracleError
 from inputs import source_hashes, stage_inputs, staged_hashes
 import native_1c_smoke as smoke
