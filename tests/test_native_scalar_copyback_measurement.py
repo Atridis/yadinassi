@@ -53,16 +53,17 @@ class ScalarCopybackParityTests(unittest.TestCase):
         expected = ['copyback.core.v1'] + [token(entry['value']) for entry in data['observations']]
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[15:50], expected)
-        self.assertEqual(len(full.CLIENT_VALUES), 135)
+        self.assertEqual(len(full.CLIENT_VALUES), 136)
+        self.assertEqual(full.CLIENT_VALUES[135:], ['dn.v1:22222277'])
         # Historical scalar capture identity; the whole current source additionally
         # contains the separately captured object operations.
         self.assertEqual(data['capture']['source_sha256'],
                          "52d3dcb83a911f7219893b3705f77d2652e31557ebdfeabaf4384813d3cca07c")
 
-    def test_exact_restored_source_computes_all_captured_values(self):
+    def test_exact_whole_source_computes_all_captured_values(self):
         from yadinassi import Interpreter
         vm = Interpreter(lambda value: self.fail('unexpected Message'))
-        vm.execute(full.date_null_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(linux_fixture(ROOT / full.CLIENT_SOURCE).decode('utf-8-sig'))
         actual = list(vm.execute('ВычислитьПробу()'))
         self.assertEqual(actual, suite.CLIENT_VALUES)
         self.assertEqual(vm.execution_context, 'client')
@@ -83,13 +84,13 @@ class ScalarCopybackParityTests(unittest.TestCase):
             path = Path(directory).resolve() / 'marker.json'
             marker = dict(schema=1, nonce='a' * 32, phase='completed', witness='client',
                           values=suite.CLIENT_VALUES)
-            path.write_bytes(json.dumps(marker).encode())
+            path.write_bytes(json.dumps(marker, separators=(',', ':')).encode())
             self.assertEqual(suite.client_marker(path, 'a' * 32, 'completed'), marker)
             self.assertLess(len(path.read_bytes()), 2048)
             for index in range(15, 50):
                 values = list(suite.CLIENT_VALUES)
                 values[index] = 'PRIVATE'
-                path.write_bytes(json.dumps({**marker, 'values': values}).encode())
+                path.write_bytes(json.dumps({**marker, 'values': values}, separators=(',', ':')).encode())
                 with self.assertRaises(suite.FullError):
                     suite.client_marker(path, 'a' * 32, 'completed')
                 diagnostic = suite.client_marker_diagnostics(path, 'a' * 32)
@@ -98,7 +99,7 @@ class ScalarCopybackParityTests(unittest.TestCase):
                 self.assertNotIn('PRIVATE', str(diagnostic))
                 self.assertNotIn('copyback', diagnostic)
             for values in (suite.CLIENT_VALUES[:15], suite.CLIENT_VALUES[:-1], suite.CLIENT_VALUES + [True]):
-                path.write_bytes(json.dumps({**marker, 'values': values}).encode())
+                path.write_bytes(json.dumps({**marker, 'values': values}, separators=(',', ':')).encode())
                 with self.assertRaises(suite.FullError):
                     suite.client_marker(path, 'a' * 32, 'completed')
 
