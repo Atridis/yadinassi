@@ -1,4 +1,4 @@
-"""Finite public file-DB oracle protocol. No native bytes or text cross this boundary.
+"""Finite file-DB lifecycle protocol. No raw bytes or unrestricted native text.
 
 This module and synthetic fixture tests are not native evidence. Version 2 adds
 bounded frozen 1CD header facts; 64 KiB byte windows are deliberately not pages.
@@ -78,14 +78,15 @@ DIAGNOSTIC_ENTRY_CLASSES = frozenset({'base_1cl', 'temp_1cd', 'temp_1cl',
                                      'session_history', 'other'})
 FAILURES = FAILURES | SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES | BASELINE_FAILURES
 # Failure-only finite command context. No native text, arguments, paths or counters.
-ENTERPRISE_OPERATIONS = ('bootstrap','audit','observe','create','update','delete')
+ENTERPRISE_OPERATIONS = ('bootstrap','audit','audit_contract','observe','create','update','delete')
 BSL_PHASES = frozenset(('dispatch','control','marker','metadata','identity','precondition',
-    'begin','create_object','set_code','set_payload','set_amount','write','reference_capture',
+    'contract_call','contract_scan','contract_limit','begin','create_object','set_code','set_payload','set_amount','write','reference_capture',
     'commit','reference_uuid','reference_write','reference_read','get_object','delete_object','readback','serialize'))
 BSL_OPERATION_PHASES = {
     'dispatch': frozenset(('dispatch','control')),
     'bootstrap': frozenset(('marker','metadata','serialize')),
     'audit': frozenset(('marker','metadata','identity','serialize')),
+    'audit_contract': frozenset(('marker','metadata','identity','contract_call','contract_scan','contract_limit','serialize')),
     'observe': frozenset(('marker','metadata','identity','readback','precondition','serialize')),
     'create': frozenset(('marker','metadata','identity','readback','precondition','begin',
         'create_object','set_code','set_payload','set_amount','write','reference_capture',
@@ -104,6 +105,7 @@ COMMAND_STAGES = {
     'designer_export_cf': ('export_cf',), 'designer_load_cf': ('load_cf',),
     'designer_dump_dt': ('dump_dt',), 'designer_restore_dt': ('restore_dt',),
     'enterprise_bootstrap': ('seed_v1',), 'enterprise_audit': ('baseline','verify_restore'),
+    'enterprise_audit_contract': ('baseline',),
     'enterprise_observe': ('baseline','create','update','load_cf','apply_cf','delete','restore_dt','verify_restore'),
     'enterprise_create': ('create',), 'enterprise_update': ('update',), 'enterprise_delete': ('delete',),
     'snapshot_freeze': ('baseline','create','update','load_cf','apply_cf','delete','restore_dt'),
@@ -259,16 +261,16 @@ def validate_logical(value, identifier):
 
 def marker(raw, *, nonce, token, operation):
     data = decode(raw)
-    exact(data, MARKER_KEYS)
+    exact(data, MARKER_KEYS | ({'storage_shape'} if operation == 'audit_contract' else set()))
     require(data['schema'] == 1 and type(data['schema']) is int and data['nonce'] == nonce
             and data['token'] == token and data['operation'] == operation and data['status'] == 'ok', 'invalid_marker')
     require(data['actual_version'] == VERSION, 'version_mismatch')
     require(all(type(data[key]) is bool for key in ('role_verified','nonprivileged','users_verified')), 'invalid_marker')
     require(data['role_verified'] is True, 'permission_mismatch')
-    if operation in ('bootstrap','audit'):
+    if operation in ('bootstrap','audit','audit_contract'):
         require(data['user'] == ('' if operation == 'bootstrap' else 'NativeOracleSetup')
                 and data['users_verified'] is True
-                and data['nonprivileged'] is (operation == 'audit'), 'permission_mismatch')
+                and data['nonprivileged'] is (operation in ('audit','audit_contract')), 'permission_mismatch')
         require(all(data[key] is None for key in ('count','code','payload','amount','deletion_mark','same_reference')), 'invalid_marker')
     else:
         require(operation in ('observe','create','update','delete') and data['user'] == 'NativeOracleCRUD'
@@ -281,6 +283,10 @@ def marker(raw, *, nonce, token, operation):
     require(type(data['payload_length']) is int and data['payload_length'] == 32 * data['metadata_version']
             and type(data['amount_digits']) is int and data['amount_digits'] == 9
             and type(data['amount_scale']) is int and data['amount_scale'] == 2, 'logical_mismatch')
+    if operation == 'audit_contract':
+        from contract import validate_shape
+        require(data['metadata_version'] == 1, 'logical_mismatch')
+        validate_shape(data['storage_shape'])
     return data
 
 
@@ -412,7 +418,10 @@ def validate_report(raw, *, nonce, provenance, final=False):
         require(report['status']=='failed' and report['failed_stage']!='cleanup')
         validate_failure_context(report['failure_context'],report['failed_stage'])
         if report['failure_context']['bsl_phase'] is not None:
-            require(report['failure_kind'] in ('process_failed','seed_bootstrap_process_failed'))
+            require(report['failure_kind'] in ('process_failed','seed_bootstrap_process_failed')
+                    or (report['failure_kind']=='artifact_limit'
+                        and report['failure_context']['operation']=='enterprise_audit_contract'
+                        and report['failure_context']['bsl_phase']=='contract_limit'))
         if report['failure_context']['region'] is not None:
             require(report['failure_kind']=='invalid_input' or report['failure_kind'].endswith('_invalid_input')
                     or report['failure_kind'] in BOOTSTRAP_INVENTORY_FAILURES)

@@ -22,8 +22,9 @@ ROOT=Path(__file__).resolve().parents[1]
 HELPERS=ROOT/'scripts/native_1c_db_oracle'
 sys.path.insert(0,str(HELPERS))
 sys.path.insert(0,str(ROOT/'yadinassi/storage'))
-from protocol import (CHECKS, IMAGE, MAX_REPORT_BYTES, STAGES, decode, empty_report,
-    encode, require, validate_report)
+from protocol import (CHECKS, IMAGE, MAX_REPORT_BYTES, STAGES, decode,
+    encode, require)
+from contract import empty_report, validate_report, discard_capture
 from snapshots import OracleError
 from inputs import source_hashes, stage_inputs, staged_hashes
 import native_1c_smoke as smoke
@@ -75,6 +76,7 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False):
     entry['checks']=({key:report['cleanup'][key] for key in CHECKS[stage]} if stage=='cleanup'
                      else {key:False for key in CHECKS[stage]})
     report['artifacts']=[]
+    discard_capture(report)
 
 
 def run_oracle(temp_root):

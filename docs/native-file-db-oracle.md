@@ -1,13 +1,14 @@
-# Synthetic native file-database oracle, version 2
+# Synthetic native file-database oracle, version 3
 
-Header integration and offline fixtures do not establish native evidence.
-A fresh source-bound run is required before claiming measured compatibility for
-version 2. The new decoder checks only frozen 1CD header geometry; it does not
-parse tables, rows or CF/DT, or implement writes or runtime DB behavior. The
-independent native experiment still exercises the unchanged CRUD lifecycle.
-Existing six-scenario outputs, caps, goldens, bootstrap and CI acceptance remain
-unchanged. Historical version 1 reports did not decode headers and cannot
-retroactively validate this implementation.
+Version 3 adds a bounded native storage-shape contract probe, not acceptance of
+an independent physical-catalog reader. `reader_validation=not_run` and
+`native_compatibility=not_claimed` remain explicit, including on accepted reports.
+Header checks, local parser tests and synthetic BSL execution are not evidence
+that this exact source compiled or completed on native 1C. A fresh source-bound
+native run and independent review remain required. The existing 13 stages,
+11 snapshots, CRUD lifecycle, opaque CF/DT summaries, isolation and caps remain.
+Historical v1/v2 reports retain their historical meaning and cannot be upgraded
+into v3 shape evidence.
 
 The original fixture contains one non-hierarchical catalog, NativeOracleItems:
 Code `K1`, Payload String(32), Amount Number(9,2). The only metadata-v2 change is
@@ -58,7 +59,7 @@ baseline by assumption.
    role; measured catalog operations use only NativeOracleCatalogCRUD. Runtime
    code verifies the current singleton role and non-privileged execution.
 3. Freeze an empty v1 baseline. Fresh-session reads and the separate admin user
-   inventory audit run on disposable clones, never the frozen bytes.
+   inventory/shape audit run on disposable clones, never the frozen bytes.
 4. Create `K1 / alpha / 1.25`; update the same reference to `beta / -2.50`.
    Each operation has a same-predecessor read/no-op control and a reopened
    observer clone. Exact decimal strings are emitted only after numeric equality.
@@ -105,13 +106,81 @@ each, from the same already anchored no-follow descriptor. Both hashes and
 prefixes must match and all existing file/ancestor checks still apply. There is
 no new payload open, additional native command, or path-based inspection race.
 
-The report alone becomes `schema=2`, `lane=native-file-db-oracle-v2`. BSL markers,
+Historically, header-only reports used `schema=2`, `lane=native-file-db-oracle-v2`. BSL markers,
 completion markers, control data and invocation retain their independent schema
 1. CF/DT summaries retain the exact four-field opaque shape with `header=unknown`.
 All summaries retain `page_analysis=unsupported`; comparison windows remain
 64-KiB byte windows, not storage pages. Report/file/live-byte/time caps and
 cleanup acceptance are unchanged. Historical v1 reports must be audited with
 their matching source revision, not silently accepted as v2 header evidence.
+
+## Version 3 bounded storage-shape contract
+
+The current host accepts only `schema=3`,
+`lane=native-file-db-shape-contract-v3`. Its strict validator reuses every v2
+lifecycle check without accepting or converting a historical v2 transport.
+Successful reports additionally require `storage_contract.status=shape_captured`.
+`accepted=true` means lifecycle, shape-capture transport and cleanup passed; it
+never means physical catalog parsing or native runtime compatibility is verified.
+
+Only the existing baseline auditor clone uses `audit_contract`. The restored
+clone still uses `audit`. No launch, native role, privilege, configuration object,
+CLI option or control field is added. Setup identity is verified in the existing
+nonprivileged server module before exactly one call:
+`ПолучитьСтруктуруХраненияБазыДанных(Отбор)`, where the one-element Array contains
+only `Справочник.NativeOracleItems`. The officially documented first argument is
+[the filtered metadata-object selection](https://v8.1c.ru/obuchenie-programmistov/primery-razrabotki/sistemnye_protsedury_i_funktsii/kak_prosmotret_strukturu_tablits_informatsionnoy_bazy.htm).
+There is no second Boolean, unfiltered fallback, external processor or retry.
+
+The shape contains only column names, declared type-name lists and observed
+nested ValueTable column signatures. Columns are discovered before accessing
+nested cells; there are no assumed `Fields`/`Indexes` or physical-name fields.
+Parent/column indices describe the signature relationship, not row values.
+Scalar cells, metadata values, composite values, references, row counts and
+exception text are not copied or rendered. Only declared Type objects may be
+converted to strings. `nesting=observed_value_tables_only` explicitly makes no
+claim that zero rows or untraversed composite cells prove empty nesting.
+
+Counts are checked before loops/allocation: 16 table occurrences including
+repeats, depth 3 below the root, 32 columns per table and 64 globally, 8 declared
+types per column and 128 globally, 64 BMP units per name/type string and 768
+units globally, 256 inspected rows and 4096 inspected cells globally. Repeated
+objects and cycles consume these same budgets. Control characters, surrogates,
+non-BMP strings, duplicate names/types and invalid parent references fail closed.
+No output is truncated. A native budget failure carries only the fixed
+`contract_limit` phase and becomes `artifact_limit`; other failures retain the
+existing finite diagnostic policy. No cap is raised.
+
+Both the fresh completion and strict result marker must validate before capture.
+The capture binds the invocation nonce, exact operation token (a generated
+correlation token, not a credential), canonical SHA-256 of the exact 18-source
+manifest, frozen baseline digest and actual platform version. The report retains
+the full individual source hashes, fixed image/platform/locale/timezone and
+all existing cleanup gates. Failed lifecycle or cleanup strips the entire shape
+capture. Neither partial result publication nor a valid result without completed
+shutdown is sufficient. The host checks cleanup again before final acceptance.
+
+The compact ASCII shape has an independent 8192-byte cap. A conservative
+structural upper bound is 7350 bytes: all 16 table containers, 64 columns,
+128 type entries with maximized array separators, plus 768 BMP units escaped at
+six bytes each. The complete report proof does not stop at this sub-budget.
+The executable test constructs an intentionally overlarge envelope containing
+the actual 18 source paths and all hashes, all 13 stage/check containers,
+11 maximal-header snapshots, all three opaque artifacts, all five comparisons
+with maximum sample arrays and over-wide counters, the longest finite failure
+and context enums, maximal basename diagnostic, full capture binding, cleanup,
+and the full 8192-byte shape allowance. Mutually exclusive failure/success fields
+are deliberately combined for an upper bound. Including the final newline,
+the result is 25875 bytes, strictly below the unchanged 32768-byte transport
+ceiling. Exact source keys and fixed provenance values are enforced by v3;
+source/protocol changes must update and re-prove this executable bound.
+
+Focused tests also run the exact BSL shape helpers under the project's controlled
+Python interpreter: discovered nested tables, private scalar exclusion, zero-row
+uncertainty, cycles, repeated aliases and row/text exhaustion. These are synthetic
+source tests only. They do not establish native compilation, native API output,
+physical table names or semantic reader agreement. A separately scoped future
+allowlisted schema-value oracle is needed for physical-name comparison.
 
 Setup alone uses the privileged SessionModule and never performs catalog CRUD.
 The ordinary dispatcher is a non-privileged server common module. CRUD does not
@@ -198,18 +267,20 @@ The 50-minute CI job includes registry setup/pull and teardown outside that run.
 ## What leaves the container
 
 Only strict JSON containing fixed stage/state enums, booleans, exact expected
-logical tokens, bounded numeric counters, hashes and sizes. The report binds a
+logical tokens, bounded numeric counters, hashes and sizes, plus the narrowly
+bounded column/type strings and signature relationships described above. The report binds a
 fresh 32-hex nonce, commit/tree, source hashes, pinned image, linux/amd64, fixed
 ru_RU.UTF-8/Etc/UTC and measured SystemInfo.AppVersion `8.3.27.1508`.
 
 No 1CD/CF/DT file, native log, raw error, XML/redump, UUID/reference, path,
-credential, binary prefix, base64, arbitrary native string or page-digest map is
-transported. The workflow uploads exactly `native-db-oracle/report.json` after
+credential, binary prefix, base64, unrestricted native string or page-digest map is
+transported. The only newly permitted native strings are bounded column names
+and declared type names from the selected synthetic catalog shape. The workflow uploads exactly `native-db-oracle/report.json` after
 strict validation and a descriptor-relative no-follow exclusive write on the
 POSIX CI host. `report_ready=true` means that safe finite diagnostic report
 exists, including a rejected run; it does not mean native success. Only
-`accepted=true` means all native, semantic, transport, provenance and cleanup
-gates passed. A failed cleanup may be diagnosed in this finite report but cannot
+`accepted=true` means all defined lifecycle, shape-capture, transport, provenance
+and cleanup gates passed, not reader or general native compatibility. A failed cleanup may be diagnosed in this finite report but cannot
 produce accepted evidence.
 
 Seed failures may use only the fixed `seed_<operation>_<category>` enum, with
@@ -382,18 +453,21 @@ fixed phase. It is written to a fixed pending filename, closed, checked again fo
 an existing destination, then moved within the same directory. This is a
 close-then-move publication sequence, not a claim about native filesystem atomicity
 or a general no-replace primitive. The host accepts semantic success only with an
-`ok`/`complete` completion **and** the unchanged strict success result marker.
+`ok`/`complete` completion **and** the strict success result marker. The v3
+`audit_contract` result additionally requires its bounded shape object.
 An error completion never becomes success even when `result.json` exists. Missing,
-stale, malformed or incomplete completion fails closed. Neither private marker,
-launch token, arbitrary exception text nor native paths are exported.
+stale, malformed or incomplete completion fails closed. Private marker files,
+arbitrary exception text and native paths are not exported. V3 exports only the
+fresh `audit_contract` correlation token inside its explicitly bound capture;
+other launch tokens remain private.
 
 A failed report may include one finite `failure_context` object: command operation,
 supervisor site, optional fixed BSL phase, and optional fixed inventory region and
 reason. Context is lexically attached to the failing operation and bound to its
 stage; it is never a sticky previous-command label. Inventory classifications are
 preserved outside seed as well. The public field requires all four cleanup flags;
-late host teardown/provenance failure strips it. Successful report keys and bytes
-remain unchanged. A timeout command/site identifies the supervised command, not
+late host teardown/provenance failure strips it. The historical v2 context-only change did not alter successful report keys;
+v3 has the separately versioned shape fields described above. A timeout command/site identifies the supervised command, not
 its internal cause or whether a transaction committed. A caught BSL phase records
 the last source-assigned boundary, not native error text or proof of rollback.
 

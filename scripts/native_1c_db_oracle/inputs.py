@@ -14,7 +14,7 @@ SOURCE_FILES = {
     'yadinassi/storage/filedb.py':'filedb.py',
     'scripts/native_1c_db_oracle.py':'host.py',
     **{f'scripts/native_1c_db_oracle/{name}':name for name in (
-        'probe.sh','run.py','protocol.py','snapshots.py','inject_metadata.py','inputs.py',
+        'probe.sh','run.py','contract.py','protocol.py','snapshots.py','inject_metadata.py','inputs.py',
         'metadata/Catalog.xml','metadata/CommonModule.xml','metadata/Role.xml',
         'metadata/SetupRights.xml','metadata/CRUDRights.xml',
         'modules/SessionModule.bsl','modules/ManagedApplicationModule.bsl','modules/NativeOracleServer.bsl')},
