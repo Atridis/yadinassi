@@ -694,6 +694,11 @@ class Native:
                             {'marker': data, 'origin': origin, 'postimage': summary},
                             nonce=self.nonce, provenance=self.provenance, baseline=baseline,
                             before_scan=self.remaining) from None
+                    if type(error) is comparison.ComparisonFailure and (error.category, error.code) == ('name_mismatch', 'field_names_differ'):
+                        raise comparison.field_names_failure(catalog,
+                            {'marker': data, 'origin': origin, 'postimage': summary},
+                            nonce=self.nonce, provenance=self.provenance, baseline=baseline,
+                            before_scan=self.remaining) from None
                     raise
                 evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
             except BaseException:

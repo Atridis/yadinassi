@@ -3,7 +3,9 @@
 The parser receives no native names. Only its completed immutable catalog is
 projected here. The bound missing-table rejection exports complete schema-2
 names only when every diagnostic policy fits; otherwise a complete schema-3
-counts-only census. Neither form exports fields or raw descriptors.
+counts-only census. A separate schema-4 field mismatch capture contains only
+complete selected name projections, including empty reader field lists. No
+diagnostic exports raw descriptors or changes the strict success predicate.
 The projection mode records the requested argument, not measured native name
 semantics. Historical v2/v3 and default-mode v4 envelopes are not accepted or
 upgraded.
@@ -461,6 +463,111 @@ def missing_table_failure(catalog, evidence, *, nonce, provenance, baseline, bef
     return ComparisonFailure('name_mismatch', 'missing_table', capture=capture)
 
 
+def validate_field_reader_projection(value):
+    """Failure-only projection: empty fields are observations, never success."""
+    exact(value, {'schema', 'target', 'tables'})
+    require(type(value['schema']) is int and value['schema'] == 1
+            and value['target'] == TARGET, 'invalid_marker')
+    tables = value['tables']
+    require(type(tables) is list and 1 <= len(tables) <= MAX_TABLES, 'artifact_limit')
+    names = set(); total = units = 0
+    for table in tables:
+        exact(table, {'name', 'fields'})
+        units += text_units(table['name'])
+        require(units <= MAX_TEXT_UNITS, 'artifact_limit')
+        require(table['name'] not in names, 'invalid_marker'); names.add(table['name'])
+        fields = table['fields']
+        require(type(fields) is list and len(fields) <= MAX_FIELDS, 'artifact_limit')
+        total += len(fields)
+        require(total <= MAX_TOTAL_FIELDS, 'artifact_limit')
+        field_names = set()
+        for name in fields:
+            units += text_units(name)
+            require(name not in field_names, 'invalid_marker'); field_names.add(name)
+            require(units <= MAX_TEXT_UNITS, 'artifact_limit')
+    require(len(encode(value)) <= MAX_PROJECTION_BYTES, 'artifact_limit')
+    return value
+
+
+def canonical_field_reader_projection(value):
+    validate_field_reader_projection(value)
+    return {'schema': 1, 'target': TARGET, 'tables': sorted(
+        ({'name': table['name'], 'fields': sorted(table['fields'])} for table in value['tables']),
+        key=lambda table: table['name'])}
+
+
+def validate_field_diagnostic(value):
+    exact(value, {'target', 'scope', 'status', 'native', 'reader'})
+    require(value['target'] == TARGET and value['scope'] == NAME_SCOPE and value['status'] == 'complete')
+    native = value['native']; actual = value['reader']
+    require(native == canonical_projection(native)
+            and actual == canonical_field_reader_projection(actual))
+    require([table['name'] for table in native['tables']] == [table['name'] for table in actual['tables']]
+            and native != actual)
+    return value
+
+
+def field_diagnostic(catalog, native, *, before_scan=None):
+    """Recheck every selected table independently of an early empty-field exit.
+
+    Count and validate bounded immutable reader collections before copying any
+    field names. Unselected fields, types and raw descriptors are never read.
+    """
+    try:
+        native = canonical_projection(native)
+        tables = getattr(catalog, 'tables', None); usage = getattr(catalog, 'usage', None)
+        require(type(tables) is tuple, 'invalid_marker')
+        require(len(tables) <= MAX_CENSUS_TABLES, 'artifact_limit')
+        count = getattr(usage, 'tables', None)
+        require(integer(count, MAX_CENSUS_TABLES) and count == len(tables), 'invalid_marker')
+        selected = []; total = units = 0
+        for expected in native['tables']:
+            match = None; matches = 0
+            for table in tables:
+                if before_scan is not None:
+                    before_scan()
+                if getattr(table, 'name', None) == expected['name']:
+                    matches += 1; match = table
+            if not matches: raise ComparisonFailure('name_mismatch', 'missing_table')
+            if matches != 1: raise ComparisonFailure('name_mismatch', 'duplicate_table')
+            fields = getattr(match, 'fields', None)
+            require(type(fields) is tuple, 'invalid_marker')
+            total += len(fields)
+            require(len(fields) <= MAX_FIELDS and total <= MAX_TOTAL_FIELDS, 'artifact_limit')
+            units += text_units(match.name)
+            require(units <= MAX_TEXT_UNITS, 'artifact_limit')
+            names = set()
+            for field in fields:
+                name = getattr(field, 'name', None)
+                units += text_units(name)
+                require(units <= MAX_TEXT_UNITS, 'artifact_limit')
+                if name in names: raise ComparisonFailure('name_mismatch', 'duplicate_field')
+                names.add(name)
+            selected.append(match)
+        actual = canonical_field_reader_projection({'schema': 1, 'target': TARGET, 'tables': [
+            {'name': table.name, 'fields': [field.name for field in table.fields]} for table in selected]})
+        value = {'target': TARGET, 'scope': NAME_SCOPE, 'status': 'complete', 'native': native, 'reader': actual}
+        validate_field_diagnostic(value)
+        return value
+    except ComparisonFailure:
+        raise
+    except OracleError as error:
+        if error.kind not in ('artifact_limit', 'invalid_marker', 'transport_invalid'):
+            raise
+        raise ComparisonFailure('resource_limit' if error.kind == 'artifact_limit' else 'structural_rejection',
+                                'projection_limit' if error.kind == 'artifact_limit' else 'invalid_projection') from None
+
+
+def field_names_failure(catalog, evidence, *, nonce, provenance, baseline, before_scan=None):
+    diagnostic = field_diagnostic(catalog, evidence['marker']['storage_names'], before_scan=before_scan)
+    capture = {'schema': 4, 'status': 'failed', 'category': 'name_mismatch', 'code': 'field_names_differ',
+        **capture_binding(evidence, nonce=nonce, provenance=provenance, baseline=baseline),
+        'field_diagnostic': diagnostic}
+    if len(encode(capture)) > MAX_CAPTURE_BYTES:
+        raise ComparisonFailure('resource_limit', 'diagnostic_limit')
+    return ComparisonFailure('name_mismatch', 'field_names_differ', capture=capture)
+
+
 def validate_binding(capture, report, *, nonce, provenance, final=False):
     # Token and postimage values are producer-bound before construction. Offline
     # validation checks their format/geometry, not independent authenticity of
@@ -492,12 +599,13 @@ def validate_binding(capture, report, *, nonce, provenance, final=False):
 
 
 def validate_failure_capture(capture, report, *, nonce, provenance, final=False):
-    require(type(capture) is dict and type(capture.get('schema')) is int and capture['schema'] in (2, 3))
-    payload = 'name_diagnostic' if capture['schema'] == 2 else 'name_census'
+    require(type(capture) is dict and type(capture.get('schema')) is int and capture['schema'] in (2, 3, 4))
+    payload = {2: 'name_diagnostic', 3: 'name_census', 4: 'field_diagnostic'}[capture['schema']]
     exact(capture, {'schema', 'status', 'category', 'code', payload} | BINDING_KEYS)
-    require(type(capture['schema']) is int and capture['schema'] in (2, 3)
+    require(type(capture['schema']) is int and capture['schema'] in (2, 3, 4)
             and capture['status'] == 'failed' and capture['category'] == 'name_mismatch'
-            and capture['code'] == 'missing_table' and report['status'] == 'failed'
+            and capture['code'] == ('field_names_differ' if capture['schema'] == 4 else 'missing_table')
+            and report['status'] == 'failed'
             and report['failure_kind'] == 'catalog_comparison_failed'
             and report['failed_stage'] == 'baseline' and report['reader_validation'] == 'failed'
             and [item['id'] for item in report['snapshots']] == ['baseline'])
@@ -505,8 +613,10 @@ def validate_failure_capture(capture, report, *, nonce, provenance, final=False)
     validate_binding(capture, report, nonce=nonce, provenance=provenance, final=final)
     if capture['schema'] == 2:
         validate_name_diagnostic(capture['name_diagnostic'])
-    else:
+    elif capture['schema'] == 3:
         validate_name_census(capture['name_census'], {key: capture[key] for key in BINDING_KEYS})
+    else:
+        validate_field_diagnostic(capture['field_diagnostic'])
 
 
 def discard_capture(report, failure=None):
@@ -524,7 +634,7 @@ def discard_capture(report, failure=None):
             try:
                 validate_failure_capture(failure.capture, report, nonce=report['nonce'],
                                          provenance=report['provenance'])
-                require((failure.category, failure.code) == ('name_mismatch', 'missing_table'))
+                require((failure.category, failure.code) == (failure.capture['category'], failure.capture['code']))
             except OracleError:
                 pass  # Failed cleanup or binding never releases diagnostic data.
             else:
@@ -536,7 +646,9 @@ def discard_capture(report, failure=None):
                or (old['schema'] == 2 and set(old) == {'schema', 'status', 'category', 'code',
                                                        'name_diagnostic'} | BINDING_KEYS)
                or (old['schema'] == 3 and set(old) == {'schema', 'status', 'category', 'code',
-                                                       'name_census'} | BINDING_KEYS))
+                                                       'name_census'} | BINDING_KEYS)
+               or (old['schema'] == 4 and set(old) == {'schema', 'status', 'category', 'code',
+                                                       'field_diagnostic'} | BINDING_KEYS))
           and old['status'] == 'failed'
           and type(old['category']) is str and old['category'] in DIAGNOSTICS
           and type(old['code']) is str and old['code'] in DIAGNOSTICS[old['category']]):
@@ -574,7 +686,7 @@ def validate_report(raw, *, nonce, provenance, final=False):
         if capture is None:
             require(report['reader_validation'] in ('not_run', 'failed', 'discarded'))
             return report
-        if type(capture) is dict and type(capture.get('schema')) is int and capture['schema'] in (2, 3):
+        if type(capture) is dict and type(capture.get('schema')) is int and capture['schema'] in (2, 3, 4):
             validate_failure_capture(capture, report, nonce=nonce, provenance=provenance, final=final)
             return report
         exact(capture, {'schema', 'status', 'category', 'code'})

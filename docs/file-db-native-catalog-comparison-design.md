@@ -43,7 +43,7 @@ Use a new schema/lane rather than retroactively upgrading schema-3 shape evidenc
 
 The postimage claim is explicitly the closed post-session image, not byte identity with baseline or the native execution-time file. Reject duplicate parser-side table/field names before set/dict conversion.
 
-Preserve distinct finite reader outcomes for unsupported layout, supported-subset sharing policy, structural rejection, resource limit, I/O/change, and name mismatch. Validate error class and an allowlisted finite code as a pair; never forward an arbitrary CatalogError.code. Do not export exception text, raw descriptor context, or partial successful projections. Failure/cleanup failure cannot retain a successful comparison. Ordinary failures retain only a fixed category/code; the source-bound, names-only rejected-run diagnostic below is a narrow synthetic-fixture exception and is stripped on cleanup failure.
+Preserve distinct finite reader outcomes for unsupported layout, supported-subset sharing policy, structural rejection, resource limit, I/O/change, and name mismatch. Validate error class and an allowlisted finite code as a pair; never forward an arbitrary CatalogError.code. Do not export exception text, raw descriptor context, or partial successful projections. Failure/cleanup failure cannot retain a successful comparison. Ordinary failures retain only a fixed category/code; the source-bound table-name and selected field-name failure diagnostics below are narrow synthetic-fixture exceptions and are stripped on cleanup failure.
 
 ## Bounds and gates
 
@@ -201,3 +201,45 @@ The explicit mode and longer lane increase the universal whole-report bound by
 32768-byte cap. Projection/name/counter/skeleton maxima remain
 3469/3491/1491/1051 and the capture cap remains 12288. This is a local serialized
 size proof, not evidence that the experimental native call succeeds.
+
+
+## Complete selected field-name rejection diagnostic
+
+Independent audit of explicit-True run 40127847477 at head
+`19fcf9712ac81db97c8c3459e2f0656967d7284b` observed only the finite failed
+`name_mismatch/field_names_differ` code with successful cleanup. Report SHA-256:
+`2be2ece201508b750f219cf61f249ac67bde13cf262bb2e595a53fcbeee17b02`.
+The existing comparator can emit this code on an early empty parsed field list
+or final canonical inequality. It does not establish every selected table matched,
+a particular missing/extra field, or field parity.
+
+A separate capture-schema-4 failure variant records the full native and reader
+selected table/field-name projections, fixed own-catalog target, synthetic scope
+and complete status. It is considered only after the unchanged real-reader and
+postimage checks and this exact rejection. Every native-selected table must have
+exactly one parser match; both complete table-name sets must agree. Native field
+lists retain the nonempty validator. A distinct failure-only reader validator
+permits empty field lists, which are observations, never successful agreement.
+Table/field duplicates, incomplete lookup and actual equality cannot produce this
+failure diagnostic. No unrelated field sets, descriptor bodies, scalar values,
+types, rows or indexes are exported.
+
+Each side retains the existing 4-table, 32-fields-per-table, 64-total-fields,
+64-BMP-units-per-name, 512-name-units and 4096-byte projection bounds. Exhausted
+limits or unsupported/incomplete observations reject finitely without partial
+output. Exact comparison and its success validation remain unchanged. No adapter,
+normalization, field exclusion or native-call change is introduced.
+
+The original failed status/category/code and all source/nonce/token/origin/
+postimage bindings accompany a complete capture. Release requires all existing
+cleanup gates; late cleanup strips the capture to a bare finite failure. The
+explicit-True report lane/mode, 13 stages, 11 snapshots and broad
+`native_compatibility=not_claimed` remain unchanged. Independent full-capture and
+whole-report bounds must fit the unchanged 12288/32768-byte ceilings before
+publication. Only the next audited artifact can reveal actual field spellings.
+
+The independent-maxima field-capture bound is 7902 bytes, below 12288. The
+universal complete-report bound remains 29873 including newline because it
+already charges the entire enforced capture slot. The existing 32768-byte
+ceiling and 2895-byte headroom are unchanged; this does not establish native
+field agreement or identify the actual mismatch.

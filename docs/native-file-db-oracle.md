@@ -145,7 +145,8 @@ mapping. Duplicate names are rejected before set/dictionary conversion. Native
 tables must each match exactly one parsed table and all its parsed field names;
 extra unrelated catalog tables stay private in a successful comparison. The
 strictly bounded synthetic-only failure diagnostic below is a separate exception
-for table names, never descriptor bodies or field/row data. Ordering is
+for table names or complete selected field-name sets, never descriptor bodies,
+field values or row data. Ordering is
 canonicalized only for comparison. Unsupported naming conventions fail honestly, never by accepting a
 partial match or applying an undocumented normalization.
 
@@ -193,6 +194,36 @@ actual unchanged reader execution on a synthetic frozen descriptor, binding and
 mutation failures, complete name matching, cleanup and report limits. These are
 local mechanics, not native compilation or native physical compatibility. The
 approved comparison design is in [the focused design note](file-db-native-catalog-comparison-design.md).
+
+### Complete selected field-name failure observation
+
+The independently audited explicit-True run
+[40127847477](https://github.com/Atridis/yadinassi/actions/runs/40127847477)
+failed with `name_mismatch/field_names_differ` and all cleanup gates true. Its
+report SHA-256 is
+`2be2ece201508b750f219cf61f249ac67bde13cf262bb2e595a53fcbeee17b02`.
+That code can mean an early empty reader field list or final exact inequality;
+it reveals neither field spellings nor proof that every selected table matched.
+
+The new capture-schema-4 failure diagnostic exports only complete native and
+reader selected table/field-name projections for the same own synthetic catalog.
+It independently requires exact unique parser lookup for every selected table,
+identical complete table-name sets, unique fields and actual field inequality.
+Only its failure-only reader projection may contain empty field lists. The
+native and successful-comparison validators remain nonempty and unchanged.
+No values, types, rows, indexes, unrelated fields or raw descriptors are copied.
+No normalization, mapping, field omission or native-call change is added.
+
+Both projections retain all existing name/collection/4096-byte limits. The
+capture retains original failed status/category/code and the same source,
+nonce/token, origin and frozen-postimage binding. Missing/duplicate selected
+tables, duplicate fields, invalid names or exhausted limits cannot yield partial
+diagnostics. Late cleanup removes the capture. Acceptance stays false and broad
+native compatibility remains unclaimed; an independent fresh artifact is needed
+to identify the actual difference.
+The independent-maxima field capture is 7902 bytes under its unchanged 12288-byte
+cap. The universal complete-report bound stays 29873 including newline because
+it already charges the full capture slot, leaving 2895 bytes under 32768.
 
 ### Explicit filtered DBMSNames=True experiment
 

@@ -374,7 +374,7 @@ class NativeCollectionTests(unittest.TestCase):
         self.assertFalse((self.artifacts/'auditor').exists())
         self.assertFalse((self.artifacts/'auditor_frozen').exists())
 
-    def test_only_exact_missing_table_is_collected_other_strict_failures_unchanged(self):
+    def test_only_exact_missing_table_collects_names_other_failures_stay_separate(self):
         cases = [({2: descriptor(), 3: descriptor()}, 'duplicate_table'),
                  ({2: descriptor(fields='{"Other","X",0,0,0,""}')}, 'field_names_differ'),
                  ({2: descriptor(fields='{"Field","X",0,0,0,""},{"Field","X",0,0,0,""}')}, 'duplicate_field')]
@@ -384,7 +384,12 @@ class NativeCollectionTests(unittest.TestCase):
                  self.assertRaises(comparison.ComparisonFailure) as caught:
                 self.native.compare_catalog('baseline')
             self.assertEqual(caught.exception.code, code)
-            self.assertIsNone(caught.exception.capture)
+            if code == 'field_names_differ':
+                self.assertEqual(caught.exception.capture['schema'], 4)
+                self.assertIn('field_diagnostic', caught.exception.capture)
+                self.assertNotIn('name_diagnostic', caught.exception.capture)
+            else:
+                self.assertIsNone(caught.exception.capture)
             collect.assert_not_called()
 
     def test_unsupported_identifier_after_real_parse_yields_complete_counts_only(self):
