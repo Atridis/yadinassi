@@ -232,16 +232,14 @@ if full_mode == "true":
             report["status"] = "stage3_failed"
         if suite["status"] != "ok" and report["status"] == "ok":
             report["status"] = "stage3_failed"
-    if client_mode == "true" and ((report["status"] == "ok" and suite["status"] == "ok")
-                                   or full_suite.has_date_null_capture(suite)):
+    if client_mode == "true" and report["status"] == "ok" and suite["status"] == "ok":
         try:
             full_suite.final_client_process_census(nonce)
         except full_suite.FullError as exc:
             report["status"] = "stage3_failed"
             full_suite.fail_client_process_checkpoint(suite, watchdog_mode == "true",
                 exc.diagnostics if isinstance(exc, full_suite.ClientProcessError) else None)
-    if client_mode == "true" and bus_cleanup_failed == "true" and (
-            suite["status"] == "ok" or full_suite.has_date_null_capture(suite)):
+    if client_mode == "true" and bus_cleanup_failed == "true" and suite["status"] == "ok":
         report["status"] = "stage3_failed"
         full_suite.fail_client_process_checkpoint(suite, watchdog_mode == "true")
     if async_mode == "true" and report["status"] == "ok" and suite["status"] == "ok":
