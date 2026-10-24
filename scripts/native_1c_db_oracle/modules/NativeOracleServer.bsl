@@ -74,7 +74,7 @@
     Результат.Вставить("users_verified", Ложь);
     Результат.Вставить("nonprivileged", Истина);
     Для Каждого Поле Из СтрРазделить("metadata_version,payload_length,amount_digits,amount_scale,count,code,payload,amount,deletion_mark,same_reference", ",") Цикл
-        Результат.Вставить(Поле, Null);
+        Результат.Вставить(Поле, Неопределено);
     КонецЦикла;
     Информация = Новый СистемнаяИнформация;
     Результат.Вставить("actual_version", Информация.ВерсияПриложения);
@@ -143,7 +143,7 @@
 Процедура NativeИзмерить(Операция, Результат, Корень)
     До = NativeСостояние(Корень);
     Если Операция = "create" Тогда
-        Если До.count <> 0 Или ТипЗнч(До.same_reference) <> Тип("Null") Тогда
+        Если До.count <> 0 Или ТипЗнч(До.same_reference) <> Тип("Неопределено") Тогда
             ВызватьИсключение "logical_mismatch";
         КонецЕсли;
         НачатьТранзакцию();
@@ -213,7 +213,7 @@
 КонецПроцедуры
 
 Функция NativeСостояние(Корень)
-    Результат = Новый Структура("count,code,payload,amount,deletion_mark,same_reference", 0, Null, Null, Null, Null, Null);
+    Результат = Новый Структура("count,code,payload,amount,deletion_mark,same_reference", 0, Неопределено, Неопределено, Неопределено, Неопределено, Неопределено);
     Сохраненная = NativeСохраненнаяСсылка(Корень);
     Если Сохраненная <> Неопределено Тогда
         // A fresh query by the saved reference must prove physical absence.

@@ -163,6 +163,20 @@ A primary failure remains visible if cleanup also fails; separate cleanup
 checks/stage still fail, and acceptance remains false. Later stages cannot
 inherit a seed-operation label.
 
+The absent logical fields in the fixed BSL markers use `Неопределено`, which
+[automatic JSON serialization](https://v8.1c.ru/platforma/json/) maps to JSON
+`null`; automatic reading maps that representation back to `Неопределено`.
+These are present properties with absent values, not omitted properties and not
+semantic BSL `Null` observations. The bootstrap writer, server result defaults,
+empty-state values and create-state absence check use the same representation.
+The Python wire contract still requires every exact key and the same `None`
+values; populated values and reference booleans are unchanged. This follows the
+[previous reviewed transport correction](native-client-async-measurement.md#error-descriptor-json-transport-correction),
+not a change to runtime Null behavior or native evidence. Run
+[40090298567](https://github.com/Atridis/yadinassi/actions/runs/40090298567)
+localized a nonzero exit to bootstrap, but did not identify its cause. The
+transport correction is not a proven repair until fresh native evidence passes.
+
 Version 1 deliberately classifies all binary headers as unknown and page analysis
 as unsupported. Differences are streamed as **64 KiB byte windows, not pages**.
 Changed/added/removed bytes, size deltas and bounded sample indices are validated.
