@@ -119,11 +119,12 @@ All summaries retain `page_analysis=unsupported`; comparison windows remain
 cleanup acceptance are unchanged. Historical v1 reports must be audited with
 their matching source revision, not silently accepted as v2 header evidence.
 
-## Version 4 filtered physical-name comparison
+## Version 4 fixture-only physical field identity
 
 The current host accepts only `schema=4`,
-`lane=native-file-db-catalog-compare-dbms-names-true-v4` and mandatory
-`projection_mode=dbms_names_true`. Its strict validator retains every v2
+`lane=native-file-db-catalog-compare-dbms-names-true-ascii-fields-v1`, mandatory
+`projection_mode=dbms_names_true` and
+`comparison_policy=exact_tables_ascii_fields_v1`. Its strict validator retains every v2
 lifecycle check, requires the exact current staged-source inventory, and rejects
 historical v2/v3 transports rather than converting them.
 
@@ -139,10 +140,12 @@ projection reads only `ИмяТаблицыХранения`, nested `Поля`,
 type values, row contents, or arbitrary scalar cells.
 
 The native projection and independent reader projection each contain only the
-fixed target and complete `{name, fields:[...]}` entries. Names are used exactly,
-case-sensitively, with no guessed physical names, prefix stripping or type-code
-mapping. Duplicate names are rejected before set/dictionary conversion. Native
-tables must each match exactly one parsed table and all its parsed field names;
+fixed target and complete `{name, fields:[...]}` entries. Raw names are retained unchanged. Table names are exact and
+case-sensitive; the explicitly versioned fixture policy below compares complete
+ASCII field identifiers using temporary ASCII-case keys. Raw duplicates and key
+collisions are rejected before set/dictionary conversion. No prefix stripping or
+type-code mapping occurs. Native tables must each match exactly one parsed table
+and all its complete field identifiers under that policy;
 extra unrelated catalog tables stay private in a successful comparison. The
 strictly bounded synthetic-only failure diagnostic below is a separate exception
 for table names or complete selected field-name sets, never descriptor bodies,
@@ -176,8 +179,8 @@ entire capture has its own 12288-byte ceiling. The unchanged full report ceiling
 is 32768 bytes. The executable whole-envelope proof includes all 20 staged
 source paths/hashes, maximal lifecycle snapshots/comparisons/opaque summaries,
 longest finite enums and diagnostic fields, both projections and postimage
-bindings, cleanup and final newline. The exact upper bound is 29873 bytes,
-leaving 2895 bytes below the unchanged ceiling. Changing source inventory or
+bindings, cleanup and final newline. The exact upper bound is 29949 bytes,
+leaving 2819 bytes below the unchanged ceiling. Changing source inventory or
 outer widths requires a new complete proof, not only a sub-payload check.
 
 An accepted report requires the narrow match verdict and every original
@@ -194,6 +197,46 @@ actual unchanged reader execution on a synthetic frozen descriptor, binding and
 mutation failures, complete name matching, cleanup and report limits. These are
 local mechanics, not native compilation or native physical compatibility. The
 approved comparison design is in [the focused design note](file-db-native-catalog-comparison-design.md).
+
+### Measured fixture-only ASCII field-identifier policy
+
+The audited field diagnostic
+[40128721635](https://github.com/Atridis/yadinassi/actions/runs/40128721635)
+observed exact table `_Reference53` on both sides. Its complete seven native
+fields `_Code`, `_Fld54`, `_Fld55`, `_IDRRef`, `_Marked`, `_PredefinedID`,
+`_Version` corresponded to the seven uppercase descriptor spellings. Report
+SHA-256: `0955badeeeb2f5947a0825ba2f50ac037ac394b832aa69a395cd4e8e5997217e`.
+The strict comparison remained failed. Reader source preserves physical spelling;
+no parser uppercasing produced this observation.
+
+The new `exact_tables_ascii_fields_v1` policy is a measured supported subset only
+for this own synthetic NativeOracleItems, explicit-True, platform 8.3.27.1508,
+file 8.3.8.0/8192 lane. It is not a universal database identifier rule or a change
+to BSL string/value behavior. Accessible official sources do not establish a
+universal physical field-case equivalence contract.
+
+Table names remain exact and unique. Both field lists must be complete and
+nonempty. Every field first satisfies `[A-Za-z_][A-Za-z0-9_]{0,63}`; a temporary
+key maps only ASCII a-z to A-Z. Reject raw duplicates and same-side key collisions
+before reduction, then require a bijection of complete keys. Non-ASCII names,
+Unicode lookalikes, missing/extra/empty fields and table-case differences reject.
+No prefix stripping, trimming, field omission or Unicode casefold is allowed.
+
+New matched capture schema 5 and verdict
+`filtered_table_ascii_field_identifiers_match` explicitly distinguish policy
+identity from identical raw spelling. The capture includes the policy and both
+unaltered projections; it never substitutes transformed names. Old strict
+projection/comparison/binding functions stay intact, with separate policy routes.
+Old lanes and matched captures are not upgraded. The same source/nonce/token,
+origin/postimage and cleanup checks apply, and `native_compatibility=not_claimed`
+remains mandatory. New-policy field failure captures must genuinely fail this
+policy, not merely differ in raw case. A fresh independently audited run must
+establish the new policy outcome before even this narrow agreement is claimed.
+The conservative matched schema-5 capture bound is 7724 bytes; the complete
+field-failure capture bound stays 7902, both below 12288. The universal report
+bound is 29949 including newline, with 2819 bytes under the unchanged 32768 cap.
+These are independent upper bounds, not a claim that every maxima combination
+is an accepted ASCII-policy projection.
 
 ### Complete selected field-name failure observation
 
@@ -222,10 +265,11 @@ diagnostics. Late cleanup removes the capture. Acceptance stays false and broad
 native compatibility remains unclaimed; an independent fresh artifact is needed
 to identify the actual difference.
 The independent-maxima field capture is 7902 bytes under its unchanged 12288-byte
-cap. The universal complete-report bound stays 29873 including newline because
-it already charges the full capture slot, leaving 2895 bytes under 32768.
+cap. With the new policy envelope, the universal complete-report bound is 29949
+including newline; it charges the full capture slot and leaves 2819 bytes under
+32768.
 
-### Explicit filtered DBMSNames=True experiment
+### Historical explicit filtered DBMSNames=True experiment
 
 Run [40126820961](https://github.com/Atridis/yadinassi/actions/runs/40126820961)
 returned native `Reference53`, absent from the complete physical-name inventory,
@@ -282,8 +326,8 @@ failure into success. Late cleanup failure removes either diagnostic.
 
 The attainable maximum complete names capture is 3491 bytes; the counts-only
 upper bound remains 1491 and its small hypothetical-name skeleton remains 1051.
-With the explicit-mode discriminator, the universal complete-report upper bound
-is 29873 bytes including newline,
+With the current mode and policy discriminators, the universal complete-report
+upper bound is 29949 bytes including newline,
 not the smaller bound for a names-only failure slot. Actual encoded name-capture
 bytes must equal the census measurement before release. Historical census flags
 remain interpreted with their original pinned source policy; the old 67-table
@@ -335,7 +379,7 @@ counts, or authenticate sole producer values from syntax. Those facts require
 pinned producer control flow and archive digest/provenance. The complete report
 retains its 32768-byte cap and the capture its 12288-byte cap. The independent-
 maxima counter-capture bound is 1491 bytes; the small name-capture skeleton is
-bounded by 1051 bytes, and the current explicit-mode complete-report bound is 29873 bytes
+bounded by 1051 bytes, and the current explicit-mode/policy complete-report bound is 29949 bytes
 including newline. These local proofs are not a native compatibility result.
 
 ### Previous complete names-only diagnostic

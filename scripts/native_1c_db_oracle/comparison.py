@@ -5,7 +5,8 @@ projected here. The bound missing-table rejection exports complete schema-2
 names only when every diagnostic policy fits; otherwise a complete schema-3
 counts-only census. A separate schema-4 field mismatch capture contains only
 complete selected name projections, including empty reader field lists. No
-diagnostic exports raw descriptors or changes the strict success predicate.
+diagnostic exports raw descriptors. The versioned ASCII field policy below
+leaves the historical strict helpers intact and preserves both raw projections.
 The projection mode records the requested argument, not measured native name
 semantics. Historical v2/v3 and default-mode v4 envelopes are not accepted or
 upgraded.
@@ -21,7 +22,9 @@ from protocol import decode, digest, encode, exact, integer, require
 from snapshots import MAX_FILE_BYTES, OracleError
 
 SCHEMA = 4
-LANE = 'native-file-db-catalog-compare-dbms-names-true-v4'
+LANE = 'native-file-db-catalog-compare-dbms-names-true-ascii-fields-v1'
+COMPARISON_POLICY = 'exact_tables_ascii_fields_v1'
+MATCHED_CAPTURE_SCHEMA = 5
 PROJECTION_MODE = 'dbms_names_true'
 TARGET = 'Справочник.NativeOracleItems'
 MAX_TABLES = 4
@@ -48,9 +51,9 @@ POLICY_FLAGS = ('reader_table_limit', 'name_character_limit', 'native_identifier
                 'reader_identifier', 'capture_byte_limit')
 BINDING_KEYS = {'operation', 'nonce', 'token', 'source_manifest_sha256',
     'reader_source_sha256', 'actual_version', 'origin', 'postimage'}
-VERDICT = 'filtered_table_field_names_match'
+VERDICT = 'filtered_table_ascii_field_identifiers_match'
 READER_SOURCE = 'yadinassi/storage/filedb_catalog.py'
-EXTRA_KEYS = {'projection_mode', 'storage_contract', 'reader_validation', 'native_compatibility'}
+EXTRA_KEYS = {'projection_mode', 'comparison_policy', 'storage_contract', 'reader_validation', 'native_compatibility'}
 
 # Exact exception classes and exact finite codes, not isinstance or exception
 # strings. Changes to the standalone reader must update this reviewed inventory.
@@ -83,9 +86,10 @@ READER_ERRORS = {
 DIAGNOSTICS = {category: set() for category, _ in READER_ERRORS.values()}
 for _category, _codes in READER_ERRORS.values():
     DIAGNOSTICS[_category].update(_codes)
-DIAGNOSTICS['name_mismatch'] = {'missing_table', 'duplicate_table', 'duplicate_field', 'field_names_differ'}
+DIAGNOSTICS['name_mismatch'] = {'missing_table', 'duplicate_table', 'duplicate_field',
+    'field_names_differ', 'ascii_field_key_collision'}
 DIAGNOSTICS['resource_limit'].update({'projection_limit', 'diagnostic_limit'})
-DIAGNOSTICS['unsupported_layout'].update({'diagnostic_identifier'})
+DIAGNOSTICS['unsupported_layout'].update({'diagnostic_identifier', 'ascii_field_identifier'})
 DIAGNOSTICS['structural_rejection'].update({'invalid_projection'})
 DIAGNOSTICS['io_or_change'].update({'snapshot_changed', 'snapshot_not_quiescent',
     'artifact_missing', 'invalid_input', 'origin_changed', 'postimage_changed'})
@@ -179,9 +183,72 @@ def project_catalog(catalog, native):
     return native, actual
 
 
+
+def ascii_field_keys(value, *, allow_empty=False):
+    """Ephemeral comparison keys only; never transform either raw projection.
+
+    Check full bounded shapes and raw uniqueness before deriving keys, then
+    check key collisions before sorting or comparing. No Unicode/locale fold.
+    """
+    try:
+        (validate_field_reader_projection if allow_empty else validate_projection)(value)
+    except OracleError as error:
+        raise ComparisonFailure('resource_limit' if error.kind == 'artifact_limit' else 'structural_rejection',
+                                'projection_limit' if error.kind == 'artifact_limit' else 'invalid_projection') from None
+    # Every bounded field passes the grammar before deriving even one key.
+    for table in value['tables']:
+        for name in table['fields']:
+            if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', name) is None:
+                raise ComparisonFailure('unsupported_layout', 'ascii_field_identifier')
+    result = []
+    for table in value['tables']:
+        keys = []
+        for name in table['fields']:
+            key = ''.join(chr(ord(char) - 32) if 'a' <= char <= 'z' else char for char in name)
+            if key in keys:
+                raise ComparisonFailure('name_mismatch', 'ascii_field_key_collision')
+            keys.append(key)
+        result.append((table['name'], tuple(sorted(keys))))
+    return tuple(sorted(result))
+
+
+def project_catalog_ascii_fields(catalog, native):
+    """Own synthetic fixture policy; exact tables and complete ASCII field keys."""
+    native_keys = ascii_field_keys(native)
+    native = canonical_projection(native)
+    selected = []; total_fields = 0
+    for expected in native['tables']:
+        matches = [table for table in catalog.tables if table.name == expected['name']]
+        if not matches: raise ComparisonFailure('name_mismatch', 'missing_table')
+        if len(matches) != 1: raise ComparisonFailure('name_mismatch', 'duplicate_table')
+        table = matches[0]
+        if not table.fields: raise ComparisonFailure('name_mismatch', 'field_names_differ')
+        total_fields += len(table.fields)
+        if len(table.fields) > MAX_FIELDS or total_fields > MAX_TOTAL_FIELDS:
+            raise ComparisonFailure('resource_limit', 'projection_limit')
+        fields = []
+        for field in table.fields:
+            if field.name in fields: raise ComparisonFailure('name_mismatch', 'duplicate_field')
+            fields.append(field.name)
+        selected.append({'name': table.name, 'fields': fields})
+    actual = {'schema': 1, 'target': TARGET, 'tables': selected}
+    actual_keys = ascii_field_keys(actual)
+    actual = canonical_projection(actual)
+    if actual_keys != native_keys: raise ComparisonFailure('name_mismatch', 'field_names_differ')
+    return native, actual
+
+
+def require_ascii_field_policy(report):
+    require(type(report) is dict and type(report.get('schema')) is int
+            and report['schema'] == SCHEMA and report.get('lane') == LANE
+            and report.get('projection_mode') == PROJECTION_MODE
+            and report.get('comparison_policy') == COMPARISON_POLICY)
+
+
 def empty_report(nonce, provenance):
     report = lifecycle.empty_report(nonce, provenance)
-    report.update(schema=SCHEMA, lane=LANE, projection_mode=PROJECTION_MODE, storage_contract=None,
+    report.update(schema=SCHEMA, lane=LANE, projection_mode=PROJECTION_MODE,
+                  comparison_policy=COMPARISON_POLICY, storage_contract=None,
                   reader_validation='not_run', native_compatibility='not_claimed')
     return report
 
@@ -215,6 +282,22 @@ def bind_capture(evidence, report):
         'native': canonical_projection(evidence['marker']['storage_names']),
         'reader': canonical_projection(evidence['reader'])}
     require(capture['native'] == capture['reader'], 'logical_mismatch')
+    require(len(encode(capture)) <= MAX_CAPTURE_BYTES, 'artifact_limit')
+    return capture
+
+
+
+def bind_ascii_fields_capture(evidence, report):
+    """Versioned policy success, not a claim that raw field spellings are equal."""
+    require_ascii_field_policy(report)
+    require(report['snapshots'][0]['id'] == 'baseline', 'snapshot_changed')
+    native = canonical_projection(evidence['marker']['storage_names'])
+    actual = canonical_projection(evidence['reader'])
+    require(ascii_field_keys(native) == ascii_field_keys(actual), 'logical_mismatch')
+    capture = {'schema': MATCHED_CAPTURE_SCHEMA, 'status': 'matched',
+        'comparison_policy': COMPARISON_POLICY, **capture_binding(evidence,
+            nonce=report['nonce'], provenance=report['provenance'],
+            baseline=report['snapshots'][0]['physical']), 'native': native, 'reader': actual}
     require(len(encode(capture)) <= MAX_CAPTURE_BYTES, 'artifact_limit')
     return capture
 
@@ -568,6 +651,22 @@ def field_names_failure(catalog, evidence, *, nonce, provenance, baseline, befor
     return ComparisonFailure('name_mismatch', 'field_names_differ', capture=capture)
 
 
+
+def validate_ascii_field_diagnostic(value):
+    # A strict case-only historical failure is not a policy failure. Empty
+    # reader fields remain complete observations, but can never match native.
+    validate_field_diagnostic(value)
+    require(ascii_field_keys(value['native']) != ascii_field_keys(value['reader'], allow_empty=True))
+    return value
+
+
+def field_names_ascii_fields_failure(catalog, evidence, *, nonce, provenance, baseline, before_scan=None):
+    failure = field_names_failure(catalog, evidence, nonce=nonce, provenance=provenance,
+                                  baseline=baseline, before_scan=before_scan)
+    validate_ascii_field_diagnostic(failure.capture['field_diagnostic'])
+    return failure
+
+
 def validate_binding(capture, report, *, nonce, provenance, final=False):
     # Token and postimage values are producer-bound before construction. Offline
     # validation checks their format/geometry, not independent authenticity of
@@ -616,7 +715,7 @@ def validate_failure_capture(capture, report, *, nonce, provenance, final=False)
     elif capture['schema'] == 3:
         validate_name_census(capture['name_census'], {key: capture[key] for key in BINDING_KEYS})
     else:
-        validate_field_diagnostic(capture['field_diagnostic'])
+        validate_ascii_field_diagnostic(capture['field_diagnostic'])
 
 
 def discard_capture(report, failure=None):
@@ -660,9 +759,7 @@ def discard_capture(report, failure=None):
 
 def validate_report(raw, *, nonce, provenance, final=False):
     report = decode(raw)
-    require(type(report) is dict and type(report.get('schema')) is int
-            and report['schema'] == SCHEMA and report.get('lane') == LANE
-            and report.get('projection_mode') == PROJECTION_MODE)
+    require_ascii_field_policy(report)
     require(EXTRA_KEYS <= set(report) and report['native_compatibility'] == 'not_claimed'
             and report['reader_validation'] in ('not_run', 'failed', 'discarded', VERDICT))
     from inputs import SOURCE_FILES
@@ -697,11 +794,12 @@ def validate_report(raw, *, nonce, provenance, final=False):
                 and type(capture['code']) is str and capture['code'] in DIAGNOSTICS[capture['category']])
         return report
     require(report['reader_validation'] == VERDICT)
-    exact(capture, {'schema', 'status', 'native', 'reader'} | BINDING_KEYS)
+    exact(capture, {'schema', 'status', 'comparison_policy', 'native', 'reader'} | BINDING_KEYS)
     require(len(encode(capture)) <= MAX_CAPTURE_BYTES, 'artifact_limit')
-    require(type(capture['schema']) is int and capture['schema'] == 1 and capture['status'] == 'matched')
+    require(type(capture['schema']) is int and capture['schema'] == MATCHED_CAPTURE_SCHEMA
+            and capture['status'] == 'matched' and capture['comparison_policy'] == COMPARISON_POLICY)
     validate_binding(capture, report, nonce=nonce, provenance=provenance, final=final)
     require(capture['native'] == canonical_projection(capture['native'])
             and capture['reader'] == canonical_projection(capture['reader'])
-            and capture['native'] == capture['reader'])
+            and ascii_field_keys(capture['native']) == ascii_field_keys(capture['reader']))
     return report

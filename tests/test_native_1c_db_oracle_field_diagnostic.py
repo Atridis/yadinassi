@@ -354,7 +354,7 @@ class RealReaderFieldTests(unittest.TestCase):
             return summary, catalog
         for effect, code in ((changed, 'postimage_changed'), (reader.InvalidStructure('descriptor_utf8'), 'descriptor_utf8')):
             with mock.patch.object(snapshots, 'inspect_frozen_catalog', side_effect=effect), \
-                 mock.patch.object(comparison, 'field_names_failure', side_effect=AssertionError('must not collect')) as collect, \
+                 mock.patch.object(comparison, 'field_names_ascii_fields_failure', side_effect=AssertionError('must not collect')) as collect, \
                  self.assertRaises(comparison.ComparisonFailure) as caught:
                 self.native.compare_catalog('baseline')
             self.assertEqual(caught.exception.code, code); self.assertIsNone(caught.exception.capture); collect.assert_not_called()
@@ -379,11 +379,11 @@ class RealReaderFieldTests(unittest.TestCase):
             (OtherFailure('name_mismatch', 'field_names_differ'), 'field_names_differ')]
         self.post = Source().ready()
         for failure, code in cases:
-            with mock.patch.object(comparison, 'field_names_failure', side_effect=AssertionError('must not collect')) as collect:
+            with mock.patch.object(comparison, 'field_names_ascii_fields_failure', side_effect=AssertionError('must not collect')) as collect:
                 if failure is None:
                     result = self.native.compare_catalog('baseline'); self.assertEqual(result['reader'], projection())
                 else:
-                    with mock.patch.object(comparison, 'project_catalog', side_effect=failure), \
+                    with mock.patch.object(comparison, 'project_catalog_ascii_fields', side_effect=failure), \
                          self.assertRaises(comparison.ComparisonFailure) as caught:
                         self.native.compare_catalog('baseline')
                     self.assertEqual(caught.exception.code, code); self.assertIsNone(caught.exception.capture)
@@ -412,7 +412,7 @@ class FieldBudgetAndUnchangedSuccessTests(unittest.TestCase):
         self.assertLess(size, comparison.MAX_CAPTURE_BYTES)
         self.assertEqual(comparison.MAX_CAPTURE_BYTES, 12288)
         self.assertEqual(existing.projection_size_upper_bound(), 3469)
-        self.assertEqual(existing.whole_report_size_upper_bound(), 29873)
+        self.assertEqual(existing.whole_report_size_upper_bound(), 29949)
         self.assertLess(existing.whole_report_size_upper_bound(), protocol.MAX_REPORT_BYTES)
         self.assertEqual(protocol.MAX_REPORT_BYTES, 32768)
 

@@ -292,7 +292,7 @@ class HostSecurityTests(SourceCase):
         report['provenance'] = copy.deepcopy(self.identity)
         report['provenance']['actual_version'] = actual
         report.update(schema=contract.SCHEMA, lane=contract.LANE, projection_mode=contract.PROJECTION_MODE,
-                      storage_contract=None,
+                      comparison_policy=contract.COMPARISON_POLICY, storage_contract=None,
                       reader_validation='not_run', native_compatibility='not_claimed')
         if report['status'] == 'ok':
             names = {'schema': 1, 'target': contract.TARGET,
@@ -305,7 +305,7 @@ class HostSecurityTests(SourceCase):
                 'storage_names': names}
             origin = {'clone': 'auditor', 'nonce': NONCE, 'token': 'd'*32,
                 **{key: report['snapshots'][0]['physical'][key] for key in ('bytes', 'sha256')}}
-            report['storage_contract'] = contract.bind_capture({'marker': native, 'origin': origin,
+            report['storage_contract'] = contract.bind_ascii_fields_capture({'marker': native, 'origin': origin,
                 'postimage': {'bytes': 32768, 'sha256': 'f'*64}, 'reader': names}, report)
             report['reader_validation'] = contract.VERDICT
         return report, backend

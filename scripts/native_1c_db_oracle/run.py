@@ -687,7 +687,7 @@ class Native:
                     raise comparison.ComparisonFailure('io_or_change', 'postimage_changed')
                 # The complete parse above has never seen native names.
                 try:
-                    native, projected = comparison.project_catalog(catalog, data['storage_names'])
+                    native, projected = comparison.project_catalog_ascii_fields(catalog, data['storage_names'])
                 except comparison.ComparisonFailure as error:
                     if type(error) is comparison.ComparisonFailure and (error.category, error.code) == ('name_mismatch', 'missing_table'):
                         raise comparison.missing_table_failure(catalog,
@@ -695,7 +695,7 @@ class Native:
                             nonce=self.nonce, provenance=self.provenance, baseline=baseline,
                             before_scan=self.remaining) from None
                     if type(error) is comparison.ComparisonFailure and (error.category, error.code) == ('name_mismatch', 'field_names_differ'):
-                        raise comparison.field_names_failure(catalog,
+                        raise comparison.field_names_ascii_fields_failure(catalog,
                             {'marker': data, 'origin': origin, 'postimage': summary},
                             nonce=self.nonce, provenance=self.provenance, baseline=baseline,
                             before_scan=self.remaining) from None
@@ -860,8 +860,9 @@ class Controller:
                 elif stage=='baseline':
                     self.snapshot(database,'baseline')
                     if self.report['schema'] == comparison.SCHEMA:
+                        comparison.require_ascii_field_policy(self.report)
                         data = self.baseline_step('audit', self.backend.compare_catalog, 'baseline')
-                        self.report['storage_contract'] = comparison.bind_capture(data, self.report)
+                        self.report['storage_contract'] = comparison.bind_ascii_fields_capture(data, self.report)
                         self.report['reader_validation'] = comparison.VERDICT
                     elif self.report['schema'] == contract.SCHEMA:
                         data = self.baseline_step('audit', self.backend.audit_contract, 'baseline')

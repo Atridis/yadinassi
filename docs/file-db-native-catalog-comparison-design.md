@@ -2,7 +2,7 @@
 
 The original comparison implementation started from PR #102 head `68716d6c4cc6689928deb92775f35b0725148336`, tree `88af273e72e77ab2674019dae51ee5490e30d433`, preserving that frozen 420-file candidate. PR #102 is now merged. The names-only rejected-run diagnostic below is a separate candidate based on the published PR #103 comparison source; it does not modify either frozen predecessor or relax publication and review gates.
 
-## What the next run must establish
+## Original exact-spelling comparison objective
 
 Execute the real `filedb_catalog.read_catalog` implementation against an immutable post-audit copy of the disposable native auditor database. Compare its physical table/field names with the names independently returned by the native platform for our own `Справочник.NativeOracleItems`. A pass establishes only exact filtered table/field-name agreement for that measured file, format 8.3.8.0, 8192-byte pages, and platform 8.3.27.1508. It does not establish row decoding, type-code equivalence, index/B-tree correctness, runtime DB globals, general 1CD support, or write compatibility.
 
@@ -33,7 +33,7 @@ Within the existing baseline stage:
 
 Add the reader itself to the exact staged source inventory and bind its SHA-256 explicitly. Stage it as a standalone standard-library module, not via `yadinassi.__init__` or an Interpreter import. Prefer keeping comparison orchestration in existing harness modules; do not change the production reader merely to obtain a pass.
 
-## Comparison and honest outcomes
+## Original strict comparison and honest outcomes
 
 Validate native and reader projections independently, then sort only for canonical representation. Match names exactly, case-sensitively; do not assume declaration order matters. Every native table must have exactly one parsed table, and each matched table's full parsed field-name set must equal the native field-name set. Extra unrelated catalog tables remain private and are not grounds for failure. Extra/missing/duplicate fields within an owned table are failures, not ignored differences.
 
@@ -243,3 +243,53 @@ universal complete-report bound remains 29873 including newline because it
 already charges the entire enforced capture slot. The existing 32768-byte
 ceiling and 2895-byte headroom are unchanged; this does not establish native
 field agreement or identify the actual mismatch.
+
+
+## Versioned fixture-only ASCII field identity
+
+Audited run 40128721635 at head
+`d3626ae5b42d9c4ff34e0f54daef079622a7a2bf` returned exact selected table
+`_Reference53` on both sides. Native fields were `_Code`, `_Fld54`, `_Fld55`,
+`_IDRRef`, `_Marked`, `_PredefinedID`, `_Version`; the complete seven reader
+fields were the corresponding uppercase identifiers. Report SHA-256:
+`0955badeeeb2f5947a0825ba2f50ac037ac394b832aa69a395cd4e8e5997217e`.
+The old exact predicate correctly failed and is not retroactively reinterpreted.
+
+The parser preserves descriptor bytes as UTF-8 strings and passes each field
+declaration directly to PhysicalField; it does not uppercase names. No accessible
+primary documentation establishes a universal 1C/DBMS field-case equivalence
+contract. This seven-field measurement supports only the explicitly declared
+own-synthetic-fixture policy, not parser normalization or BSL string semantics.
+
+The new exact lane is
+`native-file-db-catalog-compare-dbms-names-true-ascii-fields-v1`, with mandatory
+`comparison_policy = "exact_tables_ascii_fields_v1"` and unchanged explicit-True
+projection mode. The policy is restricted to the own NativeOracleItems fixture,
+platform 8.3.27.1508 and file 8.3.8.0/8192. Selected table names still match
+literally and uniquely. Both complete raw field lists remain nonempty and satisfy
+all existing limits. Every field name must first satisfy ASCII identifier grammar
+`[A-Za-z_][A-Za-z0-9_]{0,63}`. Temporary comparison keys map only ASCII a-z to A-Z.
+Raw duplicates and same-side key collisions reject before set/dictionary reduction;
+complete key sets must correspond bijectively. Missing/extra fields fail.
+
+There is no Unicode casefold, locale-dependent operation, table-case conversion,
+prefix removal, trimming, field exclusion or type/value interpretation. Parser,
+native source and language runtime are unchanged. The old strict projection,
+canonicalization, project_catalog and exact bind_capture functions remain intact;
+explicitly named policy routes are selected by the new lane instead.
+
+Matched capture schema 5 preserves both raw native and reader projections and
+states the same comparison policy. The narrow verdict is
+`filtered_table_ascii_field_identifiers_match`, not an assertion of identical raw
+field spelling. Historical lanes/captures are rejected rather than upgraded.
+New-policy field failures must actually fail the policy; case-only historical
+strict failures cannot be relabeled as new-policy mismatches. Broad native
+compatibility remains not claimed. All original lifecycle, source/postimage and
+cleanup checks remain required before the report can be accepted.
+
+The new conservative matched-capture bound is 7724 bytes; complete field-failure
+capture remains 7902. Both fit the unchanged 12288-byte capture ceiling. The
+new universal report bound is 29949 including newline, charging the entire
+capture ceiling and all policy/lane/verdict widths, with 2819-byte headroom under
+32768. The 3469-byte general projection bound is conservative for ASCII-policy
+success; it is not presented as an attainable accepted maximum for that subset.

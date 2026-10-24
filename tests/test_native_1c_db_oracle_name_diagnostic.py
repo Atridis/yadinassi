@@ -452,11 +452,11 @@ class DiagnosticBudgetTests(unittest.TestCase):
         # failure enums and independently maximal integer/text widths. Its full
         # capture slot is enforced for every old and new variant above.
         size = existing.whole_report_size_upper_bound()
-        self.assertEqual(size, 29873)
+        self.assertEqual(size, 29949)
         self.assertLess(size, protocol.MAX_REPORT_BYTES)
         self.assertEqual(protocol.MAX_REPORT_BYTES, 32768)
         # Replace that complete slot by the independently attained name bound.
-        self.assertEqual(size - comparison.MAX_CAPTURE_BYTES + len(protocol.encode(maximum_name_capture())), 21076)
+        self.assertEqual(size - comparison.MAX_CAPTURE_BYTES + len(protocol.encode(maximum_name_capture())), 21152)
 
     def test_new_fixture_text_io_uses_explicit_utf8(self):
         tree = ast.parse(Path(__file__).read_text(encoding='utf-8'))

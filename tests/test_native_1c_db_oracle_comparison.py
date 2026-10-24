@@ -200,7 +200,9 @@ class ComparisonEnvelopeTests(unittest.TestCase):
         self.assertEqual(report['reader_validation'], comparison.VERDICT)
         self.assertEqual(report['native_compatibility'], 'not_claimed')
         self.assertEqual(report['schema'], 4)
-        self.assertEqual(report['lane'], 'native-file-db-catalog-compare-dbms-names-true-v4')
+        self.assertEqual(report['lane'], 'native-file-db-catalog-compare-dbms-names-true-ascii-fields-v1')
+        self.assertEqual(report['comparison_policy'], 'exact_tables_ascii_fields_v1')
+        self.assertEqual(report['storage_contract']['schema'], 5)
         self.assertEqual(report['projection_mode'], 'dbms_names_true')
         self.assertNotEqual(report['storage_contract']['origin']['sha256'], report['storage_contract']['postimage']['sha256'])
         self.assertFalse(report['accepted'])
@@ -538,7 +540,7 @@ class WholeReportBudgetTests(unittest.TestCase):
         self.assertLess(whole_report_size_upper_bound(), protocol.MAX_REPORT_BYTES)
         self.assertEqual(protocol.MAX_REPORT_BYTES, 32768)
         # Pin exact computed maximum once, preventing unnoticed enum/source growth.
-        self.assertEqual(whole_report_size_upper_bound(), 29873)
+        self.assertEqual(whole_report_size_upper_bound(), 29949)
 
     def test_failure_capture_also_within_enclosing_cap(self):
         for category, codes in comparison.DIAGNOSTICS.items():

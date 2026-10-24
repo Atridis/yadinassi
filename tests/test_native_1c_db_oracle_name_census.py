@@ -571,7 +571,7 @@ class CensusBudgetTests(unittest.TestCase):
         skeleton = comparison.hypothetical_name_capture_base(bound, 4, 4096, 4096) - 3 - 4095
         self.assertEqual(skeleton, 1051)
         self.assertLessEqual(skeleton, comparison.MAX_NAME_CAPTURE_SKELETON_BYTES)
-        self.assertEqual(existing.whole_report_size_upper_bound(), 29873)
+        self.assertEqual(existing.whole_report_size_upper_bound(), 29949)
         self.assertLess(existing.whole_report_size_upper_bound(), protocol.MAX_REPORT_BYTES)
         self.assertEqual(protocol.MAX_REPORT_BYTES, 32768)
 
