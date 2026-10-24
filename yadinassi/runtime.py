@@ -32,7 +32,7 @@ from .maps import BSLFixedMap, BSLMap
 from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
 from .structures import BSLFixedStructure, BSLStructure, fill_property_values
 from .values import (
-    BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, Reference as _Reference,
+    BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, NULL, Reference as _Reference,
     boolean, divide, equal, number, require_number, to_string,
 )
 
@@ -1005,9 +1005,10 @@ class Interpreter:
     def _copy_context_packet(values: list[object]) -> list[object]:
         """Measured acyclic Array/Structure transport, not generic deepcopy.
 
-        Shared children are copied per occurrence, not memoized. Resource limits
-        and unsupported/cyclic graph rejection are local safety policy, not
-        additional claims about native serialization limits.
+        Shared children are copied per occurrence, not memoized. Date/Null leaves
+        follow the bounded native transfer capture. Resource limits, excluded
+        Date representations and unsupported/cyclic graph rejection are local
+        safety policy, not additional claims about native serialization limits.
         """
         remaining = 10_000
         active: set[int] = set()
@@ -1017,8 +1018,16 @@ class Interpreter:
             remaining -= 1
             if remaining < 0 or depth > 64:
                 raise ValueError("Межконтекстная передача: превышен предел размера или глубины")
-            if value is None or type(value) in (str, bool, Decimal):
+            if value is None or value is NULL or type(value) in (str, bool, Decimal):
                 return value
+            if type(value) is dates.BSLDate:
+                # Only known interior whole-second Dates are in this transfer
+                # envelope. Do not infer fractions/endpoints from the capture,
+                # or round them through the lossy internal/XML serializers.
+                if (value.boundary or value.ticks % dates.TICKS_PER_SECOND or
+                        not 0 < value.ticks < dates.MAX_TICKS):
+                    raise ValueError("Межконтекстная передача: дробные и граничные даты пока не поддерживаются")
+                return value  # Frozen value; only mutable containers need copies.
             if type(value) not in (BSLArray, BSLStructure):
                 raise TypeError("Межконтекстная передача поддерживает скаляры, Массив и Структуру")
             identity = id(value)
