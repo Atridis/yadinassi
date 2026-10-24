@@ -311,7 +311,11 @@ x = 1; control = 2; Change(x, control);
 &AtServer
 Procedure Change(X) Message("entered"); X = 43; EndProcedure
 ''')
-        for expression in ('New Map()', 'New FixedStructure()', 'Date(2026, 1, 1)'):
+        # Ordinary interior Dates are supported; preserve rejection coverage for
+        # fractional and boundary Dates alongside unsupported object types.
+        for expression in ('New Map()', 'New FixedStructure()',
+                           'Date(2026, 1, 1)+0.0001', 'Date(1, 1, 1)',
+                           'Date(9999, 12, 31, 23, 59, 59)'):
             with self.subTest(expression=expression):
                 self.vm.execute(f'x = {expression};')
                 original = self.vm.variables['x']
