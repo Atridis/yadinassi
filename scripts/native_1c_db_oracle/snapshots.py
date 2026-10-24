@@ -37,11 +37,12 @@ _CFL_CLASSES = {
     "1Cv8tmp.1CD.cfl": "cfl_temp_database",
     "1Cv8.1CL.cfl": "cfl_lock",
     "1Cv8tmp.1CL.cfl": "cfl_temp_lock",
+    "1Cv8snc.1CL.cfl": "cfl_session_lock",
 }
 _DIAGNOSTIC_BASENAME = re.compile(r"^1Cv8[A-Za-z0-9_.-]{0,48}$", re.ASCII)
 ENTRY_CLASSES = (
     "database", "cfl_database", "cfl_temp_database", "cfl_lock", "cfl_temp_lock",
-    "base_1cl", "temp_1cd", "temp_1cl", "session_history", "event_log", "other",
+    "cfl_session_lock", "base_1cl", "temp_1cd", "temp_1cl", "session_history", "event_log", "other",
 )
 ENTRY_SHAPES = (
     "owned_regular_zero", "owned_regular_nonzero", "unowned_regular_zero",
@@ -327,7 +328,7 @@ def _database_contents(descriptor: int, *, allow_ancillary: bool = True,
                        capture_zero_name: bool = False) -> dict:
     """Private stable inventory; ancillary content and digests never escape.
 
-    Only the optional event-log directory and four exact empty, single-link CFL
+    Only the optional event-log directory and five exact empty, single-link CFL
     files owned by uid/gid 1000 are tolerated in a live source. CFL content is
     never read; no ancillary entry is copied into a snapshot or clone.
     Presence/absence is not quiescence evidence.

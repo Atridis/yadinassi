@@ -198,7 +198,7 @@ proved only a polling rejection of an unexpected HOME socket, not its name,
 purpose, ownership or lifecycle. This policy checks ownership structurally;
 it is not a claim that native bootstrap or the full oracle now succeeds.
 
-Native-source freeze inventory also permits only the four exact documented
+Native-source freeze inventory permits the four exact documented
 `1Cv8.1CD.cfl`, `1Cv8tmp.1CD.cfl`, `1Cv8.1CL.cfl`, and `1Cv8tmp.1CL.cfl`
 siblings. The [official release notes](https://dl05.1c.ru/content/Platform/8_3_4_365/1cv8upd.htm)
 and [CFL glossary](https://its.1c.ru/db/content/v8devgloss/src/term_000000179.htm)
@@ -206,16 +206,27 @@ describe zero-size lock-coordination files that may persist after clients exit.
 This lane requires regular zero-byte files, one link, UID and GID 1000, no-follow
 opens and stable descriptor/anchored-entry identity, metadata and ownership at
 repeated pre/post-copy inventories. It never reads their content, copies them to
-snapshots/clones, or exports them. Exact membership bounds their count at four;
+snapshots/clones, or exports them. Exact membership originally bounded their count at four;
 there is no wildcard, size allowance, or new filesystem permission. Frozen
 sources remain strictly 1CD-only. Session history `1Cv8snc.1CD` and all other
 unknown siblings remain rejected. Existing event-log limits are unchanged.
 CFL presence or absence is not evidence of quiescence; independent process
 census and stable database copying remain mandatory.
 
+Run [40096271107](https://github.com/Atridis/yadinassi/actions/runs/40096271107)
+subsequently measured one additional rejected basename, `1Cv8snc.1CL.cfl`,
+from the first original seed-source inventory: regular, zero-byte, single-link,
+UID/GID 1000, with all four cleanup checks verified. That **one exact name** is
+now admitted under the identical metadata-only CFL guard, bringing the fixed
+maximum to five. This is based on observed shape and confinement, not an inferred
+lifecycle or guarantee from its suffix. Its contents remain unread, uncopied and
+unexported. `1Cv8snc.1CD.cfl`, session-history database files and every other
+unlisted name remain rejected. A fresh native run must still establish baseline
+and CRUD behavior; the measured rejection did not establish either.
+
 Baseline `invalid_input` failures have fixed `freeze`, `observe`, or `audit`
 operation labels. Rejected root database entries additionally report only a
-fixed class (database, one of the four CFL classes, session history, event log,
+fixed class (database, one of the five CFL classes, session history, event log,
 or other) and shape (owned/unowned zero/nonzero regular, symlink, hardlink,
 non-single link count, directory, special, or invalid size). No actual names,
 paths, numeric owners, file sizes, content or exception text are emitted by the

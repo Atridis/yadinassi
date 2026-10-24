@@ -288,7 +288,7 @@ class ProtocolTests(unittest.TestCase):
 class BaselineProtocolTests(unittest.TestCase):
     OPERATIONS=('freeze','observe','audit')
     ENTRIES=('database','cfl_database','cfl_temp_database','cfl_lock','cfl_temp_lock',
-             'base_1cl','temp_1cd','temp_1cl','session_history','event_log','other')
+             'cfl_session_lock','base_1cl','temp_1cd','temp_1cl','session_history','event_log','other')
     SHAPES=('owned_regular_zero','owned_regular_nonzero','unowned_regular_zero',
             'unowned_regular_nonzero','symlink','hardlink','link_count','directory',
             'special','invalid_size')
@@ -311,7 +311,7 @@ class BaselineProtocolTests(unittest.TestCase):
         self.assertEqual(protocol.BASELINE_INPUT_FAILURES,generic)
         self.assertEqual(protocol.BASELINE_ENTRY_FAILURES,entries)
         self.assertEqual(protocol.BASELINE_FAILURES,generic|entries)
-        self.assertEqual(len(protocol.BASELINE_FAILURES),333)
+        self.assertEqual(len(protocol.BASELINE_FAILURES),363)
         self.assertEqual({kind for kind in protocol.FAILURES if kind.startswith('baseline_')},generic|entries)
         for operation in self.OPERATIONS:
             value=self.report(operation)
@@ -421,7 +421,7 @@ class BasenameDiagnosticProtocolTests(unittest.TestCase):
             with self.subTest(stage=failed),self.assertRaises(OracleError):self.check(value)
 
     def test_accepted_known_names_cannot_fabricate_class_consistent_diagnostics(self):
-        for name in ('1Cv8.1CD','1Cv8Log','1Cv8.1CD.cfl','1Cv8tmp.1CD.cfl','1Cv8.1CL.cfl','1Cv8tmp.1CL.cfl'):
+        for name in ('1Cv8.1CD','1Cv8Log','1Cv8.1CD.cfl','1Cv8tmp.1CD.cfl','1Cv8.1CL.cfl','1Cv8tmp.1CL.cfl','1Cv8snc.1CL.cfl'):
             with self.subTest(name=name),self.assertRaises(OracleError):self.check(self.report(name))
 
     def test_each_native_or_final_cleanup_failure_rejects_retained_field(self):

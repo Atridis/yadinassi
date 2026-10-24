@@ -539,7 +539,7 @@ class HostSecurityTests(SourceCase):
         payloads=[]
         for name in (True,None,{},'1Cv8.test\n','1Cv8'+'A'*49,'1Cv8/secret','1Cv8é',PRIVATE):
             value=self.basename_failure();value['rejected_basename']=name;payloads.append((value,1))
-        for name in ('1Cv8.1CD','1Cv8.1CD.cfl','1Cv8Log'):
+        for name in ('1Cv8.1CD','1Cv8.1CD.cfl','1Cv8Log','1Cv8snc.1CL.cfl'):
             payloads.append((self.basename_failure(name),1))
         value,_=fixtures.fixture_report();value['provenance']=copy.deepcopy(self.identity)
         value['provenance']['actual_version']=protocol.VERSION;value['rejected_basename']='1Cv8.test';payloads.append((value,0))

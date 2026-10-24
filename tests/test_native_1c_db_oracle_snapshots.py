@@ -40,7 +40,7 @@ class DatabaseEntryValidationTests(unittest.TestCase):
     def test_entry_enums_are_fixed_and_complete(self):
         self.assertEqual(snapshots.ENTRY_CLASSES, (
             "database", "cfl_database", "cfl_temp_database", "cfl_lock", "cfl_temp_lock",
-            "base_1cl", "temp_1cd", "temp_1cl", "session_history", "event_log", "other"))
+            "cfl_session_lock", "base_1cl", "temp_1cd", "temp_1cl", "session_history", "event_log", "other"))
         self.assertEqual(snapshots.ENTRY_SHAPES, (
             "owned_regular_zero", "owned_regular_nonzero", "unowned_regular_zero",
             "unowned_regular_nonzero", "symlink", "hardlink", "link_count", "directory",
@@ -93,7 +93,7 @@ class DatabaseEntryValidationTests(unittest.TestCase):
         cases = {
             "1Cv8.1CD": "database", "1Cv8.1CD.cfl": "cfl_database",
             "1Cv8tmp.1CD.cfl": "cfl_temp_database", "1Cv8.1CL.cfl": "cfl_lock",
-            "1Cv8tmp.1CL.cfl": "cfl_temp_lock", "1Cv8snc.1CD": "session_history",
+            "1Cv8tmp.1CL.cfl": "cfl_temp_lock", "1Cv8snc.1CL.cfl": "cfl_session_lock", "1Cv8snc.1CD": "session_history",
             "1Cv8.1CL": "base_1cl", "1Cv8tmp.1CD": "temp_1cd",
             "1Cv8tmp.1CL": "temp_1cl", "1Cv8tmp.1cl": "other",
             "1Cv8.1CL.extra": "other", "1Cv8tmp.1CD.extra": "other",
@@ -165,7 +165,7 @@ class DatabaseEntryValidationTests(unittest.TestCase):
 
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
 class CflInventoryTests(unittest.TestCase):
-    NAMES = ("1Cv8.1CD.cfl", "1Cv8tmp.1CD.cfl", "1Cv8.1CL.cfl", "1Cv8tmp.1CL.cfl")
+    NAMES = ("1Cv8.1CD.cfl", "1Cv8tmp.1CD.cfl", "1Cv8.1CL.cfl", "1Cv8tmp.1CL.cfl", "1Cv8snc.1CL.cfl")
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -257,13 +257,13 @@ class CflInventoryTests(unittest.TestCase):
                 self.assertEqual([p.name for p in self.frozen.iterdir()], ["1Cv8.1CD"])
                 self.assertEqual(path.stat().st_size, 0)
                 path.unlink()
-        self.assertGreaterEqual(len(opened), 12)  # Before copy and both rechecks.
+        self.assertGreaterEqual(len(opened), len(self.NAMES) * 3)  # Before copy and both rechecks.
         for flags in opened:
             self.assertEqual(flags & (os.O_NOFOLLOW | os.O_NONBLOCK),
                              os.O_NOFOLLOW | os.O_NONBLOCK)
             self.assertEqual(flags & os.O_ACCMODE, os.O_RDONLY)
 
-    def test_all_four_with_logs_stay_private_and_never_enter_frozen_or_clone(self):
+    def test_all_five_with_logs_stay_private_and_never_enter_frozen_or_clone(self):
         paths = [self.cfl(name) for name in self.NAMES]
         log = self.source / "1Cv8Log"
         log.mkdir()
@@ -340,7 +340,8 @@ class CflInventoryTests(unittest.TestCase):
 
     def test_case_suffix_unknown_and_session_history_remain_rejected(self):
         for name in ("1cv8.1cd.cfl", "1Cv8.1CD.CFL", "1Cv8.1CD.cfl.extra",
-                     "unknown.cfl", "1Cv8snc.1CD.cfl", "1Cv8snc.1CD"):
+                     "unknown.cfl", "1Cv8snc.1CD.cfl", "1Cv8snc.1CD",
+                     "1Cv8snc.1CL", "1Cv8SNC.1CL.cfl", "1Cv8snc.1CL.cfl.extra"):
             with self.subTest(name=name):
                 path = self.cfl(name)
                 expected = "session_history" if name == "1Cv8snc.1CD" else "other"
