@@ -568,17 +568,21 @@ class DBMarkerTransportTests(unittest.TestCase):
                 vm.execute("\n".join((
                     exact_routine(text, "NativeПрочитатьJSON"),
                     exact_routine(text, "NativeЗаписатьJSON", procedure=True),
-                    exact_routine(text, "NativeВыполнить", procedure=True),
+                    exact_routine(text, "NativeВыполнить"),
+                    exact_routine(text, "NativeВыполнитьПроверенный", procedure=True),
                 )), source="synthetic-exact-db-bootstrap-readback")
-                invocation = 'NativeВыполнить("' + TRANSPORT_TOKEN + '");'
+                invocation = 'Ответ = NativeВыполнить("' + TRANSPORT_TOKEN + '");'
                 if tampered:
-                    with self.assertRaisesRegex(BSLRuntimeError, "invalid_marker"):
-                        vm.execute(invocation)
+                    vm.execute(invocation)
+                    self.assertEqual(json.loads(transport_encode(vm.execute("Ответ"))),
+                                     {"status": "error", "operation": "bootstrap", "phase": "marker"})
                     self.assertEqual(metadata_checks, [])
                     self.assertIsNone(writer.path)
                     self.assertIsNone(writer.raw)
                 else:
                     vm.execute(invocation)
+                    self.assertEqual(json.loads(transport_encode(vm.execute("Ответ"))),
+                                     {"status": "ok", "operation": "bootstrap", "phase": "complete"})
                     self.assertEqual(metadata_checks, [True])
                     self.assertTrue(writer.closed)
                     rewritten = db_protocol.marker(writer.raw, nonce=NONCE,
@@ -700,7 +704,7 @@ class DBMarkerTransportTests(unittest.TestCase):
     def test_actual_create_gate_requires_undefined_not_null_false_or_missing(self):
         gate = exact_slice(rendered_module("NativeOracleServer.bsl"),
                            '        Если До.count <> 0 Или ТипЗнч(До.same_reference)',
-                           '        НачатьТранзакцию();')
+                           '        Контекст.phase = "begin";')
         self.assertIn('Тип("Неопределено")', gate)
         for value in (None, NULL, False, True, Decimal(0), ""):
             for count in (0, 1):
@@ -717,6 +721,359 @@ class DBMarkerTransportTests(unittest.TestCase):
             vm, _ = transport_vm()
             vm.variables["до"] = BSLStructure("count,same_reference", Decimal(0), value)
             self.assertEqual(catch_source(vm, old_gate), value is not NULL)
+
+
+# These doubles execute the rendered completion/measurement routines unchanged.
+# They establish controlled source behavior only: not native client-server
+# transport, file-move atomicity, native transaction semantics, or real DB CRUD.
+COMPLETION_PATH = TRANSPORT_ROOT + "/completion.json"
+PENDING_PATH = TRANSPORT_ROOT + "/completion.pending.json"
+ERROR_CANARY = "RAW_ERROR_TEXT_MUST_NOT_ESCAPE"
+
+
+def completion_vm(reply=None, *, fail=None, existing=None, token=TRANSPORT_TOKEN,
+                  appear_at_close=False, shutdown_error=False):
+    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+    events, files = [], dict(existing or {})
+
+    def event(name):
+        events.append(name)
+        if fail == name:
+            raise ValueError(ERROR_CANARY)
+
+    class Writer(BSLObject):
+        def open(self, path):
+            assert path == PENDING_PATH and path not in files
+            event("open")
+            files[path] = b""
+
+        def write(self, data):
+            event("write")
+            files[PENDING_PATH] = transport_encode(data)
+
+        def close(self):
+            event("close")
+            if appear_at_close:
+                files[COMPLETION_PATH] = b"prior completion must not be replaced"
+
+        def get_member(self, name):
+            return HostFunction(name, {"ОткрытьФайл": self.open, "Закрыть": self.close}[name],
+                                returns_value=False)
+
+    def file(path):
+        assert path in (COMPLETION_PATH, PENDING_PATH)
+        return ControlledMembers(ПолноеИмя=path,
+                                 Существует=HostFunction("Существует", lambda: path in files))
+
+    def server(token_value):
+        assert token_value == TRANSPORT_TOKEN
+        event("server")
+        return reply
+
+    def move(source, target):
+        assert source == PENDING_PATH and target == COMPLETION_PATH
+        event("move")
+        # This controlled publication model is NOT a native MoveFile guarantee.
+        assert target not in files
+        files[target] = files.pop(source)
+
+    def shutdown(confirm):
+        assert confirm is False
+        events.append("shutdown")
+        if shutdown_error:
+            raise ValueError(ERROR_CANARY)
+
+    vm.execute("Перем ПараметрЗапуска, NativeOracleServer;")
+    vm.variables["параметрзапуска"] = token
+    vm.variables["nativeoracleserver"] = ControlledMembers(
+        NativeВыполнить=HostFunction("NativeВыполнить", server))
+    vm.register_type("Файл", file)
+    vm.register_type("ЗаписьJSON", Writer)
+    vm.register_function("ЗаписатьJSON", lambda writer, data: writer.write(data), returns_value=False)
+    vm.register_function("ПереместитьФайл", move, returns_value=False)
+    vm.register_function("ЗавершитьРаботуСистемы", shutdown, returns_value=False)
+    vm.execute(rendered_module("ManagedApplicationModule.bsl"), source="exact-managed-completion-routines")
+    return vm, events, files
+
+
+def finite_reply(status="ok", operation="create", phase="complete"):
+    return BSLStructure("status,operation,phase", status, operation, phase)
+
+
+class DBControlledCompletionTests(unittest.TestCase):
+    def test_exact_managed_module_publishes_six_fields_only_after_close_then_stops(self):
+        vm, events, files = completion_vm(finite_reply())
+        vm.execute("ПриНачалеРаботыСистемы();")
+        self.assertEqual(events, ["server", "open", "write", "close", "move", "shutdown"])
+        self.assertNotIn(PENDING_PATH, files)
+        self.assertEqual(json.loads(files[COMPLETION_PATH]), {
+            "schema": 1, "nonce": NONCE, "token": TRANSPORT_TOKEN,
+            "operation": "create", "phase": "complete", "status": "ok"})
+
+    def test_returned_error_remains_error_even_with_existing_success_result(self):
+        result_path = TRANSPORT_ROOT + "/result.json"
+        vm, events, files = completion_vm(finite_reply("error", "create", "write"),
+                                         existing={result_path: b'{"status":"ok"}'})
+        vm.execute("ПриНачалеРаботыСистемы();")
+        self.assertEqual(json.loads(files[COMPLETION_PATH])["status"], "error")
+        self.assertEqual(json.loads(files[COMPLETION_PATH])["phase"], "write")
+        self.assertEqual(files[result_path], b'{"status":"ok"}')
+        self.assertEqual(events.count("shutdown"), 1)
+        self.assertNotIn(ERROR_CANARY.encode(), files[COMPLETION_PATH])
+
+    def test_transport_exception_and_invalid_returns_publish_only_dispatch_error(self):
+        cases = [None, False, NULL, "unbounded_native_text", BSLStructure(),
+                 finite_reply("error", "create", "complete"),
+                 finite_reply("ok", "dispatch", "complete"),
+                 finite_reply("ok", "create", "write"),
+                 finite_reply("unknown", "create", "write"),
+                 finite_reply("error", "arbitrary", "write"),
+                 finite_reply("error", "create", "arbitrary"),
+                 BSLStructure("status,operation,phase,extra", "ok", "create", "complete", ERROR_CANARY),
+                 BSLStructure("status,operation,unexpected", "ok", "create", "complete")]
+        for reply in cases:
+            with self.subTest(reply=type(reply).__name__):
+                vm, events, files = completion_vm(reply)
+                vm.execute("ПриНачалеРаботыСистемы();")
+                self.assertEqual(json.loads(files[COMPLETION_PATH]), {
+                    "schema": 1, "nonce": NONCE, "token": TRANSPORT_TOKEN,
+                    "operation": "dispatch", "phase": "dispatch", "status": "error"})
+                self.assertEqual(events[-1], "shutdown")
+        vm, events, files = completion_vm(finite_reply(), fail="server")
+        vm.execute("ПриНачалеРаботыСистемы();")
+        self.assertEqual(json.loads(files[COMPLETION_PATH])["status"], "error")
+        self.assertNotIn(ERROR_CANARY.encode(), files[COMPLETION_PATH])
+        self.assertEqual(events.count("shutdown"), 1)
+
+    def test_invalid_token_never_serializes_unvalidated_input_and_still_stops(self):
+        for token in (None, False, "", "A" * 32, "x" * 32, "a" * 33, ERROR_CANARY):
+            with self.subTest(token=token):
+                vm, events, files = completion_vm(finite_reply(), token=token)
+                vm.execute("ПриНачалеРаботыСистемы();")
+                self.assertEqual(events, ["shutdown"])
+                self.assertEqual(files, {})
+
+    def test_publication_errors_leave_no_new_completion_but_still_attempt_shutdown(self):
+        for failure in ("open", "write", "close", "move"):
+            with self.subTest(failure=failure):
+                vm, events, files = completion_vm(finite_reply(), fail=failure)
+                vm.execute("ПриНачалеРаботыСистемы();")
+                self.assertNotIn(COMPLETION_PATH, files)
+                self.assertEqual(events[-1], "shutdown")
+                self.assertEqual(events.count("shutdown"), 1)
+                self.assertEqual(events.count(failure), 1)
+                self.assertNotIn(ERROR_CANARY.encode(), b"".join(files.values()))
+
+    def test_preexisting_pending_and_completed_files_are_not_overwritten(self):
+        for path in (COMPLETION_PATH, PENDING_PATH):
+            with self.subTest(path=path):
+                vm, events, files = completion_vm(finite_reply(), existing={path: b"prior"})
+                vm.execute("ПриНачалеРаботыСистемы();")
+                self.assertEqual(files, {path: b"prior"})
+                self.assertEqual(events, ["server", "shutdown"])
+        vm, events, files = completion_vm(finite_reply(), appear_at_close=True)
+        vm.execute("ПриНачалеРаботыСистемы();")
+        self.assertEqual(files[COMPLETION_PATH], b"prior completion must not be replaced")
+        self.assertNotIn("move", events)
+        self.assertEqual(events[-1], "shutdown")
+
+    def test_shutdown_failure_is_not_caught_or_retried(self):
+        vm, events, files = completion_vm(finite_reply("error", "create", "write"),
+                                         shutdown_error=True)
+        with self.assertRaises(BSLRuntimeError):
+            vm.execute("ПриНачалеРаботыСистемы();")
+        self.assertEqual(events.count("shutdown"), 1)
+        self.assertEqual(json.loads(files[COMPLETION_PATH])["status"], "error")
+
+    def test_actual_dispatch_control_prefix_binds_only_after_exact_validation(self):
+        source = rendered_module("NativeOracleServer.bsl")
+        prefix = exact_slice(source, "Процедура NativeВыполнитьПроверенный(",
+                             '    ФайлРезультата = Новый Файл(') + "КонецПроцедуры"
+        good = {"schema": Decimal(1), "nonce": NONCE,
+                "token": TRANSPORT_TOKEN, "operation": "create"}
+        cases = [good, {**good, "nonce": "c" * 32}, {**good, "token": "c" * 32},
+                 {**good, "schema": True}, {**good, "schema": Decimal(2)},
+                 {**good, "operation": "unknown"}, {**good, "extra": False},
+                 {key: value for key, value in good.items() if key != "operation"}]
+        for fields in cases:
+            with self.subTest(fields=fields):
+                vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+                control = BSLStructure()
+                for key, value in fields.items():
+                    control.insert(key, value)
+                vm.register_function("ПривилегированныйРежим", lambda: False)
+                vm.register_function("NativeПрочитатьJSON", lambda _: control)
+                vm.execute(exact_routine(source, "NativeВыполнить") + "\n" + prefix)
+                vm.execute('Ответ = NativeВыполнить("' + TRANSPORT_TOKEN + '");')
+                expected = ({"status": "ok", "operation": "create", "phase": "complete"}
+                            if fields is good else
+                            {"status": "error", "operation": "dispatch", "phase": "control"})
+                self.assertEqual(json.loads(transport_encode(vm.execute("Ответ"))), expected)
+
+    def test_source_phases_cover_operations_and_preserve_original_rollback_order(self):
+        source = rendered_module("NativeOracleServer.bsl")
+        wrapper = exact_routine(source, "NativeВыполнить")
+        self.assertLess(wrapper.index("NativeВыполнитьПроверенный("),
+                        wrapper.index('Контекст.status = "ok";'))
+        self.assertLess(wrapper.index("Исключение"), wrapper.index("Возврат Контекст;"))
+        measurement = exact_routine(source, "NativeИзмерить", procedure=True)
+        rollback = 'Исключение\n            ОтменитьТранзакцию();\n            ВызватьИсключение "process_failed";'
+        self.assertEqual(measurement.count(rollback), 2)
+        self.assertEqual(measurement.count('Контекст.phase = "begin";\n        НачатьТранзакцию();\n        Попытка'), 2)
+        for phase, action in (("create_object", "Объект = Справочники.NativeOracleItems.СоздатьЭлемент();"),
+                              ("set_code", 'Объект.Код = "K1";'),
+                              ("set_payload", 'Объект.Payload = "alpha";'),
+                              ("set_amount", "Объект.Amount = 1.25;"),
+                              ("write", "Объект.Записать();"),
+                              ("reference_capture", "Ссылка = Объект.Ссылка;"),
+                              ("commit", "ЗафиксироватьТранзакцию();"),
+                              ("reference_read", "Ссылка = NativeСохраненнаяСсылка(Корень);"),
+                              ("get_object", "Объект = Ссылка.ПолучитьОбъект();"),
+                              ("delete_object", "Объект.Удалить();")):
+            self.assertRegex(measurement, re.escape('Контекст.phase = "' + phase + '";') +
+                             r"\s+" + re.escape(action))
+        self.assertIn('Контекст.phase = "reference_write";\n        ФайлСсылки', measurement)
+        self.assertIn('Контекст.phase = "readback";\n    После = NativeСостояние', measurement)
+        managed = rendered_module("ManagedApplicationModule.bsl")
+        allowed = set(re.search(r'СтрРазделить\("([a-z_,]+)"', managed).group(1).split(","))
+        assigned = set(re.findall(r'Контекст.phase = "([a-z_]+)";', source)) | {"dispatch"}
+        self.assertEqual(allowed, assigned)
+        for forbidden in ("ИнформацияОбОшибке", "ОписаниеОшибки", "ПодробноеПредставлениеОшибки",
+                          "ErrorInfo", "ErrorDescription"):
+            self.assertNotIn(forbidden, source + managed)
+
+
+def measurement_vm(operation, *, failure=None, rollback_error=False):
+    """Exact measured routine + wrapper; explicit synthetic dispatcher/DB gap."""
+    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+    events = []
+    reads = 0
+
+    def event(name):
+        events.append(name)
+        if failure == name or (name == "rollback" and rollback_error):
+            raise ValueError(ERROR_CANARY)
+
+    class Item(BSLObject):
+        def set_member(self, name, value):
+            phase = {"Код": "set_code", "Payload": "set_payload", "Amount": "set_amount"}[name]
+            event(phase)
+
+        def get_member(self, name):
+            if name == "Ссылка":
+                event("reference_capture")
+                return reference
+            return HostFunction(name, lambda: event({"Записать": "write", "Удалить": "delete_object"}[name]),
+                                returns_value=False)
+
+    item = Item()
+
+    def get_object():
+        event("get_object")
+        return item
+
+    reference = ControlledMembers(
+        ПолучитьОбъект=HostFunction("ПолучитьОбъект", get_object),
+        УникальныйИдентификатор=HostFunction("УникальныйИдентификатор", lambda: "00000000-0000-0000-0000-000000000001"))
+
+    def state(root):
+        nonlocal reads
+        assert root == TRANSPORT_ROOT
+        reads += 1
+        event("readback_before" if reads == 1 else "readback_after")
+        empty = (operation == "create" and reads == 1) or (operation == "delete" and reads == 2)
+        alpha = (operation == "create" and reads == 2) or (operation == "update" and reads == 1)
+        return BSLStructure(",".join(STATE_FIELDS), Decimal(0 if empty else 1),
+                            None if empty else "K1", None if empty else ("alpha" if alpha else "beta"),
+                            None if empty else ("1.25" if alpha else "-2.50"),
+                            None if empty else False,
+                            (None if operation == "create" else False) if empty else True)
+
+    def create():
+        event("create_object")
+        return item
+
+    def saved(root):
+        assert root == TRANSPORT_ROOT
+        event("reference_read")
+        return reference
+
+    def file(path):
+        assert path == TRANSPORT_ROOT + "/reference.txt"
+        event("reference_write")
+        return ControlledMembers(ПолноеИмя=path, Существует=HostFunction("Существует", lambda: False))
+
+    vm.execute("Перем Справочники, КодировкаТекста;")
+    vm.variables["справочники"] = ControlledMembers(NativeOracleItems=ControlledMembers(
+        СоздатьЭлемент=HostFunction("СоздатьЭлемент", create)))
+    vm.variables["кодировкатекста"] = ControlledMembers(UTF8="UTF-8")
+    vm.register_function("NativeСостояние", state)
+    vm.register_function("NativeСохраненнаяСсылка", saved)
+    vm.register_function("НачатьТранзакцию", lambda: event("begin"), returns_value=False)
+    vm.register_function("ЗафиксироватьТранзакцию", lambda: event("commit"), returns_value=False)
+    vm.register_function("ОтменитьТранзакцию", lambda: event("rollback"), returns_value=False)
+    vm.register_type("Файл", file)
+    vm.register_type("ТекстовыйДокумент", lambda: ControlledMembers(
+        УстановитьТекст=HostFunction("УстановитьТекст", lambda _: None, returns_value=False),
+        Записать=HostFunction("Записать", lambda path, encoding: None, returns_value=False)))
+    source = rendered_module("NativeOracleServer.bsl")
+    vm.execute(exact_routine(source, "NativeВыполнить") + "\n" +
+               exact_routine(source, "NativeИзмерить", procedure=True))
+    # The real control/identity dispatcher is tested independently. This declared
+    # bridge supplies only the approved operation and initially absent result.
+    vm.execute('Процедура NativeВыполнитьПроверенный(ТокенЗапуска, Контекст)\n'
+               'Контекст.operation = "' + operation + '";\n'
+               'Результат = Новый Структура("' + ",".join(STATE_FIELDS) + '");\n'
+               'NativeИзмерить("' + operation + '", Результат, "' + TRANSPORT_ROOT + '", Контекст);\n'
+               'КонецПроцедуры')
+    return vm, events
+
+
+class DBControlledTransactionCompletionTests(unittest.TestCase):
+    def test_actual_measurement_faults_keep_the_last_phase_and_original_rollback(self):
+        transactional = {
+            "create": ("create_object", "set_code", "set_payload", "set_amount", "write", "reference_capture", "commit"),
+            "update": ("reference_read", "get_object", "set_payload", "set_amount", "write", "commit"),
+            "delete": ("reference_read", "get_object", "delete_object", "commit"),
+        }
+        for operation, inside in transactional.items():
+            phases = ("readback_before", "begin") + inside
+            if operation == "create":
+                phases += ("reference_write",)
+            phases += ("readback_after",)
+            for failure in phases:
+                with self.subTest(operation=operation, failure=failure):
+                    vm, events = measurement_vm(operation, failure=failure)
+                    vm.execute('Ответ = NativeВыполнить("' + TRANSPORT_TOKEN + '");')
+                    wire = transport_encode(vm.execute("Ответ"))
+                    phase = "readback" if failure.startswith("readback_") else failure
+                    self.assertEqual(json.loads(wire),
+                                     {"status": "error", "operation": operation, "phase": phase})
+                    self.assertEqual(events.count("rollback"), int(failure in inside))
+                    self.assertEqual(events[-1], "rollback" if failure in inside else failure)
+                    self.assertNotIn(ERROR_CANARY.encode(), wire)
+
+    def test_rollback_failure_cannot_erase_error_or_report_success(self):
+        for operation in ("create", "update", "delete"):
+            with self.subTest(operation=operation):
+                failure = "delete_object" if operation == "delete" else "write"
+                vm, events = measurement_vm(operation, failure=failure, rollback_error=True)
+                vm.execute('Ответ = NativeВыполнить("' + TRANSPORT_TOKEN + '");')
+                self.assertEqual(json.loads(transport_encode(vm.execute("Ответ"))),
+                                 {"status": "error", "operation": operation, "phase": failure})
+                self.assertEqual(events[-2:], [failure, "rollback"])
+                self.assertNotIn("commit", events)
+
+    def test_successful_controlled_measurement_returns_complete_after_readback(self):
+        for operation in ("create", "update", "delete", "observe"):
+            with self.subTest(operation=operation):
+                vm, events = measurement_vm(operation)
+                vm.execute('Ответ = NativeВыполнить("' + TRANSPORT_TOKEN + '");')
+                self.assertEqual(json.loads(transport_encode(vm.execute("Ответ"))),
+                                 {"status": "ok", "operation": operation, "phase": "complete"})
+                self.assertEqual(events[-1], "readback_after")
+                self.assertNotIn("rollback", events)
+                self.assertEqual(events.count("commit"), int(operation != "observe"))
 
 
 if __name__ == "__main__": unittest.main()

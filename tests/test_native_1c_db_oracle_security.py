@@ -504,6 +504,28 @@ class HostSecurityTests(SourceCase):
         self.assertEqual(self.github_output.read_text(),'report_ready=true\n')
         protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
 
+    def test_command_context_requires_all_host_cleanup_and_provenance(self):
+        original,_=fixtures.fixture_report('create')
+        original['provenance']=copy.deepcopy(self.identity)
+        original['provenance']['actual_version']=protocol.VERSION
+        original['failure_context']={'operation':'enterprise_create','site':'result','bsl_phase':'write','region':None,'reason':None}
+        for options in ({},{'cleanup_bad':True},{'fail':'rm'},{'fail':'ps'},
+                        {'private_cleanup_bad':True},{'changed_provenance':True}):
+            self.events.clear();self.configs.clear()
+            with self.subTest(options=options):
+                report=self.invoke(payload=protocol.encode(original),exit_code=1,**options)
+                self.assertEqual('failure_context' in report,not options)
+                self.assertFalse(report['accepted'])
+                self.assertEqual(report['failure_kind'],'provenance_mismatch' if options.get('changed_provenance') else 'process_failed')
+                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                make_writable(self.work)
+                for child in self.work.iterdir():shutil.rmtree(child)
+        for context in (True,{'raw':PRIVATE},{**original['failure_context'],'bsl_phase':PRIVATE}):
+            original['failure_context']=context
+            report=self.invoke(payload=protocol.encode(original),exit_code=1)
+            self.assertNotIn('failure_context',report);self.assertNotIn(PRIVATE,protocol.encode(report).decode())
+            self.assertFalse(report['accepted'])
+
     def basename_failure(self, name='1Cv8.test'):
         report=self.baseline_failure('baseline_freeze_entry_'+protocol.diagnostic_entry_class(name)+'_owned_regular_zero')
         report['rejected_basename']=name

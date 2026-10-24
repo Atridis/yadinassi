@@ -1,9 +1,23 @@
 // Original finite server dispatcher. Metadata: ServerCall=true, Privileged=false.
 // Authentication/protection defaults are never modified. No raw errors exported.
-Процедура NativeВыполнить(ТокенЗапуска) Экспорт
+Функция NativeВыполнить(ТокенЗапуска) Экспорт
+    Контекст = Новый Структура("status,operation,phase", "error", "dispatch", "dispatch");
+    Попытка
+        NativeВыполнитьПроверенный(ТокенЗапуска, Контекст);
+        Контекст.phase = "complete";
+        Контекст.status = "ok";
+    Исключение
+        // Preserve only the last fixed phase, never inspect or export the error.
+        Контекст.status = "error";
+    КонецПопытки;
+    Возврат Контекст;
+КонецФункции
+
+Процедура NativeВыполнитьПроверенный(ТокенЗапуска, Контекст)
     Если ПривилегированныйРежим() Тогда
         ВызватьИсключение "permission_mismatch";
     КонецЕсли;
+    Контекст.phase = "control";
     Корень = @@EVIDENCE@@;
     Контроль = NativeПрочитатьJSON(Корень + "/control.json");
     Если ТипЗнч(Контроль) <> Тип("Структура") Тогда
@@ -17,6 +31,9 @@
         И Контроль.operation <> "create" И Контроль.operation <> "update" И Контроль.operation <> "delete" Тогда
         ВызватьИсключение "invalid_control";
     КонецЕсли;
+    // Bind the operation only after the exact fresh control has been checked.
+    Контекст.operation = Контроль.operation;
+    Контекст.phase = "marker";
     ФайлРезультата = Новый Файл(Корень + "/result.json");
     Если ФайлРезультата.Существует() Тогда
         ВызватьИсключение "stale_evidence";
@@ -29,12 +46,16 @@
             Или Результат.nonprivileged <> Ложь Тогда
             ВызватьИсключение "invalid_marker";
         КонецЕсли;
+        Контекст.phase = "metadata";
         NativeПроверитьМетаданные(Результат);
+        Контекст.phase = "serialize";
         NativeЗаписатьJSON(Корень + "/result.json", Результат);
         Возврат;
     КонецЕсли;
+    Контекст.phase = "metadata";
     Результат = NativeНовыйРезультат(Контроль);
     NativeПроверитьМетаданные(Результат);
+    Контекст.phase = "identity";
     Текущий = ПользователиИнформационнойБазы.ТекущийПользователь();
     Если Контроль.operation = "audit" Тогда
         NativeПроверитьПользователя(Текущий, @@SETUP_USER@@, Метаданные.Роли.NativeOracleSetupAdministrator);
@@ -53,12 +74,14 @@
         Результат.role_verified = Истина;
         // No privileged user-list enumeration from a CRUD identity.
         Результат.users_verified = Ложь;
-        NativeИзмерить(Контроль.operation, Результат, Корень);
+        NativeИзмерить(Контроль.operation, Результат, Корень, Контекст);
     КонецЕсли;
+    Контекст.phase = "identity";
     Если ПривилегированныйРежим() Тогда
         ВызватьИсключение "permission_mismatch";
     КонецЕсли;
     Результат.status = "ok";
+    Контекст.phase = "serialize";
     NativeЗаписатьJSON(Корень + "/result.json", Результат);
 КонецПроцедуры
 
@@ -140,25 +163,36 @@
     Результат.amount_scale = Масштаб;
 КонецПроцедуры
 
-Процедура NativeИзмерить(Операция, Результат, Корень)
+Процедура NativeИзмерить(Операция, Результат, Корень, Контекст)
+    Контекст.phase = "readback";
     До = NativeСостояние(Корень);
+    Контекст.phase = "precondition";
     Если Операция = "create" Тогда
         Если До.count <> 0 Или ТипЗнч(До.same_reference) <> Тип("Неопределено") Тогда
             ВызватьИсключение "logical_mismatch";
         КонецЕсли;
+        Контекст.phase = "begin";
         НачатьТранзакцию();
         Попытка
+            Контекст.phase = "create_object";
             Объект = Справочники.NativeOracleItems.СоздатьЭлемент();
+            Контекст.phase = "set_code";
             Объект.Код = "K1";
+            Контекст.phase = "set_payload";
             Объект.Payload = "alpha";
+            Контекст.phase = "set_amount";
             Объект.Amount = 1.25;
+            Контекст.phase = "write";
             Объект.Записать();
+            Контекст.phase = "reference_capture";
             Ссылка = Объект.Ссылка;
+            Контекст.phase = "commit";
             ЗафиксироватьТранзакцию();
         Исключение
             ОтменитьТранзакцию();
             ВызватьИсключение "process_failed";
         КонецПопытки;
+        Контекст.phase = "reference_write";
         ФайлСсылки = Новый Файл(Корень + "/reference.txt");
         Если ФайлСсылки.Существует() Тогда
             ВызватьИсключение "stale_evidence";
@@ -176,27 +210,36 @@
         Если Операция = "delete" И (До.payload <> "beta" Или До.amount <> "-2.50") Тогда
             ВызватьИсключение "logical_mismatch";
         КонецЕсли;
+        Контекст.phase = "begin";
         НачатьТранзакцию();
         Попытка
+            Контекст.phase = "reference_read";
             Ссылка = NativeСохраненнаяСсылка(Корень);
+            Контекст.phase = "get_object";
             Объект = Ссылка.ПолучитьОбъект();
             Если Объект = Неопределено Тогда
                 ВызватьИсключение "logical_mismatch";
             КонецЕсли;
             Если Операция = "update" Тогда
+                Контекст.phase = "set_payload";
                 Объект.Payload = "beta";
+                Контекст.phase = "set_amount";
                 Объект.Amount = -2.50;
+                Контекст.phase = "write";
                 Объект.Записать();
             Иначе
                 // Physical deletion, never merely a deletion mark.
+                Контекст.phase = "delete_object";
                 Объект.Удалить();
             КонецЕсли;
+            Контекст.phase = "commit";
             ЗафиксироватьТранзакцию();
         Исключение
             ОтменитьТранзакцию();
             ВызватьИсключение "process_failed";
         КонецПопытки;
     КонецЕсли;
+    Контекст.phase = "readback";
     После = NativeСостояние(Корень);
     Если Операция = "create" И (После.count <> 1 Или После.payload <> "alpha" Или После.amount <> "1.25" Или После.same_reference <> Истина) Тогда
         ВызватьИсключение "logical_mismatch";

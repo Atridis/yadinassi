@@ -27,6 +27,7 @@ from protocol import (ARTIFACTS, CHECKS, COMPARISONS, FAILURES, IMAGE, LANE, MAX
     INVENTORY_PHASES, INVENTORY_REGIONS, INVENTORY_REASONS,
     SEED_FAILURE_CATEGORIES, SEED_FAILURES, SEED_OPERATIONS, STAGES, VERSION,
     decode, empty_report, encode, expected_logical, logical_from_marker,
+    COMMAND_STAGES, CONTEXT_SITES, completion_marker, validate_failure_context,
     marker, require, validate_logical, validate_report)
 from snapshots import (DatabaseEntryError, ENTRY_CLASSES, ENTRY_SHAPES, OracleError,
     MAX_FILE_BYTES, MAX_LIVE_BYTES, budget_check, clone_database,
@@ -315,10 +316,36 @@ class Native:
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
             if self.stage=='seed_v1' and self.seed_launched==operation and kind in SEED_FAILURE_CATEGORIES:
                 if operation=='bootstrap' and isinstance(error,BootstrapInventoryError): raise
-                raise SeedCommandError(kind,operation) from None
+                wrapped=SeedCommandError(kind,operation)
+                if hasattr(error,'failure_context'):
+                    wrapped.failure_context=error.failure_context
+                    wrapped.failure_context_stage=getattr(error,'failure_context_stage',None)
+                raise wrapped from None
             raise
         finally:
             self.seed_pending=None; self.seed_launched=None
+
+    @contextmanager
+    def command_context(self, operation):
+        require(type(operation) is str and operation in COMMAND_STAGES, 'invalid_input')
+        entered_stage=self.stage
+        try:
+            yield
+        except BaseException as original:
+            error=original if isinstance(original,OracleError) else OracleError('unexpected_failure')
+            # No mutable pending operation survives a launch or stage transition.
+            if self.stage==entered_stage and entered_stage in COMMAND_STAGES[operation]:
+                context={'operation':operation,'site':getattr(error,'oracle_site','operation'),
+                    'bsl_phase':getattr(error,'bsl_phase',None),
+                    'region':error.region if isinstance(error,SandboxInventoryError) else None,
+                    'reason':error.reason if isinstance(error,SandboxInventoryError) else None}
+                validate_failure_context(context,entered_stage)
+                error.failure_context=context
+                error.failure_context_stage=entered_stage
+            else:
+                error.__dict__.pop('failure_context',None)
+                error.__dict__.pop('failure_context_stage',None)
+            raise error from None
 
     def remaining(self):
         remaining=self.deadline-time.monotonic()
@@ -344,40 +371,51 @@ class Native:
         return self.baseline is not None and process_snapshot()==self.baseline
 
     def process(self, args, label, *, native=True):
-        self.remaining(); self.budgets()
-        require(not native or self.quiescent(),'snapshot_not_quiescent')
-        self.counter+=1
-        console=self.evidence/f'{self.counter:03}-{label}-console.log'
-        absent(console)
-        with console.open('xb') as log:
-            if self.seed_pending is not None:
-                require(native and self.stage=='seed_v1' and self.seed_pending in SEED_OPERATIONS, 'invalid_input')
-                # This is the launch boundary, not success or proof of an infobase.
-                self.seed_launched=self.seed_pending
-            child=subprocess.Popen(args,cwd=self.evidence,stdin=subprocess.DEVNULL,
-                stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-            deadline=min(self.deadline,time.monotonic()+COMMAND_SECONDS)
-            try:
-                while child.poll() is None:
-                    require(time.monotonic()<deadline,'timeout')
-                    if native: self.monitor_budget('poll')
-                    time.sleep(.05)
-                code=child.wait()
-                require(code==0,'process_failed')
-            finally:
-                if child.poll() is None:
-                    try: os.killpg(child.pid,signal.SIGKILL)
-                    except ProcessLookupError: pass
-                    child.wait(timeout=5)
-        # Marker, success exit and stable mtime do not certify quiescence.
-        if native:
-            # Allow --init to reap already-exiting helpers; never copy while they remain.
-            settle=min(self.deadline,time.monotonic()+5)
-            while not self.quiescent():
-                require(time.monotonic()<settle,'snapshot_not_quiescent')
-                time.sleep(.02)
-        if native: self.monitor_budget('post_exit')
-        else: self.budgets()
+        site='prelaunch'
+        try:
+            self.remaining(); self.budgets()
+            require(not native or self.quiescent(),'snapshot_not_quiescent')
+            self.counter+=1
+            console=self.evidence/f'{self.counter:03}-{label}-console.log'
+            absent(console)
+            with console.open('xb') as log:
+                if self.seed_pending is not None:
+                    require(native and self.stage=='seed_v1' and self.seed_pending in SEED_OPERATIONS, 'invalid_input')
+                    # This is the launch boundary, not success or proof of an infobase.
+                    self.seed_launched=self.seed_pending
+                site='launch'
+                child=subprocess.Popen(args,cwd=self.evidence,stdin=subprocess.DEVNULL,
+                    stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+                deadline=min(self.deadline,time.monotonic()+COMMAND_SECONDS)
+                try:
+                    site='poll'
+                    while child.poll() is None:
+                        require(time.monotonic()<deadline,'timeout')
+                        if native: self.monitor_budget('poll')
+                        time.sleep(.05)
+                    site='exit'
+                    code=child.wait()
+                    require(code==0,'process_failed')
+                finally:
+                    if child.poll() is None:
+                        try: os.killpg(child.pid,signal.SIGKILL)
+                        except ProcessLookupError: pass
+                        child.wait(timeout=5)
+            # Marker, success exit and stable mtime do not certify quiescence.
+            if native:
+                # Allow --init to reap already-exiting helpers; never copy while they remain.
+                site='settle'
+                settle=min(self.deadline,time.monotonic()+5)
+                while not self.quiescent():
+                    require(time.monotonic()<settle,'snapshot_not_quiescent')
+                    time.sleep(.02)
+            site='post_exit'
+            if native: self.monitor_budget('post_exit')
+            else: self.budgets()
+        except BaseException as original:
+            error=original if isinstance(original,OracleError) else OracleError('unexpected_failure')
+            error.oracle_site=site
+            raise error from None
 
     def preflight(self):
         require(os.geteuid()==1000 and sys.version_info>=(3,10) and ONEC.is_file()
@@ -426,6 +464,16 @@ class Native:
         return args+['/AppAutoCheckVersion-','/DisableStartupDialogs','/DisableStartupMessages','/L','ru']
 
     def batch(self, database, operation, label, user=SETUP_USER):
+        contexts={'dump-empty':'designer_dump_empty','seed-import':'designer_import',
+            'producer-v2-import':'designer_import','seed-apply':'designer_apply',
+            'producer-v2-apply':'designer_apply','apply-cf':'designer_apply','redump':'designer_redump',
+            'export-cf_v1':'designer_export_cf','export-cf_v2':'designer_export_cf',
+            'load-cf':'designer_load_cf','export-dt_updated':'designer_dump_dt','restore':'designer_restore_dt'}
+        require(type(label) is str and label in contexts,'invalid_input')
+        with self.command_context(contexts[label]):
+            return self._batch(database,operation,label,user)
+
+    def _batch(self, database, operation, label, user=SETUP_USER):
         result=self.evidence/f'{self.counter+1:03}-{label}.result'
         log=self.evidence/f'{self.counter+1:03}-{label}.log'
         absent(result,log)
@@ -438,6 +486,10 @@ class Native:
         return native_file_summary(path)
 
     def create_db(self, name):
+        with self.command_context('create_infobase'):
+            return self._create_db(name)
+
+    def _create_db(self, name):
         database=self.artifacts/name; absent(database)
         self.budgets(MAX_FILE_BYTES)
         result=self.evidence/f'{self.counter+1:03}-create.result'; log=self.evidence/f'{self.counter+1:03}-create.log'
@@ -448,20 +500,31 @@ class Native:
         return database
 
     def enterprise(self, database, operation):
+        require(type(operation) is str and 'enterprise_'+operation in COMMAND_STAGES,'invalid_input')
+        with self.command_context('enterprise_'+operation):
+            return self._enterprise(database,operation)
+
+    def _enterprise(self, database, operation):
         token=secrets.token_hex(16)
         control=self.evidence/'control.json'; result=self.evidence/'result.json'
-        absent(control,result)
+        completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
+        absent(control,result,completion,pending)
         control.write_text(json.dumps({'schema':1,'nonce':self.nonce,'token':token,'operation':operation}),encoding='utf-8')
         user=None if operation=='bootstrap' else (SETUP_USER if operation=='audit' else CRUD_USER)
         try:
             log=self.evidence/f'{self.counter+1:03}-{operation}.log'; absent(log)
             self.process(self.command('ENTERPRISE',database,user)+['/RunModeManagedApplication',
                 '/C',token,'/Out',str(log)],operation)
+            finished=completion_marker(regular_bytes(completion,4096),nonce=self.nonce,token=token,operation=operation)
+            if finished['status']=='error':
+                error=OracleError('process_failed'); error.oracle_site='result'; error.bsl_phase=finished['phase']
+                raise error
             data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation)
             self.provenance['actual_version']=data['actual_version']
             return data
         finally:
             control.unlink(missing_ok=True); result.unlink(missing_ok=True)
+            completion.unlink(missing_ok=True); pending.unlink(missing_ok=True)
 
     def seed(self):
         with self.seed_command('create'):
@@ -642,7 +705,16 @@ class Controller:
             raise BaselineInputError(operation,error.entry_class,error.shape,
                                      basename=getattr(error,'basename',None)) from None
         except OracleError as error:
-            if error.kind=='invalid_input': raise BaselineInputError(operation) from None
+            if error.kind=='invalid_input':
+                wrapped=BaselineInputError(operation)
+                if isinstance(error,SandboxInventoryError) and not hasattr(error,'failure_context'):
+                    error.failure_context={'operation':'inventory','site':'scan','bsl_phase':None,
+                        'region':error.region,'reason':error.reason}
+                    error.failure_context_stage=self.stage
+                if hasattr(error,'failure_context'):
+                    wrapped.failure_context=error.failure_context
+                    wrapped.failure_context_stage=getattr(error,'failure_context_stage',None)
+                raise wrapped from None
             raise
 
     def snapshot(self,database,identifier):
@@ -712,6 +784,18 @@ class Controller:
             if kind in SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES and self.stage!='seed_v1': kind='unexpected_failure'
             if kind in BASELINE_FAILURES and self.stage!='baseline': kind='unexpected_failure'
             self.report.update(status='failed',failed_stage=self.stage,failure_kind=kind)
+            context=(getattr(error,'failure_context',None)
+                     if getattr(error,'failure_context_stage',None)==self.stage else None)
+            if context is None and isinstance(error,SandboxInventoryError) and kind!='unexpected_failure':
+                context={'operation':'inventory','site':'scan','bsl_phase':None,'region':error.region,'reason':error.reason}
+            if context is not None:
+                try:
+                    validate_failure_context(context,self.stage)
+                except OracleError:
+                    pass  # A stale or forged context is never exported.
+                else:
+                    self.report['failure_context']=context
+
             if isinstance(error,BaselineInputError) and self.stage=='baseline' and hasattr(error,'basename'):
                 self.report['rejected_basename']=error.basename
             self.report['stages'][STAGES.index(self.stage)]['status']='failed'
@@ -727,6 +811,7 @@ class Controller:
             if self.report['status']!='ok': self.report['artifacts']=[]
             if not(processes and files) or self.report['status']=='ok':
                 self.report.pop('rejected_basename',None)
+                self.report.pop('failure_context',None)
         return self.report
 
 

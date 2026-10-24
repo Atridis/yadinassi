@@ -334,3 +334,37 @@ cleanup rejection, reviewed-push policy and unchanged legacy gates. Native-only
 POSIX filesystem checks are skipped on unsupported hosts; portable validators
 and orchestration tests still run. None of these tests executes 1C or licenses a
 claim of native success.
+
+### Controlled failure completion and bounded command context
+
+The managed startup handler now catches controlled dispatch/transport failures and
+attempts normal shutdown once. The server catches on the server side and returns
+only fixed status/operation/subphase values; it never reads exception descriptions.
+This does not depend on scalar by-reference copyout across a failing server call.
+Existing transaction rollback and all role, isolation, timeout, and byte limits are
+unchanged. The prior uncaught call could skip shutdown; that source weakness does
+not establish the cause of the measured create-stage timeout.
+
+Each ENTERPRISE session must now produce a separate private `completion.json`,
+exactly bound to schema, source nonce, fresh launch token, operation, status and
+fixed phase. It is written to a fixed pending filename, closed, checked again for
+an existing destination, then moved within the same directory. This is a
+close-then-move publication sequence, not a claim about native filesystem atomicity
+or a general no-replace primitive. The host accepts semantic success only with an
+`ok`/`complete` completion **and** the unchanged strict success result marker.
+An error completion never becomes success even when `result.json` exists. Missing,
+stale, malformed or incomplete completion fails closed. Neither private marker,
+launch token, arbitrary exception text nor native paths are exported.
+
+A failed report may include one finite `failure_context` object: command operation,
+supervisor site, optional fixed BSL phase, and optional fixed inventory region and
+reason. Context is lexically attached to the failing operation and bound to its
+stage; it is never a sticky previous-command label. Inventory classifications are
+preserved outside seed as well. The public field requires all four cleanup flags;
+late host teardown/provenance failure strips it. Successful report keys and bytes
+remain unchanged. A timeout command/site identifies the supervised command, not
+its internal cause or whether a transaction committed. A caught BSL phase records
+the last source-assigned boundary, not native error text or proof of rollback.
+
+The new local exception/rollback/publication tests execute rendered synthetic BSL
+with controlled stubs. They are offline harness tests, not native platform evidence.

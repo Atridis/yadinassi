@@ -439,3 +439,61 @@ class BasenameDiagnosticProtocolTests(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(OracleError):self.check(value)
 
 if __name__=='__main__': unittest.main()
+
+
+class CompletionContextTests(unittest.TestCase):
+    def completed(self,operation='create',status='ok',phase='complete'):
+        return {'schema':1,'nonce':NONCE,'token':'a'*32,'operation':operation,'status':status,'phase':phase}
+    def parse(self,value,operation='create'):
+        return protocol.completion_marker(protocol.encode(value),nonce=NONCE,token='a'*32,operation=operation)
+    def test_every_finite_operation_phase_and_success_completion(self):
+        for operation in protocol.ENTERPRISE_OPERATIONS:
+            self.parse(self.completed(operation),operation)
+            for phase in protocol.BSL_OPERATION_PHASES[operation]:
+                self.parse(self.completed(operation,'error',phase),operation)
+            for phase in protocol.BSL_OPERATION_PHASES['dispatch']:
+                self.parse(self.completed('dispatch','error',phase),operation)
+    def test_completion_rejects_unknown_types_cross_operation_and_false_success(self):
+        edits=[{'schema':True},{'nonce':'b'*32},{'token':'b'*32},{'operation':'update'},
+            {'operation':False},{'phase':False},{'phase':'write'},{'status':True},
+            {'status':'error'},{'status':'error','phase':'delete_object'},
+            {'operation':'dispatch','status':'ok'},{'operation':'dispatch','status':'error','phase':'write'},
+            {'raw':'PRIVATE /native/path'},{'phase':'PRIVATE /native/path'}]
+        for edit in edits:
+            value=self.completed();value.update(edit)
+            with self.subTest(edit=edit),self.assertRaises(OracleError):self.parse(value)
+        for raw in (b'{', b' '*4097, b'{"schema":1,"schema":1}'):
+            with self.assertRaises(OracleError):protocol.completion_marker(raw,nonce=NONCE,token='a'*32,operation='create')
+    def failed(self):
+        report,_=fixture_report('create')
+        report['failure_kind']='process_failed'
+        report['failure_context']={'operation':'enterprise_create','site':'result','bsl_phase':'write','region':None,'reason':None}
+        return report
+    def check(self,report,final=False):
+        return protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=provenance(),final=final)
+    def test_context_failure_only_and_cleanup_gated(self):
+        report=self.failed();self.check(report)
+        final=copy.deepcopy(report);final['cleanup'].update(container_removed=True,private_staging_removed=True);self.check(final,True)
+        for key in final['cleanup']:
+            bad=copy.deepcopy(final);bad['cleanup'][key]=False
+            if key in protocol.CHECKS['cleanup']:
+                bad['stages'][-1]['checks'][key]=False;bad['stages'][-1]['status']='failed'
+            with self.subTest(key=key),self.assertRaises(OracleError):self.check(bad,True)
+        good,_=fixture_report();good['failure_context']=report['failure_context']
+        with self.assertRaises(OracleError):self.check(good)
+    def test_context_exact_enum_stage_phase_and_type_binding(self):
+        changes=[{'operation':'enterprise_delete'},{'operation':False},{'operation':'/native/path'},
+            {'site':False},{'site':'scan'},{'site':'PRIVATE'},{'bsl_phase':False},
+            {'bsl_phase':'delete_object'},{'bsl_phase':'PRIVATE'}, {'region':'home'},
+            {'reason':'special'},{'region':False,'reason':'special'}, {'extra':'PRIVATE'}]
+        for edit in changes:
+            bad=self.failed();bad['failure_context'].update(edit)
+            with self.subTest(edit=edit),self.assertRaises(OracleError):self.check(bad)
+        bad=self.failed();bad['failure_kind']='timeout'
+        with self.assertRaises(OracleError):self.check(bad)
+    def test_inventory_context_only_existing_rejection_category(self):
+        report=self.failed();report['failure_kind']='invalid_input'
+        report['failure_context']={'operation':'inventory','site':'scan','bsl_phase':None,'region':'home','reason':'unexpected_socket'}
+        self.check(report)
+        report['failure_kind']='timeout'
+        with self.assertRaises(OracleError):self.check(report)

@@ -77,6 +77,79 @@ BASELINE_FAILURES = BASELINE_INPUT_FAILURES | BASELINE_ENTRY_FAILURES
 DIAGNOSTIC_ENTRY_CLASSES = frozenset({'base_1cl', 'temp_1cd', 'temp_1cl',
                                      'session_history', 'other'})
 FAILURES = FAILURES | SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES | BASELINE_FAILURES
+# Failure-only finite command context. No native text, arguments, paths or counters.
+ENTERPRISE_OPERATIONS = ('bootstrap','audit','observe','create','update','delete')
+BSL_PHASES = frozenset(('dispatch','control','marker','metadata','identity','precondition',
+    'begin','create_object','set_code','set_payload','set_amount','write','reference_capture',
+    'commit','reference_write','reference_read','get_object','delete_object','readback','serialize'))
+BSL_OPERATION_PHASES = {
+    'dispatch': frozenset(('dispatch','control')),
+    'bootstrap': frozenset(('marker','metadata','serialize')),
+    'audit': frozenset(('marker','metadata','identity','serialize')),
+    'observe': frozenset(('marker','metadata','identity','readback','precondition','serialize')),
+    'create': frozenset(('marker','metadata','identity','readback','precondition','begin',
+        'create_object','set_code','set_payload','set_amount','write','reference_capture',
+        'commit','reference_write','serialize')),
+    'update': frozenset(('marker','metadata','identity','readback','precondition','begin',
+        'reference_read','get_object','set_payload','set_amount','write','commit','serialize')),
+    'delete': frozenset(('marker','metadata','identity','readback','precondition','begin',
+        'reference_read','get_object','delete_object','commit','serialize')),
+}
+COMMAND_STAGES = {
+    'create_infobase': ('seed_v1','restore_dt'),
+    'designer_dump_empty': ('seed_v1',),
+    'designer_import': ('seed_v1','export_cf'),
+    'designer_apply': ('seed_v1','export_cf','apply_cf'),
+    'designer_redump': ('seed_v1','baseline','create','update','export_cf','load_cf','apply_cf','delete','restore_dt','verify_restore'),
+    'designer_export_cf': ('export_cf',), 'designer_load_cf': ('load_cf',),
+    'designer_dump_dt': ('dump_dt',), 'designer_restore_dt': ('restore_dt',),
+    'enterprise_bootstrap': ('seed_v1',), 'enterprise_audit': ('baseline','verify_restore'),
+    'enterprise_observe': ('baseline','create','update','load_cf','apply_cf','delete','restore_dt','verify_restore'),
+    'enterprise_create': ('create',), 'enterprise_update': ('update',), 'enterprise_delete': ('delete',),
+    'inventory': STAGES[:-1],
+}
+CONTEXT_SITES = frozenset(('operation','prelaunch','launch','poll','exit','settle','post_exit','result','scan'))
+
+
+def completion_marker(raw, *, nonce, token, operation):
+    require(type(raw) is bytes and 0<len(raw)<=4096 and type(nonce) is str
+            and re.fullmatch('[0-9a-f]{32}',nonce) is not None and type(token) is str
+            and re.fullmatch('[0-9a-f]{32}',token) is not None,'invalid_marker')
+    data=decode(raw)
+    exact(data, {'schema','nonce','token','operation','phase','status'})
+    require(type(data['schema']) is int and data['schema']==1 and data['nonce']==nonce
+            and data['token']==token and type(operation) is str and operation in ENTERPRISE_OPERATIONS,
+            'invalid_marker')
+    require(type(data['operation']) is str and type(data['phase']) is str
+            and type(data['status']) is str and data['status'] in ('ok','error'), 'invalid_marker')
+    if data['status']=='ok':
+        require(data['operation']==operation and data['phase']=='complete','invalid_marker')
+    else:
+        require(data['operation'] in (operation,'dispatch') and data['phase'] in BSL_PHASES,'invalid_marker')
+        require(data['phase'] in BSL_OPERATION_PHASES[data['operation']],'invalid_marker')
+    return data
+
+
+def validate_failure_context(value, stage):
+    exact(value, {'operation','site','bsl_phase','region','reason'})
+    require(type(value['operation']) is str and value['operation'] in COMMAND_STAGES
+            and stage in COMMAND_STAGES[value['operation']])
+    require(type(value['site']) is str and value['site'] in CONTEXT_SITES)
+    if value['bsl_phase'] is not None:
+        require(type(value['bsl_phase']) is str and value['bsl_phase'] in BSL_PHASES
+                and value['operation'].startswith('enterprise_') and value['site']=='result')
+        require(value['bsl_phase'] in BSL_OPERATION_PHASES[value['operation'][11:]] | BSL_OPERATION_PHASES['dispatch'])
+    if value['region'] is not None or value['reason'] is not None:
+        require(type(value['region']) is str and value['region'] in INVENTORY_REGIONS
+                and type(value['reason']) is str and value['reason'] in INVENTORY_REASONS
+                and value['bsl_phase'] is None)
+    if value['operation']=='inventory':
+        require(value['site']=='scan' and value['region'] is not None)
+    else:
+        require(value['site']!='scan')
+    return value
+
+
 LOGICAL_KEYS = {'count','code','payload','amount','deletion_mark','same_reference',
     'payload_length','amount_digits','amount_scale','designer_version','applied_version',
     'user','role_verified','nonprivileged'}
@@ -207,7 +280,7 @@ def validate_provenance(value, expected):
 def validate_report(raw, *, nonce, provenance, final=False):
     report = decode(raw)
     require(type(report) is dict)
-    optional={'rejected_basename'} if 'rejected_basename' in report else set()
+    optional={key for key in ('rejected_basename','failure_context') if key in report}
     exact(report, {'schema','lane','nonce','status','failed_stage','failure_kind','provenance',
         'stages','snapshots','artifacts','comparisons','cleanup','accepted'} | optional)
     require(type(report['schema']) is int and report['schema'] == SCHEMA and report['lane'] == LANE
@@ -302,6 +375,17 @@ def validate_report(raw, *, nonce, provenance, final=False):
                 and report['provenance']['actual_version']==VERSION and ids==[])
         # Pre-final stdout is private host input, not a published artifact.
         # The host must discard this candidate if either teardown later fails.
+        required=report['cleanup'] if final else {key:report['cleanup'][key]
+            for key in ('native_processes_stopped','raw_files_removed')}
+        require(all(required.values()))
+    if 'failure_context' in report:
+        require(report['status']=='failed' and report['failed_stage']!='cleanup')
+        validate_failure_context(report['failure_context'],report['failed_stage'])
+        if report['failure_context']['bsl_phase'] is not None:
+            require(report['failure_kind'] in ('process_failed','seed_bootstrap_process_failed'))
+        if report['failure_context']['region'] is not None:
+            require(report['failure_kind']=='invalid_input' or report['failure_kind'].endswith('_invalid_input')
+                    or report['failure_kind'] in BOOTSTRAP_INVENTORY_FAILURES)
         required=report['cleanup'] if final else {key:report['cleanup'][key]
             for key in ('native_processes_stopped','raw_files_removed')}
         require(all(required.values()))

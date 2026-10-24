@@ -200,6 +200,7 @@ class SeedDiagnosticTests(unittest.TestCase):
         stack.enter_context(mock.patch.object(stage,'native_file_summary',return_value=physical()))
         stack.enter_context(mock.patch.object(stage,'regular_bytes',return_value=b'{}'))
         stack.enter_context(mock.patch.object(stage,'marker',return_value={'actual_version':protocol.VERSION}))
+        stack.enter_context(mock.patch.object(stage,'completion_marker',return_value={'status':'ok','phase':'complete'}))
         def launch(*args,**kwargs):
             operation=self.native.seed_pending
             self.assertEqual(self.native.seed_launched,operation)
@@ -1285,3 +1286,81 @@ class NativePayloadCensusTests(unittest.TestCase):
                 self.assertEqual(events,['census','payload'])
 
 if __name__=='__main__': unittest.main()
+
+
+class CommandCompletionBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        NativeBoundaryTests.setUp(self)
+        self.native.begin_stage('create')
+    def run_client(self, completion='ok', phase='complete', result=True):
+        def process(*args,**kwargs):
+            control=json.loads((self.native.evidence/'control.json').read_text())
+            if completion is not None:
+                (self.native.evidence/'completion.json').write_bytes(protocol.encode({**control,'status':completion,'phase':phase}))
+            if result:
+                payload={**control,'status':'ok','actual_version':protocol.VERSION,'user':'NativeOracleCRUD',
+                    'role_verified':True,'nonprivileged':True,'users_verified':False,'metadata_version':1,
+                    'count':1,'code':'K1','payload':'alpha','amount':'1.25','deletion_mark':False,
+                    'same_reference':True,'payload_length':32,'amount_digits':9,'amount_scale':2}
+                (self.native.evidence/'result.json').write_bytes(protocol.encode(payload))
+        return mock.patch.object(self.native,'process',side_effect=process)
+    def test_success_requires_both_completion_and_strict_result(self):
+        with self.run_client(): self.assertEqual(self.native.enterprise(self.db,'create')['payload'],'alpha')
+        self.assertEqual(list(self.native.evidence.iterdir()),[])
+    def test_error_completion_never_accepts_valid_result_at_any_create_phase(self):
+        for phase in protocol.BSL_OPERATION_PHASES['create']:
+            with self.subTest(phase=phase),self.run_client('error',phase):
+                with self.assertRaises(OracleError) as caught:self.native.enterprise(self.db,'create')
+                self.assertEqual(caught.exception.kind,'process_failed')
+                self.assertEqual(caught.exception.failure_context,{'operation':'enterprise_create','site':'result',
+                    'bsl_phase':phase,'region':None,'reason':None})
+                self.assertEqual(caught.exception.failure_context_stage,'create')
+            self.assertEqual(list(self.native.evidence.iterdir()),[])
+    def test_missing_malformed_or_incomplete_completion_never_accepts_result(self):
+        for status,phase in ((None,'complete'),('ok','write'),('error','PRIVATE /native/path')):
+            with self.subTest(status=status),self.run_client(status,phase),self.assertRaises(OracleError):
+                self.native.enterprise(self.db,'create')
+            self.assertEqual(list(self.native.evidence.iterdir()),[])
+        with self.run_client(result=False),self.assertRaises(OracleError):self.native.enterprise(self.db,'create')
+    def test_stale_completion_or_pending_rejected_before_launch(self):
+        for name in ('completion.json','completion.pending.json'):
+            file=self.native.evidence/name;file.write_text('PRIVATE')
+            with mock.patch.object(self.native,'process') as process,self.assertRaises(OracleError) as caught:
+                self.native.enterprise(self.db,'create')
+            self.assertEqual(caught.exception.kind,'stale_evidence');process.assert_not_called();file.unlink()
+    @unittest.skipUnless(os.name=='posix','native launch control requires POSIX')
+    def test_timeout_identifies_command_poll_and_retains_kill_reap(self):
+        child=mock.Mock();child.pid=999;child.poll.return_value=None;self.native.deadline=1000
+        with mock.patch.object(self.native,'quiescent',return_value=True),mock.patch.object(self.native,'budgets'), \
+             mock.patch.object(stage.subprocess,'Popen',return_value=child), \
+             mock.patch.object(stage.time,'monotonic',side_effect=[0,0,0,121]), \
+             mock.patch.object(stage.os,'killpg',create=True) as kill:
+            with self.assertRaises(OracleError) as caught:self.native.enterprise(self.db,'create')
+        self.assertEqual(caught.exception.kind,'timeout')
+        self.assertEqual(caught.exception.failure_context,{'operation':'enterprise_create','site':'poll',
+            'bsl_phase':None,'region':None,'reason':None})
+        kill.assert_called_once_with(999,stage.signal.SIGKILL);child.wait.assert_called_once_with(timeout=5)
+    def test_context_cannot_outlive_stage_or_accept_arbitrary_operation(self):
+        with self.assertRaises(OracleError) as caught:
+            with self.native.command_context('enterprise_create'):
+                self.native.begin_stage('update');raise OracleError('process_failed')
+        self.assertFalse(hasattr(caught.exception,'failure_context'))
+        for op in ('PRIVATE /native/path',True,False,None,[],{}):
+            with self.subTest(op=op),self.assertRaises(OracleError):
+                with self.native.command_context(op):pass
+    def test_baseline_inventory_context_survives_freeze_observe_and_audit(self):
+        for operation in ('freeze','observe','audit'):
+            identity=provenance();backend=FixtureNative(identity)
+            controller=stage.Controller(backend,protocol.empty_report(NONCE,identity));backend.controller=controller
+            setattr(backend,operation,lambda *args: (_ for _ in ()).throw(stage.SandboxInventoryError('home','access')))
+            report=controller.run();self.assertEqual(report['failure_kind'],'baseline_'+operation+'_invalid_input')
+            self.assertEqual(report['failure_context'],{'operation':'inventory','site':'scan','bsl_phase':None,'region':'home','reason':'access'})
+            protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=identity)
+    def test_later_inventory_context_and_cleanup_failure_primary_preservation(self):
+        for clean in ((True,True),(False,False)):
+            identity=provenance();backend=FixtureNative(identity);backend.clean=clean
+            controller=stage.Controller(backend,protocol.empty_report(NONCE,identity));backend.controller=controller
+            backend.clone=lambda *args: (_ for _ in ()).throw(stage.SandboxInventoryError('runtime','special'))
+            report=controller.run();self.assertEqual(report['failed_stage'],'create');self.assertEqual(report['failure_kind'],'invalid_input')
+            self.assertEqual('failure_context' in report,all(clean))
+            protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=identity)
