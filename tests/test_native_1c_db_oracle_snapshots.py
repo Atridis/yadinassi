@@ -122,7 +122,7 @@ class DatabaseEntryValidationTests(unittest.TestCase):
             "1Cv8.1CL": "base_1cl", "1Cv8tmp.1CD": "temp_1cd",
             "1Cv8tmp.1CL": "temp_1cl", "1Cv8tmp.1cl": "other",
             "1Cv8.1CL.extra": "other", "1Cv8tmp.1CD.extra": "other",
-            "1Cv8Log": "event_log", "1cv8.1cd.cfl": "other",
+            "1Cv8Log": "event_log", "1cv8.1cd": "other", "1cv8.1cd.cfl": "other",
             "1Cv8.1CD.CFL": "other", "1Cv8snc.1CD.cfl": "other",
             "secret-name.cfl": "other", "1Cv8.1CD.cfl.extra": "other",
         }
@@ -191,7 +191,9 @@ class DatabaseEntryValidationTests(unittest.TestCase):
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
 class AncillaryInventoryTests(unittest.TestCase):
     NAMES = ("1Cv8.1CD.cfl", "1Cv8tmp.1CD.cfl", "1Cv8.1CL.cfl", "1Cv8tmp.1CL.cfl", "1Cv8snc.1CL.cfl")
-    TREE_NAMES = ("1Cv8Log", "synthetic-tree", "1Cv8.1CL", "1cv8.1cd", "private\né")
+    # Do not collide with the payload on case-insensitive host filesystems.
+    # Exact Linux case distinctions are independently tested by the pure classifier.
+    TREE_NAMES = ("1Cv8Log", "synthetic-tree", "1Cv8.1CL", "1cv8.1cd-ancillary", "private\né")
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

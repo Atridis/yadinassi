@@ -1288,13 +1288,37 @@ class NativePayloadCensusTests(unittest.TestCase):
 if __name__=='__main__': unittest.main()
 
 
+def static_marker_bytes(path, limit):
+    """Bounded static Windows fixtures, not Linux no-follow/race security proof."""
+    try:
+        before=path.lstat()
+        if path.is_symlink() or not stat.S_ISREG(before.st_mode) or before.st_nlink!=1:
+            raise OracleError('artifact_limit')
+        if not 0<before.st_size<=limit:
+            raise OracleError('artifact_limit')
+        with path.open('rb') as stream:
+            raw=stream.read(limit+1)
+        after=path.lstat()
+        signature=lambda info:(info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+        if signature(before)!=signature(after):
+            raise OracleError('stale_evidence')
+        if len(raw)!=before.st_size or not 0<len(raw)<=limit:
+            raise OracleError('artifact_limit')
+        return raw
+    except OSError:
+        raise OracleError('artifact_missing') from None
+
+
 class CommandCompletionBoundaryTests(unittest.TestCase):
     def setUp(self):
         NativeBoundaryTests.setUp(self)
         self.native.begin_stage('create')
+        if os.name=='nt':
+            reader=mock.patch.object(stage,'regular_bytes',side_effect=static_marker_bytes)
+            reader.start();self.addCleanup(reader.stop)
     def run_client(self, completion='ok', phase='complete', result=True):
         def process(*args,**kwargs):
-            control=json.loads((self.native.evidence/'control.json').read_text())
+            control=json.loads((self.native.evidence/'control.json').read_text(encoding='utf-8'))
             if completion is not None:
                 (self.native.evidence/'completion.json').write_bytes(protocol.encode({**control,'status':completion,'phase':phase}))
             if result:
@@ -1307,6 +1331,33 @@ class CommandCompletionBoundaryTests(unittest.TestCase):
     def test_success_requires_both_completion_and_strict_result(self):
         with self.run_client(): self.assertEqual(self.native.enterprise(self.db,'create')['payload'],'alpha')
         self.assertEqual(list(self.native.evidence.iterdir()),[])
+    def test_static_fixture_reader_keeps_completion_semantics_on_every_host(self):
+        with mock.patch.object(stage,'regular_bytes',side_effect=static_marker_bytes):
+            with self.run_client():
+                self.assertEqual(self.native.enterprise(self.db,'create')['payload'],'alpha')
+            for phase in protocol.BSL_OPERATION_PHASES['create']:
+                with self.subTest(phase=phase),self.run_client('error',phase):
+                    with self.assertRaises(OracleError) as caught:
+                        self.native.enterprise(self.db,'create')
+                    self.assertEqual(caught.exception.kind,'process_failed')
+                    self.assertEqual(caught.exception.failure_context['bsl_phase'],phase)
+            self.assertEqual(list(self.native.evidence.iterdir()),[])
+
+    def test_static_fixture_reader_remains_bounded_and_requires_regular_file(self):
+        path=self.native.evidence/'static-fixture'
+        for raw in (b'',b'x'*129):
+            path.write_bytes(raw)
+            with self.assertRaises(OracleError) as caught:static_marker_bytes(path,128)
+            self.assertEqual(caught.exception.kind,'artifact_limit')
+        path.write_bytes(b'x'*128)
+        self.assertEqual(static_marker_bytes(path,128),b'x'*128)
+        path.unlink()
+        with self.assertRaises(OracleError) as caught:static_marker_bytes(path,128)
+        self.assertEqual(caught.exception.kind,'artifact_missing')
+        path.mkdir()
+        with self.assertRaises(OracleError) as caught:static_marker_bytes(path,128)
+        self.assertEqual(caught.exception.kind,'artifact_limit')
+
     def test_error_completion_never_accepts_valid_result_at_any_create_phase(self):
         for phase in protocol.BSL_OPERATION_PHASES['create']:
             with self.subTest(phase=phase),self.run_client('error',phase):

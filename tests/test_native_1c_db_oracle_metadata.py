@@ -1,12 +1,15 @@
 """Synthetic source checks only: never claim native compilation or CRUD proof."""
-from pathlib import Path
+from contextlib import nullcontext
+from pathlib import Path, PurePosixPath
 import importlib.util
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 import xml.etree.ElementTree as ET
 
@@ -20,18 +23,24 @@ NONCE = "0123456789abcdef" * 2
 
 class MetadataTest(unittest.TestCase):
     def setUp(self):
+        if os.name == "nt":
+            # Only the module's lexical manifest-key parent calculations use
+            # this constructor. Real source, target and template paths stay native.
+            patch = mock.patch.object(m, "Path", PurePosixPath)
+            patch.start()
+            self.addCleanup(patch.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.source = self.root / "source"
         self.source.mkdir()
         shutil.copyfile(ROOT / "tests/fixtures/native_bootstrap/Configuration.xml", self.source / "Configuration.xml")
-        (self.source / "ConfigDumpInfo.xml").write_text("synthetic bookkeeping")
+        (self.source / "ConfigDumpInfo.xml").write_text("synthetic bookkeeping", encoding="utf-8")
         self.target = self.root / "v1"
 
     def inject(self, **kwargs):
         return m.inject(self.source, self.target, nonce=kwargs.get("nonce", NONCE),
-                        evidence=kwargs.get("evidence", Path("/tmp/onec-db-oracle/evidence")))
+                        evidence=kwargs.get("evidence", PurePosixPath("/tmp/onec-db-oracle/evidence")))
 
     def mutate(self, root, path, old, new):
         file = root / path
@@ -97,10 +106,10 @@ class MetadataTest(unittest.TestCase):
         with self.assertRaises(m.DraftError):
             m.verify_redump(self.target, alias / "v1", 1)
         with self.assertRaises(m.DraftError):
-            m.inject(alias / "source", self.root / "other", nonce=NONCE, evidence=Path("/tmp/evidence"))
+            m.inject(alias / "source", self.root / "other", nonce=NONCE, evidence=PurePosixPath("/tmp/evidence"))
 
     def test_privileged_hook_never_performs_catalog_crud(self):
-        text = (m.ROOT / "modules/SessionModule.bsl").read_text()
+        text = (m.ROOT / "modules/SessionModule.bsl").read_text(encoding="utf-8-sig")
         self.assertNotIn("Справочники.NativeOracleItems", text.replace("Метаданные.Справочники.NativeOracleItems", ""))
         for forbidden in ("СоздатьЭлемент", "Новый Запрос", "НачатьТранзакцию", "ПолучитьОбъект", "NativeOracleServer."):
             self.assertNotIn(forbidden, text)
@@ -108,8 +117,8 @@ class MetadataTest(unittest.TestCase):
         self.assertIn('ПользователиИнформационнойБазы.ПолучитьПользователей().Количество() <> 0', text)
 
     def test_dispatch_is_nonprivileged_and_values_are_canonical_strings(self):
-        text = (m.ROOT / "modules/NativeOracleServer.bsl").read_text()
-        managed = (m.ROOT / "modules/ManagedApplicationModule.bsl").read_text()
+        text = (m.ROOT / "modules/NativeOracleServer.bsl").read_text(encoding="utf-8-sig")
+        managed = (m.ROOT / "modules/ManagedApplicationModule.bsl").read_text(encoding="utf-8-sig")
         self.assertIn("NativeOracleServer.NativeВыполнить(ПараметрЗапуска)", managed)
         self.assertGreaterEqual(text.count("Если ПривилегированныйРежим()"), 2)
         self.assertIn('Результат.amount = "1.25"', text)
@@ -128,10 +137,10 @@ class MetadataTest(unittest.TestCase):
             root = m.read_xml(self.target / f"Roles/{role}/Ext/Rights.xml")[1]
             for flag in ("setForNewObjects", "setForAttributesByDefault", "independentRightsOfChildObjects"):
                 self.assertEqual(m.single(root, flag).text, "false")
-        crud = (self.target / f"Roles/{m.CRUD_ROLE}/Ext/Rights.xml").read_text()
+        crud = (self.target / f"Roles/{m.CRUD_ROLE}/Ext/Rights.xml").read_text(encoding="utf-8-sig")
         for forbidden in ("Administration", "FullAccess", "Interactive", "ExternalConnection"):
             self.assertNotIn(forbidden, crud)
-        setup = (self.target / f"Roles/{m.SETUP_ROLE}/Ext/Rights.xml").read_text()
+        setup = (self.target / f"Roles/{m.SETUP_ROLE}/Ext/Rights.xml").read_text(encoding="utf-8-sig")
         self.assertNotIn("Catalog.", setup)
 
     def test_exact_schema_pin_and_original_name_validation(self):
@@ -148,7 +157,7 @@ class MetadataTest(unittest.TestCase):
         for nonce in ("", NONCE.upper(), NONCE+"x", True, 1, "x"*32):
             with self.subTest(nonce=nonce), self.assertRaises(m.DraftError): self.inject(nonce=nonce)
         for path in ("relative", "/home/private", "/tmp/../private", "/", "/tmp/a\nb"):
-            with self.subTest(path=path), self.assertRaises(m.DraftError): self.inject(evidence=Path(path))
+            with self.subTest(path=path), self.assertRaises(m.DraftError): self.inject(evidence=PurePosixPath(path))
 
     def test_no_existing_or_overlapping_destination(self):
         self.target.mkdir()
@@ -156,24 +165,38 @@ class MetadataTest(unittest.TestCase):
         self.target.rmdir()
         for target in (self.source, self.source / "child", self.root):
             with self.subTest(target=target), self.assertRaises(m.DraftError):
-                m.inject(self.source, target, nonce=NONCE, evidence=Path("/tmp/evidence"))
+                m.inject(self.source, target, nonce=NONCE, evidence=PurePosixPath("/tmp/evidence"))
 
     def test_reject_unrequested_source_entries(self):
         for name in ("private.txt", "Ext/Module.bsl", "Catalogs/Other.xml"):
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("private fixture must never be accepted")
+            path.write_text("private fixture must never be accepted", encoding="utf-8")
             with self.subTest(name=name), self.assertRaises(m.DraftError): self.inject()
             path.unlink()
 
     def test_reject_source_hardlink_symlink_and_special_file(self):
         path = self.source / "extra"
         for kind in ("hardlink", "symlink", "fifo"):
-            if kind == "hardlink": os.link(self.source / "Configuration.xml", path)
-            elif kind == "symlink": path.symlink_to(self.source / "Configuration.xml")
-            else: os.mkfifo(path)
-            with self.subTest(kind=kind), self.assertRaises(m.DraftError): self.inject()
-            path.unlink()
+            with self.subTest(kind=kind):
+                fixture = nullcontext()
+                if kind == "hardlink": os.link(self.source / "Configuration.xml", path)
+                elif kind == "symlink": path.symlink_to(self.source / "Configuration.xml")
+                elif hasattr(os, "mkfifo"): os.mkfifo(path)
+                else:
+                    # Windows cannot create a POSIX FIFO. Model only its type
+                    # at this exact fixture entry; all other lstat calls stay real.
+                    path.write_bytes(b"synthetic FIFO entry")
+                    real_lstat = type(path).lstat
+                    def fifo_lstat(candidate):
+                        info = real_lstat(candidate)
+                        if candidate != path:
+                            return info
+                        return os.stat_result((stat.S_IFIFO | stat.S_IMODE(info.st_mode), *info[1:]))
+                    fixture = mock.patch.object(type(path), "lstat", fifo_lstat)
+                with fixture, self.assertRaisesRegex(m.DraftError, "Indirect or special metadata entry"):
+                    self.inject()
+                path.unlink()
 
     def test_reject_source_xml_entity_and_oversize(self):
         file = self.source / "Configuration.xml"
@@ -185,18 +208,18 @@ class MetadataTest(unittest.TestCase):
 
     def test_prefix_and_self_closing_children_are_preserved(self):
         file = self.source / "Configuration.xml"
-        text = file.read_text().replace('<ChildObjects><Language>Russian</Language></ChildObjects>', '<ChildObjects/>')
+        text = file.read_text(encoding="utf-8-sig").replace('<ChildObjects><Language>Russian</Language></ChildObjects>', '<ChildObjects/>')
         text = text.replace('xmlns="', 'xmlns:m="')
         text = re.sub(r"<(\/?)([A-Za-z][A-Za-z0-9]*)(?=[\s/>])", r"<\1m:\2", text)
-        file.write_text(text)
+        file.write_text(text, encoding="utf-8-sig")
         self.inject()
-        self.assertIn("<m:Catalog>NativeOracleItems</m:Catalog>", (self.target / "Configuration.xml").read_text())
+        self.assertIn("<m:Catalog>NativeOracleItems</m:Catalog>", (self.target / "Configuration.xml").read_text(encoding="utf-8-sig"))
 
     def test_roundtrip_accepts_only_formatting_and_right_order(self):
         self.inject()
         copy = self.root / "redump"
         shutil.copytree(self.target, copy)
-        (copy / "ConfigDumpInfo.xml").write_text("different synthetic dump bookkeeping")
+        (copy / "ConfigDumpInfo.xml").write_text("different synthetic dump bookkeeping", encoding="utf-8")
         path = copy / f"Roles/{m.CRUD_ROLE}/Ext/Rights.xml"
         tree = ET.fromstring(path.read_bytes())
         tree[:] = reversed(list(tree))
@@ -234,15 +257,15 @@ class MetadataTest(unittest.TestCase):
         for kind in ("extra_file", "extra_dir", "missing_module", "uuid_collision"):
             target = self.root / kind
             shutil.copytree(self.target, target)
-            if kind == "extra_file": (target / "leak.txt").write_text("private")
+            if kind == "extra_file": (target / "leak.txt").write_text("private", encoding="utf-8")
             elif kind == "extra_dir": (target / "Unexpected").mkdir()
             elif kind == "missing_module": (target / "Ext/SessionModule.bsl").unlink()
             else:
                 config = m.read_xml(target / "Configuration.xml")[1]
                 identity = m.single(config, "Configuration").attrib["uuid"]
                 file = target / f"Roles/{m.CRUD_ROLE}.xml"
-                data = file.read_text()
-                file.write_text(re.sub(r'uuid="[^"]+"', f'uuid="{identity}"', data))
+                data = file.read_text(encoding="utf-8-sig")
+                file.write_text(re.sub(r'uuid="[^"]+"', f'uuid="{identity}"', data), encoding="utf-8-sig")
             with self.subTest(kind=kind), self.assertRaises(m.DraftError): m.verify_redump(self.target, target, 1)
 
     def test_bad_version_types_do_not_equal_one(self):

@@ -272,7 +272,11 @@ class ContainerCommandTests(SourceCase):
         for name, nonce in ((PRIVATE, NONCE), ('onec-db-oracle-' + NONCE, PRIVATE),
                             ('onec-db-oracle-' + NONCE + ';', NONCE)):
             self.assert_rejected(lambda: host.container_command(self.staged, name, nonce), 'invalid_input')
-        comma = self.root / 'comma,path'; self.staged.rename(comma)
+        # Stage the same valid input at the hostile mount path directly: macOS
+        # rejects renaming the already sealed read-only fixture directory.
+        comma = self.root / 'comma,path'
+        inputs.stage_inputs(self.repo, comma, NONCE, self.identity)
+        self.assertEqual(inputs.staged_hashes(comma), self.identity['sources'])
         self.assert_rejected(lambda: host.container_command(comma, 'onec-db-oracle-' + NONCE, NONCE), 'invalid_input')
 
 
