@@ -87,7 +87,10 @@ x=New Array; x.Add(x);
         self.assertEqual(self.vm.execution_context,'client')
 
     def test_unsupported_nested_leaf_rejects_before_body(self):
-        for leaf in ('New Map','New FixedArray(New Array)','New FixedStructure','Date(2026,1,1)'):
+        # Ordinary interior Dates are supported; fractional and boundary Dates
+        # remain outside the audited cross-context transfer envelope.
+        for leaf in ('New Map','New FixedArray(New Array)','New FixedStructure',
+                     'Date(2026,1,1)+0.0001', 'Date(1,1,1)', 'Date(9999,12,31,23,59,59)'):
             self.vm.execute(f'&AtServer\nProcedure Server(P) Message("entered"); EndProcedure\nx=New Structure("Leaf",{leaf});')
             old=self.vm.variables['x']
             with self.assertRaisesRegex(BSLError,'Межконтекстная передача'):self.vm.execute('Server(x);')

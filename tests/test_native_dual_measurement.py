@@ -1,4 +1,4 @@
-"""Strict135 dual witness, with audited historical capture and explicit projection."""
+"""Strict136 witness, preserving audited dual capture and explicit projection."""
 import copy
 import inspect
 import json
@@ -29,7 +29,9 @@ def marker(values):
 
 
 def measured(values):
-    return full.CLIENT_VALUES[:134] + ['dual.v1:' + ''.join(f'{value:03d}' for value in values)]
+    return (full.CLIENT_VALUES[:134]
+            + ['dual.v1:' + ''.join(f'{value:03d}' for value in values)]
+            + full.CLIENT_VALUES[135:])
 
 
 class DualWitnessTests(SyntheticFilesystemCase):
@@ -43,7 +45,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
     def diagnose_rejected(self, value):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder).resolve() / 'completed.json'
-            path.write_bytes(json.dumps(value, allow_nan=False).encode())
+            path.write_bytes(json.dumps(value, allow_nan=False, separators=(',', ':')).encode())
             with self.assertRaises(suite.FullError):
                 suite.client_marker(path, NONCE, 'completed')
             diagnostic = suite.client_marker_diagnostics(path, NONCE)
@@ -51,20 +53,27 @@ class DualWitnessTests(SyntheticFilesystemCase):
             full.validate_marker_diagnostics(diagnostic)
             return diagnostic
 
-    def test_exact135_acceptance_and_dense_bound(self):
+    def test_exact136_acceptance_and_dense_bound(self):
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
-        self.assertEqual(len(full.CLIENT_VALUES),135)
-        self.assertEqual(full.CLIENT_VALUES[-1],TOKEN)
+        self.assertEqual(len(full.CLIENT_VALUES),136)
+        self.assertEqual(full.CLIENT_VALUES[134:], [TOKEN, 'dn.v1:22222277'])
         self.assertEqual(measured(PROJECTED),full.CLIENT_VALUES)
         with tempfile.TemporaryDirectory() as folder:
             p=Path(folder).resolve()/'completed.json'
             value=marker(full.CLIENT_VALUES)
-            p.write_bytes(json.dumps(value,indent=2).encode())
+            # The audited source uses compact JSON; the private marker cap is
+            # unchanged even though pretty-printing the new suffix exceeds it.
+            p.write_bytes(json.dumps(value,separators=(',', ':')).encode())
             self.assertEqual(suite.client_marker(p,NONCE,'completed'),value)
-            self.assertEqual(len(p.read_bytes()),2041)
+            self.assertEqual(len(p.read_bytes()),1359)
+            self.assertLessEqual(len(p.read_bytes()),2048)
+            p.write_bytes(json.dumps(value,indent=2).encode())
+            self.assertGreater(len(p.read_bytes()),2048)
+            with self.assertRaises(suite.FullError):
+                suite.client_marker(p,NONCE,'completed')
         # The nine numeric fields cannot enlarge the fixed-width private token.
         for values in ([0]*9,[15,999,999,15,999,999,15,999,999]):
-            self.assertEqual(len(json.dumps(marker(measured(values)),indent=2).encode()),2041)
+            self.assertEqual(len(json.dumps(marker(measured(values)),separators=(',', ':')).encode()),1359)
             self.diagnose_rejected(marker(measured(values)))
         self.assertEqual(len(TOKEN),35)
         self.diagnose_rejected(marker(full.CLIENT_VALUES[:134]))
@@ -82,10 +91,13 @@ class DualWitnessTests(SyntheticFilesystemCase):
         for invalid in ('dual.v1:'+'000'*9, TOKEN+'0', TOKEN[:-1], TOKEN+'\n',
                         'dual.v1:'+'٠'*27, 'dual.v1:'+'-01'*9, 'dual.v1:'+'1.0'*9,
                         'dual.v1:'+'999'*9, False,True,0,None,[],{}):
-            self.diagnose_rejected(marker(full.CLIENT_VALUES[:134]+[invalid]))
+            diagnostic = self.diagnose_rejected(marker(full.CLIENT_VALUES[:134]+[invalid]+full.CLIENT_VALUES[135:]))
+            self.assertEqual(diagnostic['ordinal'],134)
+            self.assertIn(diagnostic['kind'],('type','value'))
         for index in range(9):
             values=PROJECTED.copy(); values[index]+=1
-            self.diagnose_rejected(marker(measured(values)))
+            diagnostic=self.diagnose_rejected(marker(measured(values)))
+            self.assertEqual((diagnostic['kind'],diagnostic['ordinal']),('value',134))
 
     def test_nonce_phase_schema_and_witness_must_match(self):
         good=marker(full.CLIENT_VALUES)
@@ -101,6 +113,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
                     ordinal=134,error_stage=0,dual=values))
         self.assertNotIn("result['dual']",inspect.getsource(suite.client_marker_diagnostics))
         self.assertNotIn('dual_shared_source',inspect.getsource(full.verify_client_interpreter))
+        self.assertNotIn('date_null_shared_source',inspect.getsource(full.verify_client_interpreter))
         self.assertFalse(hasattr(full,'dual_shared_source'))
 
     def test_capture_fixture_and_projection_reconstruct_historical_sources(self):
@@ -115,7 +128,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(plan['capture']['summary_zip_sha256'],'7dd804a26fb5cf63cf5de93c2dc1ba908767bba9f64e949f04626344d9278dba')
         self.assertEqual(plan['capture']['acceptance'],'rejected_measurement_only')
         self.assertEqual(plan['fresh_projected_native_validation'],'required_not_yet_obtained')
-        raw=linux_fixture(ROOT/full.CLIENT_SOURCE); standalone=linux_fixture(ROOT/SOURCE)
+        raw=full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)); standalone=linux_fixture(ROOT/SOURCE)
         self.assertEqual(raw.count(LOGICAL),1);self.assertEqual(standalone.count(LOGICAL),1)
         self.assertNotIn(GENERIC,raw);self.assertNotIn(GENERIC,standalone)
         old=raw.replace(LOGICAL,GENERIC+LOGICAL,1).replace(b'BEGIN bounded dual witness',b'BEGIN bounded dual measurement',1)
@@ -132,10 +145,12 @@ class DualWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(full.digest(standalone),plan['source_sha256'])
 
     def test_historical_inverse_restores134_but_host_never_uses_it(self):
-        raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
+        measurement=linux_fixture(ROOT/full.CLIENT_SOURCE)
+        raw=full.date_null_shared_source(measurement)
         restored=suite.dual_shared_source(raw)
         self.assertEqual(full.digest(restored),BASE_SHA)
-        self.assertEqual(full.CLIENT_WITNESS_SOURCE_SHA256,full.digest(raw))
+        self.assertEqual(full.CLIENT_WITNESS_SOURCE_SHA256,full.digest(measurement))
+        self.assertEqual(full.DATE_NULL_BASE_SHA256,full.digest(raw))
         self.assertNotIn('DualProbe',restored.decode())
         for changed in (raw+b' ',raw[:-1],restored,
             raw.replace(suite.CLIENT_DUAL_CALL,b'',1),
@@ -152,18 +167,20 @@ class DualWitnessTests(SyntheticFilesystemCase):
                 runner.assert_not_called()
 
     @unittest.skipIf(os.name=='nt','production bounded interpreter child is POSIX-only')
-    def test_whole_exact135_source_preflight_uses_original_staged_path(self):
+    def test_preflight_uses_exact_whole_staged136_source(self):
         path=ROOT/full.CLIENT_SOURCE; raw=linux_fixture(path); seen=[]
         def runner(arguments,cwd):
             self.assertEqual(Path(arguments[-1]),path)
             self.assertEqual(Path(arguments[-1]).read_bytes(),raw)
             self.assertIn(b'DualProbe',raw)
+            self.assertIn(b'DNAppend',raw)
+            self.assertEqual(path.read_bytes(),raw)
             seen.append(full.digest(raw))
             return full.bounded_child(arguments,cwd)
         full.verify_client_interpreter(ROOT,path,full.digest(raw),runner=runner)
         self.assertEqual(seen,[full.CLIENT_WITNESS_SOURCE_SHA256])
 
-    def test_entire_interpreter_witness_and_standalone_match_projected_capture(self):
+    def test_whole136_interpreter_witness_and_standalone_match_projected_capture(self):
         from yadinassi import Interpreter
         from decimal import Decimal
         vm=Interpreter(lambda _:self.fail('unexpected Message'))
@@ -193,7 +210,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
     def test_symlink_and_oversized_private_markers_remain_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve(); path=root/'marker.json'
-            path.write_bytes(json.dumps(marker(full.CLIENT_VALUES)).encode())
+            path.write_bytes(json.dumps(marker(full.CLIENT_VALUES),separators=(',', ':')).encode())
             link=root/'link.json';link.symlink_to(path)
             for target in (link,):
                 with self.assertRaises(suite.FullError):suite.client_marker(target,NONCE,'completed')
@@ -216,7 +233,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
             values = [min(value,15),value,value]*3
             setup = 'Values = New Array;'+''.join('Values.Add('+str(x)+');' for x in values)
             vm.execute(setup)
-            self.assertEqual(vm.execute('DualProbeEncode(Values)'),measured(values)[-1])
+            self.assertEqual(vm.execute('DualProbeEncode(Values)'),measured(values)[134])
         for literal in ('True','False','Undefined','"PRIVATE"','-1','1000','0.5'):
             vm.execute('Values = New Array;'+ 'Values.Add(0);'*9+'Values[1] = '+literal+';')
             with self.assertRaisesRegex(Exception, 'dual-directive-invalid'): vm.execute('DualProbeEncode(Values)')
@@ -257,7 +274,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
             self.assertNotIn('ThisObject',body)
 
     def test_declarations_and_helpers_precede_module_initializer(self):
-        raw = linux_fixture(ROOT/full.CLIENT_SOURCE)
+        raw = full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
         tail = full.CLIENT_NOCONTEXT_INITIALIZER
         self.assertTrue(raw.startswith(suite.CLIENT_DUAL_PREFIX+full.CLIENT_MODULE_PREFIX))
         self.assertTrue(raw.endswith(full.CLIENT_NOCONTEXT_BLOCK+suite.CLIENT_DUAL_BLOCK+tail))

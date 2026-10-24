@@ -1,4 +1,4 @@
-"""Strict NoContext witness; current source still requires a fresh native CI pass."""
+"""Historical NoContext capture and current exact whole-source witness."""
 import json
 import os
 from pathlib import Path
@@ -20,7 +20,7 @@ class NoContextWitnessTests(unittest.TestCase):
 
     def test_captured_profile_projection_preserves_other_thirteen_values(self):
         capture=json.loads((ROOT/'integrational_tests/directive_probes/nocontext_native.json').read_text())
-        raw=suite.dual_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
+        raw=suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
         logical=b"#If AtClient Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 2;\n#EndIf"
         historical=b"\n".join(("#If %s Then\n    ProfileMask = ProfileMask + %s;\n#EndIf" % (name, bit)).encode()
             for name,bit in capture['profile_bits'].items())
@@ -36,7 +36,7 @@ class NoContextWitnessTests(unittest.TestCase):
         self.assertEqual(capture['capture_acceptance'],'rejected_measurement_only')
         self.assertNotEqual(full.digest(raw),capture['source_sha256'])
 
-    def test_strict135_typed_acceptance_and_no_raw_capture_export(self):
+    def test_strict136_typed_acceptance_and_no_raw_capture_export(self):
         self.assertEqual(full.CLIENT_VALUES[119:134], ['nocontext.core.v3', 12, 22, 0,
             12, 2, True, 16, True, 6, 14, 14, True, 7, 18])
         variants=[list(full.CLIENT_VALUES), full.CLIENT_VALUES[:-1], full.CLIENT_VALUES+[False]]
@@ -47,7 +47,7 @@ class NoContextWitnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             p=Path(folder).resolve()/'completed.json'
             for index,values in enumerate(variants):
-                p.write_bytes(json.dumps(self.marker(values)).encode())
+                p.write_bytes(json.dumps(self.marker(values),separators=(',', ':')).encode())
                 if index == 0:
                     suite.client_marker(p,'a'*32,'completed')
                 else:
@@ -55,25 +55,26 @@ class NoContextWitnessTests(unittest.TestCase):
                 diagnostic=suite.client_marker_diagnostics(p,'a'*32)
                 self.assertNotIn('nocontext',diagnostic)
                 full.validate_marker_diagnostics(diagnostic)
-        self.assertLessEqual(len(json.dumps(self.marker(full.CLIENT_VALUES),indent=2).encode()),2048)
+        self.assertLessEqual(len(json.dumps(self.marker(full.CLIENT_VALUES),separators=(',', ':')).encode()),2048)
 
     def test_removed_measurement_schema_is_rejected(self):
         with self.assertRaises(ValueError): full.validate_marker_diagnostics(dict(
             phase='completed',kind='count',ordinal=134,error_stage=0,nocontext=[False]*14))
 
     def test_inverse_restores_exact_audited119(self):
-        raw = suite.dual_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
+        raw = suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
         restored = full.nocontext_shared_source(raw)
         self.assertEqual(restored, suite.nocontext_shared_source(raw))
         self.assertEqual(full.digest(restored), 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17')
         for bad in (raw+b' ', raw[:-1], raw.replace(b'Value = Value + 10;', b'Value = Value + 11;')):
             with self.assertRaises(full.FullError): full.nocontext_shared_source(bad)
-        self.assertEqual(len(full.CLIENT_VALUES), 135)
+        self.assertEqual(len(full.CLIENT_VALUES), 136)
+        self.assertEqual(full.CLIENT_VALUES[135:], ['dn.v1:22222277'])
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual((suite.MAX_STAGE_REPORT, full.MAX_STAGE_REPORT, full.MAX_REPORT), (8192,8192,32768))
 
     @unittest.skipIf(os.name=='nt', 'production bounded interpreter child is POSIX-only')
-    def test_exact135_interpreter_preflight(self):
+    def test_whole_source136_interpreter_preflight(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(raw))
 
@@ -101,7 +102,7 @@ class NoContextWitnessTests(unittest.TestCase):
             self.assertTrue(all(v.casefold() in declared for v in assignments),name)
 
     def test_declarations_precede_the_unchanged_module_initializer_tail(self):
-        raw=suite.dual_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
+        raw=suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
         tail=full.CLIENT_NOCONTEXT_INITIALIZER
         self.assertTrue(raw.endswith(full.CLIENT_NOCONTEXT_BLOCK+tail))
         self.assertTrue(full.nocontext_shared_source(raw).endswith(tail))
