@@ -10,7 +10,7 @@ import stat
 from protocol import IMAGE, decode, exact, require
 from snapshots import OracleError
 
-SOURCE_FILES = {
+LEGACY_V3_SOURCE_FILES = {
     'yadinassi/storage/filedb.py':'filedb.py',
     'scripts/native_1c_db_oracle.py':'host.py',
     **{f'scripts/native_1c_db_oracle/{name}':name for name in (
@@ -20,6 +20,11 @@ SOURCE_FILES = {
         'modules/SessionModule.bsl','modules/ManagedApplicationModule.bsl','modules/NativeOracleServer.bsl')},
     'scripts/native_1c_bootstrap/inject_modules.py':'inject_modules.py',
 }
+# Historical v3 inventories remain exactly 18 entries; current v4 stages both
+# the standalone parser and the versioned comparison orchestration.
+SOURCE_FILES = {**LEGACY_V3_SOURCE_FILES,
+    'yadinassi/storage/filedb_catalog.py': 'filedb_catalog.py',
+    'scripts/native_1c_db_oracle/comparison.py': 'comparison.py'}
 MAX_SOURCE=1048576
 
 
