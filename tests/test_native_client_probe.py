@@ -185,11 +185,9 @@ class ClientProbeHarness(unittest.TestCase):
         self.run_error = None
         self.quiet = True
         self.request = None
-        # Preserve historical strict135 orchestration paths at an explicit test
-        # boundary. Production Date/Null measurement rejects every completion;
-        # this fixture's synthetic success is not measurement/native evidence.
+        # Exercise the production strict136 marker validator. Only native process
+        # execution is synthetic; fixture success is not native parity evidence.
         for patcher in (
-                mock.patch.object(suite, "date_null_client_marker", new=suite.client_marker),
                 mock.patch.object(suite, "run_process", side_effect=self.fake_native),
                 mock.patch.object(suite, "native_processes_quiet", side_effect=lambda _: self.quiet if "enterprise" in self.events else True),
                 mock.patch.object(suite, "client_process_baseline", return_value=set()),
@@ -533,7 +531,7 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
         self.assertIn('Запрос.mode = "stall"', source)
         self.assertIn("Пока Истина Цикл", source)
         self.assertIn("ЗавершитьРаботуСистемы(Ложь)", source)
-        # Prior 35 declarations remain, plus eight Date/Null measurement calls.
+        # Prior 35 declarations remain, plus eight audited Date/Null calls.
         self.assertEqual(source.count("&AtServer"), 43)
         baseline = full.date_null_shared_source(source.encode("utf-8")).decode("utf-8")
         self.assertEqual(baseline.count("&AtServer"), 35)
@@ -1109,12 +1107,12 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
     def setUp(self):
         stage_fixture.FullSuiteHarness.setUp(self)
         path = self.inputs / suite.CLIENT_TARGET
-        # The probe itself is mocked in this historical success-path fixture.
-        # Its identities must not claim acceptance of current Date/Null capture.
+        # The probe itself is mocked, but current source identities must still
+        # match the exact staged witness. Synthetic success is not native evidence.
         current = (ROOT / suite.CLIENT_SOURCE).read_bytes()
         if os.name == "nt":
             current = current.replace(b"\r\n", b"\n")
-        path.write_bytes(full.date_null_shared_source(current))
+        path.write_bytes(current)
         source = path.read_bytes()
         module = suite.generated_module(source)
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": suite.digest(source),
