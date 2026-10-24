@@ -1,0 +1,84 @@
+{
+  "status": "uncaptured_measurement_checkpoint",
+  "base_commit": "8f8b71d66d080c08f74035fc783b6d29a10e846c",
+  "base_tree": "6d4e5e0c81027a1185ef249e8157bc88e2e4f20e",
+  "base_source_sha256": "c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413",
+  "semantic_source_sha256": "1b6c51fba57161907d26d78b3c96d317ff1f4b65098d6bf5a0815ed5fb575a70",
+  "integrated_source_sha256": "f4d978ee32c33e2234828eb7681d56f4e82934903aab5833668f69161de1702f",
+  "integrated_module_sha256": "88d41c14ab52c67dfd5e56f2b8c46afa33739ed53e021d19719fbf00669ce47a",
+  "proposed_compact_source_sha256": "56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751",
+  "proposed_compact_module_sha256": "840b3d19ef6eb100af3cc685788692eec7f6aec863518b003046beae995b8062",
+  "native_compact_writer_availability": "documented_before_target_version_but_not_executed_on_pinned_target",
+  "native_target": "8.3.27.1508 Linux/amd64 managed thick client, file infobase",
+  "native_observations": null,
+  "expected_token": null,
+  "runtime_implementation": "not_changed",
+  "native_execution": "not_run",
+  "capture_token_grammar": "dn\\.v1:[0-2]{6}[0-8]{2}",
+  "token_bytes": 14,
+  "baseline_values_preserved": 135,
+  "private_marker_cap": 2048,
+  "four_adapter_sha256": {
+    "dates": "52b307cda539370ec0a7f5f28fbd22e0454934df2a287dcb2eb8e22f9f734d8e",
+    "values": "814858ce2af10afc86882ec719a19f41589effabb71b83882d94d6077d90e824",
+    "collections": "b8d28abf2a28f7ff11958f9f3a31a966e3032484b8f0cf7d316b24ef8fb847e8",
+    "numbers": "271be42fcb2df2ad497c5e8ba1edcfe94e24779f00820ba3a7191eddc60eb7f2"
+  },
+  "async8_identity": {
+    "template": "4177f7bc3e4690e6a67e48af06db4dba78405bb76f16151867fd006c35ba713f",
+    "modules": [
+      "9c35b55df6f304166f83535490b7cffe51f0bac3383663fa4d2c201dfd4f3317",
+      "2f1521d54fef7ecd73f8dce7f36f983111ff2fdb98112a89bd47f01988072676",
+      "6e1a01c33d77681426c6d3f0c0d648fde353514edad381ba2c6bd2b586284959",
+      "a3959ce4beb9fe01cc1d3f3416bdb2ac7ef56ecb9cdcce11c0b41d96f347bc78",
+      "a5a2d09e4a7be7749121b0a26c30670bcd122d76ae81e6b5158fdb9de7ff2b1b",
+      "761b8ed069ac9451cd9eb918c5e7e7d6d84a9d380155bc56b36ffd05717d76f6",
+      "395dfd07a0171d361fd5c029e6a2400ef8d72097f506e073c75fedb1bc3105f4",
+      "3ac1cd874da474e939006034f5a7216e7d2a26e9f9a9fb87f0c0813b1968a45a"
+    ]
+  },
+  "budget_models_not_native_bytes": {
+    "strict135": {
+      "compact": {
+        "raw_bytes": 1342,
+        "without_literal_controls_bytes": 1342
+      },
+      "default": {
+        "raw_bytes": 1485,
+        "without_literal_controls_bytes": 1485
+      },
+      "pretty2": {
+        "raw_bytes": 2041,
+        "without_literal_controls_bytes": 1899
+      },
+      "pretty_tab": {
+        "raw_bytes": 1765,
+        "without_literal_controls_bytes": 1347
+      }
+    },
+    "independent136": {
+      "compact": {
+        "raw_bytes": 1359,
+        "without_literal_controls_bytes": 1359
+      },
+      "default": {
+        "raw_bytes": 1503,
+        "without_literal_controls_bytes": 1503
+      },
+      "pretty2": {
+        "raw_bytes": 2063,
+        "without_literal_controls_bytes": 1920
+      },
+      "pretty_tab": {
+        "raw_bytes": 1785,
+        "without_literal_controls_bytes": 1364
+      }
+    }
+  },
+  "semantic_source_path": "integrational_tests/directive_probes/date_null_core.bsl",
+  "capture_source_sha256": "56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751",
+  "capture_module_sha256": "840b3d19ef6eb100af3cc685788692eec7f6aec863518b003046beae995b8062",
+  "applied_serializer": "native_JSONWriterSettings_no_linebreaks_no_fallback",
+  "marker_capture": "strictly_rejected_count135_only",
+  "preflight": "exact_inverse_baseline135_not_DateNull_parity"
+}
