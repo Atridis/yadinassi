@@ -1,20 +1,56 @@
-# Date/Null cross-context measurement checkpoint
+# Date/Null transfer: audited measurement and strict136 migration
 
-Status: uncaptured, measurement-only checkpoint. Native observations and the
-expected Date/Null token are unknown. No Date/Null cross-context runtime support,
-native parity, or release acceptance is claimed. Local source/schema tests do
-not supply native expected results.
+Status: the native measurement is captured and independently audited. The
+bounded runtime extension and strict136 migration are a separate candidate;
+its exact whole-source strict136 host preflight has passed. Fresh native and
+required CI acceptance gates are still pending.
+The rejected measurement is not a runtime parity or release acceptance result.
+The expected token below comes from the native artifact, not local execution.
 
 The baseline is main `8f8b71d66d080c08f74035fc783b6d29a10e846c`, tree
-`6d4e5e0c81027a1185ef249e8157bc88e2e4f20e`. The intended measurement target is
-Linux/amd64, 1C 8.3.27.1508, managed thick client, file infobase. Other versions,
-operating systems and application modes are not covered by this checkpoint.
+`6d4e5e0c81027a1185ef249e8157bc88e2e4f20e`. The measured target is
+Linux/amd64, 1C 8.3.27.1508, managed thick client, file infobase, locale `ru_RU`
+and timezone `Etc/UTC`. Other versions, operating systems and application modes
+are not covered by this capture.
+
+## Audited native capture
+
+[Draft PR99](https://github.com/Atridis/yadinassi/pull/99), native
+[run 40078699477](https://github.com/Atridis/yadinassi/actions/runs/40078699477),
+produced **`dn.v1:22222277`**, or `[2, 2, 2, 2, 2, 2, 7, 7]` in slot order.
+All six scalar predicates completed true. Both graph cases completed with all
+three checked facts true. This establishes the bounded observations described
+below, not a universal transfer model.
+
+- Head: `0fe70b6e66dbb4a397344d76a537a1b755e515cf`.
+- PR checkout: `c20971ce26073484c7b3c758b28f40ac02da1503`, with ordered parents
+  main `8f8b71d66d080c08f74035fc783b6d29a10e846c` and the measured head.
+- Tree: `f82478356de78eb31244e0199212584dbb80fb9d`.
+- Invocation nonce: `5a3306010b114c9893cb42d412a23729`.
+- Summary artifact: `12554442911`, ZIP SHA-256
+  `d784b49699b81dd3ebd518fe2a6081c7a0f412d7071bf5989f4bf5d1e1df28b9`.
+- Report SHA-256:
+  `184e6b5e4180a3bc7fd9c152bcd3ecdbc223494187acb207b7b599b4bad70b2a`.
+
+The independent audit bound all 384 source blobs, 24 staged input hashes and
+52 interpreter/provenance files to this tree. All preceding 135 values matched
+by exact type and value. The six fresh server-case metadata records matched
+audited actual main run 40054174322; fresh raw six-case output was intentionally
+not exported by the failed measurement. Historical output replay is not a new
+full-parity result.
+
+The ordinary probe and enclosing stage remained `failed` / `invalid_result`.
+`entered`, `process_exited` and `quiet` were true; `completed` and
+`witness_verified` were false. Actual completed-marker evidence was the
+source-bound diagnostic `phase=completed`, `kind=count`, `ordinal=135`,
+`error_stage=0`, with the observed token. Final cleanup passed. Later full-client
+adapters and watchdog were not started; no Date/Null Async run was claimed.
 
 ## Bounded question
 
 The existing logical client/server packet copier supports a bounded subset of
-primitive values and acyclic mutable Array/Structure graphs. This checkpoint
-asks how Date and Null leaves behave across that boundary before extending the
+primitive values and acyclic mutable Array/Structure graphs. The measurement
+asked how Date and Null leaves behave across that boundary before extending the
 copier. It does not derive native expectations from the interpreter, a generic
 serializer, or the platform guide.
 
@@ -38,7 +74,8 @@ must have exact Boolean type and be true.
 ## Eight finite observations
 
 The token fields have the following zero-based order. The described predicates
-are questions posed by the probe, not asserted native answers.
+are the exact probe predicates. The captured token reports true for each scalar
+predicate and all three bits in each graph case.
 
 1. **Slot 0, `DNEchoDate`.** Send A as Val. The server checks its exact type and
    value, then returns it; an invalid input returns a non-Date sentinel. Observe
@@ -73,10 +110,13 @@ are questions posed by the probe, not asserted native answers.
    unchanged shape/leaves.
 
 These graph facts distinguish return/copyback contents from isolation in these
-specific mutations. They do not establish every alias relationship, repeated
+specific mutations. The graph input bit checks indexed leaves, not server-side
+container identity or length. Client shape checks require a Structure, a Leaves
+Array of length two and the specified leaves, not the complete property set or
+original Seen metadata. They do not establish every alias relationship, repeated
 child identity, arbitrary graph topology, or an object-identity oracle.
 
-## One independent token, no success exception
+## Historical measurement encoding, no success exception
 
 The complete token grammar is `dn.v1:[0-2]{6}[0-8]{2}`, matched as a whole string.
 It contains eight ASCII digits after `dn.v1:` and is exactly 14 ASCII bytes.
@@ -93,12 +133,14 @@ as a bitmask with weights 1, 2 and 4. `8` means a caught error or incomplete
 operation. It is not a mask of three false facts; that mask is `0`. Any exception
 in the call or its required client checks yields the error/incomplete code,
 not a partially completed semantic observation. Raw error descriptions and
-arbitrary returned values never enter the token. No concrete token is designated
-as a native expectation at this stage.
+arbitrary returned values never enter the token. The independently captured
+`dn.v1:22222277` is now the strict136 migration oracle. Error codes identify
+neither a failing phase nor whether mutation occurred before the error.
 
-The historical marker helper retains its strict 135-value contract. The ordinary
-measurement runner rejects every completed marker, including an omitted-token
-135-value marker and the intended 136-value capture; it cannot claim success. The temporary finite `date_null` diagnostic may expose the
+In the measured PR99 checkpoint, the marker helper retained strict135 and the
+ordinary runner rejected every completed marker, including an omitted-token
+135-value marker and the intended 136-value capture. It could not claim success.
+The temporary finite `date_null` diagnostic could expose the
 token only for a source/module-bound, nonce/schema/phase/witness-valid, complete
 136-value marker whose first 135 values match exactly by both type and value.
 The extra field must satisfy the whole token grammar. This is only the expected
@@ -125,7 +167,7 @@ captured under those gates. It does not turn the rejected run into parity,
 validate an unimplemented copier, or imply that later full-client/Async lanes
 ran. Missing or failed observations must remain visible as such.
 
-## Exact source inverse and temporary host preflight
+## Exact source identity and migration of host preflight
 
 The restored strict135 baseline source SHA-256 is
 `c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413`.
@@ -133,17 +175,28 @@ The compact measurement source is pinned as
 `56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751`;
 its generated native module is pinned as
 `840b3d19ef6eb100af3cc685788692eec7f6aec863518b003046beae995b8062`.
-These are source identities, not native execution evidence.
+These exact source/module identities are bound to the audited capture above.
+The semantic core SHA-256 is
+`1b6c51fba57161907d26d78b3c96d317ff1f4b65098d6bf5a0815ed5fb575a70`.
 
-While the copier has not been extended, the temporary host preflight executes
-only the exact hash-restored baseline. The inverse must require the full new
+The measured checkpoint's temporary host preflight executed only the exact
+hash-restored strict135 baseline. The inverse must require the full new
 source hash, the unique exact added helper block and append call, the exact
 compact-writer replacement, the unchanged final initializer tail, and the final
 restored baseline hash. A modified or partial source is rejected, not repaired
-heuristically. This proves the old strict135 behavior independently; it does
-not execute or establish host/native parity for the new Date/Null operations.
+heuristically. That proved old strict135 behavior independently; it did not execute or
+establish host/native parity for the new Date/Null operations.
 
-The native measurement still runs the complete new literal source. Source,
+The strict136 host preflight now executes the exact whole staged BSL bytes,
+including all Date/Null helpers, the append call and the unchanged native compact
+writer definition. `ВычислитьПробу()` does not invoke the marker writer body, so
+no source stripping, writer replacement or new interpreter API is needed.
+Local comparison of all 136 typed values, including the observed token, passed.
+Fresh native strict136 acceptance remains pending. The measured BSL and native
+generated module stay exact. `date_null_shared_source` is retained only as the
+exact historical four-adapter/source-archaeology inverse, never for preflight.
+
+The native measurement ran the complete literal source. Source,
 generated module and native roundtrip identities remain part of evidence
 binding. The four historical full-client adapter modules must be regenerated
 from the exact restored baseline and remain byte-identical. The Async8 template,
@@ -177,8 +230,10 @@ target version is not execution evidence for Linux 8.3.27.1508.
 The native entered-marker write exercises this dependency before measurement.
 If the constructor, enum or argument is unavailable, the run cannot produce the
 required valid entered/completed evidence. There is no fallback to the default
-format. A source-bound native entered/completed capture is still needed to check
-availability and actual bytes on the pinned platform.
+format. The audited source-bound entered and completed marker paths establish
+that this native dependency executed on the pinned target and both markers
+passed the unchanged bounded reader. The private marker bytes and exact byte
+length were not exported; the audit does not report a measured compact size.
 
 The private read cap remains **2048 bytes**. A compact Python model of all
 135 baseline values plus the token is 1359 bytes, whereas the conservative
@@ -190,31 +245,54 @@ caps remain 8192/32768 bytes; source binding, security checks, process limits,
 credentials and existing comparator exceptions are not relaxed. Current production
 serializers with a schema-valid finite capture or a discarded-token record with
 maximum existing process diagnostics, plus conservative later-data majorants,
-bound stage wire at 7961/8192 bytes and the public summary at
-32147/32768 bytes. Later observations are retained only to make this an upper
-bound: the rejected ordinary probe cannot actually reach those later lanes.
+bounded the measurement stage wire at 7961/8192 bytes and public summary at
+32147/32768 bytes. The actual capture report is 19424 bytes; re-encoding its
+stage with the production wire serializer gives 6749 bytes. These are public
+report sizes, not the private marker size. Later observations were retained only
+to make the model an upper bound: the rejected ordinary probe could not reach
+those lanes. The final strict136 candidate needs its own unchanged-cap checks.
 
-## Boundaries and acceptance after measurement
+## Bounded runtime policy and pending acceptance
 
-This checkpoint adds no runtime behavior. It does not broaden Date arithmetic,
-precision, timezone or range handling; Null operations; supported collection
-types; cycles; form/module state; database/query; RPC; NoContext/dual semantics;
-Async behavior; non-Val property/index sinks; or exception-copyback rules.
-Existing rejection guards outside the measured leaf subset remain in force.
+The separate runtime candidate may extend only the existing packet copier's
+leaf cases:
 
-The required next sequence is:
+- Preserve the exact canonical `NULL` singleton. Do not admit arbitrary Null-like
+  objects or additional platform-object types.
+- Admit exact `BSLDate` values only when `boundary` is false, ticks are an exact
+  integer with `0 < ticks < MAX_TICKS`, and ticks represent a whole second.
+  Fractional ticks, either endpoint (even without a boundary flag), boundary
+  sentinels, subclasses and malformed date-like objects remain outside this
+  local transfer subset.
 
-1. Obtain a genuine, source-bound native capture on the pinned target, retaining
-   the exact source/module/roundtrip and artifact identities.
-2. Independently audit all eight observations and their finite encoding,
-   original 135 typed values, writer availability and evidence gates. Do not
-   infer missing native answers or convert an error code into a passing result.
-3. Implement only the bounded Date/Null transfer behavior justified by that
-   audit, with corresponding positive and negative tests and existing guards.
-4. Remove the temporary diagnostic and host-preflight exception. Execute the
-   complete final source on host and native and require strict **136-value**
-   typed equality, including the independently audited token. Recheck native
-   evidence, full local tests and required CI against that final source.
+This is a deliberately bounded **local transfer policy**, not a claim that native
+1C rejects those excluded dates or that every interior date has been sampled.
+It is not a year whitelist: interior whole-second values are not restricted to
+2024 and 2031. The native evidence covers the two stated values and graphs;
+additional allowed years/range limits require local tests, not invented native
+observations.
 
-A measurement-only rejected capture, synthetic schema token, restored strict135
-preflight or historical native run cannot satisfy the final strict136 gate.
+Existing Array/Structure graph-copy invariants and guards remain unchanged,
+including cycle/repeated-identity handling and unsupported object rejection.
+The slice does not broaden collection types, Date arithmetic/timezones/precision,
+Null operations, property/index copyback sinks, exception copyback, module state,
+database/query, or transport. There is no separate native Date/Null proof for
+NoContext, dual, or Async. Reusing the packet copier must not be represented as
+such a measurement, and existing Async8 sources/identities must remain unchanged.
+
+The remaining acceptance sequence is:
+
+1. Complete and independently review the bounded copier and its positive/negative
+   local tests. The native measurement and its audit are already complete.
+2. Keep temporary diagnostic acceptance and baseline-only preflight removed.
+   The exact whole-source **136-value** host preflight has passed without any
+   source transformation or suppression of Date/Null operations or definitions.
+3. Obtain fresh native strict136 acceptance against the final runtime/harness
+   tree; require the original 135 typed values plus the captured token exactly.
+   Preserve all four full-client adapters, Async8 identities, security limits,
+   cleanup gates and historical comparison exceptions.
+4. Pass the complete local aggregate, binary smoke and required native/OS CI.
+
+Fresh native and final acceptance gates remain pending. Neither the rejected
+PR99 capture, a synthetic token, restored strict135 preflight nor historical
+main acceptance satisfies them.
