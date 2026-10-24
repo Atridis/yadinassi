@@ -19,6 +19,7 @@ from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
 HELPERS=ROOT/'scripts/native_1c_db_oracle'
 if str(HELPERS) not in sys.path: sys.path.insert(0,str(HELPERS))
+sys.path.insert(0,str(ROOT/'yadinassi/storage'))
 import protocol as protocol
 from snapshots import DatabaseEntryError, ENTRY_CLASSES, ENTRY_SHAPES, OracleError
 SPEC=importlib.util.spec_from_file_location('db_oracle_controller_under_test',HELPERS/'run.py')
@@ -31,15 +32,17 @@ def provenance():
         'platform':'linux/amd64','actual_version':None,'locale':'ru_RU.UTF-8','timezone':'Etc/UTC'}
 
 
-def physical(tag='fixture'):
-    return {'bytes':4,'sha256':hashlib.sha256(tag.encode()).hexdigest(),
-        'header':'unknown','page_analysis':'unsupported'}
+def physical(tag='fixture', *, database=False):
+    return {'bytes':12288,'sha256':hashlib.sha256(tag.encode()).hexdigest(),
+        'header':({'status':'header_layout_match','version':[8,3,8,0],
+                   'page_size':4096,'page_count':3} if database else 'unknown'),
+        'page_analysis':'unsupported'}
 
 
 def comparison():
-    counts={'changed_bytes':0,'unchanged_bytes':4,'added_bytes':0,'removed_bytes':0,
+    counts={'changed_bytes':0,'unchanged_bytes':12288,'added_bytes':0,'removed_bytes':0,
         'size_delta':0,'changed_windows':0}
-    return {'predecessor_bytes':4,'control_bytes':4,'treatment_bytes':4,'control':counts.copy(),
+    return {'predecessor_bytes':12288,'control_bytes':12288,'treatment_bytes':12288,'control':counts.copy(),
         'treatment':counts.copy(),'byte_windows':{'window_bytes':65536,'count':1,
             'overlap_count':0,'control_only_count':0,'treatment_only_count':0,
             'overlap_sample':[],'control_only_sample':[],'treatment_only_sample':[]},
@@ -62,7 +65,7 @@ class FixtureNative:
     def freeze(self,database,identifier):
         self.event('freeze',database,identifier)
         self.dbs[identifier]=self.dbs.pop(database)
-        return physical(identifier)
+        return physical(identifier, database=True)
     def observe(self,identifier,designer):
         self.event('observe_clone',identifier,designer)
         data=self.dbs[identifier]; assert data['designer']==designer
@@ -91,7 +94,7 @@ class FixtureNative:
     def compare_pair(self,source,treatment):
         self.event('compare_pair',source,treatment)
         paired=comparison()
-        return {'predecessor_bytes':4,'treatment_bytes':4,'treatment':paired['treatment'],
+        return {'predecessor_bytes':12288,'treatment_bytes':12288,'treatment':paired['treatment'],
             'byte_windows':{'window_bytes':65536,'count':1,'changed_count':0,'changed_sample':[]},
             'interpretation':'observational_before_after_not_causation'}
     def export_configs(self): self.event('export_configs_from_baseline')

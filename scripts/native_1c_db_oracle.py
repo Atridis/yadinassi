@@ -21,6 +21,7 @@ sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[1]
 HELPERS=ROOT/'scripts/native_1c_db_oracle'
 sys.path.insert(0,str(HELPERS))
+sys.path.insert(0,str(ROOT/'yadinassi/storage'))
 from protocol import (CHECKS, IMAGE, MAX_REPORT_BYTES, STAGES, decode, empty_report,
     encode, require, validate_report)
 from snapshots import OracleError

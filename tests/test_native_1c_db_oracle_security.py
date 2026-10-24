@@ -45,7 +45,7 @@ def _load(name, path):
 # and generic module names so collection order cannot redirect unrelated tests.
 _saved_path = sys.path[:]
 _saved_bytecode = sys.dont_write_bytecode
-_names = ('protocol', 'snapshots', 'inputs', 'inject_metadata', 'inject_modules', 'native_1c_smoke')
+_names = ('protocol', 'snapshots', 'inputs', 'inject_metadata', 'inject_modules', 'native_1c_smoke', 'filedb')
 _saved_modules = {name: sys.modules.get(name) for name in _names}
 try:
     sys.path[:0] = [str(HELPERS), str(ROOT / 'scripts'), str(ROOT / 'scripts/native_1c_bootstrap')]
@@ -133,6 +133,7 @@ class SourceCase(unittest.TestCase):
 class InputSecurityTests(SourceCase):
     def test_exact_reviewed_source_manifest_and_hashes(self):
         expected = {
+            'yadinassi/storage/filedb.py': 'filedb.py',
             'scripts/native_1c_db_oracle.py': 'host.py',
             **{'scripts/native_1c_db_oracle/' + name: name for name in (
                 'probe.sh', 'run.py', 'protocol.py', 'snapshots.py', 'inject_metadata.py', 'inputs.py',

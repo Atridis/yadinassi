@@ -22,6 +22,9 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
+# Staged as a standalone source-pinned standard-library module. Do not import
+# yadinassi.__init__: native measurement must not load the Interpreter runtime.
+from filedb import decode_header, InspectionStatus
 from protocol import (ARTIFACTS, CHECKS, COMPARISONS, FAILURES, IMAGE, LANE, MAX_REPORT_BYTES,
     BASELINE_FAILURES, BASELINE_OPERATIONS, BOOTSTRAP_INVENTORY_FAILURES, DIAGNOSTIC_ENTRY_CLASSES,
     INVENTORY_PHASES, INVENTORY_REGIONS, INVENTORY_REASONS,
@@ -126,6 +129,16 @@ def native_file_summary(path):
     summary=file_summary(path)
     require(summary['bytes']>0,'artifact_missing')
     return summary
+
+
+def database_header_facts(raw, size):
+    """Finite facts only; unknown versions and invalid geometry fail closed."""
+    result = decode_header(raw, size, max_pages=MAX_FILE_BYTES // 4096,
+                           max_file_bytes=MAX_FILE_BYTES)
+    require(result.status is InspectionStatus.HEADER_LAYOUT_MATCH, 'invalid_header')
+    header = result.header
+    return {'status':'header_layout_match', 'version':list(header.version),
+            'page_size':header.page_size, 'page_count':header.page_count}
 
 
 def zero_result(path):
@@ -568,7 +581,8 @@ class Native:
                      and database==self.artifacts/'seed'
                      and self.provenance['actual_version']==VERSION)
             summary=freeze_database(database,target,quiescent=self.quiescent,
-                                    capture_source_name=capture)
+                                    capture_source_name=capture,
+                                    header_decoder=database_header_facts)
             self.budgets()
         # Removal has its own boundary; never relabel it as a freeze failure.
         self.remove(database)

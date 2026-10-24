@@ -11,6 +11,7 @@ from protocol import IMAGE, decode, exact, require
 from snapshots import OracleError
 
 SOURCE_FILES = {
+    'yadinassi/storage/filedb.py':'filedb.py',
     'scripts/native_1c_db_oracle.py':'host.py',
     **{f'scripts/native_1c_db_oracle/{name}':name for name in (
         'probe.sh','run.py','protocol.py','snapshots.py','inject_metadata.py','inputs.py',

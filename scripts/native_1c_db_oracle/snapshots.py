@@ -1,7 +1,8 @@
 """Bounded physical evidence for disposable, synthetic file infobases.
 
-This is deliberately not a 1CD/CF/DT parser. Every header is unknown; fixed
-64-KiB *byte windows* are not database pages, and differences imply no cause.
+Only an explicitly supplied bounded decoder may inspect a frozen 1CD header.
+CF/DT remain opaque. Fixed 64-KiB *byte windows* are not database pages, and
+differences imply no cause. Header geometry is not database validity.
 The controller owns process supervision: matching hashes cannot establish
 quiescence. Frozen copies must never be passed to a native platform process.
 
@@ -235,7 +236,7 @@ def _unchanged(path: Path, descriptor: int, initial: os.stat_result, parent: int
         raise OracleError("snapshot_changed") from None
 
 
-def _digest(descriptor: int, size: int) -> str:
+def _digest(descriptor: int, size: int, prefix: bytearray | None = None) -> str:
     os.lseek(descriptor, 0, os.SEEK_SET)
     digest = hashlib.sha256()
     count = 0
@@ -246,6 +247,8 @@ def _digest(descriptor: int, size: int) -> str:
         count += len(chunk)
         if count > size or count > MAX_FILE_BYTES:
             raise OracleError("snapshot_changed")
+        if prefix is not None and len(prefix) < 24:
+            prefix.extend(chunk[:24 - len(prefix)])
         digest.update(chunk)
     if count != size:
         raise OracleError("snapshot_changed")
@@ -257,18 +260,33 @@ def _summary(size: int, digest: str) -> dict:
             "page_analysis": "unsupported"}
 
 
-def file_summary(path: Path) -> dict:
-    """Hash a stable regular file without interpreting or returning any bytes."""
+def file_summary(path: Path, *, header_decoder: Callable | None = None) -> dict:
+    """Hash a stable file; optionally decode its verified, bounded prefix.
+
+    The internal decoder is source-pinned by the oracle, not selected by input.
+    It is called only after both passes and identity checks, using no new open.
+    Generic artifact summaries never decode or return payload bytes.
+    """
+    if header_decoder is not None and not callable(header_decoder):
+        raise OracleError("invalid_input")
     path = _path(path)
     try:
         with _file(path) as (descriptor, initial, parent):
-            digest = _digest(descriptor, initial.st_size)
+            first = bytearray() if header_decoder is not None else None
+            second = bytearray() if header_decoder is not None else None
+            digest = (_digest(descriptor, initial.st_size) if first is None
+                      else _digest(descriptor, initial.st_size, first))
             _unchanged(path, descriptor, initial, parent)
             # A second bounded pass rejects content changes even if metadata lies.
-            if _digest(descriptor, initial.st_size) != digest:
+            repeated = (_digest(descriptor, initial.st_size) if second is None
+                        else _digest(descriptor, initial.st_size, second))
+            if repeated != digest or first != second:
                 raise OracleError("snapshot_changed")
             _unchanged(path, descriptor, initial, parent)
-            return _summary(initial.st_size, digest)
+            result = _summary(initial.st_size, digest)
+            if header_decoder is not None:
+                result["header"] = header_decoder(bytes(first), initial.st_size)
+            return result
     except OSError:
         raise OracleError("snapshot_changed") from None
 
@@ -459,7 +477,8 @@ def _write_all(descriptor: int, chunk: bytes) -> None:
 
 def _copy_database(source: Path, destination: Path, root: Path,
                    quiescent: Callable[[], bool] | None, *, frozen: bool,
-                   capture_source_name: bool = False) -> dict:
+                   capture_source_name: bool = False,
+                   header_decoder: Callable | None = None) -> dict:
     source_file = source / DATABASE_NAME
     with _directory(source) as source_dir, _directory(destination.parent) as dest_parent:
         source_inventory = _database_contents(source_dir, allow_ancillary=frozen,
@@ -519,8 +538,13 @@ def _copy_database(source: Path, destination: Path, root: Path,
                 finally:
                     os.close(writer)
                 # Read the actual destination, not just the stream sent to write().
-                result = file_summary(destination / DATABASE_NAME)
-                if result != _summary(initial.st_size, before_digest):
+                result = (file_summary(destination / DATABASE_NAME)
+                          if header_decoder is None else
+                          file_summary(destination / DATABASE_NAME, header_decoder=header_decoder))
+                # The same destination bytes supply digest and header facts.
+                # Preserve the existing complete opaque-summary comparison.
+                opaque = dict(result, header="unknown")
+                if opaque != _summary(initial.st_size, before_digest):
                     raise OracleError("snapshot_changed")
                 actual = os.stat(DATABASE_NAME, dir_fd=dest_dir, follow_symlinks=False)
                 if _signature(actual) != _signature(written):
@@ -539,7 +563,8 @@ def _copy_database(source: Path, destination: Path, root: Path,
 
 
 def freeze_database(source_dir: Path, dest_dir: Path, *,
-                    quiescent: Callable[[], bool], capture_source_name: bool = False) -> dict:
+                    quiescent: Callable[[], bool], capture_source_name: bool = False,
+                    header_decoder: Callable | None = None) -> dict:
     """Freeze a closed database; source and destination must be direct siblings.
 
     Their private parent is the live-byte budget root. ``quiescent`` must prove
@@ -549,14 +574,16 @@ def freeze_database(source_dir: Path, dest_dir: Path, *,
     Optional basename diagnostics apply only to the first source inventory;
     they never authorize an otherwise rejected entry or inspect its content.
     """
-    if type(capture_source_name) is not bool:
+    if (type(capture_source_name) is not bool
+            or header_decoder is not None and not callable(header_decoder)):
         raise OracleError("invalid_input")
     source, destination = _path(source_dir), _path(dest_dir)
     if source == destination or source.parent != destination.parent or not callable(quiescent):
         raise OracleError("invalid_input")
     try:
         return _copy_database(source, destination, source.parent, quiescent, frozen=True,
-                              capture_source_name=capture_source_name)
+                              capture_source_name=capture_source_name,
+                              header_decoder=header_decoder)
     except OSError:
         raise OracleError("snapshot_changed") from None
 

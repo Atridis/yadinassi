@@ -1,12 +1,16 @@
-# Synthetic native file-database oracle, version 1
+# Synthetic native file-database oracle, version 2
 
-Status: implementation and offline fixtures, **not yet native evidence**. This is
-an independent opt-in experiment, not a 1CD/CF/DT parser, writer, or runtime DB
-implementation. Existing six-scenario outputs, caps, goldens, bootstrap and CI
-acceptance remain unchanged.
+Header integration and offline fixtures do not establish native evidence.
+A fresh source-bound run is required before claiming measured compatibility for
+version 2. The new decoder checks only frozen 1CD header geometry; it does not
+parse tables, rows or CF/DT, or implement writes or runtime DB behavior. The
+independent native experiment still exercises the unchanged CRUD lifecycle.
+Existing six-scenario outputs, caps, goldens, bootstrap and CI acceptance remain
+unchanged. Historical version 1 reports did not decode headers and cannot
+retroactively validate this implementation.
 
 The original fixture contains one non-hierarchical catalog, NativeOracleItems:
-Code `K1`, Payload String(32), Amount Number(9,2). The only v2 schema change is
+Code `K1`, Payload String(32), Amount Number(9,2). The only metadata-v2 change is
 Payload String(64), retaining every object/attribute UUID, role and module.
 There are no registers, third-party configurations, supplied binary inputs or
 production data. Native 1C is the generator and semantic oracle, not a dependency
@@ -82,6 +86,32 @@ comparisons: four matched controls (create/update/load/delete), one observationa
 apply pair. All accepted states are checked again by the host against the exact
 expected lifecycle. Failed runs stop dependent execution, retain only validated
 partial observations and expose no ready CF/DT artifact summaries.
+
+Version 2 retains this exact semantic lifecycle. Each successful frozen DB
+snapshot additionally contains a finite `physical.header` object with
+`status=header_layout_match`, a supported storage-format version, page size and
+page count. Only exact formats `8.2.14.0` (4096-byte pages) and `8.3.8.0`
+(4096/8192/16384/32768/65536-byte pages) are recognized. These are not the
+installed platform version. Page count must be at least three and agree exactly
+with physical length. A match is not proof of database validity or integrity.
+Unknown versions, invalid layouts and policy failures stop the owning existing
+stage with `invalid_header`; rejected header bytes never leave the container.
+
+The shared standard-library decoder source `yadinassi/storage/filedb.py` is
+included in the exact provenance manifest and staged as standalone `filedb.py`.
+It does not import the yadinassi package, Interpreter or native runtime. Prefixes
+are captured during both existing destination digest passes, at most 24 bytes
+each, from the same already anchored no-follow descriptor. Both hashes and
+prefixes must match and all existing file/ancestor checks still apply. There is
+no new payload open, additional native command, or path-based inspection race.
+
+The report alone becomes `schema=2`, `lane=native-file-db-oracle-v2`. BSL markers,
+completion markers, control data and invocation retain their independent schema
+1. CF/DT summaries retain the exact four-field opaque shape with `header=unknown`.
+All summaries retain `page_analysis=unsupported`; comparison windows remain
+64-KiB byte windows, not storage pages. Report/file/live-byte/time caps and
+cleanup acceptance are unchanged. Historical v1 reports must be audited with
+their matching source revision, not silently accepted as v2 header evidence.
 
 Setup alone uses the privileged SessionModule and never performs catalog CRUD.
 The ordinary dispatcher is a non-privileged server common module. CRUD does not
@@ -299,8 +329,9 @@ not a change to runtime Null behavior or native evidence. Run
 localized a nonzero exit to bootstrap, but did not identify its cause. The
 transport correction is not a proven repair until fresh native evidence passes.
 
-Version 1 deliberately classifies all binary headers as unknown and page analysis
-as unsupported. Differences are streamed as **64 KiB byte windows, not pages**.
+Historical version 1 classified all binary headers as unknown. Version 2 checks
+only the bounded frozen DB header; CF/DT headers remain unknown and page analysis
+remains unsupported. Differences are streamed as **64 KiB byte windows, not pages**.
 Changed/added/removed bytes, size deltas and bounded sample indices are validated.
 Control/treatment overlap is an observation, not causal subtraction or proof of
 row-page locations. Deletion need not shrink a database; a restored DB need not

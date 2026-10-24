@@ -105,7 +105,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(len(BOOTSTRAP_INVENTORY_FAILURES),64)
         self.assertFalse(SEED_FAILURES & BOOTSTRAP_INVENTORY_FAILURES)
         self.assertTrue(BOOTSTRAP_INVENTORY_FAILURES <= protocol.FAILURES)
-        self.assertEqual(protocol.SCHEMA,1)
+        self.assertEqual(protocol.SCHEMA,2)
         self.assertEqual(protocol.MAX_REPORT_BYTES,32768)
 
     def test_every_seed_failure_roundtrips_only_as_unaccepted_seed_diagnosis(self):
@@ -274,7 +274,7 @@ class ProtocolTests(unittest.TestCase):
     def test_same_state_control_can_have_physical_churn_without_causation_claim(self):
         value=copy.deepcopy(self.good); item=value['comparisons'][0]['physical']
         for side in ('control','treatment'):
-            item[side].update(changed_bytes=1,unchanged_bytes=3,changed_windows=1)
+            item[side].update(changed_bytes=1,unchanged_bytes=12287,changed_windows=1)
         item['byte_windows'].update(overlap_count=1,overlap_sample=[0])
         self.check(value)
         self.assertEqual(item['interpretation'],'physical_byte_differences_not_causation')
