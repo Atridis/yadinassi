@@ -686,7 +686,14 @@ class Native:
                 if summary != {key: postimage[key] for key in ('bytes', 'sha256')}:
                     raise comparison.ComparisonFailure('io_or_change', 'postimage_changed')
                 # The complete parse above has never seen native names.
-                native, projected = comparison.project_catalog(catalog, data['storage_names'])
+                try:
+                    native, projected = comparison.project_catalog(catalog, data['storage_names'])
+                except comparison.ComparisonFailure as error:
+                    if type(error) is comparison.ComparisonFailure and (error.category, error.code) == ('name_mismatch', 'missing_table'):
+                        raise comparison.missing_table_failure(catalog,
+                            {'marker': data, 'origin': origin, 'postimage': summary},
+                            nonce=self.nonce, provenance=self.provenance, baseline=baseline) from None
+                    raise
                 evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
             except BaseException:
                 try: self.remove(frozen)

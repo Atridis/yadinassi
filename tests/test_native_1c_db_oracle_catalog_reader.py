@@ -92,7 +92,7 @@ class StandaloneCatalogTests(unittest.TestCase):
             "assert callable(snapshots.inspect_frozen_catalog); "
             "assert filedb_catalog.CatalogLimits().max_read_bytes == 64 * 1024 * 1024")
         with tempfile.TemporaryDirectory() as temp:
-            target = Path(temp)
+            target = Path(temp).resolve()
             (target / 'filedb_catalog.py').write_bytes(
                 (ROOT / 'yadinassi/storage/filedb_catalog.py').read_bytes())
             (target / 'snapshots.py').write_bytes(
@@ -322,15 +322,38 @@ class PinnedCatalogTests(unittest.TestCase):
         self.assert_kind('snapshot_changed', lambda: self.inspect(read_catalog=replaced))
 
     def test_replaced_frozen_directory_is_rejected_even_on_reader_failure(self):
+        moved = self.root / 'moved'
+        identity_rejections = []
+        check_directory = snapshots._check_directory
+
+        def checked(path, descriptor):
+            try:
+                return check_directory(path, descriptor)
+            except snapshots.OracleError as error:
+                old, new = os.fstat(descriptor), path.stat()
+                self.assertEqual(error.kind, 'snapshot_changed')
+                self.assertNotEqual((old.st_dev, old.st_ino), (new.st_dev, new.st_ino))
+                self.assertEqual(stat.S_IMODE(old.st_mode), 0o500)
+                self.assertEqual(stat.S_IMODE(new.st_mode), 0o500)
+                identity_rejections.append(True)
+                raise
+
         def replaced(read_at, size, *, limits):
             reader.read_catalog(read_at, size, limits=limits)
-            self.frozen.rename(self.root / 'moved')
+            # macOS requires the directory itself to be writable for this attack.
+            self.frozen.chmod(0o700)
+            self.frozen.rename(moved)
+            moved.chmod(0o500)
             self.frozen.mkdir()
             (self.frozen / snapshots.DATABASE_NAME).write_bytes(self.data)
             (self.frozen / snapshots.DATABASE_NAME).chmod(0o400)
             self.frozen.chmod(0o500)
             raise reader.InvalidStructure('PRIVATE')
-        self.assert_kind('snapshot_changed', lambda: self.inspect(read_catalog=replaced))
+        with mock.patch.object(snapshots, '_check_directory', side_effect=checked):
+            self.assert_kind('snapshot_changed', lambda: self.inspect(read_catalog=replaced))
+        self.assertTrue(identity_rejections)
+        self.assertEqual((moved / snapshots.DATABASE_NAME).read_bytes(), self.data)
+        self.assertEqual(self.path.read_bytes(), self.data)
 
     def test_reader_callback_is_bounded_and_cannot_outlive_the_descriptor(self):
         callbacks = []

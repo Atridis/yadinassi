@@ -1,6 +1,6 @@
 # Minimal native-versus-physical catalog comparison
 
-Design approved for separate local implementation; publication remains gated. Start a separate source-only candidate from PR #102 head `68716d6c4cc6689928deb92775f35b0725148336`, tree `88af273e72e77ab2674019dae51ee5490e30d433`. Preserve that frozen 420-file candidate. No publication or new CI until PR #102 merges and parent follow-through gates are satisfied.
+The original comparison implementation started from PR #102 head `68716d6c4cc6689928deb92775f35b0725148336`, tree `88af273e72e77ab2674019dae51ee5490e30d433`, preserving that frozen 420-file candidate. PR #102 is now merged. The names-only rejected-run diagnostic below is a separate candidate based on the published PR #103 comparison source; it does not modify either frozen predecessor or relax publication and review gates.
 
 ## What the next run must establish
 
@@ -20,7 +20,7 @@ Export a small native projection: target plus a list of `{name, fields:[name,...
 
 ## Bind the native observation to the actual reader input
 
-Current schema-3 binding is only baseline ancestry: `audit_contract` runs on a writable `auditor` clone and deletes it before the controller binds its observation to the baseline digest. Native startup/shutdown may change clone bytes. Reading the original baseline would not prove a same-file comparison.
+The previous schema-3 binding was only baseline ancestry: `audit_contract` runs on a writable `auditor` clone and deletes it before the controller binds its observation to the baseline digest. Native startup/shutdown may change clone bytes. Reading the original baseline would not prove a same-file comparison.
 
 Within the existing baseline stage:
 
@@ -43,7 +43,7 @@ Use a new schema/lane rather than retroactively upgrading schema-3 shape evidenc
 
 The postimage claim is explicitly the closed post-session image, not byte identity with baseline or the native execution-time file. Reject duplicate parser-side table/field names before set/dict conversion.
 
-Preserve distinct finite reader outcomes for unsupported layout, supported-subset sharing policy, structural rejection, resource limit, I/O/change, and name mismatch. Validate error class and an allowlisted finite code as a pair; never forward an arbitrary CatalogError.code. Do not export exception text, raw descriptor context, or partial successful projections. Failure/cleanup failure cannot retain a successful comparison; at most a fixed category/code survives for diagnosis.
+Preserve distinct finite reader outcomes for unsupported layout, supported-subset sharing policy, structural rejection, resource limit, I/O/change, and name mismatch. Validate error class and an allowlisted finite code as a pair; never forward an arbitrary CatalogError.code. Do not export exception text, raw descriptor context, or partial successful projections. Failure/cleanup failure cannot retain a successful comparison. Ordinary failures retain only a fixed category/code; the source-bound, names-only rejected-run diagnostic below is a narrow synthetic-fixture exception and is stripped on cleanup failure.
 
 ## Bounds and gates
 
@@ -64,3 +64,31 @@ This leaves 2947 bytes below the unchanged 32768-byte limit. These local proofs
 do not establish a native comparison result; the fresh exact-source native run
 and independent artifact audit remain required. The production reader is
 unchanged from PR #102.
+
+## Rejected-run names diagnostic
+
+The first native comparison, run 40122436147 at PR #103 head
+`85bc9328e2368ca1fd9a8141c8657a109cb71fa6`, rejected with
+`name_mismatch/missing_table` after a complete reader return and postimage check.
+Its archived finite report does not reveal either table-name representation;
+no normalization or root-mapping explanation is inferred from that result.
+
+A separate candidate adds an exact capture-schema-2 failure variant while
+preserving report schema 4, strict comparison and production reader bytes.
+It retains the complete source/nonce/token/origin/postimage binding and emits
+only the selected native table names and complete parsed table-name inventory
+from the controlled synthetic disposable DB. The native list is 1..4 names;
+the parser list is 0..64 names with duplicates preserved. Both are sorted,
+counts must equal list lengths, every identifier matches
+`[A-Za-z_][A-Za-z0-9_]{0,63}`, and both lists together have at most 2048 ASCII
+characters. No fields, classifiers, candidate selection, raw descriptor bodies,
+row values, index bytes or physical offsets are included.
+
+Enumeration is all-or-nothing. Unsupported identifiers and exhausted limits
+produce finite bare failures, never a truncated inventory. The names capture
+is valid only for the original strict missing-table rejection, after complete
+hash/read/hash inspection and successful required cleanup; late host cleanup
+failure removes it. It remains failed and `native_compatibility=not_claimed`.
+The executable proof must charge the complete report and the enforced 12288-byte
+capture ceiling, not only the new name lists. Local tests and review do not
+replace a fresh source-bound native diagnostic run.

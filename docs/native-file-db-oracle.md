@@ -141,8 +141,10 @@ fixed target and complete `{name, fields:[...]}` entries. Names are used exactly
 case-sensitively, with no guessed physical names, prefix stripping or type-code
 mapping. Duplicate names are rejected before set/dictionary conversion. Native
 tables must each match exactly one parsed table and all its parsed field names;
-extra unrelated catalog tables stay private. Ordering is canonicalized only for
-comparison. Unsupported naming conventions fail honestly, never by accepting a
+extra unrelated catalog tables stay private in a successful comparison. The
+strictly bounded synthetic-only failure diagnostic below is a separate exception
+for table names, never descriptor bodies or field/row data. Ordering is
+canonicalized only for comparison. Unsupported naming conventions fail honestly, never by accepting a
 partial match or applying an undocumented normalization.
 
 The writable auditor clone's pre-launch digest must equal the frozen baseline.
@@ -176,7 +178,7 @@ leaving 2947 bytes below the unchanged ceiling. Changing source inventory or
 outer widths requires a new complete proof, not only a sub-payload check.
 
 An accepted report requires the narrow match verdict and every original
-lifecycle/cleanup gate. Failed comparisons retain at most validated finite
+lifecycle/cleanup gate. Failed comparisons ordinarily retain validated finite
 category/code pairs: unsupported layout, conservative sharing policy, structural
 rejection, resource exhaustion, source I/O/change, or name mismatch. Arbitrary
 `CatalogError.code` values and exception text are never exported. A later
@@ -189,6 +191,45 @@ actual unchanged reader execution on a synthetic frozen descriptor, binding and
 mutation failures, complete name matching, cleanup and report limits. These are
 local mechanics, not native compilation or native physical compatibility. The
 approved comparison design is in [the focused design note](file-db-native-catalog-comparison-design.md).
+
+### Complete names-only diagnostic for a rejected synthetic comparison
+
+Native run 40122436147 on commit
+`85bc9328e2368ca1fd9a8141c8657a109cb71fa6` reached the completed reader and
+postimage check, then failed baseline with `name_mismatch/missing_table`.
+Its finite failure report contains no names and cannot establish the actual
+naming or mapping cause. It is not native comparison acceptance.
+
+A separate exact failure-capture variant (`storage_contract.schema=2`) may retain
+a complete names-only observation for this specific rejection. The report stays
+schema 4, status failed, reader failed and native compatibility not claimed.
+The capture binds the same source manifest, reader source, operation nonce/token,
+platform version, baseline auditor origin and closed frozen postimage as the
+comparison. This is restricted to the harness's own synthetic disposable DB,
+not an external or production database.
+
+The diagnostic contains the complete selected native table-name list (1..4) and
+complete parsed table-name inventory (0..64), sorted without silently removing
+parser duplicates. Counts must equal list lengths. Every name must match
+`[A-Za-z_][A-Za-z0-9_]{0,63}` and both lists together may contain at most 2048
+ASCII characters. All names are observed literally. There is no case conversion,
+prefix stripping, candidate selection, relation classifier, field-name export,
+row value, raw descriptor, index byte, physical offset or interpretation of an
+unmatched name. A limit or unsupported identifier produces a finite failure
+without any partial name inventory. The existing capture/report caps still apply.
+
+The diagnostic is allowed only after the complete independent parse and exact
+same-descriptor postimage checks. Required native/raw cleanup must pass before
+container output; all four cleanup checks must pass before final host output.
+Any cleanup failure strips the names and binding to a bare finite failure.
+The strict missing-table predicate and cross-field bindings are revalidated,
+so a syntactically valid inventory cannot turn failure into acceptance. The
+producer checks the actual launch token and freeze/read digest equality; an
+offline validator cannot independently authenticate a sole token or postimage
+digest merely from valid syntax. Their authenticity also relies on pinned
+producer control flow and archived artifact digest/provenance evidence. These names
+can reveal spelling differences; their absence cannot prove incorrect root
+mapping, and they never authorize normalization or parser changes.
 
 ## Historical version 3 bounded storage-shape contract
 

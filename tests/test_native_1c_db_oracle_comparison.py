@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -25,6 +26,7 @@ import snapshots
 import test_native_1c_db_oracle_contract as historical
 import test_native_1c_db_oracle_stage as fixtures
 from test_filedb_catalog import Source, descriptor
+from test_native_1c_db_oracle_catalog_reader import normalize_owners
 from snapshots import OracleError
 
 NONCE = fixtures.NONCE
@@ -313,8 +315,9 @@ class ComparisonEnvelopeTests(unittest.TestCase):
 @unittest.skipIf(os.name == 'nt', 'POSIX pinned native harness boundary')
 class AuditedPostimageTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name); self.artifacts = self.root/'artifacts'; self.artifacts.mkdir()
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.cleanup)
+        self.root = Path(self.temp.name).resolve(); self.artifacts = self.root/'artifacts'; self.artifacts.mkdir()
+        normalize_owners(self)
         self.seed = self.artifacts/'seed'; self.seed.mkdir()
         self.pre = Source().ready(); (self.seed/'1Cv8.1CD').write_bytes(self.pre.full_bytes())
         snapshots.freeze_database(self.seed, self.artifacts/'baseline', quiescent=lambda: True)
@@ -329,9 +332,10 @@ class AuditedPostimageTests(unittest.TestCase):
             return marker(token)
         self.native.enterprise = enterprise
 
-    def tearDown(self):
+    def cleanup(self):
         for path in self.root.rglob('*'):
             if path.is_dir(): path.chmod(0o700)
+        self.temp.cleanup()
 
     def test_real_reader_runs_on_post_audit_frozen_copy_and_both_removed(self):
         with mock.patch.object(reader, 'read_catalog', wraps=reader.read_catalog) as read:
@@ -407,6 +411,32 @@ class AuditedPostimageTests(unittest.TestCase):
         self.native.stage = 'verify_restore'
         with self.assertRaises(OracleError): self.native.compare_catalog('baseline')
         self.assertEqual(self.calls, [])
+
+
+@unittest.skipIf(os.name == 'nt', 'POSIX pinned native harness boundary')
+class FixturePortabilityTests(unittest.TestCase):
+    def test_postimage_fixture_resolves_alias_and_models_native_owners(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            actual = root/'actual'; actual.mkdir()
+            alias = root/'alias'; alias.symlink_to(actual, target_is_directory=True)
+            real_fstat = os.fstat
+
+            def foreign_owner(descriptor):
+                info = real_fstat(descriptor)
+                fields = {name: getattr(info, name) for name in dir(info) if name.startswith('st_')}
+                return SimpleNamespace(**dict(fields, st_uid=501, st_gid=20))
+
+            case = AuditedPostimageTests('test_real_reader_runs_on_post_audit_frozen_copy_and_both_removed')
+            with mock.patch.object(tempfile, 'tempdir', str(alias)), \
+                    mock.patch.object(os, 'fstat', side_effect=foreign_owner):
+                result = unittest.TestResult(); case.run(result)
+                self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+                self.assertIn(actual, case.root.parents)
+                # Fixture normalization must not relax the real ownership gate.
+                with snapshots._directory(actual) as descriptor, self.assertRaises(OracleError) as caught:
+                    snapshots._database_contents(descriptor)
+                self.assertEqual(caught.exception.kind, 'invalid_input')
 
 
 def projection_size_upper_bound():
@@ -527,7 +557,7 @@ class NativeProjectionSourceTests(unittest.TestCase):
 
     def test_exact_staged_reader_imports_without_interpreter_runtime(self):
         with tempfile.TemporaryDirectory() as temporary:
-            staged = Path(temporary)/'inputs'
+            staged = Path(temporary).resolve()/'inputs'
             provenance = identity(); provenance['sources'] = inputs.source_hashes(ROOT)
             try:
                 inputs.stage_inputs(ROOT, staged, NONCE, provenance)
