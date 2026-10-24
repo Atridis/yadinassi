@@ -1,9 +1,10 @@
 # Isolated six-scenario native regression
 
-The next [infobase-context measurement](infobase-context-measurement.md) adds an
-independent finite observation to the managed client probe. Its native result
-is pending; it does not implement a database runtime API. Shared strict136 host
-preflight and the complete native measurement source are explicitly distinct.
+The [infobase-context contract](infobase-context-measurement.md) extends the
+managed client witness to strict137 using the independently audited native token.
+Current host preflight executes the unchanged full source with a genuine owned
+synthetic header and real optional file DB context. The historical strict136
+inverse remains only for legacy adapter identity and capture history.
 
 This extends the digest-pinned disposable bootstrap described in
 [native-1c-isolated-smoke.md](native-1c-isolated-smoke.md). The real bootstrap,

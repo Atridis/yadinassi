@@ -5,10 +5,43 @@ from pathlib import Path
 import sys
 
 from . import __version__
+from .database_context import FileDBContext
 from .errors import BSLError, BSLRuntimeError, IncompleteInput
 from .parser import parse
 from .runtime import Interpreter
 from .values import to_string
+
+
+_UNSUPPORTED_AUTH = "yadinassi: authentication options --user/--psw are not supported"
+_EMPTY_DATABASE = "yadinassi: --f requires a non-empty directory"
+
+
+def _option_arguments(arguments: list[str]):
+    """Visit options without interpreting BSL source or crossing ``--``."""
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--":
+            return
+        following = arguments[index + 1] if index + 1 < len(arguments) else None
+        yield argument, following
+        if argument in ("-c", "-с", "--command"):
+            if following == "--":
+                return
+            index += 2
+        else:
+            index += 1
+
+
+def _has_auth_option(arguments: list[str]) -> bool:
+    """Reject credentials before argparse can echo values or exit for --help."""
+    return any(argument.partition("=")[0] in ("--user", "--psw")
+               for argument, _ in _option_arguments(arguments))
+
+
+def _has_empty_database_option(arguments: list[str]) -> bool:
+    return any(argument == "--f=" or (argument == "--f" and following == "")
+               for argument, following in _option_arguments(arguments))
 
 
 def repl(interpreter: Interpreter) -> int:
@@ -88,15 +121,26 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(prog="yadinassi", description="Интерпретатор языка 1С (BSL)")
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if _has_auth_option(arguments):
+        print(_UNSUPPORTED_AUTH, file=sys.stderr)
+        return 2
+    if _has_empty_database_option(arguments):
+        print(_EMPTY_DATABASE, file=sys.stderr)
+        return 2
+    parser = argparse.ArgumentParser(prog="yadinassi", description="Интерпретатор языка 1С (BSL)",
+                                     allow_abbrev=False)
     parser.add_argument("file", nargs="?", help="файл BSL для исполнения; '-' — стандартный ввод")
     parser.add_argument("-c", "-с", "--command", help="код BSL для исполнения")
+    parser.add_argument("--f", metavar="DIRECTORY",
+                        help="каталог offline-копии файловой базы; проверяется только при DB-вызове")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
     if args.file is not None and args.command is not None:
         parser.error("файл и -c нельзя использовать одновременно")
-    interpreter = Interpreter(encoding=args.encoding)
+    database_context = FileDBContext(args.f) if args.f is not None else None
+    interpreter = Interpreter(encoding=args.encoding, database_context=database_context)
     try:
         if args.command is not None:
             interpreter.execute(args.command, "<команда>")

@@ -3,6 +3,7 @@ import copy
 import inspect
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import tempfile
@@ -166,19 +167,26 @@ class DualWitnessTests(SyntheticFilesystemCase):
                     full.verify_client_interpreter(ROOT,path,full.digest(changed),runner=runner)
                 runner.assert_not_called()
 
-    @unittest.skipIf(os.name=='nt','production bounded interpreter child is POSIX-only')
-    def test_preflight_uses_exact_restored_whole136_source(self):
-        path=ROOT/full.CLIENT_SOURCE; raw=linux_fixture(path); seen=[]
-        def runner(arguments,cwd):
-            self.assertNotEqual(Path(arguments[-1]),path)
-            self.assertEqual(Path(arguments[-1]).read_bytes(),full.infobase_shared_source(raw))
-            self.assertIn(b'DualProbe',raw)
-            self.assertIn(b'DNAppend',raw)
-            self.assertEqual(path.read_bytes(),raw)
+    @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
+    def test_preflight_uses_exact_original_whole137_source(self):
+        path = ROOT / full.CLIENT_SOURCE
+        raw = linux_fixture(path)
+        seen = []
+        fixture = full._load_infobase_fixture()
+        bounded = fixture.bounded_child
+        def spy(arguments, cwd, **limits):
+            self.assertEqual(Path(arguments[-2]), path)
+            self.assertEqual(path.read_bytes(), raw)
+            self.assertIn(b'DualProbe', raw)
+            self.assertIn(b'DNAppend', raw)
             seen.append(full.digest(raw))
-            return full.bounded_child(arguments,cwd)
-        full.verify_client_interpreter(ROOT,path,full.digest(raw),runner=runner)
-        self.assertEqual(seen,[full.CLIENT_WITNESS_SOURCE_SHA256])
+            return bounded(arguments, cwd, **limits)
+        # Observe the real owner-mediated path; no injected runner or second
+        # module/error identity can bypass the uncertain-shutdown boundary.
+        with mock.patch.object(full, '_load_infobase_fixture', return_value=fixture), \
+                mock.patch.object(fixture, 'bounded_child', side_effect=spy):
+            full.verify_client_interpreter(ROOT, path, full.digest(raw))
+        self.assertEqual(seen, [full.CLIENT_WITNESS_SOURCE_SHA256])
 
     def test_whole136_interpreter_witness_and_standalone_match_projected_capture(self):
         from yadinassi import Interpreter

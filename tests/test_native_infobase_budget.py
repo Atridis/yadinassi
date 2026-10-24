@@ -24,8 +24,9 @@ import test_native_client_collections_host as collections
 from test_native_1c_full_host import SyntheticFilesystemCase
 
 full, suite, smoke = budget.full, budget.suite, budget.smoke
-# A legal finite size witness only. This is deliberately not a native expectation.
-SIZE_TOKEN = 'ibc.v1:' + '321122' * 5
+# Runtime-positive budget witnesses use the independently captured exact token.
+# Other grammar strings below remain size witnesses, never runtime acceptance.
+SIZE_TOKEN = full.INFOBASE_CONTEXT_EXPECTED_TOKEN
 OPTION_NAMES = ('client_dates', 'client_values', 'client_collections',
                 'client_numbers', 'watchdog_check')
 RECORD_NAMES = OPTION_NAMES[:-1] + ('client_watchdog',)

@@ -1,8 +1,18 @@
-# Infobase connection context: bounded measurement only
+# Infobase connection context: historical measurement and strict runtime contract
 
-Status: local measurement candidate. Native execution and its independent audit
-are pending. There is **no expected native token** and no new interpreter API,
-CLI option, database session, authentication, or native runtime dependency.
+The original measurement was captured and independently audited in
+[run 40137786320](https://github.com/Atridis/yadinassi/actions/runs/40137786320),
+at commit `1d220ded50a6c2afa458b248bbaa66b3d53cd8db`. Its original
+`infobase_context_measurement.json` is preserved as the pre-capture design, with
+its then-unknown expectation still null. The separate
+`infobase_context_native.json` records the observed token, source/module pins,
+artifact identities and evidence limits. It does not retroactively change the
+measurement into an implementation test.
+
+The current bounded runtime and optional CLI context are documented in
+[file-database-context.md](file-database-context.md). Current native admission
+requires the entire original 137-value source and the captured exact token;
+the historical 136-value inverse is not runtime admission.
 
 The primary-source [1C release notes](https://downloads.v8.1c.ru/content/Comm/Platform/8_0_17_25/V8Update.htm)
 establish the Russian global method's existence and purpose. The official
@@ -52,32 +62,46 @@ generated BOM module and strict136 baseline. The native client executes the
 complete new literal source. Its round-tripped module must match exactly.
 Entered/completed marker identity, schema, nonce and witness remain strict.
 The completed marker must contain exactly 137 values: the first 136 match by
-exact JSON type and value, and the last independently satisfies this finite
-grammar. An omitted, changed, malformed, partial or oversized tail cannot pass.
+exact JSON type and value, and the last equals the independently captured token
+`ibc.v1:121122221122021122021122021122`. During the historical measurement only,
+the last value was admitted by the finite grammar above. An omitted, changed, malformed, partial or oversized tail cannot pass.
 
-Host interpreter preflight is explicitly **shared-prefix parity**, not whole-new-
-source parity. A uniquely exact inverse first checks the entire candidate hash,
-removes exactly one pinned core and call, then verifies the complete historical
-strict136 hash. That entire restored source executes in the bounded child; both
-its temporary bytes and the staged candidate are rechecked. The interpreter
-does not implement the proposed function and cannot supply its expected result.
-The four legacy parity adapters use the same exact inverse; their generated
-module hashes and all eight literal Async source identities remain unchanged.
+The historical measurement used shared-prefix parity: an exact inverse restored
+and executed all 136 old values because the new API did not yet exist. Current
+host preflight instead executes the **unchanged whole137 source** in a bounded
+Linux child with real `FileDBContext` and read-only `inspect_header`. No builtin
+callback is substituted and no BSL source is rewritten. The 136-value constant
+and exact inverse remain only for legacy adapters/history; the four legacy
+module hashes and all eight literal Async identities remain unchanged.
+
+The host exclusively creates `/tmp/onec-smoke` with mode 0700. Any pre-existing
+pathname causes immediate failure without reading, reusing or removing it.
+Pinned descriptors and identities guard an owned `db/1Cv8.1CD`, containing only
+a bounded recognized synthetic header/layout. Exact content, link count, source
+bytes and ownership are rechecked around the child. Only verified owned files
+and empty directories are removed; uncertainty prevents success and cleanup.
+This is a trusted single-job Linux test-host contract, not atomic isolation
+against a malicious same-UID/root process. There is no lock/reuse fallback.
+A bounded non-reaping child-exit observation preserves PID ownership through
+process-group shutdown, then performs bounded reaping before fixture cleanup.
 
 The optional `client_probe.infobase_context` field is accepted only for this
-exact source/module, full existing proof and successful stage. It is mandatory
+exact source/module, full existing proof, successful stage and captured exact
+token. A merely grammar-valid observation is no longer runtime acceptance. It is mandatory
 for such a successful ordinary measurement, forbidden on other records, and
 discarded on later input, process, stage, export, host or cleanup failure. The
 discard never rewrites older proof fields or promotes a failed status. Existing
 six-case outputs, typed136 expectations, source inventories, comparison modes,
-caps and publication classes are not relaxed. A successful collection is still
-only a measurement, not a claim that the new API has runtime parity.
+caps and publication classes are not relaxed. Historical capture alone remains measurement evidence. Runtime acceptance
+requires the original whole137 preflight with real context as well as fresh
+native lifecycle and comparison gates.
 
 ## Offline bounds and verification
 
 The existing native JSON writer remains compact, without a fallback. The full
 marker model includes the complete prefix, nonce and metadata, not just token
-bytes. Actual native marker bytes remain unmeasured until capture. Tests also
+bytes. Private raw native marker bytes were not separately exported; the capture
+audit verifies their source-bound producer and finite report evidence. Tests also
 exercise the real stage codecs, production host validators and pretty CLI
 report serializer with all optional-lane combinations. They include 32 parity
 subsets, 80 successful Async paths, 240 client-failure partitions, 192 server-
@@ -88,21 +112,14 @@ never a capture forbidden by validation.
 Conservative upper models remain below unchanged caps: 8,043/8,192 stage wire
 bytes and 32,228/32,768 pretty summary bytes. The parity wire bound is 8,015;
 schema 2 without numbers is tighter than the all-options schema 3 case. These
-are offline bounds, not native observations. Native capture and independent
-source/nonce/module/roundtrip/lifecycle audit are required before deriving any
-expected result or implementing a runtime function.
+are offline bounds, not native observations. The original native capture and independent
+source/nonce/module/roundtrip/lifecycle audits preceded the runtime expectation.
+Fresh runtime admission must still pass independently for each candidate.
 
-## Later runtime proposal, not implemented here
+## Bounded implementation, not a native database session
 
-If the native result supports the bounded feature, optional `--f` would configure
-a standalone read-only file-DB context using the existing header validator.
-That means an explicitly configured physical attachment, **not** a platform
-session, authenticated user or proof of logical DB validity. No file writes or
-invented user identity are implied. The initial path subset must remain explicit.
-
-Running without a database must preserve script, `-c`, stdin and console modes
-and the default root AtClient profile. Only an actually executed DB operation
-would raise catchable `BSLError("db required for further code execution")`;
-unexecuted branches must not fail. Unsupported `--user`/`--psw`, including normal,
-`=value`, empty and missing-value forms, must fail explicitly without echoing
-secrets. CF/DT load/dump belong to future separate real subcommands, not stubs.
+See [file-database-context.md](file-database-context.md) for actual `--f` modes,
+lazy execution, immutable context propagation, fixed unsupported-auth errors,
+path scope and deferred CF/DT commands. Recognized physical header geometry is
+not proof of native database validity, authenticated user identity or a session.
+The Linux capture does not establish native Windows function return formatting.

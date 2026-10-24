@@ -3,9 +3,11 @@ import copy
 import inspect
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
+from infobase_preflight_test_support import offline_fixture
 from unittest import mock
 
 from test_native_1c_full_host import SyntheticFilesystemCase
@@ -106,23 +108,23 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(full.async_source_identity(linux_fixture(ROOT/'scripts/native_1c_bootstrap/full_suite.py')),
                          plan['async8_identity'])
 
-    def test_preflight_passes_exact_restored_whole136_source(self):
+    def test_current_preflight_passes_original_whole137_source(self):
         calls=[]
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, offline_fixture(full):
             path=Path(temporary).resolve()/'source.bsl'; path.write_bytes(self.source)
             def runner(command, cwd):
                 calls.append(command)
-                self.assertNotEqual(Path(command[-1]), path)
-                self.assertEqual(Path(command[-1]).read_bytes(), self.strict136)
-                return 0, json.dumps(full.CLIENT_VALUES, ensure_ascii=False, separators=(',',':')).encode(), b''
+                self.assertEqual(Path(command[-2]), path)
+                self.assertEqual(path.read_bytes(), self.source)
+                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False, separators=(',',':')).encode(), b''
             full.verify_client_interpreter(ROOT,path,full.digest(self.source),runner=runner)
             self.assertEqual(len(calls),1)
             with self.assertRaises(full.FullError):
                 full.verify_client_interpreter(ROOT,path,'0'*64,runner=runner)
             self.assertEqual(len(calls),1)
 
-    @unittest.skipIf(os.name=='nt', 'native host bounded child is POSIX-only')
-    def test_real_interpreter_computes_all136_from_exact_native_source(self):
+    @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
+    def test_real_interpreter_computes_whole137_from_exact_native_source(self):
         full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(self.source))
 
     def test_compact_writer_kept_native_only_and_cap_not_increased(self):

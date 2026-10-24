@@ -774,6 +774,10 @@ class AsyncBudgetTests(SyntheticFilesystemCase):
         self.assertEqual(len(expected), 136)
         self.assertEqual(suite.CLIENT_VALUES, expected)
         self.assertEqual(full.CLIENT_VALUES, expected)
+        current = expected + ['ibc.v1:121122221122021122021122021122']
+        self.assertEqual(full.CLIENT_RUNTIME_VALUES, current)
+        self.assertEqual(suite.CLIENT_RUNTIME_VALUES, current)
+        self.assertEqual(len(current), 137)
         # Freeze bool/int distinctions as well as equality for the strict119
         # witness and its nine side-local module-context observations.
         self.assertEqual(list(map(type, suite.CLIENT_VALUES)), list(map(type, expected)))
@@ -785,16 +789,16 @@ class AsyncBudgetTests(SyntheticFilesystemCase):
         for phase, kind, ordinal, error_stage in itertools.product(
                 ('invalid', 'error', 'completed'),
                 ('none', 'count', 'type', 'value', 'runtime_error'),
-                range(-1, 138), range(12)):
+                range(-1, 139), range(12)):
             diagnostic = dict(phase=phase, kind=kind, ordinal=ordinal, error_stage=error_stage)
             if phase != 'completed':
                 allowed = kind == 'none' and ordinal == -1 and error_stage == 0
             elif kind == 'runtime_error':
                 allowed = 1 <= error_stage <= 11 and ordinal == error_stage + 3
             elif kind == 'count':
-                allowed = 0 <= ordinal <= 136 and error_stage == 0
+                allowed = 0 <= ordinal <= 137 and error_stage == 0
             elif kind in ('type', 'value'):
-                allowed = 0 <= ordinal < 136 and error_stage == 0
+                allowed = 0 <= ordinal < 137 and error_stage == 0
             else:
                 allowed = ordinal == -1 and error_stage == 0
             if not allowed:
@@ -829,7 +833,7 @@ class AsyncBudgetTests(SyntheticFilesystemCase):
             self.assertLessEqual(len(summary), CAPS['public_summary'])
             with self.assertRaises(full.FullError):
                 full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], b''), result, smoke.IMAGE)
-        self.assertEqual(count, 423)
+        self.assertEqual(count, 426)
 
     def test_process_counter_width_bound_is_derived_not_independent_maxima(self):
         # DP over seven nonnegative counters with a <=256 sum proves 16

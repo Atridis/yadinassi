@@ -1,9 +1,11 @@
 """Source-bound scalar directive witness; synthetic checks are not native captures."""
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
+from infobase_preflight_test_support import offline_fixture
 from unittest import mock
 
 from test_native_1c_full_host import SyntheticFilesystemCase
@@ -45,12 +47,12 @@ class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
             self.assertNotIn('DirectiveClientProfile', source)
             self.assertNotIn('DirectiveServerProfile', source)
 
-    @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
+    @unittest.skipUnless(sys.platform == "linux", "fixed native fixture is Linux-only")
     def test_whole_staged_source_computes_contract_in_real_interpreter(self):
         source = ROOT / full.CLIENT_SOURCE
         full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()))
 
-    @unittest.skipIf(os.name == "nt", "native host bounded subprocess is POSIX-only")
+    @unittest.skipUnless(sys.platform == "linux", "fixed native fixture is Linux-only")
     def test_changed_callee_is_rejected_by_exact_source_gate(self):
         source = (ROOT / full.CLIENT_SOURCE).read_bytes()
         changed = source.replace(b"Return A + B;", b"Return A + B + 1;")
@@ -73,11 +75,11 @@ class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
         self.addCleanup(temporary.cleanup)
         source = Path(temporary.name).resolve() / "probe.bsl"
         source.write_bytes(linux_fixture(ROOT / full.CLIENT_SOURCE))
-        good = json.dumps(full.CLIENT_VALUES, ensure_ascii=False,
+        good = json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False,
                           separators=(",", ":")).encode()
         for result in [(1, good, b""), (0, good, b"error"),
                        (0, b"[]", b""), (0, good.replace(b"42,", b"42.0,", 1), b"")]:
-            with self.subTest(result=result), self.assertRaisesRegex(
+            with self.subTest(result=result), offline_fixture(full), self.assertRaisesRegex(
                     full.FullError, "^interpreter_failed$"):
                 full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()),
                                                runner=lambda *args: result)

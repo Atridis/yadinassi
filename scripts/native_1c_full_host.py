@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import uuid
 
 SCENARIOS = ("collections", "dates", "functions", "numbers", "strings", "values")
@@ -330,6 +331,9 @@ CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
 
 # Audited native checkpoint40078699477; exact eight Date/Null observations.
 CLIENT_VALUES += ['dn.v1:22222277']
+# Historical 136 values remain unchanged for legacy adapters and their proofs.
+# Current source-bound admission executes and requires all 137 values.
+CLIENT_RUNTIME_VALUES = CLIENT_VALUES + ['ibc.v1:121122221122021122021122021122']
 
 
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
@@ -396,7 +400,9 @@ Interpreter = module.Interpreter
 
 import json
 from decimal import Decimal
-vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")))
+from yadinassi.database_context import FileDBContext
+vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")),
+                 database_context=FileDBContext(sys.argv[3]))
 vm.execute(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
 values = list(vm.execute("ВычислитьПробу()"))
 result = []
@@ -450,6 +456,8 @@ def date_null_shared_source(raw: bytes) -> bytes:
 INFOBASE_CONTEXT_SOURCE_SHA256 = 'baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d'
 INFOBASE_CONTEXT_MODULE_SHA256 = '8f0e26621fed3a26f3073764f51dbf1c2164e4ebcc9a50b24f052487ba2b3be9'
 INFOBASE_CONTEXT_BASE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
+# Independently audited capture: run 40137786320, not a synthetic prediction.
+INFOBASE_CONTEXT_EXPECTED_TOKEN = 'ibc.v1:121122221122021122021122021122'
 INFOBASE_CONTEXT_CORE = b'// BEGIN bounded infobase context measurement\n// Only ordinary /tmp/onec-smoke/db, verified by the native host.\n// Zero-argument calls are direct; arity rejection is dynamic, not static.\n&AtClient\nFunction IBCClient()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServer\nFunction IBCServer()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServerNoContext\nFunction IBCNoContext()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCDual()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCObserve(Val Profile, Val EnglishValue, Val RussianValue)\n    Var Shape, Aliases, EnglishArity, RussianArity, IBCArityTemporary;\n    If TypeOf(EnglishValue) <> Type("String") Or TypeOf(RussianValue) <> Type("String") Then\n        Return IBCEncode(Profile, 3, 0, 0, 0, 0);\n    EndIf;\n    Shape = 0;\n    If EnglishValue = "File=""/tmp/onec-smoke/db"";" Then Shape = 1; EndIf;\n    If EnglishValue = "File=""/tmp/onec-smoke/db""" Then Shape = 2; EndIf;\n    Aliases = 0;\n    If EnglishValue = RussianValue Then Aliases = 1; EndIf;\n    // Arity runs in this dual no-context observer, on the same side.\n    // It does not measure the originating routine\'s arity profile.\n    EnglishArity = 1;\n    Try\n        Execute("IBCArityTemporary = InfoBaseConnectionString(1);");\n    Except\n        EnglishArity = 2;\n    EndTry;\n    RussianArity = 1;\n    Try\n        Execute("IBCArityTemporary = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b(1);");\n    Except\n        RussianArity = 2;\n    EndTry;\n    Return IBCEncode(Profile, 2, Shape, Aliases, EnglishArity, RussianArity);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCEncode(Val Profile, Val Status, Val Shape, Val Aliases, Val EnglishArity, Val RussianArity)\n    Return Mid("0123", Profile + 1, 1) + Mid("0123", Status + 1, 1)\n        + Mid("012", Shape + 1, 1) + Mid("01", Aliases + 1, 1)\n        + Mid("012", EnglishArity + 1, 1) + Mid("012", RussianArity + 1, 1);\nEndFunction\n\n&AtServer\nFunction IBCServerDual()\n    Return IBCDual();\nEndFunction\n\n&AtClient\nProcedure IBCAppend(RecordsOut)\n    Var Encoded;\n    Encoded = "ibc.v1:" + IBCClient() + IBCServer() + IBCNoContext()\n        + IBCDual() + IBCServerDual();\n    If StrLen(Encoded) <> 37 Then Raise "ibc-invalid-token"; EndIf;\n    RecordsOut.Add(Encoded);\nEndProcedure\n// END bounded infobase context measurement\n'
 INFOBASE_CONTEXT_CALL = '    IBCAppend(Значения);\n'.encode('utf-8')
 
@@ -491,26 +499,53 @@ def discard_infobase_capture(report):
 CLIENT_WITNESS_SOURCE_SHA256 = INFOBASE_CONTEXT_SOURCE_SHA256
 
 
+def _load_infobase_fixture():
+    """Load the source-inventoried Linux fixture helper from this checkout only."""
+    path = Path(__file__).with_name("native_infobase_fixture.py")
+    source = read_regular(path, 4 * MAX_FILE, nonempty=True)
+    # Never execute ignored timestamp-valid bytecode beside this safety helper.
+    module = types.ModuleType("_native_infobase_fixture")
+    module.__file__ = str(path)
+    exec(compile(source, str(path), "exec"), module.__dict__)
+    return module
+
+
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Execute the exact restored strict136 source, not the unimplemented new API."""
+    """Execute the exact whole137 source with a real, exclusively owned file DB.
+
+    This preflight is Linux-only and assumes a trusted single-job host. Its
+    fixture is header-recognized synthetic storage, not a valid native database.
+    The historical inverse is used by legacy adapters only, never admission.
+    """
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:
         raise FullError("source_changed")
-    restored = infobase_shared_source(raw)
-    runner = bounded_child if runner is None else runner
-    with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
-        baseline = Path(cache) / "strict136.bsl"
-        baseline.write_bytes(restored)
-        code, output, stderr = runner(
-            [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(baseline)], root)
-        if baseline.read_bytes() != restored:
-            raise FullError("source_changed")
-    expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
-    if code != 0 or stderr or output != expected:
-        raise FullError("interpreter_failed")
-    if read_regular(source, MAX_FILE, nonempty=True) != raw:
-        raise FullError("source_changed")
+    fixture_module = _load_infobase_fixture()
+    try:
+        with fixture_module.OwnedInfobase() as fixture:
+            fixture.verify()
+            with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+                arguments = [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+                             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source), str(fixture.directory)]
+                if runner is None:
+                    code, output, stderr = fixture.run_child(
+                        arguments, root, env=child_environment(), seconds=CASE_SECONDS,
+                        stdout_limit=MAX_FILE, stderr_limit=MAX_STDERR)
+                else:
+                    # Explicit offline injection only; production always runs
+                    # the bounded child above with the genuine runtime context.
+                    code, output, stderr = runner(arguments, root)
+                fixture.verify()
+                if read_regular(source, MAX_FILE, nonempty=True) != raw:
+                    raise FullError("source_changed")
+            expected = json.dumps(CLIENT_RUNTIME_VALUES, ensure_ascii=False,
+                                  separators=(",", ":")).encode()
+            if code != 0 or stderr or output != expected:
+                raise FullError("interpreter_failed")
+    except fixture_module.FixtureError as error:
+        # Translation stays outside the owner so an uncertain child shutdown
+        # prevents fixture removal before finite public reporting.
+        raise FullError(error.code) from None
 
 
 def validate_process_diagnostics(value):
@@ -537,7 +572,7 @@ def validate_marker_diagnostics(value):
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
             or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
-            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_RUNTIME_VALUES)
             or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
         raise ValueError('client marker diagnostics')
     if value['phase'] != 'completed':
@@ -545,9 +580,9 @@ def validate_marker_diagnostics(value):
     elif value['kind'] == 'runtime_error':
         valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
     elif value['kind'] == 'count':
-        valid = 0 <= value['ordinal'] <= len(CLIENT_VALUES) and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] <= len(CLIENT_RUNTIME_VALUES) and value['error_stage'] == 0
     elif value['kind'] in {'type', 'value'}:
-        valid = 0 <= value['ordinal'] < len(CLIENT_VALUES) and value['error_stage'] == 0
+        valid = 0 <= value['ordinal'] < len(CLIENT_RUNTIME_VALUES) and value['error_stage'] == 0
     else:
         valid = value['ordinal'] == -1 and value['error_stage'] == 0
     if not valid:
@@ -561,6 +596,8 @@ def validate_client_probe(data, source_hash, module_hash, *, infobase_allowed=Fa
                 or module_hash != INFOBASE_CONTEXT_MODULE_SHA256 or data.get('status') != 'ok'):
             raise ValueError('infobase context source or outcome')
         validate_infobase_context(data['infobase_context'])
+        if data['infobase_context'] != INFOBASE_CONTEXT_EXPECTED_TOKEN:
+            raise ValueError('infobase context runtime mismatch')
         data = {key: value for key, value in data.items() if key != 'infobase_context'}
     if type(data) is dict and "marker_diagnostics" in data:
         validate_marker_diagnostics(data["marker_diagnostics"])
@@ -1422,9 +1459,10 @@ def repository_provenance(root: Path) -> dict:
     if (not re.fullmatch(r"[0-9a-f]{40}", commit) or not re.fullmatch(r"[0-9a-f]{40}", tree)
             or git("status", "--porcelain", "--untracked-files=all")):
         raise FullError("repository_identity_unverified")
-    tracked = set(git("ls-files", "--", "yadinassi").splitlines())
+    tracked = set(git("ls-files", "--", "yadinassi", "scripts/native_infobase_fixture.py").splitlines())
     actual = {path.relative_to(root).as_posix() for path in (root / "yadinassi").rglob("*")
               if not path.is_dir() and "__pycache__" not in path.parts}
+    actual.add("scripts/native_infobase_fixture.py")
     if not tracked or actual != tracked:
         raise FullError("repository_sources_unverified")
     expected = os.environ.get("GITHUB_SHA")
@@ -1446,7 +1484,8 @@ def interpreter_provenance(root: Path) -> dict:
     if any(path.suffix not in {".py", ".txt"} for path in files):
         raise FullError("unexpected_interpreter_source")
     files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
-              root / "scripts/native_1c_map_contract.py", root / "scripts/native_async_comparison.py"]
+              root / "scripts/native_1c_map_contract.py", root / "scripts/native_async_comparison.py",
+              root / "scripts/native_infobase_fixture.py"]
     if not files or len(files) > 512:
         raise FullError("interpreter_provenance_invalid")
     hashes = {path.relative_to(root).as_posix(): digest(read_regular(path, 4 * MAX_FILE, nonempty=True)) for path in files}

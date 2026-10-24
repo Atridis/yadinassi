@@ -1,6 +1,7 @@
 """Historical NoContext capture and current exact whole-source witness."""
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import tempfile
@@ -73,8 +74,8 @@ class NoContextWitnessTests(unittest.TestCase):
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual((suite.MAX_STAGE_REPORT, full.MAX_STAGE_REPORT, full.MAX_REPORT), (8192,8192,32768))
 
-    @unittest.skipIf(os.name=='nt', 'production bounded interpreter child is POSIX-only')
-    def test_whole_source136_interpreter_preflight(self):
+    @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
+    def test_whole_source137_interpreter_preflight(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(raw))
 

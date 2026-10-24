@@ -2,6 +2,7 @@
 import copy
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import tempfile
@@ -32,7 +33,7 @@ class ModuleContextParityTests(unittest.TestCase):
         self.assertEqual(actual,full.CLIENT_VALUES)
         self.assertEqual([type(v) for v in actual],[type(v) for v in full.CLIENT_VALUES])
 
-    @unittest.skipIf(os.name=='nt','bounded native preflight is POSIX-only')
+    @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
     def test_whole_source_preflight_and_changed_initializer_rejection(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         with tempfile.TemporaryDirectory() as folder:

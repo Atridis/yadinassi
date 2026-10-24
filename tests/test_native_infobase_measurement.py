@@ -1,8 +1,11 @@
-"""Bounded measurement mechanics only; no invented native expectation."""
+"""Historical measurement grammar and current captured strict137 admission."""
 import copy
 from dataclasses import replace
 import json
+import importlib.util
+import py_compile
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,18 +15,20 @@ import test_native_client_probe as probe
 import test_native_1c_full_host as host_fixture
 from test_native_1c_full_host import SyntheticFilesystemCase
 from test_native_directive_witness import linux_fixture
+from infobase_preflight_test_support import offline_fixture
 
 full, suite, ROOT, NONCE = probe.full, probe.suite, probe.ROOT, probe.NONCE
 # Deliberately synthetic, all direct calls failed and no profile bit observed.
 # This is legal observation syntax, not a predicted or accepted native result.
 SYNTHETIC = 'ibc.v1:' + '010000' * 5
+CAPTURED = full.INFOBASE_CONTEXT_EXPECTED_TOKEN
 SOURCE = 'integrational_tests/directive_probes/infobase_context_core.bsl'
 
 
 def marker(phase='completed', **patch):
     result = probe.marker(phase)
     if phase == 'completed':
-        result['values'].append(SYNTHETIC)
+        result['values'].append(CAPTURED)
     result.update(patch)
     return result
 
@@ -44,12 +49,12 @@ class InfobaseMarkerTests(unittest.TestCase):
         return suite.infobase_client_marker(self.path, NONCE, phase,
             source_hash=suite.INFOBASE_CONTEXT_SOURCE_SHA256 if source_hash is None else source_hash)
 
-    def test_entered_and_complete_full_prefix_with_independent_observation(self):
+    def test_entered_and_complete_full_prefix_require_captured_observation(self):
         for phase in ('entered', 'completed'):
             self.assertEqual(self.read(marker(phase), phase), marker(phase))
         for slot in ('010000', '130000', '220111', '321122'):
             value = marker(); value['values'][-1] = 'ibc.v1:' + slot * 5
-            self.assertEqual(self.read(value), value)
+            with self.assertRaises(suite.FullError): self.read(value)
         self.assertLessEqual(self.path.stat().st_size, 2048)
         with self.assertRaises(suite.FullError):
             suite.client_marker(self.path, NONCE, 'completed')
@@ -107,28 +112,30 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
             with self.assertRaises(full.FullError): full.infobase_shared_source(changed)
             with self.assertRaises(suite.FullError): suite.infobase_shared_source(changed)
 
-    def test_whole_strict136_preflight_reads_exact_restored_bytes(self):
+    def test_whole137_preflight_reads_original_source_bytes(self):
         raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory() as folder, offline_fixture(full):
             path = Path(folder).resolve() / 'candidate.bsl'; path.write_bytes(raw)
             seen = []
             def runner(arguments, cwd):
-                restored = Path(arguments[-1]).read_bytes()
-                self.assertNotEqual(Path(arguments[-1]), path)
-                self.assertEqual(restored, full.infobase_shared_source(raw))
-                seen.append(full.digest(restored))
-                return 0, json.dumps(full.CLIENT_VALUES, ensure_ascii=False, separators=(',', ':')).encode(), b''
+                self.assertEqual(Path(arguments[-2]), path)
+                self.assertEqual(arguments[-1], str(Path('/tmp/onec-smoke/db')))
+                self.assertEqual(path.read_bytes(), raw)
+                seen.append(full.digest(path.read_bytes()))
+                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False,
+                                     separators=(',', ':')).encode(), b''
             full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=runner)
-            self.assertEqual(seen, [full.INFOBASE_CONTEXT_BASE_SHA256])
+            self.assertEqual(seen, [full.INFOBASE_CONTEXT_SOURCE_SHA256])
             def altered_runner(arguments, cwd):
-                Path(arguments[-1]).write_bytes(b'changed')
-                return 0, json.dumps(full.CLIENT_VALUES, ensure_ascii=False, separators=(',', ':')).encode(), b''
+                Path(arguments[-2]).write_bytes(b'changed')
+                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False,
+                                     separators=(',', ':')).encode(), b''
             with self.assertRaises(full.FullError) as raised:
                 full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=altered_runner)
             self.assertEqual(str(raised.exception), 'source_changed')
 
     def test_plan_is_unmeasured_and_binds_all_source_identities(self):
-        plan = json.loads((ROOT / 'integrational_tests/directive_probes/infobase_context_measurement.json').read_text())
+        plan = json.loads((ROOT / 'integrational_tests/directive_probes/infobase_context_measurement.json').read_text(encoding='utf-8'))
         self.assertIsNone(plan['native_expected_token'])
         self.assertEqual(plan['native_execution'], 'pending')
         self.assertEqual(plan['source_sha256'], full.INFOBASE_CONTEXT_SOURCE_SHA256)
@@ -137,8 +144,8 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
         self.assertEqual(plan['core_sha256'], full.digest(linux_fixture(ROOT / SOURCE)))
         self.assertEqual(plan['token_bytes'], len(SYNTHETIC))
 
-    @unittest.skipIf(os.name == 'nt', 'native host bounded child is POSIX-only')
-    def test_real_interpreter_runs_restored136_without_new_builtin(self):
+    @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
+    def test_real_interpreter_runs_original_whole137_with_real_context(self):
         raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
         full.verify_client_interpreter(ROOT, ROOT / full.CLIENT_SOURCE, full.digest(raw))
         from yadinassi import Interpreter, BSLError
@@ -146,7 +153,7 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
 
     def test_four_parity_outputs_and_async_literal_identity_unchanged(self):
         raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
-        plan = json.loads((ROOT / 'integrational_tests/directive_probes/date_null_measurement.json').read_text())
+        plan = json.loads((ROOT / 'integrational_tests/directive_probes/date_null_measurement.json').read_text(encoding='utf-8'))
         for name, expected in plan['four_adapter_sha256'].items():
             scenario = linux_fixture(ROOT / f'integrational_tests/tests/{name}.bsl')
             self.assertEqual(full.digest(getattr(suite, f'client_{name}_module')(scenario, raw)), expected)
@@ -159,14 +166,14 @@ class InfobaseFixtureAdapterTests(unittest.TestCase):
         original = full.read_regular
         self.assertIs(full, host_fixture.full)
         self.assertIs(full, probe.smoke.FULL)
-        case = InfobaseSourceTests('test_whole_strict136_preflight_reads_exact_restored_bytes')
+        case = InfobaseSourceTests('test_whole137_preflight_reads_original_source_bytes')
         with mock.patch.object(host_fixture, '_USE_SYNTHETIC_FILE_READER', True):
             case.setUp()
             try:
                 reader = full.read_regular
                 self.assertIsNot(reader, original)
-                case.test_whole_strict136_preflight_reads_exact_restored_bytes()
-                self.assertEqual(reader.call_count, 3)
+                case.test_whole137_preflight_reads_original_source_bytes()
+                self.assertEqual(reader.call_count, 4)
             finally:
                 case.doCleanups()
         self.assertIs(full.read_regular, original)
@@ -184,7 +191,7 @@ class InfobaseHarnessTests(unittest.TestCase):
         def tail(mode):
             if mode == 'enterprise' and 'completed' in f.run_markers:
                 path = f.work / 'completed.json'
-                value = json.loads(path.read_text()); value['values'].append(SYNTHETIC)
+                value = json.loads(path.read_text(encoding='utf-8')); value['values'].append(CAPTURED)
                 path.write_bytes(json.dumps(value, separators=(',', ':')).encode())
         self.tail = tail
         f.hook = tail
@@ -193,7 +200,7 @@ class InfobaseHarnessTests(unittest.TestCase):
         f = self.fixture
         record = f.run_probe()
         self.assertEqual(record['status'], 'ok')
-        self.assertEqual(record['infobase_context'], SYNTHETIC)
+        self.assertEqual(record['infobase_context'], CAPTURED)
         full.validate_client_probe(record, full.INFOBASE_CONTEXT_SOURCE_SHA256,
                                   full.INFOBASE_CONTEXT_MODULE_SHA256, infobase_allowed=True)
         self.assertEqual(f.events, ['build', 'dump', 'enterprise'])
@@ -231,6 +238,8 @@ class InfobaseHarnessTests(unittest.TestCase):
         self.assertEqual(record['failure_kind'], 'invalid_result')
         self.assertNotIn('infobase_context', record)
         self.assertNotIn(SYNTHETIC, json.dumps(record.get('marker_diagnostics')))
+        self.assertEqual(record['marker_diagnostics']['kind'], 'count')
+        self.assertEqual(record['marker_diagnostics']['ordinal'], 136)
 
 
 class InfobaseLifecycleTests(unittest.TestCase):
@@ -242,7 +251,7 @@ class InfobaseLifecycleTests(unittest.TestCase):
         path.write_bytes(linux_fixture(ROOT / suite.CLIENT_SOURCE))
         fixture.client.update(source_sha256=full.INFOBASE_CONTEXT_SOURCE_SHA256,
             module_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256,
-            roundtrip_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256, infobase_context=SYNTHETIC)
+            roundtrip_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256, infobase_context=CAPTURED)
         def captured(*args, **kwargs):
             path.write_bytes(path.read_bytes() + b'\n')
             return fixture.client
@@ -256,7 +265,7 @@ class InfobaseLifecycleTests(unittest.TestCase):
     def test_actual_envelope_failure_discards_capture_and_all_outputs(self):
         for quiet in (False, True):
             stage = {'schema': 1, 'status': 'ok', 'nonce': NONCE, 'cases': [],
-                     'client_probe': {'infobase_context': SYNTHETIC, 'witness_verified': True}}
+                     'client_probe': {'infobase_context': CAPTURED, 'witness_verified': True}}
             report = {'status': 'ok', 'stage3': stage, 'native_tests_completed': True}
             with tempfile.TemporaryDirectory() as folder:
                 envelope = json.loads(suite.build_envelope(report, NONCE, Path(folder), quiet=quiet))
@@ -269,7 +278,7 @@ class InfobaseLifecycleTests(unittest.TestCase):
         for extras in ({}, {'client_dates': suite.empty_dates_report()},
                        {'client_async': suite.empty_async_report()}):
             stage = {'status': 'ok', 'failure_kind': 'none',
-                     'client_probe': dict(suite.empty_client_report(), infobase_context=SYNTHETIC), **extras}
+                     'client_probe': dict(suite.empty_client_report(), infobase_context=CAPTURED), **extras}
             if 'client_async' in stage:
                 stage['client_async']['status'] = 'failed'
             suite.fail_client_process_checkpoint(stage, False)
@@ -277,7 +286,7 @@ class InfobaseLifecycleTests(unittest.TestCase):
             self.assertEqual(stage['status'], 'failed')
 
     def test_host_failure_discards_capture_without_changing_old_evidence(self):
-        report = {'stage3': {'client_probe': {'infobase_context': SYNTHETIC,
+        report = {'stage3': {'client_probe': {'infobase_context': CAPTURED,
                                              'witness_verified': True, 'source_sha256': 'f' * 64}}}
         error = probe.smoke.SmokeError('container_cleanup_unverified', validated_report=report)
         self.assertNotIn('infobase_context', error.validated_report['stage3']['client_probe'])
@@ -291,7 +300,7 @@ class InfobaseLifecycleTests(unittest.TestCase):
             source_sha256=full.INFOBASE_CONTEXT_SOURCE_SHA256,
             module_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256,
             roundtrip_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256,
-            infobase_context=SYNTHETIC, **dict.fromkeys(suite.CLIENT_FLAGS, True))
+            infobase_context=CAPTURED, **dict.fromkeys(suite.CLIENT_FLAGS, True))
         for source, module, allowed in ((record['source_sha256'], record['module_sha256'], False),
                                         ('0' * 64, record['module_sha256'], True),
                                         (record['source_sha256'], '0' * 64, True)):
@@ -302,3 +311,49 @@ class InfobaseLifecycleTests(unittest.TestCase):
             bad[key] = False if key in suite.CLIENT_FLAGS else ('failed' if key == 'status' else None)
             with self.assertRaises(ValueError):
                 full.validate_client_probe(bad, record['source_sha256'], record['module_sha256'], infobase_allowed=True)
+
+
+class InfobaseCapturedContractTests(unittest.TestCase):
+    def test_capture_binds_literal_tokens_and_current_contract(self):
+        capture = json.loads((ROOT / 'integrational_tests/directive_probes/infobase_context_native.json').read_text(encoding='utf-8'))
+        self.assertEqual(capture['native_run'], 40137786320)
+        self.assertEqual(capture['expected_token'], CAPTURED)
+        self.assertEqual(CAPTURED, suite.INFOBASE_CONTEXT_EXPECTED_TOKEN)
+        self.assertEqual(full.CLIENT_RUNTIME_VALUES, full.CLIENT_VALUES + [CAPTURED])
+        self.assertEqual(suite.CLIENT_RUNTIME_VALUES, full.CLIENT_RUNTIME_VALUES)
+        self.assertEqual(len(full.CLIENT_RUNTIME_VALUES), 137)
+        self.assertEqual(capture['source_sha256'], full.INFOBASE_CONTEXT_SOURCE_SHA256)
+        self.assertEqual(capture['module_sha256'], full.INFOBASE_CONTEXT_MODULE_SHA256)
+
+    def test_legal_observation_is_not_a_runtime_expectation(self):
+        record = dict(status='ok', failure_kind='none', process_diagnostics=probe.process_diagnostics(),
+            source_sha256=full.INFOBASE_CONTEXT_SOURCE_SHA256,
+            module_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256,
+            roundtrip_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256,
+            infobase_context=SYNTHETIC, **dict.fromkeys(suite.CLIENT_FLAGS, True))
+        self.assertEqual(full.validate_infobase_context(SYNTHETIC), SYNTHETIC)
+        with self.assertRaises(ValueError):
+            full.validate_client_probe(record, full.INFOBASE_CONTEXT_SOURCE_SHA256,
+                full.INFOBASE_CONTEXT_MODULE_SHA256, infobase_allowed=True)
+
+
+class InfobaseHelperSourceTests(SyntheticFilesystemCase):
+    def test_valid_timestamp_bytecode_cannot_replace_verified_helper_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder).resolve()
+            helper = directory / 'native_infobase_fixture.py'
+            clean, poison = b'VALUE = "CLEAN"\n', b'VALUE = "EVIL!"\n'
+            self.assertEqual(len(clean), len(poison))
+            helper.write_bytes(poison)
+            before = helper.stat()
+            py_compile.compile(str(helper), doraise=True)
+            helper.write_bytes(clean)
+            os.utime(helper, ns=(before.st_atime_ns, before.st_mtime_ns))
+            # Demonstrate that ordinary loader cache selection would be poisoned.
+            spec = importlib.util.spec_from_file_location('ordinary_helper', helper)
+            cached = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(cached)
+            self.assertEqual(cached.VALUE, 'EVIL!')
+            with mock.patch.object(full, '__file__', str(directory / 'native_1c_full_host.py')):
+                source_only = full._load_infobase_fixture()
+            self.assertEqual(source_only.VALUE, 'CLEAN')
