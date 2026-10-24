@@ -2373,6 +2373,29 @@ def check_dual_nocontext(executable, *, directory, env):
           'three caller lanes, same-side alias/escaping writes, BOM file, -c, stdin and console')
 
 
+def check_date_null_transfer(executable, *, directory, env):
+    """Replay the eight audited Date/Null transfer predicates in the binary."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    raw = (probes / 'date_null_core.bsl').read_bytes().replace(b'\r\n', b'\n')
+    capture = json.loads((probes / 'date_null_measurement.json').read_text(encoding='utf-8'))
+    if (hashlib.sha256(raw).hexdigest() != capture['semantic_source_sha256']
+            or capture['native_observations'] != [2, 2, 2, 2, 2, 2, 7, 7]
+            or capture['expected_token'] != 'dn.v1:22222277'):
+        raise AssertionError('Date/Null captured source/observations changed')
+    code = raw.decode('utf-8-sig') + '\nMessage(DNEncode(DNCollect()));\n'
+    expected = capture['expected_token'] + '\n'
+    source = directory / 'ДатаИНулл.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Date/Null transfer failed {arguments!r}: {result!r}')
+    print('Binary Date/Null transfer passed: eight captured predicates, BOM file, -c, stdin and console')
+
+
 def check_extended_exceptions(executable, *, directory, env):
     """Core structured exception flow and unsupported-display REPL recovery."""
     directory.mkdir()
@@ -2535,6 +2558,7 @@ def main() -> None:
         check_side_local_module_variables(executable, directory=Path(temporary) / "side-local-module", env=env)
         check_server_nocontext(executable, directory=Path(temporary) / "server-nocontext", env=env)
         check_dual_nocontext(executable, directory=Path(temporary) / "dual-nocontext", env=env)
+        check_date_null_transfer(executable, directory=Path(temporary) / "date-null-transfer", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)
