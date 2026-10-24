@@ -1,6 +1,7 @@
 """Synthetic bounded-shape protocol/source tests, never native compatibility proof."""
 from __future__ import annotations
 
+import ast
 import copy
 import json
 from pathlib import Path
@@ -220,7 +221,7 @@ class NativeShapeBoundaryTests(unittest.TestCase):
             commands = []
             def process(args, *unused, **kwargs):
                 commands.append(args)
-                control = json.loads((self.native.evidence/'control.json').read_text())
+                control = json.loads((self.native.evidence/'control.json').read_text(encoding='utf-8'))
                 self.assertEqual(set(control), {'schema', 'nonce', 'token', 'operation'})
                 self.assertEqual(control['operation'], 'audit_contract')
                 if status is not None:
@@ -239,14 +240,14 @@ class NativeShapeBoundaryTests(unittest.TestCase):
 
     def test_contract_stale_control_and_partial_publication_never_launch_or_accept(self):
         for name in ('control.json', 'result.json', 'completion.json', 'completion.pending.json'):
-            path = self.native.evidence/name; path.write_text('PRIVATE')
+            path = self.native.evidence/name; path.write_text('PRIVATE', encoding='utf-8')
             with self.subTest(name=name), mock.patch.object(self.native, 'process') as process:
                 with self.assertRaises(OracleError): self.native.enterprise(self.db, 'audit_contract')
                 process.assert_not_called()
             path.unlink()
         for partial in ('completion.json', 'result.json', 'completion.pending.json'):
             def process(*args, **kwargs):
-                control = json.loads((self.native.evidence/'control.json').read_text())
+                control = json.loads((self.native.evidence/'control.json').read_text(encoding='utf-8'))
                 (self.native.evidence/'completion.json').write_bytes(protocol.encode({**control, 'status': 'ok', 'phase': 'complete'}))
                 (self.native.evidence/'result.json').write_bytes(protocol.encode(marker(control['token'])))
                 (self.native.evidence/partial).write_bytes(b'{')
@@ -273,8 +274,25 @@ class NativeShapeBoundaryTests(unittest.TestCase):
 
 
 class ShapeSourceTests(unittest.TestCase):
+    def test_new_fixture_text_io_always_has_explicit_utf8_encoding(self):
+        # Keep this guard local to the new physical-reader/shape fixture tests.
+        # PYTHONIOENCODING affects standard streams, not Path text file reads.
+        for filename in ('test_native_1c_db_oracle_contract.py', 'test_filedb_catalog.py'):
+            source = (ROOT/'tests'/filename).read_text(encoding='utf-8')
+            tree = ast.parse(source, filename=filename)
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in ('read_text', 'write_text')):
+                    continue
+                with self.subTest(filename=filename, line=node.lineno):
+                    encoding = next((keyword.value for keyword in node.keywords
+                                     if keyword.arg == 'encoding'), None)
+                    self.assertIsInstance(encoding, ast.Constant,
+                                          'Fixture text I/O must specify encoding="utf-8"')
+                    self.assertEqual(encoding.value, 'utf-8')
+
     def test_one_filtered_call_no_scalar_rendering_or_guessed_nested_names(self):
-        source = (ROOT/'scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl').read_text()
+        source = (ROOT/'scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl').read_text(encoding='utf-8')
         probe = source[source.index('// Shape-only diagnostic:'):source.index('Функция NativeНовыйРезультат')]
         self.assertEqual(probe.count('ПолучитьСтруктуруХраненияБазыДанных('), 1)
         self.assertIn('ПолучитьСтруктуруХраненияБазыДанных(Отбор)', probe)
@@ -290,7 +308,7 @@ class ShapeSourceTests(unittest.TestCase):
         self.assertIn('contract_limit', protocol.BSL_OPERATION_PHASES['audit_contract'])
 
     def test_native_and_python_caps_are_pinned_together(self):
-        source = (ROOT/'scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl').read_text()
+        source = (ROOT/'scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl').read_text(encoding='utf-8')
         for snippet in ('Длина <= 64', 'Бюджет.units + Длина <= 768', 'Глубина <= 3',
                         'Форма.tables.Количество() < 16', 'ЧислоКолонок <= 32',
                         'Бюджет.columns + ЧислоКолонок <= 64', 'Бюджет.rows + ЧислоСтрок <= 256',
@@ -416,7 +434,7 @@ class ExecutedShapeSourceTests(unittest.TestCase):
             self.assertEqual(list(selector), [contract.TARGET])
             return table
         vm.register_function('ПолучитьСтруктуруХраненияБазыДанных', get_structure)
-        source = (ROOT/'scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl').read_text()
+        source = (ROOT/'scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl').read_text(encoding='utf-8')
         helpers = source[source.index('// Shape-only diagnostic:'):source.index('Функция NativeНовыйРезультат')]
         vm.execute(helpers + '\nКонтекст = Новый Структура("phase", "dispatch");')
         try:
