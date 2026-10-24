@@ -1364,3 +1364,220 @@ class CommandCompletionBoundaryTests(unittest.TestCase):
             report=controller.run();self.assertEqual(report['failed_stage'],'create');self.assertEqual(report['failure_kind'],'invalid_input')
             self.assertEqual('failure_context' in report,all(clean))
             protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=identity)
+
+
+class SnapshotOperationContextTests(unittest.TestCase):
+    """Finite snapshot boundaries and secondary cleanup failures, without 1C."""
+    setUp=NativeBoundaryTests.setUp
+
+    def context(self,operation,**extra):
+        return {'operation':operation,'site':'operation','bsl_phase':None,
+                'region':None,'reason':None,**extra}
+
+    def test_snapshot_boundaries_cover_only_their_fixed_lifecycle_stages(self):
+        for operation in ('snapshot_freeze','snapshot_clone','snapshot_remove'):
+            for current in protocol.STAGES:
+                self.native.begin_stage(current)
+                with self.subTest(operation=operation,stage=current), \
+                     mock.patch.object(self.native,'physical_summary',side_effect=OracleError('artifact_missing')), \
+                     mock.patch.object(self.native,'quiescent',return_value=False), \
+                     self.assertRaises(OracleError) as caught:
+                    if operation=='snapshot_freeze': self.native.freeze(self.db,'baseline')
+                    elif operation=='snapshot_clone': self.native.clone('baseline','observer')
+                    else: self.native.remove(self.db)
+                if current in protocol.COMMAND_STAGES[operation]:
+                    self.assertEqual(caught.exception.failure_context,self.context(operation))
+                    self.assertEqual(caught.exception.failure_context_stage,current)
+                else:
+                    self.assertFalse(hasattr(caught.exception,'failure_context'))
+
+    def test_snapshot_context_cannot_survive_a_stage_transition(self):
+        for operation in ('snapshot_freeze','snapshot_clone','snapshot_remove'):
+            self.native.begin_stage('baseline')
+            error=OracleError('invalid_input')
+            with self.subTest(operation=operation),self.assertRaises(OracleError) as caught:
+                with self.native.command_context(operation):
+                    self.native.begin_stage('create')
+                    raise error
+            self.assertIs(caught.exception,error)
+            self.assertFalse(hasattr(error,'failure_context'))
+            self.assertFalse(hasattr(error,'failure_context_stage'))
+
+    def test_freeze_keeps_original_order_and_does_not_relabel_removal(self):
+        self.native.begin_stage('restore_dt');events=[]
+        def summary(*args):events.append('summary');return physical()
+        def budget(*args):events.append('reserve' if args else 'postcheck')
+        def freeze(*args,**kwargs):events.append('freeze');return physical()
+        def quiet():events.append('remove');return False
+        with mock.patch.object(self.native,'physical_summary',side_effect=summary), \
+             mock.patch.object(self.native,'budgets',side_effect=budget), \
+             mock.patch.object(stage,'freeze_database',side_effect=freeze), \
+             mock.patch.object(self.native,'quiescent',side_effect=quiet), \
+             self.assertRaises(OracleError) as caught:
+            self.native.freeze(self.db,'restored')
+        self.assertEqual(events,['summary','reserve','freeze','postcheck','remove'])
+        self.assertEqual(caught.exception.kind,'snapshot_not_quiescent')
+        self.assertEqual(caught.exception.failure_context,self.context('snapshot_remove'))
+
+    def test_freeze_and_clone_preserve_each_existing_guard_failure(self):
+        self.native.begin_stage('restore_dt')
+        for operation,helper in (('freeze','freeze_database'),('clone','clone_database')):
+            for location in ('summary','reserve','copy','postcheck'):
+                error=OracleError('artifact_limit')
+                with self.subTest(operation=operation,location=location), \
+                     mock.patch.object(self.native,'physical_summary',
+                         side_effect=error if location=='summary' else None,return_value=physical()), \
+                     mock.patch.object(self.native,'budgets',
+                         side_effect=[error] if location=='reserve' else [None,error] if location=='postcheck' else None), \
+                     mock.patch.object(stage,helper,side_effect=error if location=='copy' else None,
+                         return_value=physical()), \
+                     mock.patch.object(self.native,'remove') as remove, \
+                     self.assertRaises(OracleError) as caught:
+                    if operation=='freeze':self.native.freeze(self.db,'restored')
+                    else:self.native.clone('restored','observer')
+                self.assertIs(caught.exception,error)
+                self.assertEqual(error.failure_context,self.context('snapshot_'+operation))
+                remove.assert_not_called()
+
+    def test_database_entry_context_is_finite_on_freeze_and_clone(self):
+        self.native.begin_stage('restore_dt')
+        for operation,helper in (('freeze','freeze_database'),('clone','clone_database')):
+            for entry in ENTRY_CLASSES:
+                for shape in ENTRY_SHAPES:
+                    error=DatabaseEntryError(entry,shape);error.args=('PRIVATE /native/path',)
+                    with self.subTest(operation=operation,entry=entry,shape=shape), \
+                         mock.patch.object(self.native,'physical_summary',return_value=physical()), \
+                         mock.patch.object(self.native,'budgets'), \
+                         mock.patch.object(stage,helper,side_effect=error), \
+                         self.assertRaises(OracleError) as caught:
+                        if operation=='freeze':self.native.freeze(self.db,'restored')
+                        else:self.native.clone('restored','observer')
+                    self.assertIs(caught.exception,error)
+                    self.assertEqual(error.failure_context,self.context('snapshot_'+operation,
+                        entry_class=entry,entry_shape=shape))
+                    raw=protocol.encode(error.failure_context)
+                    self.assertNotIn(b'PRIVATE',raw);self.assertNotIn(b'/native/path',raw)
+
+    def test_entry_fields_are_not_inferred_or_added_to_other_contexts(self):
+        self.native.begin_stage('restore_dt')
+        ordinary=OracleError('invalid_input');ordinary.entry_class='other';ordinary.shape='special'
+        for operation,error in (('snapshot_freeze',ordinary),
+                                ('snapshot_remove',DatabaseEntryError('other','special')),
+                                ('designer_restore_dt',DatabaseEntryError('other','special'))):
+            with self.subTest(operation=operation),self.assertRaises(OracleError) as caught:
+                with self.native.command_context(operation):raise error
+            self.assertEqual(caught.exception.failure_context,self.context(operation))
+
+    def test_baseline_entry_wrapper_keeps_snapshot_context_without_new_basename(self):
+        self.native.begin_stage('baseline')
+        for baseline,operation in (('freeze','snapshot_freeze'),('observe','snapshot_clone'),('audit','snapshot_clone')):
+            error=DatabaseEntryError('other','owned_regular_zero')
+            with self.assertRaises(DatabaseEntryError):
+                with self.native.command_context(operation):raise error
+            value=BaselineDiagnosticTests.injected(self,baseline,error)
+            self.assertEqual(value['failure_kind'],'baseline_'+baseline+'_entry_other_owned_regular_zero')
+            self.assertEqual(value['failure_context'],self.context(operation,
+                entry_class='other',entry_shape='owned_regular_zero'))
+            self.assertNotIn('rejected_basename',value)
+
+    def cleanup_failure(self,method,*,primary=True,unexpected=False):
+        settings={
+            'observe':('restore_dt','redump','designer_redump',('restored',2)),
+            'audit':('verify_restore','enterprise','enterprise_audit',('restored',)),
+            'export_configs':('export_cf','export','designer_export_cf',()),
+            'dump_dt':('dump_dt','export','designer_dump_dt',()),
+        }
+        current,action,operation,args=settings[method];self.native.begin_stage(current)
+        error=RuntimeError('PRIVATE /native/path') if unexpected else OracleError('metadata_rejected')
+        if not unexpected:error.oracle_site='result'
+        def fail(*args,**kwargs):
+            if unexpected:raise error
+            with self.native.command_context(operation):raise error
+        with contextlib.ExitStack() as stack:
+            clone=stack.enter_context(mock.patch.object(self.native,'clone',return_value=self.db))
+            stack.enter_context(mock.patch.object(self.native,'redump'))
+            stack.enter_context(mock.patch.object(self.native,'enterprise',return_value={}))
+            stack.enter_context(mock.patch.object(stage,'logical_from_marker',return_value={}))
+            stack.enter_context(mock.patch.object(self.native,'batch'))
+            stack.enter_context(mock.patch.object(self.native,'export'))
+            if primary:stack.enter_context(mock.patch.object(self.native,action,side_effect=fail))
+            stack.enter_context(mock.patch.object(self.native,'quiescent',return_value=False))
+            remove=stack.enter_context(mock.patch.object(self.native,'remove',wraps=self.native.remove))
+            with self.assertRaises(BaseException) as caught:getattr(self.native,method)(*args)
+            remove.assert_called_once_with(self.db);clone.assert_called_once()
+        return caught.exception,error,current,operation
+
+    def test_all_temporary_clone_paths_preserve_primary_failure_and_context(self):
+        for method in ('observe','audit','export_configs','dump_dt'):
+            with self.subTest(method=method):
+                caught,error,current,operation=self.cleanup_failure(method)
+                self.assertIs(caught,error)
+                self.assertEqual(caught.kind,'metadata_rejected')
+                self.assertEqual(caught.failure_context,{**self.context(operation),'site':'result'})
+                self.assertEqual(caught.failure_context_stage,current)
+
+    def test_all_temporary_clone_paths_preserve_unexpected_primary_failure(self):
+        for method in ('observe','audit','export_configs','dump_dt'):
+            with self.subTest(method=method):
+                caught,error,_,_=self.cleanup_failure(method,unexpected=True)
+                self.assertIs(caught,error)
+                self.assertFalse(hasattr(caught,'failure_context'))
+
+    def test_all_successful_clone_operations_still_fail_on_removal(self):
+        for method in ('observe','audit','export_configs','dump_dt'):
+            with self.subTest(method=method):
+                caught,_,current,_=self.cleanup_failure(method,primary=False)
+                self.assertEqual(caught.kind,'snapshot_not_quiescent')
+                self.assertEqual(caught.failure_context,self.context('snapshot_remove'))
+                self.assertEqual(caught.failure_context_stage,current)
+
+    def test_second_export_version_preserves_primary_failure_after_first_cleanup(self):
+        self.native.begin_stage('export_cf');error=OracleError('process_failed');events=[]
+        def clone(*args):events.append('clone');return self.db
+        def export(*args):events.append('export')
+        def batch(*args):
+            events.append('import')
+            with self.native.command_context('designer_import'):raise error
+        def quiet():events.append('remove');return events.count('remove')==1
+        with mock.patch.object(self.native,'clone',side_effect=clone), \
+             mock.patch.object(self.native,'export',side_effect=export), \
+             mock.patch.object(self.native,'batch',side_effect=batch), \
+             mock.patch.object(self.native,'quiescent',side_effect=quiet), \
+             mock.patch.object(stage.shutil,'rmtree'),self.assertRaises(OracleError) as caught:
+            self.native.export_configs()
+        self.assertIs(caught.exception,error)
+        self.assertEqual(events,['clone','export','remove','clone','import','remove'])
+        self.assertEqual(error.failure_context,self.context('designer_import'))
+
+    def test_controller_keeps_primary_context_only_after_verified_global_cleanup(self):
+        for clean in ((True,True),(False,True),(True,False),(False,False)):
+            for primary in (True,False):
+                error,_,current,operation=self.cleanup_failure('observe',primary=primary)
+                with self.subTest(clean=clean,primary=primary):
+                    report=BaselineDiagnosticTests.injected(self,'observe',error,
+                        clean=clean,failed_stage=current)
+                self.assertEqual(report['failed_stage'],'restore_dt')
+                self.assertEqual(report['failure_kind'],'metadata_rejected' if primary else 'snapshot_not_quiescent')
+                self.assertEqual(report['artifacts'],[])
+                self.assertEqual('failure_context' in report,all(clean))
+                if all(clean):
+                    self.assertEqual(report['failure_context']['operation'],
+                        operation if primary else 'snapshot_remove')
+                raw=protocol.encode(report)
+                self.assertNotIn(b'PRIVATE',raw);self.assertNotIn(b'/native/path',raw)
+
+    def test_global_cleanup_still_removes_files_after_local_remove_failure(self):
+        (self.db/'1Cv8.1CD').write_bytes(b'synthetic')
+        caught,error,_,_=self.cleanup_failure('observe')
+        self.assertIs(caught,error);self.assertTrue(self.db.exists())
+        # Keep the global cleanup fixture entirely inside its disposable root.
+        with mock.patch.object(stage,'Path',return_value=self.root/'runtime'):
+            self.assertEqual(self.native.cleanup(),(True,True))
+        self.assertFalse(self.root.exists())
+
+    def test_clone_failure_does_not_attempt_unacquired_temporary_clone_removal(self):
+        error=OracleError('artifact_limit')
+        with mock.patch.object(self.native,'clone',side_effect=error), \
+             mock.patch.object(self.native,'remove') as remove,self.assertRaises(OracleError) as caught:
+            self.native.observe('restored',2)
+        self.assertIs(caught.exception,error);remove.assert_not_called()

@@ -394,3 +394,25 @@ Exactness here means the parsed object's shape and values. The existing automati
 JSON reader is unchanged; this lane does not newly claim native rejection of raw
 duplicate keys or trailing JSON tokens. The input remains its own write-once private
 marker, not a caller-supplied document.
+
+### Snapshot-boundary failure localization
+
+Finite failure context also covers snapshot freeze, clone and removal throughout
+the fixed lifecycle. A database-entry rejection may carry only the existing fixed
+entry-class/shape pair, never a basename, path or contents. Live-source ancillary
+inventory, strict frozen/clone inventory, file ownership/link checks, census,
+copy verification, and every resource bound are unchanged.
+
+Auxiliary-clone cleanup is attempted after both success and failure. If the main
+operation already failed, a removal failure no longer replaces its primary error
+or context; the enclosing mandatory cleanup and final cleanup gates still run.
+If the operation succeeded but removal fails, the operation remains a failure.
+This rule applies to observation, audit, configuration producers and DT dumping,
+not just restoration. Optional context is still removed when final cleanup cannot
+be verified, and successful report bytes remain unchanged.
+
+The prior run proved the complete lifecycle through physical deletion, but failed
+before a restored snapshot was appended. Source-bound synthetic fault injection
+localized a diagnostic gap after the restore command wrapper, including the
+possibility that auxiliary removal masked an earlier error. It did not establish
+a native restore defect, an ancillary-file cause, or grounds to widen admission.

@@ -497,3 +497,52 @@ class CompletionContextTests(unittest.TestCase):
         self.check(report)
         report['failure_kind']='timeout'
         with self.assertRaises(OracleError):self.check(report)
+
+
+class SnapshotContextProtocolTests(unittest.TestCase):
+    def failed(self, operation='snapshot_freeze', stage='restore_dt', entry=True):
+        report,_=fixture_report(stage);report['failure_kind']='invalid_input'
+        context={'operation':operation,'site':'operation','bsl_phase':None,'region':None,'reason':None}
+        if entry:context.update(entry_class='other',entry_shape='directory')
+        report['failure_context']=context
+        return report
+    def check(self, report, final=False):
+        return protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=provenance(),final=final)
+    def test_fixed_snapshot_operations_and_all_existing_entry_enums(self):
+        for operation in ('snapshot_freeze','snapshot_clone','snapshot_remove'):
+            self.check(self.failed(operation,entry=False))
+        for operation in ('snapshot_freeze','snapshot_clone'):
+            for entry in protocol.ENTRY_CLASSES:
+                for shape in protocol.ENTRY_SHAPES:
+                    report=self.failed(operation);report['failure_context'].update(entry_class=entry,entry_shape=shape)
+                    self.check(report)
+    def test_snapshot_entry_pair_cannot_expand_to_native_text_or_unknown_context(self):
+        changes=[{'entry_class':True},{'entry_shape':False},{'entry_class':'PRIVATE /database/path'},
+            {'entry_shape':'PRIVATE'},{'entry_class':[]},{'entry_shape':{}},
+            {'basename':'1Cv8.native-private'},{'operation':'snapshot_remove'},
+            {'operation':'designer_restore_dt'},{'site':'poll'},
+            {'bsl_phase':'write'},{'region':'home','reason':'access'}]
+        for change in changes:
+            report=self.failed();report['failure_context'].update(change)
+            with self.subTest(change=change),self.assertRaises(OracleError):self.check(report)
+        for key in ('entry_class','entry_shape'):
+            report=self.failed();report['failure_context'].pop(key)
+            with self.assertRaises(OracleError):self.check(report)
+    def test_snapshot_context_stage_kind_and_baseline_class_binding(self):
+        for stage in ('preflight','seed_v1'):
+            with self.subTest(stage=stage),self.assertRaises(OracleError):self.check(self.failed(stage=stage))
+        report=self.failed();report['failure_kind']='process_failed'
+        with self.assertRaises(OracleError):self.check(report)
+        report=self.failed(stage='baseline');report['failure_kind']='baseline_freeze_entry_other_directory';self.check(report)
+        report['failure_context']['entry_shape']='owned_regular_zero'
+        with self.assertRaises(OracleError):self.check(report)
+    def test_snapshot_context_is_failure_only_and_requires_final_cleanup(self):
+        report=self.failed();report['cleanup'].update(container_removed=True,private_staging_removed=True);self.check(report,True)
+        report['cleanup']['private_staging_removed']=False
+        with self.assertRaises(OracleError):self.check(report,True)
+        good,_=fixture_report();good['failure_context']=self.failed()['failure_context']
+        with self.assertRaises(OracleError):self.check(good)
+    def test_snapshot_budget_context_retains_existing_region_reason_without_entry(self):
+        report=self.failed(entry=False);report['failure_context'].update(region='home',reason='access');self.check(report)
+        report['failure_context']['site']='post_exit'
+        with self.assertRaises(OracleError):self.check(report)

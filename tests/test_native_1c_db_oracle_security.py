@@ -526,6 +526,23 @@ class HostSecurityTests(SourceCase):
             self.assertNotIn('failure_context',report);self.assertNotIn(PRIVATE,protocol.encode(report).decode())
             self.assertFalse(report['accepted'])
 
+    def test_snapshot_entry_context_is_stripped_on_late_host_failure(self):
+        value,_=fixtures.fixture_report('restore_dt')
+        value['provenance']=copy.deepcopy(self.identity);value['provenance']['actual_version']=protocol.VERSION
+        value['failure_kind']='invalid_input'
+        value['failure_context']={'operation':'snapshot_freeze','site':'operation','bsl_phase':None,
+            'region':None,'reason':None,'entry_class':'other','entry_shape':'directory'}
+        for options in ({},{'cleanup_bad':True},{'private_cleanup_bad':True},{'changed_provenance':True}):
+            self.events.clear();self.configs.clear()
+            with self.subTest(options=options):
+                report=self.invoke(payload=protocol.encode(value),exit_code=1,**options)
+                self.assertEqual('failure_context' in report,not options)
+                self.assertEqual(report['failure_kind'],'provenance_mismatch' if options.get('changed_provenance') else 'invalid_input')
+                self.assertFalse(report['accepted'])
+                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                make_writable(self.work)
+                for child in self.work.iterdir():shutil.rmtree(child)
+
     def basename_failure(self, name='1Cv8.test'):
         report=self.baseline_failure('baseline_freeze_entry_'+protocol.diagnostic_entry_class(name)+'_owned_regular_zero')
         report['rejected_basename']=name

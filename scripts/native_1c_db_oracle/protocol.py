@@ -106,6 +106,9 @@ COMMAND_STAGES = {
     'enterprise_bootstrap': ('seed_v1',), 'enterprise_audit': ('baseline','verify_restore'),
     'enterprise_observe': ('baseline','create','update','load_cf','apply_cf','delete','restore_dt','verify_restore'),
     'enterprise_create': ('create',), 'enterprise_update': ('update',), 'enterprise_delete': ('delete',),
+    'snapshot_freeze': ('baseline','create','update','load_cf','apply_cf','delete','restore_dt'),
+    'snapshot_clone': ('baseline','create','update','export_cf','load_cf','apply_cf','dump_dt','delete','restore_dt','verify_restore'),
+    'snapshot_remove': ('baseline','create','update','export_cf','load_cf','apply_cf','dump_dt','delete','restore_dt','verify_restore'),
     'inventory': STAGES[:-1],
 }
 CONTEXT_SITES = frozenset(('operation','prelaunch','launch','poll','exit','settle','post_exit','result','scan'))
@@ -131,7 +134,9 @@ def completion_marker(raw, *, nonce, token, operation):
 
 
 def validate_failure_context(value, stage):
-    exact(value, {'operation','site','bsl_phase','region','reason'})
+    require(type(value) is dict)
+    entry={'entry_class','entry_shape'} if ('entry_class' in value or 'entry_shape' in value) else set()
+    exact(value, {'operation','site','bsl_phase','region','reason'} | entry)
     require(type(value['operation']) is str and value['operation'] in COMMAND_STAGES
             and stage in COMMAND_STAGES[value['operation']])
     require(type(value['site']) is str and value['site'] in CONTEXT_SITES)
@@ -143,6 +148,13 @@ def validate_failure_context(value, stage):
         require(type(value['region']) is str and value['region'] in INVENTORY_REGIONS
                 and type(value['reason']) is str and value['reason'] in INVENTORY_REASONS
                 and value['bsl_phase'] is None)
+    if value['operation'].startswith('snapshot_'):
+        require(value['site']=='operation' and value['bsl_phase'] is None)
+    if entry:
+        require(value['operation'] in ('snapshot_freeze','snapshot_clone') and value['site']=='operation'
+                and value['bsl_phase'] is None and value['region'] is None and value['reason'] is None)
+        require(type(value['entry_class']) is str and value['entry_class'] in ENTRY_CLASSES
+                and type(value['entry_shape']) is str and value['entry_shape'] in ENTRY_SHAPES)
     if value['operation']=='inventory':
         require(value['site']=='scan' and value['region'] is not None)
     else:
@@ -386,6 +398,12 @@ def validate_report(raw, *, nonce, provenance, final=False):
         if report['failure_context']['region'] is not None:
             require(report['failure_kind']=='invalid_input' or report['failure_kind'].endswith('_invalid_input')
                     or report['failure_kind'] in BOOTSTRAP_INVENTORY_FAILURES)
+        if 'entry_class' in report['failure_context']:
+            context=report['failure_context']
+            require(report['failure_kind']=='invalid_input' or report['failure_kind'] in BASELINE_ENTRY_FAILURES)
+            if report['failure_kind'] in BASELINE_ENTRY_FAILURES:
+                require(report['failure_kind'].endswith('_entry_'+context['entry_class']+'_'+context['entry_shape']))
+
         required=report['cleanup'] if final else {key:report['cleanup'][key]
             for key in ('native_processes_stopped','raw_files_removed')}
         require(all(required.values()))

@@ -339,6 +339,8 @@ class Native:
                     'bsl_phase':getattr(error,'bsl_phase',None),
                     'region':error.region if isinstance(error,SandboxInventoryError) else None,
                     'reason':error.reason if isinstance(error,SandboxInventoryError) else None}
+                if operation in ('snapshot_freeze','snapshot_clone') and isinstance(error,DatabaseEntryError):
+                    context.update(entry_class=error.entry_class,entry_shape=error.shape)
                 validate_failure_context(context,entered_stage)
                 error.failure_context=context
                 error.failure_context_stage=entered_stage
@@ -558,48 +560,64 @@ class Native:
             if target.exists(): shutil.rmtree(target)
 
     def freeze(self, database, identifier):
-        target=self.artifacts/identifier
-        self.budgets(self.physical_summary(database/'1Cv8.1CD')['bytes'])
-        capture=(self.stage=='baseline' and identifier=='baseline'
-                 and self.root==ROOT and self.artifacts==ROOT/'artifacts'
-                 and database==self.artifacts/'seed'
-                 and self.provenance['actual_version']==VERSION)
-        summary=freeze_database(database,target,quiescent=self.quiescent,
-                                capture_source_name=capture)
-        self.budgets()
+        with self.command_context('snapshot_freeze'):
+            target=self.artifacts/identifier
+            self.budgets(self.physical_summary(database/'1Cv8.1CD')['bytes'])
+            capture=(self.stage=='baseline' and identifier=='baseline'
+                     and self.root==ROOT and self.artifacts==ROOT/'artifacts'
+                     and database==self.artifacts/'seed'
+                     and self.provenance['actual_version']==VERSION)
+            summary=freeze_database(database,target,quiescent=self.quiescent,
+                                    capture_source_name=capture)
+            self.budgets()
+        # Removal has its own boundary; never relabel it as a freeze failure.
         self.remove(database)
         return summary
 
     def clone(self, identifier, label):
-        target=self.artifacts/label
-        self.budgets(self.physical_summary(self.artifacts/identifier/'1Cv8.1CD')['bytes'])
-        clone_database(self.artifacts/identifier,target,budget_root=self.artifacts)
-        self.budgets()
-        return target
+        with self.command_context('snapshot_clone'):
+            target=self.artifacts/label
+            self.budgets(self.physical_summary(self.artifacts/identifier/'1Cv8.1CD')['bytes'])
+            clone_database(self.artifacts/identifier,target,budget_root=self.artifacts)
+            self.budgets()
+            return target
 
     def remove(self, path):
-        require(self.quiescent(),'snapshot_not_quiescent')
-        if path.exists():
-            require(path.parent==self.artifacts and not path.is_symlink(),'invalid_input')
-            path.chmod(0o700)
-            shutil.rmtree(path)
+        with self.command_context('snapshot_remove'):
+            require(self.quiescent(),'snapshot_not_quiescent')
+            if path.exists():
+                require(path.parent==self.artifacts and not path.is_symlink(),'invalid_input')
+                path.chmod(0o700)
+                shutil.rmtree(path)
+
+    @contextmanager
+    def temporary_clone(self, identifier, label):
+        database=self.clone(identifier,label)
+        try:
+            yield database
+        except BaseException:
+            # Always attempt removal, but let the controller keep the primary
+            # failure and its context before its independent global cleanup.
+            try: self.remove(database)
+            except BaseException: pass
+            raise
+        else:
+            # A successful operation still fails if removal cannot be verified.
+            self.remove(database)
 
     def discard(self,*identifiers):
         for identifier in identifiers: self.remove(self.artifacts/identifier)
 
     def observe(self, identifier, designer):
-        database=self.clone(identifier,'observer')
-        try:
+        with self.temporary_clone(identifier,'observer') as database:
             # Designer redump and runtime read are separate clone sessions. Neither touches frozen bytes.
             self.redump(database,designer)
             data=self.enterprise(database,'observe')
             return logical_from_marker(data,designer)
-        finally: self.remove(database)
 
     def audit(self, identifier):
-        database=self.clone(identifier,'auditor')
-        try: self.enterprise(database,'audit')
-        finally: self.remove(database)
+        with self.temporary_clone(identifier,'auditor') as database:
+            self.enterprise(database,'audit')
 
     def mutate(self,database,operation):
         self.enterprise(database,operation)
@@ -614,14 +632,12 @@ class Native:
 
     def export_configs(self):
         for version in (1,2):
-            database=self.clone('baseline','producer')
-            try:
+            with self.temporary_clone('baseline','producer') as database:
                 if version==2:
                     self.batch(database,['/LoadConfigFromFiles',str(self.v2)],'producer-v2-import')
                     self.batch(database,['/UpdateDBCfg'],'producer-v2-apply')
                     self.redump(database,2)
                 self.export(database,'cf_v'+str(version),'/DumpCfg')
-            finally: self.remove(database)
 
     def export(self,database,identifier,switch):
         suffix='.dt' if identifier=='dt_updated' else '.cf'
@@ -640,9 +656,8 @@ class Native:
         self.batch(database,['/UpdateDBCfg'],'apply-cf')
 
     def dump_dt(self):
-        database=self.clone('applied','dumper')
-        try: self.export(database,'dt_updated','/DumpIB')
-        finally: self.remove(database)
+        with self.temporary_clone('applied','dumper') as database:
+            self.export(database,'dt_updated','/DumpIB')
 
     def restore(self):
         database=self.create_db('restore-target')
@@ -702,8 +717,12 @@ class Controller:
             # A pre-wrapped or stale diagnostic is not a fresh baseline input error.
             raise
         except DatabaseEntryError as error:
-            raise BaselineInputError(operation,error.entry_class,error.shape,
-                                     basename=getattr(error,'basename',None)) from None
+            wrapped=BaselineInputError(operation,error.entry_class,error.shape,
+                                       basename=getattr(error,'basename',None))
+            if hasattr(error,'failure_context'):
+                wrapped.failure_context=error.failure_context
+                wrapped.failure_context_stage=getattr(error,'failure_context_stage',None)
+            raise wrapped from None
         except OracleError as error:
             if error.kind=='invalid_input':
                 wrapped=BaselineInputError(operation)
