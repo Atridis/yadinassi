@@ -39,7 +39,8 @@ class DatabaseContextTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Resolve only the owned fixture: macOS may spell /private/var as /var.
+        self.root = Path(self.temporary.name).resolve()
         self.directory = self.root / "Моя база данных"
         self.path = make_header_file(self.directory)
         self.context = FileDBContext(self.directory)
@@ -74,6 +75,28 @@ class DatabaseContextTests(unittest.TestCase):
             os.chdir(later)
             self.assertEqual(context.directory, str(self.directory))
             self.assertEqual(context.connection_string(), self.expected)
+        finally:
+            os.chdir(before)
+
+    @unittest.skipIf(os.name == "nt", "POSIX directory alias; no privileged Windows symlink required")
+    def test_relative_directory_anchors_actual_cwd_without_runtime_resolution(self):
+        physical = self.root / "physical"
+        make_header_file(physical / "db")
+        alias = self.root / "cwd-alias"
+        alias.symlink_to(physical, target_is_directory=True)
+        before = os.getcwd()
+        try:
+            os.chdir(alias)
+            startup = os.getcwd()
+            self.assertEqual(startup, str(physical))
+            with mock.patch.object(Path, "resolve", side_effect=AssertionError("unexpected resolve")), \
+                 mock.patch.object(os, "stat", side_effect=AssertionError("unexpected stat")), \
+                 mock.patch.object(os, "lstat", side_effect=AssertionError("unexpected lstat")), \
+                 mock.patch.object(os, "open", side_effect=AssertionError("unexpected open")):
+                context = FileDBContext("db")
+                self.assertEqual(context.directory, os.path.join(startup, "db"))
+            os.chdir(self.root)
+            self.assertEqual(context.connection_string(), f'File="{physical / "db"}";')
         finally:
             os.chdir(before)
 
