@@ -267,52 +267,83 @@ class OwnedFixtureTests(unittest.TestCase):
 
     def test_mutations_abandon_without_removing_any_entries(self):
         for mutation in ("replace", "symlink", "hardlink", "content", "extra-file",
-                         "extra-root", "mode", "restored-bytes", "db-symlink", "root-symlink"):
+                         "extra-root", "mode", "restored-bytes-mtime", "db-symlink", "root-symlink"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory(
-                    prefix="mutation-", dir=self.base) as external:
-                outside = Path(external)
+                    prefix="mutation-", dir=self.base) as temporary:
+                # Each case owns an isolated private namespace, even if an
+                # earlier assertion fails. No public fixed pathname is touched.
+                case = Path(temporary)
+                parent = case / "namespace"
+                outside = case / "outside"
+                parent.mkdir()
+                outside.mkdir()
+                root = parent / "onec-smoke"
+                db = root / "db"
+                file = db / "1Cv8.1CD"
                 sentinel = outside / "sentinel"
                 sentinel.write_bytes(b"outside sentinel\n")
-                owned = fixture.OwnedInfobase().__enter__()
-                if mutation == "replace":
-                    self.file.unlink()
-                    self.file.write_bytes(fixture._FIXTURE_BYTES)
-                elif mutation == "symlink":
-                    self.file.unlink()
-                    self.file.symlink_to(sentinel)
-                elif mutation == "hardlink":
-                    os.link(self.file, outside / "linked")
-                elif mutation in ("content", "restored-bytes"):
-                    self.file.write_bytes(b"changed\n")
-                    if mutation == "restored-bytes":
-                        self.file.write_bytes(fixture._FIXTURE_BYTES)
-                elif mutation == "extra-file":
-                    (self.db / "extra").write_bytes(b"keep\n")
-                elif mutation == "extra-root":
-                    (self.root / "extra").mkdir()
-                elif mutation == "mode":
-                    self.file.chmod(0o640)
-                elif mutation == "db-symlink":
-                    self.db.rename(outside / "original-db")
-                    self.db.symlink_to(outside, target_is_directory=True)
-                else:
-                    self.root.rename(outside / "original-root")
-                    self.root.symlink_to(outside, target_is_directory=True)
-                before = self.root.lstat()
-                with self.assertRaises(fixture.FixtureError) as caught:
-                    owned.verify()
-                self.assertEqual(caught.exception.code, "fixture_changed")
-                with self.assertRaises(fixture.FixtureError) as exit_error:
-                    owned.__exit__(None, None, None)
-                self.assertEqual(exit_error.exception.code, "fixture_cleanup_failed")
-                self.assertEqual(fixture._stable(self.root.lstat()), fixture._stable(before))
-                self.assertEqual(sentinel.read_bytes(), b"outside sentinel\n")
-                # Test-only disposal of its unique namespace, never production cleanup.
-                if self.root.is_symlink():
-                    self.root.unlink()
-                else:
-                    import shutil
-                    shutil.rmtree(self.root)
+
+                def namespace():
+                    return (os.open(case, fixture._directory_flags()),
+                            os.open(parent, fixture._directory_flags()))
+
+                with mock.patch.object(fixture, "_PARENT", parent), \
+                        mock.patch.object(fixture, "_open_trusted_parent", side_effect=namespace):
+                    owned = fixture.OwnedInfobase()
+                    try:
+                        owned.__enter__()
+                        if mutation == "replace":
+                            file.unlink()
+                            file.write_bytes(fixture._FIXTURE_BYTES)
+                        elif mutation == "symlink":
+                            file.unlink()
+                            file.symlink_to(sentinel)
+                        elif mutation == "hardlink":
+                            os.link(file, outside / "linked")
+                        elif mutation in ("content", "restored-bytes-mtime"):
+                            original = file.stat()
+                            file.write_bytes(b"changed\n")
+                            if mutation == "restored-bytes-mtime":
+                                file.write_bytes(fixture._FIXTURE_BYTES)
+                                # Test observable metadata-change detection, not
+                                # an unobservable history of writes and restores.
+                                os.utime(file, ns=(original.st_atime_ns,
+                                                 original.st_mtime_ns - 2_000_000_000),
+                                         follow_symlinks=False)
+                                self.assertNotEqual(file.stat().st_mtime_ns, original.st_mtime_ns)
+                                self.assertEqual(file.read_bytes(), fixture._FIXTURE_BYTES)
+                        elif mutation == "extra-file":
+                            (db / "extra").write_bytes(b"keep\n")
+                        elif mutation == "extra-root":
+                            (root / "extra").mkdir()
+                        elif mutation == "mode":
+                            file.chmod(0o640)
+                        elif mutation == "db-symlink":
+                            db.rename(outside / "original-db")
+                            db.symlink_to(outside, target_is_directory=True)
+                        else:
+                            root.rename(outside / "original-root")
+                            root.symlink_to(outside, target_is_directory=True)
+                        before = root.lstat()
+                        with self.assertRaises(fixture.FixtureError) as caught:
+                            owned.verify()
+                        self.assertEqual(caught.exception.code, "fixture_changed")
+                        with self.assertRaises(fixture.FixtureError) as exit_error:
+                            owned.__exit__(None, None, None)
+                        self.assertEqual(exit_error.exception.code, "fixture_cleanup_failed")
+                        self.assertEqual(fixture._stable(root.lstat()), fixture._stable(before))
+                        self.assertEqual(sentinel.read_bytes(), b"outside sentinel\n")
+                    finally:
+                        # Test-only disposal runs even after a failed assertion;
+                        # production cleanup and uncertain-object rules are unchanged.
+                        try:
+                            owned._close_fds()
+                        finally:
+                            if root.is_symlink():
+                                root.unlink()
+                            elif root.exists():
+                                import shutil
+                                shutil.rmtree(root)
 
     def test_exit_itself_verifies_and_preserves_unknown_extra_entry(self):
         with self.assertRaises(fixture.FixtureError) as caught:
