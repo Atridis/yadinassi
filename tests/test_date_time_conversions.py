@@ -230,11 +230,12 @@ class FixedOffsetRuntimeTests(unittest.TestCase):
                     self.assert_caught(name + '(opaque,"GMT+0")')
         self.assertEqual(self.vm.execute('ToLocalTime(source,"GMT+1")'), date('20240301005959'))
 
-    def test_trailing_omission_retains_existing_parser_limit(self):
+    def test_trailing_omission_retains_existing_host_runtime_limit(self):
         for _, names in ALIASES:
             for name in names:
-                with self.assertRaises(BSLError):
+                with self.assertRaisesRegex(BSLError, 'Пропуск аргументов'):
                     self.vm.execute(name + '(source,)')
+                self.assert_caught(name + '(source,)')
 
     def assert_caught(self, expression):
         self.vm.execute('saved = 7; caught = False; Try saved = ' + expression

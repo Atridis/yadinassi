@@ -1,0 +1,105 @@
+{
+  "schema": "trailing-omitted-native-v1",
+  "status": "audited_execute_capture",
+  "native_target": "linux-8.3.27.1508",
+  "platform_version": "8.3.27.1508",
+  "configured_timezone": "Etc/UTC",
+  "configured_native_locale": "ru_RU",
+  "native_token": "omit.v1:S0112E0099S0100E0099S0152S0150E0099E0099E0099",
+  "records": [
+    {
+      "label": "defaults.zero",
+      "status": "S",
+      "argument_calls": 0,
+      "body_calls": 1,
+      "result": 12
+    },
+    {
+      "label": "required.zero",
+      "status": "E",
+      "argument_calls": 0,
+      "body_calls": 0,
+      "result": 99
+    },
+    {
+      "label": "required.one-comma",
+      "status": "S",
+      "argument_calls": 0,
+      "body_calls": 1,
+      "result": 0
+    },
+    {
+      "label": "required.two-commas",
+      "status": "E",
+      "argument_calls": 0,
+      "body_calls": 0,
+      "result": 99
+    },
+    {
+      "label": "defaults.terminal",
+      "status": "S",
+      "argument_calls": 0,
+      "body_calls": 1,
+      "result": 52
+    },
+    {
+      "label": "defaults.explicit-undefined",
+      "status": "S",
+      "argument_calls": 0,
+      "body_calls": 1,
+      "result": 50
+    },
+    {
+      "label": "one.tick-terminal",
+      "status": "E",
+      "argument_calls": 0,
+      "body_calls": 0,
+      "result": 99
+    },
+    {
+      "label": "one.tick-excess-terminal",
+      "status": "E",
+      "argument_calls": 0,
+      "body_calls": 0,
+      "result": 99
+    },
+    {
+      "label": "required.tick-two-commas",
+      "status": "E",
+      "argument_calls": 0,
+      "body_calls": 0,
+      "result": 99
+    }
+  ],
+  "capture": {
+    "run_id": 40029817101,
+    "head_sha": "438d1ef25ebea7cfeb39776abb4d7fede9608dd6",
+    "checkout_sha": "d0f1ee7227d34607e0fbb49a8600864b70b3effc",
+    "tree_sha": "f1cd2282dcd40abf0b20ff2b3dd7b1702c05182a",
+    "source_sha256": "b1862eb7569e23e054c4abc14711a4faa53b1e26fd16212502317e592caf98a3",
+    "module_sha256": "8f536868671b97f7929056ef19e3706d716dd65c91a313cb03bcb22af80c3286",
+    "functions_output_sha256": "b0d968775e0a92545c9a6facdee9d03216355b0b59a0eb40c99942f3a2e578ea",
+    "functions_output_bytes": 20380,
+    "functions_message_count": 157,
+    "runtime_source_sha256": "8fb26d9b20c6831733848cc5c283b49d4563fb2d841c3dc688789a1c46bd5318",
+    "report_sha256": "74e9912d4d3a2c65f30018d7b2e7f953906ae28022b47b35eab5ecc908169b77",
+    "outputs_artifact_id": 12533359542,
+    "outputs_zip_sha256": "264895179498218543e0a2c4e2fb3336c0ba32d725ec25553f23b5a224062050",
+    "summary_artifact_id": 12533179935,
+    "summary_zip_sha256": "b82ccc315eebe0741b335aa74e1ce02ef07e9a21fb3d3a0a75021e53be08653a",
+    "comparison_status": "mismatched",
+    "acceptance_status": "rejected_measurement_only"
+  },
+  "retained_records": {
+    "initialization": 136,
+    "post_create_observations": 18,
+    "phase_witnesses": 2,
+    "new_token_records": 1
+  },
+  "limitations": [
+    "Measured ordinary BSL functions through Execute on Linux 1C 8.3.27.1508.",
+    "Literal direct positive witness is a later source change and requires fresh native validation.",
+    "No new host optional-parameter contract, constructor, RPC, form or database behavior is inferred.",
+    "Async composition regressions do not claim a new native Async measurement."
+  ]
+}

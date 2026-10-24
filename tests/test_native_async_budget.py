@@ -45,7 +45,7 @@ import unittest
 from unittest import mock
 
 import test_native_async_protocol as protocol
-from test_native_1c_full_host import fixture, NONCE
+from test_native_1c_full_host import fixture, NONCE, SyntheticFilesystemCase
 from test_native_1c_smoke import (smoke, bootstrap_report, read_staging_fixture,
                                   _USE_SYNTHETIC_STAGING_READER)
 
@@ -417,7 +417,7 @@ def proof_results():
         async_comparison_compact_bytes=len(compact(maximum_async_comparison())))
 
 
-class AsyncBudgetTests(unittest.TestCase):
+class AsyncBudgetTests(SyntheticFilesystemCase):
     def test_linux_serializer_bound_is_independent_of_crlf_text_transport(self):
         value = majorant()
         expected, expected_code = render_summary(value, error=True)

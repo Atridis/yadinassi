@@ -11,7 +11,7 @@ from scripts.native_historical_replay import (
     EXPORTED_CONTEXT_BASE_BLOB, EXPORTED_VARIABLE_BASE_BLOB,
     HISTORICAL_FUNCTIONS_BLOB, git_blob, without_exported_postcreate_probes,
     without_exported_context_probes, without_exported_variable_probes,
-    without_extended_exception_probes,
+    without_extended_exception_probes, without_trailing_omitted_probes,
 )
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse
@@ -29,7 +29,8 @@ def checkout_source(path):
 class ExportedPostCreateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.raw = checkout_source(ROOT / 'integrational_tests/tests/functions.bsl')
+        cls.raw = without_trailing_omitted_probes(checkout_source(
+            ROOT / 'integrational_tests/tests/functions.bsl').decode('utf-8')).encode('utf-8')
         cls.source = cls.raw.decode('utf-8')
         cls.previous = without_exported_postcreate_probes(cls.source)
 

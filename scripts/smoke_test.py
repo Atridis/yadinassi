@@ -14,8 +14,16 @@ import tempfile
 
 if __package__:
     from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
+    from .native_historical_replay import (
+        TRAILING_OMITTED_PROBE_BLOCKS, TRAILING_OMITTED_SOURCE_SHA256,
+        without_trailing_omitted_direct_probe,
+    )
 else:
     from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
+    from native_historical_replay import (
+        TRAILING_OMITTED_PROBE_BLOCKS, TRAILING_OMITTED_SOURCE_SHA256,
+        without_trailing_omitted_direct_probe,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -2459,6 +2467,43 @@ def check_async_language(executable, *, directory, env):
     print('Binary async language passed: continuations, values, repeat Await, rejection, complete lifecycle')
 
 
+def check_trailing_omitted_arguments(executable, *, directory, env):
+    """Bounded binary smoke, not a fresh full-source native-1C measurement."""
+    fixture = json.loads((ROOT / 'tests/fixtures/trailing_omitted_linux.json').read_text(encoding='utf-8'))
+    text = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+    measured = without_trailing_omitted_direct_probe(text)
+    if (fixture['capture']['source_sha256'] != TRAILING_OMITTED_SOURCE_SHA256
+            or hashlib.sha256(measured.encode('utf-8')).hexdigest()
+            != fixture['capture']['source_sha256']):
+        raise AssertionError('Trailing omitted native capture source binding changed')
+    token = fixture['native_token']
+    if not re.fullmatch(r'omit\.v1:(?:[SE][0-9]{4}){9}', token):
+        raise AssertionError('Trailing omitted native token shape changed')
+    # Keep all nine measured Execute cases plus the later direct positive witness.
+    # Only these exact bounded sections are extracted; live native CI still runs
+    # the complete current functions source and must validate the new witness.
+    blocks = []
+    for start, end in TRAILING_OMITTED_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise AssertionError('Trailing omitted smoke probe boundaries changed')
+        blocks.append(start + text.split(start, 1)[1].split(end, 1)[0] + end)
+    code = ''.join(blocks)
+    expected = token + '\n'
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ПоследнийПропущенныйАргумент.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed trailing omitted arguments {arguments!r}: {result!r}')
+    print('Binary trailing omitted arguments passed: nine measured Execute cases, '
+          'direct positive witness, BOM file, command flags, stdin and console')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -2485,6 +2530,7 @@ def main() -> None:
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
         check_extended_exceptions(executable, directory=Path(temporary) / "extended-exceptions", env=env)
         check_async_language(executable, directory=Path(temporary) / "async-language", env=env)
+        check_trailing_omitted_arguments(executable, directory=Path(temporary) / "trailing-omitted", env=env)
         check_exported_module_variables(executable, directory=Path(temporary) / "exported-module-variables", env=env)
         check_side_local_module_variables(executable, directory=Path(temporary) / "side-local-module", env=env)
         check_server_nocontext(executable, directory=Path(temporary) / "server-nocontext", env=env)

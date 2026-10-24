@@ -177,7 +177,7 @@ class Interpreter:
                             else 'export-phase.post-create: [ok]']
                 self.assertEqual(result.stdout.decode().splitlines(), expected)
 
-    def test_host_real_measured_checkpoint_completes_all_156_rows(self):
+    def test_host_complete_source_keeps_checkpoint_and_measurement_rows(self):
         source = ROOT / 'integrational_tests/tests/functions.bsl'
         result = subprocess.run([sys.executable, '-c', host.EXECUTE_SCRIPT, str(ROOT), str(source),
                                  'linux-8.3.27.1508'], capture_output=True, check=False)
@@ -186,11 +186,12 @@ class Interpreter:
         Interpreter(expected.append, native_target='linux-8.3.27.1508').execute(
             without_exported_postcreate_probes(source.read_text(encoding='utf-8')))
         lines = result.stdout.decode().splitlines()
-        self.assertEqual(len(lines), 156)
+        self.assertEqual(len(lines), 157)
         self.assertEqual(lines[:136], expected)
-        self.assertEqual(lines[136], 'export-phase.post-create: [begin]')
-        self.assertEqual(tuple(row.split(':', 1)[0] for row in lines[137:155]), host.POST_CREATE_LABELS)
-        self.assertEqual(lines[155], 'export-phase.post-create: [ok]')
+        self.assertRegex(lines[136], r'^omit\.v1:(?:[SE][0-9]{4}){9}$')
+        self.assertEqual(lines[137], 'export-phase.post-create: [begin]')
+        self.assertEqual(tuple(row.split(':', 1)[0] for row in lines[138:156]), host.POST_CREATE_LABELS)
+        self.assertEqual(lines[156], 'export-phase.post-create: [ok]')
 
     def test_real_host_missing_export_is_bounded_failure_not_green(self):
         source = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
@@ -209,7 +210,8 @@ class Interpreter:
             self.assertEqual((result.returncode, result.stderr), (3, b''))
             lines = result.stdout.decode().splitlines()
             self.assertEqual(lines[:136], expected)
-            self.assertEqual(lines[136:], ['export-phase.post-create: [begin]',
+            self.assertRegex(lines[136], r'^omit\.v1:(?:[SE][0-9]{4}){9}$')
+            self.assertEqual(lines[137:], ['export-phase.post-create: [begin]',
                 'export-phase.post-create: [error;kind=method-missing;named={"B",1}]'])
             historical = Path(folder) / 'old.bsl'
             historical.write_text('Message("unchanged");', encoding='utf-8')

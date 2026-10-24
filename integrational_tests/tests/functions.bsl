@@ -12,6 +12,10 @@ Var ExportProbePrivate, ExportProbeValue Export, ExportProbeOther Export;
 Перем МодульноеВычисления;
 Перем СчетчикСсылок;
 
+// Begin trailing omitted argument checkpoint declarations.
+Var OmitProbeArgumentCalls, OmitProbeBodyCalls;
+// End trailing omitted argument checkpoint declarations.
+
 // Begin exported variable post-create helpers.
 Procedure ExportProbeAfterCreate(Val PublicObject) Export
     ExportProbePublicObject = PublicObject;
@@ -553,6 +557,83 @@ EndProcedure
 КонецПроцедуры
 // End exception context checkpoint helpers.
 
+// Begin trailing omitted argument checkpoint helpers.
+Function OmitProbeDigit(Val Value)
+    If Value < 0 Or Value > 9 Or Value <> Int(Value) Then
+        Raise "omit-probe-digit-range";
+    EndIf;
+    Return Mid("0123456789", Value + 1, 1);
+EndFunction
+
+Function OmitProbeEncodePair(Val First, Val Second)
+    If First = Undefined Then First = 0; EndIf;
+    If Second = Undefined Then Second = 0; EndIf;
+    Return First * 10 + Second;
+EndFunction
+
+Function OmitProbeDefaults(First = 1, Second = 2)
+    OmitProbeBodyCalls = OmitProbeBodyCalls + 1;
+    Return OmitProbeEncodePair(First, Second);
+EndFunction
+
+Function OmitProbeRequired(First, Second)
+    OmitProbeBodyCalls = OmitProbeBodyCalls + 1;
+    Return OmitProbeEncodePair(First, Second);
+EndFunction
+
+Function OmitProbeOne(Value)
+    OmitProbeBodyCalls = OmitProbeBodyCalls + 1;
+    Return Value;
+EndFunction
+
+Function OmitProbeTick()
+    OmitProbeArgumentCalls = OmitProbeArgumentCalls + 1;
+    Return OmitProbeArgumentCalls;
+EndFunction
+
+Function OmitProbeObserve(Val Expression)
+    Var Result, Status;
+    Result = 99;
+    Status = "S";
+    OmitProbeArgumentCalls = 0;
+    OmitProbeBodyCalls = 0;
+    Try
+        Execute("Result = " + Expression + ";");
+    Except
+        Status = "E";
+    EndTry;
+    // Finite outcome only: no localized descriptions, paths or private data.
+    Return Status
+        + OmitProbeDigit(OmitProbeArgumentCalls)
+        + OmitProbeDigit(OmitProbeBodyCalls)
+        + OmitProbeDigit(Int(Result / 10))
+        + OmitProbeDigit(Result % 10);
+EndFunction
+
+Function CollectTrailingOmittedProbe()
+    Var Result;
+    // Begin trailing omitted direct positive witness.
+    OmitProbeArgumentCalls = 0;
+    OmitProbeBodyCalls = 0;
+    Result = OmitProbeDefaults(5,);
+    If Result <> 52 Or OmitProbeArgumentCalls <> 0 Or OmitProbeBodyCalls <> 1 Then
+        Raise "omit-probe-direct";
+    EndIf;
+    // End trailing omitted direct positive witness.
+    Result = "omit.v1:";
+    Result = Result + OmitProbeObserve("OmitProbeDefaults()");
+    Result = Result + OmitProbeObserve("OmitProbeRequired()");
+    Result = Result + OmitProbeObserve("OmitProbeRequired(,)");
+    Result = Result + OmitProbeObserve("OmitProbeRequired(,,)");
+    Result = Result + OmitProbeObserve("OmitProbeDefaults(5,)");
+    Result = Result + OmitProbeObserve("OmitProbeDefaults(5,Undefined)");
+    Result = Result + OmitProbeObserve("OmitProbeOne(OmitProbeTick(),)");
+    Result = Result + OmitProbeObserve("OmitProbeOne(OmitProbeTick(),2,)");
+    Result = Result + OmitProbeObserve("OmitProbeRequired(OmitProbeTick(),,)");
+    Return Result;
+EndFunction
+// End trailing omitted argument checkpoint helpers.
+
 Показать(Сложить(2, 3));
 
 Попытка
@@ -724,3 +805,7 @@ ObserveExportContext("static-routine", 3, "");
 ObserveExportContext("execute-read", 0, "Result = ThisObject.ExportProbeValue;");
 ObserveExportContext("execute-routine", 0, "Result = ThisObject.ExportProbeRead();");
 // End exported variable discriminator observations.
+// Begin trailing omitted argument checkpoint observations.
+// Audited Execute token retained; the direct positive witness requires fresh native validation.
+Message(CollectTrailingOmittedProbe());
+// End trailing omitted argument checkpoint observations.

@@ -447,15 +447,12 @@ class Parser:
         if self.accept(")"):
             return arguments
         while True:
-            if self.current.kind == ",":
+            if self.current.kind in {",", ")"}:
                 arguments.append(ast.OmittedArgument(self.current))
             else:
                 arguments.append(self.expression())
             if not self.accept(","):
                 break
-            if self.current.kind == ")":
-                self.fail("Запятая в конце списка аргументов пока не поддерживается; "
-                          "опустите конечные необязательные параметры без запятой")
         self.expect(")")
         return arguments
 

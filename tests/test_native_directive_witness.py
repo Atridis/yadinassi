@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from test_native_1c_full_host import SyntheticFilesystemCase
 from test_native_client_probe import suite, full, ROOT, stage_fixture
 
 
@@ -14,8 +15,9 @@ def linux_fixture(path):
     return raw.replace(b"\r\n", b"\n") if os.name == "nt" else raw
 
 
-class NativeDirectiveWitnessTests(unittest.TestCase):
+class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
     def setUp(self):
+        super().setUp()
         # Pure marker-schema fixtures do not exercise Linux descriptor security.
         # Match the existing Windows client marker fixture adapter; keep the
         # production reader and real POSIX security tests unchanged.

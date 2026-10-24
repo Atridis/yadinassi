@@ -45,18 +45,15 @@ class DefaultParameterTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('F(, 2)'), '1:2:3')
         self.assertEqual(self.vm.execute('F(,,3)'), '1::3')
         self.assertEqual(self.vm.execute('F(,,9)'), '1::9')
-        for code in ['F()', 'F(1)', 'F(1,)']:
+        self.assertEqual(self.vm.execute('F(1,)'), '1::3')
+        for code in ['F()', 'F(1)']:
             with self.subTest(code=code), self.assertRaises(BSLError):
                 self.vm.execute(code)
 
-    def test_interior_skips_and_trailing_comma_diagnostics(self):
+    def test_interior_skips_preserve_argument_positions(self):
         self.vm.execute('Procedure P(a, b, c) Message(a = Undefined); '
                         'Message(b = Undefined); Message(c); EndProcedure')
         self.vm.execute('P(,,3)')
-        self.assertEqual(self.output, ['Да', 'Да', '3'])
-        for code in ['P(,)', 'P(,,)', 'P(,,,)', 'P(1,)', 'P(1,,)']:
-            with self.subTest(code=code), self.assertRaisesRegex(BSLError, 'Запятая в конце'):
-                self.vm.execute('Message("bad"); ' + code)
         self.assertEqual(self.output, ['Да', 'Да', '3'])
         for code, count in [('P()', 0), ('P(,1)', 2), ('P(,,1)', 3), ('P(1,,2)', 3)]:
             with self.subTest(code=code):
