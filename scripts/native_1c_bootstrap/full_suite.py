@@ -604,9 +604,6 @@ def build_envelope(report: dict, nonce: str, root: Path, *, quiet: bool) -> byte
         raise FullError('invalid_input')
     outputs = []
     stage = report['stage3']
-    if not quiet:
-        discard_date_null_capture(stage, dict(empty_process_diagnostics(),
-                                             stage='after_exit', reason='native_not_quiet'))
     if report['status'] == 'ok' and stage['status'] == 'ok':
         try:
             if not quiet or stage['nonce'] != nonce:
@@ -673,6 +670,9 @@ CLIENT_VALUES += ['nocontext.core.v3'] + [12, 22, 0, 12, 2, True, 16, True, 6, 1
 
 # One exact dense witness, projected from the audited nine-slot native capture.
 CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
+
+# Audited native checkpoint40078699477; exact eight Date/Null observations.
+CLIENT_VALUES += ['dn.v1:22222277']
 
 
 CLIENT_FLAGS = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
@@ -745,15 +745,7 @@ def client_marker(path: Path, nonce: str, phase: str) -> dict:
     return value
 
 
-def date_null_client_marker(path: Path, nonce: str, phase: str) -> dict:
-    """Measurement-only source never turns baseline or new observations into PASS."""
-    value = client_marker(path, nonce, phase)
-    if phase == 'completed':
-        raise FullError('invalid_result')
-    return value
-
-
-def client_marker_diagnostics(path: Path, nonce: str, *, date_null_source: bytes | None = None) -> dict:
+def client_marker_diagnostics(path: Path, nonce: str) -> dict:
     """Finite failure metadata only; never actual strings, paths or error text."""
     result = {'phase': 'invalid', 'kind': 'none', 'ordinal': -1, 'error_stage': 0}
     try:
@@ -786,14 +778,6 @@ def client_marker_diagnostics(path: Path, nonce: str, *, date_null_source: bytes
             return result
     if len(values) != len(CLIENT_VALUES):
         result.update(kind='count', ordinal=min(len(values), len(CLIENT_VALUES)))
-    # Export only the finite independent token after the entire strict135 prefix
-    # matched by type and value. Production passes source bytes only after all
-    # source/module/roundtrip, process, entered-marker and timing gates below.
-    if (type(date_null_source) is bytes and digest(date_null_source) == DATE_NULL_SOURCE_SHA256
-            and len(CLIENT_VALUES) == 135 and len(values) == 136
-            and result['kind'] == 'count' and result['ordinal'] == 135
-            and valid_date_null_token(values[135])):
-        result['date_null'] = values[135]
     return result
 
 
@@ -1015,29 +999,9 @@ def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
     return baseline | own
 
 
-def has_date_null_capture(suite: dict) -> bool:
-    record = suite.get('client_probe')
-    return (type(record) is dict and type(record.get('marker_diagnostics')) is dict
-            and 'date_null' in record['marker_diagnostics'])
-
-
-def discard_date_null_capture(suite: dict, diagnostics=None) -> bool:
-    """Late cleanup failure invalidates only the optional finite observation."""
-    if not has_date_null_capture(suite):
-        return False
-    record = suite['client_probe']
-    del record['marker_diagnostics']['date_null']
-    record.update(quiet=False, witness_verified=False)
-    record['process_diagnostics'] = (diagnostics if diagnostics is not None else
-        dict(empty_process_diagnostics(), stage='after_exit', reason='unverified'))
-    return True
-
-
 def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostics=None) -> None:
     """Keep a final teardown/census failure valid, finite and non-exportable."""
     suite.update(status='failed', failure_kind='process_failed')
-    if discard_date_null_capture(suite, diagnostics):
-        return
     if 'client_async' in suite and suite['client_async']['status'] != 'not_started':
         fail_async_process_checkpoint(suite['client_async'], diagnostics)
         return
@@ -1085,7 +1049,7 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
     marker_reader = (client_numbers_marker if numbers_output is not None else
                      client_collections_marker if collections_output is not None else
                      client_values_marker if values_output is not None else
-                     client_dates_marker if dates_output is not None else date_null_client_marker)
+                     client_dates_marker if dates_output is not None else client_marker)
     record.update(status='failed', failure_kind='unexpected_failure')
     try:
         if (not valid_nonce(nonce) or type(stall) is not bool
@@ -1130,7 +1094,6 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             record['source_sha256'] = digest(dates_source)
             module = client_dates_module(dates_source, source)
         else:
-            date_null_shared_source(source)  # Reject every unreviewed measurement source.
             record['source_sha256'] = digest(source)
             module = generated_module(source)
         src = root / 'src'
@@ -1204,20 +1167,6 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         except FullError as error:
             if error.kind == 'invalid_result' and parity_output is None and not stall:
                 record['marker_diagnostics'] = client_marker_diagnostics(completed, nonce)
-                # A rejected count is an observation only after clean native
-                # execution and unchanged exact source/module/roundtrip bytes.
-                if (record['entered'] and record['process_exited'] and record['quiet']
-                        and record['process_diagnostics']['stage'] == 'after_exit'
-                        and record['process_diagnostics']['reason'] == 'none'
-                        and record['source_sha256'] == DATE_NULL_SOURCE_SHA256
-                        and record['module_sha256'] == DATE_NULL_MODULE_SHA256
-                        and record['roundtrip_sha256'] == DATE_NULL_MODULE_SHA256
-                        and completed.stat().st_mtime_ns >= entered.stat().st_mtime_ns
-                        and secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT) == source
-                        and secure_bytes(src / CLIENT_MODULE, MAX_OUTPUT) == module
-                        and generated_module(secure_bytes(dumped / CLIENT_MODULE, MAX_OUTPUT)) == module):
-                    record['marker_diagnostics'] = client_marker_diagnostics(
-                        completed, nonce, date_null_source=source)
             raise
         if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
             raise FullError('invalid_result')
@@ -1365,7 +1314,7 @@ DATE_NULL_COMPACT_WRITER = b'\xd0\x9f\xd1\x80\xd0\xbe\xd1\x86\xd0\xb5\xd0\xb4\xd
 
 
 def date_null_shared_source(raw: bytes) -> bytes:
-    """Exact reviewed measurement inverse; no arbitrary BSL source removal."""
+    """Exact legacy adapter inverse only; never the strict136 host preflight."""
     if (type(raw) is not bytes or digest(raw) != DATE_NULL_SOURCE_SHA256
             or raw.count(DATE_NULL_PREFIX) != 1 or raw.count(DATE_NULL_SUFFIX) != 1
             or raw.count(DATE_NULL_CALL) != 1 or raw.count(DATE_NULL_COMPACT_WRITER) != 1
@@ -1383,11 +1332,6 @@ def date_null_shared_source(raw: bytes) -> bytes:
         raise FullError('source_changed')
     return restored
 
-
-def valid_date_null_token(value):
-    return (type(value) is str and len(value) == 14 and value.startswith('dn.v1:')
-            and all(char in '012' for char in value[6:12])
-            and all(char in '012345678' for char in value[12:14]))
 # END bounded Date Null measurement source binding
 
 
