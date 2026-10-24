@@ -291,7 +291,8 @@ class HostSecurityTests(SourceCase):
         actual = report['provenance']['actual_version']
         report['provenance'] = copy.deepcopy(self.identity)
         report['provenance']['actual_version'] = actual
-        report.update(schema=contract.SCHEMA, lane=contract.LANE, storage_contract=None,
+        report.update(schema=contract.SCHEMA, lane=contract.LANE, projection_mode=contract.PROJECTION_MODE,
+                      storage_contract=None,
                       reader_validation='not_run', native_compatibility='not_claimed')
         if report['status'] == 'ok':
             names = {'schema': 1, 'target': contract.TARGET,

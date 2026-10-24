@@ -122,15 +122,17 @@ their matching source revision, not silently accepted as v2 header evidence.
 ## Version 4 filtered physical-name comparison
 
 The current host accepts only `schema=4`,
-`lane=native-file-db-catalog-compare-v4`. Its strict validator retains every v2
+`lane=native-file-db-catalog-compare-dbms-names-true-v4` and mandatory
+`projection_mode=dbms_names_true`. Its strict validator retains every v2
 lifecycle check, requires the exact current staged-source inventory, and rejects
 historical v2/v3 transports rather than converting them.
 
 The baseline `audit_contract` operation still uses Setup's existing identity and
-nonprivileged module. It makes exactly one one-argument filtered
-`ПолучитьСтруктуруХраненияБазыДанных(Отбор)` call for our own catalog. No native
-invocation, schema/data mutation, privilege, user, UI step, external processor,
-second Boolean or unfiltered fallback is added. The requisite column names were
+nonprivileged module. It makes exactly one filtered experimental
+`ПолучитьСтруктуруХраненияБазыДанных(Отбор, Истина)` call for our own catalog,
+as described below. No native invocation, schema/data mutation, privilege, user,
+UI step, external processor, retry or unfiltered fallback is added. The requisite
+column names were
 measured by schema-3 run 40116987010. After checking declared/runtime types, the
 projection reads only `ИмяТаблицыХранения`, nested `Поля`, and each field's
 `ИмяПоляХранения`. It exports no metadata/logical names, tablespaces, indexes,
@@ -173,8 +175,8 @@ entire capture has its own 12288-byte ceiling. The unchanged full report ceiling
 is 32768 bytes. The executable whole-envelope proof includes all 20 staged
 source paths/hashes, maximal lifecycle snapshots/comparisons/opaque summaries,
 longest finite enums and diagnostic fields, both projections and postimage
-bindings, cleanup and final newline. The exact upper bound is 29821 bytes,
-leaving 2947 bytes below the unchanged ceiling. Changing source inventory or
+bindings, cleanup and final newline. The exact upper bound is 29873 bytes,
+leaving 2895 bytes below the unchanged ceiling. Changing source inventory or
 outer widths requires a new complete proof, not only a sub-payload check.
 
 An accepted report requires the narrow match verdict and every original
@@ -191,6 +193,33 @@ actual unchanged reader execution on a synthetic frozen descriptor, binding and
 mutation failures, complete name matching, cleanup and report limits. These are
 local mechanics, not native compilation or native physical compatibility. The
 approved comparison design is in [the focused design note](file-db-native-catalog-comparison-design.md).
+
+### Explicit filtered DBMSNames=True experiment
+
+Run [40126820961](https://github.com/Atridis/yadinassi/actions/runs/40126820961)
+returned native `Reference53`, absent from the complete physical-name inventory,
+which instead contained exactly one `_Reference53`. The source-bound report
+remained failed/missing_table and established no field parity. Its SHA-256 is
+`ccc3b68ecbefb3a54cc97a22a8733e0a036bd3f44d6227837ed9597a3e38ea5c`.
+
+The next source uses exactly one filtered experimental call
+`ПолучитьСтруктуруХраненияБазыДанных(Отбор, Истина)` for its own synthetic catalog.
+[Official release notes](https://1c-dn.com/library/v8update_639420419_changes_that_require_modification_of_configuration_and_administrative_settings/)
+confirm Boolean `DBMSNames`, but accessible primary evidence did not establish
+position/default/True/file-mode behavior. Those semantics are measured, not
+assumed. There is no fallback, name conversion or comparison relaxation.
+
+A distinct exact schema-4 lane
+`native-file-db-catalog-compare-dbms-names-true-v4` and required
+`projection_mode = "dbms_names_true"` distinguish the experiment from the prior
+one-argument source. The mode labels the requested argument; source digests pin
+the actual native code. The same declared/runtime column checks, clone and
+postimage binding, table/field equality, limits and cleanup apply. Historical
+one-argument artifacts remain validated by their original source. A new native
+artifact is required before any exact table/field agreement can be claimed.
+The mandatory mode and longer lane add 52 bytes: the universal complete-report
+bound is 29873 including newline, below the unchanged 32768-byte ceiling;
+capture/projection/name/counter bounds are unchanged.
 
 ### Measured complete names with counts-only fallback
 
@@ -222,7 +251,8 @@ failure into success. Late cleanup failure removes either diagnostic.
 
 The attainable maximum complete names capture is 3491 bytes; the counts-only
 upper bound remains 1491 and its small hypothetical-name skeleton remains 1051.
-The universal complete-report upper bound remains 29821 bytes including newline,
+With the explicit-mode discriminator, the universal complete-report upper bound
+is 29873 bytes including newline,
 not the smaller bound for a names-only failure slot. Actual encoded name-capture
 bytes must equal the census measurement before release. Historical census flags
 remain interpreted with their original pinned source policy; the old 67-table
@@ -274,7 +304,7 @@ counts, or authenticate sole producer values from syntax. Those facts require
 pinned producer control flow and archive digest/provenance. The complete report
 retains its 32768-byte cap and the capture its 12288-byte cap. The independent-
 maxima counter-capture bound is 1491 bytes; the small name-capture skeleton is
-bounded by 1051 bytes, and the complete-report bound remains 29821 bytes
+bounded by 1051 bytes, and the current explicit-mode complete-report bound is 29873 bytes
 including newline. These local proofs are not a native compatibility result.
 
 ### Previous complete names-only diagnostic

@@ -1,10 +1,12 @@
-"""Schema-4 exact filtered name comparison, never general native compatibility.
+"""Schema-4 explicit-True experiment, never general native compatibility.
 
 The parser receives no native names. Only its completed immutable catalog is
 projected here. The bound missing-table rejection exports complete schema-2
 names only when every diagnostic policy fits; otherwise a complete schema-3
 counts-only census. Neither form exports fields or raw descriptors.
-Historical v2/v3 envelopes are not accepted or upgraded.
+The projection mode records the requested argument, not measured native name
+semantics. Historical v2/v3 and default-mode v4 envelopes are not accepted or
+upgraded.
 """
 from __future__ import annotations
 
@@ -17,7 +19,8 @@ from protocol import decode, digest, encode, exact, integer, require
 from snapshots import MAX_FILE_BYTES, OracleError
 
 SCHEMA = 4
-LANE = 'native-file-db-catalog-compare-v4'
+LANE = 'native-file-db-catalog-compare-dbms-names-true-v4'
+PROJECTION_MODE = 'dbms_names_true'
 TARGET = 'Справочник.NativeOracleItems'
 MAX_TABLES = 4
 MAX_FIELDS = 32
@@ -45,7 +48,7 @@ BINDING_KEYS = {'operation', 'nonce', 'token', 'source_manifest_sha256',
     'reader_source_sha256', 'actual_version', 'origin', 'postimage'}
 VERDICT = 'filtered_table_field_names_match'
 READER_SOURCE = 'yadinassi/storage/filedb_catalog.py'
-EXTRA_KEYS = {'storage_contract', 'reader_validation', 'native_compatibility'}
+EXTRA_KEYS = {'projection_mode', 'storage_contract', 'reader_validation', 'native_compatibility'}
 
 # Exact exception classes and exact finite codes, not isinstance or exception
 # strings. Changes to the standalone reader must update this reviewed inventory.
@@ -176,7 +179,7 @@ def project_catalog(catalog, native):
 
 def empty_report(nonce, provenance):
     report = lifecycle.empty_report(nonce, provenance)
-    report.update(schema=SCHEMA, lane=LANE, storage_contract=None,
+    report.update(schema=SCHEMA, lane=LANE, projection_mode=PROJECTION_MODE, storage_contract=None,
                   reader_validation='not_run', native_compatibility='not_claimed')
     return report
 
@@ -546,7 +549,8 @@ def discard_capture(report, failure=None):
 def validate_report(raw, *, nonce, provenance, final=False):
     report = decode(raw)
     require(type(report) is dict and type(report.get('schema')) is int
-            and report['schema'] == SCHEMA and report.get('lane') == LANE)
+            and report['schema'] == SCHEMA and report.get('lane') == LANE
+            and report.get('projection_mode') == PROJECTION_MODE)
     require(EXTRA_KEYS <= set(report) and report['native_compatibility'] == 'not_claimed'
             and report['reader_validation'] in ('not_run', 'failed', 'discarded', VERDICT))
     from inputs import SOURCE_FILES

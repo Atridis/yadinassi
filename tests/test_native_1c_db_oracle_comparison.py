@@ -97,10 +97,12 @@ class ProjectionTests(unittest.TestCase):
     def test_missing_extra_duplicate_case_sensitive_and_no_normalization(self):
         cases = [({2: descriptor('Other')}, 'missing_table'),
                  ({2: descriptor('physical')}, 'missing_table'),
+                 ({2: descriptor('_Physical')}, 'missing_table'),
                  ({2: descriptor('Physical'), 3: descriptor('Physical')}, 'duplicate_table'),
                  ({2: descriptor(fields='{"Field","X",0,0,0,""},{"Field","X",0,0,0,""}')}, 'duplicate_field'),
                  ({2: descriptor(fields='{"Field","X",0,0,0,""},{"Extra","X",0,0,0,""}')}, 'field_names_differ'),
                  ({2: descriptor(fields='{"field","X",0,0,0,""}')}, 'field_names_differ'),
+                 ({2: descriptor(fields='{"_Field","X",0,0,0,""}')}, 'field_names_differ'),
                  ({2: descriptor(fields='{"Other","X",0,0,0,""}')}, 'field_names_differ'),
                  ({2: descriptor(fields='')}, 'field_names_differ')]
         for descriptions, code in cases:
@@ -197,6 +199,9 @@ class ComparisonEnvelopeTests(unittest.TestCase):
                          [('compare_catalog', 'baseline'), ('audit_clone', 'restored')])
         self.assertEqual(report['reader_validation'], comparison.VERDICT)
         self.assertEqual(report['native_compatibility'], 'not_claimed')
+        self.assertEqual(report['schema'], 4)
+        self.assertEqual(report['lane'], 'native-file-db-catalog-compare-dbms-names-true-v4')
+        self.assertEqual(report['projection_mode'], 'dbms_names_true')
         self.assertNotEqual(report['storage_contract']['origin']['sha256'], report['storage_contract']['postimage']['sha256'])
         self.assertFalse(report['accepted'])
         report['cleanup'].update(container_removed=True, private_staging_removed=True); report['accepted'] = True
@@ -210,6 +215,30 @@ class ComparisonEnvelopeTests(unittest.TestCase):
         self.assertEqual(len(inputs.LEGACY_V3_SOURCE_FILES), 18)
         self.assertEqual(len(inputs.SOURCE_FILES), 20)
         self.assertEqual(historical.whole_report_size_upper_bound(), 25875)
+
+    def test_default_v4_missing_wrong_mode_and_lane_rejected_without_upgrade(self):
+        # Both success and early-return failure envelopes require the new mode.
+        edits = [lambda r: r.pop('projection_mode'),
+                 lambda r: r.update(lane='native-file-db-catalog-compare-v4'),
+                 lambda r: (r.pop('projection_mode'), r.update(lane='native-file-db-catalog-compare-v4')),
+                 lambda r: r.update(lane='native-file-db-catalog-compare-dbms-names-false-v4')]
+        edits += [lambda r, mode=mode: r.update(projection_mode=mode)
+                  for mode in (None, False, True, 1, '', 'default', 'dbms_names_false',
+                               'DBMS_NAMES_TRUE', ['dbms_names_true'], {'dbms_names_true': True})]
+        for failed_stage in (None, 'preflight', 'create'):
+            good, _ = fixture(failed_stage)
+            for index, edit in enumerate(edits):
+                report = copy.deepcopy(good); edit(report)
+                original = copy.deepcopy(report)
+                with self.subTest(stage=failed_stage, index=index), self.assertRaises(OracleError):
+                    self.check(report)
+                self.assertEqual(report, original)
+
+    def test_capture_binding_pins_native_source_even_with_current_mode(self):
+        report, _ = fixture()
+        report['provenance']['sources']['scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl'] = 'b'*64
+        with self.assertRaises(OracleError):
+            comparison.validate_report(protocol.encode(report), nonce=NONCE, provenance=report['provenance'])
 
     def test_only_exact_source_inventory_and_constant_provenance(self):
         for source in inputs.SOURCE_FILES:
@@ -455,7 +484,8 @@ def whole_report_size_upper_bound():
 
     Combine even mutually exclusive fields. Bound the complete capture by its
     enforced 12288-byte cap, not only its two projections. All exact source paths,
-    stage/check names, diagnostic enums, integer widths and newline are charged.
+    stage/check names, exact lane/mode, diagnostic enums, integer widths and
+    newline are charged.
     """
     longest = lambda values: max(values, key=lambda value: len(protocol.encode(value)))
     report = comparison.empty_report(NONCE, identity())
@@ -508,7 +538,7 @@ class WholeReportBudgetTests(unittest.TestCase):
         self.assertLess(whole_report_size_upper_bound(), protocol.MAX_REPORT_BYTES)
         self.assertEqual(protocol.MAX_REPORT_BYTES, 32768)
         # Pin exact computed maximum once, preventing unnoticed enum/source growth.
-        self.assertEqual(whole_report_size_upper_bound(), 29821)
+        self.assertEqual(whole_report_size_upper_bound(), 29873)
 
     def test_failure_capture_also_within_enclosing_cap(self):
         for category, codes in comparison.DIAGNOSTICS.items():
@@ -531,10 +561,11 @@ class NativeProjectionSourceTests(unittest.TestCase):
         value = (ROOT/'scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl').read_text(encoding='utf-8')
         return value[value.index('// Exact filtered name projection.'):value.index('Функция NativeНовыйРезультат')]
 
-    def test_only_measured_three_columns_and_one_filtered_native_call(self):
+    def test_measured_three_columns_and_one_explicit_true_filtered_experiment(self):
         value = self.source()
         self.assertEqual(value.count('ПолучитьСтруктуруХраненияБазыДанных('), 1)
-        self.assertIn('ПолучитьСтруктуруХраненияБазыДанных(Отбор)', value)
+        self.assertIn('ПолучитьСтруктуруХраненияБазыДанных(Отбор, Истина)', value)
+        self.assertNotIn('ПолучитьСтруктуруХраненияБазыДанных(Отбор)', value)
         self.assertEqual(value.count('Отбор.Добавить('), 1)
         self.assertIn('Отбор.Добавить("Справочник.NativeOracleItems")', value)
         for name in ('ИмяТаблицыХранения', 'Поля', 'ИмяПоляХранения'): self.assertIn(name, value)
@@ -564,7 +595,9 @@ class NativeProjectionSourceTests(unittest.TestCase):
                 code = ("import sys; sys.path.insert(0, sys.argv[1]); import run, comparison, filedb_catalog; "
                         "assert 'yadinassi' not in sys.modules; "
                         "assert run.filedb_catalog is comparison.reader is filedb_catalog; "
-                        "assert comparison.SCHEMA == 4; sys.stdout.buffer.write(b'standalone\\n')")
+                        "assert comparison.SCHEMA == 4; "
+                        "assert comparison.PROJECTION_MODE == 'dbms_names_true'; "
+                        "sys.stdout.buffer.write(b'standalone\\n')")
                 result = subprocess.run([sys.executable, '-I', '-B', '-c', code, str(staged)],
                                         capture_output=True, timeout=30, check=False)
                 self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8'))
@@ -574,7 +607,7 @@ class NativeProjectionSourceTests(unittest.TestCase):
                 for path in (staged, *staged.rglob('*')):
                     path.chmod(0o700 if path.is_dir() else 0o600)
 
-    def run_probe(self, setup, *, fields_declared=True):
+    def run_probe(self, setup, *, fields_declared=True, reject_call=False):
         from yadinassi import Interpreter
         from yadinassi.native_targets import LINUX_8_3_27_1508
         from test_native_async_error_transport import encode as transport_encode
@@ -588,17 +621,24 @@ class NativeProjectionSourceTests(unittest.TestCase):
             column = vm.execute('ТестоваяТаблица').columns.find('Поля')
             object.__setattr__(column.value_type, 'types', (BSLType.VALUE_TABLE,))
         table = vm.execute('ТестоваяТаблица')
-        def get_structure(selector):
-            calls.append(selector); self.assertEqual(list(selector), [comparison.TARGET])
+        def get_structure(selector, dbms_names):
+            calls.append((selector, dbms_names))
+            if reject_call: raise ValueError('synthetic API rejection')
             return table
         vm.register_function('ПолучитьСтруктуруХраненияБазыДанных', get_structure)
         vm.execute(self.source()+'\nКонтекст = Новый Структура("phase", "dispatch");')
+        result = None
         try: vm.execute('Проекция = NativeИменаХранения(Контекст);')
-        except BaseException:
-            self.assertEqual(len(calls), 1)
-            return vm, None
+        except BaseException: pass
+        else: result = json.loads(transport_encode(vm.execute('Проекция')))
+        # Assert outside the caught native failure so a wrong mode cannot hide
+        # behind a negative projection test. This double proves call mechanics,
+        # not the real platform's argument semantics or returned names.
         self.assertEqual(len(calls), 1)
-        return vm, json.loads(transport_encode(vm.execute('Проекция')))
+        selector, dbms_names = calls[0]
+        self.assertEqual(list(selector), [comparison.TARGET])
+        self.assertIs(dbms_names, True)
+        return vm, result
 
     SETUP = '''
         ТестоваяТаблица = Новый ТаблицаЗначений;
@@ -622,6 +662,11 @@ class NativeProjectionSourceTests(unittest.TestCase):
         self.assertEqual(value, projection())
         comparison.validate_projection(value)
         self.assertNotIn(b'PRIVATE', protocol.encode(value))
+
+    def test_explicit_true_call_rejection_is_not_retried_or_fallen_back(self):
+        vm, result = self.run_probe(self.SETUP, reject_call=True)
+        self.assertIsNone(result)
+        self.assertEqual(vm.execute('Контекст.phase'), 'contract_call')
 
     def test_actual_current_helper_rejects_missing_wrong_declared_and_runtime_types(self):
         cases = [self.SETUP+'ТестоваяТаблица.Колонки.Найти("ИмяТаблицыХранения").Имя = "Missing";',

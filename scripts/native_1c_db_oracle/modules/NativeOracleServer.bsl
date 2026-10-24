@@ -92,12 +92,13 @@
 КонецПроцедуры
 
 // Exact filtered name projection. These three columns were measured in v3.
-// No second argument, unfiltered fallback, type mapping, or scalar rendering.
+// Experiment: request the explicit second argument True; measure its result.
+// No default-call retry, unfiltered fallback, type mapping, or scalar rendering.
 Функция NativeИменаХранения(Контекст)
     Отбор = Новый Массив;
     Отбор.Добавить("Справочник.NativeOracleItems");
     Контекст.phase = "contract_call";
-    Таблица = ПолучитьСтруктуруХраненияБазыДанных(Отбор);
+    Таблица = ПолучитьСтруктуруХраненияБазыДанных(Отбор, Истина);
     Контекст.phase = "contract_scan";
     Если ТипЗнч(Таблица) <> Тип("ТаблицаЗначений") Тогда
         ВызватьИсключение "invalid_marker";

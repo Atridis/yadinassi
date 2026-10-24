@@ -8,13 +8,13 @@ Execute the real `filedb_catalog.read_catalog` implementation against an immutab
 
 The prerequisite observation is run 40116987010, report SHA-256 `ed5e9c7741638065684b7bf1ffc695b8e1822fefe6573a208c6e5dd45837d013`. Its shape provides the real column names and declared types, but no physical-name scalar values. Therefore no `_ReferenceN`, `_FldN`, case conversion, prefix stripping, or field-type mapping may be invented.
 
-## Native projection: only measured columns we need
+## Original one-argument projection: measured columns
 
-Keep the existing baseline `audit_contract` operation, Setup identity, nonprivileged module, and exactly one call:
+The original source used the existing baseline `audit_contract` operation, Setup identity, nonprivileged module, and exactly one call:
 
 `ПолучитьСтруктуруХраненияБазыДанных(Отбор)`, where `Отбор` is the one-element Array containing `Справочник.NativeOracleItems`.
 
-Check the requisite columns and their declared/runtime types before use. From every returned root row select only `ИмяТаблицыХранения` and the nested `Поля` table; from every nested field row select only `ИмяПоляХранения`. These exact column names are observed, not guessed. Do not read/export `Метаданные`, `Назначение`, tablespaces, index names, logical names, `ТипПоля`, or arbitrary cells. Do not make a second call, use a second Boolean argument, or fall back to an unfiltered call.
+Check the requisite columns and their declared/runtime types before use. From every returned root row select only `ИмяТаблицыХранения` and the nested `Поля` table; from every nested field row select only `ИмяПоляХранения`. These exact column names are observed, not guessed. Do not read/export `Метаданные`, `Назначение`, tablespaces, index names, logical names, `ТипПоля`, or arbitrary cells. The original one-argument source made no second call and used no second Boolean or unfiltered fallback; the later explicitly approved experiment is described below.
 
 Export a small native projection: target plus a list of `{name, fields:[name,...]}`. Require nonempty string names, unique table names, unique field names within each table, nonempty tables/fields, and bounded complete enumeration. Do not silently omit virtual/empty names, deduplicate, truncate, or accept a subset. Unexpected output fails closed with a finite diagnostic.
 
@@ -55,7 +55,7 @@ Focused tests must prove execution of the real reader on a synthetic frozen desc
 
 If it passes, use that measured mapping as the foundation for the next user-visible read-only DB operation. Do not spend this slice on unrelated edge polishing or claim CRUD support from catalog-name agreement.
 
-## Local implementation proof
+## Original one-argument local implementation proof
 
 The implemented schema-4 tests prove a 3469-byte independent-maxima projection
 within its 4096-byte cap and a 29821-byte complete-report upper bound including
@@ -130,7 +130,7 @@ bytes and its small hypothetical-name skeleton at 1051 bytes. The enclosing
 report maximum remains 29821 bytes including newline, within unchanged caps.
 These bounds do not establish actual native counts or resolve the mismatch.
 
-## Measured 128-table output policy and conditional names
+## Historical measured 128-table output policy and conditional names
 
 Independent audit of run 40125667143 at
 `9285723e58c3d4a756b59939a3c7dd743622c6b0` measured native/reader/parser counts
@@ -161,3 +161,43 @@ bounds remain 1491/1051 and the universal whole-report maximum remains 29821
 including newline. Actual encoded schema-2 bytes must equal the complete census
 measurement. Historical policy flags are validated with their original source,
 never silently reinterpreted under the new 128-table supported subset.
+
+
+## Explicit filtered Boolean experiment
+
+Independent audit of run 40126820961 at head
+`4402509e7cf37585f8f0828188f8ca56a48c3692` established exact native table
+`Reference53`, with no identical name and exactly one `_Reference53` in the
+complete 67-table parser inventory. Report SHA-256:
+`ccc3b68ecbefb3a54cc97a22a8733e0a036bd3f44d6227837ed9597a3e38ea5c`.
+The failed comparison reached no field comparison. This does not justify a
+prefix adapter, a field-name mapping or a general naming convention.
+
+[Official 1C release notes](https://1c-dn.com/library/v8update_639420419_changes_that_require_modification_of_configuration_and_administrative_settings/)
+confirm a Boolean parameter named `DBMSNames`; the
+[Russian release history](https://downloads.v8.1c.ru/content/Platform/8_3_9_1850/1cv8upd.htm)
+names it `ИменаБазыДанных`. Accessible primary documentation did not establish
+its position, default, True semantics or file-infobase applicability. The next
+explicitly approved experiment therefore measures, rather than assumes, the
+filtered call `ПолучитьСтруктуруХраненияБазыДанных(Отбор, Истина)`.
+
+Only the one-element own-catalog filter is used. There is no one-argument or
+unfiltered fallback, name adapter, underscore/case normalization, parser edit,
+or relaxed table/field comparison. Column/type checks and finite output budgets
+remain in force. A rejected call or name/field mismatch remains failed.
+
+The report keeps schema 4 with a distinct exact lane
+`native-file-db-catalog-compare-dbms-names-true-v4` and mandatory
+`projection_mode = "dbms_names_true"`. The discriminator records the requested
+parameter value, not a claim that returned names are physical. Existing staged
+source digests bind the actual native call together with source, nonce, token,
+baseline origin and frozen post-audit image. Missing/wrong mode and the old lane
+are rejected rather than upgrading previous reports. Cleanup and all 13 stages
+remain unchanged. A fresh audited artifact must establish whether the call is
+supported and the complete exact selected table/field-name projections agree.
+
+The explicit mode and longer lane increase the universal whole-report bound by
+52 bytes to 29873 including newline, leaving 2895 bytes under the unchanged
+32768-byte cap. Projection/name/counter/skeleton maxima remain
+3469/3491/1491/1051 and the capture cap remains 12288. This is a local serialized
+size proof, not evidence that the experimental native call succeeds.
