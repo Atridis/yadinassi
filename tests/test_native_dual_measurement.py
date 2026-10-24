@@ -115,7 +115,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(plan['capture']['summary_zip_sha256'],'7dd804a26fb5cf63cf5de93c2dc1ba908767bba9f64e949f04626344d9278dba')
         self.assertEqual(plan['capture']['acceptance'],'rejected_measurement_only')
         self.assertEqual(plan['fresh_projected_native_validation'],'required_not_yet_obtained')
-        raw=linux_fixture(ROOT/full.CLIENT_SOURCE); standalone=linux_fixture(ROOT/SOURCE)
+        raw=full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)); standalone=linux_fixture(ROOT/SOURCE)
         self.assertEqual(raw.count(LOGICAL),1);self.assertEqual(standalone.count(LOGICAL),1)
         self.assertNotIn(GENERIC,raw);self.assertNotIn(GENERIC,standalone)
         old=raw.replace(LOGICAL,GENERIC+LOGICAL,1).replace(b'BEGIN bounded dual witness',b'BEGIN bounded dual measurement',1)
@@ -132,10 +132,12 @@ class DualWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(full.digest(standalone),plan['source_sha256'])
 
     def test_historical_inverse_restores134_but_host_never_uses_it(self):
-        raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
+        measurement=linux_fixture(ROOT/full.CLIENT_SOURCE)
+        raw=full.date_null_shared_source(measurement)
         restored=suite.dual_shared_source(raw)
         self.assertEqual(full.digest(restored),BASE_SHA)
-        self.assertEqual(full.CLIENT_WITNESS_SOURCE_SHA256,full.digest(raw))
+        self.assertEqual(full.CLIENT_WITNESS_SOURCE_SHA256,full.digest(measurement))
+        self.assertEqual(full.DATE_NULL_BASE_SHA256,full.digest(raw))
         self.assertNotIn('DualProbe',restored.decode())
         for changed in (raw+b' ',raw[:-1],restored,
             raw.replace(suite.CLIENT_DUAL_CALL,b'',1),
@@ -152,22 +154,25 @@ class DualWitnessTests(SyntheticFilesystemCase):
                 runner.assert_not_called()
 
     @unittest.skipIf(os.name=='nt','production bounded interpreter child is POSIX-only')
-    def test_whole_exact135_source_preflight_uses_original_staged_path(self):
+    def test_preflight_uses_exact_restored135_not_measurement_source(self):
         path=ROOT/full.CLIENT_SOURCE; raw=linux_fixture(path); seen=[]
+        baseline=full.date_null_shared_source(raw)
         def runner(arguments,cwd):
-            self.assertEqual(Path(arguments[-1]),path)
-            self.assertEqual(Path(arguments[-1]).read_bytes(),raw)
-            self.assertIn(b'DualProbe',raw)
-            seen.append(full.digest(raw))
+            self.assertNotEqual(Path(arguments[-1]),path)
+            self.assertEqual(Path(arguments[-1]).read_bytes(),baseline)
+            self.assertIn(b'DualProbe',baseline)
+            self.assertNotIn(b'DNAppend',baseline)
+            self.assertEqual(path.read_bytes(),raw)
+            seen.append(full.digest(baseline))
             return full.bounded_child(arguments,cwd)
         full.verify_client_interpreter(ROOT,path,full.digest(raw),runner=runner)
-        self.assertEqual(seen,[full.CLIENT_WITNESS_SOURCE_SHA256])
+        self.assertEqual(seen,[full.DATE_NULL_BASE_SHA256])
 
-    def test_entire_interpreter_witness_and_standalone_match_projected_capture(self):
+    def test_restored135_interpreter_witness_and_standalone_match_projected_capture(self):
         from yadinassi import Interpreter
         from decimal import Decimal
         vm=Interpreter(lambda _:self.fail('unexpected Message'))
-        vm.execute(linux_fixture(ROOT/full.CLIENT_SOURCE).decode('utf-8-sig'))
+        vm.execute(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)).decode('utf-8-sig'))
         actual=[int(v) if type(v) is Decimal else v for v in vm.execute('ВычислитьПробу()')]
         self.assertEqual(actual,full.CLIENT_VALUES)
         self.assertEqual(list(map(type,actual)),list(map(type,full.CLIENT_VALUES)))
@@ -257,7 +262,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
             self.assertNotIn('ThisObject',body)
 
     def test_declarations_and_helpers_precede_module_initializer(self):
-        raw = linux_fixture(ROOT/full.CLIENT_SOURCE)
+        raw = full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))
         tail = full.CLIENT_NOCONTEXT_INITIALIZER
         self.assertTrue(raw.startswith(suite.CLIENT_DUAL_PREFIX+full.CLIENT_MODULE_PREFIX))
         self.assertTrue(raw.endswith(full.CLIENT_NOCONTEXT_BLOCK+suite.CLIENT_DUAL_BLOCK+tail))
