@@ -29,9 +29,9 @@ class ObjectTransferParityTests(unittest.TestCase):
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual(full.CLIENT_VALUES[50:109], ['object.transfer.v1'] + self.capture['values'])
 
-    def test_exact_restored_object_source_computes_every_captured_value(self):
+    def test_exact_whole_source_computes_every_captured_value(self):
         vm = Interpreter(lambda _: self.fail('unexpected output'))
-        vm.execute(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(linux_fixture(ROOT/full.CLIENT_SOURCE).decode('utf-8-sig'))
         values = list(vm.execute('ВычислитьПробу()'))
         normalized = [int(v) if type(v) is Decimal else v for v in values]
         self.assertEqual(normalized, full.CLIENT_VALUES)
@@ -39,7 +39,7 @@ class ObjectTransferParityTests(unittest.TestCase):
         self.assertEqual(vm.execution_context, 'client')
 
     @unittest.skipIf(os.name == 'nt', 'bounded native preflight runner is POSIX-only')
-    def test_exact_inverse_gate_rejects_changed_object_callee(self):
+    def test_exact_source_gate_rejects_changed_object_callee(self):
         raw = (ROOT/full.CLIENT_SOURCE).read_bytes()
         changed = raw.replace(b'P.N = 11;', b'Raise "changed";')
         self.assertNotEqual(raw, changed)
@@ -52,18 +52,18 @@ class ObjectTransferParityTests(unittest.TestCase):
         marker = dict(schema=1,nonce='a'*32,phase='completed',witness='client',values=suite.CLIENT_VALUES)
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary).resolve()/'marker.json'
-            path.write_bytes(json.dumps(marker).encode())
+            path.write_bytes(json.dumps(marker,separators=(',', ':')).encode())
             self.assertEqual(suite.client_marker(path,'a'*32,'completed'),marker)
             for index in range(50,109):
                 values=list(suite.CLIENT_VALUES); original=values[index]
                 values[index] = not original if type(original) is bool else (original+1 if type(original) is int else 'wrong')
-                path.write_bytes(json.dumps({**marker,'values':values}).encode())
+                path.write_bytes(json.dumps({**marker,'values':values},separators=(',', ':')).encode())
                 with self.assertRaises(suite.FullError):suite.client_marker(path,'a'*32,'completed')
                 self.assertEqual(suite.client_marker_diagnostics(path,'a'*32)['ordinal'],index)
             for values in (suite.CLIENT_VALUES[:50],suite.CLIENT_VALUES[:-1],suite.CLIENT_VALUES+[0]):
-                path.write_bytes(json.dumps({**marker,'values':values}).encode())
+                path.write_bytes(json.dumps({**marker,'values':values},separators=(',', ':')).encode())
                 with self.assertRaises(suite.FullError):suite.client_marker(path,'a'*32,'completed')
-        self.assertLess(len(json.dumps(marker,indent=2).encode()),2048)
+        self.assertLess(len(json.dumps(marker,separators=(',', ':')).encode()),2048)
         self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,full.MAX_REPORT),(8192,8192,32768))
 
     def test_capture_only_metadata_and_shared_inverse_removed(self):
