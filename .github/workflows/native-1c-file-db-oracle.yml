@@ -1,0 +1,230 @@
+name: Reviewed native 1C file-DB oracle
+
+# Advancing this one owner-reviewed branch explicitly opts in its exact SHA.
+# Admission is not a privacy boundary against workflow edits or the existing
+# public-repository package grant. This lane never changes the six-output lane.
+on:
+  push:
+    branches: [codex/native-file-db-oracle-reviewed]
+
+permissions: {}
+
+concurrency:
+  group: native-1c-file-db-oracle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  eligibility:
+    name: File-DB oracle eligibility
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate owner, repository, reviewed push and revision without checkout
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        shell: bash
+        run: |
+          python3 -I -B - <<'PYTHON'
+          # BEGIN NATIVE DB ORACLE CI ADMISSION
+          import json
+          import os
+          import re
+          import sys
+
+          REPOSITORY = "Atridis/yadinassi"
+          REPOSITORY_ID = 359770628
+          OWNER = "Atridis"
+          OWNER_ID = 30860798
+          REVIEWED_REF = "refs/heads/codex/native-file-db-oracle-reviewed"
+          WORKFLOW_PATH = ".github/workflows/native-1c-file-db-oracle.yml"
+          MAX_EVENT_BYTES = 8 * 1024 * 1024
+
+
+          class PolicyError(Exception):
+              """A finite reason safe to emit without printing event data."""
+
+
+          def require(condition, reason):
+              if not condition:
+                  raise PolicyError(reason)
+
+
+          def object_value(value):
+              return value if type(value) is dict else {}
+
+
+          def is_sha(value):
+              return (type(value) is str and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+                      and value != "0" * 40)
+
+
+          def owner_identity(value):
+              value = object_value(value)
+              return (value.get("login") == OWNER and type(value.get("id")) is int
+                      and value["id"] == OWNER_ID and value.get("type") == "User")
+
+
+          def trusted_repository(value):
+              value = object_value(value)
+              return (value.get("full_name") == REPOSITORY and type(value.get("id")) is int
+                      and value["id"] == REPOSITORY_ID and value.get("fork") is False
+                      and owner_identity(value.get("owner")))
+
+
+          def validate_admission(event, context):
+              require(type(event) is dict and type(context) is dict, "event_invalid")
+              expected = {
+                  "GITHUB_REPOSITORY": REPOSITORY,
+                  "GITHUB_REPOSITORY_ID": str(REPOSITORY_ID),
+                  "GITHUB_REPOSITORY_OWNER": OWNER,
+                  "GITHUB_REPOSITORY_OWNER_ID": str(OWNER_ID),
+                  "GITHUB_ACTOR": OWNER,
+                  "GITHUB_ACTOR_ID": str(OWNER_ID),
+                  # triggering_actor has a login but no numeric ID in GitHub's context.
+                  # Bind that unique login to the independently checked repository owner.
+                  "NATIVE_TRIGGERING_ACTOR": OWNER,
+              }
+              require(all(context.get(key) == value for key, value in expected.items()), "identity_not_approved")
+              require(trusted_repository(event.get("repository")), "repository_not_approved")
+              require(owner_identity(event.get("sender")), "sender_not_approved")
+              require(context.get("GITHUB_EVENT_NAME") == "push", "event_not_approved")
+              require(context.get("GITHUB_REF") == REVIEWED_REF and event.get("ref") == REVIEWED_REF,
+                      "push_ref_not_approved")
+              require(context.get("GITHUB_REF_TYPE") == "branch"
+                      and context.get("GITHUB_BASE_REF") == "" and context.get("GITHUB_HEAD_REF") == "",
+                      "push_reviewed_context_invalid")
+              require(event.get("forced") is False, "push_forced_or_invalid")
+              require(event.get("deleted") is False, "push_deleted_or_invalid")
+              require(is_sha(context.get("GITHUB_SHA")), "revision_invalid")
+              require(event.get("after") == context["GITHUB_SHA"]
+                      and object_value(event.get("head_commit")).get("id") == context["GITHUB_SHA"],
+                      "push_revision_mismatch")
+              require(context.get("GITHUB_WORKFLOW_REF") == f"{REPOSITORY}/{WORKFLOW_PATH}@{REVIEWED_REF}"
+                      and context.get("GITHUB_WORKFLOW_SHA") == context["GITHUB_SHA"],
+                      "push_workflow_revision_mismatch")
+              return "push"
+
+
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  require(key not in result, "event_invalid")
+                  result[key] = value
+              return result
+
+
+          def reject_constant(_value):
+              raise PolicyError("event_invalid")
+
+
+          def read_event(context):
+              try:
+                  with open(context["GITHUB_EVENT_PATH"], "rb") as stream:
+                      data = stream.read(MAX_EVENT_BYTES + 1)
+                  require(len(data) <= MAX_EVENT_BYTES, "event_invalid")
+                  return json.loads(data, object_pairs_hook=unique_object, parse_constant=reject_constant)
+              except (OSError, ValueError, KeyError, TypeError, RecursionError):
+                  raise PolicyError("event_invalid") from None
+
+
+          def admission_main():
+              try:
+                  validate_admission(read_event(os.environ), dict(os.environ))
+              except PolicyError as error:
+                  print(f"Native DB oracle CI blocked: {error}", file=sys.stderr)
+                  return 1
+              print("Native DB oracle CI admission accepted.")
+              return 0
+          # END NATIVE DB ORACLE CI ADMISSION
+          raise SystemExit(admission_main())
+          PYTHON
+
+  native_oracle:
+    name: Native 1C file-DB oracle
+    needs: eligibility
+    if: >-
+      needs.eligibility.result == 'success' &&
+      github.repository == 'Atridis/yadinassi' &&
+      github.repository_id == '359770628' &&
+      github.repository_owner == 'Atridis' &&
+      github.repository_owner_id == '30860798' &&
+      github.actor == 'Atridis' &&
+      github.actor_id == '30860798' &&
+      github.triggering_actor == 'Atridis' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.ref_type == 'branch' &&
+      github.base_ref == '' && github.head_ref == '' &&
+      github.event.ref == github.ref &&
+      github.event.deleted == false && github.event.forced == false &&
+      github.event.after == github.sha && github.event.head_commit.id == github.sha &&
+      github.workflow_ref == 'Atridis/yadinassi/.github/workflows/native-1c-file-db-oracle.yml@refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.workflow_sha == github.sha
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    # The host has one 2400-second execution deadline plus bounded cleanup.
+    # This outer budget also includes checkout, authentication and report upload.
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Verify immutable reviewed checkout before exposing the package token
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 -I -B scripts/native_1c_db_oracle_ci_policy.py bind
+      - name: Run approved digest with no network, ports or container credentials
+        id: native
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --output native-db-oracle/report.json
+      - name: Require validated report readiness on native success
+        if: always() && steps.native.outcome == 'success'
+        env:
+          NATIVE_REPORT_READY: ${{ steps.native.outputs.report_ready }}
+        shell: bash
+        run: test "${NATIVE_REPORT_READY}" = "true"
+      # The host emits report_ready only after strict finite-schema validation
+      # and the 32 KiB cap, including sanitized failures. Never upload raw files.
+      - name: Upload only the validated finite DB-oracle report
+        if: always() && steps.native.outputs.report_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-file-db-oracle-summary
+          path: native-db-oracle/report.json
+          if-no-files-found: error
+          retention-days: 7
+
+  verdict:
+    name: Native 1C file-DB oracle verdict
+    if: always()
+    needs: [eligibility, native_oracle]
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require admission and genuine native success
+        env:
+          ELIGIBILITY_RESULT: ${{ needs.eligibility.result }}
+          NATIVE_RESULT: ${{ needs.native_oracle.result }}
+        shell: bash
+        run: |
+          python3 -I -B - <<'PYTHON'
+          import os
+          # BEGIN NATIVE DB ORACLE CI VERDICT
+          def final_verdict(eligibility_result, native_result):
+              # Skipped, cancelled, unavailable and failed native runs are never green.
+              return 0 if eligibility_result == "success" and native_result == "success" else 1
+          # END NATIVE DB ORACLE CI VERDICT
+          result = final_verdict(os.environ.get("ELIGIBILITY_RESULT"), os.environ.get("NATIVE_RESULT"))
+          print("Native DB oracle CI passed." if result == 0 else "Native DB oracle CI failed or unavailable.")
+          raise SystemExit(result)
+          PYTHON
