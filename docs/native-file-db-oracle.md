@@ -163,6 +163,21 @@ A primary failure remains visible if cleanup also fails; separate cleanup
 checks/stage still fail, and acceptance remains false. Later stages cannot
 inherit a seed-operation label.
 
+Bootstrap-only inventory failures additionally use a fixed
+`seed_bootstrap_inventory_<phase>_<region>_<reason>` enum. The source-bound
+phase is `poll` (a budget check following an alive-child poll) or `post_exit`
+(the final budget check after zero native exit and quiescence). A poll rejection
+is a monitor failure, not proof of native nonzero exit or that the child remained
+alive until rejection; existing kill/reap and cleanup still apply. Regions are
+only `home`, `tmp`, `runtime`, and `experiment`, selected from fixed controlled
+prefixes. Reasons distinguish unexpected socket, symlink, hardlink, other
+non-single link count, other special file, rejected ENOENT/ESTALE race,
+EACCES/EPERM access failure, and other I/O error. No path, filename, raw errno,
+exception, file content or log is reported. Already tolerated entry-disappearance
+races remain tolerated. This classification changes no socket whitelist,
+permissions, filesystem predicate, allocation limit, or quiescence requirement.
+Pre-launch failures and every other operation retain existing categories.
+
 The absent logical fields in the fixed BSL markers use `Неопределено`, which
 [automatic JSON serialization](https://v8.1c.ru/platforma/json/) maps to JSON
 `null`; automatic reading maps that representation back to `Неопределено`.

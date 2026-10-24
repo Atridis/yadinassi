@@ -61,7 +61,13 @@ SEED_FAILURE_CATEGORIES = frozenset({'invalid_input', 'permission_mismatch',
     'version_mismatch', 'unexpected_failure'})
 SEED_FAILURES = frozenset('seed_' + operation + '_' + category
     for operation in SEED_OPERATIONS for category in SEED_FAILURE_CATEGORIES)
-FAILURES = FAILURES | SEED_FAILURES
+INVENTORY_PHASES = ('poll', 'post_exit')
+INVENTORY_REGIONS = ('home', 'tmp', 'runtime', 'experiment')
+INVENTORY_REASONS = ('unexpected_socket', 'symlink', 'hardlink', 'special',
+                     'race', 'access', 'otherio', 'link_count')
+BOOTSTRAP_INVENTORY_FAILURES = frozenset('seed_bootstrap_inventory_' + phase + '_' + region + '_' + reason
+    for phase in INVENTORY_PHASES for region in INVENTORY_REGIONS for reason in INVENTORY_REASONS)
+FAILURES = FAILURES | SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES
 LOGICAL_KEYS = {'count','code','payload','amount','deletion_mark','same_reference',
     'payload_length','amount_digits','amount_scale','designer_version','applied_version',
     'user','role_verified','nonprivileged'}
@@ -198,7 +204,7 @@ def validate_report(raw, *, nonce, provenance, final=False):
     validate_provenance(report['provenance'], provenance)
     require(report['status'] in ('ok','failed') and type(report['failure_kind']) is str
             and report['failure_kind'] in FAILURES)
-    if report['failure_kind'] in SEED_FAILURES:
+    if report['failure_kind'] in SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES:
         require(report['status']=='failed' and report['failed_stage']=='seed_v1')
     require(type(report['accepted']) is bool)
     require(type(report['stages']) is list and len(report['stages']) == len(STAGES))

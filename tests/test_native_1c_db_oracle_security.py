@@ -26,6 +26,9 @@ ROOT = Path(__file__).resolve().parents[1]
 HELPERS = ROOT / 'scripts/native_1c_db_oracle'
 NONCE = 'a' * 32
 PRIVATE = 'PRIVATE-SYNTHETIC-NATIVE-DATA'
+BOOTSTRAP_INVENTORY_FAILURES = frozenset(f'seed_bootstrap_inventory_{phase}_{region}_{reason}'
+    for phase in ('poll', 'post_exit') for region in ('home', 'tmp', 'runtime', 'experiment')
+    for reason in ('unexpected_socket', 'symlink', 'hardlink', 'special', 'race', 'access', 'otherio', 'link_count'))
 APPROVED = ['--execute-approved-image', '--file-db-oracle']
 DESCRIPTOR_EXPORT = (hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_DIRECTORY')
                      and os.open in os.supports_dir_fd)
@@ -447,7 +450,7 @@ class HostSecurityTests(SourceCase):
         return report
 
     def test_every_validated_seed_failure_survives_successful_host_cleanup(self):
-        for kind in sorted(protocol.SEED_FAILURES):
+        for kind in sorted(protocol.SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES):
             self.events.clear(); self.configs.clear()
             with self.subTest(kind=kind):
                 report = self.invoke(payload=protocol.encode(self.seed_failure(kind)), exit_code=1)
@@ -465,7 +468,11 @@ class HostSecurityTests(SourceCase):
 
     def test_host_cleanup_failure_preserves_primary_seed_and_records_cleanup_independently(self):
         kinds = [f'seed_{operation}_process_failed' for operation in protocol.SEED_OPERATIONS]
-        kinds += ['process_failed', 'unsupported_platform_command']
+        kinds += ['process_failed', 'unsupported_platform_command',
+                  'seed_bootstrap_inventory_poll_home_unexpected_socket',
+                  'seed_bootstrap_inventory_poll_tmp_symlink',
+                  'seed_bootstrap_inventory_post_exit_runtime_race',
+                  'seed_bootstrap_inventory_post_exit_experiment_link_count']
         cases = [({'cleanup_bad': True}, False, True), ({'fail': 'rm'}, False, True),
                  ({'fail': 'ps'}, False, True), ({'private_cleanup_bad': True}, True, False),
                  ({'cleanup_bad': True, 'private_cleanup_bad': True}, False, False)]
@@ -491,29 +498,46 @@ class HostSecurityTests(SourceCase):
                     for child in self.work.iterdir(): shutil.rmtree(child)
 
     def test_native_and_host_cleanup_failures_do_not_erase_primary_seed(self):
-        kind = 'seed_bootstrap_invalid_marker'
-        original = self.seed_failure(kind)
-        original['cleanup'].update(native_processes_stopped=False, raw_files_removed=False)
-        original['stages'][-1]['status'] = 'failed'
-        original['stages'][-1]['checks'] = {'native_processes_stopped': False, 'raw_files_removed': False}
-        report = self.invoke(payload=protocol.encode(original), exit_code=1, cleanup_bad=True)
-        self.assertEqual(report['failure_kind'], kind)
-        self.assertEqual(report['failed_stage'], 'seed_v1')
-        self.assertEqual(report['stages'][-1], original['stages'][-1])
-        self.assertEqual(report['cleanup'], {'native_processes_stopped': False, 'raw_files_removed': False,
-            'container_removed': False, 'private_staging_removed': True})
-        self.assertFalse(report['accepted']); self.assertEqual(report['artifacts'], [])
-        protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+        for kind in ('seed_bootstrap_invalid_marker', 'seed_bootstrap_inventory_poll_home_access',
+                     'seed_bootstrap_inventory_post_exit_experiment_otherio'):
+            self.events.clear(); self.configs.clear()
+            with self.subTest(kind=kind):
+                original = self.seed_failure(kind)
+                original['cleanup'].update(native_processes_stopped=False, raw_files_removed=False)
+                original['stages'][-1]['status'] = 'failed'
+                original['stages'][-1]['checks'] = {'native_processes_stopped': False, 'raw_files_removed': False}
+                report = self.invoke(payload=protocol.encode(original), exit_code=1, cleanup_bad=True)
+                self.assertEqual(report['failure_kind'], kind)
+                self.assertEqual(report['failed_stage'], 'seed_v1')
+                self.assertEqual(report['stages'][-1], original['stages'][-1])
+                self.assertEqual(report['cleanup'], {'native_processes_stopped': False, 'raw_files_removed': False,
+                    'container_removed': False, 'private_staging_removed': True})
+                self.assertFalse(report['accepted']); self.assertEqual(report['artifacts'], [])
+                protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
 
     def test_unvalidated_seed_diagnosis_never_survives_as_primary_or_leaks(self):
         malformed = [PRIVATE, 'seed_create_' + PRIVATE, 'seed_create_none',
                      'seed_create_registry_credentials_missing', True, False, None,
-                     [PRIVATE], {'native_error': PRIVATE}]
+                     [PRIVATE], {'native_error': PRIVATE},
+                     'seed_create_inventory_poll_home_symlink',
+                     'seed_bootstrap_inventory_unknown_home_symlink',
+                     'seed_bootstrap_inventory_poll_unknown_symlink',
+                     'seed_bootstrap_inventory_poll_home_unknown',
+                     'seed_bootstrap_inventory_poll_home_symlink_' + PRIVATE,
+                     'seed_bootstrap_inventory_poll_/private/' + PRIVATE + '_symlink']
         payloads = [(self.seed_failure(kind), 1) for kind in malformed]
         wrong_stage, _ = fixtures.fixture_report('create')
         wrong_stage['provenance'] = copy.deepcopy(self.identity)
         wrong_stage['failure_kind'] = 'seed_create_process_failed'
-        payloads += [(wrong_stage, 1), (self.seed_failure('seed_create_process_failed'), 0)]
+        wrong_inventory_stage = copy.deepcopy(wrong_stage)
+        wrong_inventory_stage['failure_kind'] = 'seed_bootstrap_inventory_poll_home_symlink'
+        success, _ = fixtures.fixture_report()
+        success['provenance'] = copy.deepcopy(self.identity)
+        success['provenance']['actual_version'] = protocol.VERSION
+        success['failure_kind'] = 'seed_bootstrap_inventory_poll_home_symlink'
+        payloads += [(wrong_stage, 1), (wrong_inventory_stage, 1), (success, 0),
+                     (self.seed_failure('seed_create_process_failed'), 0),
+                     (self.seed_failure('seed_bootstrap_inventory_poll_home_symlink'), 0)]
         for original, code in payloads:
             for cleanup_bad in (False, True):
                 self.events.clear(); self.configs.clear()
@@ -596,6 +620,56 @@ class HostSecurityTests(SourceCase):
         self.assertLessEqual(self.output.stat().st_size, 32768)
         self.assertNotIn(PRIVATE, self.output.read_text())
         protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+
+    @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')
+    def test_bootstrap_inventory_exports_only_finite_diagnosis_and_independent_cleanup(self):
+        kind = 'seed_bootstrap_inventory_post_exit_experiment_link_count'
+        self.assertEqual(self.invoke(main=True, payload=protocol.encode(self.seed_failure(kind)),
+                                     exit_code=1, cleanup_bad=True), 1)
+        report = json.loads(self.output.read_text())
+        self.assertEqual(report['failure_kind'], kind)
+        self.assertEqual(report['failed_stage'], 'seed_v1')
+        self.assertEqual(report['stages'][1]['status'], 'failed')
+        self.assertEqual(report['stages'][-1]['status'], 'failed')
+        self.assertEqual(report['cleanup'], {'native_processes_stopped': True, 'raw_files_removed': True,
+            'container_removed': False, 'private_staging_removed': True})
+        self.assertFalse(report['accepted'])
+        for key in ('artifacts', 'snapshots', 'comparisons'):
+            self.assertEqual(report[key], [])
+        self.assertEqual(self.github_output.read_text(), 'report_ready=true\n')
+        self.assertEqual(self.events[-1], 'export')
+        self.assertEqual([path.name for path in self.output.parent.iterdir()], ['report.json'])
+        self.assertLessEqual(self.output.stat().st_size, 32768)
+        self.assertNotIn(PRIVATE, self.output.read_text())
+        protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+
+    @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')
+    def test_malformed_inventory_and_raw_details_are_never_exported(self):
+        valid_kind = 'seed_bootstrap_inventory_poll_home_symlink'
+        payloads = [self.seed_failure(kind) for kind in (
+            valid_kind + '\n' + PRIVATE,
+            'seed_bootstrap_inventory_poll_/private/' + PRIVATE + '_symlink',
+            'seed_bootstrap_inventory_post_exit_tmp_unknown',
+            'seed_import_inventory_poll_home_symlink', True, {'path': PRIVATE})]
+        for field in ('path', 'name', 'native_log', 'inventory'):
+            report = self.seed_failure(valid_kind); report[field] = PRIVATE
+            payloads.append(report)
+        for index, original in enumerate(payloads):
+            self.events.clear(); self.configs.clear()
+            with self.subTest(payload=index):
+                self.assertEqual(self.invoke(main=True, payload=protocol.encode(original), exit_code=1), 1)
+                report = json.loads(self.output.read_text())
+                self.assertEqual(report['failure_kind'], 'transport_invalid')
+                self.assertEqual(report['failed_stage'], 'preflight')
+                self.assertFalse(report['accepted'])
+                for key in ('artifacts', 'snapshots', 'comparisons'):
+                    self.assertEqual(report[key], [])
+                self.assertNotIn(PRIVATE, self.output.read_text())
+                self.assertEqual(self.github_output.read_text(), 'report_ready=true\n')
+                self.assertEqual([path.name for path in self.output.parent.iterdir()], ['report.json'])
+                self.assertLessEqual(self.output.stat().st_size, 32768)
+                protocol.validate_report(protocol.encode(report), nonce=NONCE, provenance=self.identity, final=True)
+                self.output.unlink(); self.github_output.unlink()
 
     @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')
     def test_raw_failure_main_exports_only_sanitized_finite_diagnosis(self):

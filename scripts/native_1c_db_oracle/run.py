@@ -7,6 +7,7 @@ No interpreter/parser implementation and no native payload export live here.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import errno
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ import time
 
 sys.dont_write_bytecode = True
 from protocol import (ARTIFACTS, CHECKS, COMPARISONS, FAILURES, IMAGE, LANE, MAX_REPORT_BYTES,
+    BOOTSTRAP_INVENTORY_FAILURES, INVENTORY_PHASES, INVENTORY_REGIONS, INVENTORY_REASONS,
     SEED_FAILURE_CATEGORIES, SEED_FAILURES, SEED_OPERATIONS, STAGES, VERSION,
     decode, empty_report, encode, expected_logical, logical_from_marker,
     marker, require, validate_logical, validate_report)
@@ -45,6 +47,38 @@ class SeedCommandError(OracleError):
                 and type(kind) is str and kind in SEED_FAILURE_CATEGORIES, 'invalid_input')
         super().__init__(kind)
         self.operation=operation
+
+
+class SandboxInventoryError(OracleError):
+    """Finite classification of an existing inventory rejection, never its path."""
+    def __init__(self, region, reason):
+        require(type(region) is str and region in INVENTORY_REGIONS
+                and type(reason) is str and reason in INVENTORY_REASONS, 'invalid_input')
+        super().__init__('invalid_input')
+        self.region=region; self.reason=reason
+
+
+class BootstrapInventoryError(SandboxInventoryError):
+    def __init__(self, phase, region, reason):
+        require(type(phase) is str and phase in INVENTORY_PHASES, 'invalid_input')
+        super().__init__(region,reason)
+        self.phase=phase
+
+
+def inventory_region(relative):
+    # Fixed controlled regions, not arbitrary native path components.
+    def below(prefix): return relative.rstrip('/')==prefix or relative.startswith(prefix+'/')
+    if below('onec-db-oracle/home'): return 'home'
+    if below('onec-db-oracle/temp'): return 'tmp'
+    if below('runtime') or below('.X11-unix'): return 'runtime'
+    if below('onec-db-oracle'): return 'experiment'
+    return 'tmp'
+
+
+def inventory_io_reason(error):
+    if error.errno in (errno.ENOENT, getattr(errno,'ESTALE',errno.ENOENT)): return 'race'
+    if error.errno in (errno.EACCES,errno.EPERM): return 'access'
+    return 'otherio'
 
 
 def absent(*paths):
@@ -83,46 +117,59 @@ def zero_result(path):
 
 
 def sandbox_bytes(root, reserve=0):
-    """Account all private tmpfs regular files, including native HOME/temp.
+    """Account the same private tmpfs entries without changing admission policy.
 
-    Descriptor-relative traversal never follows a link. Only the two explicitly
-    owned sockets are allowed. Temporary entry removal is tolerated by this live
-    monitor; none of this replaces closed-process snapshot consistency checks.
+    Error classifications contain fixed regions/reasons only. Disappearing entry
+    stat/child-open races remain tolerated exactly as before; other existing
+    rejections remain failures, including unknown sockets and every link/special.
     """
     require(type(reserve) is int and 0 <= reserve <= MAX_LIVE_BYTES,'artifact_limit')
     sockets={'.X11-unix/X99','runtime/session-bus/bus'}
     total=0; entries=0
+    def reject(relative,reason):
+        raise SandboxInventoryError(inventory_region(relative),reason)
+    def io(relative,action,*,missing=False):
+        try: return action()
+        except FileNotFoundError as error:
+            if missing: return None
+            raise SandboxInventoryError(inventory_region(relative),inventory_io_reason(error)) from None
+        except OSError as error:
+            raise SandboxInventoryError(inventory_region(relative),inventory_io_reason(error)) from None
+    def links(relative,info):
+        if info.st_nlink!=1: reject(relative,'hardlink' if info.st_nlink>1 else 'link_count')
     def walk(descriptor,prefix,depth):
         nonlocal total,entries
         require(depth<=16,'artifact_limit')
-        with os.scandir(descriptor) as children:
-            for entry in children:
-                entries+=1; require(entries<=4096,'artifact_limit')
-                try: info=entry.stat(follow_symlinks=False)
-                except FileNotFoundError: continue
-                relative=prefix+entry.name
-                if stat.S_ISDIR(info.st_mode):
-                    try:
-                        child=os.open(entry.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
-                    except FileNotFoundError: continue
-                    try:
-                        actual=os.fstat(child)
-                        require((actual.st_dev,actual.st_ino)==(info.st_dev,info.st_ino),'snapshot_changed')
-                        walk(child,relative+'/',depth+1)
-                    finally: os.close(child)
-                elif stat.S_ISSOCK(info.st_mode):
-                    require(relative in sockets and info.st_nlink==1,'invalid_input')
-                else:
-                    require(stat.S_ISREG(info.st_mode) and info.st_nlink==1,'invalid_input')
-                    require(0<=info.st_size<=MAX_FILE_BYTES,'artifact_limit')
-                    total+=info.st_size
-                    require(total+reserve<=MAX_LIVE_BYTES,'artifact_limit')
-    try:
-        descriptor=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
-        try: walk(descriptor,'',0)
-        finally: os.close(descriptor)
-    except OSError:
-        raise OracleError('invalid_input') from None
+        try:
+            with os.scandir(descriptor) as children:
+                for entry in children:
+                    entries+=1; require(entries<=4096,'artifact_limit')
+                    relative=prefix+entry.name
+                    info=io(relative,lambda: entry.stat(follow_symlinks=False),missing=True)
+                    if info is None: continue
+                    if stat.S_ISDIR(info.st_mode):
+                        child=io(relative,lambda: os.open(entry.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor),missing=True)
+                        if child is None: continue
+                        try:
+                            actual=io(relative,lambda: os.fstat(child))
+                            require((actual.st_dev,actual.st_ino)==(info.st_dev,info.st_ino),'snapshot_changed')
+                            walk(child,relative+'/',depth+1)
+                        finally: io(relative,lambda: os.close(child))
+                    elif stat.S_ISSOCK(info.st_mode):
+                        if relative not in sockets: reject(relative,'unexpected_socket')
+                        links(relative,info)
+                    else:
+                        if stat.S_ISLNK(info.st_mode): reject(relative,'symlink')
+                        if not stat.S_ISREG(info.st_mode): reject(relative,'special')
+                        links(relative,info)
+                        require(0<=info.st_size<=MAX_FILE_BYTES,'artifact_limit')
+                        total+=info.st_size
+                        require(total+reserve<=MAX_LIVE_BYTES,'artifact_limit')
+        except OSError as error:
+            raise SandboxInventoryError(inventory_region(prefix),inventory_io_reason(error)) from None
+    descriptor=io('',lambda: os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW))
+    try: walk(descriptor,'',0)
+    finally: io('',lambda: os.close(descriptor))
     return total
 
 
@@ -187,6 +234,7 @@ class Native:
         except BaseException as error:
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
             if self.stage=='seed_v1' and self.seed_launched==operation and kind in SEED_FAILURE_CATEGORIES:
+                if operation=='bootstrap' and isinstance(error,BootstrapInventoryError): raise
                 raise SeedCommandError(kind,operation) from None
             raise
         finally:
@@ -202,6 +250,15 @@ class Native:
         logs=[p for p in self.root.rglob('*') if p.is_file() and p.suffix in ('.log','.result')]
         require(all(p.stat().st_size<=MAX_LOG_BYTES for p in logs)
                 and sum(p.stat().st_size for p in logs)<=MAX_LOG_TOTAL,'artifact_limit')
+
+    def monitor_budget(self, phase):
+        require(type(phase) is str and phase in INVENTORY_PHASES, 'invalid_input')
+        try:
+            self.budgets()
+        except SandboxInventoryError as error:
+            if self.stage=='seed_v1' and self.seed_pending==self.seed_launched=='bootstrap':
+                raise BootstrapInventoryError(phase,error.region,error.reason) from None
+            raise
 
     def quiescent(self):
         return self.baseline is not None and process_snapshot()==self.baseline
@@ -223,7 +280,7 @@ class Native:
             try:
                 while child.poll() is None:
                     require(time.monotonic()<deadline,'timeout')
-                    if native: self.budgets()
+                    if native: self.monitor_budget('poll')
                     time.sleep(.05)
                 code=child.wait()
                 require(code==0,'process_failed')
@@ -239,7 +296,8 @@ class Native:
             while not self.quiescent():
                 require(time.monotonic()<settle,'snapshot_not_quiescent')
                 time.sleep(.02)
-        self.budgets()
+        if native: self.monitor_budget('post_exit')
+        else: self.budgets()
 
     def preflight(self):
         require(os.geteuid()==1000 and sys.version_info>=(3,10) and ONEC.is_file()
@@ -534,9 +592,11 @@ class Controller:
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
-            if isinstance(error,SeedCommandError):
+            if isinstance(error,BootstrapInventoryError):
+                kind=('seed_bootstrap_inventory_' + error.phase + '_' + error.region + '_' + error.reason) if self.stage=='seed_v1' else 'unexpected_failure'
+            elif isinstance(error,SeedCommandError):
                 kind=('seed_' + error.operation + '_' + kind) if self.stage=='seed_v1' else 'unexpected_failure'
-            if kind in SEED_FAILURES and self.stage!='seed_v1': kind='unexpected_failure'
+            if kind in SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES and self.stage!='seed_v1': kind='unexpected_failure'
             self.report.update(status='failed',failed_stage=self.stage,failure_kind=kind)
             self.report['stages'][STAGES.index(self.stage)]['status']='failed'
         finally:

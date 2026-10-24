@@ -22,6 +22,12 @@ SEED_FAILURE_CATEGORIES = frozenset({
 })
 SEED_FAILURES = frozenset(f'seed_{operation}_{category}'
     for operation in SEED_OPERATIONS for category in SEED_FAILURE_CATEGORIES)
+INVENTORY_PHASES = ('poll','post_exit')
+INVENTORY_REGIONS = ('home','tmp','runtime','experiment')
+INVENTORY_REASONS = ('unexpected_socket','symlink','hardlink','special','race','access','otherio','link_count')
+BOOTSTRAP_INVENTORY_FAILURES = frozenset(f'seed_bootstrap_inventory_{phase}_{region}_{reason}'
+    for phase in INVENTORY_PHASES for region in INVENTORY_REGIONS for reason in INVENTORY_REASONS)
+ALL_SEED_FAILURES = SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES
 PRIVATE = 'PRIVATE-SYNTHETIC-NATIVE-DATA'
 
 
@@ -88,12 +94,23 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(protocol.SEED_FAILURE_CATEGORIES,SEED_FAILURE_CATEGORIES)
         self.assertEqual(protocol.SEED_FAILURES,SEED_FAILURES)
         self.assertEqual(len(SEED_FAILURES),90)
-        self.assertEqual({value for value in protocol.FAILURES if value.startswith('seed_')},SEED_FAILURES)
+        self.assertEqual({value for value in protocol.FAILURES if value.startswith('seed_')},ALL_SEED_FAILURES)
         self.assertTrue(SEED_FAILURES <= protocol.FAILURES)
+
+    def test_bootstrap_inventory_vocabulary_is_exact_finite_cross_product(self):
+        self.assertEqual(protocol.INVENTORY_PHASES,INVENTORY_PHASES)
+        self.assertEqual(protocol.INVENTORY_REGIONS,INVENTORY_REGIONS)
+        self.assertEqual(protocol.INVENTORY_REASONS,INVENTORY_REASONS)
+        self.assertEqual(protocol.BOOTSTRAP_INVENTORY_FAILURES,BOOTSTRAP_INVENTORY_FAILURES)
+        self.assertEqual(len(BOOTSTRAP_INVENTORY_FAILURES),64)
+        self.assertFalse(SEED_FAILURES & BOOTSTRAP_INVENTORY_FAILURES)
+        self.assertTrue(BOOTSTRAP_INVENTORY_FAILURES <= protocol.FAILURES)
+        self.assertEqual(protocol.SCHEMA,1)
+        self.assertEqual(protocol.MAX_REPORT_BYTES,32768)
 
     def test_every_seed_failure_roundtrips_only_as_unaccepted_seed_diagnosis(self):
         source,_=fixture_report('seed_v1')
-        for kind in sorted(SEED_FAILURES):
+        for kind in sorted(ALL_SEED_FAILURES):
             for final in (False,True):
                 with self.subTest(kind=kind,final=final):
                     value=copy.deepcopy(source); value['failure_kind']=kind
@@ -110,7 +127,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_seed_failure_rejects_unknown_and_nonstring_values_without_echo(self):
         source,_=fixture_report('seed_v1')
-        unsupported = (protocol.FAILURES - SEED_FAILURES - SEED_FAILURE_CATEGORIES)
+        unsupported = (protocol.FAILURES - ALL_SEED_FAILURES - SEED_FAILURE_CATEGORIES)
         values = [None,True,False,0,1,1.5,[],{},[PRIVATE],{'raw':PRIVATE},
             '',PRIVATE,'seed_unknown_process_failed','seed_create_process_failed_'+PRIVATE,
             'seed_create_process_failed\n'+PRIVATE,'seed_create_'+PRIVATE,
@@ -125,11 +142,45 @@ class ProtocolTests(unittest.TestCase):
                 self.assertEqual(caught.exception.kind,'transport_invalid')
                 self.assertNotIn(PRIVATE,str(caught.exception))
 
+    def test_inventory_rejects_unapproved_axes_operations_and_raw_details(self):
+        source,_=fixture_report('seed_v1')
+        values = [
+            'seed_bootstrap_inventory_unknown_home_symlink',
+            'seed_bootstrap_inventory_poll_unknown_symlink',
+            'seed_bootstrap_inventory_poll_home_unknown',
+            'seed_bootstrap_inventory_poll_home',
+            'seed_bootstrap_inventory_poll_home_symlink_'+PRIVATE,
+            'seed_bootstrap_inventory_poll_home_symlink\n'+PRIVATE,
+            'seed_bootstrap_inventory_poll_/private/'+PRIVATE+'_symlink',
+            'seed_bootstrap_inventory_poll_home_'+PRIVATE,
+            'seed_bootstrap_inventory_poll_home_True',
+            'seed_bootstrap_inventory_post-exit_tmp_special',
+            *(f'seed_{operation}_inventory_{phase}_{region}_{reason}'
+              for operation in SEED_OPERATIONS if operation!='bootstrap'
+              for phase in INVENTORY_PHASES for region in INVENTORY_REGIONS
+              for reason in INVENTORY_REASONS),
+        ]
+        for kind in values:
+            with self.subTest(kind=kind):
+                value=copy.deepcopy(source); value['failure_kind']=kind
+                with self.assertRaises(OracleError) as caught:
+                    self.check(value)
+                self.assertEqual(caught.exception.kind,'transport_invalid')
+                self.assertNotIn(PRIVATE,str(caught.exception))
+        source['failure_kind']='seed_bootstrap_inventory_poll_home_symlink'
+        for key in ('path','name','native_log','inventory'):
+            with self.subTest(extra_key=key):
+                value=copy.deepcopy(source); value[key]=PRIVATE
+                with self.assertRaises(OracleError) as caught:
+                    self.check(value)
+                self.assertNotIn(PRIVATE,str(caught.exception))
+
     def test_failure_kind_requires_exact_string_even_for_decoder_objects(self):
         class StringSubclass(str):
             pass
         source,_=fixture_report('seed_v1')
-        for kind in ('process_failed','seed_create_process_failed'):
+        for kind in ('process_failed','seed_create_process_failed',
+                     'seed_bootstrap_inventory_poll_home_symlink'):
             with self.subTest(kind=kind):
                 source['failure_kind']=StringSubclass(kind)
                 with mock.patch.object(protocol,'decode',return_value=source),self.assertRaises(OracleError):
@@ -148,11 +199,11 @@ class ProtocolTests(unittest.TestCase):
             else:
                 source,_=fixture_report(stage)
             self.check(source)
-            for kind in sorted(SEED_FAILURES):
+            for kind in sorted(ALL_SEED_FAILURES):
                 with self.subTest(stage=stage,kind=kind):
                     value=copy.deepcopy(source); value['failure_kind']=kind
                     with self.assertRaises(OracleError): self.check(value)
-        for kind in sorted(SEED_FAILURES):
+        for kind in sorted(ALL_SEED_FAILURES):
             with self.subTest(stage='success',kind=kind):
                 value=copy.deepcopy(self.good); value['failure_kind']=kind
                 with self.assertRaises(OracleError): self.check(value)
@@ -163,16 +214,36 @@ class ProtocolTests(unittest.TestCase):
         source['stages'][-1]['status']='failed'
         source['stages'][-1]['checks']['raw_files_removed']=False
         source['cleanup']['raw_files_removed']=False
-        for state in ('ok','not_started'):
-            with self.subTest(seed_state=state):
-                value=copy.deepcopy(source); seed=value['stages'][1]
-                seed['status']=state
-                seed['checks']={key:state=='ok' for key in protocol.CHECKS['seed_v1']}
+        for kind in ('seed_bootstrap_invalid_marker',*sorted(BOOTSTRAP_INVENTORY_FAILURES)):
+            for state in ('ok','not_started'):
+                with self.subTest(kind=kind,seed_state=state):
+                    value=copy.deepcopy(source); value['failure_kind']=kind
+                    seed=value['stages'][1]
+                    seed['status']=state
+                    seed['checks']={key:state=='ok' for key in protocol.CHECKS['seed_v1']}
+                    with self.assertRaises(OracleError): self.check(value)
+
+    def test_inventory_failure_requires_exact_stage_prefix_and_no_observations(self):
+        source,_=fixture_report('seed_v1')
+        source['failure_kind']='seed_bootstrap_inventory_post_exit_experiment_link_count'
+        edits = [
+            lambda r:r['stages'][0].update(status='not_started',
+                checks={key:False for key in protocol.CHECKS['preflight']}),
+            lambda r:r['stages'][2].update(status='failed'),
+            lambda r:r['stages'][3].update(status='ok',
+                checks={key:True for key in protocol.CHECKS['create']}),
+            lambda r:r.update(snapshots=copy.deepcopy(self.good['snapshots'][:1])),
+            lambda r:r.update(artifacts=copy.deepcopy(self.good['artifacts'])),
+            lambda r:r.update(comparisons=copy.deepcopy(self.good['comparisons'][:1])),
+        ]
+        for index,edit in enumerate(edits):
+            with self.subTest(edit=index):
+                value=copy.deepcopy(source); edit(value)
                 with self.assertRaises(OracleError): self.check(value)
 
     def test_primary_seed_failure_and_independent_cleanup_failure_are_valid(self):
         source,_=fixture_report('seed_v1')
-        for kind in sorted(SEED_FAILURES):
+        for kind in sorted(ALL_SEED_FAILURES):
             with self.subTest(kind=kind):
                 value=copy.deepcopy(source); value['failure_kind']=kind
                 value['stages'][-1]['status']='failed'
