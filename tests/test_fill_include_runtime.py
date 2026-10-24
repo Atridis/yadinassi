@@ -1,9 +1,9 @@
-from scripts.native_historical_replay import without_fill_exclude_probes
 """Linux-only FillPropertyValues INCLUDE behavior bound to audited native PR86."""
 import hashlib
 from pathlib import Path
 import unittest
 
+from scripts.native_historical_replay import without_fill_exclude_probes
 from yadinassi import Interpreter
 from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context, current_native_target
 from yadinassi.structures import BSLStructure, BSLFixedStructure, fill_property_values
@@ -46,7 +46,7 @@ def observe(include, target=None, exclude=None):
 class FillIncludeNativeRuntimeTests(unittest.TestCase):
     def test_exact_native_13_record_replay_with_unchanged_full_source_pin(self):
         raw = (ROOT / 'integrational_tests/tests/collections.bsl').read_bytes()
-        canonical = without_fill_exclude_probes(raw.decode('utf-8-sig').replace('\r\n', '\n')).encode('utf-8-sig')
+        canonical = without_fill_exclude_probes(raw.replace(b'\r\n', b'\n').decode('utf-8-sig')).encode('utf-8-sig')
         self.assertEqual(hashlib.sha256(canonical).hexdigest(), SOURCE_SHA256)
         expected = [f'fill.include-normalization.{label}: [{status};{{"N",{first}}};{{"N",{last}}}]'
                     for (label, _), (status, first, last) in zip(CASES, NATIVE)]

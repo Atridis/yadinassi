@@ -13,9 +13,17 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
+    from .native_historical_replay import (
+        TRAILING_OMITTED_PROBE_BLOCKS, TRAILING_OMITTED_SOURCE_SHA256,
+        without_trailing_omitted_direct_probe,
+    )
 else:
-    from native_historical_replay import historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes
+    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
+    from native_historical_replay import (
+        TRAILING_OMITTED_PROBE_BLOCKS, TRAILING_OMITTED_SOURCE_SHA256,
+        without_trailing_omitted_direct_probe,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1872,8 +1880,8 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
-        if name in ('collections', 'dates', 'numbers'):
-            reconstruct = {'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
+        if name in ('collections', 'dates', 'numbers', 'functions'):
+            reconstruct = {'functions': historical_functions_source, 'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
             replay = directory / (name + '-historical.bsl')
             replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
@@ -2168,6 +2176,334 @@ def check_value_list_references(executable, *, directory, env):
           'BOM file, command flags, stdin and console')
 
 
+EXTENDED_EXCEPTION_PROGRAM = '''Procedure Fail()
+    Try Raise ("inner",, "INNER", "inner detail");
+    Except cause = ErrorInfo(); EndTry;
+    Raise ("outer", ErrorCategory.ConfigurationError, "OUTER", "detail", cause);
+EndProcedure
+Try
+    Try Fail(); Except saved = ErrorInfo(); Raise; EndTry;
+Except
+    info = ErrorInfo();
+    Message(info.Description); Message(info.Code); Message(info.AdditionalInformation);
+    Message(info.Cause.Description); Message(info.Cause.Code);
+    Message(info.Cause.AdditionalInformation);
+    Message(info.IsErrorOfCategory(ErrorCategory.ConfigurationError));
+    Message(TypeOf(info) = Type("ErrorInfo"));
+    Message(info.LineNumber = saved.LineNumber);
+EndTry;
+Попытка ВызватьИсключение ("русский",, "RU");
+Исключение
+    ошибка = ИнформацияОбОшибке();
+    Сообщить(ошибка.Описание); Сообщить(ошибка.Код);
+    Сообщить(ошибка.ЯвляетсяОшибкойКатегории(КатегорияОшибки.ИсключениеВызванноеИзВстроенногоЯзыка));
+КонецПопытки;
+Message(saved.Cause.Code);
+'''
+EXTENDED_EXCEPTION_OUTPUT = ('outer\nOUTER\ndetail\ninner\nINNER\ninner detail\n'
+                             'Да\nДа\nДа\nрусский\nRU\nДа\nINNER\n')
+
+
+EXPORT_VARIABLE_DECLARATIONS = '''Перем A Экспорт, B; Var C Export;
+Function Read() Export Return A; EndFunction
+A=7; B=11; C=13;
+Try ignored=ThisObject.A; Except Message("initial-read-closed"); EndTry;
+Try ThisObject.A=99; Except Message("initial-write-closed"); EndTry;
+Try ignored=ЭтотОбъект.Read(); Except Message("initial-call-closed"); EndTry;
+Message(A+B+C);
+'''
+EXPORT_VARIABLE_DECLARATION_OUTPUT = ('initial-read-closed\ninitial-write-closed\n'
+                                      'initial-call-closed\n31\n')
+
+# A small file-import integration probe, not additional native 1C evidence.
+# The module becomes public only after initialization, before its caller runs.
+EXPORT_VARIABLE_MODULE = '''Var Private, Value Export, After;
+Перем Другой Экспорт, Items Экспорт;
+Function Read() Export Return Value; EndFunction
+Procedure Write(Val next) Export Value=next; EndProcedure
+Function Hidden() Return Private; EndFunction
+Procedure Alias(first, second) Export
+    first=23; Message(second); Value=29; Message(first);
+EndProcedure
+Function Copy(Val slot) Export slot=41; Return slot; EndFunction
+Procedure Fail(slot) Export slot=53; Raise "controlled"; EndProcedure
+Function Count() Export Return Items.Count(); EndFunction
+Function Self() Export Return ThisObject; EndFunction
+Function IsSelf(Val receiver) Export
+    Return receiver = ThisObject And receiver = ЭтотОбъект;
+EndFunction
+Value=11; Другой=17; Private=19; After=7;
+Items=New Array; Items.Add(1);
+'''
+EXPORT_VARIABLE_IMPORT_PROGRAM = '''// #Import mod.bsl
+Message(mod.vAlUe);
+mod.Value=31; Message(mod.Read());
+mod.Write(43); Message(mod.Value); Message(mod.Другой);
+Try ignored=mod.Private; Except Message("private-read-closed"); EndTry;
+Try mod.After=99; Except Message("per-name-write-closed"); EndTry;
+Try ignored=mod.Missing; Except Message("unknown-read-closed"); EndTry;
+Try mod.Missing=99; Except Message("unknown-write-closed"); EndTry;
+Try mod.Hidden(); Except Message("private-call-closed"); EndTry;
+mod.Alias(mod.Value, mod.Value); Message(mod.Value);
+Message(mod.Copy(mod.Value)); Message(mod.Value);
+Try mod.Fail(mod.Value); Except Message("mutation-error"); EndTry;
+Message(mod.Value);
+items=mod.Items; items.Add(2); Message(mod.Count()); Message(mod.Items[1]);
+public=mod.Self(); Message(mod.IsSelf(public));
+public.Value=61; Message(mod.Value); Message(public.Read());
+'''
+EXPORT_VARIABLE_IMPORT_OUTPUT = ('11\n31\n43\n17\nprivate-read-closed\n'
+                                 'per-name-write-closed\nunknown-read-closed\n'
+                                 'unknown-write-closed\nprivate-call-closed\n'
+                                 '23\n29\n29\n41\n29\nmutation-error\n53\n'
+                                 '2\n2\nДа\n61\n61\n')
+
+
+def check_exported_module_variables(executable, *, directory, env):
+    """Measured core field semantics plus the existing file-import extension."""
+    directory.mkdir()
+    source = directory / 'Переменные.bsl'
+    source.write_text(EXPORT_VARIABLE_DECLARATIONS, encoding='utf-8-sig')
+    for arguments, stdin in ((['-c', EXPORT_VARIABLE_DECLARATIONS], None),
+                             ([str(source)], None), (['-'], EXPORT_VARIABLE_DECLARATIONS)):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, EXPORT_VARIABLE_DECLARATION_OUTPUT, ''):
+            raise AssertionError(f'Exported-variable declarations/readiness failed {arguments!r}: {result!r}')
+    (directory / 'mod.bsl').write_text(EXPORT_VARIABLE_MODULE, encoding='utf-8-sig')
+    imported = directory / 'ИмпортПеременных.bsl'
+    imported.write_text(EXPORT_VARIABLE_IMPORT_PROGRAM, encoding='utf-8-sig')
+    # Imports remain file-only; do not imply support for imports via -c or stdin.
+    result = subprocess.run([executable, str(imported)], capture_output=True,
+                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+    if (result.returncode, result.stdout, result.stderr) != (0, EXPORT_VARIABLE_IMPORT_OUTPUT, ''):
+        raise AssertionError(f'Exported-module variable runtime failed: {result!r}')
+    print('Binary exported-module variables passed: bilingual declarations, initialization '
+          'readiness, shared imported fields/routines, private/unknown rejection, live '
+          'aliases, Val, mutation after error, collections, self identity, BOM, -c and stdin')
+
+
+def check_side_local_module_variables(executable, *, directory, env):
+    """Replay all nine independently captured module-state observations."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    code = (probes / 'module_context_core.bsl').read_text(encoding='utf-8')
+    code += '\nRunModuleContextProbe();\n'
+    capture = json.loads((probes / 'module_context_native.json').read_text(encoding='utf-8'))
+    if len(capture['labels']) != 9 or len(capture['values']) != 9:
+        raise AssertionError('module context capture width')
+    expected = ''
+    for label, value in zip(capture['labels'], capture['values']):
+        if type(value) is bool:
+            token = '{"B",' + str(int(value)) + '}'
+        elif type(value) is int:
+            token = '{"N",' + str(value) + '}'
+        else:
+            raise AssertionError('module context capture type')
+        expected += 'module.context.core.' + label + ': ' + token + '\n'
+    source = directory / 'МодульныеПеременные.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Side-local module variables failed {arguments!r}: {result!r}')
+    print('Binary side-local module variables passed: all nine native observations, '
+          'initializers, fresh outer calls, nested sharing, exception recovery, client '
+          'persistence, BOM file, -c, stdin and console')
+
+
+def check_server_nocontext(executable, *, directory, env):
+    """Replay captured NoContext values with the measured logical-bit projection."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    code = (probes / 'nocontext_core.bsl').read_text(encoding='utf-8')
+    code += '\nRunNoContextProbe();\n'
+    capture = json.loads((probes / 'nocontext_native.json').read_text(encoding='utf-8'))
+    if len(capture['labels']) != 14 or len(capture['values']) != 14:
+        raise AssertionError('NoContext capture width')
+    capture['values'][2] = (1 if capture['values'][2] & 4 else 0) + (2 if capture['values'][2] & 8 else 0)
+    expected = ''
+    for label, value in zip(capture['labels'], capture['values']):
+        if type(value) is bool:
+            token = '{"B",' + str(int(value)) + '}'
+        elif type(value) is int:
+            token = '{"N",' + str(value) + '}'
+        else:
+            raise AssertionError('NoContext capture type')
+        expected += 'nocontext.core.' + label + ': ' + token + '\n'
+    source = directory / 'БезКонтекста.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Server NoContext failed {arguments!r}: {result!r}')
+    print('Binary server NoContext passed: fourteen measured/projection values, normal and '
+          'escaping boundary copyout, same-server references, logical flags, BOM file, -c, '
+          'stdin and console')
+
+
+def check_dual_nocontext(executable, *, directory, env):
+    """Replay the nine captured dual observations with logical-only profile bits."""
+    directory.mkdir()
+    probes = ROOT / 'integrational_tests' / 'directive_probes'
+    code = (probes / 'dual_directive_core.bsl').read_text(encoding='utf-8')
+    code += '\nFor Each Observed In CollectDualDirectiveProbe() Do Message(Observed); EndDo;\n'
+    capture = json.loads((probes / 'dual_directive_measurement.json').read_text(encoding='utf-8'))
+    values = list(capture['native_values'])
+    if len(values) != 9 or any(type(value) is not int for value in values):
+        raise AssertionError('Dual capture width/type')
+    for index in (0, 3, 6):
+        values[index] &= 12
+    if values != capture['projected_values']:
+        raise AssertionError('Dual capture projection mismatch')
+    expected = ''.join(str(value) + '\n' for value in values)
+    source = directory / 'СовместныйБезКонтекста.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    for arguments, stdin in (([str(source)], None), (['-c', code], None),
+                             (['-'], code), ([], code + '/exit\n')):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Dual NoContext failed {arguments!r}: {result!r}')
+    print('Binary dual NoContext passed: nine measured/projection observations, '
+          'three caller lanes, same-side alias/escaping writes, BOM file, -c, stdin and console')
+
+
+def check_extended_exceptions(executable, *, directory, env):
+    """Core structured exception flow and unsupported-display REPL recovery."""
+    directory.mkdir()
+    source = directory / 'РасширенныеИсключения.bsl'
+    source.write_text(EXTENDED_EXCEPTION_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, EXTENDED_EXCEPTION_PROGRAM], None)
+             for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], EXTENDED_EXCEPTION_PROGRAM),
+              ([], EXTENDED_EXCEPTION_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, EXTENDED_EXCEPTION_OUTPUT, ''):
+            raise AssertionError(f'Failed extended exceptions {arguments!r}: {result!r}')
+    fixture = json.loads((ROOT / 'tests/fixtures/extended_exceptions_linux.json').read_text(encoding='utf-8'))
+    native_source = without_exported_variable_probes(
+        (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')).encode('utf-8')
+    historical = (ROOT / 'tests/fixtures/native_windows/functions.out').read_bytes().replace(b'\r\n', b'\n')
+    if (hashlib.sha256(native_source).hexdigest() != fixture['source_sha256']
+            or hashlib.sha256(historical).hexdigest() != fixture['historical_output_sha256']):
+        raise AssertionError('Extended exception native source/history binding changed')
+    native_expected = historical + ('\n'.join(fixture['records']) + '\n').encode('utf-8')
+    if hashlib.sha256(native_expected).hexdigest() != fixture['complete_output_sha256']:
+        raise AssertionError('Extended exception native output binding changed')
+    native_file = directory / 'ВсеИсключения.bsl'
+    native_file.write_text(native_source.decode('utf-8'), encoding='utf-8-sig')
+    for arguments, stdin in (([str(native_file)], None), (['-'], native_source.decode('utf-8'))):
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, native_expected.decode('utf-8'), ''):
+            raise AssertionError(f'Failed all 116 native exception records {arguments!r}: {result!r}')
+    recovery = ('Try Raise "x"; Except saved=ErrorInfo(); EndTry;\n'
+                'saved\nErrorCategory.ConfigurationError\nErrorCategory\n'
+                'Message("still alive");\n/exit\n')
+    result = subprocess.run([executable], input=recovery, capture_output=True,
+                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+    if ((result.returncode, result.stdout) != (1, 'still alive\n')
+            or result.stderr.count('пока не поддерживается') != 3
+            or 'Traceback' in result.stderr):
+        raise AssertionError(f'Failed extended exception display recovery: {result!r}')
+    print('Binary extended exceptions passed: all 116 native records, bilingual fields, category, cause, '
+          'omissions, routines, rethrow, BOM file, command flags, stdin and console recovery')
+
+
+ASYNC_PROGRAM = '''Async Function Leaf(x)
+    x = 17;
+    Return Await x;
+EndFunction
+Async Function Reject()
+    Raise("async-smoke", ErrorCategory.ConfigurationError, "async-code", "detail", Undefined);
+EndFunction
+Async Procedure AsyncMain()
+    x = 5;
+    p = Leaf(x);
+    Message(x);
+    Message(TypeOf(p) = Type("Promise"));
+    Message(Await p);
+    Message(Await p);
+    Try
+        failed = Reject();
+        Message("returned");
+        ignored = Await failed;
+    Except
+        Message(ErrorInfo().Description);
+        Message(ErrorInfo().Code);
+    EndTry;
+EndProcedure
+AsyncMain();
+'''
+ASYNC_OUTPUT = '5\nДа\n17\n17\nreturned\nasync-smoke\nasync-code\n'
+
+
+def check_async_language(executable, *, directory, env):
+    """Frozen executable language core, not a fresh native-1C measurement."""
+    directory.mkdir()
+    source = directory / 'АсинхронноеЯдро.bsl'
+    source.write_text(ASYNC_PROGRAM, encoding='utf-8-sig')
+    cases = [([flag, ASYNC_PROGRAM], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], ASYNC_PROGRAM), ([], ASYNC_PROGRAM + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, ASYNC_OUTPUT, ''):
+            raise AssertionError(f'Failed async language {arguments!r}: {result!r}')
+    cycle = ('Var a,b; Async Function A1() x=Await 0; Return Await b; EndFunction '
+             'Async Function B1() x=Await 0; Return Await a; EndFunction a=A1();b=B1();')
+    result = subprocess.run([executable, '-c', cycle], capture_output=True, encoding='utf-8',
+                            cwd=directory, env=env, timeout=30)
+    if (result.returncode != 1 or result.stdout or 'незавершенные' not in result.stderr
+            or 'Traceback' in result.stderr):
+        raise AssertionError(f'Failed async pending lifecycle: {result!r}')
+    print('Binary async language passed: continuations, values, repeat Await, rejection, complete lifecycle')
+
+
+def check_trailing_omitted_arguments(executable, *, directory, env):
+    """Bounded binary smoke, not a fresh full-source native-1C measurement."""
+    fixture = json.loads((ROOT / 'tests/fixtures/trailing_omitted_linux.json').read_text(encoding='utf-8'))
+    text = (ROOT / 'integrational_tests/tests/functions.bsl').read_text(encoding='utf-8')
+    measured = without_trailing_omitted_direct_probe(text)
+    if (fixture['capture']['source_sha256'] != TRAILING_OMITTED_SOURCE_SHA256
+            or hashlib.sha256(measured.encode('utf-8')).hexdigest()
+            != fixture['capture']['source_sha256']):
+        raise AssertionError('Trailing omitted native capture source binding changed')
+    token = fixture['native_token']
+    if not re.fullmatch(r'omit\.v1:(?:[SE][0-9]{4}){9}', token):
+        raise AssertionError('Trailing omitted native token shape changed')
+    # Keep all nine measured Execute cases plus the later direct positive witness.
+    # Only these exact bounded sections are extracted; live native CI still runs
+    # the complete current functions source and must validate the new witness.
+    blocks = []
+    for start, end in TRAILING_OMITTED_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise AssertionError('Trailing omitted smoke probe boundaries changed')
+        blocks.append(start + text.split(start, 1)[1].split(end, 1)[0] + end)
+    code = ''.join(blocks)
+    expected = token + '\n'
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ПоследнийПропущенныйАргумент.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed trailing omitted arguments {arguments!r}: {result!r}')
+    print('Binary trailing omitted arguments passed: nine measured Execute cases, '
+          'direct positive witness, BOM file, command flags, stdin and console')
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -2192,6 +2528,13 @@ def main() -> None:
         check_xml_checkpoint(executable, directory=Path(temporary) / "xml-checkpoint", env=env)
         check_table_checkpoint(executable, directory=Path(temporary) / "table-checkpoint", env=env)
         check_value_list_references(executable, directory=Path(temporary) / "list-references", env=env)
+        check_extended_exceptions(executable, directory=Path(temporary) / "extended-exceptions", env=env)
+        check_async_language(executable, directory=Path(temporary) / "async-language", env=env)
+        check_trailing_omitted_arguments(executable, directory=Path(temporary) / "trailing-omitted", env=env)
+        check_exported_module_variables(executable, directory=Path(temporary) / "exported-module-variables", env=env)
+        check_side_local_module_variables(executable, directory=Path(temporary) / "side-local-module", env=env)
+        check_server_nocontext(executable, directory=Path(temporary) / "server-nocontext", env=env)
+        check_dual_nocontext(executable, directory=Path(temporary) / "dual-nocontext", env=env)
         check_numeric_presentation(executable, directory=Path(temporary) / "numeric", env=env)
         check_division(executable, directory=Path(temporary) / "division", env=env)
         check_division_tie_checkpoint(executable, directory=Path(temporary) / "division-ties", env=env)
@@ -2217,7 +2560,7 @@ def main() -> None:
         module.write_text('#Область ПубличныйИнтерфейс\n#Если Клиент Тогда\n&НаКлиенте\n'
                           'Функция ПолучитьСумму(А, Б = 2) Экспорт\n'
                           '#Область Вычисление\nВозврат А + Б;\n#КонецОбласти\n'
-                          'КонецФункции\n#Иначе\n&AtServer\ninvalid !!!\n'
+                          'КонецФункции\n#Иначе\ninvalid !!!\n'
                           '#КонецЕсли\n#КонецОбласти\n', encoding="utf-8-sig")
         importer = Path(temporary) / "Основное.bsl"
         importer.write_text('// #Импорт Побочное.bsl\n'
@@ -2242,7 +2585,7 @@ def main() -> None:
             '// #Импорт Справочник.Вложенное\n'
             'Сообщить(Справочник.Побочное.ПолучитьСумму(1, 2));\n'
             'Сообщить(Справочник.Вложенное.Другое.Ответ());', encoding="utf-8")
-        client_code = ('#If AtClient And Not Server Then\n&AtClient\n'
+        client_code = ('#If Client And Not Server Then\n&AtClient\n'
                        'Function F() Return 42; EndFunction\nMessage(F());\n'
                        '#Else\n// #Импорт Missing.bsl\nunsupported !!!\n#EndIf\n')
         region_code = ('#Область Модуль\nФункция Ответ()\n'

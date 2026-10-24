@@ -37,6 +37,11 @@ class Unary(Node):
 
 
 @dataclass
+class Await(Node):
+    operand: Node
+
+
+@dataclass
 class Binary(Node):
     left: Node
     operator: str
@@ -131,6 +136,13 @@ class Continue(Node):
 @dataclass
 class Var(Node):
     names: list[str]
+    exported_names: tuple[str, ...] = ()
+    execution_context: str = "client"
+
+
+@dataclass
+class ServerInitializer(Node):
+    body: list[Node]
 
 
 @dataclass
@@ -148,6 +160,9 @@ class Routine(Node):
     exported: bool
     body: list[Node]
     execution_context: str = "client"
+    is_async: bool = False
+    module_context: bool = True
+    is_dual: bool = False
 
 
 @dataclass
@@ -169,6 +184,7 @@ class Try(Node):
 @dataclass
 class Raise(Node):
     value: Node | None
+    optional_arguments: list[Node] | None = None
 
 
 @dataclass

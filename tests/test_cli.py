@@ -18,6 +18,27 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_extended_exceptions_all_inputs_and_console_display_recovery(self):
+        from scripts.smoke_test import EXTENDED_EXCEPTION_PROGRAM, EXTENDED_EXCEPTION_OUTPUT
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'Исключения.bsl'
+            source.write_text(EXTENDED_EXCEPTION_PROGRAM, encoding='utf-8-sig')
+            cases = [((flag, EXTENDED_EXCEPTION_PROGRAM), None)
+                     for flag in ('-c', '-с', '--command')]
+            cases += [((str(source),), None), (('-',), EXTENDED_EXCEPTION_PROGRAM),
+                      ((), EXTENDED_EXCEPTION_PROGRAM + '/exit\n')]
+            for arguments, stdin in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, EXTENDED_EXCEPTION_OUTPUT, ''))
+        result = self.run_cli(stdin='Try Raise "x"; Except saved=ErrorInfo(); EndTry;\n'
+                              'saved\nErrorCategory.ConfigurationError\nErrorCategory\n'
+                              'Message("still alive");\n/exit\n')
+        self.assertEqual((result.returncode, result.stdout), (1, 'still alive\n'))
+        self.assertEqual(result.stderr.count('пока не поддерживается'), 3)
+        self.assertNotIn('Traceback', result.stderr)
+
     def test_dates_all_flags_bom_file_stdin_and_console(self):
         from scripts.smoke_test import DATE_PROGRAM, DATE_OUTPUT
 
@@ -1224,7 +1245,7 @@ EndTry;
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "-2\n-2\n", ""))
 
     def test_client_compilation_command_stdin_and_repl(self):
-        code = ('#If Server Then\n&AtServer\nunsupported !\n#Else\n'
+        code = ('#If Server Then\nunsupported !\n#Else\n'
                 '&НаКлиенте\nФункция Ответ() Возврат 42; КонецФункции\n'
                 'Сообщить(Ответ());\n#EndIf\n')
         for arguments, stdin in [(('-c', code), None), (('-',), code), ((), code + '/exit\n')]:
@@ -1241,7 +1262,7 @@ EndTry;
             project.mkdir()
             (project / 'Side.bsl').write_text(
                 '#If Client Then\n&AtClient\nFunction F() Export Return 42; EndFunction\n'
-                '#Else\n&AtServer\nunsupported !\n#EndIf', encoding='utf-8')
+                '#Else\nunsupported !\n#EndIf', encoding='utf-8')
             main = project / 'Main.bsl'
             main.write_text('#If AtClient Then\n// #Импорт Side.bsl\n#Else\n'
                             '// #Импорт Missing.bsl\n#EndIf\nMessage(Side.F());', encoding='utf-8-sig')
@@ -1249,7 +1270,7 @@ EndTry;
             self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
 
     def test_client_compilation_clean_diagnostics_and_unfinished_repl(self):
-        cases = [('&AtServer\nProcedure P() EndProcedure', 'только клиентский контекст'),
+        cases = [('&AtClientAtServer\nProcedure P() EndProcedure', 'не поддерживается'),
                  ('#If Client Then\nMessage(1);', '#КонецЕсли'),
                  ('#Else', 'соответствующей #Если')]
         for code, message in cases:

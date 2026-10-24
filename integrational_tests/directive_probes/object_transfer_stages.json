@@ -1,0 +1,711 @@
+{
+  "schema": 1,
+  "source_sha256": "3ece4f397eb5249ae8e95b628bce2fefd8d9cf29e896620719741cf9ea9d5f82",
+  "stages": [
+    {
+      "id": 1,
+      "source_line": 174,
+      "statement": "ObjectTransferRecord(\"entered\", True);"
+    },
+    {
+      "id": 2,
+      "source_line": 177,
+      "statement": "X = ObjectTransferNew(1);"
+    },
+    {
+      "id": 3,
+      "source_line": 178,
+      "statement": "Child = X.Items;"
+    },
+    {
+      "id": 4,
+      "source_line": 179,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 5,
+      "source_line": 181,
+      "statement": "ObjectTransferVal(X);"
+    },
+    {
+      "id": 6,
+      "source_line": 183,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 7,
+      "source_line": 185,
+      "statement": "ObjectTransferRecord(\"val.error\", Failed);"
+    },
+    {
+      "id": 8,
+      "source_line": 186,
+      "statement": "ObjectTransferRecord(\"val.root\", ObjectTransferField(X, \"N\"));"
+    },
+    {
+      "id": 9,
+      "source_line": 187,
+      "statement": "ObjectTransferRecord(\"val.leaf\", ObjectTransferLeaf(X, \"Items\"));"
+    },
+    {
+      "id": 10,
+      "source_line": 188,
+      "statement": "ObjectTransferRecord(\"val.retained\", ObjectTransferArrayLeaf(Child));"
+    },
+    {
+      "id": 11,
+      "source_line": 191,
+      "statement": "X = ObjectTransferNew(2);"
+    },
+    {
+      "id": 12,
+      "source_line": 192,
+      "statement": "Y = X;"
+    },
+    {
+      "id": 13,
+      "source_line": 193,
+      "statement": "Child = X.Items;"
+    },
+    {
+      "id": 14,
+      "source_line": 194,
+      "statement": "Seen = Undefined;"
+    },
+    {
+      "id": 15,
+      "source_line": 195,
+      "statement": "BeforeX = Undefined;"
+    },
+    {
+      "id": 16,
+      "source_line": 196,
+      "statement": "BeforeY = Undefined;"
+    },
+    {
+      "id": 17,
+      "source_line": 197,
+      "statement": "AfterY = Undefined;"
+    },
+    {
+      "id": 18,
+      "source_line": 198,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 19,
+      "source_line": 200,
+      "statement": "Seen = ObjectTransferIndependent(X, Y);"
+    },
+    {
+      "id": 20,
+      "source_line": 201,
+      "statement": "BeforeX = ObjectTransferLeaf(X, \"Items\");"
+    },
+    {
+      "id": 21,
+      "source_line": 202,
+      "statement": "BeforeY = ObjectTransferLeaf(Y, \"Items\");"
+    },
+    {
+      "id": 22,
+      "source_line": 203,
+      "statement": "X.Items[0] = 24;"
+    },
+    {
+      "id": 23,
+      "source_line": 204,
+      "statement": "AfterY = ObjectTransferLeaf(Y, \"Items\");"
+    },
+    {
+      "id": 24,
+      "source_line": 206,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 25,
+      "source_line": 208,
+      "statement": "ObjectTransferRecord(\"independent.error\", Failed);"
+    },
+    {
+      "id": 26,
+      "source_line": 209,
+      "statement": "ObjectTransferRecord(\"independent.server.second\", ObjectTransferNumber(Seen));"
+    },
+    {
+      "id": 27,
+      "source_line": 210,
+      "statement": "ObjectTransferRecord(\"independent.x.before\", BeforeX);"
+    },
+    {
+      "id": 28,
+      "source_line": 211,
+      "statement": "ObjectTransferRecord(\"independent.y.before\", BeforeY);"
+    },
+    {
+      "id": 29,
+      "source_line": 212,
+      "statement": "ObjectTransferRecord(\"independent.y.after\", AfterY);"
+    },
+    {
+      "id": 30,
+      "source_line": 213,
+      "statement": "ObjectTransferRecord(\"independent.retained\", ObjectTransferArrayLeaf(Child));"
+    },
+    {
+      "id": 31,
+      "source_line": 216,
+      "statement": "X = ObjectTransferNew(3);"
+    },
+    {
+      "id": 32,
+      "source_line": 217,
+      "statement": "Child = X.Items;"
+    },
+    {
+      "id": 33,
+      "source_line": 218,
+      "statement": "Seen = Undefined;"
+    },
+    {
+      "id": 34,
+      "source_line": 219,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 35,
+      "source_line": 221,
+      "statement": "Seen = ObjectTransferRepeated(X, X);"
+    },
+    {
+      "id": 36,
+      "source_line": 223,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 37,
+      "source_line": 225,
+      "statement": "ObjectTransferRecord(\"repeated.error\", Failed);"
+    },
+    {
+      "id": 38,
+      "source_line": 226,
+      "statement": "ObjectTransferRecord(\"repeated.server.second\", ObjectTransferNumber(Seen));"
+    },
+    {
+      "id": 39,
+      "source_line": 227,
+      "statement": "ObjectTransferRecord(\"repeated.leaf\", ObjectTransferLeaf(X, \"Items\"));"
+    },
+    {
+      "id": 40,
+      "source_line": 228,
+      "statement": "ObjectTransferRecord(\"repeated.retained\", ObjectTransferArrayLeaf(Child));"
+    },
+    {
+      "id": 41,
+      "source_line": 231,
+      "statement": "X = ObjectTransferNew(4);"
+    },
+    {
+      "id": 42,
+      "source_line": 232,
+      "statement": "Kept = X;"
+    },
+    {
+      "id": 43,
+      "source_line": 233,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 44,
+      "source_line": 235,
+      "statement": "ObjectTransferRebind(X);"
+    },
+    {
+      "id": 45,
+      "source_line": 237,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 46,
+      "source_line": 239,
+      "statement": "ObjectTransferRecord(\"rebind.error\", Failed);"
+    },
+    {
+      "id": 47,
+      "source_line": 240,
+      "statement": "ObjectTransferRecord(\"rebind.root\", ObjectTransferField(X, \"N\"));"
+    },
+    {
+      "id": 48,
+      "source_line": 241,
+      "statement": "ObjectTransferRecord(\"rebind.leaf\", ObjectTransferLeaf(X, \"Items\"));"
+    },
+    {
+      "id": 49,
+      "source_line": 242,
+      "statement": "ObjectTransferRecord(\"rebind.retained\", ObjectTransferField(Kept, \"N\"));"
+    },
+    {
+      "id": 50,
+      "source_line": 245,
+      "statement": "Child = New Array;"
+    },
+    {
+      "id": 51,
+      "source_line": 246,
+      "statement": "Child.Add(5);"
+    },
+    {
+      "id": 52,
+      "source_line": 247,
+      "statement": "X = New Structure(\"Left,Right\", Child, Child);"
+    },
+    {
+      "id": 53,
+      "source_line": 248,
+      "statement": "Seen = Undefined;"
+    },
+    {
+      "id": 54,
+      "source_line": 249,
+      "statement": "Result = Undefined;"
+    },
+    {
+      "id": 55,
+      "source_line": 250,
+      "statement": "AfterXSibling = Undefined;"
+    },
+    {
+      "id": 56,
+      "source_line": 251,
+      "statement": "AfterXResultLeft = Undefined;"
+    },
+    {
+      "id": 57,
+      "source_line": 252,
+      "statement": "AfterXResultRight = Undefined;"
+    },
+    {
+      "id": 58,
+      "source_line": 253,
+      "statement": "AfterResultSibling = Undefined;"
+    },
+    {
+      "id": 59,
+      "source_line": 254,
+      "statement": "AfterResultXLeft = Undefined;"
+    },
+    {
+      "id": 60,
+      "source_line": 255,
+      "statement": "AfterResultXRight = Undefined;"
+    },
+    {
+      "id": 61,
+      "source_line": 256,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 62,
+      "source_line": 258,
+      "statement": "Result = ObjectTransferGraph(X, Seen);"
+    },
+    {
+      "id": 63,
+      "source_line": 259,
+      "statement": "X.Left[0] = 52;"
+    },
+    {
+      "id": 64,
+      "source_line": 260,
+      "statement": "AfterXSibling = ObjectTransferLeaf(X, \"Right\");"
+    },
+    {
+      "id": 65,
+      "source_line": 261,
+      "statement": "AfterXResultLeft = ObjectTransferLeaf(Result, \"Left\");"
+    },
+    {
+      "id": 66,
+      "source_line": 262,
+      "statement": "AfterXResultRight = ObjectTransferLeaf(Result, \"Right\");"
+    },
+    {
+      "id": 67,
+      "source_line": 263,
+      "statement": "Result.Left[0] = 53;"
+    },
+    {
+      "id": 68,
+      "source_line": 264,
+      "statement": "AfterResultSibling = ObjectTransferLeaf(Result, \"Right\");"
+    },
+    {
+      "id": 69,
+      "source_line": 265,
+      "statement": "AfterResultXLeft = ObjectTransferLeaf(X, \"Left\");"
+    },
+    {
+      "id": 70,
+      "source_line": 266,
+      "statement": "AfterResultXRight = ObjectTransferLeaf(X, \"Right\");"
+    },
+    {
+      "id": 71,
+      "source_line": 268,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 72,
+      "source_line": 270,
+      "statement": "ObjectTransferRecord(\"graph.error\", Failed);"
+    },
+    {
+      "id": 73,
+      "source_line": 271,
+      "statement": "ObjectTransferRecord(\"graph.server.sibling\", ObjectTransferNumber(Seen));"
+    },
+    {
+      "id": 74,
+      "source_line": 272,
+      "statement": "ObjectTransferRecord(\"graph.x.sibling\", AfterXSibling);"
+    },
+    {
+      "id": 75,
+      "source_line": 273,
+      "statement": "ObjectTransferRecord(\"graph.result.left.after.x\", AfterXResultLeft);"
+    },
+    {
+      "id": 76,
+      "source_line": 274,
+      "statement": "ObjectTransferRecord(\"graph.result.right.after.x\", AfterXResultRight);"
+    },
+    {
+      "id": 77,
+      "source_line": 275,
+      "statement": "ObjectTransferRecord(\"graph.result.sibling\", AfterResultSibling);"
+    },
+    {
+      "id": 78,
+      "source_line": 276,
+      "statement": "ObjectTransferRecord(\"graph.x.left.after.result\", AfterResultXLeft);"
+    },
+    {
+      "id": 79,
+      "source_line": 277,
+      "statement": "ObjectTransferRecord(\"graph.x.right.after.result\", AfterResultXRight);"
+    },
+    {
+      "id": 80,
+      "source_line": 278,
+      "statement": "ObjectTransferRecord(\"graph.retained\", ObjectTransferArrayLeaf(Child));"
+    },
+    {
+      "id": 81,
+      "source_line": 281,
+      "statement": "X = ObjectTransferNew(6);"
+    },
+    {
+      "id": 82,
+      "source_line": 282,
+      "statement": "Kept = X;"
+    },
+    {
+      "id": 83,
+      "source_line": 283,
+      "statement": "Child = X.Items;"
+    },
+    {
+      "id": 84,
+      "source_line": 284,
+      "statement": "Untouched = ObjectTransferNew(7);"
+    },
+    {
+      "id": 85,
+      "source_line": 285,
+      "statement": "Control = ObjectTransferNew(8);"
+    },
+    {
+      "id": 86,
+      "source_line": 286,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 87,
+      "source_line": 287,
+      "statement": "Matched = False;"
+    },
+    {
+      "id": 88,
+      "source_line": 289,
+      "statement": "ObjectTransferEscapes(X, Untouched, Control);"
+    },
+    {
+      "id": 89,
+      "source_line": 291,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 90,
+      "source_line": 292,
+      "statement": "Matched = Find(ErrorDescription(), \"object-transfer-core-controlled-failure\") > 0;"
+    },
+    {
+      "id": 91,
+      "source_line": 294,
+      "statement": "ObjectTransferRecord(\"escaped.error\", Failed);"
+    },
+    {
+      "id": 92,
+      "source_line": 295,
+      "statement": "ObjectTransferRecord(\"escaped.matched\", Matched);"
+    },
+    {
+      "id": 93,
+      "source_line": 296,
+      "statement": "ObjectTransferRecord(\"escaped.value.undefined\", X = Undefined);"
+    },
+    {
+      "id": 94,
+      "source_line": 297,
+      "statement": "ObjectTransferRecord(\"escaped.value.leaf\", ObjectTransferLeaf(X, \"Items\"));"
+    },
+    {
+      "id": 95,
+      "source_line": 298,
+      "statement": "ObjectTransferRecord(\"escaped.retained.root\", ObjectTransferField(Kept, \"N\"));"
+    },
+    {
+      "id": 96,
+      "source_line": 299,
+      "statement": "ObjectTransferRecord(\"escaped.retained.leaf\", ObjectTransferArrayLeaf(Child));"
+    },
+    {
+      "id": 97,
+      "source_line": 300,
+      "statement": "ObjectTransferRecord(\"escaped.untouched.undefined\", Untouched = Undefined);"
+    },
+    {
+      "id": 98,
+      "source_line": 301,
+      "statement": "ObjectTransferRecord(\"escaped.untouched.leaf\", ObjectTransferLeaf(Untouched, \"Items\"));"
+    },
+    {
+      "id": 99,
+      "source_line": 302,
+      "statement": "ObjectTransferRecord(\"escaped.val.leaf\", ObjectTransferLeaf(Control, \"Items\"));"
+    },
+    {
+      "id": 100,
+      "source_line": 305,
+      "statement": "X = ObjectTransferNew(9);"
+    },
+    {
+      "id": 101,
+      "source_line": 306,
+      "statement": "Child = X.Items;"
+    },
+    {
+      "id": 102,
+      "source_line": 307,
+      "statement": "Calls = 0;"
+    },
+    {
+      "id": 103,
+      "source_line": 308,
+      "statement": "Result = Undefined;"
+    },
+    {
+      "id": 104,
+      "source_line": 309,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 105,
+      "source_line": 311,
+      "statement": "Result = ObjectTransferTiming(X, X, ObjectTransferChange(X, Calls));"
+    },
+    {
+      "id": 106,
+      "source_line": 313,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 107,
+      "source_line": 315,
+      "statement": "ObjectTransferRecord(\"timing.error\", Failed);"
+    },
+    {
+      "id": 108,
+      "source_line": 316,
+      "statement": "ObjectTransferRecord(\"timing.early\", ObjectTransferField(Result, \"Early\"));"
+    },
+    {
+      "id": 109,
+      "source_line": 317,
+      "statement": "ObjectTransferRecord(\"timing.late\", ObjectTransferField(Result, \"Late\"));"
+    },
+    {
+      "id": 110,
+      "source_line": 318,
+      "statement": "ObjectTransferRecord(\"timing.caller\", ObjectTransferLeaf(X, \"Items\"));"
+    },
+    {
+      "id": 111,
+      "source_line": 319,
+      "statement": "ObjectTransferRecord(\"timing.retained\", ObjectTransferArrayLeaf(Child));"
+    },
+    {
+      "id": 112,
+      "source_line": 320,
+      "statement": "ObjectTransferRecord(\"timing.calls\", ObjectTransferNumber(Calls));"
+    },
+    {
+      "id": 113,
+      "source_line": 323,
+      "statement": "X = ObjectTransferNew(10);"
+    },
+    {
+      "id": 114,
+      "source_line": 324,
+      "statement": "Child = X.Items;"
+    },
+    {
+      "id": 115,
+      "source_line": 325,
+      "statement": "Matched = Undefined;"
+    },
+    {
+      "id": 116,
+      "source_line": 326,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 117,
+      "source_line": 328,
+      "statement": "Matched = ObjectTransferCaught(X);"
+    },
+    {
+      "id": 118,
+      "source_line": 330,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 119,
+      "source_line": 332,
+      "statement": "ObjectTransferRecord(\"recovery.error\", Failed);"
+    },
+    {
+      "id": 120,
+      "source_line": 333,
+      "statement": "ObjectTransferRecord(\"recovery.matched\", Matched);"
+    },
+    {
+      "id": 121,
+      "source_line": 334,
+      "statement": "ObjectTransferRecord(\"recovery.leaf\", ObjectTransferLeaf(X, \"Items\"));"
+    },
+    {
+      "id": 122,
+      "source_line": 335,
+      "statement": "ObjectTransferRecord(\"recovery.retained\", ObjectTransferArrayLeaf(Child));"
+    },
+    {
+      "id": 123,
+      "source_line": 337,
+      "statement": "ObjectTransferRecord(\"complete\", True);"
+    },
+    {
+      "id": 124,
+      "source_line": 340,
+      "statement": "X = ObjectTransferNew(9);"
+    },
+    {
+      "id": 125,
+      "source_line": 341,
+      "statement": "Kept = X;"
+    },
+    {
+      "id": 126,
+      "source_line": 342,
+      "statement": "Scalar = 11;"
+    },
+    {
+      "id": 127,
+      "source_line": 343,
+      "statement": "Calls = 0;"
+    },
+    {
+      "id": 128,
+      "source_line": 344,
+      "statement": "Result = Undefined;"
+    },
+    {
+      "id": 129,
+      "source_line": 345,
+      "statement": "Failed = False;"
+    },
+    {
+      "id": 130,
+      "source_line": 347,
+      "statement": "Result = ObjectTransferMixedTiming(X, Kept, ObjectTransferIdentity(X), Scalar, ObjectTransferIdentity(Scalar), ObjectTransferChangeBoth(X, Scalar, Calls));"
+    },
+    {
+      "id": 131,
+      "source_line": 349,
+      "statement": "Failed = True;"
+    },
+    {
+      "id": 132,
+      "source_line": 351,
+      "statement": "ObjectTransferRecord(\"mixed.error\", Failed);"
+    },
+    {
+      "id": 133,
+      "source_line": 352,
+      "statement": "ObjectTransferRecord(\"mixed.named.object\", ObjectTransferField(Result, \"NamedObject\"));"
+    },
+    {
+      "id": 134,
+      "source_line": 353,
+      "statement": "ObjectTransferRecord(\"mixed.alias.object\", ObjectTransferField(Result, \"AliasObject\"));"
+    },
+    {
+      "id": 135,
+      "source_line": 354,
+      "statement": "ObjectTransferRecord(\"mixed.expression.object\", ObjectTransferField(Result, \"ExpressionObject\"));"
+    },
+    {
+      "id": 136,
+      "source_line": 355,
+      "statement": "ObjectTransferRecord(\"mixed.named.scalar\", ObjectTransferField(Result, \"NamedScalar\"));"
+    },
+    {
+      "id": 137,
+      "source_line": 356,
+      "statement": "ObjectTransferRecord(\"mixed.expression.scalar\", ObjectTransferField(Result, \"ExpressionScalar\"));"
+    },
+    {
+      "id": 138,
+      "source_line": 357,
+      "statement": "ObjectTransferRecord(\"mixed.caller.object\", ObjectTransferLeaf(X, \"Items\"));"
+    },
+    {
+      "id": 139,
+      "source_line": 358,
+      "statement": "ObjectTransferRecord(\"mixed.caller.scalar\", ObjectTransferNumber(Scalar));"
+    },
+    {
+      "id": 140,
+      "source_line": 359,
+      "statement": "ObjectTransferRecord(\"mixed.retained\", ObjectTransferLeaf(Kept, \"Items\"));"
+    },
+    {
+      "id": 141,
+      "source_line": 360,
+      "statement": "ObjectTransferRecord(\"mixed.calls\", ObjectTransferNumber(Calls));"
+    }
+  ]
+}

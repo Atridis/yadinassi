@@ -1,5 +1,124 @@
+// NativePostCreate: ExportProbeAfterCreate
+// Begin exported variable post-create declarations.
+Var ExportProbePublicObject;
+// End exported variable post-create declarations.
+
+// Begin exported variable checkpoint declarations.
+Перем ExportProbeUnset Экспорт;
+Var ExportProbePrivate, ExportProbeValue Export, ExportProbeOther Export;
+Перем ExportProbeArray Экспорт;
+// End exported variable checkpoint declarations.
+
 Перем МодульноеВычисления;
 Перем СчетчикСсылок;
+
+// Begin trailing omitted argument checkpoint declarations.
+Var OmitProbeArgumentCalls, OmitProbeBodyCalls;
+// End trailing omitted argument checkpoint declarations.
+
+// Begin exported variable post-create helpers.
+Procedure ExportProbeAfterCreate(Val PublicObject) Export
+    ExportProbePublicObject = PublicObject;
+    ObserveExportProbe("post-create.object-context", "Result = ExportProbePublicObject <> Undefined;");
+    ObserveExportProbe("post-create.initial-undefined", "Result = ExportProbePublicObject.ExportProbeUnset = Undefined;");
+    ObserveExportProbe("post-create.read", "Result = ExportProbePublicObject.exportprobevalue;");
+    ObserveExportProbe("post-create.write-routine-read", "ExportProbePublicObject.ExportProbeValue = 31; Result = ExportProbeRead();");
+    ObserveExportProbe("post-create.routine-write-read", "ExportProbeWrite(43); Result = ExportProbePublicObject.ExportProbeValue;");
+    ObserveExportProbe("post-create.private-list-entry", "Result = ExportProbePublicObject.ExportProbePrivate;");
+    ObserveExportProbe("post-create.private-write", "ExportProbePublicObject.ExportProbePrivate = 59; Result = ExportProbePrivate;");
+    ObserveExportProbe("post-create.second-export-entry", "Result = ExportProbePublicObject.ExportProbeOther;");
+    ObserveExportProbe("post-create.undeclared-read", "Result = ExportProbePublicObject.ExportProbeMissing;");
+    ObserveExportProbe("post-create.undeclared-write", "ExportProbePublicObject.ExportProbeMissing = 61; Result = True;");
+    ObserveExportProbe("post-create.local-shadow", "Result = ExportProbeShadow();");
+    ObserveExportProbe("post-create.reference-alias", "Result = ExportProbeAlias(ExportProbePublicObject.ExportProbeValue, ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.value-parameter", "Result = ExportProbeVal(ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.reference-after-error", "ExportProbeFail(ExportProbePublicObject.ExportProbeValue);");
+    ObserveExportProbe("post-create.collection-shared", "ExportProbePublicObject.ExportProbeArray.Add(47); Result = ExportProbeArray.Count();");
+    ObserveExportProbe("post-create.receiver-identity", "Result = ExportProbePublicObject = ThisObject;");
+    ObserveExportProbe("post-create.self-read", "Result = ThisObject.ExportProbeValue;");
+    ObserveExportProbe("post-create.self-write", "ThisObject.ExportProbeValue = 61; Result = ExportProbePublicObject.ExportProbeValue;");
+EndProcedure
+// End exported variable post-create helpers.
+
+// Begin exported variable discriminator helpers.
+Procedure ObserveExportContext(Val Label, Val Mode, Val Code)
+    Result = Undefined;
+    Status = "ok";
+    ErrorKind = "none";
+    NamedMember = False;
+    ExportProbeValue = 11;
+    Try
+        If Mode = 1 Then
+            Result = ThisObject.ExportProbeValue;
+        ElsIf Mode = 2 Then
+            ThisObject.ExportProbeValue = 31;
+            Result = ExportProbeRead();
+        ElsIf Mode = 3 Then
+            Result = ThisObject.ExportProbeRead();
+        Else
+            Execute(Code);
+        EndIf;
+    Except
+        Status = "error";
+        Description = ErrorInfo().Description;
+        ErrorKind = "other";
+        If StrFind(Description, "Поле объекта не обнаружено") > 0 Then
+            ErrorKind = "field-missing";
+        ElsIf StrFind(Description, "Метод объекта не обнаружен") > 0 Then
+            ErrorKind = "method-missing";
+        EndIf;
+        NamedMember = StrFind(Lower(Description), "exportprobe") > 0;
+    EndTry;
+    Message("export-context." + Label + ": [" + Status + ";kind=" + ErrorKind
+        + ";named=" + ValueToStringInternal(NamedMember)
+        + ";result=" + ValueToStringInternal(Result)
+        + ";value=" + ValueToStringInternal(ExportProbeValue) + "]");
+EndProcedure
+// End exported variable discriminator helpers.
+
+// Begin exported variable checkpoint helpers.
+Function ExportProbeRead() Export
+    Return ExportProbeValue;
+EndFunction
+Procedure ExportProbeWrite(Val Value) Export
+    ExportProbeValue = Value;
+EndProcedure
+Function ExportProbeAlias(A, B)
+    A = 23;
+    Return B;
+EndFunction
+Function ExportProbeVal(Val A)
+    A = 41;
+    Return A;
+EndFunction
+Function ExportProbeShadow()
+    Var ExportProbeValue;
+    ExportProbeValue = 37;
+    Return ExportProbeValue;
+EndFunction
+Procedure ExportProbeFail(A)
+    A = 53;
+    Raise "export-probe-controlled";
+EndProcedure
+Procedure ObserveExportProbe(Val Label, Val Code)
+    Result = Undefined;
+    Status = "ok";
+    ExportProbeValue = 11;
+    ExportProbeOther = 17;
+    ExportProbePrivate = 19;
+    ExportProbeArray = New Array;
+    ExportProbeArray.Add(29);
+    Try
+        Execute(Code);
+    Except
+        Status = "error";
+    EndTry;
+    Message("export-variable." + Label + ": [" + Status + ";result="
+        + ValueToStringInternal(Result) + ";value="
+        + ValueToStringInternal(ExportProbeValue) + ";private="
+        + ValueToStringInternal(ExportProbePrivate) + "]");
+EndProcedure
+// End exported variable checkpoint helpers.
 
 Функция Сложить(А, Б)
     Возврат А + Б;
@@ -312,6 +431,209 @@
         + ";calls=" + ЗначениеВСтрокуВнутр(СчетчикСсылок) + "]");
 КонецПроцедуры
 
+// Begin extended exception checkpoint helpers.
+// Новые API остаются в строках: старый интерпретатор выполняет весь checkpoint.
+// Читаем только скаляры; путь, строку модуля и тексты системных ошибок не выводим.
+Функция ПолеРасширеннойОшибки(Знач Инфо, Знач Формула)
+    Попытка
+        Возврат ЗначениеВСтрокуВнутр(Вычислить(Формула));
+    Исключение
+        Возврат "query-error";
+    КонецПопытки;
+КонецФункции
+
+Функция СнимокРасширеннойОшибки(Знач Инфо)
+    Возврат "type=" + ПолеРасширеннойОшибки(Инфо, "TypeOf(Инфо) = Type(""ErrorInfo"")")
+        + ";description=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = ""exception-probe""")
+        + ";code=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Code")
+        + ";additional=" + ПолеРасширеннойОшибки(Инфо, "Инфо.AdditionalInformation")
+        + ";cause-undefined=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause = Undefined")
+        + ";cause-description=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause.Description = ""exception-cause""")
+        + ";cause-code=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause.Code")
+        + ";cause-configuration=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause.IsErrorOfCategory(ErrorCategory.ConfigurationError)")
+        + ";all=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.AllErrors)")
+        + ";runtime=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptRuntimeError)")
+        + ";compile=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptCompileError)")
+        + ";raised=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ExceptionRaisedFromScript)")
+        + ";configuration=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ConfigurationError)")
+        + ";other=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.OtherError)")
+        + ";aliases=" + ПолеРасширеннойОшибки(Инфо, "ТипЗнч(Инфо) = Тип(""ИнформацияОбОшибке"") И Инфо.Описание = Инфо.Description И Инфо.Код = Инфо.Code И Инфо.ДополнительнаяИнформация = Инфо.AdditionalInformation И ТипЗнч(Инфо.Причина) = ТипЗнч(Инфо.Cause)")
+        + ";runtime-alias=" + ПолеРасширеннойОшибки(Инфо, "Инфо.ЯвляетсяОшибкойКатегории(КатегорияОшибки.ОшибкаВоВремяВыполненияВстроенногоЯзыка) = Инфо.IsErrorOfCategory(ErrorCategory.ScriptRuntimeError)")
+        + ";category-alias=" + ПолеРасширеннойОшибки(Инфо, "Инфо.ЯвляетсяОшибкойКатегории(КатегорияОшибки.ОшибкаКонфигурации) = Инфо.IsErrorOfCategory(ErrorCategory.ConfigurationError)");
+КонецФункции
+
+Процедура ВызватьРасширеннуюОшибку(Знач ПричинаПробы, Знач Русский)
+    Если Русский Тогда
+        Выполнить("ВызватьИсключение(""exception-probe"", КатегорияОшибки.ОшибкаКонфигурации, ""E-PROBE"", ""probe-detail"", ПричинаПробы);");
+    Иначе
+        Execute("Raise(""exception-probe"", ErrorCategory.ConfigurationError, ""E-PROBE"", ""probe-detail"", ПричинаПробы);");
+    КонецЕсли;
+КонецПроцедуры
+
+Процедура ПередатьРасширеннуюОшибку(Знач ПричинаПробы, Знач Русский)
+    ВызватьРасширеннуюОшибку(ПричинаПробы, Русский);
+КонецПроцедуры
+
+Процедура ПроверитьРасширеннуюОшибку(Знач Метка, Знач Код, Знач Получение = "ErrorInfo()")
+    ПричинаПробы = Неопределено;
+    Попытка
+        ВызватьИсключение "exception-cause";
+    Исключение
+        Попытка
+            ПричинаПробы = Вычислить(Получение);
+        Исключение
+            // Отсутствие API в старом runtime не прерывает остальные наблюдения.
+        КонецПопытки;
+    КонецПопытки;
+    Инфо = Неопределено;
+    ТекстОшибки = "";
+    Статус = "not-raised";
+    // Прямое исключение сохраняется внутри динамического текста, до границы
+    // Выполнить. Возможную обертку Execute не принимаем за поля самого Raise.
+    КодОбработчика = "Попытка " + Код
+        + " Исключение Статус = ""raised""; ТекстОшибки = ОписаниеОшибки(); Инфо = " + Получение
+        + "; КонецПопытки;";
+    Попытка
+        Выполнить(КодОбработчика);
+    Исключение
+        Если Статус = "raised" Тогда
+            Статус = "info-error";
+        Иначе
+            Статус = "execute-error";
+        КонецЕсли;
+    КонецПопытки;
+    // Снимок читается после обработчика: сохраненное значение не должно зависеть
+    // от последующих исключений в отдельных защищенных запросах.
+    Сообщить("exception." + Метка + ": [" + Статус
+        + ";error-description-token=" + ЗначениеВСтрокуВнутр(Найти(ТекстОшибки, "exception-probe") > 0)
+        + ";" + СнимокРасширеннойОшибки(Инфо) + "]");
+КонецПроцедуры
+
+Процедура ПроверитьСостояниеИнформацииОбОшибке()
+    До = ПолеРасширеннойОшибки(Неопределено, "ErrorInfo() = Undefined");
+    Инфо = Неопределено;
+    Попытка
+        ВызватьИсключение "exception-probe";
+    Исключение
+        Попытка
+            Инфо = Eval("ИнформацияОбОшибке()");
+        Исключение
+        КонецПопытки;
+    КонецПопытки;
+    После = ПолеРасширеннойОшибки(Инфо, "ИнформацияОбОшибке() = Неопределено");
+    Сообщить("exception.handler-state: [before=" + До + ";after=" + После
+        + ";saved=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = ""exception-probe""") + "]");
+КонецПроцедуры
+// End extended exception checkpoint helpers.
+
+// Begin exception context checkpoint helpers.
+// Пары различаются только Eval и вложенной успешной Попыткой вокруг захвата.
+// Скаляр внутри обработчика отделяет пустой захват от последующего изменения.
+Функция СнимокКонтекстаОшибки(Знач Инфо)
+    Возврат "type=" + ПолеРасширеннойОшибки(Инфо, "TypeOf(Инфо) = Type(""ErrorInfo"")")
+        + ";description=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = ""exception-context""")
+        + ";description-empty=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Description = """"")
+        + ";cause-undefined=" + ПолеРасширеннойОшибки(Инфо, "Инфо.Cause = Undefined")
+        + ";all=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.AllErrors)")
+        + ";runtime=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptRuntimeError)")
+        + ";compile=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ScriptCompileError)")
+        + ";raised=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ExceptionRaisedFromScript)")
+        + ";configuration=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.ConfigurationError)")
+        + ";other=" + ПолеРасширеннойОшибки(Инфо, "Инфо.IsErrorOfCategory(ErrorCategory.OtherError)");
+КонецФункции
+
+Процедура ПроверитьКонтекстОшибки(Знач Метка, Знач Код)
+    Инфо = Неопределено;
+    Внутри = Неопределено;
+    Статус = "not-captured";
+    Попытка
+        Выполнить(Код);
+    Исключение
+        Статус = "execute-error";
+    КонецПопытки;
+    Сообщить("exception-context." + Метка + ": [" + Статус
+        + ";inside=" + ЗначениеВСтрокуВнутр(Внутри)
+        + ";" + СнимокКонтекстаОшибки(Инфо) + "]");
+КонецПроцедуры
+// End exception context checkpoint helpers.
+
+// Begin trailing omitted argument checkpoint helpers.
+Function OmitProbeDigit(Val Value)
+    If Value < 0 Or Value > 9 Or Value <> Int(Value) Then
+        Raise "omit-probe-digit-range";
+    EndIf;
+    Return Mid("0123456789", Value + 1, 1);
+EndFunction
+
+Function OmitProbeEncodePair(Val First, Val Second)
+    If First = Undefined Then First = 0; EndIf;
+    If Second = Undefined Then Second = 0; EndIf;
+    Return First * 10 + Second;
+EndFunction
+
+Function OmitProbeDefaults(First = 1, Second = 2)
+    OmitProbeBodyCalls = OmitProbeBodyCalls + 1;
+    Return OmitProbeEncodePair(First, Second);
+EndFunction
+
+Function OmitProbeRequired(First, Second)
+    OmitProbeBodyCalls = OmitProbeBodyCalls + 1;
+    Return OmitProbeEncodePair(First, Second);
+EndFunction
+
+Function OmitProbeOne(Value)
+    OmitProbeBodyCalls = OmitProbeBodyCalls + 1;
+    Return Value;
+EndFunction
+
+Function OmitProbeTick()
+    OmitProbeArgumentCalls = OmitProbeArgumentCalls + 1;
+    Return OmitProbeArgumentCalls;
+EndFunction
+
+Function OmitProbeObserve(Val Expression)
+    Var Result, Status;
+    Result = 99;
+    Status = "S";
+    OmitProbeArgumentCalls = 0;
+    OmitProbeBodyCalls = 0;
+    Try
+        Execute("Result = " + Expression + ";");
+    Except
+        Status = "E";
+    EndTry;
+    // Finite outcome only: no localized descriptions, paths or private data.
+    Return Status
+        + OmitProbeDigit(OmitProbeArgumentCalls)
+        + OmitProbeDigit(OmitProbeBodyCalls)
+        + OmitProbeDigit(Int(Result / 10))
+        + OmitProbeDigit(Result % 10);
+EndFunction
+
+Function CollectTrailingOmittedProbe()
+    Var Result;
+    // Begin trailing omitted direct positive witness.
+    OmitProbeArgumentCalls = 0;
+    OmitProbeBodyCalls = 0;
+    Result = OmitProbeDefaults(5,);
+    If Result <> 52 Or OmitProbeArgumentCalls <> 0 Or OmitProbeBodyCalls <> 1 Then
+        Raise "omit-probe-direct";
+    EndIf;
+    // End trailing omitted direct positive witness.
+    Result = "omit.v1:";
+    Result = Result + OmitProbeObserve("OmitProbeDefaults()");
+    Result = Result + OmitProbeObserve("OmitProbeRequired()");
+    Result = Result + OmitProbeObserve("OmitProbeRequired(,)");
+    Result = Result + OmitProbeObserve("OmitProbeRequired(,,)");
+    Result = Result + OmitProbeObserve("OmitProbeDefaults(5,)");
+    Result = Result + OmitProbeObserve("OmitProbeDefaults(5,Undefined)");
+    Result = Result + OmitProbeObserve("OmitProbeOne(OmitProbeTick(),)");
+    Result = Result + OmitProbeObserve("OmitProbeOne(OmitProbeTick(),2,)");
+    Result = Result + OmitProbeObserve("OmitProbeRequired(OmitProbeTick(),,)");
+    Return Result;
+EndFunction
+// End trailing omitted argument checkpoint helpers.
+
 Показать(Сложить(2, 3));
 
 Попытка
@@ -426,3 +748,64 @@
 ПроверитьФункциональныйНовый("nonarray-evaluated", "Объект = Новый (""Массив"", ПолучитьДляСсылки(7)); Результат = Объект.Количество();");
 ПроверитьФункциональныйНовый("invalid-selector-order", "Объект = Новый (""НетТакогоТипа"", ПолучитьДляСсылки(Аргументы));");
 Сообщить("reference-new.checkpoint.complete: [ok]");
+// Begin extended exception checkpoint observations.
+// Нативные ответы еще не назначены; ошибки запросов не означают поддержку API.
+ПроверитьРасширеннуюОшибку("statement-en", "Raise ""exception-probe"";", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("statement-ru", "ВызватьИсключение ""exception-probe"";", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("functional-one-en", "Raise(""exception-probe"");", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("functional-one-ru", "ВызватьИсключение(""exception-probe"");", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("functional-five-en", "Raise(""exception-probe"", ErrorCategory.ConfigurationError, ""E-PROBE"", ""probe-detail"", ПричинаПробы);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("functional-five-ru", "ВызватьИсключение(""exception-probe"", КатегорияОшибки.ОшибкаКонфигурации, ""E-PROBE"", ""probe-detail"", ПричинаПробы);", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("category-only", "Raise(""exception-probe"", ErrorCategory.ConfigurationError);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("code-only", "Raise(""exception-probe"",, ""E-PROBE"");", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("additional-only", "ВызватьИсключение(""exception-probe"",,, ""probe-detail"");", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("cause-only", "Raise(""exception-probe"",,,, ПричинаПробы);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("omitted-all", "Raise(""exception-probe"",,,,);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("undefined-all", "ВызватьИсключение(""exception-probe"", Неопределено, Неопределено, Неопределено, Неопределено);", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("empty-fields", "Raise(""exception-probe"",, """", """");", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("rethrow-en", "Try Raise(""exception-probe"", ErrorCategory.ConfigurationError, ""E-PROBE"", ""probe-detail"", ПричинаПробы); Except Raise; EndTry;", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("rethrow-ru", "Попытка ВызватьИсключение(""exception-probe"", КатегорияОшибки.ОшибкаКонфигурации, ""E-PROBE"", ""probe-detail"", ПричинаПробы); Исключение ВызватьИсключение; КонецПопытки;", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("routine-en", "ПередатьРасширеннуюОшибку(ПричинаПробы, False);", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("routine-ru", "ПередатьРасширеннуюОшибку(ПричинаПробы, Истина);", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("nested-cause-en", "Try Raise ""exception-cause""; Except Raise(""exception-probe"",, ""E-PROBE"", ""probe-detail"", ErrorInfo()); EndTry;", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("nested-cause-ru", "Попытка ВызватьИсключение ""exception-cause""; Исключение ВызватьИсключение(""exception-probe"",, ""E-PROBE"", ""probe-detail"", ИнформацияОбОшибке()); КонецПопытки;", "ИнформацияОбОшибке()");
+ПроверитьРасширеннуюОшибку("nested-configuration-cause", "Try Raise(""exception-cause"", ErrorCategory.ConfigurationError, ""E-CAUSE""); Except Raise(""exception-probe"",, ""E-PROBE"", ""probe-detail"", ErrorInfo()); EndTry;", "ErrorInfo()");
+ПроверитьРасширеннуюОшибку("forbidden-category", "Raise(""exception-probe"", ErrorCategory.AllErrors);", "ErrorInfo()");
+ПроверитьСостояниеИнформацииОбОшибке();
+Сообщить("exception.checkpoint.complete: [ok]");
+// End extended exception checkpoint observations.
+// Begin exception context checkpoint observations.
+ПроверитьКонтекстОшибки("direct", "Try Raise ""exception-context""; Except Инфо = ErrorInfo(); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; EndTry;");
+ПроверитьКонтекстОшибки("eval", "Try Raise ""exception-context""; Except Инфо = Eval(""ErrorInfo()""); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; EndTry;");
+ПроверитьКонтекстОшибки("direct-nested-try", "Try Raise ""exception-context""; Except Try Инфо = ErrorInfo(); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; Except Статус = ""capture-error""; EndTry; EndTry;");
+ПроверитьКонтекстОшибки("eval-nested-try", "Try Raise ""exception-context""; Except Try Инфо = Eval(""ErrorInfo()""); Внутри = Инфо.Description = ""exception-context""; Статус = ""captured""; Except Статус = ""capture-error""; EndTry; EndTry;");
+ПроверитьКонтекстОшибки("outside-empty", "Инфо = ErrorInfo(); Внутри = Инфо.Description = """"; Статус = ""captured"";");
+// End exception context checkpoint observations.
+// Begin exported variable checkpoint observations.
+ObserveExportProbe("object-context", "Result = ThisObject <> Undefined;");
+ObserveExportProbe("initial-undefined", "Result = ThisObject.ExportProbeUnset = Undefined;");
+ObserveExportProbe("read", "Result = ЭтотОбъект.exportprobevalue;");
+ObserveExportProbe("write-routine-read", "ThisObject.ExportProbeValue = 31; Result = ExportProbeRead();");
+ObserveExportProbe("routine-write-read", "ExportProbeWrite(43); Result = ThisObject.ExportProbeValue;");
+ObserveExportProbe("private-list-entry", "Result = ThisObject.ExportProbePrivate;");
+ObserveExportProbe("private-write", "ThisObject.ExportProbePrivate = 59; Result = ExportProbePrivate;");
+ObserveExportProbe("second-export-entry", "Result = ThisObject.ExportProbeOther;");
+ObserveExportProbe("undeclared-read", "Result = ThisObject.ExportProbeMissing;");
+ObserveExportProbe("undeclared-write", "ThisObject.ExportProbeMissing = 61; Result = True;");
+ObserveExportProbe("local-shadow", "Result = ExportProbeShadow();");
+ObserveExportProbe("reference-alias", "Result = ExportProbeAlias(ThisObject.ExportProbeValue, ThisObject.ExportProbeValue);");
+ObserveExportProbe("value-parameter", "Result = ExportProbeVal(ThisObject.ExportProbeValue);");
+ObserveExportProbe("reference-after-error", "ExportProbeFail(ThisObject.ExportProbeValue);");
+ObserveExportProbe("collection-shared", "ThisObject.ExportProbeArray.Add(47); Result = ExportProbeArray.Count();");
+// End exported variable checkpoint observations.
+// Begin exported variable discriminator observations.
+ObserveExportContext("static-read", 1, "");
+ObserveExportContext("static-write", 2, "");
+ObserveExportContext("static-routine", 3, "");
+ObserveExportContext("execute-read", 0, "Result = ThisObject.ExportProbeValue;");
+ObserveExportContext("execute-routine", 0, "Result = ThisObject.ExportProbeRead();");
+// End exported variable discriminator observations.
+// Begin trailing omitted argument checkpoint observations.
+// Audited Execute token retained; the direct positive witness requires fresh native validation.
+Message(CollectTrailingOmittedProbe());
+// End trailing omitted argument checkpoint observations.

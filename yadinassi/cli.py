@@ -66,7 +66,7 @@ def repl(interpreter: Interpreter) -> int:
             if result is not None:
                 try:
                     presentation = to_string(result)
-                except (ValueError, ArithmeticError) as error:
+                except (ValueError, TypeError, ArithmeticError) as error:
                     # Implicit REPL output is outside Interpreter.visit, but
                     # presentation limits still need recoverable diagnostics.
                     token = program[-1].token
@@ -77,6 +77,7 @@ def repl(interpreter: Interpreter) -> int:
             print(error, file=sys.stderr)
             had_error = True
         except KeyboardInterrupt:
+            interpreter.close()
             if not interactive:
                 return 130
             print("\nИсполнение прервано.")
@@ -108,7 +109,12 @@ def main(argv: list[str] | None = None) -> int:
                 source = args.file
             interpreter.execute(text, source)
         else:
-            return repl(interpreter)
+            result = repl(interpreter)
+            if result:
+                return result
+            interpreter.ensure_complete()
+            return result
+        interpreter.ensure_complete()
     except BSLError as error:
         print(error, file=sys.stderr)
         return 1
@@ -121,4 +127,6 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nИсполнение прервано.", file=sys.stderr)
         return 130
+    finally:
+        interpreter.close()
     return 0

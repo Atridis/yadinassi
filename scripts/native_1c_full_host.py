@@ -37,7 +37,7 @@ LINUX_TARGET = "linux-8.3.27.1508"
 BYTE_EXACT = "byte_exact"
 MAP_MODE = "typed-map-order-v1"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
-COLLECTIONS_SOURCE_SHA256 = "fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9"
+COLLECTIONS_SOURCE_SHA256 = "42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb"
 CASE_SECONDS = 10
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
 FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
@@ -46,8 +46,18 @@ FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
             "export_failed"}
 CASE_KEYS = {"name", "status", "source_sha256", "module_sha256", "output_sha256",
              "output_size", "message_count"}
+POST_CREATE_DIRECTIVE = "// NativePostCreate: ExportProbeAfterCreate"
+POST_CREATE_FAILURE = "interpreter_post_create_failed"
+# Labels, not values: a completed callback must retain every guarded observation.
+POST_CREATE_LABELS = tuple("export-variable.post-create." + label for label in (
+    "object-context", "initial-undefined", "read", "write-routine-read",
+    "routine-write-read", "private-list-entry", "private-write", "second-export-entry",
+    "undeclared-read", "undeclared-write", "local-shadow", "reference-alias",
+    "value-parameter", "reference-after-error", "collection-shared", "receiver-identity",
+    "self-read", "self-write"))
 EXECUTE_SCRIPT = r'''
 import sys
+import re
 import importlib.util
 from pathlib import Path
 # Load only the verified package, not arbitrary modules beside the checkout.
@@ -63,9 +73,41 @@ def emit(message):
     message = message.replace("\r\n", "\n").replace("\r", "\n")
     sys.stdout.buffer.write((message + "\n").encode("utf-8"))
 
+POST_CREATE_DIRECTIVE = "// NativePostCreate: ExportProbeAfterCreate"
+
+
+def post_create_requested(source: str) -> bool:
+    """A visible fixed test-driver action, never an executable routine name."""
+    lines = source.removeprefix("\ufeff").splitlines()
+    directives = [(index, line) for index, line in enumerate(lines)
+                  if re.match(r"\s*//\s*NativePostCreate", line)]
+    if not directives:
+        return False
+    if directives != [(0, POST_CREATE_DIRECTIVE)]:
+        raise ValueError("Invalid NativePostCreate directive")
+    return True
+
+
 source = Path(sys.argv[2])
+source_text = source.read_text(encoding="utf-8-sig")
+post_create = post_create_requested(source_text)
 options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
-Interpreter(output=emit, **options).execute(source.read_text(encoding="utf-8-sig"), str(source))
+interpreter = Interpreter(output=emit, **options)
+interpreter.execute(source_text, str(source))
+if post_create:
+    emit("export-phase.post-create: [begin]")
+    try:
+        interpreter.execute("ThisObject.ExportProbeAfterCreate(ThisObject);", "<post-create>")
+    except module.BSLError as error:
+        description = error.message
+        kind = "other"
+        if "Метод объекта не обнаружен" in description:
+            kind = "method-missing"
+        named = '{"B",1}' if "exportprobeaftercreate" in description.lower() else '{"B",0}'
+        emit("export-phase.post-create: [error;kind=" + kind + ";named=" + named + "]")
+        sys.exit(3)  # An unavailable entrypoint must never yield a green comparison.
+    else:
+        emit("export-phase.post-create: [ok]")
 '''
 
 
@@ -83,6 +125,68 @@ def is_digest(value: object) -> bool:
 
 def is_int(value: object, maximum: int) -> bool:
     return type(value) is int and 0 <= value <= maximum
+
+
+def post_create_requested(source: str) -> bool:
+    """Use exactly the launcher's fail-closed canonical directive grammar."""
+    lines = source.removeprefix("\ufeff").splitlines()
+    directives = [(index, line) for index, line in enumerate(lines)
+                  if re.match(r"\s*//\s*NativePostCreate", line)]
+    if not directives:
+        return False
+    if directives != [(0, POST_CREATE_DIRECTIVE)]:
+        raise ValueError("Invalid NativePostCreate directive")
+    return True
+
+
+def post_create_phase(payload: bytes) -> tuple[bool, list[bytes]]:
+    """Validate bounded, exact full-line framing without interpreting probe values."""
+    if type(payload) is not bytes or len(payload) > MAX_FILE or not payload.endswith(b"\n"):
+        raise ValueError("post-create framing")
+    lines = [line.removesuffix(b"\r") for line in payload[:-1].split(b"\n")]
+    if any(b"\r" in line for line in lines):
+        raise ValueError("post-create line ending")
+    markers = [(index, line) for index, line in enumerate(lines)
+               if b"export-phase.post-create" in line]
+    if (len(markers) != 2 or markers[0][1] != b"export-phase.post-create: [begin]"
+            or markers[1][0] != len(lines) - 1):
+        raise ValueError("post-create phase")
+    final = markers[1][1]
+    completed = final == b"export-phase.post-create: [ok]"
+    if not completed and re.fullmatch(
+            rb'export-phase\.post-create: \[error;kind=(?:other|method-missing);named=\{"B",[01]\}\]',
+            final) is None:
+        raise ValueError("post-create result")
+    return completed, lines[markers[0][0] + 1:markers[1][0]]
+
+
+def interpreter_post_create_failed(source: bytes, code: int, actual: bytes, stderr: bytes) -> bool:
+    """Only the verified directive plus the driver's finite failure may be retained."""
+    if code != 3 or stderr != b"":
+        return False
+    try:
+        if not post_create_requested(source.decode("utf-8-sig")):
+            return False
+        completed, _ = post_create_phase(actual)
+        return not completed
+    except (ValueError, UnicodeError):
+        return False
+
+
+def validate_native_post_create(payload: bytes) -> None:
+    completed, rows = post_create_phase(payload)
+    all_probe_rows = [line.removesuffix(b"\r") for line in payload[:-1].split(b"\n")
+                      if b"export-variable.post-create" in line]
+    if all_probe_rows != rows:
+        raise ValueError("post-create probe placement")
+    if completed:
+        if (any(b": " not in row for row in rows)
+                or [row.partition(b": ")[0] for row in rows] != [label.encode("ascii") for label in POST_CREATE_LABELS]):
+            raise ValueError("post-create probe inventory")
+    elif rows:
+        # The fixed callback guards each probe. An entrypoint failure has no rows;
+        # partial callbacks are not a complete native observation set.
+        raise ValueError("post-create incomplete callback")
 
 
 def unique_pairs(pairs):
@@ -192,9 +296,137 @@ def generated_module(source: bytes) -> bytes:
 
 
 CLIENT_SOURCE = "scripts/native_1c_bootstrap/client_probe.bsl"
+# Exact finite witness contract, independently executed by the host interpreter.
+CLIENT_VALUES = [
+    42,
+    'client-probe',
+    3,
+    6,
+    'directive.call.add: {"N",42}',
+    'directive.preprocessor.server: server',
+    'directive.preprocessor.client: client',
+    'directive.call.nested: server',
+    'directive.param.val: {"N",7}',
+    'directive.exception: {"B",1}',
+    'directive.return.number: {"N",42}',
+    'directive.return.string: {"S","x"}',
+    'directive.return.boolean: {"B",1}',
+    'directive.return.undefined: {"U"}',
+    'directive.call.recovery: {"N",42}',
+]
+# Audited pinned native scalar-copyback capture, not interpreter-generated data.
+CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
+
+# Audited pinned object capture, including named/expression timing; not local expected generation.
+CLIENT_VALUES += ['object.transfer.v1'] + [True, False, 1, 1, 1, False, 2, 21, 23, 23, 2, False, 3, 3, 3, False, 41, 42, 4, False, 5, 51, 51, 51, 51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73, 73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74, 11, 73, 74, 72, 1]
+
+# Native run39974330047: exact side-local module context observations.
+CLIENT_VALUES += ['module.context.v1'] + [10, 100, 111, True, 100, True, 100, True, 11]
+# Logical-context projection of audited profile mask19; new exact source needs native validation.
+CLIENT_VALUES += ['nocontext.core.v3'] + [12, 22, 0, 12, 2, True, 16, True, 6, 14, 14, True, 7, 18]
+
+# One exact dense witness, projected from the audited nine-slot native capture.
+CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
+
+
 CLIENT_FLAGS = {"entered", "completed", "process_exited", "quiet", "witness_verified"}
 CLIENT_HASHES = {"source_sha256", "module_sha256", "roundtrip_sha256"}
 
+
+
+CLIENT_MODULE_TEMPLATE_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17'
+CLIENT_MODULE_SHARED_SHA256 = '6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120'
+CLIENT_MODULE_PREFIX = b'// BEGIN bounded module context declarations\n&AtClient\nVar ContextClientCounter;\n&AtServer\nVar ContextServerCounter;\n&AtServer\nVar ContextServerUninitialized;\n\n// END bounded module context declarations\n'
+CLIENT_MODULE_SUFFIX = b'\n// BEGIN bounded module context measurement\n&AtServer\nFunction ContextModuleNested()\n    ContextServerCounter = ContextServerCounter + 1;\n    Return ContextServerCounter;\nEndFunction\n\n&AtServer\nFunction ContextModuleCall(Val Escape)\n    Var Initial, Nested, WasUndefined;\n    Initial = ContextServerCounter;\n    WasUndefined = ContextServerUninitialized = Undefined;\n    ContextServerCounter = ContextServerCounter + 10;\n    ContextServerUninitialized = 7;\n    Nested = ContextModuleNested();\n    If Escape Then\n        Raise "module-context-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,WasUndefined", Initial, Nested, WasUndefined);\nEndFunction\n\n&AtClient\nProcedure ContextModuleRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunModuleContextProbe()\n    Var Records, First, Second, Third, Failed, Matched;\n    Records = New Array;\n    Records.Add("module.context.v1");\n    ContextModuleRecord(Records, "client.initial", ContextClientCounter);\n    ContextClientCounter = ContextClientCounter + 1;\n    First = ContextModuleCall(False);\n    ContextModuleRecord(Records, "server.initial", First.Initial);\n    ContextModuleRecord(Records, "server.nested", First.Nested);\n    ContextModuleRecord(Records, "server.undefined", First.WasUndefined);\n    Second = ContextModuleCall(False);\n    ContextModuleRecord(Records, "server.repeated.initial", Second.Initial);\n    Failed = False;\n    Matched = False;\n    Try\n        ContextModuleCall(True);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "module-context-controlled-failure") > 0;\n    EndTry;\n    Third = ContextModuleCall(False);\n    ContextModuleRecord(Records, "escaped.caught", Failed And Matched);\n    ContextModuleRecord(Records, "server.recovery.initial", Third.Initial);\n    ContextModuleRecord(Records, "server.recovery.undefined", Third.WasUndefined);\n    ContextModuleRecord(Records, "client.retained", ContextClientCounter);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure ContextModuleAppend(RecordsOut)\n    Var ModuleContextValue;\n    For Each ModuleContextValue In RunModuleContextProbe() Do\n        RecordsOut.Add(ModuleContextValue);\n    EndDo;\nEndProcedure\n\n// Initialization runs in its explicitly compiled side only. Do not infer that\n// arbitrary unguarded standalone root statements should run on the server.\n#If AtClient Then\nContextClientCounter = 10;\n#EndIf\n#If AtServer Then\nContextServerCounter = 100;\n#EndIf\n'
+CLIENT_MODULE_CALL = b'    ContextModuleAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+
+
+def module_context_shared_source(raw: bytes) -> bytes:
+    """Exact measured prefix/call/suffix inverse, not generic source stripping."""
+    if (digest(raw) != CLIENT_MODULE_TEMPLATE_SHA256
+            or not raw.startswith(CLIENT_MODULE_PREFIX)
+            or not raw.endswith(CLIENT_MODULE_SUFFIX)
+            or raw.count(CLIENT_MODULE_CALL) != 1):
+        raise FullError('source_changed')
+    restored = raw[len(CLIENT_MODULE_PREFIX):-len(CLIENT_MODULE_SUFFIX)].replace(
+        CLIENT_MODULE_CALL, b'', 1)
+    if digest(restored) != CLIENT_MODULE_SHARED_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
+
+CLIENT_NOCONTEXT_TEMPLATE_SHA256 = 'b79c23abb756c3b3965e3a46ad7212e582db917ff319facc70a1efb18a470e14'
+CLIENT_NOCONTEXT_SHARED_SHA256 = 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17'
+CLIENT_NOCONTEXT_BLOCK = b'\n// BEGIN bounded no-context witness\n&AtServerNoContext\nFunction NoContextLeaf(Value)\n    Value = Value + 1;\n    Return Value;\nEndFunction\n\n&AtServerNoContext\nFunction NoContextOperation(Value, Val PrivateValue, Val Mode)\n    Var Initial, Nested, ProfileMask, Caught;\n    Initial = Value;\n    Value = Value + 10;\n    PrivateValue = PrivateValue + 20;\n    Nested = NoContextLeaf(Value);\n    ProfileMask = 0;\n#If AtClient Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 2;\n#EndIf\n    Caught = False;\n    If Mode = 1 Then\n        Try\n            Raise "nocontext-controlled-failure";\n        Except\n            Caught = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n        EndTry;\n    EndIf;\n    If Mode = 2 Then\n        Raise "nocontext-controlled-failure";\n    EndIf;\n    Return New Structure("Initial,Nested,PrivateValue,ProfileMask,Caught", Initial, Nested, PrivateValue, ProfileMask, Caught);\nEndFunction\n\n&AtServer\nFunction NoContextFromContext(Val Escape)\n    Var LocalValue, PrivateValue, Result, Failed, Matched;\n    LocalValue = 3;\n    PrivateValue = 4;\n    Failed = False;\n    Matched = False;\n    Result = Undefined;\n    Try\n        If Escape Then\n            Result = NoContextOperation(LocalValue, PrivateValue, 2);\n        Else\n            Result = NoContextOperation(LocalValue, PrivateValue, 0);\n        EndIf;\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    Return New Structure("Value,PrivateValue,Failed,Matched,Result", LocalValue, PrivateValue, Failed, Matched, Result);\nEndFunction\n\n&AtClient\nProcedure NoContextRecord(Records, Val Label, Val Value)\n    If Value = Undefined Then\n        Records.Add("U");\n    Else\n        Records.Add(Value);\n    EndIf;\nEndProcedure\n\n&AtClient\nFunction RunNoContextProbe()\n    Var Records, Value, PrivateValue, Result, Failed, Matched, Nested;\n    Records = New Array;\n    Records.Add("nocontext.core.v3");\n    Value = 1;\n    PrivateValue = 2;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "normal.nested", Result.Nested);\n    NoContextRecord(Records, "normal.private", Result.PrivateValue);\n    NoContextRecord(Records, "normal.profile", Result.ProfileMask);\n    NoContextRecord(Records, "normal.caller", Value);\n    NoContextRecord(Records, "normal.val.caller", PrivateValue);\n    Value = 5;\n    Result = NoContextOperation(Value, PrivateValue, 1);\n    NoContextRecord(Records, "caught.matched", Result.Caught);\n    NoContextRecord(Records, "caught.caller", Value);\n    Value = 6;\n    Failed = False;\n    Matched = False;\n    Try\n        NoContextOperation(Value, PrivateValue, 2);\n    Except\n        Failed = True;\n        Matched = Find(ErrorDescription(), "nocontext-controlled-failure") > 0;\n    EndTry;\n    NoContextRecord(Records, "escape.caught", Failed And Matched);\n    NoContextRecord(Records, "escape.caller", Value);\n    Nested = NoContextFromContext(False);\n    NoContextRecord(Records, "context.normal.value", Nested.Value);\n    Nested = NoContextFromContext(True);\n    NoContextRecord(Records, "context.escape.value", Nested.Value);\n    NoContextRecord(Records, "context.escape.caught", Nested.Failed And Nested.Matched);\n    Value = 7;\n    Result = NoContextOperation(Value, PrivateValue, 0);\n    NoContextRecord(Records, "recovery.initial", Result.Initial);\n    NoContextRecord(Records, "recovery.caller", Value);\n    Return Records;\nEndFunction\n\n&AtClient\nProcedure NoContextAppend(RecordsOut)\n    Var NoContextValue;\n    For Each NoContextValue In RunNoContextProbe() Do\n        RecordsOut.Add(NoContextValue);\n    EndDo;\nEndProcedure\n'
+CLIENT_NOCONTEXT_INITIALIZER = b'// Initialization runs in its explicitly compiled side only. Do not infer that\n// arbitrary unguarded standalone root statements should run on the server.\n#If AtClient Then\nContextClientCounter = 10;\n#EndIf\n#If AtServer Then\nContextServerCounter = 100;\n#EndIf\n'
+CLIENT_NOCONTEXT_CALL = b'    NoContextAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+
+
+def nocontext_shared_source(raw: bytes) -> bytes:
+    """Exact pre-initializer witness/call inverse for legacy adapters only."""
+    tail = CLIENT_NOCONTEXT_BLOCK + CLIENT_NOCONTEXT_INITIALIZER
+    if (digest(raw) != CLIENT_NOCONTEXT_TEMPLATE_SHA256
+            or not raw.endswith(tail)
+            or raw.count(CLIENT_NOCONTEXT_CALL) != 1):
+        raise FullError('source_changed')
+    restored = (raw[:-len(tail)] + CLIENT_NOCONTEXT_INITIALIZER).replace(
+        CLIENT_NOCONTEXT_CALL, b'', 1)
+    if digest(restored) != CLIENT_NOCONTEXT_SHARED_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
+CLIENT_EXECUTE_SCRIPT = r'''
+import sys
+import re
+import importlib.util
+from pathlib import Path
+# Load only the verified package, not arbitrary modules beside the checkout.
+package = Path(sys.argv[1]) / "yadinassi"
+spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                            submodule_search_locations=[str(package)])
+module = importlib.util.module_from_spec(spec)
+sys.modules["yadinassi"] = module
+spec.loader.exec_module(module)
+Interpreter = module.Interpreter
+
+import json
+from decimal import Decimal
+vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")))
+vm.execute(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
+values = list(vm.execute("ВычислитьПробу()"))
+result = []
+for value in values:
+    if type(value) is Decimal and value.is_finite() and value == value.to_integral_value():
+        result.append(int(value))
+    elif type(value) in (str, bool):
+        result.append(value)
+    else:
+        raise RuntimeError("unexpected witness type")
+sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+'''
+
+
+
+CLIENT_WITNESS_SOURCE_SHA256 = 'c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413'
+
+
+def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
+    """Compute the exact staged witness independently in the real interpreter."""
+    raw = read_regular(source, MAX_FILE, nonempty=True)
+    if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:
+        raise FullError("source_changed")
+    runner = bounded_child if runner is None else runner
+    with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        code, output, stderr = runner(
+            [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+    expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
+    if code != 0 or stderr or output != expected:
+        raise FullError("interpreter_failed")
+    if read_regular(source, MAX_FILE, nonempty=True) != raw:
+        raise FullError("source_changed")
 
 
 def validate_process_diagnostics(value):
@@ -214,7 +446,37 @@ def validate_process_diagnostics(value):
     return value
 
 
+def validate_marker_diagnostics(value):
+    if (type(value) is not dict
+            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or type(value['phase']) is not str
+            or value['phase'] not in {'invalid', 'error', 'completed'}
+            or type(value['kind']) is not str
+            or value['kind'] not in {'none', 'count', 'type', 'value', 'runtime_error'}
+            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)
+            or type(value['error_stage']) is not int or not 0 <= value['error_stage'] <= 11):
+        raise ValueError('client marker diagnostics')
+    if value['phase'] != 'completed':
+        valid = value['kind'] == 'none' and value['ordinal'] == -1 and value['error_stage'] == 0
+    elif value['kind'] == 'runtime_error':
+        valid = 1 <= value['error_stage'] <= 11 and value['ordinal'] == value['error_stage'] + 3
+    elif value['kind'] == 'count':
+        valid = 0 <= value['ordinal'] <= len(CLIENT_VALUES) and value['error_stage'] == 0
+    elif value['kind'] in {'type', 'value'}:
+        valid = 0 <= value['ordinal'] < len(CLIENT_VALUES) and value['error_stage'] == 0
+    else:
+        valid = value['ordinal'] == -1 and value['error_stage'] == 0
+    if not valid:
+        raise ValueError('client marker diagnostics combination')
+    return value
+
+
 def validate_client_probe(data, source_hash, module_hash):
+    if type(data) is dict and "marker_diagnostics" in data:
+        validate_marker_diagnostics(data["marker_diagnostics"])
+        if data.get("status") != "failed" or data.get("failure_kind") != "invalid_result" or data.get("witness_verified") is not False:
+            raise ValueError("client marker diagnostics outcome")
+        data = {key: value for key, value in data.items() if key != "marker_diagnostics"}
     if (type(data) is not dict
             or set(data) != CLIENT_FLAGS | CLIENT_HASHES | {"status", "failure_kind", "process_diagnostics"}
             or any(type(data[key]) is not bool for key in CLIENT_FLAGS)
@@ -321,7 +583,7 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
         if (server_case["status"] != "ok"
                 or not is_digest(data["output_sha256"])
                 or not is_int(data["output_size"], MAX_FILE)
-                or type(data["message_count"]) is not int or data["message_count"] != 852
+                or type(data["message_count"]) is not int or data["message_count"] != 854
                 or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
             raise ValueError("client collections output identity")
     elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):
@@ -338,23 +600,23 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
                 or data["process_diagnostics"]["stage"] != "after_exit"
                 or data["process_diagnostics"]["reason"] != "none"
                 or server_case["status"] != "ok" or server_case["source_sha256"] != source_hash
-                or type(server_case["message_count"]) is not int or server_case["message_count"] != 852):
+                or type(server_case["message_count"]) is not int or server_case["message_count"] != 854):
             raise ValueError("client collections mismatch context")
         keys = {"count", "first", "ordinals", "client_sha256", "server_sha256", "client_size", "server_size"}
         if (type(mismatch) is not dict or set(mismatch) != keys
-                or not is_int(mismatch["count"], 852) or mismatch["count"] < 1
-                or not is_int(mismatch["first"], 852) or mismatch["first"] < 1
-                or mismatch["count"] > 853 - mismatch["first"]
+                or not is_int(mismatch["count"], 854) or mismatch["count"] < 1
+                or not is_int(mismatch["first"], 854) or mismatch["first"] < 1
+                or mismatch["count"] > 855 - mismatch["first"]
                 or not is_digest(mismatch["client_sha256"]) or not is_digest(mismatch["server_sha256"])
                 or mismatch["client_sha256"] == mismatch["server_sha256"]
                 or any(not is_int(mismatch[key], MAX_FILE) or mismatch[key] < 1
                        for key in ("client_size", "server_size"))
                 or type(mismatch["ordinals"]) is not list
                 or len(mismatch["ordinals"]) != min(mismatch["count"], 16)
-                or any(not is_int(value, 852) or value < 1 for value in mismatch["ordinals"])
+                or any(not is_int(value, 854) or value < 1 for value in mismatch["ordinals"])
                 or mismatch["ordinals"] != sorted(set(mismatch["ordinals"]))
                 or mismatch["ordinals"][0] != mismatch["first"]
-                or mismatch["count"] - len(mismatch["ordinals"]) > 852 - mismatch["ordinals"][-1]):
+                or mismatch["count"] - len(mismatch["ordinals"]) > 854 - mismatch["ordinals"][-1]):
             raise ValueError("client collections mismatch schema")
     return data
 
@@ -392,6 +654,14 @@ MAX_STAGE_REPORT = 8192
 
 
 def decode_stage3_wire(data):
+    if type(data) is dict and type(data.get("schema")) is int and data["schema"] == 4:
+        if ("client_async" not in data or "client_probe" not in data
+                or any(key in data for key in ("client_dates","client_values","client_collections","client_numbers","client_watchdog"))
+                or len(json.dumps(data,separators=(",",":"),allow_nan=False).encode()) > MAX_STAGE_REPORT):
+            raise ValueError("async wire")
+        base = {key:value for key,value in data.items() if key != "client_async"}
+        base["schema"] = 1
+        return {**decode_stage3_wire(base),"client_async":decode_async_wire(data["client_async"])}
     """Decode lossless schema-2/3 wire; public evidence retains named schema 1.
 
     Schema 1 is the legacy named representation. Schema 2 requires *every*
@@ -447,10 +717,18 @@ def decode_stage3_wire(data):
     return result
 
 
-def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False):
+def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *, prerequisites: bool, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False):
+    raw_schema = data.get("schema") if type(data) is dict else None
+    if client_async:
+        if (not CLIENT_SOURCE in input_hashes or watchdog_check or client_dates or client_values or client_collections or client_numbers or raw_schema != 4):
+            raise ValueError("async requires separate schema4 measurement")
+    elif raw_schema == 4:
+        raise ValueError("unsolicited async schema")
     data = decode_stage3_wire(data)
     client_requested = CLIENT_SOURCE in input_hashes
     expected_keys = {"schema", "nonce", "status", "failure_kind", "failed_case", "input_sha256", "cases"}
+    if client_async:
+        expected_keys.add("client_async")
     if client_numbers:
         if not client_requested:
             raise ValueError("client numbers requires client")
@@ -478,7 +756,7 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
     if type(data["schema"]) is not int or data["schema"] != 1 or data["nonce"] != nonce:
         raise ValueError("stage3 identity")
     status = data["status"]
-    if status not in {"not_started", "failed", "ok"} or data["failure_kind"] not in FAILURES:
+    if status not in {"not_started", "failed", "ok"} or data["failure_kind"] not in (FAILURES | {"unsupported_observation"} if client_async else FAILURES):
         raise ValueError("stage3 status")
     if type(data["input_sha256"]) is not dict:
         raise ValueError("inputs")
@@ -590,6 +868,15 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
             raise ValueError("client numbers missing")
         if status == "not_started" and numbers["status"] != "not_started":
             raise ValueError("client numbers unreached")
+    if client_async:
+        identity = module_hashes["client_async"]
+        measurement = validate_client_async(data["client_async"], identity["template"], identity["modules"])
+        if client["status"] != "ok" and measurement["status"] != "not_started":
+            raise ValueError("async order")
+        if status == "ok" and measurement["status"] != "ok":
+            raise ValueError("async incomplete")
+        if status == "not_started" and measurement["status"] != "not_started":
+            raise ValueError("async unreached")
     if status == "ok":
         if (not prerequisites or seen_incomplete or data["failure_kind"] != "none" or data["failed_case"] is not None):
             raise ValueError("success")
@@ -597,14 +884,15 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
         if (prerequisites or any(case["status"] != "not_started" for case in cases)
                 or data["failure_kind"] != "prerequisites_failed" or data["failed_case"] is not None):
             raise ValueError("not started")
-    elif (not prerequisites or data["failure_kind"] in {"none", "prerequisites_failed"}
+    elif (not prerequisites or data["failure_kind"] == "none"
+            or (data["failure_kind"] == "prerequisites_failed" and not (client_async and measurement["status"] == "failed" and measurement["failure_kind"] == "prerequisites_failed"))
             or (failed and data["failed_case"] != failed[0])
             or (not failed and data["failed_case"] is not None)):
         raise ValueError("failed")
     return data
 
 
-def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False):
+def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes: dict, report_validator, *, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False):
     """Return validated report and exact bytes, never the unchecked envelope."""
     try:
         if not re.fullmatch(r"[0-9a-f]{32}", nonce):
@@ -619,7 +907,7 @@ def validate_envelope(raw: bytes, nonce: str, input_hashes: dict, module_hashes:
         report = report_validator(report_raw, bootstrap=True, full_suite=True)
         prerequisites = bool(report.get("stage2") and report["stage2"]["status"] == "ok")
         stage3 = validate_stage3(report["stage3"], nonce, input_hashes, module_hashes,
-                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers)
+                                 prerequisites=prerequisites, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
         report["stage3"] = stage3
         if len(json.dumps(report, separators=(",", ":"), ensure_ascii=True).encode()) > MAX_REPORT:
             raise ValueError("expanded report limit")
@@ -780,6 +1068,92 @@ def map_contract():
     return module
 
 
+
+ASYNC_ACTUAL_LIMIT = 8192
+ASYNC_EXECUTE_SCRIPT = r"""
+import sys
+import importlib.util
+from pathlib import Path
+try:
+    root = Path(sys.argv[1])
+    path = root / "scripts/native_async_comparison.py"
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_async_comparison", path))
+    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+    source = (root / "scripts/native_1c_bootstrap/full_suite.py").read_bytes()
+    template, bodies = module.read_pinned_sources(source)
+    package = root / "yadinassi"
+    spec = importlib.util.spec_from_file_location("yadinassi", package / "__init__.py",
+                                                submodule_search_locations=[str(package)])
+    runtime = importlib.util.module_from_spec(spec)
+    sys.modules["yadinassi"] = runtime
+    spec.loader.exec_module(runtime)
+    sys.stdout.buffer.write(module.canonical(module.execute_actual(bodies)))
+except BaseException:
+    sys.exit(1)
+"""
+
+
+def async_contract(root: Path):
+    path = root / "scripts/native_async_comparison.py"
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_async_comparison", path))
+    exec(compile(read_regular(path, 4 * MAX_FILE, nonempty=True), str(path), "exec"), module.__dict__)
+    return module
+
+
+def validate_async_comparison(result):
+    if (type(result) is not dict or set(result) != {"profile", "status", "cases", "actual_sha256"}
+            or result["profile"] != "async-language-8-v1"
+            or type(result["status"]) is not str or result["status"] not in {"matched", "mismatched"}
+            or not is_digest(result["actual_sha256"])
+            or type(result["cases"]) is not list or len(result["cases"]) != 8):
+        raise FullError("async_comparison_invalid")
+    for row in result["cases"]:
+        if (type(row) is not list or len(row) != 2 or any(type(v) is not str for v in row)
+                or row[0] not in {"matched", "mismatched"}
+                or row[1] not in {"none", "runtimeerror", "lifecycle", "trace", "values", "errors"}
+                or (row[0] == "matched") != (row[1] == "none")):
+            raise FullError("async_comparison_invalid")
+    if (result["status"] == "matched") != all(row[0] == "matched" for row in result["cases"]):
+        raise FullError("async_comparison_invalid")
+    return result
+
+
+def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes: dict, *, runner=bounded_child):
+    """Execute actual-only rows in isolation; compare accepted same-run evidence here."""
+    source_path = "scripts/native_1c_bootstrap/full_suite.py"
+    validate_semantic_context(report, APPROVED_IMAGE)
+    if report["trusted_input_sha256"] != input_hashes:
+        raise FullError("async_evidence_invalid")
+    before = interpreter_provenance(root)
+    source = read_regular(root / source_path, 262144, nonempty=True)
+    if digest(source) != input_hashes.get(source_path):
+        raise FullError("async_source_changed")
+    if (report.get("native_evidence_accepted") is not True
+            or report.get("container_cleanup_verified") is not True
+            or report.get("native_transport_validated") is not True):
+        raise FullError("async_evidence_invalid")
+    try:
+        contract = async_contract(root)
+        template, bodies = contract.read_pinned_sources(source)
+        native = report["stage3"]["client_async"]
+        contract.validate_inputs(template, bodies, native)
+        with tempfile.TemporaryDirectory(prefix="async-cache-", dir=private) as cache:
+            code, stdout, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
+                "-c", ASYNC_EXECUTE_SCRIPT, str(root)], root,
+                stdout_limit=ASYNC_ACTUAL_LIMIT, stderr_limit=MAX_STDERR)
+        if code or stderr:
+            raise FullError("async_execution_failed")
+        actual = strict_json(stdout, ASYNC_ACTUAL_LIMIT)
+        result = contract.compare_observations(template, bodies, native, actual)
+    except FullError:
+        raise
+    except Exception:
+        raise FullError("async_comparison_invalid") from None
+    if (interpreter_provenance(root) != before
+            or read_regular(root / source_path, 262144, nonempty=True) != source):
+        raise FullError("execution_provenance_changed")
+    return validate_async_comparison(result)
+
 def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
     contract = map_contract()
     if type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}:
@@ -787,15 +1161,15 @@ def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
     if (type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}
             or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != MAP_MODE
             or type(result["reason"]) is not str or result["reason"] not in contract.REASONS
-            or not is_int(result["records"], 852) or not is_int(result["byte_equal_records"], result["records"])
+            or not is_int(result["records"], 854) or not is_int(result["byte_equal_records"], result["records"])
             or type(result["accepted_labels"]) is not list
             or any(type(label) is not str or label not in contract.ELIGIBLE_LABELS for label in result["accepted_labels"])
             or len(set(result["accepted_labels"])) != len(result["accepted_labels"])):
         raise FullError("semantic_result_invalid")
     if result["status"] == "equivalent":
-        if (result["reason"] != "none" or result["records"] != 852
-                or result["byte_equal_records"] + len(result["accepted_labels"]) != 852
-                or raw_matched != (result["byte_equal_records"] == 852)):
+        if (result["reason"] != "none" or result["records"] != 854
+                or result["byte_equal_records"] + len(result["accepted_labels"]) != 854
+                or raw_matched != (result["byte_equal_records"] == 854)):
             raise FullError("semantic_result_invalid")
     elif (result["reason"] == "none" or result["records"] != 0
             or result["byte_equal_records"] != 0 or result["accepted_labels"]):
@@ -833,7 +1207,8 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
                         or case["mismatch"] is not None or case["interpreter_size"] is not None
                         or case["interpreter_sha256"] is not None
                         or case["failure_kind"] not in {"source_changed", "native_capture_changed", "invalid_private_file",
-                            "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed"}
+                            "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed",
+                            POST_CREATE_FAILURE}
                         or (case["status"] == "timeout") != (case["failure_kind"] == "interpreter_timeout")):
                     raise ValueError("failure")
                 continue
@@ -892,7 +1267,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
                   "acceptance_status": "rejected", "semantic": None}
         try:
             source = root / f"integrational_tests/tests/{name}.bsl"
-            if digest(read_regular(source, MAX_FILE, nonempty=True)) != input_hashes[f"integrational_tests/tests/{name}.bsl"]:
+            source_bytes = read_regular(source, MAX_FILE, nonempty=True)
+            if digest(source_bytes) != input_hashes[f"integrational_tests/tests/{name}.bsl"]:
                 raise FullError("source_changed")
             expected = read_regular(capture / (name + ".out"), MAX_FILE)
             if digest(expected) != case["output_sha256"] or len(expected) != case["output_size"]:
@@ -903,6 +1279,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
                                               "-c", EXECUTE_SCRIPT, str(root), str(source), native_target], root)
             if code != 0 or stderr:
+                if interpreter_post_create_failed(source_bytes, code, actual, stderr):
+                    raise FullError(POST_CREATE_FAILURE)
                 raise FullError("interpreter_failed")
             record.update(interpreter_size=len(actual), interpreter_sha256=digest(actual))
             record["status"] = "matched" if actual == expected else "mismatched"
@@ -972,7 +1350,7 @@ def interpreter_provenance(root: Path) -> dict:
     if any(path.suffix not in {".py", ".txt"} for path in files):
         raise FullError("unexpected_interpreter_source")
     files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
-              root / "scripts/native_1c_map_contract.py"]
+              root / "scripts/native_1c_map_contract.py", root / "scripts/native_async_comparison.py"]
     if not files or len(files) > 512:
         raise FullError("interpreter_provenance_invalid")
     hashes = {path.relative_to(root).as_posix(): digest(read_regular(path, 4 * MAX_FILE, nonempty=True)) for path in files}
@@ -1063,15 +1441,21 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
         cases = []
         for name, native, compared in zip(SCENARIOS, stage3["cases"], comparison["cases"]):
             payload = payloads[name + ".out"]
+            post_create_failure = compared["status"] == "error" and compared["failure_kind"] == POST_CREATE_FAILURE
             if (native["status"] != "ok" or native["output_sha256"] != digest(payload)
                     or native["output_size"] != len(payload)
                     or not is_digest(native["source_sha256"]) or not is_digest(native["module_sha256"])
                     or native["source_sha256"] != stage3["input_sha256"][f"integrational_tests/tests/{name}.bsl"]
                     or not is_int(native["message_count"], 32_768)
-                    or compared["status"] not in {"matched", "mismatched"}
+                    or (compared["status"] not in {"matched", "mismatched"} and not post_create_failure)
                     or compared["native_sha256"] != native["output_sha256"]
-                    or compared["native_size"] != native["output_size"]
-                    or not is_digest(compared["interpreter_sha256"])
+                    or compared["native_size"] != native["output_size"]):
+                raise ValueError("case")
+            if post_create_failure:
+                # Comparison validation requires rejected acceptance and null host
+                # hashes/size/mismatch/semantic. Native framing is checked anew.
+                validate_native_post_create(payload)
+            elif (not is_digest(compared["interpreter_sha256"])
                     or not is_int(compared["interpreter_size"], MAX_FILE)
                     or (compared["status"] == "matched") != (compared["interpreter_sha256"] == native["output_sha256"]
                         and compared["interpreter_size"] == native["output_size"])):
@@ -1095,6 +1479,20 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
                     "windows_goldens_unchanged": True, "comparison_status": comparison["status"],
                     "native_target": native_target, "comparison_mode": comparison_mode,
                     "acceptance_status": comparison["acceptance_status"], "cases": cases}
+        if "client_async" in report.get("stage3", {}):
+            measurement = validate_client_async(report["stage3"]["client_async"], ASYNC_EXPECTED_IDENTITY["template"], ASYNC_EXPECTED_IDENTITY["modules"])
+            if measurement.get("status") != "ok":
+                raise ValueError("async measurement incomplete")
+            metadata["client_async"] = measurement
+            metadata["client_async_measurement_completed"] = True
+            metadata["client_async_parity_claimed"] = False
+            if "async_comparison" in report:
+                validate_semantic_context(report, image)
+                metadata["async_comparison"] = validate_async_comparison(report["async_comparison"])
+                metadata["client_async_parity_claimed"] = bool(
+                    metadata["async_comparison"]["status"] == "matched"
+                    and comparison["acceptance_status"] == "accepted")
+            metadata["purpose"] = "client-async-language-measurement-v1"
         raw = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
         if len(raw) > MAX_REPORT:
             raise ValueError("limit")
@@ -1267,3 +1665,326 @@ def verify_output_artifact(root: Path, expected_hashes: dict[str, str]) -> None:
     finally:
         if directory is not None:
             os.close(directory)
+
+
+# This reads only reviewed literal data from a trusted staged input. It never
+# imports or executes the staged Python to reconstruct the native async module.
+def async_source_identity(source: bytes) -> dict:
+    import ast
+    try:
+        tree = ast.parse(source.decode('utf-8'))
+        names = {'ASYNC_TEMPLATE', 'ASYNC_CASE_SOURCES'}
+        found = {}
+        for node in tree.body:
+            targets = node.targets if isinstance(node, ast.Assign) else []
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id in names:
+                    if len(targets) != 1 or target.id in found:
+                        raise ValueError('duplicate async source')
+                    value = node.value
+                    if target.id == 'ASYNC_TEMPLATE':
+                        if not isinstance(value, ast.Constant) or type(value.value) is not str:
+                            raise ValueError('async template literal')
+                        found[target.id] = value.value
+                    else:
+                        if (not isinstance(value, ast.Tuple) or len(value.elts) != 8
+                                or any(not isinstance(item, ast.Constant) or type(item.value) is not str for item in value.elts)):
+                            raise ValueError('async cases literal')
+                        found[target.id] = tuple(item.value for item in value.elts)
+        if set(found) != names:
+            raise ValueError('async source missing')
+        template, cases = found['ASYNC_TEMPLATE'], found['ASYNC_CASE_SOURCES']
+        if any(template.count(token) != 1 for token in ('__ASYNC_CASE_ID__', '__ASYNC_CASE_SOURCE__')):
+            raise ValueError('async placeholders')
+        if any('__ASYNC_CASE_' in case for case in cases):
+            raise ValueError('async nested placeholder')
+        fixture_hash = digest(json.dumps([template,cases],ensure_ascii=False,separators=(',',':')).encode('utf-8'))
+        if fixture_hash != '83a6e22dbb4788498985e51e06ea610d2a9bc95702852da396cb6d7779bf1c5a':
+            raise ValueError('async fixture not pinned')
+        modules = [generated_module(template.replace('__ASYNC_CASE_ID__', str(i)).replace('__ASYNC_CASE_SOURCE__', case).encode('utf-8')) for i, case in enumerate(cases)]
+        identity = {'template': digest(template.encode('utf-8')), 'modules': [digest(module) for module in modules]}
+        if identity != ASYNC_EXPECTED_IDENTITY:
+            raise ValueError('async module pins')
+        return identity
+    except (SyntaxError, UnicodeError, TypeError, ValueError):
+        raise FullError('native_artifact_evidence_invalid') from None
+# Independent host verifier for client-async finite protocol v1.
+# No stage Python is executed or imported. Only trusted literal source is extracted elsewhere.
+HOST_ASYNC_FAILURES = ('none', 'prerequisites_failed', 'stale_evidence', 'invalid_input', 'invalid_result', 'invalid_dump_result', 'artifact_missing', 'output_mismatch', 'output_limit', 'module_mismatch', 'timeout', 'process_failed', 'unexpected_failure', 'export_failed', 'unsupported_observation')
+HOST_ASYNC_SLOTS = (4, 3, 5, 3, 4, 7, 3, 3)
+HOST_ASYNC_BASE_EVENTS = ((10, 11, 12, 13, 14, 15, 16, 17, 18), (10, 11, 12, 13, 14, 15, 16, 17, 25, 26), (10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28), (10, 13, 16), (10, 11, 12, 13, 14, 15, 16, 19), (10, 11, 12, 13, 14, 15, 16), (10, 11, 12), (10, 11, 12, 13, 14, 15, 16, 17, 18))
+HOST_ASYNC_EDGES = (((10, 11), (11, 12), (10, 13), (13, 14), (12, 14), (14, 15), (15, 16), (16, 17), (17, 18)), ((10, 11), (11, 12), (12, 25), (25, 26), (26, 13), (13, 14), (14, 17), (10, 15), (15, 16), (16, 17)), ((10, 11), (11, 12), (12, 25), (25, 26), (26, 13), (13, 14), (14, 22), (10, 15), (15, 16), (16, 17), (17, 18), (18, 27), (27, 28), (28, 19), (19, 20), (20, 23), (16, 21), (21, 22), (22, 23), (23, 24)), ((10, 11), (10, 12), (11, 13), (12, 13), (13, 14), (13, 15), (14, 16), (15, 16), (16, 17), (16, 18)), ((10, 11), (11, 12), (12, 13), (11, 14), (14, 16), (10, 15), (15, 16), (16, 17), (16, 18), (17, 19), (18, 19), (13, 19)), ((10, 11), (11, 12), (12, 13), (13, 14), (14, 16), (10, 15), (15, 16)), ((10, 11), (11, 12), (10, 13), (12, 14), (13, 15), (15, 16), (15, 17), (12, 16), (12, 17), (16, 18), (17, 18), (18, 19), (18, 20), (12, 19), (12, 20)), ((10, 11), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17), (17, 18)))
+
+
+def _host_async_require(condition, label):
+    if not condition:
+        raise ValueError('async ' + label)
+
+
+def _host_async_number(value, minimum, maximum):
+    return type(value) is int and minimum <= value <= maximum
+
+
+def _host_async_sha(value):
+    return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+
+def validate_async_case_observation(case_id, trace, values, errors):
+    require = _host_async_require
+    number = _host_async_number
+    require(number(case_id,0,7),'case')
+    require(type(trace) is list and 5 <= len(trace) <= 24,'trace length')
+    require(all(number(token,0,28) for token in trace),'event type')
+    require(trace[:2] == [0,1] and trace[-3:] == [2,3,4],'root boundaries')
+    require(len(trace) == len(set(trace)),'duplicate event')
+    require(type(values) is list and len(values) == HOST_ASYNC_SLOTS[case_id],'slots')
+    require(type(errors) is list and len(errors) <= 3,'errors')
+    for pair in values:
+        require(type(pair) is list and len(pair) == 2,'value pair')
+        tag,payload = pair
+        require(number(tag,0,7) and number(payload,-999999,999999),'value type')
+        ranges = {0:(0,0),1:(0,0),2:(0,0),3:(0,1),4:(-999999,999999),5:(0,7),6:(0,0),7:(0,2)}
+        require(ranges[tag][0] <= payload <= ranges[tag][1],'value payload')
+    for entry in errors:
+        require(type(entry) is list and len(entry) == 7,'error row')
+        require(number(entry[0],0,6) and all(number(x,0,4) for x in entry[1:4])
+                and all(number(x,0,3) for x in entry[4:6]) and _host_async_sha(entry[6]),'error fields')
+    tags = [v[0] for v in values]
+    selected = set(HOST_ASYNC_BASE_EVENTS[case_id]) | {0,1,2,3,4}
+    absent_slots = set()
+    if case_id == 3:
+        for slot,returned,rejected in ((0,11,12),(1,14,15),(2,17,18)):
+            selected.add(rejected if tags[slot] == 7 else returned)
+    if case_id == 4:
+        if tags[1] == 6:
+            selected.add(17)
+        else:
+            selected.add(18)
+            absent_slots.add(2)
+    if case_id == 6:
+        if tags[0] == 7:
+            selected.add(14)
+            absent_slots = {1,2}
+        else:
+            selected |= {13,15,18,17 if tags[1] == 7 else 16,20 if tags[2] == 7 else 19}
+    require(set(trace) == selected,'conditional inventory')
+    seen = set()
+    for token in trace:
+        for before,after in HOST_ASYNC_EDGES[case_id]:
+            if after == token and before in selected:
+                require(before in seen,'causal order')
+        seen.add(token)
+    phases = {3:{0:3,1:4,2:5},6:{0:0,1:1,2:2},7:{2:6}}.get(case_id,{})
+    next_error = 0
+    for index,(tag,payload) in enumerate(values):
+        require((tag == 0) == (index in absent_slots),'not-executed slot')
+        if tag == 7:
+            require(index in phases and payload == next_error and next_error < len(errors),'error ordinal')
+            require(errors[next_error][0] == phases[index],'error phase')
+            next_error += 1
+    require(next_error == len(errors),'unreferenced error')
+    require(case_id != 7 or tags[2] == 7,'handler observation')
+    return trace,values,errors
+
+
+def _host_async_diagnostic(value):
+    _host_async_require(type(value) is dict and set(value) == {'stage','reason','unexpected_count','zombie_count','classes'},'diagnostic keys')
+    _host_async_require(type(value['stage']) is str and type(value['reason']) is str,'diagnostic enums')
+    return validate_process_diagnostics(value)
+
+
+def validate_async_marker_failure(data):
+    """Independent finite failure-only hint validation, never marker acceptance."""
+    value = data['marker_validation_failure']
+    if value is None: return
+    require, number = _host_async_require, _host_async_number
+    hint = data.get('failure_diagnostics')
+    require(data.get('status') == 'failed' and data.get('failure_kind') == 'invalid_result', 'marker failure applicability')
+    require(type(hint) is list and len(hint) == 4 and hint[0] == 4, 'marker failure stage')
+    require(type(value) is list and len(value) == 4, 'marker failure fields')
+    phase,site,descriptor,locator = value
+    require(number(phase,0,1) and number(site,1,42) and number(descriptor,0,3) and number(locator,0,31), 'marker failure codes')
+    require(hint[phase+1] == 2 and (phase == 0 or hint[1] == 3), 'marker failure observation')
+    rows = data.get('cases')
+    require(type(rows) is list and len(rows) == 8, 'marker failure rows')
+    failures = [index for index,row in enumerate(rows) if type(row) is list and len(row) == 8 and row[1:3] == [2,4]]
+    require(len(failures) == 1, 'marker failure case')
+    case_id = failures[0]
+    require(phase == 1 or site in set(range(1,10)) | {42}, 'marker failure phase')
+    if site in range(14,27):
+        require(descriptor < 3, 'marker descriptor ordinal')
+        allowed = ({31} if site in (14,26) else {0} if site == 15 else {1} if site == 16
+                   else set(range(2,10)) | ({31} if site == 25 else set()))
+        require(locator in allowed, 'marker descriptor field')
+    elif site in (34,35):
+        require(descriptor < 3 and locator in range(HOST_ASYNC_SLOTS[case_id]), 'marker reference locator')
+    else:
+        require(descriptor == 3, 'marker descriptor sentinel')
+        if site in (29,38,39): allowed = set(range(29))
+        elif site in (31,32,33,37): allowed = set(range(HOST_ASYNC_SLOTS[case_id]))
+        elif site == 40: allowed = set(range(len(HOST_ASYNC_EDGES[case_id])))
+        elif site == 41: allowed = {2} if case_id == 7 else set()
+        else: allowed = {31}
+        require(locator in allowed, 'marker field locator')
+
+
+def validate_async_failure_diagnostics(data):
+    validate_async_marker_failure(data)
+    value = data['failure_diagnostics']
+    if value is None:
+        return
+    require = _host_async_require
+    number = _host_async_number
+    require(data.get('status') in ('failed', 'inconclusive'), 'failure diagnostic applicability')
+    require(type(value) is list and len(value) == 4, 'failure diagnostic fields')
+    stage, entered, completed, category = value
+    require(number(stage, 0, 5) and number(entered, 0, 3)
+            and number(completed, 0, 3) and number(category, 0, 43), 'failure diagnostic codes')
+    require(stage >= 3 or (entered == 0 and completed == 0), 'failure marker applicability')
+    require(stage != 0 or category == 0, 'failure log applicability')
+    require(category < 13 or stage >= 3, 'entry log applicability')
+    require(completed != 3 or entered == 3, 'failure marker order')
+
+
+def validate_client_async(data, template_hash, module_hashes):
+    require = _host_async_require
+    number = _host_async_number
+    require(_host_async_sha(template_hash) and type(module_hashes) in (tuple,list)
+            and len(module_hashes) == 8 and all(_host_async_sha(x) for x in module_hashes),'trusted hashes')
+    require(type(data) is dict and set(data) == {'version','status','failure_kind','template_sha256','continuity_sha256','process_diagnostics','failure_diagnostics','marker_validation_failure','cases'},'record fields')
+    require(number(data['version'],2,2),'version')
+    require(type(data['status']) is str and data['status'] in ('not_started','ok','failed','inconclusive'),'status')
+    require(type(data['failure_kind']) is str and data['failure_kind'] in HOST_ASYNC_FAILURES,'reason')
+    require(data['template_sha256'] is None or _host_async_sha(data['template_sha256']) and data['template_sha256'] == template_hash,'template identity')
+    require(_host_async_sha(data['continuity_sha256']) if data['status'] == 'ok' else data['continuity_sha256'] is None,'continuity anchor')
+    diag = _host_async_diagnostic(data['process_diagnostics'])
+    validate_async_failure_diagnostics(data)
+    require(type(diag['stage']) is str and type(diag['reason']) is str,'diagnostic types')
+    rows = data['cases']
+    require(type(rows) is list and len(rows) == 8,'eight cases')
+    states = []
+    for case_id,row in enumerate(rows):
+        require(type(row) is list and len(row) == 8,'eight fields')
+        cid,status,failure,module,bits,trace,values,errors = row
+        require(number(cid,case_id,case_id) and number(status,0,3) and number(failure,0,14) and number(bits,0,63),'row codes')
+        require(module is None or _host_async_sha(module) and module == module_hashes[case_id],'module identity')
+        states.append(status)
+        if status == 1:
+            require(failure == 0 and bits == 63 and module == module_hashes[case_id],'observed proof')
+            validate_async_case_observation(case_id,trace,values,errors)
+        else:
+            require(bits == 0 and all(type(x) is list and x == [] for x in (trace,values,errors)),'failed private boundary')
+            if status == 0:
+                require(failure == 1 and module is None,'unreached')
+            elif status == 2:
+                require(1 <= failure <= 13,'failed reason')
+            else:
+                require(failure == 14 and module == module_hashes[case_id],'inconclusive')
+    if data['status'] == 'not_started':
+        require(states == [0]*8 and data['failure_kind'] == 'prerequisites_failed'
+                and data['template_sha256'] is None and diag['stage'] == 'not_checked' and diag['reason'] == 'none','unstarted aggregate')
+    elif data['status'] == 'ok':
+        require(states == [1]*8 and data['failure_kind'] == 'none' and data['template_sha256'] == template_hash
+                and diag['stage'] == 'after_exit' and diag['reason'] == 'none','completed aggregate')
+    else:
+        failure_state = 3 if data['status'] == 'inconclusive' else 2
+        require(states.count(failure_state) == 1,'single failure')
+        index = states.index(failure_state)
+        require(states == [1]*index + [failure_state] + [0]*(7-index),'failure prefix')
+        require(data['failure_kind'] == HOST_ASYNC_FAILURES[rows[index][2]],'aggregate reason')
+        if index or rows[index][3] is not None:
+            require(data['template_sha256'] == template_hash,'aggregate identity')
+    return data
+
+
+def decode_async_wire(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
+        raise ValueError('async wire')
+    validate_async_failure_diagnostics(record)
+    wire = record['process_diagnostics']
+    if (type(wire) is not list or len(wire) != 5 or type(wire[4]) is not list or len(wire[4]) != 7):
+        raise ValueError('async process wire')
+    names = ('native','display','session_bus','shell','python','other','unreadable')
+    diagnostic = _host_async_diagnostic({'stage':wire[0],'reason':wire[1],'unexpected_count':wire[2],
+            'zombie_count':wire[3],'classes':dict(zip(names,wire[4]))})
+    if type(diagnostic['stage']) is not str or type(diagnostic['reason']) is not str:
+        raise ValueError('async process wire type')
+    return {**record,'process_diagnostics':diagnostic}
+
+
+def encode_async_wire(record):
+    if type(record) is not dict or not {'process_diagnostics', 'failure_diagnostics', 'marker_validation_failure'} <= set(record):
+        raise ValueError('async wire')
+    validate_async_failure_diagnostics(record)
+    diagnostic = _host_async_diagnostic(record['process_diagnostics'])
+    names = ('native','display','session_bus','shell','python','other','unreadable')
+    encoded = {**record,'process_diagnostics':[diagnostic['stage'],diagnostic['reason'],diagnostic['unexpected_count'],
+            diagnostic['zombie_count'],[diagnostic['classes'][name] for name in names]]}
+    if decode_async_wire(encoded) != record:
+        raise ValueError('async wire roundtrip')
+    return encoded
+
+
+def validate_async_private_descriptor(value):
+    """Independent selected-field check. Not a whole ErrorInfo serializer."""
+    require = _host_async_require
+    number = _host_async_number
+    fields = ('description','code','additional','category','cause','module','line','source')
+    require(type(value) is dict and set(value) == {'schema','phase',*fields},'private keys')
+    require(number(value['schema'],1,1) and number(value['phase'],0,6),'private version')
+    forms = ({0,1,2,3,4},{0,1,2,3,4},{0,1,2,3,4},{0,1,3,5},{0,1,5},{0,2},{0,1,3},{0,2})
+    for field,allowed in zip(fields,forms):
+        pair = value[field]
+        require(type(pair) is list and len(pair) == 2 and number(pair[0],0,5) and pair[0] in allowed,'private tagged field')
+        tag,payload = pair
+        if tag < 2:
+            require(payload is None,'private absent')
+        elif tag == 2:
+            require(type(payload) is str and len(payload) <= 512,'private text')
+            require(len(payload.encode('utf-8')) <= 512,'private text bytes')
+        elif tag == 3:
+            require(number(payload,0,999999),'private integer')
+        elif tag == 4:
+            require(type(payload) is bool,'private boolean')
+        else:
+            require(number(payload,0,1) and payload == (1 if field == 'category' else 0),'private native type')
+    raw = json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')
+    require(len(raw) <= 4096,'private descriptor size')
+    result = [value['phase']]
+    for field,literal in zip(fields,('ASYNC-REJECT','ASYNC-CODE','ASYNC-DETAIL')):
+        tag,payload = value[field]
+        result.append(4 if tag == 0 else 0 if tag == 1 else 1 if payload == '' and tag == 2 else 2 if payload == literal and tag == 2 else 3)
+    category = value['category']
+    result.append(3 if category[0] == 0 else 0 if category[0] == 1 else 1 if category == [3,1] else 2)
+    result.append({0:3,1:0,5:1}[value['cause'][0]])
+    result.append(hashlib.sha256(raw).hexdigest())
+    return result
+
+
+def validate_async_marker_raw(raw, nonce, case_id, phase):
+    """Read with the host's duplicate-key/depth/UTF-8/size security helper."""
+    require = _host_async_require
+    require(type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}',nonce) is not None
+            and _host_async_number(case_id,0,7) and phase in ('entered','completed'),'marker inputs')
+    data = strict_json(raw,16_384)
+    keys = {'schema','nonce','case','phase','witness'}
+    if phase == 'completed':
+        keys |= {'status','failure','trace','values','errors'}
+    require(type(data) is dict and set(data) == keys,'marker keys')
+    require(_host_async_number(data['schema'],1,1) and _host_async_number(data['case'],case_id,case_id)
+            and type(data['nonce']) is str and data['nonce'] == nonce and type(data['phase']) is str and data['phase'] == phase
+            and type(data['witness']) is str and data['witness'] == 'client','marker binding')
+    if phase == 'entered':
+        return data
+    require(_host_async_number(data['status'],1,3) and _host_async_number(data['failure'],0,14),'marker codes')
+    if data['status'] == 1:
+        require(data['failure'] == 0 and type(data['errors']) is list and len(data['errors']) <= 3,'marker success')
+        errors = [validate_async_private_descriptor(x) for x in data['errors']]
+        validate_async_case_observation(case_id,data['trace'],data['values'],errors)
+        return {**data,'errors':errors}
+    require((data['status'] == 2 and 1 <= data['failure'] <= 13) or (data['status'] == 3 and data['failure'] == 14),'marker failure')
+    require(all(type(data[key]) is list and data[key] == [] for key in ('trace','values','errors')),'marker failed privacy')
+    return data
+
+
+ASYNC_EXPECTED_IDENTITY = {'template': '4177f7bc3e4690e6a67e48af06db4dba78405bb76f16151867fd006c35ba713f', 'modules': ['9c35b55df6f304166f83535490b7cffe51f0bac3383663fa4d2c201dfd4f3317', '2f1521d54fef7ecd73f8dce7f36f983111ff2fdb98112a89bd47f01988072676', '6e1a01c33d77681426c6d3f0c0d648fde353514edad381ba2c6bd2b586284959', 'a3959ce4beb9fe01cc1d3f3416bdb2ac7ef56ecb9cdcce11c0b41d96f347bc78', 'a5a2d09e4a7be7749121b0a26c30670bcd122d76ae81e6b5158fdb9de7ff2b1b', '761b8ed069ac9451cd9eb918c5e7e7d6d84a9d380155bc56b36ffd05717d76f6', '395dfd07a0171d361fd5c029e6a2400ef8d72097f506e073c75fedb1bc3105f4', '3ac1cd874da474e939006034f5a7216e7d2a26e9f9a9fb87f0c0813b1968a45a']}

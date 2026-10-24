@@ -1604,31 +1604,66 @@ before. Native source, all fixture bytes, input/security/cap/wire/client rules,
 and the eight Map exceptions are unchanged. This runtime change makes no new
 Windows evidence claim; no evidence is inferred for any excluded category.
 
-### FillPropertyValues EXCLUDE missing names: source-only checkpoint
+### Deferred PR87 EXCLUDE compatibility measurement
 
-This checkpoint appends 11 records to the exact 841-record collections source
-(SHA-256 `e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232`).
-Every call creates fresh mutable target `Structure("First,Last,Copy", 1, 2, 3)`
-and source `Structure("First,Last,Copy", 10, 20, 30)`. `Missing` is added only
-to the target (value 4), only to the source (value 40), or to neither. Each
-variant uses fourth-argument lists `Missing`, `Missing,First`, and
-`First,Missing`; the third argument is always Undefined. Two final controls
-use `First` and `First,Last` with Missing absent from both.
+This is a source-only checkpoint, not an EXCLUDE runtime change or a claim of
+new native parity. It restores the original 11 PR87 observations unchanged and
+adds only two source-insertion-order observations. Collections has 854 records:
+841 prior records, the exact 11-record PR87 suffix, then two new records. The
+current EXCLUDE upfront guard and the eight existing typed-Map allowances are
+unchanged. Every EXCLUDE record remains byte-strict and is ineligible for those
+allowances; a measured mismatch must remain a failure, not become an exception.
 
-Each record reports stable `ok`/`error`, all three target fields, target count,
-and Missing presence/value after catching the operation. Copy is never excluded,
-so partial mutation cannot hide behind First exclusion. Setup fixes insertion
-order only; it makes no assumption about native traversal order. Native errors
-are valid observations and never omitted. Labels start `fill.exclude-missing.`.
-Collections now has 852 records; values 402, numbers 421 and dates 185 are unchanged.
+The original matrix uses fresh mutable target/source structures with
+`First,Last,Copy` values `1,2,3` / `10,20,30`. `Missing` exists only in the target,
+only in the source, or in neither. Each variant uses EXCLUDE strings `Missing`,
+`Missing,First`, and `First,Missing`; the two controls use `First` and
+`First,Last`. All 11 labels, inputs and observers are preserved. Each observer
+records `ok`/`error` followed by six serialized post-state fields: First, Last,
+Copy, target count, target Missing presence, and target Missing value. It catches
+only the fill operation, not setup or observation failures.
 
-There is no runtime change: absent EXCLUDE names remain explicitly unsupported
-pending independently audited native observations. EDT parameter/description
-conflicts are not evidence for mutation timing. Synthetic tests prove observer
-sensitivity only. Linux results cannot broaden historical Windows/default behavior.
-Excluded: simultaneous lists, empty or spaced tokens, fixed targets or fixed
-sources, new containers and database queries. Exact inverse reconstruction
-restores the complete 841 source and every earlier historical chain; output
-truncation is not a parity exception. Fixtures, all 24 trusted inputs, caps,
-strict wire and client/server comparison, and eight Map-order exceptions remain
-unchanged. Every new record requires byte-exact comparison.
+The archived Linux 8.3.27.1508 run
+[39836204865](https://github.com/Atridis/yadinassi/actions/runs/39836204865)
+has been independently validated against its exact 852-record source, staged
+inputs, archives, provenance and full original comparison. It executed synthetic
+commit `0f8b5fd992013f10e6f1b67a87f95ddb3739e47a`, tree
+`185ccfa1997d941720be60a55f8fdc373f74f194`, for PR87 head
+`90039bd3560189e8da827389131724e26f4a01a8`. Its collections source SHA-256 is
+`fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9`.
+Native source-only `Missing` failed after changing First/Last/Copy to 10/20/30;
+`Missing,First` and `First,Missing` failed after changing only Last/Copy to
+20/30. The other eight EXCLUDE records matched the interpreter. Those three
+partial-mutation mismatches correctly failed parity: validating a historical
+capture does not turn its rejected comparison into acceptance. There is no
+Windows EXCLUDE measurement and no new first/between native result yet.
+
+In that historical source, Missing was inserted last in every source-only case.
+That cannot distinguish copying common fields before late validation from
+traversing source properties until a target-missing name is encountered. The
+new labels `fill.exclude-source-order.source-only.first` and `.between` use
+source construction orders `Missing,First,Last,Copy` and
+`First,Missing,Last,Copy`, respectively. Both retain the same fresh target,
+EXCLUDE `Missing`, and six-field observer, with all five helper locals explicitly
+declared. The original `fill.exclude-missing.source-only.missing` record at
+ordinal 845 supplies the last-position case. The new records are ordinals 853
+and 854. Old labels ending in `missing-first` describe EXCLUDE-string order,
+not source-property order. Controlled insertion order is an input; even fresh
+results for these cases will not establish a universal native traversal algorithm.
+
+The full source SHA-256 is
+`42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb`.
+Removing only the new bounded blocks reconstructs the exact PR87 source above;
+removing its two EXCLUDE blocks reconstructs the 841-record source SHA-256
+`e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232`.
+Only explicit LF/CRLF checkout transport normalization is permitted. Historical
+replay uses these exact source inverses, never current-output truncation or
+regenerated historical fixtures. Tests preserve all 841 and 852 prefix records
+on both interpreter targets. Separate synthetic upfront-validation,
+copy-then-validate and insertion-order-traversal policies prove that the three
+cases discriminate those alternatives; neither synthetic states nor interpreter
+predictions are native expectations. Fresh full client/server output and audited
+provenance for this exact 854-record source are still required before interpreting
+the new cases or designing a separately scoped runtime change. No new output
+fixture, comparison relaxation, workflow, protocol, security limit or Map
+allowance is introduced by this measurement.

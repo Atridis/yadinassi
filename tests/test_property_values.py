@@ -87,7 +87,7 @@ class PropertyValuesTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('fixed.Count()'), Decimal(3))
 
     def test_explicit_undefined_and_omitted_optional_arguments(self):
-        for suffix in (', Undefined', ', Undefined, Undefined', ', , Undefined'):
+        for suffix in (', Undefined', ', Undefined, Undefined', ', , Undefined', ',', ',,'):
             self.setUp()
             self.vm.execute('FillPropertyValues(target, source' + suffix + ');')
             self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
@@ -148,7 +148,6 @@ class PropertyValuesTests(unittest.TestCase):
         for args in ('', 'target', 'target, source, 1', 'target, source, True',
                      'target, source, Undefined, New Array()',
                      'target, source, Undefined, Undefined, Undefined',
-                     'target, source, ', 'target, source, , ',
                      ', source', 'target, , "Имя"'):
             with self.assertRaises(BSLError):
                 self.vm.execute('FillPropertyValues(' + args + ');')

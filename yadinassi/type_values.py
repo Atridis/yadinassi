@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from .dates import BSLDate
+from .error_info import BSLErrorInfo, BSLErrorCategory
 from .xml_processing import BSLXMLStringProcessingManager
 
 from .maps import BSLFixedMap, BSLMap
@@ -23,7 +24,13 @@ from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
 from .value_lists import BSLValueList, BSLValueListItem
 
 
+from .async_runtime import Promise
+
+
 _VALUE_TYPES = (
+    (Promise, BSLType.PROMISE, "Promise"),
+    (BSLErrorInfo, BSLType.ERROR_INFO, "ErrorInfo"),
+    (BSLErrorCategory, BSLType.ERROR_CATEGORY, "ErrorCategory"),
     (BSLXMLStringProcessingManager, BSLType.XML_STRING_PROCESSING_MANAGER, "XMLStringProcessingManager"),
     (BSLNull, BSLType.NULL, "Null"),
     (type(None), BSLType.UNDEFINED, "Undefined"),

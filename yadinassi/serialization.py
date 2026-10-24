@@ -82,6 +82,9 @@ _TYPE_IDS = {
     BSLType.COLLECTION_INDEXES: "3a461c5c-0a17-430a-ae05-90890129a7da",
     BSLType.COLLECTION_INDEX: "4523f487-9cd3-4779-89f5-92023e88037b",
 }
+# This syntax milestone does not claim native serialization for error objects or
+# their types. Keep an explicit refusal policy instead of inventing native GUIDs.
+_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE})
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
@@ -229,6 +232,11 @@ class _Writer:
             kind = type_of(value)
         except TypeError:
             raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
+        if kind in _UNSUPPORTED_CODEC_TYPES or (
+                kind is BSLType.TYPE and value in _UNSUPPORTED_CODEC_TYPES):
+            if kind is BSLType.PROMISE or (kind is BSLType.TYPE and value is BSLType.PROMISE):
+                raise ValueError("ЗначениеВСтрокуВнутр: сериализация Обещание пока не поддерживается")
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов ошибок пока не поддерживается")
         if kind not in _CODECS:
             raise ValueError("ЗначениеВСтрокуВнутр: для типа не задана политика сериализации Yadinassi")
         if kind is BSLType.UNDEFINED:

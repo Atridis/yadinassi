@@ -42,9 +42,7 @@ class ClientContextTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('F()'), Decimal(7))
 
     def test_invalid_annotations_fail_before_module_side_effects(self):
-        directives = ['&НаСервере', '&AtServer', '&НаСервереБезКонтекста',
-                      '&AtServerNoContext', '&НаКлиентеНаСервере', '&AtClientAtServer',
-                      '&НаКлиентеНаСервереБезКонтекста', '&AtClientAtServerNoContext',
+        directives = ['&НаКлиентеНаСервере', '&AtClientAtServer',
                       '&Unknown', '&AtClient()', '&AtClient Procedure P() EndProcedure']
         for directive in directives:
             with self.subTest(directive=directive), self.assertRaises(BSLError) as caught:
@@ -89,7 +87,7 @@ class ClientContextTests(unittest.TestCase):
     def test_nested_elsif_first_match_and_inactive_invalid_code(self):
         self.vm.execute('''
             #If Server Then
-            &AtServer
+            // No server declaration: this is excluded root text.
             invalid !!! syntax "
             // #Импорт Missing.bsl
             #If Client Then
@@ -174,9 +172,10 @@ class ClientContextTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(IncompleteInput):
                 parse(text)
 
-    def test_server_annotation_in_active_branch_still_rejected(self):
-        with self.assertRaisesRegex(BSLError, 'только клиентский контекст'):
-            self.vm.execute('#If Client Then\n&AtServer\nProcedure P() EndProcedure\n#EndIf')
+    def test_server_annotation_cut_out_by_server_preprocessor_is_unavailable(self):
+        self.vm.execute('#If Client Then\n&AtServer\nProcedure P() EndProcedure\n#EndIf')
+        self.assertNotIn('p', self.vm.routines)
+        self.assertNotIn('p', self.vm.server_routines)
 
     def test_imported_client_modules_and_excluded_imports(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -187,7 +186,7 @@ Function F(Val x = 40) Export
     Return x + 2;
 EndFunction
 #Else
-&AtServer
+// Excluded root text, not an explicit server declaration.
 server-only !!!
 #EndIf
 ''', encoding='utf-8')
@@ -201,7 +200,7 @@ server-only !!!
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             side = root / 'Side.bsl'
-            side.write_text('Message("bad");\n&AtServer\nProcedure P() EndProcedure', encoding='utf-8')
+            side.write_text('Message("bad");\n&AtClientAtServer\nProcedure P() EndProcedure', encoding='utf-8')
             with self.assertRaises(BSLError) as caught:
                 self.vm.execute('// #Импорт Side.bsl\nMessage("bad root");', str(root / 'Main.bsl'))
             self.assertEqual((caught.exception.source, caught.exception.line), (str(side.resolve()), 2))

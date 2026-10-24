@@ -15,6 +15,7 @@ REPOSITORY = "Atridis/yadinassi"
 REPOSITORY_ID = 359770628
 OWNER = "Atridis"
 OWNER_ID = 30860798
+ASYNC_REVIEWED_REF = "refs/heads/codex/native-client-async-reviewed"
 PR_ACTIONS = frozenset({"opened", "synchronize", "reopened"})
 MAX_EVENT_BYTES = 8 * 1024 * 1024
 
@@ -86,13 +87,53 @@ def validate_admission(event, context):
         require(is_sha(base.get("sha")) and is_sha(head.get("sha")), "pr_revisions_invalid")
         return "pull_request"
     if context.get("GITHUB_EVENT_NAME") == "push":
-        require(context.get("GITHUB_REF") == "refs/heads/main" and event.get("ref") == "refs/heads/main",
+        ref = context.get("GITHUB_REF")
+        require(ref in ("refs/heads/main", ASYNC_REVIEWED_REF) and event.get("ref") == ref,
                 "push_ref_not_approved")
+        if ref == ASYNC_REVIEWED_REF:
+            # Deliberately advancing this exact owner-only branch opts in the reviewed SHA.
+            # Branch naming is not a security boundary against repository/workflow editors.
+            require(event.get("forced") is False, "push_forced_or_invalid")
+            require(context.get("GITHUB_REF_TYPE") == "branch"
+                    and context.get("GITHUB_BASE_REF") == "" and context.get("GITHUB_HEAD_REF") == "",
+                    "push_reviewed_context_invalid")
+            require(context.get("GITHUB_WORKFLOW_REF") == f"{REPOSITORY}/.github/workflows/native-1c-isolated-smoke.yml@{ref}"
+                    and context.get("GITHUB_WORKFLOW_SHA") == context["GITHUB_SHA"],
+                    "push_workflow_revision_mismatch")
         require(event.get("deleted") is False, "push_deleted_or_invalid")
         require(event.get("after") == context["GITHUB_SHA"]
                 and object_value(event.get("head_commit")).get("id") == context["GITHUB_SHA"],
                 "push_revision_mismatch")
         return "push"
+    if context.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        # This owner-only opt-in attests review of an immutable same-repo revision.
+        # It is not a security boundary against edits to this workflow or policy.
+        inputs = object_value(event.get("inputs"))
+        require(set(inputs) == {"client_async_measurement", "reviewed_sha"}
+                and inputs.get("client_async_measurement") == "true",
+                "dispatch_inputs_not_approved")
+        try:
+            typed_inputs = json.loads(context.get("NATIVE_DISPATCH_INPUTS", ""), object_pairs_hook=unique_object)
+        except (ValueError, TypeError, RecursionError):
+            raise PolicyError("dispatch_inputs_not_approved") from None
+        require(type(typed_inputs) is dict and set(typed_inputs) == set(inputs)
+                and typed_inputs.get("client_async_measurement") is True
+                and typed_inputs.get("reviewed_sha") == inputs.get("reviewed_sha"),
+                "dispatch_inputs_not_approved")
+        require(is_sha(inputs.get("reviewed_sha")) and inputs["reviewed_sha"] == context["GITHUB_SHA"],
+                "dispatch_revision_mismatch")
+        ref = context.get("GITHUB_REF")
+        require(type(ref) is str and re.fullmatch(r"refs/heads/[A-Za-z0-9][A-Za-z0-9._/-]{0,239}", ref) is not None
+                and ".." not in ref and "//" not in ref and not ref.endswith(("/", "."))
+                and all(not part.startswith(".") and not part.endswith(".lock") for part in ref.split("/"))
+                and context.get("GITHUB_REF_TYPE") == "branch"
+                and context.get("GITHUB_BASE_REF") == "" and context.get("GITHUB_HEAD_REF") == ""
+                and event.get("ref") in (ref, ref.removeprefix("refs/heads/")),
+                "dispatch_ref_not_approved")
+        require(context.get("GITHUB_WORKFLOW_REF") == f"{REPOSITORY}/.github/workflows/native-1c-isolated-smoke.yml@{ref}"
+                and context.get("GITHUB_WORKFLOW_SHA") == context["GITHUB_SHA"],
+                "dispatch_workflow_revision_mismatch")
+        return "workflow_dispatch"
     raise PolicyError("event_not_approved")
 
 

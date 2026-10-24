@@ -27,16 +27,32 @@ class _Branch:
     matched: bool
     active: bool
     saw_else: bool = False
+    logical: bool = False
 
 
 class ConditionalCompilation:
-    def __init__(self, source: str):
+    def __init__(self, source: str, execution_context: str = "client"):
+        if execution_context not in {"client", "server", "server_nocontext",
+                                     "dual_client", "dual_server"}:
+            raise ValueError("Unknown execution context")
         self.source = source
+        self.symbols = {name: value == (execution_context in {"client", "dual_client"})
+                        for name, value in SYMBOLS.items()}
+        if execution_context in {"server_nocontext", "dual_client", "dual_server"}:
+            # NoContext profiles are not preprocessor symbols. Each retains its
+            # standalone target flags; only the logical context flags differ.
+            for name in ("наклиенте", "atclient", "насервере", "atserver"):
+                self.symbols[name] = False
         self.stack: list[_Branch] = []
 
     @property
     def active(self) -> bool:
         return not self.stack or self.stack[-1].active
+
+    @property
+    def logical_guard(self) -> bool:
+        """An enclosing branch was selected with AtClient/AtServer symbols."""
+        return any(branch.logical for branch in self.stack)
 
     def process(self, directive: str, line: int, column: int) -> str | None:
         """Consume a conditional directive and return its kind, or None."""
@@ -50,12 +66,14 @@ class ConditionalCompilation:
             raise BSLError(message, self.source, line, column)
 
         if kind in ("if", "elsif"):
-            condition = _Condition(rest, fail).parse()
+            expression = _Condition(rest, fail, self.symbols)
+            condition = expression.parse()
+            logical = expression.logical
         elif rest:
             fail("После #Иначе / #КонецЕсли не должно быть выражения")
         if kind == "if":
             parent = self.active
-            self.stack.append(_Branch(parent, condition, parent and condition))
+            self.stack.append(_Branch(parent, condition, parent and condition, logical=logical))
             return kind
         if not self.stack:
             fail("Директива препроцессора не имеет соответствующей #Если")
@@ -69,6 +87,7 @@ class ConditionalCompilation:
             branch.matched = True
             branch.saw_else = True
         else:
+            branch.logical = branch.logical or logical
             branch.active = branch.parent_active and not branch.matched and condition
             branch.matched = branch.matched or condition
         return kind
@@ -139,10 +158,12 @@ class SourceRegions:
 
 
 class _Condition:
-    def __init__(self, text, fail):
+    def __init__(self, text, fail, symbols=SYMBOLS):
+        self.symbols = symbols
         self.fail = fail
         self.tokens = re.findall(r"[^\W\d]\w*|\S", text)
         self.pos = 0
+        self.logical = False
 
     def accept(self, kind: str) -> bool:
         if self.pos < len(self.tokens):
@@ -191,4 +212,6 @@ class _Condition:
         self.pos += 1
         if name.casefold() not in SYMBOLS:
             self.fail(f"Неподдерживаемый символ препроцессора: {name}")
-        return SYMBOLS[name.casefold()]
+        if name.casefold() in {"наклиенте", "atclient", "насервере", "atserver"}:
+            self.logical = True
+        return self.symbols[name.casefold()]

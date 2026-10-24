@@ -3,6 +3,35 @@
 
 #Область ВспомогательныеПроцедуры
 
+// Begin FillPropertyValues EXCLUDE source-order discriminator helpers.
+// Source-only Missing: vary insertion position, not the EXCLUDE list or target.
+// Insertion order is controlled here; native iteration behavior is measured.
+Процедура ПроверитьПозициюИсключения(Знач Позиция)
+    Перем Приемник, Источник, Статус, ЗначениеMissing, ЕстьMissing;
+    Приемник = Новый Структура("First,Last,Copy", 1, 2, 3);
+    Если Позиция = "first" Тогда
+        Источник = Новый Структура("Missing,First,Last,Copy", 40, 10, 20, 30);
+    Иначе
+        Источник = Новый Структура("First,Missing,Last,Copy", 10, 40, 20, 30);
+    КонецЕсли;
+    Статус = "ok";
+    Попытка
+        FillPropertyValues(Приемник, Источник, Неопределено, "Missing");
+    Исключение
+        Статус = "error";
+    КонецПопытки;
+    ЗначениеMissing = Неопределено;
+    ЕстьMissing = Приемник.Свойство("Missing", ЗначениеMissing);
+    Показать("fill.exclude-source-order.source-only." + Позиция, Статус
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.First)
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.Last)
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.Copy)
+        + ";" + ЗначениеВСтрокуВнутр(Приемник.Количество())
+        + ";" + ЗначениеВСтрокуВнутр(ЕстьMissing)
+        + ";" + ЗначениеВСтрокуВнутр(ЗначениеMissing));
+КонецПроцедуры
+// End FillPropertyValues EXCLUDE source-order discriminator helpers.
+
 // Begin FillPropertyValues EXCLUDE checkpoint helpers.
 // Mutable only; fixed insertion order, not an assumed native iteration order.
 Процедура ПроверитьСписокИсключения(Знач Метка, Знач Наличие, Знач Список)
@@ -3859,3 +3888,7 @@
 ПроверитьСписокИсключения("control.first", "neither", "First");
 ПроверитьСписокИсключения("control.first-last", "neither", "First,Last");
 // End FillPropertyValues EXCLUDE checkpoint observations.
+// Begin FillPropertyValues EXCLUDE source-order discriminator observations.
+ПроверитьПозициюИсключения("first");
+ПроверитьПозициюИсключения("between");
+// End FillPropertyValues EXCLUDE source-order discriminator observations.

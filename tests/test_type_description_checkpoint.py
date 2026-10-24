@@ -312,7 +312,7 @@ class StrictNativeGateTests(unittest.TestCase):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
         # Reviewed migration preserves every captured output byte and binds the
         # complete historical source; live Docker compares all current cases.
-        self.assertEqual(hashlib.sha256(actual).hexdigest(), '16181f66d337f4f6821c35601b54ec5d91c056b49005078d6687073956d5d86e')
+        self.assertEqual(hashlib.sha256(actual).hexdigest(), '459be92e9484d1673a71ddb86fef7662c8eccae2d500383bdfca0fbdae433b62')
 
     def test_frozen_full_native_comparator_has_reviewed_historical_replay(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')
@@ -320,7 +320,7 @@ class StrictNativeGateTests(unittest.TestCase):
                  + text.split('def check_saved_native_outputs(', 1)[1]
                  .split('def check_timezone_configuration(', 1)[0])
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
-                         "1d11846b03b509e80405406cf026f8d3bfbbc0c2a1575330337fba1af20efb69")
+                         "d51c3ac7e2c354661626063cf927b7f80f15388ce87aefd3cf8d775a9013816c")
 
     def test_frozen_full_modes_and_bounded_command_aliases(self):
         expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
