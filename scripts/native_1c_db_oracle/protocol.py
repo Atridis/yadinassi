@@ -9,7 +9,8 @@ import json
 import re
 from pathlib import Path
 
-from snapshots import MAX_FILE_BYTES, OracleError, validate_comparison, validate_pair
+from snapshots import (ENTRY_CLASSES, ENTRY_SHAPES, MAX_FILE_BYTES, OracleError,
+    validate_comparison, validate_pair)
 
 SCHEMA = 1
 LANE = 'native-file-db-oracle-v1'
@@ -67,7 +68,13 @@ INVENTORY_REASONS = ('unexpected_socket', 'symlink', 'hardlink', 'special',
                      'race', 'access', 'otherio', 'link_count')
 BOOTSTRAP_INVENTORY_FAILURES = frozenset('seed_bootstrap_inventory_' + phase + '_' + region + '_' + reason
     for phase in INVENTORY_PHASES for region in INVENTORY_REGIONS for reason in INVENTORY_REASONS)
-FAILURES = FAILURES | SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES
+BASELINE_OPERATIONS = ('freeze', 'observe', 'audit')
+BASELINE_INPUT_FAILURES = frozenset('baseline_' + operation + '_invalid_input'
+    for operation in BASELINE_OPERATIONS)
+BASELINE_ENTRY_FAILURES = frozenset('baseline_' + operation + '_entry_' + entry + '_' + shape
+    for operation in BASELINE_OPERATIONS for entry in ENTRY_CLASSES for shape in ENTRY_SHAPES)
+BASELINE_FAILURES = BASELINE_INPUT_FAILURES | BASELINE_ENTRY_FAILURES
+FAILURES = FAILURES | SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES | BASELINE_FAILURES
 LOGICAL_KEYS = {'count','code','payload','amount','deletion_mark','same_reference',
     'payload_length','amount_digits','amount_scale','designer_version','applied_version',
     'user','role_verified','nonprivileged'}
@@ -206,6 +213,8 @@ def validate_report(raw, *, nonce, provenance, final=False):
             and report['failure_kind'] in FAILURES)
     if report['failure_kind'] in SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES:
         require(report['status']=='failed' and report['failed_stage']=='seed_v1')
+    if report['failure_kind'] in BASELINE_FAILURES:
+        require(report['status']=='failed' and report['failed_stage']=='baseline')
     require(type(report['accepted']) is bool)
     require(type(report['stages']) is list and len(report['stages']) == len(STAGES))
     failed = []
@@ -236,6 +245,8 @@ def validate_report(raw, *, nonce, provenance, final=False):
         physical(item['physical']); validate_logical(item['logical'],item['id'])
         require(item['quiescent'] is True and item['copy_verified'] is True)
     require(ids == list(SNAPSHOTS[:len(ids)]))
+    if report['failure_kind'] in BASELINE_FAILURES:
+        require(ids == (['baseline'] if report['failure_kind'].startswith('baseline_audit_') else []))
     stage_states={entry['id']:entry['status'] for entry in report['stages']}
     for identifier in ids:
         require(stage_states[SNAPSHOT_STAGE[identifier]] in ('ok','failed'))

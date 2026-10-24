@@ -23,11 +23,13 @@ import time
 
 sys.dont_write_bytecode = True
 from protocol import (ARTIFACTS, CHECKS, COMPARISONS, FAILURES, IMAGE, LANE, MAX_REPORT_BYTES,
-    BOOTSTRAP_INVENTORY_FAILURES, INVENTORY_PHASES, INVENTORY_REGIONS, INVENTORY_REASONS,
+    BASELINE_FAILURES, BASELINE_OPERATIONS, BOOTSTRAP_INVENTORY_FAILURES,
+    INVENTORY_PHASES, INVENTORY_REGIONS, INVENTORY_REASONS,
     SEED_FAILURE_CATEGORIES, SEED_FAILURES, SEED_OPERATIONS, STAGES, VERSION,
     decode, empty_report, encode, expected_logical, logical_from_marker,
     marker, require, validate_logical, validate_report)
-from snapshots import (OracleError, MAX_FILE_BYTES, MAX_LIVE_BYTES, budget_check, clone_database,
+from snapshots import (DatabaseEntryError, ENTRY_CLASSES, ENTRY_SHAPES, OracleError,
+    MAX_FILE_BYTES, MAX_LIVE_BYTES, budget_check, clone_database,
     compare_files, compare_pair, file_summary, freeze_database)
 from inject_metadata import CRUD_USER, SETUP_USER, inject, promote_v2, verify_redump
 
@@ -64,6 +66,17 @@ class BootstrapInventoryError(SandboxInventoryError):
         require(type(phase) is str and phase in INVENTORY_PHASES, 'invalid_input')
         super().__init__(region,reason)
         self.phase=phase
+
+
+class BaselineInputError(OracleError):
+    """Lexically scoped fixed operation and optional rejected root-entry shape."""
+    def __init__(self, operation, entry_class=None, shape=None):
+        require(type(operation) is str and operation in BASELINE_OPERATIONS, 'invalid_input')
+        require((entry_class is None and shape is None) or
+                (type(entry_class) is str and entry_class in ENTRY_CLASSES
+                 and type(shape) is str and shape in ENTRY_SHAPES), 'invalid_input')
+        super().__init__('invalid_input')
+        self.operation=operation; self.entry_class=entry_class; self.shape=shape
 
 
 def inventory_region(relative):
@@ -597,9 +610,25 @@ class Controller:
         entry=self.report['stages'][STAGES.index(stage)]
         entry['status']='ok'; entry['checks']={key:True for key in CHECKS[stage]}
 
+    def baseline_step(self,operation,callback,*args):
+        # No mutable pending operation: only this call can receive a baseline label.
+        if self.stage!='baseline': return callback(*args)
+        require(type(operation) is str and operation in BASELINE_OPERATIONS, 'invalid_input')
+        try:
+            return callback(*args)
+        except (SeedCommandError,BootstrapInventoryError,BaselineInputError):
+            # A pre-wrapped or stale diagnostic is not a fresh baseline input error.
+            raise
+        except DatabaseEntryError as error:
+            raise BaselineInputError(operation,error.entry_class,error.shape) from None
+        except OracleError as error:
+            if error.kind=='invalid_input': raise BaselineInputError(operation) from None
+            raise
+
     def snapshot(self,database,identifier):
-        summary=self.backend.freeze(database,identifier)
-        logical=self.backend.observe(identifier,expected_logical(identifier)['designer_version'])
+        summary=self.baseline_step('freeze',self.backend.freeze,database,identifier)
+        logical=self.baseline_step('observe',self.backend.observe,identifier,
+                                   expected_logical(identifier)['designer_version'])
         validate_logical(logical,identifier)
         self.report['snapshots'].append({'id':identifier,'physical':summary,'logical':logical,
             'quiescent':True,'copy_verified':True})
@@ -627,7 +656,7 @@ class Controller:
                 if stage=='preflight': self.backend.preflight()
                 elif stage=='seed_v1': database=self.backend.seed()
                 elif stage=='baseline':
-                    self.snapshot(database,'baseline'); self.backend.audit('baseline')
+                    self.snapshot(database,'baseline'); self.baseline_step('audit',self.backend.audit,'baseline')
                 elif stage in ('create','update','load_cf','delete'):
                     self.paired(stage,{'create':'create','update':'update','delete':'delete'}.get(stage,stage))
                     if stage=='update': self.backend.discard('created')
@@ -653,11 +682,15 @@ class Controller:
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
-            if isinstance(error,BootstrapInventoryError):
+            if isinstance(error,BaselineInputError):
+                kind=('baseline_' + error.operation + ('_invalid_input' if error.entry_class is None else
+                    '_entry_' + error.entry_class + '_' + error.shape)) if self.stage=='baseline' else 'unexpected_failure'
+            elif isinstance(error,BootstrapInventoryError):
                 kind=('seed_bootstrap_inventory_' + error.phase + '_' + error.region + '_' + error.reason) if self.stage=='seed_v1' else 'unexpected_failure'
             elif isinstance(error,SeedCommandError):
                 kind=('seed_' + error.operation + '_' + kind) if self.stage=='seed_v1' else 'unexpected_failure'
             if kind in SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES and self.stage!='seed_v1': kind='unexpected_failure'
+            if kind in BASELINE_FAILURES and self.stage!='baseline': kind='unexpected_failure'
             self.report.update(status='failed',failed_stage=self.stage,failure_kind=kind)
             self.report['stages'][STAGES.index(self.stage)]['status']='failed'
         finally:

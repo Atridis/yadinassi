@@ -28,6 +28,23 @@ DATABASE_NAME = "1Cv8.1CD"
 # Official event-log location, not permission to parse or export its contents:
 # https://kb.1ci.com/1C_Enterprise_Platform/FAQ/Administration/DBMS/Data_structure_in_1C_Enterprise_8/?language=en
 ANCILLARY_NAME = "1Cv8Log"
+# Exact, case-sensitive source-only metadata exceptions. These files are never
+# read, copied, or exported, and their presence is not proof of quiescence.
+_CFL_CLASSES = {
+    "1Cv8.1CD.cfl": "cfl_database",
+    "1Cv8tmp.1CD.cfl": "cfl_temp_database",
+    "1Cv8.1CL.cfl": "cfl_lock",
+    "1Cv8tmp.1CL.cfl": "cfl_temp_lock",
+}
+ENTRY_CLASSES = (
+    "database", "cfl_database", "cfl_temp_database", "cfl_lock", "cfl_temp_lock",
+    "session_history", "event_log", "other",
+)
+ENTRY_SHAPES = (
+    "owned_regular_zero", "owned_regular_nonzero", "unowned_regular_zero",
+    "unowned_regular_nonzero", "symlink", "hardlink", "link_count", "directory",
+    "special", "invalid_size",
+)
 MAX_ANCILLARY_BYTES = 16 * 1024 * 1024
 MAX_ANCILLARY_FILES = 64
 MAX_ANCILLARY_ENTRIES = 128  # Also bound empty directories and inventory memory.
@@ -54,6 +71,48 @@ class OracleError(Exception):
         super().__init__(kind)
 
 
+class DatabaseEntryError(OracleError):
+    """A rejected root entry described only by two bounded, fixed enums."""
+
+    def __init__(self, entry_class: str, shape: str):
+        if type(entry_class) is not str or entry_class not in ENTRY_CLASSES:
+            raise ValueError("invalid entry class")
+        if type(shape) is not str or shape not in ENTRY_SHAPES:
+            raise ValueError("invalid entry shape")
+        self.entry_class = entry_class
+        self.shape = shape
+        super().__init__("invalid_input")
+
+
+def _entry_class(name: str) -> str:
+    if name == DATABASE_NAME:
+        return "database"
+    if name in _CFL_CLASSES:
+        return _CFL_CLASSES[name]
+    if name == "1Cv8snc.1CD":
+        return "session_history"
+    if name == ANCILLARY_NAME:
+        return "event_log"
+    return "other"
+
+
+def _entry_shape(info: os.stat_result) -> str:
+    if stat.S_ISLNK(info.st_mode):
+        return "symlink"
+    if stat.S_ISDIR(info.st_mode):
+        return "directory"
+    if not stat.S_ISREG(info.st_mode):
+        return "special"
+    if info.st_nlink > 1:
+        return "hardlink"
+    if info.st_nlink != 1:
+        return "link_count"
+    if info.st_size < 0:
+        return "invalid_size"
+    owner = "owned" if (info.st_uid, info.st_gid) == (1000, 1000) else "unowned"
+    return owner + ("_regular_zero" if info.st_size == 0 else "_regular_nonzero")
+
+
 def _path(value: Path) -> Path:
     try:
         path = Path(value)
@@ -75,8 +134,10 @@ def _signature(info: os.stat_result) -> tuple:
             info.st_mtime_ns, info.st_ctime_ns)
 
 
-def _regular(info: os.stat_result) -> None:
+def _regular(info: os.stat_result, *, entry_class: str | None = None) -> None:
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        if entry_class is not None:
+            raise DatabaseEntryError(entry_class, _entry_shape(info))
         raise OracleError("invalid_input")
     if info.st_size < 0 or info.st_size > MAX_FILE_BYTES:
         raise OracleError("artifact_limit")
@@ -240,13 +301,39 @@ def budget_check(root: Path, additional: int = 0) -> int:
 def _database_contents(descriptor: int, *, allow_ancillary: bool = True) -> dict:
     """Private stable inventory; ancillary names, digests and bytes never escape.
 
-    Only the documented optional event-log directory is tolerated. It is never
-    copied into a snapshot or clone. Presence/absence is not quiescence evidence.
+    Only the optional event-log directory and four exact empty, single-link CFL
+    files owned by uid/gid 1000 are tolerated in a live source. CFL content is
+    never read; no ancillary entry is copied into a snapshot or clone.
+    Presence/absence is not quiescence evidence.
     These stricter limits do not increase the raw-file or cumulative-live caps.
     """
     root_before = os.fstat(descriptor)
     inventory = {(): (_signature(root_before), None)}
     files = entries_count = total = 0
+
+    def cfl(name: str, initial: os.stat_result) -> None:
+        shape = _entry_shape(initial)
+        if shape != "owned_regular_zero":
+            raise DatabaseEntryError(_entry_class(name), shape)
+
+        def signature(info: os.stat_result) -> tuple:
+            # Ownership is deliberately checked in addition to the full file
+            # signature, not inferred from ctime or the running user's uid.
+            return _signature(info) + (info.st_uid, info.st_gid)
+
+        expected = signature(initial)
+        child = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                        dir_fd=descriptor)
+        try:
+            if signature(os.fstat(child)) != expected:
+                raise OracleError("snapshot_changed")
+            current = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if (signature(current) != expected or
+                    signature(os.fstat(child)) != expected):
+                raise OracleError("snapshot_changed")
+            inventory[(name,)] = (expected, None)
+        finally:
+            os.close(child)
 
     def walk(parent: int, name: str, relative: tuple, initial: os.stat_result,
              depth: int) -> None:
@@ -300,12 +387,16 @@ def _database_contents(descriptor: int, *, allow_ancillary: bool = True) -> dict
         for entry in entries:
             info = entry.stat(follow_symlinks=False)
             if entry.name == DATABASE_NAME:
-                _regular(info)
+                _regular(info, entry_class="database")
                 database_seen = True
             elif entry.name == ANCILLARY_NAME and allow_ancillary:
+                if not stat.S_ISDIR(info.st_mode):
+                    raise DatabaseEntryError("event_log", _entry_shape(info))
                 walk(descriptor, entry.name, (entry.name,), info, 0)
+            elif entry.name in _CFL_CLASSES and allow_ancillary:
+                cfl(entry.name, info)
             else:
-                raise OracleError("invalid_input")
+                raise DatabaseEntryError(_entry_class(entry.name), _entry_shape(info))
     if not database_seen:
         raise OracleError("invalid_input")
     if _signature(os.fstat(descriptor)) != _signature(root_before):

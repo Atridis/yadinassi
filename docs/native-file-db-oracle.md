@@ -198,6 +198,38 @@ proved only a polling rejection of an unexpected HOME socket, not its name,
 purpose, ownership or lifecycle. This policy checks ownership structurally;
 it is not a claim that native bootstrap or the full oracle now succeeds.
 
+Native-source freeze inventory also permits only the four exact documented
+`1Cv8.1CD.cfl`, `1Cv8tmp.1CD.cfl`, `1Cv8.1CL.cfl`, and `1Cv8tmp.1CL.cfl`
+siblings. The [official release notes](https://dl05.1c.ru/content/Platform/8_3_4_365/1cv8upd.htm)
+and [CFL glossary](https://its.1c.ru/db/content/v8devgloss/src/term_000000179.htm)
+describe zero-size lock-coordination files that may persist after clients exit.
+This lane requires regular zero-byte files, one link, UID and GID 1000, no-follow
+opens and stable descriptor/anchored-entry identity, metadata and ownership at
+repeated pre/post-copy inventories. It never reads their content, copies them to
+snapshots/clones, or exports them. Exact membership bounds their count at four;
+there is no wildcard, size allowance, or new filesystem permission. Frozen
+sources remain strictly 1CD-only. Session history `1Cv8snc.1CD` and all other
+unknown siblings remain rejected. Existing event-log limits are unchanged.
+CFL presence or absence is not evidence of quiescence; independent process
+census and stable database copying remain mandatory.
+
+Baseline `invalid_input` failures have fixed `freeze`, `observe`, or `audit`
+operation labels. Rejected root database entries additionally report only a
+fixed class (database, one of the four CFL classes, session history, event log,
+or other) and shape (owned/unowned zero/nonzero regular, symlink, hardlink,
+non-single link count, directory, special, or invalid size). No actual names,
+paths, numeric owners, file sizes, content or exception text are emitted.
+The exact finite vocabulary is in `protocol.py`; labels are scoped to a single
+baseline call, never retained across stages, and accepted only for failed
+baseline reports. Freeze/observe failures must have no completed snapshot;
+audit failures require the completed baseline snapshot. Other error categories,
+report keys, success schema, caps and independent cleanup remain unchanged.
+Run [40093649254](https://github.com/Atridis/yadinassi/actions/runs/40093649254)
+verified bootstrap, two users, metadata reimport and platform `8.3.27.1508`, then
+failed with baseline `invalid_input`. Its output did not identify the rejected
+entry or distinguish freeze from observation. Synthetic fixtures prove the old
+policy rejects documented CFL files, not that CFL caused that native failure.
+
 The absent logical fields in the fixed BSL markers use `Неопределено`, which
 [automatic JSON serialization](https://v8.1c.ru/platforma/json/) maps to JSON
 `null`; automatic reading maps that representation back to `Неопределено`.

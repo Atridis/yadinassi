@@ -283,4 +283,86 @@ class ProtocolTests(unittest.TestCase):
         self.rejected(lambda r:r['artifacts'].append({'id':'1Cv8.1CD'}))
 
 
+
+
+class BaselineProtocolTests(unittest.TestCase):
+    OPERATIONS=('freeze','observe','audit')
+    ENTRIES=('database','cfl_database','cfl_temp_database','cfl_lock','cfl_temp_lock',
+             'session_history','event_log','other')
+    SHAPES=('owned_regular_zero','owned_regular_nonzero','unowned_regular_zero',
+            'unowned_regular_nonzero','symlink','hardlink','link_count','directory',
+            'special','invalid_size')
+
+    def report(self,operation):
+        value,_=fixture_report('baseline')
+        if operation=='audit': value['snapshots']=copy.deepcopy(fixture_report()[0]['snapshots'][:1])
+        return value
+
+    def check(self,value):
+        return protocol.validate_report(protocol.encode(value),nonce=NONCE,provenance=provenance())
+
+    def test_exact_baseline_vocabulary_and_every_combination_roundtrips(self):
+        generic=frozenset('baseline_'+op+'_invalid_input' for op in self.OPERATIONS)
+        entries=frozenset('baseline_'+op+'_entry_'+entry+'_'+shape
+            for op in self.OPERATIONS for entry in self.ENTRIES for shape in self.SHAPES)
+        self.assertEqual(protocol.BASELINE_OPERATIONS,self.OPERATIONS)
+        self.assertEqual(protocol.ENTRY_CLASSES,self.ENTRIES)
+        self.assertEqual(protocol.ENTRY_SHAPES,self.SHAPES)
+        self.assertEqual(protocol.BASELINE_INPUT_FAILURES,generic)
+        self.assertEqual(protocol.BASELINE_ENTRY_FAILURES,entries)
+        self.assertEqual(protocol.BASELINE_FAILURES,generic|entries)
+        self.assertEqual(len(protocol.BASELINE_FAILURES),243)
+        self.assertEqual({kind for kind in protocol.FAILURES if kind.startswith('baseline_')},generic|entries)
+        for operation in self.OPERATIONS:
+            value=self.report(operation)
+            for kind in generic|entries:
+                if kind.startswith('baseline_'+operation+'_'):
+                    with self.subTest(kind=kind):
+                        value['failure_kind']=kind
+                        checked=self.check(value)
+                        self.assertFalse(checked['accepted'])
+                        self.assertLess(len(protocol.encode(value)),protocol.MAX_REPORT_BYTES)
+
+    def test_baseline_diagnostics_reject_unknown_axes_scalars_and_extra_keys(self):
+        for kind in (True,False,None,1,[],{},PRIVATE,'baseline_unknown_invalid_input',
+                     'baseline_freeze_process_failed','baseline_freeze_entry_unknown_special',
+                     'baseline_freeze_entry_other_unknown','baseline_freeze_entry_other_True',
+                     'baseline_freeze_entry_other_special_'+PRIVATE,
+                     'baseline_freeze_entry_/private/path_special'):
+            value=self.report('freeze'); value['failure_kind']=kind
+            with self.subTest(kind=kind),self.assertRaises(OracleError):self.check(value)
+        for key in ('path','entry_name','owner','size','native_log','operation'):
+            value=self.report('freeze');value['failure_kind']='baseline_freeze_invalid_input';value[key]=PRIVATE
+            with self.subTest(key=key),self.assertRaises(OracleError):self.check(value)
+
+    def test_baseline_diagnostics_reject_success_and_every_other_stage(self):
+        for operation in self.OPERATIONS:
+            kinds=('baseline_'+operation+'_invalid_input',
+                   'baseline_'+operation+'_entry_other_owned_regular_zero')
+            for kind in kinds:
+                value,_=fixture_report();value['failure_kind']=kind
+                with self.assertRaises(OracleError):self.check(value)
+                for failed in protocol.STAGES:
+                    if failed=='baseline':continue
+                    value,_=fixture_report(failed if failed!='cleanup' else None)
+                    if failed=='cleanup':
+                        value.update(status='failed',failed_stage='cleanup',artifacts=[])
+                        value['cleanup']['raw_files_removed']=False
+                        value['stages'][-1].update(status='failed',checks={'native_processes_stopped':True,'raw_files_removed':False})
+                    value['failure_kind']=kind
+                    with self.subTest(operation=operation,stage=failed),self.assertRaises(OracleError):self.check(value)
+
+    def test_baseline_operation_requires_exact_snapshot_prefix(self):
+        for operation in self.OPERATIONS:
+            value=self.report(operation);value['failure_kind']='baseline_'+operation+'_invalid_input'
+            value['snapshots']=[] if operation=='audit' else copy.deepcopy(fixture_report()[0]['snapshots'][:1])
+            with self.subTest(operation=operation),self.assertRaises(OracleError):self.check(value)
+
+    def test_baseline_label_cannot_be_only_a_cleanup_failure(self):
+        value,_=fixture_report()
+        value.update(status='failed',failed_stage='baseline',failure_kind='baseline_audit_invalid_input',artifacts=[])
+        value['stages'][-1].update(status='failed',checks={'native_processes_stopped':False,'raw_files_removed':True})
+        value['cleanup']['native_processes_stopped']=False
+        with self.assertRaises(OracleError):self.check(value)
+
 if __name__=='__main__': unittest.main()

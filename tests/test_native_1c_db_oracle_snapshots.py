@@ -1,11 +1,13 @@
 """Offline synthetic-byte tests. No native platform execution or format proof."""
 import copy
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import os
 from pathlib import Path
 import stat
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -20,6 +22,360 @@ POSIX_FILE_API = (
     and {os.open, os.stat, os.mkdir}.issubset(os.supports_dir_fd)
     and os.scandir in os.supports_fd
 )
+
+
+def stat_fields(info, **changes):
+    fields = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+    fields.update(changes)
+    return SimpleNamespace(**fields)
+
+
+class DatabaseEntryValidationTests(unittest.TestCase):
+    def info(self, **changes):
+        fields = dict(st_mode=stat.S_IFREG | 0o600, st_nlink=1, st_size=0,
+                      st_uid=1000, st_gid=1000)
+        fields.update(changes)
+        return SimpleNamespace(**fields)
+
+    def test_entry_enums_are_fixed_and_complete(self):
+        self.assertEqual(snapshots.ENTRY_CLASSES, (
+            "database", "cfl_database", "cfl_temp_database", "cfl_lock", "cfl_temp_lock",
+            "session_history", "event_log", "other"))
+        self.assertEqual(snapshots.ENTRY_SHAPES, (
+            "owned_regular_zero", "owned_regular_nonzero", "unowned_regular_zero",
+            "unowned_regular_nonzero", "symlink", "hardlink", "link_count", "directory",
+            "special", "invalid_size"))
+
+    def test_typed_error_retains_only_bounded_fields(self):
+        for entry_class in snapshots.ENTRY_CLASSES:
+            for shape in snapshots.ENTRY_SHAPES:
+                error = snapshots.DatabaseEntryError(entry_class, shape)
+                self.assertIsInstance(error, snapshots.OracleError)
+                self.assertEqual(vars(error), {"kind": "invalid_input",
+                                              "entry_class": entry_class, "shape": shape})
+                self.assertEqual(error.args, ("invalid_input",))
+                self.assertEqual(str(error), "invalid_input")
+
+    def test_typed_error_rejects_unknown_text_and_nonexact_strings(self):
+        class StringSubclass(str):
+            pass
+        for value in (True, False, None, 1, [], {}, "PRIVATE PATH",
+                      StringSubclass("database")):
+            with self.subTest(field="entry_class", value=value):
+                with self.assertRaisesRegex(ValueError, "^invalid entry class$"):
+                    snapshots.DatabaseEntryError(value, "owned_regular_zero")
+        for value in (True, False, None, 1, [], {}, "PRIVATE CONTENT",
+                      StringSubclass("owned_regular_zero")):
+            with self.subTest(field="shape", value=value):
+                with self.assertRaisesRegex(ValueError, "^invalid entry shape$"):
+                    snapshots.DatabaseEntryError("database", value)
+
+    def test_shape_classifier_is_finite_and_links_precede_ownership(self):
+        cases = (
+            ({}, "owned_regular_zero"),
+            ({"st_size": 1}, "owned_regular_nonzero"),
+            ({"st_uid": 0}, "unowned_regular_zero"),
+            ({"st_gid": 0, "st_size": 1}, "unowned_regular_nonzero"),
+            ({"st_mode": stat.S_IFLNK, "st_nlink": 2}, "symlink"),
+            ({"st_nlink": 2, "st_uid": 0}, "hardlink"),
+            ({"st_nlink": 0, "st_gid": 0}, "link_count"),
+            ({"st_nlink": -1}, "link_count"),
+            ({"st_mode": stat.S_IFDIR, "st_nlink": 2}, "directory"),
+            ({"st_mode": stat.S_IFIFO}, "special"),
+            ({"st_mode": stat.S_IFSOCK}, "special"),
+            ({"st_size": -1, "st_uid": 0}, "invalid_size"),
+        )
+        for changes, expected in cases:
+            with self.subTest(changes=changes):
+                self.assertEqual(snapshots._entry_shape(self.info(**changes)), expected)
+
+    def test_name_classifier_is_exact_not_a_suffix_rule(self):
+        cases = {
+            "1Cv8.1CD": "database", "1Cv8.1CD.cfl": "cfl_database",
+            "1Cv8tmp.1CD.cfl": "cfl_temp_database", "1Cv8.1CL.cfl": "cfl_lock",
+            "1Cv8tmp.1CL.cfl": "cfl_temp_lock", "1Cv8snc.1CD": "session_history",
+            "1Cv8Log": "event_log", "1cv8.1cd.cfl": "other",
+            "1Cv8.1CD.CFL": "other", "1Cv8snc.1CD.cfl": "other",
+            "secret-name.cfl": "other", "1Cv8.1CD.cfl.extra": "other",
+        }
+        for name, expected in cases.items():
+            self.assertEqual(snapshots._entry_class(name), expected)
+
+
+@unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
+class CflInventoryTests(unittest.TestCase):
+    NAMES = ("1Cv8.1CD.cfl", "1Cv8tmp.1CD.cfl", "1Cv8.1CL.cfl", "1Cv8tmp.1CL.cfl")
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.source = self.root / "live"
+        self.source.mkdir()
+        self.db = self.source / "1Cv8.1CD"
+        self.data = b"synthetic bytes only" * 5000
+        self.db.write_bytes(self.data)
+        self.frozen = self.root / "frozen"
+
+        # Model the fixed Linux fixture owner on any supported POSIX CI host.
+        # Never chown files, derive policy from the host uid, or change its caps.
+        real_stat, real_fstat, real_scandir = os.stat, os.fstat, os.scandir
+        def owned(info):
+            return stat_fields(info, st_uid=1000, st_gid=1000)
+        class Entry:
+            def __init__(self, entry):
+                self.entry = entry
+            def __getattr__(self, name):
+                return getattr(self.entry, name)
+            def stat(self, **kwargs):
+                return owned(self.entry.stat(**kwargs))
+        @contextmanager
+        def scandir(path):
+            with real_scandir(path) as entries:
+                yield (Entry(entry) for entry in entries)
+        for name, replacement in (
+                ("stat", lambda *a, **kw: owned(real_stat(*a, **kw))),
+                ("fstat", lambda *a, **kw: owned(real_fstat(*a, **kw))),
+                ("scandir", scandir)):
+            patch = mock.patch.object(snapshots.os, name, side_effect=replacement)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def cleanup(self):
+        for current, directories, _ in os.walk(self.root):
+            os.chmod(current, 0o700)
+            for directory in directories:
+                path = Path(current) / directory
+                if not path.is_symlink():
+                    os.chmod(path, 0o700)
+        self.temp.cleanup()
+
+    def cfl(self, name=None):
+        path = self.source / (name or self.NAMES[0])
+        path.touch()
+        return path
+
+    def freeze(self, **kwargs):
+        return snapshots.freeze_database(self.source, self.frozen,
+                                         quiescent=kwargs.get("quiescent", lambda: True))
+
+    def assert_kind(self, kind, action):
+        with self.assertRaises(snapshots.OracleError) as failure:
+            action()
+        self.assertEqual(failure.exception.kind, kind)
+        self.assertEqual(str(failure.exception), kind)
+        return failure.exception
+
+    def assert_entry(self, entry_class, shape, action=None):
+        error = self.assert_kind("invalid_input", action or self.freeze)
+        self.assertIsInstance(error, snapshots.DatabaseEntryError)
+        self.assertEqual((error.entry_class, error.shape), (entry_class, shape))
+        self.assertEqual(set(vars(error)), {"kind", "entry_class", "shape"})
+
+    def test_each_exact_cfl_name_is_accepted_without_reading_content(self):
+        real_read, real_open = snapshots.os.read, snapshots.os.open
+        opened = []
+        for index, name in enumerate(self.NAMES):
+            with self.subTest(name=name):
+                path = self.cfl(name)
+                inode = path.stat().st_ino
+                self.frozen = self.root / f"frozen-{index}"
+                def read(descriptor, size):
+                    self.assertNotEqual(os.fstat(descriptor).st_ino, inode)
+                    return real_read(descriptor, size)
+                def open_file(name, flags, *args, **kwargs):
+                    if name in self.NAMES:
+                        opened.append(flags)
+                        self.assertIsNotNone(kwargs.get("dir_fd"))
+                    return real_open(name, flags, *args, **kwargs)
+                with mock.patch.object(snapshots.os, "read", side_effect=read), \
+                        mock.patch.object(snapshots.os, "open", side_effect=open_file):
+                    result = self.freeze()
+                self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
+                self.assertEqual([p.name for p in self.frozen.iterdir()], ["1Cv8.1CD"])
+                self.assertEqual(path.stat().st_size, 0)
+                path.unlink()
+        self.assertGreaterEqual(len(opened), 12)  # Before copy and both rechecks.
+        for flags in opened:
+            self.assertEqual(flags & (os.O_NOFOLLOW | os.O_NONBLOCK),
+                             os.O_NOFOLLOW | os.O_NONBLOCK)
+            self.assertEqual(flags & os.O_ACCMODE, os.O_RDONLY)
+
+    def test_all_four_with_logs_stay_private_and_never_enter_frozen_or_clone(self):
+        paths = [self.cfl(name) for name in self.NAMES]
+        log = self.source / "1Cv8Log"
+        log.mkdir()
+        (log / "events.lgp").write_bytes(b"PRIVATE SYNTHETIC LOG")
+        before = [snapshots._signature(path.stat()) for path in paths]
+        result = self.freeze()
+        clone = self.root / "observer"
+        snapshots.clone_database(self.frozen, clone, budget_root=self.root)
+        self.assertEqual(before, [snapshots._signature(path.stat()) for path in paths])
+        for directory in (self.frozen, clone):
+            self.assertEqual([p.name for p in directory.iterdir()], ["1Cv8.1CD"])
+        self.assertEqual(set(result), {"bytes", "sha256", "header", "page_analysis"})
+        for private in (*self.NAMES, "1Cv8Log", "PRIVATE"):
+            self.assertNotIn(private, str(result))
+
+    def test_each_cfl_injected_into_frozen_source_is_rejected_for_clone(self):
+        self.freeze()
+        self.frozen.chmod(0o700)
+        for name in self.NAMES:
+            with self.subTest(name=name):
+                path = self.frozen / name
+                path.touch()
+                self.assert_entry(snapshots._entry_class(name), "owned_regular_zero",
+                                  lambda: snapshots.clone_database(
+                                      self.frozen, self.root / "observer", budget_root=self.root))
+                self.assertFalse((self.root / "observer").exists())
+                path.unlink()
+
+    def test_nonempty_cfl_is_rejected_without_reading_or_creating_destination(self):
+        path = self.cfl()
+        path.write_bytes(b"PRIVATE CONTENT")
+        with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("must not read")):
+            self.assert_entry("cfl_database", "owned_regular_nonzero")
+        self.assertFalse(self.frozen.exists())
+
+    def test_owner_group_and_invalid_metadata_are_rejected(self):
+        self.cfl()
+        real_scandir = snapshots.os.scandir
+        for changes, shape in (({"st_uid": 0}, "unowned_regular_zero"),
+                               ({"st_gid": 0}, "unowned_regular_zero"),
+                               ({"st_size": -1}, "invalid_size"),
+                               ({"st_nlink": 0}, "link_count"),
+                               ({"st_nlink": 2}, "hardlink")):
+            with self.subTest(changes=changes):
+                @contextmanager
+                def scandir(descriptor):
+                    with real_scandir(descriptor) as entries:
+                        entries = list(entries)
+                    for entry in entries:
+                        if entry.name == self.NAMES[0]:
+                            initial = entry.stat(follow_symlinks=False)
+                            entry.stat = lambda **kw: stat_fields(initial, **changes)
+                    yield iter(entries)
+                with mock.patch.object(snapshots.os, "scandir", side_effect=scandir):
+                    self.assert_entry("cfl_database", shape)
+                self.assertFalse(self.frozen.exists())
+
+    def test_symlink_hardlink_fifo_and_directory_are_rejected(self):
+        path = self.source / self.NAMES[0]
+        path.symlink_to("/dev/zero")
+        self.assert_entry("cfl_database", "symlink")
+        path.unlink()
+        outside = self.root / "outside-alias"
+        outside.touch()
+        os.link(outside, path)
+        self.assert_entry("cfl_database", "hardlink")
+        path.unlink()
+        os.mkfifo(path)
+        self.assert_entry("cfl_database", "special")
+        path.unlink()
+        path.mkdir()
+        self.assert_entry("cfl_database", "directory")
+        self.assertFalse(self.frozen.exists())
+
+    def test_case_suffix_unknown_and_session_history_remain_rejected(self):
+        for name in ("1cv8.1cd.cfl", "1Cv8.1CD.CFL", "1Cv8.1CD.cfl.extra",
+                     "unknown.cfl", "1Cv8snc.1CD.cfl", "1Cv8snc.1CD"):
+            with self.subTest(name=name):
+                path = self.cfl(name)
+                expected = "session_history" if name == "1Cv8snc.1CD" else "other"
+                self.assert_entry(expected, "owned_regular_zero")
+                path.unlink()
+
+    def test_existing_database_and_log_root_rejects_are_typed(self):
+        self.db.unlink()
+        self.db.symlink_to("/dev/zero")
+        self.assert_entry("database", "symlink")
+        self.db.unlink()
+        self.db.write_bytes(self.data)
+        log = self.source / "1Cv8Log"
+        log.write_bytes(b"private")
+        self.assert_entry("event_log", "owned_regular_nonzero")
+        log.unlink()
+        log.symlink_to(self.root, target_is_directory=True)
+        self.assert_entry("event_log", "symlink")
+
+    def test_empty_cfl_never_substitutes_for_before_or_after_quiescence(self):
+        self.cfl()
+        for index, results in enumerate(([False], [True, False])):
+            with self.subTest(results=results):
+                self.frozen = self.root / f"frozen-{index}"
+                quiet = mock.Mock(side_effect=results)
+                self.assert_kind("snapshot_not_quiescent", lambda: self.freeze(quiescent=quiet))
+                self.assertEqual(quiet.call_count, len(results))
+
+    def test_membership_change_in_either_direction_is_snapshot_changed(self):
+        path = self.cfl()
+        for index, mutate in enumerate((path.unlink, path.touch)):
+            with self.subTest(index=index):
+                self.frozen = self.root / f"frozen-{index}"
+                # Mutate only at the first quiescence boundary.
+                called = False
+                def quiescent():
+                    nonlocal called
+                    if not called:
+                        called = True
+                        mutate()
+                    return True
+                self.assert_kind("snapshot_changed", lambda: self.freeze(quiescent=quiescent))
+
+    def test_nonempty_content_after_initial_inventory_is_rejected(self):
+        path = self.cfl()
+        real_write = snapshots._write_all
+        def write(descriptor, block):
+            real_write(descriptor, block)
+            path.write_bytes(b"PRIVATE MUTATION")
+        with mock.patch.object(snapshots, "_write_all", side_effect=write):
+            self.assert_entry("cfl_database", "owned_regular_nonzero")
+
+    def test_empty_same_path_replacement_after_inventory_is_snapshot_changed(self):
+        path = self.cfl()
+        def quiet():
+            path.unlink()
+            path.touch()
+            return True
+        self.assert_kind("snapshot_changed", lambda: self.freeze(quiescent=quiet))
+
+    def test_descriptor_owner_change_is_detected_even_with_unchanged_other_fields(self):
+        path = self.cfl()
+        inode = path.stat().st_ino
+        real_fstat = snapshots.os.fstat
+        def fstat(descriptor):
+            info = real_fstat(descriptor)
+            return stat_fields(info, st_uid=0) if info.st_ino == inode else info
+        with mock.patch.object(snapshots.os, "fstat", side_effect=fstat):
+            self.assert_kind("snapshot_changed", self.freeze)
+        self.assertFalse(self.frozen.exists())
+
+    def test_anchored_entry_owner_change_is_detected_even_with_unchanged_other_fields(self):
+        self.cfl()
+        real_stat = snapshots.os.stat
+        def anchored_stat(path, *args, **kwargs):
+            info = real_stat(path, *args, **kwargs)
+            return (stat_fields(info, st_gid=0)
+                    if path == self.NAMES[0] and kwargs.get("dir_fd") is not None else info)
+        with mock.patch.object(snapshots.os, "stat", side_effect=anchored_stat):
+            self.assert_kind("snapshot_changed", self.freeze)
+        self.assertFalse(self.frozen.exists())
+
+    def test_entry_replacement_between_stat_and_open_is_detected(self):
+        path = self.cfl()
+        real_open = snapshots.os.open
+        changed = False
+        def open_file(name, flags, *args, **kwargs):
+            nonlocal changed
+            if name == self.NAMES[0] and not changed:
+                changed = True
+                path.unlink()
+                os.mkfifo(path)
+            return real_open(name, flags, *args, **kwargs)
+        with mock.patch.object(snapshots.os, "open", side_effect=open_file):
+            self.assert_kind("snapshot_changed", self.freeze)
+        self.assertTrue(changed)
+        self.assertFalse(self.frozen.exists())
 
 
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")

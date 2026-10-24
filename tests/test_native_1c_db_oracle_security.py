@@ -449,6 +449,61 @@ class HostSecurityTests(SourceCase):
         report['failure_kind'] = kind
         return report
 
+    def baseline_failure(self, kind):
+        report, _ = fixtures.fixture_report('baseline')
+        report['provenance'] = copy.deepcopy(self.identity)
+        report['provenance']['actual_version'] = protocol.VERSION
+        report['failure_kind'] = kind
+        if type(kind) is str and kind.startswith('baseline_audit_'):
+            report['snapshots'] = copy.deepcopy(fixtures.fixture_report()[0]['snapshots'][:1])
+        return report
+
+    def test_baseline_diagnosis_preserved_with_independent_host_cleanup(self):
+        for kind in ('baseline_freeze_invalid_input','baseline_observe_entry_other_special',
+                     'baseline_audit_entry_session_history_owned_regular_nonzero'):
+            for options in ({}, {'cleanup_bad': True}, {'private_cleanup_bad': True}):
+                self.events.clear(); self.configs.clear()
+                with self.subTest(kind=kind, options=options):
+                    report=self.invoke(payload=protocol.encode(self.baseline_failure(kind)),exit_code=1,**options)
+                    self.assertEqual(report['failure_kind'],kind)
+                    self.assertEqual(report['failed_stage'],'baseline')
+                    self.assertFalse(report['accepted']);self.assertEqual(report['artifacts'],[])
+                    protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                    self.assertNotIn(PRIVATE,protocol.encode(report).decode())
+                    make_writable(self.work)
+                    for child in self.work.iterdir():shutil.rmtree(child)
+
+    def test_host_rejects_malformed_or_wrong_scope_baseline_diagnosis(self):
+        payloads=[self.baseline_failure(kind) for kind in (
+            True,False,{},PRIVATE,'baseline_freeze_process_failed',
+            'baseline_freeze_entry_other_special_'+PRIVATE,
+            'baseline_freeze_entry_/private/path_special')]
+        wrong=self.seed_failure('baseline_freeze_invalid_input');payloads.append(wrong)
+        wrong=self.baseline_failure('baseline_audit_invalid_input');wrong['snapshots']=[];payloads.append(wrong)
+        wrong=self.baseline_failure('baseline_freeze_invalid_input');wrong['path']=PRIVATE;payloads.append(wrong)
+        for original in payloads:
+            self.events.clear();self.configs.clear()
+            with self.subTest(kind=original['failure_kind']):
+                report=self.invoke(payload=protocol.encode(original),exit_code=1)
+                self.assertEqual(report['failure_kind'],'transport_invalid')
+                self.assertFalse(report['accepted'])
+                self.assertNotIn(PRIVATE,protocol.encode(report).decode())
+
+    @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')
+    def test_baseline_diagnosis_exports_only_finite_report_with_cleanup_failure(self):
+        kind='baseline_freeze_entry_session_history_owned_regular_nonzero'
+        self.assertEqual(self.invoke(main=True,payload=protocol.encode(self.baseline_failure(kind)),
+                                    exit_code=1,cleanup_bad=True),1)
+        report=json.loads(self.output.read_text())
+        self.assertEqual(report['failure_kind'],kind);self.assertEqual(report['failed_stage'],'baseline')
+        self.assertFalse(report['accepted']);self.assertFalse(report['cleanup']['container_removed'])
+        self.assertTrue(report['cleanup']['private_staging_removed'])
+        self.assertEqual([path.name for path in self.output.parent.iterdir()],['report.json'])
+        self.assertLessEqual(self.output.stat().st_size,32768)
+        self.assertNotIn(PRIVATE,self.output.read_text())
+        self.assertEqual(self.github_output.read_text(),'report_ready=true\n')
+        protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+
     def test_every_validated_seed_failure_survives_successful_host_cleanup(self):
         for kind in sorted(protocol.SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES):
             self.events.clear(); self.configs.clear()

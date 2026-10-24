@@ -20,7 +20,7 @@ ROOT=Path(__file__).resolve().parents[1]
 HELPERS=ROOT/'scripts/native_1c_db_oracle'
 if str(HELPERS) not in sys.path: sys.path.insert(0,str(HELPERS))
 import protocol as protocol
-from snapshots import OracleError
+from snapshots import DatabaseEntryError, ENTRY_CLASSES, ENTRY_SHAPES, OracleError
 SPEC=importlib.util.spec_from_file_location('db_oracle_controller_under_test',HELPERS/'run.py')
 stage=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(stage)
 NONCE='a'*32
@@ -1077,5 +1077,88 @@ class InventoryMonitorTests(unittest.TestCase):
             with self.subTest(phase=phase),self.assertRaises(OracleError):
                 stage.BootstrapInventoryError(phase,'home','race')
 
+
+
+
+class BaselineDiagnosticTests(unittest.TestCase):
+    def injected(self,operation,error,*,clean=(True,True),failed_stage='baseline'):
+        identity=provenance(); report=protocol.empty_report(NONCE,identity)
+        backend=FixtureNative(identity); backend.clean=clean
+        controller=stage.Controller(backend,report); backend.controller=controller
+        original=getattr(backend,operation)
+        def called(*args):
+            if controller.stage==failed_stage: raise error
+            return original(*args)
+        with mock.patch.object(backend,operation,side_effect=called):
+            value=controller.run()
+        protocol.validate_report(protocol.encode(value),nonce=NONCE,provenance=identity)
+        self.assertFalse(value['accepted'])
+        self.assertEqual(backend.events[-1],('cleanup',))
+        return value
+
+    def test_each_baseline_operation_is_source_bound_and_has_exact_snapshot_prefix(self):
+        for operation in ('freeze','observe','audit'):
+            with self.subTest(operation=operation):
+                value=self.injected(operation,OracleError('invalid_input'))
+                self.assertEqual(value['failure_kind'],'baseline_'+operation+'_invalid_input')
+                self.assertEqual([item['id'] for item in value['snapshots']],
+                                 ['baseline'] if operation=='audit' else [])
+                self.assertEqual(value['failed_stage'],'baseline')
+
+    def test_every_root_entry_shape_is_finite_and_never_leaks_native_text(self):
+        for operation in ('freeze','observe','audit'):
+            for entry in ENTRY_CLASSES:
+                for shape in ENTRY_SHAPES:
+                    with self.subTest(operation=operation,entry=entry,shape=shape):
+                        error=DatabaseEntryError(entry,shape)
+                        error.args=('PRIVATE /raw/path native bytes',)
+                        value=self.injected(operation,error)
+                        self.assertEqual(value['failure_kind'],
+                            'baseline_'+operation+'_entry_'+entry+'_'+shape)
+                        self.assertNotIn(b'PRIVATE',protocol.encode(value))
+                        self.assertNotIn(b'/raw/path',protocol.encode(value))
+
+    def test_other_error_categories_are_not_relabelled(self):
+        for operation in ('freeze','observe','audit'):
+            for kind in ('snapshot_changed','snapshot_not_quiescent','artifact_limit',
+                         'process_failed','metadata_rejected','invalid_marker'):
+                with self.subTest(operation=operation,kind=kind):
+                    value=self.injected(operation,OracleError(kind))
+                    self.assertEqual(value['failure_kind'],kind)
+
+    def test_later_stage_rejection_cannot_inherit_baseline_context(self):
+        for operation in ('freeze','observe'):
+            for error in (OracleError('invalid_input'),DatabaseEntryError('other','special')):
+                with self.subTest(operation=operation,error=type(error)):
+                    value=self.injected(operation,error,failed_stage='create')
+                    self.assertEqual(value['failed_stage'],'create')
+                    self.assertEqual(value['failure_kind'],'invalid_input')
+
+    def test_wrapped_baseline_error_in_another_stage_fails_closed(self):
+        value=self.injected('freeze',stage.BaselineInputError('freeze'),failed_stage='create')
+        self.assertEqual(value['failure_kind'],'unexpected_failure')
+
+    def test_primary_baseline_diagnosis_survives_cleanup_failure(self):
+        for clean in ((False,True),(True,False),(False,False)):
+            value=self.injected('freeze',DatabaseEntryError('session_history','owned_regular_nonzero'),clean=clean)
+            self.assertEqual(value['failure_kind'],'baseline_freeze_entry_session_history_owned_regular_nonzero')
+            self.assertEqual(value['stages'][-1]['status'],'failed')
+            self.assertEqual(value['failed_stage'],'baseline')
+
+    def test_baseline_internal_context_rejects_unknown_bool_and_partial_combinations(self):
+        bad=(True,False,None,1,{},[], 'PRIVATE /path')
+        for value in bad:
+            with self.subTest(operation=value),self.assertRaises(OracleError):
+                stage.BaselineInputError(value)
+        for entry,shape in [('other',None),(None,'special'),*(('other',v) for v in bad),
+                            *((v,'special') for v in bad)]:
+            with self.subTest(entry=entry,shape=shape),self.assertRaises(OracleError):
+                stage.BaselineInputError('freeze',entry,shape)
+
+    def test_completed_baseline_does_not_leave_pending_operation_state(self):
+        value,_=fixture_report()
+        self.assertEqual(value['status'],'ok')
+        self.assertEqual(value['failure_kind'],'none')
+        self.assertFalse(any('baseline_' in key for key in value))
 
 if __name__=='__main__': unittest.main()
