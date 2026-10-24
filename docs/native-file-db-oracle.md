@@ -113,13 +113,13 @@ digests must agree, and destination bytes are read back and hashed.
 
 For this fixed synthetic configuration only, every other owned (UID/GID 1000),
 single-link regular root file is a private **metadata-only** ancillary entry,
-regardless of its basename. The only permitted root ancillary directory is
-`1Cv8Log`, with the existing bounded nested directory layout. All ancillary
+regardless of its basename. Owned root ancillary directories of any name use
+the same bounded metadata-only walk formerly limited to `1Cv8Log`. All ancillary
 entries together share the existing 16 MiB, 64-file, 128-entry and depth-2 limits;
 zero-byte files count too. No ancillary payload is read, hashed, copied or
 exported. Descriptor-relative no-follow/nonblocking opens verify type, identity,
 ownership and stable metadata against anchored entries, then repeated inventories
-must match across the copy. Unknown root directories, links, special files,
+must match across the copy. Links, special files,
 wrong ownership, changing metadata and exhausted limits fail closed. This is
 not a wildcard path input or a user-database backup contract.
 
@@ -416,3 +416,30 @@ before a restored snapshot was appended. Source-bound synthetic fault injection
 localized a diagnostic gap after the restore command wrapper, including the
 possibility that auxiliary removal masked an earlier error. It did not establish
 a native restore defect, an ancillary-file cause, or grounds to widen admission.
+
+
+### Bounded ancillary directories after restore
+
+The source-only ancillary policy now permits directory trees of any basename,
+subject to the **same shared** 16 MiB, 64-file, 128-entry and depth-2 bounds as the
+previous log tree. Every directory and regular file must be owned by UID/GID 1000;
+regular files must be single-link. Descriptor-anchored no-follow traversal,
+ancestor/entry identity checks, stable pre/post inventories and native-process
+census remain mandatory. Links and special nodes remain rejected. Exact
+`1Cv8.1CD` takes precedence and remains the sole payload that is read, hashed or
+copied. Ancillary content is never read, hashed, copied or exported; read-only
+opens are used only for descriptor metadata verification. Frozen sources, clone
+sources and every copy destination remain strictly database-only.
+
+This deliberately removes the root-directory-name anomaly detector. It is not a
+security superset and does not infer the name, ownership, purpose or safety of the
+previously rejected native directory. Ownership and shape must now be verified
+structurally before acceptance. Existing metadata-only limits do not detect
+content changes that preserve every observed metadata field.
+
+The contract applies only to the immutable synthetic one-catalog configuration,
+which has no external storage dependencies and accepts no user database input.
+A copy of `1Cv8.1CD` alone is not advertised as a general database backup. The
+restored clone still must pass all reopened row/reference, metadata and user-role
+checks before the oracle can succeed. This policy change is not native proof that
+restoration succeeded; that remains an exact-source native execution gate.

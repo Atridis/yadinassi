@@ -191,6 +191,7 @@ class DatabaseEntryValidationTests(unittest.TestCase):
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
 class AncillaryInventoryTests(unittest.TestCase):
     NAMES = ("1Cv8.1CD.cfl", "1Cv8tmp.1CD.cfl", "1Cv8.1CL.cfl", "1Cv8tmp.1CL.cfl", "1Cv8snc.1CL.cfl")
+    TREE_NAMES = ("1Cv8Log", "synthetic-tree", "1Cv8.1CL", "1cv8.1cd", "private\né")
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -236,6 +237,23 @@ class AncillaryInventoryTests(unittest.TestCase):
         self.assertIsInstance(error, snapshots.DatabaseEntryError)
         self.assertEqual((error.entry_class, error.shape), (entry_class, shape))
         self.assertEqual(set(vars(error)), {"kind", "entry_class", "shape"})
+
+    @contextmanager
+    def tree_case(self, name):
+        """Give each parameterized adversarial case an isolated live source."""
+        previous = self.source, self.db, self.frozen
+        case = Path(tempfile.mkdtemp(prefix="tree-case-", dir=self.root)).resolve()
+        self.source = case / "live"
+        self.source.mkdir()
+        self.db = self.source / "1Cv8.1CD"
+        self.db.write_bytes(self.data)
+        self.frozen = case / "frozen"
+        tree = self.source / name
+        tree.mkdir()
+        try:
+            yield tree
+        finally:
+            self.source, self.db, self.frozen = previous
 
     def test_each_exact_cfl_name_is_accepted_without_reading_content(self):
         real_read, real_open = snapshots.os.read, snapshots.os.open
@@ -331,7 +349,7 @@ class AncillaryInventoryTests(unittest.TestCase):
                     self.assert_entry("cfl_database", shape)
                 self.assertFalse(self.frozen.exists())
 
-    def test_symlink_hardlink_fifo_and_directory_are_rejected(self):
+    def test_symlink_hardlink_fifo_are_rejected_but_owned_directory_is_ancillary(self):
         path = self.source / self.NAMES[0]
         path.symlink_to("/dev/zero")
         self.assert_entry("cfl_database", "symlink")
@@ -345,8 +363,9 @@ class AncillaryInventoryTests(unittest.TestCase):
         self.assert_entry("cfl_database", "special")
         path.unlink()
         path.mkdir()
-        self.assert_entry("cfl_database", "directory")
-        self.assertFalse(self.frozen.exists())
+        result = self.freeze()
+        self.assertEqual(result["bytes"], len(self.data))
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
     def test_case_suffix_unknown_and_session_history_are_structurally_accepted(self):
         names = ("1cv8.1cd.cfl", "1Cv8.1CD.CFL", "1Cv8.1CD.cfl.extra",
@@ -422,7 +441,7 @@ class AncillaryInventoryTests(unittest.TestCase):
                         capture_source_name=True))
                 self.assertFalse(self.frozen.exists())
 
-    def test_opt_in_never_captures_symlink_hardlink_fifo_or_directory(self):
+    def test_opt_in_never_captures_links_fifo_or_accepted_owned_directory(self):
         path = self.source / "1Cv8.1CL"
         path.symlink_to("/dev/zero")
         self.assert_entry("base_1cl", "symlink", lambda: self.freeze(capture_source_name=True))
@@ -436,8 +455,9 @@ class AncillaryInventoryTests(unittest.TestCase):
         self.assert_entry("base_1cl", "special", lambda: self.freeze(capture_source_name=True))
         path.unlink()
         path.mkdir()
-        self.assert_entry("base_1cl", "directory", lambda: self.freeze(capture_source_name=True))
-        self.assertFalse(self.frozen.exists())
+        result = self.freeze(capture_source_name=True)
+        self.assertEqual(set(result), {"bytes", "sha256", "header", "page_analysis"})
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
     def test_opt_in_does_not_capture_database_or_nested_log_rejection(self):
         self.db.unlink()
@@ -619,14 +639,20 @@ class AncillaryInventoryTests(unittest.TestCase):
         self.assertEqual(snapshots.MAX_TREE_ENTRIES, 4096)
         self.assertEqual(snapshots.MAX_TREE_DEPTH, 16)
 
-    def test_root_sidecars_and_nested_logs_are_never_read_hashed_or_chmodded(self):
+    def test_root_sidecars_and_multiple_trees_are_never_read_hashed_or_chmodded(self):
         side = self.cfl("arbitrary-private-sidecar")
         side.write_bytes(b"PRIVATE ROOT SIDECAR")
-        log = self.source / "1Cv8Log"
-        nested = log / "one" / "two"
-        nested.mkdir(parents=True)
-        (nested / "arbitrary-private-log").write_bytes(b"PRIVATE NESTED LOG")
-        private_paths = (side, log, log / "one", nested, nested / "arbitrary-private-log")
+        private_paths = [side]
+        for name in self.TREE_NAMES:
+            tree = self.source / name
+            nested = tree / "one" / "two"
+            nested.mkdir(parents=True)
+            private_file = nested / "arbitrary-private-file"
+            private_file.write_bytes(b"PRIVATE NESTED FILE")
+            # Only the exact database name at the source root is a payload.
+            nested_database = tree / "1Cv8.1CD"
+            nested_database.write_bytes(b"PRIVATE ANCILLARY, NOT A DATABASE PAYLOAD")
+            private_paths.extend((tree, tree / "one", nested, private_file, nested_database))
         before = {path: snapshots._signature(path.stat()) for path in private_paths}
         private_inodes = {path.stat().st_ino for path in private_paths}
         real_read, real_digest, real_chmod = snapshots.os.read, snapshots._digest, snapshots.os.fchmod
@@ -646,60 +672,67 @@ class AncillaryInventoryTests(unittest.TestCase):
         self.assertNotIn("private", str(result))
         for directory in (self.frozen, clone):
             self.assertEqual([entry.name for entry in directory.iterdir()], ["1Cv8.1CD"])
+            self.assertEqual((directory / "1Cv8.1CD").read_bytes(), self.data)
 
     def test_inventory_itself_never_reads_or_hashes_even_nonempty_ancillary_files(self):
         self.cfl("root-private").write_bytes(b"ROOT")
-        log = self.source / "1Cv8Log"
-        log.mkdir()
-        (log / "event-private").write_bytes(b"LOG")
+        expected = {(), ("root-private",)}
+        for name in self.TREE_NAMES:
+            tree = self.source / name
+            tree.mkdir()
+            (tree / "file-private").write_bytes(b"PRIVATE")
+            expected.update(((name,), (name, "file-private")))
         with snapshots._directory(self.source) as descriptor, \
                 mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no payload I/O")), \
                 mock.patch.object(snapshots, "_digest", side_effect=AssertionError("no digest")):
             inventory = snapshots._database_contents(descriptor)
-        self.assertEqual(set(inventory), {(), ("root-private",), ("1Cv8Log",),
-                                          ("1Cv8Log", "event-private")})
+        self.assertEqual(set(inventory), expected)
         self.assertTrue(all(value[1] is None for value in inventory.values()))
         self.assertNotIn(("1Cv8.1CD",), inventory)
 
-    def test_shared_file_count_accepts_64_and_rejects_65_across_root_and_logs(self):
-        log = self.source / "1Cv8Log"
-        log.mkdir()
-        for index in range(32):
-            self.cfl(f"root-{index}")
-            (log / f"log-{index}").touch()
+    def test_shared_file_count_accepts_64_and_rejects_65_across_multiple_trees(self):
+        trees = [self.source / name for name in self.TREE_NAMES]
+        for tree in trees:
+            tree.mkdir()
+        parents = [self.source, *trees]
+        for index in range(snapshots.MAX_ANCILLARY_FILES):
+            (parents[index % len(parents)] / f"private-{index}").touch()
         with snapshots._directory(self.source) as descriptor:
             snapshots._database_contents(descriptor)
-            (log / "one-too-many").touch()
+            (trees[-1] / "one-too-many").touch()
             self.assert_kind("artifact_limit", lambda: snapshots._database_contents(descriptor))
         self.assertFalse(self.frozen.exists())
 
-    def test_shared_entry_count_includes_root_sidecars_and_log_root(self):
+    def test_shared_entry_count_includes_root_sidecars_and_each_tree_root(self):
         self.cfl("one-root-file")
-        log = self.source / "1Cv8Log"
-        log.mkdir()
-        for index in range(snapshots.MAX_ANCILLARY_ENTRIES - 2):
-            (log / f"empty-{index}").mkdir()
+        trees = [self.source / name for name in self.TREE_NAMES]
+        for tree in trees:
+            tree.mkdir()
+        for index in range(snapshots.MAX_ANCILLARY_ENTRIES - len(trees) - 1):
+            (trees[index % len(trees)] / f"empty-{index}").mkdir()
         with snapshots._directory(self.source) as descriptor:
             inventory = snapshots._database_contents(descriptor)
             self.assertEqual(len(inventory), snapshots.MAX_ANCILLARY_ENTRIES + 1)  # Plus source root.
-            (log / "one-too-many").mkdir()
+            (trees[-1] / "one-too-many").mkdir()
             self.assert_kind("artifact_limit", lambda: snapshots._database_contents(descriptor))
         self.assertFalse(self.frozen.exists())
 
-    def test_shared_byte_limit_is_metadata_only_and_exact_across_root_and_logs(self):
+    def test_shared_byte_limit_is_metadata_only_and_exact_across_multiple_trees(self):
         side = self.cfl("root-private")
-        log = self.source / "1Cv8Log"
-        log.mkdir()
-        event = log / "event-private"
-        half = snapshots.MAX_ANCILLARY_BYTES // 2
-        for path in (side, event):
+        paths = [side]
+        for name in self.TREE_NAMES:
+            tree = self.source / name
+            tree.mkdir()
+            paths.append(tree / "file-private")
+        portion, remainder = divmod(snapshots.MAX_ANCILLARY_BYTES, len(paths))
+        for index, path in enumerate(paths):
             with path.open("wb") as stream:
-                stream.truncate(half)
+                stream.truncate(portion + (remainder if index == 0 else 0))
         with snapshots._directory(self.source) as descriptor, \
                 mock.patch.object(snapshots.os, "read", side_effect=AssertionError("metadata only")):
             snapshots._database_contents(descriptor)
-            with event.open("r+b") as stream:
-                stream.truncate(half + 1)
+            with paths[-1].open("r+b") as stream:
+                stream.truncate(portion + 1)
             self.assert_kind("artifact_limit", lambda: snapshots._database_contents(descriptor))
         self.assertFalse(self.frozen.exists())
 
@@ -715,29 +748,30 @@ class AncillaryInventoryTests(unittest.TestCase):
         self.assertFalse(self.frozen.exists())
 
     def test_wrong_owner_or_group_rejects_nested_regular_files_and_directories(self):
-        log = self.source / "1Cv8Log"
-        nested = log / "nested"
-        nested.mkdir(parents=True)
-        event = nested / "private"
-        event.write_bytes(b"NONEMPTY")
         real_scandir = snapshots.os.scandir
-        for target in (log, nested, event):
-            for field in ("st_uid", "st_gid"):
-                with self.subTest(target=target.name, field=field):
-                    inode = target.stat().st_ino
-                    @contextmanager
-                    def scandir(descriptor):
-                        with real_scandir(descriptor) as entries:
-                            entries = list(entries)
-                        for entry in entries:
-                            info = entry.stat(follow_symlinks=False)
-                            if info.st_ino == inode:
-                                entry.stat = lambda info=info, **kw: stat_fields(info, **{field: 0})
-                        yield iter(entries)
-                    with mock.patch.object(snapshots.os, "scandir", side_effect=scandir), \
-                            mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
-                        self.assert_kind("invalid_input", self.freeze)
-        self.assertFalse(self.frozen.exists())
+        for name in self.TREE_NAMES:
+            with self.tree_case(name) as tree:
+                nested = tree / "nested"
+                nested.mkdir()
+                private_file = nested / "private"
+                private_file.write_bytes(b"NONEMPTY")
+                for target in (tree, nested, private_file):
+                    for field in ("st_uid", "st_gid"):
+                        with self.subTest(name=name, target=target.name, field=field):
+                            inode = target.stat().st_ino
+                            @contextmanager
+                            def scandir(descriptor):
+                                with real_scandir(descriptor) as entries:
+                                    entries = list(entries)
+                                for entry in entries:
+                                    info = entry.stat(follow_symlinks=False)
+                                    if info.st_ino == inode:
+                                        entry.stat = lambda info=info, **kw: stat_fields(info, **{field: 0})
+                                yield iter(entries)
+                            with mock.patch.object(snapshots.os, "scandir", side_effect=scandir), \
+                                    mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                                self.assert_kind("invalid_input", self.freeze)
+                            self.assertFalse(self.frozen.exists())
 
     def test_source_root_owner_and_group_are_checked_without_chown(self):
         inode = self.source.stat().st_ino
@@ -846,6 +880,231 @@ class AncillaryInventoryTests(unittest.TestCase):
                 (old / "leaf").rename(leaf)
                 self.assertEqual(snapshots._identity(leaf.stat()), original)
         self.assertEqual(failure.exception.kind, "snapshot_changed")
+
+    def test_exact_database_directory_is_rejected_before_ancillary_admission(self):
+        self.db.unlink()
+        self.db.mkdir()
+        (self.db / "private-file").write_bytes(b"NOT A DATABASE PAYLOAD")
+        with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")), \
+                mock.patch.object(snapshots, "_digest", side_effect=AssertionError("no digest")):
+            self.assert_entry("database", "directory")
+        self.assertFalse(self.frozen.exists())
+
+    def test_nested_database_name_never_substitutes_for_missing_root_payload(self):
+        self.db.unlink()
+        for name in self.TREE_NAMES:
+            tree = self.source / name
+            tree.mkdir()
+            (tree / "1Cv8.1CD").write_bytes(b"PRIVATE ANCILLARY")
+        with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+            self.assert_kind("invalid_input", self.freeze)
+        self.assertFalse(self.frozen.exists())
+
+    def test_unknown_trees_reject_links_and_special_files_without_reads(self):
+        for name in self.TREE_NAMES:
+            for kind in ("root_symlink", "file_symlink", "directory_symlink", "hardlink", "fifo"):
+                with self.subTest(name=name, kind=kind), self.tree_case(name) as tree:
+                    target = tree / "private"
+                    if kind == "root_symlink":
+                        tree.rmdir()
+                        tree.symlink_to(self.root, target_is_directory=True)
+                    elif kind == "file_symlink":
+                        target.symlink_to(self.db)
+                    elif kind == "directory_symlink":
+                        target.symlink_to(self.root, target_is_directory=True)
+                    elif kind == "hardlink":
+                        outside = self.source.parent / "outside-private"
+                        outside.write_bytes(b"PRIVATE")
+                        os.link(outside, target)
+                    else:
+                        os.mkfifo(target)
+                    with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                        self.assert_kind("invalid_input", self.freeze)
+                    self.assertFalse(self.frozen.exists())
+
+    def test_unknown_tree_files_reject_invalid_metadata_without_reads(self):
+        real_scandir = snapshots.os.scandir
+        changes_list = ({"st_nlink": 0}, {"st_nlink": -1}, {"st_nlink": 2},
+                        {"st_size": -1}, {"st_mode": stat.S_IFSOCK})
+        for name in self.TREE_NAMES:
+            with self.tree_case(name) as tree:
+                target = tree / "private"
+                target.write_bytes(b"PRIVATE")
+                inode = target.stat().st_ino
+                for changes in changes_list:
+                    with self.subTest(name=name, changes=changes):
+                        @contextmanager
+                        def scandir(descriptor):
+                            with real_scandir(descriptor) as entries:
+                                entries = list(entries)
+                            for entry in entries:
+                                info = entry.stat(follow_symlinks=False)
+                                if info.st_ino == inode:
+                                    entry.stat = lambda info=info, **kw: stat_fields(info, **changes)
+                            yield iter(entries)
+                        with mock.patch.object(snapshots.os, "scandir", side_effect=scandir), \
+                                mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                            self.assert_kind("invalid_input", self.freeze)
+                        self.assertFalse(self.frozen.exists())
+
+    def test_unknown_tree_open_flags_are_descriptor_anchored_and_no_follow(self):
+        real_open = snapshots.os.open
+        for name in self.TREE_NAMES:
+            with self.subTest(name=name), self.tree_case(name) as tree:
+                nested = tree / "nested"
+                nested.mkdir()
+                (nested / "private-file").write_bytes(b"PRIVATE")
+                seen = []
+                def opened(path, flags, *args, **kwargs):
+                    if path in (name, "nested", "private-file"):
+                        seen.append(path)
+                        self.assertIsNotNone(kwargs.get("dir_fd"))
+                        self.assertEqual(flags & os.O_ACCMODE, os.O_RDONLY)
+                        self.assertEqual(flags & (os.O_NOFOLLOW | os.O_NONBLOCK),
+                                         os.O_NOFOLLOW | os.O_NONBLOCK)
+                        if path != "private-file":
+                            self.assertTrue(flags & os.O_DIRECTORY)
+                    return real_open(path, flags, *args, **kwargs)
+                with snapshots._directory(self.source) as descriptor, \
+                        mock.patch.object(snapshots.os, "open", side_effect=opened), \
+                        mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                    snapshots._database_contents(descriptor)
+                self.assertEqual(set(seen), {name, "nested", "private-file"})
+
+    def test_unknown_tree_directory_owner_changes_are_compared_at_both_checks(self):
+        real_fstat, real_stat = snapshots.os.fstat, snapshots.os.stat
+        for name in self.TREE_NAMES:
+            with self.tree_case(name) as tree:
+                nested = tree / "nested"
+                nested.mkdir()
+                for target in (tree, nested):
+                    for field in ("st_uid", "st_gid"):
+                        for check in ("fstat", "stat"):
+                            with self.subTest(name=name, target=target.name, field=field, check=check):
+                                inode = target.stat().st_ino
+                                original = real_fstat if check == "fstat" else real_stat
+                                def changed(*args, **kwargs):
+                                    info = original(*args, **kwargs)
+                                    return stat_fields(info, **{field: 0}) if info.st_ino == inode else info
+                                with mock.patch.object(snapshots.os, check, side_effect=changed), \
+                                        mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                                    self.assert_kind("snapshot_changed", self.freeze)
+                                self.assertFalse(self.frozen.exists())
+
+    def test_unknown_tree_directory_swap_is_rejected_before_or_after_open(self):
+        real_open = snapshots.os.open
+        for name in self.TREE_NAMES:
+            for position in ("root", "nested"):
+                for replacement in ("before_directory", "before_symlink", "before_fifo", "after_directory"):
+                    with self.subTest(name=name, position=position, replacement=replacement), \
+                            self.tree_case(name) as tree:
+                        target = tree if position == "root" else tree / "nested"
+                        if position == "nested":
+                            target.mkdir()
+                        moved = self.source.parent / "moved-private"
+                        changed = False
+                        def replace():
+                            target.rename(moved)
+                            if replacement == "before_symlink":
+                                target.symlink_to(moved, target_is_directory=True)
+                            elif replacement == "before_fifo":
+                                os.mkfifo(target)
+                            else:
+                                target.mkdir()
+                        def opened(path, flags, *args, **kwargs):
+                            nonlocal changed
+                            match = path == target.name and not changed
+                            if match:
+                                changed = True
+                                if replacement != "after_directory":
+                                    replace()
+                            descriptor = real_open(path, flags, *args, **kwargs)
+                            if match and replacement == "after_directory":
+                                replace()
+                            return descriptor
+                        with mock.patch.object(snapshots.os, "open", side_effect=opened), \
+                                mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                            expected = "invalid_input" if replacement in ("before_symlink", "before_fifo") else "snapshot_changed"
+                            self.assert_kind(expected, self.freeze)
+                        self.assertTrue(changed)
+                        self.assertFalse(self.frozen.exists())
+
+    def test_each_tree_has_depth_two_boundary_without_resetting_below_root(self):
+        for name in self.TREE_NAMES:
+            with self.subTest(name=name), self.tree_case(name) as tree:
+                deepest = tree / "one" / "two"
+                deepest.mkdir(parents=True)
+                (deepest / "private").write_bytes(b"PRIVATE")
+                with snapshots._directory(self.source) as descriptor, \
+                        mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                    inventory = snapshots._database_contents(descriptor)
+                    self.assertIn((name, "one", "two", "private"), inventory)
+                    (deepest / "three").mkdir()
+                    self.assert_kind("artifact_limit", lambda: snapshots._database_contents(descriptor))
+                self.assertFalse(self.frozen.exists())
+
+    def test_tree_membership_and_metadata_changes_fail_both_source_rechecks(self):
+        original = snapshots._database_contents
+        for name in self.TREE_NAMES:
+            for inventory_index in (2, 4):
+                for mutation in ("add", "remove", "file_content", "directory_mode"):
+                    with self.subTest(name=name, index=inventory_index, mutation=mutation), \
+                            self.tree_case(name) as tree:
+                        private_file = tree / "private"
+                        private_file.write_bytes(b"PRIVATE")
+                        calls = 0
+                        def inventory(descriptor, **kwargs):
+                            nonlocal calls
+                            calls += 1
+                            if calls == inventory_index:
+                                if mutation == "add":
+                                    (tree / "new-private").touch()
+                                elif mutation == "remove":
+                                    private_file.unlink()
+                                elif mutation == "file_content":
+                                    private_file.write_bytes(b"CHANGED PRIVATE")
+                                else:
+                                    tree.chmod(0o500)
+                            return original(descriptor, **kwargs)
+                        with mock.patch.object(snapshots, "_database_contents", side_effect=inventory):
+                            self.assert_kind("snapshot_changed", self.freeze)
+                        self.assertEqual(calls, inventory_index)
+
+    def test_all_tree_names_are_rejected_in_frozen_source_before_clone_reads(self):
+        for name in self.TREE_NAMES:
+            with self.subTest(name=name), self.tree_case(name):
+                self.freeze()
+                self.frozen.chmod(0o700)
+                (self.frozen / name).mkdir()
+                clone = self.frozen.parent / "observer"
+                with mock.patch.object(snapshots.os, "read", side_effect=AssertionError("no reads")):
+                    self.assert_entry(snapshots._entry_class(name), "directory",
+                                      lambda: snapshots.clone_database(self.frozen, clone,
+                                                                       budget_root=self.root))
+                self.assertFalse(clone.exists())
+
+    def test_all_tree_names_are_rejected_in_frozen_and_clone_destinations(self):
+        original = snapshots._database_contents
+        for name in self.TREE_NAMES:
+            for mode in ("freeze", "clone"):
+                with self.subTest(name=name, mode=mode), self.tree_case(name):
+                    if mode == "clone":
+                        self.freeze()
+                    destination = self.frozen if mode == "freeze" else self.frozen.parent / "observer"
+                    calls = 0
+                    def inventory(descriptor, **kwargs):
+                        nonlocal calls
+                        calls += 1
+                        if calls == 3:
+                            self.assertIs(kwargs["allow_ancillary"], False)
+                            (destination / name).mkdir()
+                        return original(descriptor, **kwargs)
+                    with mock.patch.object(snapshots, "_database_contents", side_effect=inventory):
+                        action = (self.freeze if mode == "freeze" else
+                                  lambda: snapshots.clone_database(self.frozen, destination,
+                                                                   budget_root=self.root))
+                        self.assert_entry(snapshots._entry_class(name), "directory", action)
+                    self.assertEqual(calls, 3)
 
 
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
@@ -1048,9 +1307,11 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(result["sha256"], hashlib.sha256(self.data).hexdigest())
         self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
-    def test_extra_directory_is_rejected(self):
+    def test_extra_owned_directory_is_ancillary_and_not_copied(self):
         (self.source / "extra").mkdir()
-        self.assert_kind("invalid_input", self.freeze)
+        result = self.freeze()
+        self.assertEqual(result["bytes"], len(self.data))
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
     def test_traversal_and_non_sibling_destination_rejected(self):
         self.assert_kind("invalid_input", lambda: snapshots.file_summary(
@@ -1152,7 +1413,7 @@ class SnapshotTests(unittest.TestCase):
         path.write_bytes(content)
         return path
 
-    def test_only_known_log_inventory_is_allowed_and_never_copied_or_reported(self):
+    def test_known_log_inventory_is_metadata_only_and_never_copied_or_reported(self):
         log = self.log()
         nested = self.log("year/month/events.lgp", b"SECOND PRIVATE EVENT")
         before = (log.read_bytes(), nested.read_bytes(), log.stat().st_mtime_ns)
@@ -1310,10 +1571,12 @@ class SnapshotTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertFalse(self.frozen.exists())
 
-    def test_unknown_directory_remains_rejected_even_with_known_log(self):
+    def test_unknown_owned_directory_can_coexist_with_known_log(self):
         self.log()
         (self.source / "1Cv8.1CL").mkdir()
-        self.assert_kind("invalid_input", self.freeze)
+        result = self.freeze()
+        self.assertEqual(result["bytes"], len(self.data))
+        self.assertEqual([entry.name for entry in self.frozen.iterdir()], ["1Cv8.1CD"])
 
     def test_log_injection_into_frozen_source_is_not_accepted_for_clone(self):
         self.freeze()

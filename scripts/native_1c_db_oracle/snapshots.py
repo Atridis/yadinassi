@@ -52,7 +52,7 @@ ENTRY_SHAPES = (
 MAX_ANCILLARY_BYTES = 16 * 1024 * 1024
 MAX_ANCILLARY_FILES = 64
 MAX_ANCILLARY_ENTRIES = 128  # Also bound empty directories and inventory memory.
-MAX_ANCILLARY_DEPTH = 2  # Log root is depth zero; no deeper descendants.
+MAX_ANCILLARY_DEPTH = 2  # Each ancillary root is depth zero; no deeper descendants.
 FAILURE_KINDS = frozenset({
     "invalid_input", "provenance_mismatch", "permission_mismatch",
     "unsupported_platform_command", "process_failed", "timeout",
@@ -335,9 +335,9 @@ def _database_contents(descriptor: int, *, allow_ancillary: bool = True,
     """Private metadata-only inventory of this fixed synthetic configuration.
 
     Live sources allow owned, single-link regular root sidecars of any name
-    except the exact database payload, plus the bounded 1Cv8Log directory tree.
-    All ancillary entries share the same byte/file/entry limits. Their content
-    is NEVER read, hashed, copied, or exported. This replaces the old log-content
+    except the exact database payload, plus bounded owned directory trees of
+    any other name. All ancillary entries share the same byte/file/entry limits.
+    Their content is NEVER read, hashed, copied, or exported. This replaces the old log-content
     hash boundary; it cannot detect content changes with identical metadata.
     Frozen sources and all destinations remain strictly database-only.
     ``capture_zero_name`` is retained for the failure diagnostic API, but no
@@ -426,7 +426,7 @@ def _database_contents(descriptor: int, *, allow_ancillary: bool = True,
                 database_seen = True
             elif allow_ancillary:
                 count_entry()
-                if entry.name == ANCILLARY_NAME and stat.S_ISDIR(info.st_mode):
+                if stat.S_ISDIR(info.st_mode):
                     walk(descriptor, entry.name, (entry.name,), info, 0)
                 else:
                     ancillary_file(descriptor, entry.name, (entry.name,), info, root_entry=True)
