@@ -409,7 +409,46 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 
 
-CLIENT_WITNESS_SOURCE_SHA256 = 'c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413'
+# BEGIN bounded Date Null measurement source binding
+DATE_NULL_SOURCE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
+DATE_NULL_MODULE_SHA256 = '840b3d19ef6eb100af3cc685788692eec7f6aec863518b003046beae995b8062'
+DATE_NULL_BASE_SHA256 = 'c991b9fbf808a59fad6edc10ad9768efe85bc3bd2da9d7b63c1daa5cdb118413'
+DATE_NULL_CORE_SHA256 = '1b6c51fba57161907d26d78b3c96d317ff1f4b65098d6bf5a0815ed5fb575a70'
+DATE_NULL_PREFIX = b'\n// BEGIN bounded Date Null measurement\n'
+DATE_NULL_SUFFIX = b'// END bounded Date Null measurement\n'
+DATE_NULL_CALL = b'    DNAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+DATE_NULL_OLD_WRITER = b'\xd0\x9f\xd1\x80\xd0\xbe\xd1\x86\xd0\xb5\xd0\xb4\xd1\x83\xd1\x80\xd0\xb0 \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd0\xb0\xd1\x82\xd1\x8c\xd0\x9f\xd1\x80\xd0\xbe\xd0\xb1\xd1\x83(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x9f\xd1\x83\xd1\x82\xd1\x8c, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x9d\xd0\xbe\xd0\xbc\xd0\xb5\xd1\x80, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\xa4\xd0\xb0\xd0\xb7\xd0\xb0, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x9a\xd0\xbe\xd0\xbd\xd1\x82\xd0\xb5\xd0\xba\xd1\x81\xd1\x82, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f)\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c = \xd0\x9d\xd0\xbe\xd0\xb2\xd1\x8b\xd0\xb9 \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8cJSON;\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c.\xd0\x9e\xd1\x82\xd0\xba\xd1\x80\xd1\x8b\xd1\x82\xd1\x8c\xd0\xa4\xd0\xb0\xd0\xb9\xd0\xbb(\xd0\x9f\xd1\x83\xd1\x82\xd1\x8c);\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd0\xb0\xd1\x82\xd1\x8cJSON(\xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c, \xd0\x9d\xd0\xbe\xd0\xb2\xd1\x8b\xd0\xb9 \xd0\xa1\xd1\x82\xd1\x80\xd1\x83\xd0\xba\xd1\x82\xd1\x83\xd1\x80\xd0\xb0("schema,nonce,phase,witness,values",\n        1, \xd0\x9d\xd0\xbe\xd0\xbc\xd0\xb5\xd1\x80, \xd0\xa4\xd0\xb0\xd0\xb7\xd0\xb0, \xd0\x9a\xd0\xbe\xd0\xbd\xd1\x82\xd0\xb5\xd0\xba\xd1\x81\xd1\x82, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f));\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c.\xd0\x97\xd0\xb0\xd0\xba\xd1\x80\xd1\x8b\xd1\x82\xd1\x8c();\n\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x9f\xd1\x80\xd0\xbe\xd1\x86\xd0\xb5\xd0\xb4\xd1\x83\xd1\x80\xd1\x8b'
+DATE_NULL_COMPACT_WRITER = b'\xd0\x9f\xd1\x80\xd0\xbe\xd1\x86\xd0\xb5\xd0\xb4\xd1\x83\xd1\x80\xd0\xb0 \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd0\xb0\xd1\x82\xd1\x8c\xd0\x9f\xd1\x80\xd0\xbe\xd0\xb1\xd1\x83(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x9f\xd1\x83\xd1\x82\xd1\x8c, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x9d\xd0\xbe\xd0\xbc\xd0\xb5\xd1\x80, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\xa4\xd0\xb0\xd0\xb7\xd0\xb0, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x9a\xd0\xbe\xd0\xbd\xd1\x82\xd0\xb5\xd0\xba\xd1\x81\xd1\x82, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87 \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f)\n    \xd0\x9f\xd0\xb5\xd1\x80\xd0\xb5\xd0\xbc \xd0\x9f\xd0\xb0\xd1\x80\xd0\xb0\xd0\xbc\xd0\xb5\xd1\x82\xd1\x80\xd1\x8bJSON, \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c;\n    \xd0\x9f\xd0\xb0\xd1\x80\xd0\xb0\xd0\xbc\xd0\xb5\xd1\x82\xd1\x80\xd1\x8bJSON = \xd0\x9d\xd0\xbe\xd0\xb2\xd1\x8b\xd0\xb9 \xd0\x9f\xd0\xb0\xd1\x80\xd0\xb0\xd0\xbc\xd0\xb5\xd1\x82\xd1\x80\xd1\x8b\xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd0\xb8JSON(\xd0\x9f\xd0\xb5\xd1\x80\xd0\xb5\xd0\xbd\xd0\xbe\xd1\x81\xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xbaJSON.\xd0\x9d\xd0\xb5\xd1\x82, " ", \xd0\x98\xd1\x81\xd1\x82\xd0\xb8\xd0\xbd\xd0\xb0);\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c = \xd0\x9d\xd0\xbe\xd0\xb2\xd1\x8b\xd0\xb9 \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8cJSON;\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c.\xd0\x9e\xd1\x82\xd0\xba\xd1\x80\xd1\x8b\xd1\x82\xd1\x8c\xd0\xa4\xd0\xb0\xd0\xb9\xd0\xbb(\xd0\x9f\xd1\x83\xd1\x82\xd1\x8c, , , \xd0\x9f\xd0\xb0\xd1\x80\xd0\xb0\xd0\xbc\xd0\xb5\xd1\x82\xd1\x80\xd1\x8bJSON);\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd0\xb0\xd1\x82\xd1\x8cJSON(\xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c, \xd0\x9d\xd0\xbe\xd0\xb2\xd1\x8b\xd0\xb9 \xd0\xa1\xd1\x82\xd1\x80\xd1\x83\xd0\xba\xd1\x82\xd1\x83\xd1\x80\xd0\xb0("schema,nonce,phase,witness,values",\n        1, \xd0\x9d\xd0\xbe\xd0\xbc\xd0\xb5\xd1\x80, \xd0\xa4\xd0\xb0\xd0\xb7\xd0\xb0, \xd0\x9a\xd0\xbe\xd0\xbd\xd1\x82\xd0\xb5\xd0\xba\xd1\x81\xd1\x82, \xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f));\n    \xd0\x97\xd0\xb0\xd0\xbf\xd0\xb8\xd1\x81\xd1\x8c.\xd0\x97\xd0\xb0\xd0\xba\xd1\x80\xd1\x8b\xd1\x82\xd1\x8c();\n\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x9f\xd1\x80\xd0\xbe\xd1\x86\xd0\xb5\xd0\xb4\xd1\x83\xd1\x80\xd1\x8b'
+
+
+def date_null_shared_source(raw: bytes) -> bytes:
+    """Exact reviewed measurement inverse; no arbitrary BSL source removal."""
+    if (type(raw) is not bytes or digest(raw) != DATE_NULL_SOURCE_SHA256
+            or raw.count(DATE_NULL_PREFIX) != 1 or raw.count(DATE_NULL_SUFFIX) != 1
+            or raw.count(DATE_NULL_CALL) != 1 or raw.count(DATE_NULL_COMPACT_WRITER) != 1
+            or not raw.endswith(DATE_NULL_SUFFIX + CLIENT_NOCONTEXT_INITIALIZER)):
+        raise FullError('source_changed')
+    start = raw.index(DATE_NULL_PREFIX)
+    end = raw.index(DATE_NULL_SUFFIX, start)
+    core = raw[start + len(DATE_NULL_PREFIX):end]
+    if digest(core) != DATE_NULL_CORE_SHA256:
+        raise FullError('source_changed')
+    restored = raw[:start] + raw[end + len(DATE_NULL_SUFFIX):]
+    restored = restored.replace(DATE_NULL_CALL, b'', 1).replace(
+        DATE_NULL_COMPACT_WRITER, DATE_NULL_OLD_WRITER, 1)
+    if digest(restored) != DATE_NULL_BASE_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
+def valid_date_null_token(value):
+    return (type(value) is str and len(value) == 14 and value.startswith('dn.v1:')
+            and all(char in '012' for char in value[6:12])
+            and all(char in '012345678' for char in value[12:14]))
+# END bounded Date Null measurement source binding
+
+
+CLIENT_WITNESS_SOURCE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
@@ -418,10 +457,17 @@ def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, run
     if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:
         raise FullError("source_changed")
     runner = bounded_child if runner is None else runner
+    # Temporary measurement checkpoint: independently execute only the exact
+    # restored strict135 baseline. This is not Date/Null runtime/native parity.
+    baseline = date_null_shared_source(raw)
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        baseline_path = Path(cache) / "date-null-baseline.bsl"
+        baseline_path.write_bytes(baseline)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(baseline_path)], root)
+        if read_regular(baseline_path, MAX_FILE, nonempty=True) != baseline:
+            raise FullError("source_changed")
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -447,8 +493,17 @@ def validate_process_diagnostics(value):
 
 
 def validate_marker_diagnostics(value):
+    capture = type(value) is dict and 'date_null' in value
+    if capture:
+        if (set(value) != {'phase', 'kind', 'ordinal', 'error_stage', 'date_null'}
+                or not valid_date_null_token(value['date_null'])
+                or value.get('phase') != 'completed' or value.get('kind') != 'count'
+                or type(value.get('ordinal')) is not int or value['ordinal'] != 135
+                or type(value.get('error_stage')) is not int or value['error_stage'] != 0):
+            raise ValueError('Date/Null marker diagnostics')
     if (type(value) is not dict
-            or set(value) != {'phase', 'kind', 'ordinal', 'error_stage'}
+            or set(value) != ({'phase', 'kind', 'ordinal', 'error_stage', 'date_null'}
+                             if capture else {'phase', 'kind', 'ordinal', 'error_stage'})
             or type(value['phase']) is not str
             or value['phase'] not in {'invalid', 'error', 'completed'}
             or type(value['kind']) is not str
@@ -474,6 +529,17 @@ def validate_marker_diagnostics(value):
 def validate_client_probe(data, source_hash, module_hash):
     if type(data) is dict and "marker_diagnostics" in data:
         validate_marker_diagnostics(data["marker_diagnostics"])
+        if 'date_null' in data['marker_diagnostics']:
+            if (source_hash != DATE_NULL_SOURCE_SHA256 or module_hash != DATE_NULL_MODULE_SHA256
+                    or data.get('source_sha256') != DATE_NULL_SOURCE_SHA256
+                    or data.get('module_sha256') != DATE_NULL_MODULE_SHA256
+                    or data.get('roundtrip_sha256') != DATE_NULL_MODULE_SHA256
+                    or any(data.get(key) is not True for key in ('entered', 'process_exited', 'quiet'))
+                    or data.get('completed') is not False
+                    or type(data.get('process_diagnostics')) is not dict
+                    or data['process_diagnostics'].get('stage') != 'after_exit'
+                    or data['process_diagnostics'].get('reason') != 'none'):
+                raise ValueError("Date/Null capture identity or completion")
         if data.get("status") != "failed" or data.get("failure_kind") != "invalid_result" or data.get("witness_verified") is not False:
             raise ValueError("client marker diagnostics outcome")
         data = {key: value for key, value in data.items() if key != "marker_diagnostics"}
@@ -489,6 +555,8 @@ def validate_client_probe(data, source_hash, module_hash):
     if any(data[key] not in (None, expected[key]) for key in CLIENT_HASHES):
         raise ValueError("client probe identity")
     if data["status"] == "ok":
+        if source_hash == DATE_NULL_SOURCE_SHA256:
+            raise ValueError("Date/Null measurement cannot claim acceptance")
         if (diagnostic["stage"] != "after_exit" or diagnostic["reason"] != "none"
                 or data["failure_kind"] != "none" or not all(data[key] for key in CLIENT_FLAGS)
                 or any(data[key] != expected[key] for key in CLIENT_HASHES)):
@@ -767,6 +835,11 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
         raise ValueError("cases")
     client = (validate_client_probe(data["client_probe"], input_hashes[CLIENT_SOURCE],
                                     module_hashes["client_probe"]) if client_requested else None)
+    if (client_requested and 'date_null' in
+            data['client_probe'].get('marker_diagnostics', {})):
+        if (status != 'failed' or data['failure_kind'] != 'invalid_result'
+                or data['failed_case'] is not None or data['input_sha256'] != input_hashes):
+            raise ValueError('Date/Null capture stage outcome')
     watchdog = (validate_client_watchdog(data["client_watchdog"], input_hashes[CLIENT_SOURCE],
                 module_hashes["client_probe"]) if watchdog_check else None)
     if watchdog is not None:
