@@ -566,6 +566,384 @@ class InventoryScannerTests(unittest.TestCase):
             self.assertEqual(failure.exception.kind,'artifact_limit')
 
 
+@unittest.skipUnless(os.name=='posix' and hasattr(os,'O_NOFOLLOW'), 'native inventory requires POSIX')
+class HomeSocketInventoryTests(unittest.TestCase):
+    """Real directory anchors with controlled socket metadata, never native IPC."""
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.base=Path(self.temp.name).resolve(); self.root=self.base/'sandbox'; self.root.mkdir()
+        self.parent=self.root/'onec-db-oracle'; self.home=self.parent/'home'; self.home.mkdir(parents=True)
+        self.park=self.base/'park'; self.park.mkdir()
+
+    @staticmethod
+    def identity(info): return info.st_dev,info.st_ino
+
+    def leaf(self,relative,*,uid=1000,gid=1000,links=1,mode=stat.S_IFSOCK,size=0):
+        path=self.root/relative; path.parent.mkdir(parents=True,exist_ok=True)
+        entry=mock.Mock(); entry.name=path.name
+        entry.stat.return_value=mock.Mock(st_mode=mode,st_nlink=links,st_size=size,
+            st_dev=1,st_ino=2,st_uid=uid,st_gid=gid)
+        return path,entry
+
+    @contextlib.contextmanager
+    def inventory(self,*leaves,owners=None,after_scan=None):
+        # Normalize directory ownership only in metadata. Never chown/chmod and
+        # never need the test runner itself to have the native UID/GID.
+        owners={} if owners is None else owners
+        real_fstat,real_stat,real_scandir=stage.os.fstat,stage.os.stat,stage.os.scandir
+        grouped={}
+        for path,entry in leaves:
+            grouped.setdefault(self.identity(real_stat(path.parent)),[]).append(entry)
+        def normalize(info):
+            if not stat.S_ISDIR(info.st_mode): return info
+            values=list(info); values[4:6]=owners.get(self.identity(info),(1000,1000))
+            return os.stat_result(values)
+        def fstat(descriptor): return normalize(real_fstat(descriptor))
+        def lstat(*args,**kwargs): return normalize(real_stat(*args,**kwargs))
+        @contextlib.contextmanager
+        def scan_fd(descriptor):
+            identity=self.identity(real_fstat(descriptor)); extra=grouped.get(identity,[])
+            names={entry.name for entry in extra}; entries=[]
+            with real_scandir(descriptor) as children:
+                for child in children:
+                    if child.name in names: continue
+                    entry=mock.Mock(); entry.name=child.name
+                    entry.stat.side_effect=lambda *,follow_symlinks,child=child: normalize(
+                        child.stat(follow_symlinks=follow_symlinks))
+                    entries.append(entry)
+            yield entries+extra
+            if after_scan is not None: after_scan(identity)
+        def scan(descriptor):
+            return scan_fd(descriptor) if isinstance(descriptor,int) else real_scandir(descriptor)
+        with mock.patch.object(stage.os,'fstat',side_effect=fstat), \
+                mock.patch.object(stage.os,'stat',side_effect=lstat), \
+                mock.patch.object(stage.os,'scandir',side_effect=scan):
+            yield
+
+    def assert_kind(self,kind,action):
+        with self.assertRaises(OracleError) as failure: action()
+        self.assertEqual(failure.exception.kind,kind)
+        self.assertNotIsInstance(failure.exception,stage.SandboxInventoryError)
+        return failure.exception
+
+    def assert_socket_rejection(self,anchor,region,reason):
+        with self.assertRaises(stage.SandboxInventoryError) as failure:
+            stage.sandbox_bytes(self.root,home_anchor=anchor)
+        self.assertEqual((failure.exception.region,failure.exception.reason),(region,reason))
+        self.assertNotIn(str(self.root),repr(failure.exception))
+
+    def test_capture_pins_both_directory_identities_and_owners_using_directory_only_opens(self):
+        real_open=stage.os.open
+        with self.inventory(),mock.patch.object(stage.os,'open',wraps=real_open) as opened:
+            anchor=stage.capture_home_anchor(self.root)
+            expected=tuple(value for path in (self.parent,self.home) for value in
+                (path.stat().st_dev,path.stat().st_ino,1000,1000))
+            self.assertEqual(anchor,expected); self.assertTrue(all(type(value) is int for value in anchor))
+            self.assertEqual(len(opened.call_args_list),3)
+            for call in opened.call_args_list:
+                self.assertTrue(call.args[1]&os.O_DIRECTORY)
+                self.assertTrue(call.args[1]&os.O_NOFOLLOW)
+
+    def test_capture_and_each_scan_reject_wrong_anchor_uid_or_gid(self):
+        owners={}
+        with self.inventory(owners=owners):
+            anchor=stage.capture_home_anchor(self.root)
+            for directory in (self.parent,self.home):
+                for owner in ((0,1000),(1000,0),(1001,1000),(1000,1001)):
+                    with self.subTest(directory=directory.name,owner=owner):
+                        owners[self.identity(directory.stat())]=owner
+                        self.assert_kind('snapshot_changed',lambda: stage.capture_home_anchor(self.root))
+                        self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+                        owners.clear()
+
+    def test_zero_one_four_nested_sockets_and_per_scan_counter_reset(self):
+        self.assertEqual(stage.MAX_HOME_SOCKETS,4)
+        for count in (0,1,4):
+            leaves=[self.leaf(f'onec-db-oracle/home/private/level-{index}/ipc') for index in range(count)]
+            with self.subTest(count=count),self.inventory(*leaves):
+                anchor=stage.capture_home_anchor(self.root)
+                for _ in range(3): self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=anchor),0)
+
+    def test_fifth_owned_socket_is_generic_artifact_limit(self):
+        leaves=[self.leaf(f'onec-db-oracle/home/level-{index}/ipc') for index in range(5)]
+        with self.inventory(*leaves):
+            anchor=stage.capture_home_anchor(self.root)
+            self.assert_kind('artifact_limit',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+
+    def test_socket_owner_and_link_failures_keep_existing_bounded_reasons(self):
+        cases=((0,1000,1,'unexpected_socket'),(1000,0,1,'unexpected_socket'),
+            (1001,1000,1,'unexpected_socket'),(1000,1001,1,'unexpected_socket'),
+            (1000,1000,0,'link_count'),(1000,1000,-1,'link_count'),(1000,1000,2,'hardlink'))
+        for uid,gid,links,reason in cases:
+            leaf=self.leaf('onec-db-oracle/home/private/ipc',uid=uid,gid=gid,links=links)
+            with self.subTest(uid=uid,gid=gid,links=links),self.inventory(leaf):
+                self.assert_socket_rejection(stage.capture_home_anchor(self.root),'home',reason)
+
+    def test_unpinned_calls_preserve_strict_home_socket_rejection(self):
+        with self.inventory(self.leaf('onec-db-oracle/home/ipc')):
+            self.assert_socket_rejection(None,'home','unexpected_socket')
+            with self.assertRaises(stage.SandboxInventoryError) as failure: stage.sandbox_bytes(self.root)
+            self.assertEqual(failure.exception.reason,'unexpected_socket')
+
+    def test_only_strict_home_descendants_are_eligible(self):
+        cases=(('onec-db-oracle/home','home'),('onec-db-oracle/home-other/ipc','experiment'),
+            ('onec-db-oracle/homeish/ipc','experiment'),('onec-db-oracle/temp/ipc','tmp'),
+            ('other/home/ipc','tmp'),('runtime/ipc','runtime'),('ipc','tmp'))
+        for relative,region in cases:
+            with self.subTest(relative=relative),self.inventory(self.leaf(relative)):
+                self.assert_socket_rejection(stage.capture_home_anchor(self.root),region,'unexpected_socket')
+
+    def test_legacy_two_service_sockets_do_not_consume_home_socket_allowance(self):
+        leaves=[self.leaf('.X11-unix/X99',uid=0,gid=0),self.leaf('runtime/session-bus/bus',uid=0,gid=0)]
+        leaves.extend(self.leaf(f'onec-db-oracle/home/ipc-{index}') for index in range(4))
+        with self.inventory(*leaves):
+            self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=stage.capture_home_anchor(self.root)),0)
+        for relative in ('.X11-unix/X98','runtime/session-bus/other'):
+            with self.subTest(relative=relative),self.inventory(self.leaf(relative)):
+                self.assert_socket_rejection(stage.capture_home_anchor(self.root),'runtime','unexpected_socket')
+
+    def test_pinned_scans_still_reject_other_specials_and_links(self):
+        for mode,links,reason in ((stat.S_IFLNK,1,'symlink'),(stat.S_IFIFO,1,'special'),
+                (stat.S_IFCHR,1,'special'),(stat.S_IFREG,2,'hardlink'),(stat.S_IFREG,0,'link_count')):
+            with self.subTest(mode=mode,links=links),self.inventory(
+                    self.leaf('onec-db-oracle/home/entry',mode=mode,links=links)):
+                self.assert_socket_rejection(stage.capture_home_anchor(self.root),'home',reason)
+
+    def test_regular_creation_and_same_scan_size_reserves_remain_valid(self):
+        leaf=self.leaf('onec-db-oracle/home/ipc',size=stage.MAX_FILE_BYTES+1)
+        with self.inventory(leaf):
+            anchor=stage.capture_home_anchor(self.root)
+            self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=anchor),0)
+            (self.home/'new-child').mkdir(); (self.home/'new-child'/'ordinary').write_bytes(b'1234')
+            (self.root/'outside-home').write_bytes(b'567')
+            with mock.patch.object(stage,'MAX_LIVE_BYTES',8):
+                self.assertEqual(stage.sandbox_bytes(self.root,1,home_anchor=anchor),7)
+                self.assert_kind('artifact_limit',lambda: stage.sandbox_bytes(self.root,2,home_anchor=anchor))
+            with mock.patch.object(stage,'MAX_FILE_BYTES',3):
+                self.assert_kind('artifact_limit',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+
+    def test_existing_entry_limit_counts_admitted_sockets(self):
+        socket_leaf=self.leaf('onec-db-oracle/home/ipc')
+        regular=[self.leaf(f'onec-db-oracle/home/regular-{index}',mode=stat.S_IFREG) for index in range(4094)]
+        for count in (4093,4094):
+            with self.subTest(count=count),self.inventory(socket_leaf,*regular[:count]):
+                anchor=stage.capture_home_anchor(self.root)
+                if count==4093: self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=anchor),0)
+                else: self.assert_kind('artifact_limit',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+
+    def test_existing_depth_limit_is_not_relaxed(self):
+        directory=self.home
+        for _ in range(14): directory=directory/'nested'; directory.mkdir()
+        with self.inventory(self.leaf(str((directory/'ipc').relative_to(self.root)))):
+            self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=stage.capture_home_anchor(self.root)),0)
+        directory=directory/'too-deep'; directory.mkdir()
+        with self.inventory():
+            self.assert_kind('artifact_limit',lambda: stage.sandbox_bytes(self.root,
+                home_anchor=stage.capture_home_anchor(self.root)))
+
+    def test_replacement_between_scans_is_not_reanchored(self):
+        for name in ('home','parent'):
+            target=self.home if name=='home' else self.parent
+            displaced=self.park/name
+            with self.subTest(target=name),self.inventory():
+                anchor=stage.capture_home_anchor(self.root)
+                self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=anchor),0)
+                target.rename(displaced); target.mkdir()
+                if name=='parent': (target/'home').mkdir()
+                self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+                if name=='parent': (target/'home').rmdir()
+                target.rmdir(); displaced.rename(target)
+
+    def test_opened_anchor_must_still_match_its_parent_entry(self):
+        real_open=stage.os.open
+        for name in ('home','parent'):
+            target=self.home if name=='home' else self.parent
+            original=self.identity(target.stat()); displaced=self.park/name; changed=False
+            def opened(path,*args,**kwargs):
+                nonlocal changed
+                descriptor=real_open(path,*args,**kwargs)
+                if not changed and self.identity(os.fstat(descriptor))==original:
+                    changed=True; target.rename(displaced); target.mkdir()
+                    if name=='parent': (target/'home').mkdir()
+                return descriptor
+            with self.subTest(target=name),self.inventory(),mock.patch.object(stage.os,'open',side_effect=opened):
+                self.assert_kind('snapshot_changed',lambda: stage.capture_home_anchor(self.root))
+                self.assertTrue(changed)
+            if name=='parent': (target/'home').rmdir()
+            target.rmdir(); displaced.rename(target)
+
+    def test_walker_checks_anchor_identity_after_pre_scan_validation(self):
+        # Swap just before the walk opens each fixed directory. Its entry stat
+        # agrees with its newly opened descriptor, but not with the pinned tuple.
+        for name in ('home','parent'):
+            target=self.home if name=='home' else self.parent
+            displaced=self.park/name; changed=False
+            def scanned(identity):
+                nonlocal changed
+                # _checked_home_anchor does not call scandir; reaching root
+                # scandir means pre-scan validation already completed.
+                if identity==self.identity(self.root.stat()) and not changed:
+                    changed=True; target.rename(displaced); target.mkdir()
+                    if name=='parent': (target/'home').mkdir()
+            with self.subTest(target=name),self.inventory():
+                anchor=stage.capture_home_anchor(self.root)
+                real_scan=stage.os.scandir
+                def scan(descriptor):
+                    scanned(self.identity(os.fstat(descriptor)))
+                    return real_scan(descriptor)
+                with mock.patch.object(stage.os,'scandir',side_effect=scan):
+                    self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+                self.assertTrue(changed)
+            if name=='parent': (target/'home').rmdir()
+            target.rmdir(); displaced.rename(target)
+
+    def test_after_open_rename_of_socket_ancestor_is_rejected(self):
+        nested=self.home/'nested'; nested.mkdir()
+        leaf=self.leaf('onec-db-oracle/home/nested/ipc'); real_open=stage.os.open
+        for name,target in (('parent',self.parent),('home',self.home),('nested',nested)):
+            original=self.identity(target.stat()); displaced=self.park/name; opens=0; changed=False
+            def opened(path,*args,**kwargs):
+                nonlocal opens,changed
+                descriptor=real_open(path,*args,**kwargs)
+                if self.identity(os.fstat(descriptor))==original:
+                    opens+=1
+                    # Fixed anchors are opened once in the pre-scan check first.
+                    if opens==(1 if name=='nested' else 2):
+                        changed=True; target.rename(displaced); target.mkdir()
+                        if name=='parent': (target/'home').mkdir()
+                return descriptor
+            with self.subTest(target=name),self.inventory(leaf):
+                anchor=stage.capture_home_anchor(self.root)
+                with mock.patch.object(stage.os,'open',side_effect=opened):
+                    self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+                self.assertTrue(changed)
+            if name=='parent': (target/'home').rmdir()
+            target.rmdir(); displaced.rename(target)
+
+    def test_post_recursion_checks_missing_replaced_or_symlinked_ancestors(self):
+        nested=self.home/'nested'; nested.mkdir(); leaf=self.leaf('onec-db-oracle/home/nested/ipc')
+        nested_identity=self.identity(nested.stat())
+        for name,target in (('parent',self.parent),('home',self.home),('nested',nested)):
+            for replacement in ('missing','directory','symlink'):
+                displaced=self.park/(name+'-'+replacement); changed=False
+                def completed(identity):
+                    nonlocal changed
+                    if identity==nested_identity and not changed:
+                        changed=True; target.rename(displaced)
+                        if replacement=='directory':
+                            target.mkdir()
+                            if name=='parent': (target/'home').mkdir()
+                        elif replacement=='symlink': target.symlink_to(displaced,target_is_directory=True)
+                with self.subTest(target=name,replacement=replacement),self.inventory(leaf,after_scan=completed):
+                    anchor=stage.capture_home_anchor(self.root)
+                    self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+                    self.assertTrue(changed)
+                if replacement=='directory':
+                    if name=='parent': (target/'home').rmdir()
+                    target.rmdir()
+                elif replacement=='symlink': target.unlink()
+                displaced.rename(target)
+
+    def test_final_anchor_check_runs_even_when_no_home_sockets_were_seen(self):
+        changed=False; displaced=self.park/'home'
+        def completed(identity):
+            nonlocal changed
+            if identity==self.identity(self.root.stat()) and not changed:
+                changed=True; self.home.rename(displaced); self.home.mkdir()
+        with self.inventory(after_scan=completed):
+            anchor=stage.capture_home_anchor(self.root)
+            self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+            self.assertTrue(changed)
+
+    def test_preexisting_symlink_ancestor_is_not_followed(self):
+        for name,target in (('parent',self.parent),('home',self.home)):
+            displaced=self.park/name
+            with self.subTest(target=name),self.inventory():
+                anchor=stage.capture_home_anchor(self.root)
+                target.rename(displaced); target.symlink_to(displaced,target_is_directory=True)
+                self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+                self.assert_kind('snapshot_changed',lambda: stage.capture_home_anchor(self.root))
+                target.unlink(); displaced.rename(target)
+
+    def test_missing_ordinary_entries_remain_tolerated_under_pinned_home(self):
+        missing=self.leaf('onec-db-oracle/home/missing',mode=stat.S_IFREG)
+        missing[1].stat.side_effect=FileNotFoundError(errno.ENOENT,'synthetic disappearance')
+        gone=self.leaf('onec-db-oracle/home/gone',mode=stat.S_IFDIR)
+        real_open=stage.os.open
+        def opened(path,*args,**kwargs):
+            if path=='gone': raise FileNotFoundError(errno.ENOENT,'synthetic disappearance')
+            return real_open(path,*args,**kwargs)
+        with self.inventory(missing,gone),mock.patch.object(stage.os,'open',side_effect=opened):
+            self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=stage.capture_home_anchor(self.root)),0)
+
+    def test_socket_metadata_is_never_opened_connected_copied_or_exported(self):
+        leaves=[self.leaf('onec-db-oracle/home/nested/ipc'),self.leaf('.X11-unix/X99')]
+        real_open=stage.os.open
+        with self.inventory(*leaves),mock.patch.object(stage.os,'open',wraps=real_open) as opened, \
+                mock.patch.object(socket,'socket',side_effect=AssertionError('no IPC')), \
+                mock.patch.object(stage.shutil,'copyfile',side_effect=AssertionError('no copy')), \
+                mock.patch.object(stage.shutil,'copytree',side_effect=AssertionError('no copy')), \
+                mock.patch.object(stage,'file_summary',side_effect=AssertionError('no export')):
+            anchor=stage.capture_home_anchor(self.root)
+            self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=anchor),0)
+            for call in opened.call_args_list:
+                self.assertTrue(call.args[1]&os.O_DIRECTORY)
+                self.assertTrue(call.args[1]&os.O_NOFOLLOW)
+                self.assertNotIn(str(call.args[0]),('ipc','X99'))
+
+    def test_native_budget_forwards_the_original_pin_without_recapture(self):
+        native=stage.Native(NONCE,provenance()); self.assertIsNone(native.home_anchor)
+        native.root=self.parent; native.budget_base=self.root
+        with self.inventory(): native.home_anchor=stage.capture_home_anchor(self.root)
+        with mock.patch.object(stage,'sandbox_bytes') as scan,mock.patch.object(stage,'capture_home_anchor') as capture:
+            native.budgets(17); native.budgets(19)
+        self.assertEqual(scan.call_args_list,[mock.call(self.root,17,home_anchor=native.home_anchor),
+            mock.call(self.root,19,home_anchor=native.home_anchor)])
+        capture.assert_not_called()
+
+    def test_preflight_captures_private_home_before_any_command(self):
+        self.home.rmdir(); self.parent.rmdir()
+        native=stage.Native(NONCE,provenance()); native.root=self.parent; native.budget_base=self.root
+        native.artifacts=self.parent/'artifacts'; native.evidence=self.parent/'evidence'
+        real_path=Path; sentinel=OracleError('process_failed')
+        def path(value): return self.root/'runtime' if str(value)=='/tmp/runtime' else real_path(value)
+        def command(*args,**kwargs):
+            self.assertTrue(self.home.is_dir()); self.assertIsNotNone(native.home_anchor)
+            self.assertEqual(native.home_anchor,stage.capture_home_anchor(self.root))
+            raise sentinel
+        with self.inventory(),mock.patch.object(stage,'Path',side_effect=path), \
+                mock.patch.object(stage.os,'geteuid',return_value=1000,create=True), \
+                mock.patch.object(stage.os,'access',return_value=True),mock.patch.object(stage,'ONEC') as onec, \
+                mock.patch.object(stage.os,'pidfd_open',create=True), \
+                mock.patch.object(stage.signal,'pidfd_send_signal',create=True), \
+                mock.patch.dict(stage.os.environ),mock.patch.object(stage,'process_snapshot',return_value=set()), \
+                mock.patch.object(native,'process',side_effect=command) as process:
+            onec.is_file.return_value=True
+            with self.assertRaises(OracleError) as failure: native.preflight()
+            self.assertIs(failure.exception,sentinel); process.assert_called_once()
+
+    def test_admitted_socket_never_bypasses_live_process_census_or_timeout(self):
+        for outcome in ('census','timeout'):
+            native=stage.Native(NONCE,provenance()); native.root=self.parent; native.budget_base=self.root
+            native.evidence=self.parent/('evidence-'+outcome); native.evidence.mkdir(); native.deadline=1000
+            native.begin_stage('seed_v1'); child=mock.Mock(); child.pid=999
+            child.poll.return_value=None if outcome=='timeout' else 0; child.wait.return_value=0
+            times=[0,0,1,121] if outcome=='timeout' else [0,0,0,6]
+            quiet=[True] if outcome=='timeout' else [True,False]
+            with self.subTest(outcome=outcome),self.inventory(self.leaf('onec-db-oracle/home/ipc')):
+                native.home_anchor=stage.capture_home_anchor(self.root)
+                with mock.patch.object(native,'quiescent',side_effect=quiet), \
+                        mock.patch.object(stage.subprocess,'Popen',return_value=child), \
+                        mock.patch.object(stage.time,'monotonic',side_effect=times), \
+                        mock.patch.object(stage.time,'sleep'),mock.patch.object(stage.os,'killpg',create=True) as kill, \
+                        mock.patch.object(stage.signal,'SIGKILL',9,create=True):
+                    self.assert_kind('timeout' if outcome=='timeout' else 'snapshot_not_quiescent',
+                        lambda: native.process(['synthetic'],'owned-home-socket'))
+                    if outcome=='timeout':
+                        kill.assert_called_once_with(999,9); child.wait.assert_called_once_with(timeout=5)
+                    else: kill.assert_not_called(); child.wait.assert_called_once_with()
+
+
 class InventoryMonitorTests(unittest.TestCase):
     """Exercise the real process loop with a synthetic child, never native 1C."""
     def setUp(self):

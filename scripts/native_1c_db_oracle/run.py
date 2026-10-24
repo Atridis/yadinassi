@@ -38,6 +38,7 @@ COMMAND_SECONDS = 120
 WORK_SECONDS = 2340
 MAX_LOG_BYTES = 1048576
 MAX_LOG_TOTAL = 16777216
+MAX_HOME_SOCKETS = 4
 
 
 class SeedCommandError(OracleError):
@@ -116,16 +117,54 @@ def zero_result(path):
 
 
 
-def sandbox_bytes(root, reserve=0):
+def _checked_home_anchor(root_fd, expected=None):
+    """Directory metadata only: fixed private HOME and its parent entry."""
+    descriptors=[]
+    try:
+        if expected is not None:
+            require(type(expected) is tuple and len(expected)==8
+                    and all(type(value) is int and value>=0 for value in expected)
+                    and expected[2:4]==expected[6:8]==(1000,1000), 'snapshot_changed')
+        parent=root_fd; values=[]
+        for name in ('onec-db-oracle','home'):
+            child=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent)
+            descriptors.append(child)
+            opened=os.fstat(child); entry=os.stat(name,dir_fd=parent,follow_symlinks=False)
+            require(stat.S_ISDIR(opened.st_mode) and stat.S_ISDIR(entry.st_mode)
+                    and (opened.st_dev,opened.st_ino)==(entry.st_dev,entry.st_ino)
+                    and (opened.st_uid,opened.st_gid)==(entry.st_uid,entry.st_gid)==(1000,1000),
+                    'snapshot_changed')
+            values.extend((opened.st_dev,opened.st_ino,opened.st_uid,opened.st_gid))
+            parent=child
+        actual=tuple(values)
+        require(expected is None or actual==expected,'snapshot_changed')
+        return actual
+    except OSError:
+        raise OracleError('snapshot_changed') from None
+    finally:
+        for descriptor in reversed(descriptors): os.close(descriptor)
+
+
+def capture_home_anchor(root):
+    # Called once, before native processes, never repinned after a replacement.
+    try:
+        descriptor=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try: return _checked_home_anchor(descriptor)
+        finally: os.close(descriptor)
+    except OSError:
+        raise OracleError('snapshot_changed') from None
+
+
+def sandbox_bytes(root, reserve=0, *, home_anchor=None):
     """Account the same private tmpfs entries without changing admission policy.
 
     Error classifications contain fixed regions/reasons only. Disappearing entry
     stat/child-open races remain tolerated exactly as before; other existing
-    rejections remain failures, including unknown sockets and every link/special.
+    rejections remain failures except the explicit pinned, owned HOME socket policy.
     """
     require(type(reserve) is int and 0 <= reserve <= MAX_LIVE_BYTES,'artifact_limit')
     sockets={'.X11-unix/X99','runtime/session-bus/bus'}
-    total=0; entries=0
+    total=0; entries=0; home_sockets=0
     def reject(relative,reason):
         raise SandboxInventoryError(inventory_region(relative),reason)
     def io(relative,action,*,missing=False):
@@ -138,7 +177,7 @@ def sandbox_bytes(root, reserve=0):
     def links(relative,info):
         if info.st_nlink!=1: reject(relative,'hardlink' if info.st_nlink>1 else 'link_count')
     def walk(descriptor,prefix,depth):
-        nonlocal total,entries
+        nonlocal total,entries,home_sockets
         require(depth<=16,'artifact_limit')
         try:
             with os.scandir(descriptor) as children:
@@ -153,11 +192,28 @@ def sandbox_bytes(root, reserve=0):
                         try:
                             actual=io(relative,lambda: os.fstat(child))
                             require((actual.st_dev,actual.st_ino)==(info.st_dev,info.st_ino),'snapshot_changed')
+                            if home_anchor is not None and relative in ('onec-db-oracle','onec-db-oracle/home'):
+                                offset=0 if relative=='onec-db-oracle' else 4
+                                require((actual.st_dev,actual.st_ino,actual.st_uid,actual.st_gid)==home_anchor[offset:offset+4],
+                                        'snapshot_changed')
+                            before=home_sockets
                             walk(child,relative+'/',depth+1)
+                            if home_sockets>before:
+                                # The new exception is valid only while this path still names the opened directory.
+                                try: after=os.stat(entry.name,dir_fd=descriptor,follow_symlinks=False)
+                                except OSError: raise OracleError('snapshot_changed') from None
+                                require(stat.S_ISDIR(after.st_mode)
+                                        and (after.st_dev,after.st_ino)==(actual.st_dev,actual.st_ino),'snapshot_changed')
                         finally: io(relative,lambda: os.close(child))
                     elif stat.S_ISSOCK(info.st_mode):
-                        if relative not in sockets: reject(relative,'unexpected_socket')
-                        links(relative,info)
+                        if relative in sockets:
+                            links(relative,info)
+                        elif home_anchor is not None and relative.startswith('onec-db-oracle/home/'):
+                            if (info.st_uid,info.st_gid)!=(1000,1000): reject(relative,'unexpected_socket')
+                            links(relative,info)
+                            home_sockets+=1
+                            require(home_sockets<=MAX_HOME_SOCKETS,'artifact_limit')
+                        else: reject(relative,'unexpected_socket')
                     else:
                         if stat.S_ISLNK(info.st_mode): reject(relative,'symlink')
                         if not stat.S_ISREG(info.st_mode): reject(relative,'special')
@@ -168,7 +224,10 @@ def sandbox_bytes(root, reserve=0):
         except OSError as error:
             raise SandboxInventoryError(inventory_region(prefix),inventory_io_reason(error)) from None
     descriptor=io('',lambda: os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW))
-    try: walk(descriptor,'',0)
+    try:
+        if home_anchor is not None: _checked_home_anchor(descriptor,home_anchor)
+        walk(descriptor,'',0)
+        if home_anchor is not None: _checked_home_anchor(descriptor,home_anchor)
     finally: io('',lambda: os.close(descriptor))
     return total
 
@@ -217,6 +276,7 @@ class Native:
         self.baseline=None; self.initial=None; self.services=[]; self.counter=0
         self.v1=ROOT/'metadata-v1'; self.v2=ROOT/'metadata-v2'
         self.stage='preflight'; self.seed_pending=None; self.seed_launched=None
+        self.home_anchor=None
 
     def begin_stage(self, stage):
         require(type(stage) is str and stage in STAGES, 'invalid_input')
@@ -246,7 +306,7 @@ class Native:
         return remaining
 
     def budgets(self, reserve=0):
-        sandbox_bytes(self.budget_base,reserve)
+        sandbox_bytes(self.budget_base,reserve,home_anchor=self.home_anchor)
         logs=[p for p in self.root.rglob('*') if p.is_file() and p.suffix in ('.log','.result')]
         require(all(p.stat().st_size<=MAX_LOG_BYTES for p in logs)
                 and sum(p.stat().st_size for p in logs)<=MAX_LOG_TOTAL,'artifact_limit')
@@ -307,6 +367,7 @@ class Native:
         self.artifacts.mkdir(mode=0o700); self.evidence.mkdir(mode=0o700)
         for directory in (self.root/'home',self.root/'temp',Path('/tmp/runtime')):
             absent(directory); directory.mkdir(mode=0o700)
+        self.home_anchor=capture_home_anchor(self.budget_base)
         os.environ['HOME']=str(self.root/'home')
         os.environ['TMPDIR']=str(self.root/'temp')
         self.initial=process_snapshot()

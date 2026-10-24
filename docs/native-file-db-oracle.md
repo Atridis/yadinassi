@@ -119,7 +119,8 @@ Limits are independent of, and do not raise, the existing lane's limits:
 
 - 64 MiB per raw file, 512 MiB cumulative regular files across the private /tmp,
   including native HOME, TMPDIR, metadata, caches and evidence. Only the two
-  explicitly owned X11/session-bus socket paths are admitted as special entries.
+  explicit X11/session-bus socket paths and the narrowly bounded owned HOME
+  sockets described below are admitted as special entries.
 - 1 MiB per native log, 16 MiB total native logs.
 - 32 KiB complete public report and container transport, no binary payloads.
 - 120 seconds maximum per native command, one 2340-second work deadline, and
@@ -174,9 +175,28 @@ prefixes. Reasons distinguish unexpected socket, symlink, hardlink, other
 non-single link count, other special file, rejected ENOENT/ESTALE race,
 EACCES/EPERM access failure, and other I/O error. No path, filename, raw errno,
 exception, file content or log is reported. Already tolerated entry-disappearance
-races remain tolerated. This classification changes no socket whitelist,
+races remain tolerated. The classification itself changes no socket whitelist,
 permissions, filesystem predicate, allocation limit, or quiescence requirement.
+The separately reviewed HOME policy below is the only new typed exception.
 Pre-launch failures and every other operation retain existing categories.
+
+The inventory additionally permits at most **four** filesystem socket nodes
+strictly below the preflight-created private HOME, only when UID and GID are both
+1000 and link count is exactly one. Four is a conservative local fail-closed
+ceiling, not a measured native requirement. The controller pins the parent and
+HOME device/inode/ownership before native processes, verifies the same anchored
+no-follow directory entries before and after every inventory, and revalidates
+post-recursion ancestry on every path that used this new exception. HOME itself,
+lookalike paths, replaced or renamed ancestry, unowned sockets, and other regions
+are not covered. The existing two service socket names, all other special/link
+rejections, regular-file accounting, entry/depth limits and process/snapshot
+checks are unchanged. Neither socket names nor content are opened, connected,
+copied, hashed or exported. A stale socket may remain after exit, but its presence
+or absence never proves quiescence. HOME is never a database snapshot source.
+Run [40092430401](https://github.com/Atridis/yadinassi/actions/runs/40092430401)
+proved only a polling rejection of an unexpected HOME socket, not its name,
+purpose, ownership or lifecycle. This policy checks ownership structurally;
+it is not a claim that native bootstrap or the full oracle now succeeds.
 
 The absent logical fields in the fixed BSL markers use `Неопределено`, which
 [automatic JSON serialization](https://v8.1c.ru/platforma/json/) maps to JSON
