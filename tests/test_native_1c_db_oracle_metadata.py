@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import uuid
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -267,7 +268,7 @@ from yadinassi import Interpreter
 from yadinassi.errors import BSLRuntimeError
 from yadinassi.native_targets import LINUX_8_3_27_1508
 from yadinassi.structures import BSLStructure
-from yadinassi.values import BSLObject, HostFunction, NULL
+from yadinassi.values import BSLArray, BSLObject, HostFunction, NULL
 from test_native_async_error_transport import encode as transport_encode
 
 sys.path.insert(0, str(ROOT / "scripts/native_1c_db_oracle"))
@@ -927,12 +928,17 @@ class DBControlledCompletionTests(unittest.TestCase):
                               ("write", "Объект.Записать();"),
                               ("reference_capture", "Ссылка = Объект.Ссылка;"),
                               ("commit", "ЗафиксироватьТранзакцию();"),
+                              ("reference_uuid", "ЗначениеСсылки = Строка(Ссылка.УникальныйИдентификатор());"),
                               ("reference_read", "Ссылка = NativeСохраненнаяСсылка(Корень);"),
                               ("get_object", "Объект = Ссылка.ПолучитьОбъект();"),
                               ("delete_object", "Объект.Удалить();")):
             self.assertRegex(measurement, re.escape('Контекст.phase = "' + phase + '";') +
                              r"\s+" + re.escape(action))
-        self.assertIn('Контекст.phase = "reference_write";\n        ФайлСсылки', measurement)
+        self.assertIn('Контекст.phase = "reference_write";\n        ДанныеСсылки', measurement)
+        self.assertLess(measurement.index("ЗафиксироватьТранзакцию();"),
+                        measurement.index('Контекст.phase = "reference_uuid";'))
+        self.assertLess(measurement.index('Контекст.phase = "reference_uuid";'),
+                        measurement.index('Контекст.phase = "reference_write";'))
         self.assertIn('Контекст.phase = "readback";\n    После = NativeСостояние', measurement)
         managed = rendered_module("ManagedApplicationModule.bsl")
         allowed = set(re.search(r'СтрРазделить\("([a-z_,]+)"', managed).group(1).split(","))
@@ -941,6 +947,246 @@ class DBControlledCompletionTests(unittest.TestCase):
         for forbidden in ("ИнформацияОбОшибке", "ОписаниеОшибки", "ПодробноеПредставлениеОшибки",
                           "ErrorInfo", "ErrorDescription"):
             self.assertNotIn(forbidden, source + managed)
+
+
+# The private codec tests below execute the actual rendered reader/writer and
+# create-tail source. JSON I/O and UUID construction are bounded host doubles,
+# not a claim about native parser EOF/duplicate-key handling or UUID behavior.
+PRIVATE_REFERENCE_PATH = TRANSPORT_ROOT + "/reference.json"
+PRIVATE_UUID = "12345678-abcd-1234-abcd-1234567890ab"
+
+
+def private_reference_bytes(**changes):
+    return json.dumps({"nonce": NONCE, "reference": PRIVATE_UUID, **changes},
+                      separators=(",", ":")).encode("utf-8")
+
+
+def private_reference_vm(raw=None):
+    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+    events = []
+    files = {} if raw is None else {PRIVATE_REFERENCE_PATH: raw}
+
+    def file(path):
+        assert path == PRIVATE_REFERENCE_PATH
+
+        def exists():
+            events.append("exists")
+            return path in files
+
+        def size():
+            events.append("size")
+            return Decimal(len(files[path]))
+
+        return ControlledMembers(Существует=HostFunction("Существует", exists),
+                                 Размер=HostFunction("Размер", size))
+
+    def read_subset(value):
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int:
+            return Decimal(value)
+        if type(value) is dict:
+            result = BSLStructure()
+            for key, item in value.items():
+                result.insert(key, read_subset(item))
+            return result
+        if type(value) is list:
+            result = BSLArray()
+            result.items[:] = [read_subset(item) for item in value]
+            return result
+        raise TypeError("Outside controlled private JSON subset")
+
+    class Reader(BSLObject):
+        def __init__(self):
+            self.path = None
+
+        def open(self, path):
+            assert path == PRIVATE_REFERENCE_PATH and self.path is None
+            events.append("read_open")
+            self.path = path
+
+        def read(self):
+            assert self.path is not None
+            events.append("read")
+            return read_subset(json.loads(files[self.path].decode("utf-8-sig")))
+
+        def close(self):
+            assert self.path is not None
+            events.append("read_close")
+
+        def get_member(self, name):
+            return HostFunction(name, {"ОткрытьФайл": self.open, "Закрыть": self.close}[name],
+                                returns_value=False)
+
+    class Writer(BSLObject):
+        def __init__(self):
+            self.path = None
+
+        def open(self, path):
+            assert path == PRIVATE_REFERENCE_PATH and path not in files and self.path is None
+            events.append("write_open")
+            self.path = path
+            files[path] = b""
+
+        def write(self, data):
+            assert self.path is not None and files[self.path] == b""
+            events.append("write")
+            files[self.path] = transport_encode(data)
+
+        def close(self):
+            assert self.path is not None and files[self.path]
+            events.append("write_close")
+
+        def get_member(self, name):
+            return HostFunction(name, {"ОткрытьФайл": self.open, "Закрыть": self.close}[name],
+                                returns_value=False)
+
+    def captured_uuid():
+        events.append("uuid_capture")
+        return uuid.UUID(PRIVATE_UUID)
+
+    reference = ControlledMembers(УникальныйИдентификатор=HostFunction(
+        "УникальныйИдентификатор", captured_uuid))
+
+    def parse_uuid(value):
+        events.append("uuid_parse")
+        return uuid.UUID(value)
+
+    def get_reference(identifier):
+        assert type(identifier) is uuid.UUID and str(identifier) == PRIVATE_UUID
+        events.append("get_reference")
+        return reference
+
+    vm.execute("Перем Справочники, Ссылка, Контекст, Корень;")
+    vm.variables["справочники"] = ControlledMembers(NativeOracleItems=ControlledMembers(
+        ПолучитьСсылку=HostFunction("ПолучитьСсылку", get_reference)))
+    vm.variables["ссылка"] = reference
+    vm.variables["контекст"] = finite_reply("error", "create", "commit")
+    vm.variables["корень"] = TRANSPORT_ROOT
+    vm.register_type("Файл", file)
+    vm.register_type("ЧтениеJSON", Reader)
+    vm.register_type("ЗаписьJSON", Writer)
+    vm.register_type("УникальныйИдентификатор", parse_uuid)
+    vm.register_function("ПрочитатьJSON", lambda reader: reader.read())
+    vm.register_function("ЗаписатьJSON", lambda writer, data: writer.write(data), returns_value=False)
+    source = rendered_module("NativeOracleServer.bsl")
+    vm.execute(exact_routine(source, "NativeСохраненнаяСсылка") + "\n" +
+               exact_routine(source, "NativeПрочитатьJSON") + "\n" +
+               exact_routine(source, "NativeЗаписатьJSON", procedure=True))
+    return vm, events, files, reference
+
+
+def private_reference_write_source():
+    return exact_slice(rendered_module("NativeOracleServer.bsl"),
+                       '        Контекст.phase = "reference_uuid";',
+                       '    ИначеЕсли Операция = "update" Или Операция = "delete" Тогда')
+
+
+class DBPrivateReferenceJSONTests(unittest.TestCase):
+    def test_exact_create_tail_writes_only_bound_nonce_and_canonical_uuid_once(self):
+        vm, events, files, reference = private_reference_vm()
+        self.assertFalse(catch_source(vm, private_reference_write_source()))
+        self.assertEqual(files, {PRIVATE_REFERENCE_PATH: private_reference_bytes()})
+        self.assertEqual(events, ["uuid_capture", "exists", "write_open", "write", "write_close"])
+        self.assertEqual(vm.execute("Контекст.phase"), "reference_write")
+        self.assertIs(vm.execute("NativeСохраненнаяСсылка(Корень)"), reference)
+        before = dict(files)
+        self.assertTrue(catch_source(vm, private_reference_write_source()))
+        self.assertEqual(files, before)
+        self.assertEqual(events.count("write_open"), 1)
+        self.assertEqual(events.count("write"), 1)
+
+    def test_preexisting_reference_is_never_opened_or_overwritten(self):
+        vm, events, files, _ = private_reference_vm(b"prior private evidence")
+        self.assertTrue(catch_source(vm, private_reference_write_source()))
+        self.assertEqual(files, {PRIVATE_REFERENCE_PATH: b"prior private evidence"})
+        self.assertEqual(events, ["uuid_capture", "exists"])
+
+    def test_exact_codec_byte_budget_and_preread_boundary(self):
+        compact = private_reference_bytes()
+        self.assertEqual(len(compact), 32 + 36 + 27)
+        self.assertTrue(compact.isascii())
+        pretty_bom = b"\xef\xbb\xbf" + json.dumps(json.loads(compact), indent=4).replace("\n", "\r\n").encode("ascii")
+        self.assertEqual(len(pretty_bom), 114)
+        maximum = b"\xef\xbb\xbf" + compact + b" " * 30
+        self.assertEqual(len(maximum), 128)
+        for raw in (compact, b"\xef\xbb\xbf" + compact, pretty_bom, maximum):
+            with self.subTest(length=len(raw)):
+                vm, events, _, reference = private_reference_vm(raw)
+                self.assertIs(vm.execute("NativeСохраненнаяСсылка(Корень)"), reference)
+                self.assertLess(events.index("size"), events.index("read_open"))
+                self.assertEqual(events[-3:], ["read_close", "uuid_parse", "get_reference"])
+        for raw in (b"", maximum + b" ", b" " * 4097):
+            with self.subTest(rejected_length=len(raw)):
+                vm, events, _, _ = private_reference_vm(raw)
+                self.assertTrue(catch_source(vm, "NativeСохраненнаяСсылка(Корень);"))
+                self.assertNotIn("read_open", events)
+                self.assertNotIn("uuid_parse", events)
+        vm, events, _, _ = private_reference_vm()
+        self.assertIsNone(vm.execute("NativeСохраненнаяСсылка(Корень)"))
+        self.assertEqual(events, ["exists"])
+
+    def test_exact_parsed_object_rejects_extra_missing_and_wrong_keys(self):
+        good = json.loads(private_reference_bytes())
+        bad = [None, False, [], "reference", {**good, "extra": False}, {},
+               {"nonce": NONCE}, {"reference": PRIVATE_UUID},
+               {"nonce": NONCE, "unexpected": PRIVATE_UUID},
+               {"unexpected": NONCE, "reference": PRIVATE_UUID},
+               {"NONCE": NONCE, "reference": PRIVATE_UUID},
+               {"nonce": NONCE, "Reference": PRIVATE_UUID},
+               {"NONCE": NONCE, "REFERENCE": PRIVATE_UUID}]
+        for value in bad:
+            with self.subTest(value=value):
+                raw = json.dumps(value, separators=(",", ":")).encode("ascii")
+                self.assertLessEqual(len(raw), 128)
+                vm, events, _, _ = private_reference_vm(raw)
+                self.assertTrue(catch_source(vm, "NativeСохраненнаяСсылка(Корень);"))
+                self.assertIn("read_close", events)
+                self.assertNotIn("uuid_parse", events)
+                self.assertNotIn("get_reference", events)
+
+    def test_nonce_is_source_bound_and_both_values_must_be_strings(self):
+        for key, value in (("nonce", "f" * 32), ("nonce", NONCE.upper()),
+                           ("nonce", ""), ("nonce", None), ("nonce", False),
+                           ("nonce", 32), ("nonce", []), ("reference", None),
+                           ("reference", False), ("reference", 36), ("reference", {})):
+            with self.subTest(key=key, value=value):
+                vm, events, _, _ = private_reference_vm(private_reference_bytes(**{key: value}))
+                self.assertTrue(catch_source(vm, "NativeСохраненнаяСсылка(Корень);"))
+                self.assertIn("read_close", events)
+                self.assertNotIn("uuid_parse", events)
+                self.assertNotIn("get_reference", events)
+
+    def test_uuid_length_parse_and_canonical_roundtrip_precede_getref(self):
+        for value in ("", PRIVATE_UUID.replace("-", ""), "{" + PRIVATE_UUID + "}",
+                      " " + PRIVATE_UUID, PRIVATE_UUID + " ", "x" * 36,
+                      PRIVATE_UUID.upper()):
+            with self.subTest(value=value):
+                vm, events, _, _ = private_reference_vm(private_reference_bytes(reference=value))
+                self.assertTrue(catch_source(vm, "NativeСохраненнаяСсылка(Корень);"))
+                self.assertEqual("uuid_parse" in events, len(value) == 36)
+                self.assertNotIn("get_reference", events)
+
+    def test_reader_parse_failures_never_reach_uuid_or_getref(self):
+        for raw in (b"{", b"\xff"):
+            with self.subTest(raw=raw):
+                vm, events, _, _ = private_reference_vm(raw)
+                self.assertTrue(catch_source(vm, "NativeСохраненнаяСсылка(Корень);"))
+                self.assertEqual(events[-2:], ["read_open", "read"])
+                self.assertNotIn("uuid_parse", events)
+                self.assertNotIn("get_reference", events)
+
+    def test_textdocument_dependency_removed_without_raising_shared_reader_cap(self):
+        source = rendered_module("NativeOracleServer.bsl")
+        self.assertNotIn("ТекстовыйДокумент", source)
+        self.assertNotIn("reference.txt", source)
+        private = exact_routine(source, "NativeСохраненнаяСсылка")
+        generic = exact_routine(source, "NativeПрочитатьJSON")
+        self.assertIn("Файл.Размер() > 128", private)
+        self.assertLess(private.index("Файл.Размер() > 128"), private.index("NativeПрочитатьJSON("))
+        self.assertIn("Файл.Размер() > 4096", generic)
+        self.assertIn('Если Строка(Идентификатор) <> Значение Тогда', private)
+        self.assertIn('ПолучитьСсылку(Идентификатор)', private)
 
 
 def measurement_vm(operation, *, failure=None, rollback_error=False):
@@ -972,9 +1218,13 @@ def measurement_vm(operation, *, failure=None, rollback_error=False):
         event("get_object")
         return item
 
+    def reference_uuid():
+        event("reference_uuid")
+        return uuid.UUID(PRIVATE_UUID)
+
     reference = ControlledMembers(
         ПолучитьОбъект=HostFunction("ПолучитьОбъект", get_object),
-        УникальныйИдентификатор=HostFunction("УникальныйИдентификатор", lambda: "00000000-0000-0000-0000-000000000001"))
+        УникальныйИдентификатор=HostFunction("УникальныйИдентификатор", reference_uuid))
 
     def state(root):
         nonlocal reads
@@ -999,25 +1249,44 @@ def measurement_vm(operation, *, failure=None, rollback_error=False):
         return reference
 
     def file(path):
-        assert path == TRANSPORT_ROOT + "/reference.txt"
+        assert path == PRIVATE_REFERENCE_PATH
         event("reference_write")
         return ControlledMembers(ПолноеИмя=path, Существует=HostFunction("Существует", lambda: False))
 
-    vm.execute("Перем Справочники, КодировкаТекста;")
+    class Writer(BSLObject):
+        def __init__(self):
+            self.path = self.raw = None
+
+        def open(self, path):
+            assert path == PRIVATE_REFERENCE_PATH and self.path is None
+            self.path = path
+
+        def write(self, data):
+            assert self.path is not None and self.raw is None
+            self.raw = transport_encode(data)
+            assert json.loads(self.raw) == {"nonce": NONCE, "reference": PRIVATE_UUID}
+
+        def close(self):
+            assert self.raw is not None
+
+        def get_member(self, name):
+            return HostFunction(name, {"ОткрытьФайл": self.open, "Закрыть": self.close}[name],
+                                returns_value=False)
+
+    vm.execute("Перем Справочники;")
     vm.variables["справочники"] = ControlledMembers(NativeOracleItems=ControlledMembers(
         СоздатьЭлемент=HostFunction("СоздатьЭлемент", create)))
-    vm.variables["кодировкатекста"] = ControlledMembers(UTF8="UTF-8")
     vm.register_function("NativeСостояние", state)
     vm.register_function("NativeСохраненнаяСсылка", saved)
     vm.register_function("НачатьТранзакцию", lambda: event("begin"), returns_value=False)
     vm.register_function("ЗафиксироватьТранзакцию", lambda: event("commit"), returns_value=False)
     vm.register_function("ОтменитьТранзакцию", lambda: event("rollback"), returns_value=False)
     vm.register_type("Файл", file)
-    vm.register_type("ТекстовыйДокумент", lambda: ControlledMembers(
-        УстановитьТекст=HostFunction("УстановитьТекст", lambda _: None, returns_value=False),
-        Записать=HostFunction("Записать", lambda path, encoding: None, returns_value=False)))
+    vm.register_type("ЗаписьJSON", Writer)
+    vm.register_function("ЗаписатьJSON", lambda writer, data: writer.write(data), returns_value=False)
     source = rendered_module("NativeOracleServer.bsl")
     vm.execute(exact_routine(source, "NativeВыполнить") + "\n" +
+               exact_routine(source, "NativeЗаписатьJSON", procedure=True) + "\n" +
                exact_routine(source, "NativeИзмерить", procedure=True))
     # The real control/identity dispatcher is tested independently. This declared
     # bridge supplies only the approved operation and initially absent result.
@@ -1039,7 +1308,7 @@ class DBControlledTransactionCompletionTests(unittest.TestCase):
         for operation, inside in transactional.items():
             phases = ("readback_before", "begin") + inside
             if operation == "create":
-                phases += ("reference_write",)
+                phases += ("reference_uuid", "reference_write")
             phases += ("readback_after",)
             for failure in phases:
                 with self.subTest(operation=operation, failure=failure):
@@ -1052,6 +1321,7 @@ class DBControlledTransactionCompletionTests(unittest.TestCase):
                     self.assertEqual(events.count("rollback"), int(failure in inside))
                     self.assertEqual(events[-1], "rollback" if failure in inside else failure)
                     self.assertNotIn(ERROR_CANARY.encode(), wire)
+                    self.assertNotIn(PRIVATE_UUID.encode(), wire)
 
     def test_rollback_failure_cannot_erase_error_or_report_success(self):
         for operation in ("create", "update", "delete"):

@@ -81,7 +81,7 @@ FAILURES = FAILURES | SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES | BASELINE_FA
 ENTERPRISE_OPERATIONS = ('bootstrap','audit','observe','create','update','delete')
 BSL_PHASES = frozenset(('dispatch','control','marker','metadata','identity','precondition',
     'begin','create_object','set_code','set_payload','set_amount','write','reference_capture',
-    'commit','reference_write','reference_read','get_object','delete_object','readback','serialize'))
+    'commit','reference_uuid','reference_write','reference_read','get_object','delete_object','readback','serialize'))
 BSL_OPERATION_PHASES = {
     'dispatch': frozenset(('dispatch','control')),
     'bootstrap': frozenset(('marker','metadata','serialize')),
@@ -89,7 +89,7 @@ BSL_OPERATION_PHASES = {
     'observe': frozenset(('marker','metadata','identity','readback','precondition','serialize')),
     'create': frozenset(('marker','metadata','identity','readback','precondition','begin',
         'create_object','set_code','set_payload','set_amount','write','reference_capture',
-        'commit','reference_write','serialize')),
+        'commit','reference_uuid','reference_write','serialize')),
     'update': frozenset(('marker','metadata','identity','readback','precondition','begin',
         'reference_read','get_object','set_payload','set_amount','write','commit','serialize')),
     'delete': frozenset(('marker','metadata','identity','readback','precondition','begin',

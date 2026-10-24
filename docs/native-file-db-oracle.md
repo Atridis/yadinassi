@@ -368,3 +368,29 @@ the last source-assigned boundary, not native error text or proof of rollback.
 
 The new local exception/rollback/publication tests execute rendered synthetic BSL
 with controlled stubs. They are offline harness tests, not native platform evidence.
+
+### Private reference JSON transport
+
+The private reference helper now uses the already exercised JSON read/write helpers
+instead of TextDocument operations. Its exact two-field object contains the source
+nonce and a canonical UUID string; neither value is added to public output. The
+nonce must match, the UUID must be a String of length 36, and parsing it as a UUID
+then converting back to String must reproduce it exactly before the unchanged
+catalog GetRef/query checks. Existing-file rejection preserves one-write evidence.
+The fixed `reference_uuid` phase separates UUID conversion from `reference_write`.
+
+Only this private helper's pre-read file cap changes from 64 to 128 bytes to fit the
+nonce-bound object. Its compact ASCII representation is 95 bytes; UTF-8 BOM and a
+four-space/CRLF rendering total 114 bytes. The cap still applies before the generic
+JSON reader is called, independently of that reader's existing 4096-byte limit.
+All aggregate, raw-database, timeout and public-report limits remain unchanged.
+
+The measured prior run reached the reference-persistence group after write and
+commit returned, but did not establish a reopened row. This substitution removes
+an unexercised auxiliary transport dependency; it does not diagnose a TextDocument
+bug or establish native CRUD success. Native execution of the exact revised source
+and the unchanged reopen/reference assertions remain required.
+Exactness here means the parsed object's shape and values. The existing automatic
+JSON reader is unchanged; this lane does not newly claim native rejection of raw
+duplicate keys or trailing JSON tokens. The input remains its own write-once private
+marker, not a caller-supplied document.

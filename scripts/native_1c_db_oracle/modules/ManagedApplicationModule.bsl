@@ -49,7 +49,7 @@
         ВызватьИсключение "invalid_marker";
     КонецЕсли;
     ФазаИзвестна = Ложь;
-    Для Каждого Фаза Из СтрРазделить("dispatch,control,marker,metadata,identity,precondition,begin,create_object,set_code,set_payload,set_amount,write,reference_capture,commit,reference_write,reference_read,get_object,delete_object,readback,serialize,complete", ",") Цикл
+    Для Каждого Фаза Из СтрРазделить("dispatch,control,marker,metadata,identity,precondition,begin,create_object,set_code,set_payload,set_amount,write,reference_capture,commit,reference_uuid,reference_write,reference_read,get_object,delete_object,readback,serialize,complete", ",") Цикл
         Если Ответ.phase = Фаза Тогда
             ФазаИзвестна = Истина;
         КонецЕсли;
