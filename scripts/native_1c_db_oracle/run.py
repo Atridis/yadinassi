@@ -510,7 +510,7 @@ class Native:
     def clone(self, identifier, label):
         target=self.artifacts/label
         self.budgets(self.physical_summary(self.artifacts/identifier/'1Cv8.1CD')['bytes'])
-        clone_database(self.artifacts/identifier,target,budget_root=self.root)
+        clone_database(self.artifacts/identifier,target,budget_root=self.artifacts)
         self.budgets()
         return target
 

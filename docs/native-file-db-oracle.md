@@ -135,6 +135,17 @@ is made to preserve unrelated logs, session history, or arbitrary configuration
 sidecar dependencies. Frozen files/directories remain read-only; native sessions
 use writable clones. Existing destinations are never silently overwritten.
 
+Clone-local byte accounting walks only the private artifact root, just as the
+freeze helper accounts within that root. It must not rescan runtime HOME with
+the helper's stricter database/artifact-only scanner: HOME may contain the
+separately admitted pinned socket nodes. The outer controller still reserves
+the complete clone size against **all private /tmp bytes before allocation** and
+checks that same global budget afterward. No socket permission or allocation
+limit is changed. Run [40098023212](https://github.com/Atridis/yadinassi/actions/runs/40098023212)
+localized `invalid_input` to baseline observation after freeze returned; a
+synthetic fixture reproduces the scanner-scope inconsistency, but does not by
+itself establish the native failing suboperation.
+
 Limits are independent of, and do not raise, the existing lane's limits:
 
 - 64 MiB per raw file, 512 MiB cumulative regular files across the private /tmp,

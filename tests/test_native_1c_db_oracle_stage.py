@@ -944,6 +944,48 @@ class HomeSocketInventoryTests(unittest.TestCase):
                     else: kill.assert_not_called(); child.wait.assert_called_once_with()
 
 
+    def clone_fixture(self):
+        native=stage.Native(NONCE,provenance());native.root=self.parent
+        native.artifacts=self.parent/'artifacts';native.artifacts.mkdir()
+        native.budget_base=self.root
+        frozen=native.artifacts/'baseline';frozen.mkdir()
+        data=b'synthetic clone bytes only'
+        (frozen/'1Cv8.1CD').write_bytes(data);(frozen/'1Cv8.1CD').chmod(0o400)
+        frozen.chmod(0o500);self.addCleanup(lambda:frozen.chmod(0o700))
+        return native,data
+
+    def test_clone_uses_artifact_local_accounting_with_allowed_pinned_home_socket(self):
+        native,data=self.clone_fixture()
+        with self.inventory(self.leaf('onec-db-oracle/home/ipc')):
+            native.home_anchor=stage.capture_home_anchor(self.root)
+            with mock.patch.object(native,'quiescent',return_value=True),                     mock.patch.object(native,'budgets',wraps=native.budgets) as budgets,                     mock.patch.object(stage,'clone_database',wraps=stage.clone_database) as clone:
+                result=native.clone('baseline','observer')
+                self.assertEqual(clone.call_args.kwargs,{'budget_root':native.artifacts})
+                self.assertEqual(budgets.call_args_list,[mock.call(len(data)),mock.call()])
+            self.assertEqual((result/'1Cv8.1CD').read_bytes(),data)
+            self.assertEqual([path.name for path in result.iterdir()],['1Cv8.1CD'])
+
+    def test_clone_still_reserves_entire_global_home_bytes_before_allocation(self):
+        native,data=self.clone_fixture();(self.home/'cache').write_bytes(b'x'*len(data))
+        with self.inventory(self.leaf('onec-db-oracle/home/ipc')):
+            native.home_anchor=stage.capture_home_anchor(self.root)
+            with mock.patch.object(native,'quiescent',return_value=True),                     mock.patch.object(stage,'MAX_LIVE_BYTES',len(data)*3-1),                     mock.patch.object(stage,'clone_database',wraps=stage.clone_database) as clone:
+                self.assert_kind('artifact_limit',lambda:native.clone('baseline','observer'))
+                clone.assert_not_called()
+                self.assertFalse((native.artifacts/'observer').exists())
+
+    def test_clone_global_postcheck_still_rejects_home_growth(self):
+        native,data=self.clone_fixture();real_clone=stage.clone_database
+        def clone(*args,**kwargs):
+            real_clone(*args,**kwargs)
+            (self.home/'cache').write_bytes(b'x'*len(data)*3)
+        with self.inventory(self.leaf('onec-db-oracle/home/ipc')):
+            native.home_anchor=stage.capture_home_anchor(self.root)
+            with mock.patch.object(native,'quiescent',return_value=True),                     mock.patch.object(stage,'MAX_LIVE_BYTES',len(data)*4),                     mock.patch.object(stage,'clone_database',side_effect=clone):
+                self.assert_kind('artifact_limit',lambda:native.clone('baseline','observer'))
+
+
+
 class InventoryMonitorTests(unittest.TestCase):
     """Exercise the real process loop with a synthetic child, never native 1C."""
     def setUp(self):
