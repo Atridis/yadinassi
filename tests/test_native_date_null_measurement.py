@@ -29,6 +29,7 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
     def setUp(self):
         super().setUp()
         self.source = linux_fixture(ROOT / full.CLIENT_SOURCE)
+        self.strict136 = full.infobase_shared_source(self.source)
         if os.name == 'nt':
             patch = mock.patch.object(suite, 'secure_bytes',
                                       new=stage_fixture.portable_fixture_bytes)
@@ -46,8 +47,8 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(len(full.CLIENT_VALUES), 136)
         self.assertEqual(full.CLIENT_VALUES[-2:],
                          ['dual.v1:000032017000017041000032017', TOKEN])
-        self.assertEqual(full.digest(self.source), full.DATE_NULL_SOURCE_SHA256)
-        self.assertEqual(full.digest(suite.generated_module(self.source)), full.DATE_NULL_MODULE_SHA256)
+        self.assertEqual(full.digest(self.strict136), full.DATE_NULL_SOURCE_SHA256)
+        self.assertEqual(full.digest(suite.generated_module(self.strict136)), full.DATE_NULL_MODULE_SHA256)
         self.assertEqual(full.digest(linux_fixture(ROOT / SOURCE)), full.DATE_NULL_CORE_SHA256)
         self.assertEqual(self.read_marker(marker())['values'], full.CLIENT_VALUES)
 
@@ -93,10 +94,10 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
         self.assertNotIn('date_null_source', inspect.signature(suite.client_marker_diagnostics).parameters)
 
     def test_hash_bound_inverse_for_legacy_adapters_only(self):
-        restored = suite.date_null_shared_source(self.source)
-        self.assertEqual(full.date_null_shared_source(self.source), restored)
+        restored = suite.date_null_shared_source(self.strict136)
+        self.assertEqual(full.date_null_shared_source(self.strict136), restored)
         self.assertEqual(full.digest(restored), full.DATE_NULL_BASE_SHA256)
-        for mutated in (self.source+b'\n', self.source.replace(b'DNAppend(', b'DNOther(', 1)):
+        for mutated in (self.strict136+b'\n', self.strict136.replace(b'DNAppend(', b'DNOther(', 1)):
             with self.assertRaises(suite.FullError): suite.date_null_shared_source(mutated)
         plan = json.loads((ROOT/PLAN).read_text(encoding='utf-8'))
         for name, expected in plan['four_adapter_sha256'].items():
@@ -105,14 +106,14 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(full.async_source_identity(linux_fixture(ROOT/'scripts/native_1c_bootstrap/full_suite.py')),
                          plan['async8_identity'])
 
-    def test_preflight_passes_exact_whole_staged_source(self):
+    def test_preflight_passes_exact_restored_whole136_source(self):
         calls=[]
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary).resolve()/'source.bsl'; path.write_bytes(self.source)
             def runner(command, cwd):
                 calls.append(command)
-                self.assertEqual(Path(command[-1]), path)
-                self.assertEqual(Path(command[-1]).read_bytes(), self.source)
+                self.assertNotEqual(Path(command[-1]), path)
+                self.assertEqual(Path(command[-1]).read_bytes(), self.strict136)
                 return 0, json.dumps(full.CLIENT_VALUES, ensure_ascii=False, separators=(',',':')).encode(), b''
             full.verify_client_interpreter(ROOT,path,full.digest(self.source),runner=runner)
             self.assertEqual(len(calls),1)

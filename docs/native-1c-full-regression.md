@@ -1,5 +1,10 @@
 # Isolated six-scenario native regression
 
+The next [infobase-context measurement](infobase-context-measurement.md) adds an
+independent finite observation to the managed client probe. Its native result
+is pending; it does not implement a database runtime API. Shared strict136 host
+preflight and the complete native measurement source are explicitly distinct.
+
 This extends the digest-pinned disposable bootstrap described in
 [native-1c-isolated-smoke.md](native-1c-isolated-smoke.md). The real bootstrap,
 singleton role/protection readbacks, measured `SystemInfo.AppVersion`

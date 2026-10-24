@@ -446,19 +446,66 @@ def date_null_shared_source(raw: bytes) -> bytes:
 # END bounded Date Null measurement source binding
 
 
-CLIENT_WITNESS_SOURCE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
+# BEGIN bounded infobase-context measurement binding
+INFOBASE_CONTEXT_SOURCE_SHA256 = 'baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d'
+INFOBASE_CONTEXT_MODULE_SHA256 = '8f0e26621fed3a26f3073764f51dbf1c2164e4ebcc9a50b24f052487ba2b3be9'
+INFOBASE_CONTEXT_BASE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
+INFOBASE_CONTEXT_CORE = b'// BEGIN bounded infobase context measurement\n// Only ordinary /tmp/onec-smoke/db, verified by the native host.\n// Zero-argument calls are direct; arity rejection is dynamic, not static.\n&AtClient\nFunction IBCClient()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServer\nFunction IBCServer()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServerNoContext\nFunction IBCNoContext()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCDual()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCObserve(Val Profile, Val EnglishValue, Val RussianValue)\n    Var Shape, Aliases, EnglishArity, RussianArity, IBCArityTemporary;\n    If TypeOf(EnglishValue) <> Type("String") Or TypeOf(RussianValue) <> Type("String") Then\n        Return IBCEncode(Profile, 3, 0, 0, 0, 0);\n    EndIf;\n    Shape = 0;\n    If EnglishValue = "File=""/tmp/onec-smoke/db"";" Then Shape = 1; EndIf;\n    If EnglishValue = "File=""/tmp/onec-smoke/db""" Then Shape = 2; EndIf;\n    Aliases = 0;\n    If EnglishValue = RussianValue Then Aliases = 1; EndIf;\n    // Arity runs in this dual no-context observer, on the same side.\n    // It does not measure the originating routine\'s arity profile.\n    EnglishArity = 1;\n    Try\n        Execute("IBCArityTemporary = InfoBaseConnectionString(1);");\n    Except\n        EnglishArity = 2;\n    EndTry;\n    RussianArity = 1;\n    Try\n        Execute("IBCArityTemporary = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b(1);");\n    Except\n        RussianArity = 2;\n    EndTry;\n    Return IBCEncode(Profile, 2, Shape, Aliases, EnglishArity, RussianArity);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCEncode(Val Profile, Val Status, Val Shape, Val Aliases, Val EnglishArity, Val RussianArity)\n    Return Mid("0123", Profile + 1, 1) + Mid("0123", Status + 1, 1)\n        + Mid("012", Shape + 1, 1) + Mid("01", Aliases + 1, 1)\n        + Mid("012", EnglishArity + 1, 1) + Mid("012", RussianArity + 1, 1);\nEndFunction\n\n&AtServer\nFunction IBCServerDual()\n    Return IBCDual();\nEndFunction\n\n&AtClient\nProcedure IBCAppend(RecordsOut)\n    Var Encoded;\n    Encoded = "ibc.v1:" + IBCClient() + IBCServer() + IBCNoContext()\n        + IBCDual() + IBCServerDual();\n    If StrLen(Encoded) <> 37 Then Raise "ibc-invalid-token"; EndIf;\n    RecordsOut.Add(Encoded);\nEndProcedure\n// END bounded infobase context measurement\n'
+INFOBASE_CONTEXT_CALL = '    IBCAppend(Значения);\n'.encode('utf-8')
+
+
+def infobase_shared_source(raw: bytes) -> bytes:
+    """Exact measurement inverse; no generic routine stripping or API emulation."""
+    if (type(raw) is not bytes or digest(raw) != INFOBASE_CONTEXT_SOURCE_SHA256
+            or raw.count(INFOBASE_CONTEXT_CORE) != 1 or raw.count(INFOBASE_CONTEXT_CALL) != 1):
+        raise FullError('source_changed')
+    restored = raw.replace(INFOBASE_CONTEXT_CORE, b'', 1).replace(INFOBASE_CONTEXT_CALL, b'', 1)
+    if digest(restored) != INFOBASE_CONTEXT_BASE_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
+def validate_infobase_context(value):
+    """Finite native observation, not a native expected result or parity claim."""
+    if (type(value) is not str or len(value) != 37
+            or re.fullmatch(r'ibc\.v1:(?:[0-3][1-3][0-2][01][0-2][0-2]){5}', value) is None):
+        raise ValueError('infobase context token')
+    for offset in range(7, 37, 6):
+        slot = value[offset:offset + 6]
+        if ((slot[1] in '13' and slot[2:] != '0000')
+                or (slot[1] == '2' and (slot[4] not in '12' or slot[5] not in '12'))):
+            raise ValueError('infobase context observation combination')
+    return value
+
+
+def discard_infobase_capture(report):
+    """Discard only optional observation after later failure; retain old evidence."""
+    if type(report) is not dict:
+        return
+    stage = report.get('stage3', report)
+    if type(stage) is dict and type(stage.get('client_probe')) is dict:
+        stage['client_probe'].pop('infobase_context', None)
+# END bounded infobase-context measurement binding
+
+
+CLIENT_WITNESS_SOURCE_SHA256 = INFOBASE_CONTEXT_SOURCE_SHA256
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None) -> None:
-    """Compute the exact staged witness independently in the real interpreter."""
+    """Execute the exact restored strict136 source, not the unimplemented new API."""
     raw = read_regular(source, MAX_FILE, nonempty=True)
     if digest(raw) != source_hash or source_hash != CLIENT_WITNESS_SOURCE_SHA256:
         raise FullError("source_changed")
+    restored = infobase_shared_source(raw)
     runner = bounded_child if runner is None else runner
     with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
+        baseline = Path(cache) / "strict136.bsl"
+        baseline.write_bytes(restored)
         code, output, stderr = runner(
             [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(source)], root)
+             "-c", CLIENT_EXECUTE_SCRIPT, str(root), str(baseline)], root)
+        if baseline.read_bytes() != restored:
+            raise FullError("source_changed")
     expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(",", ":")).encode()
     if code != 0 or stderr or output != expected:
         raise FullError("interpreter_failed")
@@ -508,7 +555,13 @@ def validate_marker_diagnostics(value):
     return value
 
 
-def validate_client_probe(data, source_hash, module_hash):
+def validate_client_probe(data, source_hash, module_hash, *, infobase_allowed=False):
+    if type(data) is dict and 'infobase_context' in data:
+        if (not infobase_allowed or source_hash != INFOBASE_CONTEXT_SOURCE_SHA256
+                or module_hash != INFOBASE_CONTEXT_MODULE_SHA256 or data.get('status') != 'ok'):
+            raise ValueError('infobase context source or outcome')
+        validate_infobase_context(data['infobase_context'])
+        data = {key: value for key, value in data.items() if key != 'infobase_context'}
     if type(data) is dict and "marker_diagnostics" in data:
         validate_marker_diagnostics(data["marker_diagnostics"])
         if data.get("status") != "failed" or data.get("failure_kind") != "invalid_result" or data.get("witness_verified") is not False:
@@ -802,8 +855,14 @@ def validate_stage3(data, nonce: str, input_hashes: dict, module_hashes: dict, *
     cases = data["cases"]
     if type(cases) is not list or len(cases) != len(SCENARIOS):
         raise ValueError("cases")
+    infobase_requested = client_requested and input_hashes[CLIENT_SOURCE] == INFOBASE_CONTEXT_SOURCE_SHA256
     client = (validate_client_probe(data["client_probe"], input_hashes[CLIENT_SOURCE],
-                                    module_hashes["client_probe"]) if client_requested else None)
+                                    module_hashes["client_probe"],
+                                    infobase_allowed=infobase_requested and status == 'ok')
+              if client_requested else None)
+    if (infobase_requested and status == 'ok'
+            and 'infobase_context' not in data['client_probe']):
+        raise ValueError('infobase context observation missing')
     watchdog = (validate_client_watchdog(data["client_watchdog"], input_hashes[CLIENT_SOURCE],
                 module_hashes["client_probe"]) if watchdog_check else None)
     if watchdog is not None:

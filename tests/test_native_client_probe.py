@@ -167,6 +167,10 @@ class ClientProbeHarness(unittest.TestCase):
             path = self.inputs / target
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / source, path)
+        # Keep this historical strict136 harness fixture explicit. The new
+        # source-bound measurement harness has separate tests and no oracle yet.
+        path = self.inputs / suite.CLIENT_TARGET
+        path.write_bytes(suite.infobase_shared_source(path.read_bytes().replace(b'\r\n', b'\n')))
         if os.name == "nt":
             # Model the reviewed LF source in this private synthetic copy even
             # when Git checked it out with CRLF; production bytes stay strict.
@@ -531,9 +535,10 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
         self.assertIn('Запрос.mode = "stall"', source)
         self.assertIn("Пока Истина Цикл", source)
         self.assertIn("ЗавершитьРаботуСистемы(Ложь)", source)
-        # Prior 35 declarations remain, plus eight audited Date/Null calls.
-        self.assertEqual(source.count("&AtServer"), 43)
-        baseline = full.date_null_shared_source(source.encode("utf-8")).decode("utf-8")
+        # All 43 prior declarations remain; three bounded measurement sites added.
+        self.assertEqual(source.count("&AtServer"), 46)
+        baseline = full.date_null_shared_source(full.infobase_shared_source(
+            source.encode("utf-8"))).decode("utf-8")
         self.assertEqual(baseline.count("&AtServer"), 35)
         self.assertEqual(source.count("&НаСервере"), 1)
         self.assertIn("Function DirectiveWitnessValues()", source)
@@ -1107,11 +1112,12 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
     def setUp(self):
         stage_fixture.FullSuiteHarness.setUp(self)
         path = self.inputs / suite.CLIENT_TARGET
-        # The probe itself is mocked, but current source identities must still
-        # match the exact staged witness. Synthetic success is not native evidence.
+        # Probe is mocked here: retain the exact historical strict136 fixture.
+        # The new measurement's staged/source-bound record has separate tests.
         current = (ROOT / suite.CLIENT_SOURCE).read_bytes()
         if os.name == "nt":
             current = current.replace(b"\r\n", b"\n")
+        current = suite.infobase_shared_source(current)
         path.write_bytes(current)
         source = path.read_bytes()
         module = suite.generated_module(source)

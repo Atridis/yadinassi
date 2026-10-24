@@ -81,6 +81,8 @@ class SmokeError(Exception):
     def __init__(self, code: str, *, security_uncertain: bool = False, validated_report=None, cleanup_error=None):
         super().__init__(code)
         self.security_uncertain = security_uncertain
+        # Later host/source/container/artifact failure invalidates optional capture.
+        FULL.discard_infobase_capture(validated_report)
         self.validated_report = validated_report
         self.cleanup_error = cleanup_error
 
@@ -772,6 +774,8 @@ def main(argv: list[str] | None = None) -> int:
         except FULL.FullError:
             success = False
     report["smoke_completed"] = success
+    if not success:
+        FULL.discard_infobase_capture(report.get('probe'))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     report_within_limit = len(rendered.encode("utf-8")) <= MAX_OUTPUT
@@ -783,6 +787,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             FULL.verify_output_artifact(ROOT, report["probe"]["native_output_artifact_sha256"])
         except FULL.FullError as error:
+            FULL.discard_infobase_capture(report.get('probe'))
             report["probe"]["native_output_artifact_ready"] = False
             report["error"] = str(error)
             report["smoke_completed"] = success = False
