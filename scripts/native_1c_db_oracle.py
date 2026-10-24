@@ -62,6 +62,7 @@ def container_command(staged,name,nonce):
 
 
 def fail_report(report,kind,stage='preflight',*,preserve_primary=False):
+    report.pop('rejected_basename',None)
     # Cleanup has its own checks; do not erase a validated primary failure.
     preserve=(preserve_primary and stage=='cleanup' and kind=='cleanup_unverified'
               and report['status']=='failed' and report['failed_stage']!='cleanup')
@@ -134,6 +135,7 @@ def run_oracle(temp_root):
         fail_report(report,'cleanup_unverified','cleanup',preserve_primary=validated)
     elif not attempted or not validated:
         entry=report['stages'][-1]; entry['status']='ok'; entry['checks']={key:True for key in CHECKS['cleanup']}
+    if not all(report['cleanup'].values()): report.pop('rejected_basename',None)
     report['accepted']=report['status']=='ok' and all(report['cleanup'].values())
     validate_report(encode(report),nonce=nonce,provenance=identity,final=True)
     return report

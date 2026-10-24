@@ -218,17 +218,40 @@ operation labels. Rejected root database entries additionally report only a
 fixed class (database, one of the four CFL classes, session history, event log,
 or other) and shape (owned/unowned zero/nonzero regular, symlink, hardlink,
 non-single link count, directory, special, or invalid size). No actual names,
-paths, numeric owners, file sizes, content or exception text are emitted.
+paths, numeric owners, file sizes, content or exception text are emitted by the
+finite enum; the separately bounded failure-only basename field below is the
+only name exception.
 The exact finite vocabulary is in `protocol.py`; labels are scoped to a single
 baseline call, never retained across stages, and accepted only for failed
 baseline reports. Freeze/observe failures must have no completed snapshot;
 audit failures require the completed baseline snapshot. Other error categories,
-report keys, success schema, caps and independent cleanup remain unchanged.
+success schema, caps and independent cleanup remain unchanged.
 Run [40093649254](https://github.com/Atridis/yadinassi/actions/runs/40093649254)
 verified bootstrap, two users, metadata reimport and platform `8.3.27.1508`, then
 failed with baseline `invalid_input`. Its output did not identify the rejected
 entry or distinguish freeze from observation. Synthetic fixtures prove the old
 policy rejects documented CFL files, not that CFL caused that native failure.
+
+One failure-only optional `rejected_basename` diagnostic may identify an
+otherwise rejected zero-byte, single-link regular root entry owned by UID/GID
+1000. It originates only from the first source inventory of the original
+synthetic `seed` database during baseline freeze, never a clone, destination,
+later inventory, user database, file contents or full path. Its entire value
+must match ASCII `1Cv8[A-Za-z0-9_.-]{0,48}` (4–52 characters). Names containing
+separators, Unicode, whitespace/control characters, or any other prefix remain
+unreported. The three documented base names `1Cv8.1CL`, `1Cv8tmp.1CD`, and
+`1Cv8tmp.1CL` also have fixed rejection classes; this does not admit them.
+All unknown entries still fail closed, including names eligible for diagnosis.
+
+The optional field is invalid on successful reports, other stages/operations,
+other shapes, mismatched name classes, unmeasured versions, or mismatched
+nonce/source provenance. Before host teardown it is only a private candidate
+in captured stdout and requires successful native cleanup. The host discards it
+on any later container/private-staging cleanup or provenance failure; the final
+public report requires all four cleanup checks true. Existing primary failure
+categories remain visible if cleanup fails, without the basename. Success keys,
+raw-data restrictions, byte/report limits, permissions and admission policy are
+unchanged. This narrowly bounded diagnostic is not a general filename inventory.
 
 The absent logical fields in the fixed BSL markers use `Неопределено`, which
 [automatic JSON serialization](https://v8.1c.ru/platforma/json/) maps to JSON

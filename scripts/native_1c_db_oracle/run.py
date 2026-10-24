@@ -23,14 +23,15 @@ import time
 
 sys.dont_write_bytecode = True
 from protocol import (ARTIFACTS, CHECKS, COMPARISONS, FAILURES, IMAGE, LANE, MAX_REPORT_BYTES,
-    BASELINE_FAILURES, BASELINE_OPERATIONS, BOOTSTRAP_INVENTORY_FAILURES,
+    BASELINE_FAILURES, BASELINE_OPERATIONS, BOOTSTRAP_INVENTORY_FAILURES, DIAGNOSTIC_ENTRY_CLASSES,
     INVENTORY_PHASES, INVENTORY_REGIONS, INVENTORY_REASONS,
     SEED_FAILURE_CATEGORIES, SEED_FAILURES, SEED_OPERATIONS, STAGES, VERSION,
     decode, empty_report, encode, expected_logical, logical_from_marker,
     marker, require, validate_logical, validate_report)
 from snapshots import (DatabaseEntryError, ENTRY_CLASSES, ENTRY_SHAPES, OracleError,
     MAX_FILE_BYTES, MAX_LIVE_BYTES, budget_check, clone_database,
-    compare_files, compare_pair, file_summary, freeze_database)
+    compare_files, compare_pair, diagnostic_entry_class, file_summary, freeze_database,
+    valid_diagnostic_basename)
 from inject_metadata import CRUD_USER, SETUP_USER, inject, promote_v2, verify_redump
 
 ONEC = Path('/opt/1cv8t/x86_64/8.3.27.1508/1cv8t')
@@ -70,13 +71,19 @@ class BootstrapInventoryError(SandboxInventoryError):
 
 class BaselineInputError(OracleError):
     """Lexically scoped fixed operation and optional rejected root-entry shape."""
-    def __init__(self, operation, entry_class=None, shape=None):
+    def __init__(self, operation, entry_class=None, shape=None, *, basename=None):
         require(type(operation) is str and operation in BASELINE_OPERATIONS, 'invalid_input')
         require((entry_class is None and shape is None) or
                 (type(entry_class) is str and entry_class in ENTRY_CLASSES
                  and type(shape) is str and shape in ENTRY_SHAPES), 'invalid_input')
         super().__init__('invalid_input')
         self.operation=operation; self.entry_class=entry_class; self.shape=shape
+        if basename is not None:
+            require(operation=='freeze' and shape=='owned_regular_zero'
+                    and valid_diagnostic_basename(basename)
+                    and entry_class in DIAGNOSTIC_ENTRY_CLASSES
+                    and diagnostic_entry_class(basename)==entry_class, 'invalid_input')
+            self.basename=basename
 
 
 def inventory_region(relative):
@@ -485,7 +492,12 @@ class Native:
     def freeze(self, database, identifier):
         target=self.artifacts/identifier
         self.budgets(native_file_summary(database/'1Cv8.1CD')['bytes'])
-        summary=freeze_database(database,target,quiescent=self.quiescent)
+        capture=(self.stage=='baseline' and identifier=='baseline'
+                 and self.root==ROOT and self.artifacts==ROOT/'artifacts'
+                 and database==self.artifacts/'seed'
+                 and self.provenance['actual_version']==VERSION)
+        summary=freeze_database(database,target,quiescent=self.quiescent,
+                                capture_source_name=capture)
         self.budgets()
         self.remove(database)
         return summary
@@ -620,7 +632,8 @@ class Controller:
             # A pre-wrapped or stale diagnostic is not a fresh baseline input error.
             raise
         except DatabaseEntryError as error:
-            raise BaselineInputError(operation,error.entry_class,error.shape) from None
+            raise BaselineInputError(operation,error.entry_class,error.shape,
+                                     basename=getattr(error,'basename',None)) from None
         except OracleError as error:
             if error.kind=='invalid_input': raise BaselineInputError(operation) from None
             raise
@@ -692,6 +705,8 @@ class Controller:
             if kind in SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES and self.stage!='seed_v1': kind='unexpected_failure'
             if kind in BASELINE_FAILURES and self.stage!='baseline': kind='unexpected_failure'
             self.report.update(status='failed',failed_stage=self.stage,failure_kind=kind)
+            if isinstance(error,BaselineInputError) and self.stage=='baseline' and hasattr(error,'basename'):
+                self.report['rejected_basename']=error.basename
             self.report['stages'][STAGES.index(self.stage)]['status']='failed'
         finally:
             self.backend.begin_stage('cleanup')
@@ -703,6 +718,8 @@ class Controller:
             if not(processes and files) and self.report['status']=='ok':
                 self.report.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified')
             if self.report['status']!='ok': self.report['artifacts']=[]
+            if not(processes and files) or self.report['status']=='ok':
+                self.report.pop('rejected_basename',None)
         return self.report
 
 

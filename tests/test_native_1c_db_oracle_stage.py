@@ -1161,4 +1161,43 @@ class BaselineDiagnosticTests(unittest.TestCase):
         self.assertEqual(value['failure_kind'],'none')
         self.assertFalse(any('baseline_' in key for key in value))
 
+
+
+class BasenameControllerTests(unittest.TestCase):
+    injected=BaselineDiagnosticTests.injected
+    def test_private_candidate_survives_only_successful_native_cleanup(self):
+        for clean in ((True,True),(False,True),(True,False),(False,False)):
+            error=DatabaseEntryError('other','owned_regular_zero',basename='1Cv8.test')
+            value=self.injected('freeze',error,clean=clean)
+            self.assertEqual(value['failure_kind'],'baseline_freeze_entry_other_owned_regular_zero')
+            self.assertEqual(value.get('rejected_basename'),'1Cv8.test' if all(clean) else None)
+
+    def test_other_operations_and_later_stages_never_export_candidate(self):
+        for operation,failed in (('observe','baseline'),('audit','baseline'),('freeze','create')):
+            value=self.injected(operation,DatabaseEntryError('other','owned_regular_zero',basename='1Cv8.test'),failed_stage=failed)
+            self.assertNotIn('rejected_basename',value)
+
+    def test_internal_context_rejects_malformed_or_inconsistent_basename(self):
+        for operation,entry,shape,name in (
+            ('observe','other','owned_regular_zero','1Cv8.test'),
+            ('freeze','other','owned_regular_nonzero','1Cv8.test'),
+            ('freeze','other','owned_regular_zero','1Cv8.1CL'),
+            ('freeze','database','owned_regular_zero','1Cv8.1CD'),
+            ('freeze','other','owned_regular_zero','1Cv8.test\n'),
+            ('freeze','other','owned_regular_zero',False)):
+            with self.subTest(operation=operation,entry=entry,shape=shape,name=name),self.assertRaises(OracleError):
+                stage.BaselineInputError(operation,entry,shape,basename=name)
+
+    def test_native_capture_gate_is_original_seed_only_with_measured_version(self):
+        cases=({},True),({'stage':'create'},False),({'identifier':'other'},False),              ({'database':'other'},False),({'version':None},False),({'root':Path('/tmp/other')},False),              ({'artifacts':Path('/tmp/other/artifacts')},False)
+        for changes,expected in cases:
+            identity=provenance();identity['actual_version']=changes.get('version',protocol.VERSION)
+            native=stage.Native(NONCE,identity);native.stage=changes.get('stage','baseline')
+            native.root=changes.get('root',stage.ROOT);native.artifacts=changes.get('artifacts',stage.ROOT/'artifacts')
+            database=native.artifacts/changes.get('database','seed');identifier=changes.get('identifier','baseline')
+            with self.subTest(changes=changes),mock.patch.object(stage,'native_file_summary',return_value=physical()),                     mock.patch.object(native,'budgets'),mock.patch.object(native,'remove'),                     mock.patch.object(stage,'freeze_database',return_value=physical()) as freeze:
+                native.freeze(database,identifier)
+                self.assertIs(freeze.call_args.kwargs['capture_source_name'],expected)
+                self.assertEqual(freeze.call_args.args,(database,native.artifacts/identifier))
+
 if __name__=='__main__': unittest.main()

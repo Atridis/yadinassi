@@ -504,6 +504,72 @@ class HostSecurityTests(SourceCase):
         self.assertEqual(self.github_output.read_text(),'report_ready=true\n')
         protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
 
+    def basename_failure(self, name='1Cv8.test'):
+        report=self.baseline_failure('baseline_freeze_entry_'+protocol.diagnostic_entry_class(name)+'_owned_regular_zero')
+        report['rejected_basename']=name
+        return report
+
+    def test_private_basename_is_retained_only_after_verified_host_teardown(self):
+        for name in ('1Cv8.test','1Cv8'+'A'*48,'1Cv8.1CL','1Cv8tmp.1CD','1Cv8tmp.1CL'):
+            self.events.clear();self.configs.clear()
+            with self.subTest(name=name):
+                report=self.invoke(payload=protocol.encode(self.basename_failure(name)),exit_code=1)
+                self.assertEqual(report['rejected_basename'],name)
+                self.assertTrue(all(report['cleanup'].values()));self.assertFalse(report['accepted'])
+                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+
+    def test_late_container_private_and_provenance_failures_strip_basename(self):
+        cases=({'cleanup_bad':True},{'fail':'rm'},{'fail':'ps'},{'private_cleanup_bad':True},
+               {'cleanup_bad':True,'private_cleanup_bad':True},{'changed_provenance':True})
+        for options in cases:
+            self.events.clear();self.configs.clear()
+            with self.subTest(options=options):
+                report=self.invoke(payload=protocol.encode(self.basename_failure()),exit_code=1,**options)
+                self.assertNotIn('rejected_basename',report)
+                if not options.get('changed_provenance'):
+                    self.assertEqual(report['failure_kind'],'baseline_freeze_entry_other_owned_regular_zero')
+                else:self.assertEqual(report['failure_kind'],'provenance_mismatch')
+                self.assertFalse(report['accepted'])
+                self.assertNotIn('1Cv8.test',protocol.encode(report).decode())
+                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                make_writable(self.work)
+                for child in self.work.iterdir():shutil.rmtree(child)
+
+    def test_malformed_success_and_failed_native_cleanup_names_never_cross_host(self):
+        payloads=[]
+        for name in (True,None,{},'1Cv8.test\n','1Cv8'+'A'*49,'1Cv8/secret','1Cv8é',PRIVATE):
+            value=self.basename_failure();value['rejected_basename']=name;payloads.append((value,1))
+        for name in ('1Cv8.1CD','1Cv8.1CD.cfl','1Cv8Log'):
+            payloads.append((self.basename_failure(name),1))
+        value,_=fixtures.fixture_report();value['provenance']=copy.deepcopy(self.identity)
+        value['provenance']['actual_version']=protocol.VERSION;value['rejected_basename']='1Cv8.test';payloads.append((value,0))
+        for key in ('native_processes_stopped','raw_files_removed'):
+            value=self.basename_failure();value['cleanup'][key]=False
+            value['stages'][-1]['checks'][key]=False;value['stages'][-1]['status']='failed';payloads.append((value,1))
+        for value,code in payloads:
+            self.events.clear();self.configs.clear()
+            with self.subTest(name=value.get('rejected_basename'),code=code):
+                report=self.invoke(payload=protocol.encode(value),exit_code=code)
+                self.assertEqual(report['failure_kind'],'transport_invalid')
+                self.assertNotIn('rejected_basename',report);self.assertFalse(report['accepted'])
+                self.assertNotIn(PRIVATE,protocol.encode(report).decode())
+
+    @unittest.skipUnless(DESCRIPTOR_EXPORT, 'Native host export requires POSIX no-follow dirfd support')
+    def test_public_basename_export_happens_only_after_all_cleanup(self):
+        for options in ({},{'cleanup_bad':True},{'private_cleanup_bad':True}):
+            self.events.clear();self.configs.clear()
+            with self.subTest(options=options):
+                self.assertEqual(self.invoke(main=True,payload=protocol.encode(self.basename_failure()),exit_code=1,**options),1)
+                report=json.loads(self.output.read_text())
+                self.assertEqual('rejected_basename' in report,not bool(options))
+                self.assertEqual(self.events[-1],'export');self.assertFalse(report['accepted'])
+                self.assertEqual([path.name for path in self.output.parent.iterdir()],['report.json'])
+                self.assertLessEqual(self.output.stat().st_size,32768)
+                self.assertNotIn(PRIVATE,self.output.read_text())
+                protocol.validate_report(protocol.encode(report),nonce=NONCE,provenance=self.identity,final=True)
+                self.output.unlink();self.github_output.unlink();make_writable(self.work)
+                for child in self.work.iterdir():shutil.rmtree(child)
+
     def test_every_validated_seed_failure_survives_successful_host_cleanup(self):
         for kind in sorted(protocol.SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES):
             self.events.clear(); self.configs.clear()

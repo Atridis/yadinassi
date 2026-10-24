@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from snapshots import (ENTRY_CLASSES, ENTRY_SHAPES, MAX_FILE_BYTES, OracleError,
-    validate_comparison, validate_pair)
+    diagnostic_entry_class, valid_diagnostic_basename, validate_comparison, validate_pair)
 
 SCHEMA = 1
 LANE = 'native-file-db-oracle-v1'
@@ -74,6 +74,8 @@ BASELINE_INPUT_FAILURES = frozenset('baseline_' + operation + '_invalid_input'
 BASELINE_ENTRY_FAILURES = frozenset('baseline_' + operation + '_entry_' + entry + '_' + shape
     for operation in BASELINE_OPERATIONS for entry in ENTRY_CLASSES for shape in ENTRY_SHAPES)
 BASELINE_FAILURES = BASELINE_INPUT_FAILURES | BASELINE_ENTRY_FAILURES
+DIAGNOSTIC_ENTRY_CLASSES = frozenset({'base_1cl', 'temp_1cd', 'temp_1cl',
+                                     'session_history', 'other'})
 FAILURES = FAILURES | SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES | BASELINE_FAILURES
 LOGICAL_KEYS = {'count','code','payload','amount','deletion_mark','same_reference',
     'payload_length','amount_digits','amount_scale','designer_version','applied_version',
@@ -204,8 +206,10 @@ def validate_provenance(value, expected):
 
 def validate_report(raw, *, nonce, provenance, final=False):
     report = decode(raw)
+    require(type(report) is dict)
+    optional={'rejected_basename'} if 'rejected_basename' in report else set()
     exact(report, {'schema','lane','nonce','status','failed_stage','failure_kind','provenance',
-        'stages','snapshots','artifacts','comparisons','cleanup','accepted'})
+        'stages','snapshots','artifacts','comparisons','cleanup','accepted'} | optional)
     require(type(report['schema']) is int and report['schema'] == SCHEMA and report['lane'] == LANE
             and report['nonce'] == nonce and re.fullmatch('[0-9a-f]{32}',nonce) is not None)
     validate_provenance(report['provenance'], provenance)
@@ -288,6 +292,19 @@ def validate_report(raw, *, nonce, provenance, final=False):
     require(all(type(value) is bool for value in report['cleanup'].values()))
     require(all(report['cleanup'][key] is report['stages'][-1]['checks'][key]
                 for key in ('native_processes_stopped','raw_files_removed')))
+    if 'rejected_basename' in report:
+        name=report['rejected_basename']
+        require(valid_diagnostic_basename(name))
+        require(report['status']=='failed' and report['failed_stage']=='baseline'
+                and diagnostic_entry_class(name) in DIAGNOSTIC_ENTRY_CLASSES
+                and report['failure_kind']=='baseline_freeze_entry_' + diagnostic_entry_class(name) + '_owned_regular_zero'
+                and report['failure_kind'] in BASELINE_ENTRY_FAILURES
+                and report['provenance']['actual_version']==VERSION and ids==[])
+        # Pre-final stdout is private host input, not a published artifact.
+        # The host must discard this candidate if either teardown later fails.
+        required=report['cleanup'] if final else {key:report['cleanup'][key]
+            for key in ('native_processes_stopped','raw_files_removed')}
+        require(all(required.values()))
     success = report['status'] == 'ok'
     if success:
         require(all(item['status']=='ok' for item in report['stages']) and report['failed_stage'] is None

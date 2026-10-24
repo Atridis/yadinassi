@@ -40,7 +40,7 @@ class DatabaseEntryValidationTests(unittest.TestCase):
     def test_entry_enums_are_fixed_and_complete(self):
         self.assertEqual(snapshots.ENTRY_CLASSES, (
             "database", "cfl_database", "cfl_temp_database", "cfl_lock", "cfl_temp_lock",
-            "session_history", "event_log", "other"))
+            "base_1cl", "temp_1cd", "temp_1cl", "session_history", "event_log", "other"))
         self.assertEqual(snapshots.ENTRY_SHAPES, (
             "owned_regular_zero", "owned_regular_nonzero", "unowned_regular_zero",
             "unowned_regular_nonzero", "symlink", "hardlink", "link_count", "directory",
@@ -94,12 +94,73 @@ class DatabaseEntryValidationTests(unittest.TestCase):
             "1Cv8.1CD": "database", "1Cv8.1CD.cfl": "cfl_database",
             "1Cv8tmp.1CD.cfl": "cfl_temp_database", "1Cv8.1CL.cfl": "cfl_lock",
             "1Cv8tmp.1CL.cfl": "cfl_temp_lock", "1Cv8snc.1CD": "session_history",
+            "1Cv8.1CL": "base_1cl", "1Cv8tmp.1CD": "temp_1cd",
+            "1Cv8tmp.1CL": "temp_1cl", "1Cv8tmp.1cl": "other",
+            "1Cv8.1CL.extra": "other", "1Cv8tmp.1CD.extra": "other",
             "1Cv8Log": "event_log", "1cv8.1cd.cfl": "other",
             "1Cv8.1CD.CFL": "other", "1Cv8snc.1CD.cfl": "other",
             "secret-name.cfl": "other", "1Cv8.1CD.cfl.extra": "other",
         }
         for name, expected in cases.items():
             self.assertEqual(snapshots._entry_class(name), expected)
+            self.assertEqual(snapshots.diagnostic_entry_class(name), expected)
+
+    def test_diagnostic_basename_is_exact_ascii_and_fullmatch_bounded(self):
+        class StringSubclass(str):
+            pass
+        accepted = ("1Cv8", "1Cv8.1CL", "1Cv8tmp.1CD", "1Cv8.A-z_9",
+                    "1Cv8" + "A" * 48)
+        rejected = (None, True, False, 1, [], {}, b"1Cv8.1CL", "", "1Cv",
+                    "1cv8.1CL", "1Cv8" + "A" * 49, "1Cv8" + "A" * 50,
+                    "1Cv8\n", "1Cv8.1CL\n", "1Cv8\r", "1Cv8\t", "1Cv8\0",
+                    "1Cv8\ud800", "1Cv8é", "1Cv8名", "1Cv8/file", "1Cv8\\file",
+                    "/1Cv8.1CL", "1Cv8:file", StringSubclass("1Cv8.1CL"))
+        for value in accepted:
+            self.assertIs(snapshots.valid_diagnostic_basename(value), True)
+        for value in rejected:
+            with self.subTest(value=value):
+                self.assertIs(snapshots.valid_diagnostic_basename(value), False)
+                if value is not None:  # None is the explicit no-capture sentinel.
+                    with self.assertRaisesRegex(ValueError, "^invalid entry basename$"):
+                        snapshots.DatabaseEntryError("other", "owned_regular_zero",
+                                                     basename=value)
+
+    def test_optional_basename_is_class_bound_without_io_or_error_text(self):
+        with mock.patch.object(snapshots.os, "open", side_effect=AssertionError("no I/O")), \
+                mock.patch.object(snapshots.os, "stat", side_effect=AssertionError("no I/O")), \
+                mock.patch.object(snapshots.os, "scandir", side_effect=AssertionError("no I/O")):
+            for name in ("1Cv8", "1Cv8.1CL", "1Cv8tmp.1CD", "1Cv8tmp.1CL",
+                         "1Cv8snc.1CD", "1Cv8.1CD", "1Cv8Log", "1Cv8.1CD.cfl"):
+                entry_class = snapshots.diagnostic_entry_class(name)
+                error = snapshots.DatabaseEntryError(entry_class, "owned_regular_zero",
+                                                       basename=name)
+                self.assertEqual(vars(error), {"kind": "invalid_input",
+                                              "entry_class": entry_class,
+                                              "shape": "owned_regular_zero", "basename": name})
+                self.assertEqual(error.args, ("invalid_input",))
+                self.assertEqual(str(error), "invalid_input")
+                wrong_class = "other" if entry_class != "other" else "database"
+                with self.assertRaisesRegex(ValueError, "^invalid entry basename$"):
+                    snapshots.DatabaseEntryError(wrong_class, "owned_regular_zero", basename=name)
+        for shape in snapshots.ENTRY_SHAPES:
+            if shape != "owned_regular_zero":
+                with self.subTest(shape=shape):
+                    with self.assertRaisesRegex(ValueError, "^invalid entry basename$"):
+                        snapshots.DatabaseEntryError("base_1cl", shape, basename="1Cv8.1CL")
+        self.assertFalse(hasattr(snapshots.DatabaseEntryError(
+            "base_1cl", "owned_regular_zero", basename=None), "basename"))
+
+    def test_capture_source_flag_requires_exact_bool_before_io(self):
+        with mock.patch.object(snapshots, "_copy_database") as copy_database, \
+                mock.patch.object(snapshots, "_path", side_effect=AssertionError("no I/O")):
+            for value in (None, 0, 1, "true", "false", [], {}, object()):
+                with self.subTest(value=value):
+                    with self.assertRaises(snapshots.OracleError) as failure:
+                        snapshots.freeze_database(Path("source"), Path("destination"),
+                                                  quiescent=lambda: True,
+                                                  capture_source_name=value)
+                    self.assertEqual(vars(failure.exception), {"kind": "invalid_input"})
+            copy_database.assert_not_called()
 
 
 @unittest.skipUnless(POSIX_FILE_API, "Native Linux snapshot filesystem API is unavailable")
@@ -157,7 +218,8 @@ class CflInventoryTests(unittest.TestCase):
 
     def freeze(self, **kwargs):
         return snapshots.freeze_database(self.source, self.frozen,
-                                         quiescent=kwargs.get("quiescent", lambda: True))
+                                         quiescent=kwargs.get("quiescent", lambda: True),
+                                         capture_source_name=kwargs.get("capture_source_name", False))
 
     def assert_kind(self, kind, action):
         with self.assertRaises(snapshots.OracleError) as failure:
@@ -297,6 +359,192 @@ class CflInventoryTests(unittest.TestCase):
         log.unlink()
         log.symlink_to(self.root, target_is_directory=True)
         self.assert_entry("event_log", "symlink")
+
+    def test_opt_in_captures_one_owned_empty_basename_without_reading_or_acceptance(self):
+        real_open = snapshots.os.open
+        for name in ("1Cv8", "1Cv8.1CL", "1Cv8tmp.1CD", "1Cv8tmp.1CL",
+                     "1Cv8snc.1CD", "1Cv8unknown_-", "1Cv8" + "A" * 48):
+            with self.subTest(name=name):
+                path = self.cfl(name)
+                def open_file(opened, *args, **kwargs):
+                    self.assertNotEqual(opened, name)
+                    return real_open(opened, *args, **kwargs)
+                with mock.patch.object(snapshots.os, "open", side_effect=open_file), \
+                        mock.patch.object(snapshots.os, "read",
+                                          side_effect=AssertionError("must not read")):
+                    error = self.assert_kind("invalid_input", lambda: self.freeze(
+                        capture_source_name=True))
+                self.assertIsInstance(error, snapshots.DatabaseEntryError)
+                self.assertEqual(vars(error), {"kind": "invalid_input", "basename": name,
+                                              "entry_class": snapshots.diagnostic_entry_class(name),
+                                              "shape": "owned_regular_zero"})
+                self.assertFalse(self.frozen.exists())
+                self.assertEqual(path.stat().st_size, 0)
+                path.unlink()
+
+    def test_default_and_explicit_false_never_capture_eligible_basename(self):
+        self.cfl("1Cv8.1CL")
+        self.assert_entry("base_1cl", "owned_regular_zero", lambda: snapshots.freeze_database(
+            self.source, self.frozen, quiescent=lambda: True))
+        self.assert_entry("base_1cl", "owned_regular_zero", lambda: self.freeze(
+            capture_source_name=False))
+        self.assertFalse(self.frozen.exists())
+
+    def test_opt_in_still_rejects_invalid_basenames_without_retaining_them(self):
+        for name in ("1cv8.1CL", "private", "1Cv8.1CL\n", "1Cv8é", "1Cv8\\file",
+                     "1Cv8:file", "1Cv8" + "A" * 49, "1Cv8" + "A" * 50):
+            with self.subTest(name=name):
+                path = self.cfl(name)
+                self.assert_entry("other", "owned_regular_zero", lambda: self.freeze(
+                    capture_source_name=True))
+                self.assertFalse(self.frozen.exists())
+                path.unlink()
+
+    def test_opt_in_never_captures_nonzero_unowned_or_link_metadata(self):
+        name = "1Cv8.1CL"
+        self.cfl(name)
+        real_scandir = snapshots.os.scandir
+        for changes, shape in (({"st_uid": 0}, "unowned_regular_zero"),
+                               ({"st_gid": 0}, "unowned_regular_zero"),
+                               ({"st_size": 1}, "owned_regular_nonzero"),
+                               ({"st_uid": 0, "st_size": 1}, "unowned_regular_nonzero"),
+                               ({"st_size": -1}, "invalid_size"),
+                               ({"st_nlink": 0}, "link_count"),
+                               ({"st_nlink": 2}, "hardlink")):
+            with self.subTest(changes=changes):
+                @contextmanager
+                def scandir(descriptor):
+                    with real_scandir(descriptor) as entries:
+                        entries = list(entries)
+                    for entry in entries:
+                        if entry.name == name:
+                            initial = entry.stat(follow_symlinks=False)
+                            entry.stat = lambda **kw: stat_fields(initial, **changes)
+                    yield iter(entries)
+                with mock.patch.object(snapshots.os, "scandir", side_effect=scandir), \
+                        mock.patch.object(snapshots.os, "read",
+                                          side_effect=AssertionError("must not read")):
+                    self.assert_entry("base_1cl", shape, lambda: self.freeze(
+                        capture_source_name=True))
+                self.assertFalse(self.frozen.exists())
+
+    def test_opt_in_never_captures_symlink_hardlink_fifo_or_directory(self):
+        path = self.source / "1Cv8.1CL"
+        path.symlink_to("/dev/zero")
+        self.assert_entry("base_1cl", "symlink", lambda: self.freeze(capture_source_name=True))
+        path.unlink()
+        outside = self.root / "outside-alias"
+        outside.touch()
+        os.link(outside, path)
+        self.assert_entry("base_1cl", "hardlink", lambda: self.freeze(capture_source_name=True))
+        path.unlink()
+        os.mkfifo(path)
+        self.assert_entry("base_1cl", "special", lambda: self.freeze(capture_source_name=True))
+        path.unlink()
+        path.mkdir()
+        self.assert_entry("base_1cl", "directory", lambda: self.freeze(capture_source_name=True))
+        self.assertFalse(self.frozen.exists())
+
+    def test_opt_in_does_not_capture_database_log_cfl_or_nested_log_rejection(self):
+        self.db.unlink()
+        self.db.symlink_to("/dev/zero")
+        self.assert_entry("database", "symlink", lambda: self.freeze(capture_source_name=True))
+        self.db.unlink()
+        self.db.write_bytes(self.data)
+        log = self.source / "1Cv8Log"
+        log.touch()
+        self.assert_entry("event_log", "owned_regular_zero", lambda: self.freeze(
+            capture_source_name=True))
+        log.unlink()
+        cfl = self.cfl()
+        cfl.write_bytes(b"private")
+        self.assert_entry("cfl_database", "owned_regular_nonzero", lambda: self.freeze(
+            capture_source_name=True))
+        cfl.unlink()
+        log.mkdir()
+        (log / "1Cv8.1CL").symlink_to("/dev/zero")
+        error = self.assert_kind("invalid_input", lambda: self.freeze(capture_source_name=True))
+        self.assertEqual(vars(error), {"kind": "invalid_input"})
+        self.assertFalse(self.frozen.exists())
+
+    def test_opt_in_missing_database_or_disappearing_entry_has_no_basename(self):
+        self.db.unlink()
+        error = self.assert_kind("invalid_input", lambda: self.freeze(capture_source_name=True))
+        self.assertEqual(vars(error), {"kind": "invalid_input"})
+        self.db.write_bytes(self.data)
+        self.cfl("1Cv8.1CL")
+        real_scandir = snapshots.os.scandir
+        @contextmanager
+        def scandir(descriptor):
+            with real_scandir(descriptor) as entries:
+                entries = list(entries)
+            for entry in entries:
+                if entry.name == "1Cv8.1CL":
+                    entry.stat = mock.Mock(side_effect=FileNotFoundError("private path"))
+            yield iter(entries)
+        with mock.patch.object(snapshots.os, "scandir", side_effect=scandir):
+            error = self.assert_kind("invalid_input", lambda: self.freeze(
+                capture_source_name=True))
+        self.assertEqual(vars(error), {"kind": "invalid_input"})
+        self.assertFalse(self.frozen.exists())
+
+    def test_inventory_capture_requires_true_and_live_source_mode(self):
+        self.cfl("1Cv8.1CL")
+        with snapshots._directory(self.source) as descriptor:
+            for capture in (False, None, 1, "true"):
+                self.assert_entry("base_1cl", "owned_regular_zero", lambda: snapshots._database_contents(
+                    descriptor, capture_zero_name=capture))
+            self.assert_entry("base_1cl", "owned_regular_zero", lambda: snapshots._database_contents(
+                descriptor, allow_ancillary=False, capture_zero_name=True))
+
+    def test_opt_in_is_only_used_by_first_source_inventory_never_clone(self):
+        self.cfl()
+        original = snapshots._database_contents
+        calls = []
+        def inventory(descriptor, **kwargs):
+            calls.append((os.fstat(descriptor).st_ino, kwargs.get("capture_zero_name", False)))
+            return original(descriptor, **kwargs)
+        with mock.patch.object(snapshots, "_database_contents", side_effect=inventory):
+            result = self.freeze(capture_source_name=True)
+            self.assertEqual(calls, [(self.source.stat().st_ino, True),
+                                     (self.source.stat().st_ino, False),
+                                     (self.frozen.stat().st_ino, False),
+                                     (self.source.stat().st_ino, False)])
+            calls.clear()
+            snapshots.clone_database(self.frozen, self.root / "observer", budget_root=self.root)
+        self.assertEqual(len(calls), 4)
+        self.assertTrue(all(capture is False for _, capture in calls))
+        self.assertEqual(set(result), {"bytes", "sha256", "header", "page_analysis"})
+
+    def test_destination_and_both_source_rechecks_cannot_capture_new_entries(self):
+        original = snapshots._database_contents
+        for index in (2, 3, 4):
+            with self.subTest(inventory=index):
+                self.frozen = self.root / f"frozen-{index}"
+                calls = 0
+                path = (self.frozen if index == 3 else self.source) / "1Cv8.1CL"
+                def inventory(descriptor, **kwargs):
+                    nonlocal calls
+                    calls += 1
+                    if calls == index:
+                        path.touch()
+                        self.assertIs(kwargs.get("capture_zero_name", False), False)
+                    return original(descriptor, **kwargs)
+                with mock.patch.object(snapshots, "_database_contents", side_effect=inventory):
+                    self.assert_entry("base_1cl", "owned_regular_zero", lambda: self.freeze(
+                        capture_source_name=True))
+                self.assertEqual(calls, index)
+                self.frozen.chmod(0o700)
+                path.unlink()
+
+    def test_clone_cannot_capture_injected_eligible_basename(self):
+        self.freeze(capture_source_name=True)
+        self.frozen.chmod(0o700)
+        (self.frozen / "1Cv8.1CL").touch()
+        clone = self.root / "observer"
+        self.assert_entry("base_1cl", "owned_regular_zero", lambda: snapshots.clone_database(
+            self.frozen, clone, budget_root=self.root))
+        self.assertFalse(clone.exists())
 
     def test_empty_cfl_never_substitutes_for_before_or_after_quiescence(self):
         self.cfl()

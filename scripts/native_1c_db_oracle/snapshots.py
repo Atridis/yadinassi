@@ -5,7 +5,8 @@ This is deliberately not a 1CD/CF/DT parser. Every header is unknown; fixed
 The controller owns process supervision: matching hashes cannot establish
 quiescence. Frozen copies must never be passed to a native platform process.
 
-All failures expose only a fixed kind, never an OS error, path, or file bytes.
+A failure may include one explicitly enabled, bounded ASCII root basename;
+no failure exposes an OS error, path, or file bytes.
 A failed copy may leave its newly created destination for controller cleanup;
 it is never returned as verified, and a retry cannot overwrite it.
 """
@@ -15,6 +16,7 @@ from contextlib import ExitStack, contextmanager
 import hashlib
 import os
 from pathlib import Path
+import re
 import stat
 from typing import Callable, Iterator
 
@@ -36,9 +38,10 @@ _CFL_CLASSES = {
     "1Cv8.1CL.cfl": "cfl_lock",
     "1Cv8tmp.1CL.cfl": "cfl_temp_lock",
 }
+_DIAGNOSTIC_BASENAME = re.compile(r"^1Cv8[A-Za-z0-9_.-]{0,48}$", re.ASCII)
 ENTRY_CLASSES = (
     "database", "cfl_database", "cfl_temp_database", "cfl_lock", "cfl_temp_lock",
-    "session_history", "event_log", "other",
+    "base_1cl", "temp_1cd", "temp_1cl", "session_history", "event_log", "other",
 )
 ENTRY_SHAPES = (
     "owned_regular_zero", "owned_regular_nonzero", "unowned_regular_zero",
@@ -72,13 +75,19 @@ class OracleError(Exception):
 
 
 class DatabaseEntryError(OracleError):
-    """A rejected root entry described only by two bounded, fixed enums."""
+    """Fixed enums, optionally binding an owned empty entry's bounded basename."""
 
-    def __init__(self, entry_class: str, shape: str):
+    def __init__(self, entry_class: str, shape: str, *, basename: str | None = None):
         if type(entry_class) is not str or entry_class not in ENTRY_CLASSES:
             raise ValueError("invalid entry class")
         if type(shape) is not str or shape not in ENTRY_SHAPES:
             raise ValueError("invalid entry shape")
+        if basename is not None:
+            if (not valid_diagnostic_basename(basename)
+                    or shape != "owned_regular_zero"
+                    or _entry_class(basename) != entry_class):
+                raise ValueError("invalid entry basename")
+            self.basename = basename
         self.entry_class = entry_class
         self.shape = shape
         super().__init__("invalid_input")
@@ -89,11 +98,27 @@ def _entry_class(name: str) -> str:
         return "database"
     if name in _CFL_CLASSES:
         return _CFL_CLASSES[name]
+    if name == "1Cv8.1CL":
+        return "base_1cl"
+    if name == "1Cv8tmp.1CD":
+        return "temp_1cd"
+    if name == "1Cv8tmp.1CL":
+        return "temp_1cl"
     if name == "1Cv8snc.1CD":
         return "session_history"
     if name == ANCILLARY_NAME:
         return "event_log"
     return "other"
+
+
+def valid_diagnostic_basename(value: object) -> bool:
+    """Validate diagnostic text only, without accepting or accessing a file."""
+    return type(value) is str and _DIAGNOSTIC_BASENAME.fullmatch(value) is not None
+
+
+def diagnostic_entry_class(name: str) -> str:
+    """Bind a validated diagnostic basename to its finite class, without I/O."""
+    return _entry_class(name)
 
 
 def _entry_shape(info: os.stat_result) -> str:
@@ -298,14 +323,16 @@ def budget_check(root: Path, additional: int = 0) -> int:
         raise OracleError("invalid_input") from None
 
 
-def _database_contents(descriptor: int, *, allow_ancillary: bool = True) -> dict:
-    """Private stable inventory; ancillary names, digests and bytes never escape.
+def _database_contents(descriptor: int, *, allow_ancillary: bool = True,
+                       capture_zero_name: bool = False) -> dict:
+    """Private stable inventory; ancillary content and digests never escape.
 
     Only the optional event-log directory and four exact empty, single-link CFL
     files owned by uid/gid 1000 are tolerated in a live source. CFL content is
     never read; no ancillary entry is copied into a snapshot or clone.
     Presence/absence is not quiescence evidence.
     These stricter limits do not increase the raw-file or cumulative-live caps.
+    Opted-in diagnostics can name only one rejected, owned empty root entry.
     """
     root_before = os.fstat(descriptor)
     inventory = {(): (_signature(root_before), None)}
@@ -396,7 +423,11 @@ def _database_contents(descriptor: int, *, allow_ancillary: bool = True) -> dict
             elif entry.name in _CFL_CLASSES and allow_ancillary:
                 cfl(entry.name, info)
             else:
-                raise DatabaseEntryError(_entry_class(entry.name), _entry_shape(info))
+                shape = _entry_shape(info)
+                basename = (entry.name if capture_zero_name is True and allow_ancillary
+                            and shape == "owned_regular_zero"
+                            and valid_diagnostic_basename(entry.name) else None)
+                raise DatabaseEntryError(_entry_class(entry.name), shape, basename=basename)
     if not database_seen:
         raise OracleError("invalid_input")
     if _signature(os.fstat(descriptor)) != _signature(root_before):
@@ -423,10 +454,12 @@ def _write_all(descriptor: int, chunk: bytes) -> None:
 
 
 def _copy_database(source: Path, destination: Path, root: Path,
-                   quiescent: Callable[[], bool] | None, *, frozen: bool) -> dict:
+                   quiescent: Callable[[], bool] | None, *, frozen: bool,
+                   capture_source_name: bool = False) -> dict:
     source_file = source / DATABASE_NAME
     with _directory(source) as source_dir, _directory(destination.parent) as dest_parent:
-        source_inventory = _database_contents(source_dir, allow_ancillary=frozen)
+        source_inventory = _database_contents(source_dir, allow_ancillary=frozen,
+                                              capture_zero_name=capture_source_name)
         with _file(source_file) as (reader, initial, source_parent):
             if not frozen and initial.st_mode & 0o222:
                 raise OracleError("invalid_input")
@@ -499,18 +532,23 @@ def _copy_database(source: Path, destination: Path, root: Path,
 
 
 def freeze_database(source_dir: Path, dest_dir: Path, *,
-                    quiescent: Callable[[], bool]) -> dict:
+                    quiescent: Callable[[], bool], capture_source_name: bool = False) -> dict:
     """Freeze a closed database; source and destination must be direct siblings.
 
     Their private parent is the live-byte budget root. ``quiescent`` must prove
     all owned native workers have exited, immediately before and after copy.
     A marker, unchanged mtime, or sleep is not an acceptable implementation.
+    Optional basename diagnostics apply only to the first source inventory;
+    they never authorize an otherwise rejected entry or inspect its content.
     """
+    if type(capture_source_name) is not bool:
+        raise OracleError("invalid_input")
     source, destination = _path(source_dir), _path(dest_dir)
     if source == destination or source.parent != destination.parent or not callable(quiescent):
         raise OracleError("invalid_input")
     try:
-        return _copy_database(source, destination, source.parent, quiescent, frozen=True)
+        return _copy_database(source, destination, source.parent, quiescent, frozen=True,
+                              capture_source_name=capture_source_name)
     except OSError:
         raise OracleError("snapshot_changed") from None
 
@@ -523,7 +561,7 @@ def clone_database(frozen_dir: Path, dest_dir: Path, *, budget_root: Path) -> No
             or source in destination.parents or destination in source.parents):
         raise OracleError("invalid_input")
     try:
-        _copy_database(source, destination, root, None, frozen=False)
+        _copy_database(source, destination, root, None, frozen=False, capture_source_name=False)
     except OSError:
         raise OracleError("snapshot_changed") from None
 

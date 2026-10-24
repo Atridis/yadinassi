@@ -288,7 +288,7 @@ class ProtocolTests(unittest.TestCase):
 class BaselineProtocolTests(unittest.TestCase):
     OPERATIONS=('freeze','observe','audit')
     ENTRIES=('database','cfl_database','cfl_temp_database','cfl_lock','cfl_temp_lock',
-             'session_history','event_log','other')
+             'base_1cl','temp_1cd','temp_1cl','session_history','event_log','other')
     SHAPES=('owned_regular_zero','owned_regular_nonzero','unowned_regular_zero',
             'unowned_regular_nonzero','symlink','hardlink','link_count','directory',
             'special','invalid_size')
@@ -311,7 +311,7 @@ class BaselineProtocolTests(unittest.TestCase):
         self.assertEqual(protocol.BASELINE_INPUT_FAILURES,generic)
         self.assertEqual(protocol.BASELINE_ENTRY_FAILURES,entries)
         self.assertEqual(protocol.BASELINE_FAILURES,generic|entries)
-        self.assertEqual(len(protocol.BASELINE_FAILURES),243)
+        self.assertEqual(len(protocol.BASELINE_FAILURES),333)
         self.assertEqual({kind for kind in protocol.FAILURES if kind.startswith('baseline_')},generic|entries)
         for operation in self.OPERATIONS:
             value=self.report(operation)
@@ -364,5 +364,78 @@ class BaselineProtocolTests(unittest.TestCase):
         value['stages'][-1].update(status='failed',checks={'native_processes_stopped':False,'raw_files_removed':True})
         value['cleanup']['native_processes_stopped']=False
         with self.assertRaises(OracleError):self.check(value)
+
+
+
+class BasenameDiagnosticProtocolTests(unittest.TestCase):
+    def report(self,name='1Cv8.private-test',final=False):
+        value,_=fixture_report('baseline')
+        value['failure_kind']='baseline_freeze_entry_'+protocol.diagnostic_entry_class(name)+'_owned_regular_zero'
+        value['rejected_basename']=name
+        if final:value['cleanup'].update(container_removed=True,private_staging_removed=True)
+        return value
+
+    def check(self,value,final=False,**overrides):
+        args=dict(nonce=NONCE,provenance=provenance(),final=final);args.update(overrides)
+        return protocol.validate_report(protocol.encode(value),**args)
+
+    def test_only_bounded_rejected_names_roundtrip_privately_then_after_all_cleanup(self):
+        for name in ('1Cv8','1Cv8'+'A'*48,'1Cv8.1CL','1Cv8tmp.1CD','1Cv8tmp.1CL','1Cv8snc.1CD'):
+            with self.subTest(name=name):
+                self.assertEqual(self.check(self.report(name))['rejected_basename'],name)
+                value=self.check(self.report(name,True),True)
+                self.assertEqual(value['rejected_basename'],name);self.assertFalse(value['accepted'])
+                self.assertLess(len(protocol.encode(value)),32768)
+
+    def test_rejects_unbounded_nonascii_paths_controls_and_wrong_scalar_types(self):
+        names=(True,False,None,1,{},[], '','1Cv','1cv8','X1Cv8','1Cv8'+'A'*49,
+               '1Cv8/file','1Cv8\\file','1Cv8\n','1Cv8\r','1Cv8\t','1Cv8\x00',
+               '1Cv8é','1Cv8１','1Cv8 native','/tmp/1Cv8.test','1Cv8:'+PRIVATE)
+        for name in names:
+            value=self.report();value['rejected_basename']=name
+            with self.subTest(name=name),self.assertRaises(OracleError):self.check(value)
+
+    def test_success_rejects_diagnostic_even_with_all_cleanup(self):
+        for final in (False,True):
+            value,_=fixture_report();value['rejected_basename']='1Cv8.test'
+            if final:value['cleanup'].update(container_removed=True,private_staging_removed=True);value['accepted']=True
+            with self.subTest(final=final),self.assertRaises(OracleError):self.check(value,final)
+
+    def test_field_requires_freeze_exact_class_shape_version_nonce_and_provenance(self):
+        edits=(lambda v:v.update(failure_kind='baseline_observe_entry_other_owned_regular_zero'),
+               lambda v:v.update(failure_kind='baseline_freeze_entry_other_owned_regular_nonzero'),
+               lambda v:v.update(failure_kind='baseline_freeze_entry_other_unowned_regular_zero'),
+               lambda v:v.update(failure_kind='baseline_freeze_invalid_input'),
+               lambda v:v.update(rejected_basename='1Cv8.1CL'),
+               lambda v:v['provenance'].update(actual_version=None),
+               lambda v:v.update(nonce='b'*32),
+               lambda v:v['provenance'].update(commit='b'*40),
+               lambda v:v['provenance'].update(tree='c'*40),
+               lambda v:v['provenance']['sources'].update(synthetic='d'*64))
+        for index,edit in enumerate(edits):
+            value=self.report();edit(value)
+            with self.subTest(edit=index),self.assertRaises(OracleError):self.check(value)
+        for failed in ('preflight','seed_v1','create','update','delete','cleanup'):
+            value,_=fixture_report(failed if failed!='cleanup' else 'delete')
+            value['rejected_basename']='1Cv8.test'
+            with self.subTest(stage=failed),self.assertRaises(OracleError):self.check(value)
+
+    def test_accepted_known_names_cannot_fabricate_class_consistent_diagnostics(self):
+        for name in ('1Cv8.1CD','1Cv8Log','1Cv8.1CD.cfl','1Cv8tmp.1CD.cfl','1Cv8.1CL.cfl','1Cv8tmp.1CL.cfl'):
+            with self.subTest(name=name),self.assertRaises(OracleError):self.check(self.report(name))
+
+    def test_each_native_or_final_cleanup_failure_rejects_retained_field(self):
+        for final in (False,True):
+            for key in ('native_processes_stopped','raw_files_removed','container_removed','private_staging_removed'):
+                if not final and key in ('container_removed','private_staging_removed'):continue
+                value=self.report(final=final);value['cleanup'][key]=False
+                if key in ('native_processes_stopped','raw_files_removed'):
+                    value['stages'][-1]['checks'][key]=False;value['stages'][-1]['status']='failed'
+                with self.subTest(final=final,key=key),self.assertRaises(OracleError):self.check(value,final)
+
+    def test_no_extra_diagnostic_object_keys_or_raw_error_channels(self):
+        for key in ('diagnostic','path','basenames','file_contents','source_directory'):
+            value=self.report();value[key]=PRIVATE
+            with self.subTest(key=key),self.assertRaises(OracleError):self.check(value)
 
 if __name__=='__main__': unittest.main()
