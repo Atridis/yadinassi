@@ -15,6 +15,8 @@ from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
 from .xml_processing import XML_STRING_PROCESSING
 from .type_descriptions import BSLTypeDescription
+from .value_trees import (BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeColumn,
+                          BSLValueTreeRow, BSLValueTreeRowCollection)
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
                            BSLValueTableColumn, BSLValueTableRow,
                            BSLCollectionIndexes, BSLCollectionIndex)
@@ -41,9 +43,11 @@ from .values import (
 
 _COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
-                BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList)
+                BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
+                BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 _TABLE_COLLECTIONS = (BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
-                      BSLCollectionIndexes, BSLCollectionIndex, BSLValueList)
+                      BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
+                      BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
 
 # Explicit Yadinassi resource limits, not asserted native language limits.
@@ -201,6 +205,7 @@ class Interpreter:
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
         self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
+        self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
         self.register_type("СписокЗначений", BSLValueList, "ValueList")
         self.register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
         self.register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
@@ -792,7 +797,7 @@ class Interpreter:
             return (yield from self._evaluate(node.arguments[0]))
         defaults = None
         if table_optional is not None:
-            if type(table_receiver) is BSLValueTableColumnCollection:
+            if type(table_receiver) in (BSLValueTableColumnCollection, BSLValueTreeColumnCollection):
                 defaults = ("", None, "", Decimal(0))
                 if callee.name.casefold() in {"insert", "вставить"}:
                     defaults = (None,) + defaults
@@ -825,7 +830,7 @@ class Interpreter:
             if type(parent) is _Module:
                 self._require_module_storage_context()
                 return parent.get_member(node.name)
-            if type(parent) is BSLValueTable and node.name.casefold() in {"колонки", "columns"}:
+            if type(parent) in (BSLValueTable, BSLValueTree) and node.name.casefold() in {"колонки", "columns"}:
                 return parent.columns
         return None
 
@@ -834,7 +839,7 @@ class Interpreter:
         # classifier as the single existing hook for known optional receivers.
         value = self.known_receiver(node)
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
-                                       BSLValueList) else None
+                                       BSLValueList, BSLValueTreeColumnCollection) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -856,7 +861,7 @@ class Interpreter:
                 return frozenset(range(3))
             if key in {"insert", "вставить"}:
                 return frozenset(range(1, 4))
-        if type(receiver) is BSLValueTableColumnCollection:
+        if type(receiver) in (BSLValueTableColumnCollection, BSLValueTreeColumnCollection):
             if key in {"add", "добавить"}:
                 return frozenset(range(4))
             if key in {"insert", "вставить"}:
@@ -1136,7 +1141,7 @@ class Interpreter:
                 owner.reference_get_member(node.name)
                 return _Reference(lambda: owner.reference_get_member(node.name),
                                   lambda value: owner.reference_set_member(node.name, value))
-            if not isinstance(owner, (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTableColumn)):
+            if not isinstance(owner, (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTableColumn, BSLValueTreeRow, BSLValueTreeColumn)):
                 raise TypeError("Передача свойства по ссылке поддерживается только для структуры, строки или колонки таблицы")
             # Bind the receiver once and validate existence before entering the
             # callee. Fixed properties remain readable; their setter rejects an

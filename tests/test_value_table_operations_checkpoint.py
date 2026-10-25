@@ -1,5 +1,5 @@
 """Probe integrity only: native Sort/GroupBy outputs must come from the owner."""
-from scripts.native_historical_replay import FILL_EXCLUDE_ORDER_PROBE_BLOCKS, FILL_EXCLUDE_PROBE_BLOCKS, FILL_INCLUDE_PROBE_BLOCKS, DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS
+from scripts.native_historical_replay import without_value_tree_probes, FILL_EXCLUDE_ORDER_PROBE_BLOCKS, FILL_EXCLUDE_PROBE_BLOCKS, FILL_INCLUDE_PROBE_BLOCKS, DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS
 import hashlib
 from pathlib import Path
 import unittest
@@ -17,7 +17,7 @@ BODY = ('// Начало наблюдений Sort/GroupBy.\n', '// Конец �
 
 
 def source():
-    text = SOURCE.read_text(encoding='utf-8-sig')
+    text = without_value_tree_probes(SOURCE.read_text(encoding='utf-8-sig'))
     # Isolate the already confirmed operations checkpoint. Full native gates
     # read collections.bsl directly and still compare every output byte.
     for start, end in (

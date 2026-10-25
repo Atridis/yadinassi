@@ -84,7 +84,9 @@ _TYPE_IDS = {
 }
 # This syntax milestone does not claim native serialization for error objects or
 # their types. Keep an explicit refusal policy instead of inventing native GUIDs.
-_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE})
+_TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
+    BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
+_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE}) | _TREE_CODEC_TYPES
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
@@ -232,6 +234,8 @@ class _Writer:
             kind = type_of(value)
         except TypeError:
             raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
+        if kind in _TREE_CODEC_TYPES or (kind is BSLType.TYPE and value in _TREE_CODEC_TYPES):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ДеревоЗначений пока не поддерживается")
         if kind in _UNSUPPORTED_CODEC_TYPES or (
                 kind is BSLType.TYPE and value in _UNSUPPORTED_CODEC_TYPES):
             if kind is BSLType.PROMISE or (kind is BSLType.TYPE and value is BSLType.PROMISE):

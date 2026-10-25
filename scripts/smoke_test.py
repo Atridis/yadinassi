@@ -2527,6 +2527,59 @@ def check_trailing_omitted_arguments(executable, *, directory, env):
           'direct positive witness, BOM file, command flags, stdin and console')
 
 
+def type_smoke_program() -> tuple[str, str]:
+    """Shared exact type smoke; unit tests exercise the packaged program too."""
+    type_code = '''Сообщить(ТипЗнч(Неопределено));
+Message(TypeOf(True));
+Сообщить(ТипЗнч(12.5));
+Message(TypeOf("ёж"));
+Сообщить(ТипЗнч(Новый Массив));
+Message(TypeOf(New Structure));
+Сообщить(ТипЗнч(Новый Соответствие));
+Message(TypeOf(Type("Number")));
+kind = тИп("чИсЛо");
+Message(kind = tYpE("nUmBeR"));
+Message(kind = "Число");
+Message(TypeOf(True) = kind);
+values = New Array;
+values.Add(kind);
+s = New Structure("Kind", values[0]);
+m = New Map;
+m[s.Kind] = Type("String");
+m["Число"] = "строковый ключ";
+Message(m[TypeOf(42)]);
+Message(m["Число"]);
+Message(m.Count());
+Message(values.Find(TypeOf(1)));
+For Each pair In s Do
+    Message(TypeOf(pair));
+EndDo;
+For Each pair In m Do
+    Message(ТипЗнч(pair) = Type("kEyAnDvAlUe"));
+EndDo;
+Try
+    Type("UnknownTree");
+Except
+    Message("неизвестный тип");
+EndTry;
+Try
+    TypeOf(Message);
+Except
+    Message("внешнее значение");
+EndTry;
+Message(TypeOf(kind) = Тип("Тип"));
+tree = New ValueTree;
+Message(TypeOf(tree) = Type("ДеревоЗначений"));
+Message(TypeOf(New("ДеревоЗначений")) = Type("ValueTree"));
+Message(String(TypeOf(tree)));
+'''
+    type_output = ('Не определено\nБулево\nЧисло\nСтрока\nМассив\nСтруктура\n'
+                   'Соответствие\nТип\nДа\nНет\nНет\nСтрока\nстроковый ключ\n'
+                   '2\n0\nКлючИЗначение\nДа\nДа\nнеизвестный тип\nвнешнее значение\nДа\n'
+                   'Да\nДа\nДерево значений\n')
+    return type_code, type_output
+
+
 def main() -> None:
     # Redirected Windows output can default to cp1252, which cannot encode BSL text.
     for stream in (sys.stdout, sys.stderr):
@@ -2698,54 +2751,12 @@ def main() -> None:
                       "только чтение\n5\n0\nСоответствие\n")
         map_file = Path(temporary) / "Соответствия.bsl"
         map_file.write_text(map_code, encoding="utf-8-sig")
-        type_code = '''Сообщить(ТипЗнч(Неопределено));
-Message(TypeOf(True));
-Сообщить(ТипЗнч(12.5));
-Message(TypeOf("ёж"));
-Сообщить(ТипЗнч(Новый Массив));
-Message(TypeOf(New Structure));
-Сообщить(ТипЗнч(Новый Соответствие));
-Message(TypeOf(Type("Number")));
-kind = тИп("чИсЛо");
-Message(kind = tYpE("nUmBeR"));
-Message(kind = "Число");
-Message(TypeOf(True) = kind);
-values = New Array;
-values.Add(kind);
-s = New Structure("Kind", values[0]);
-m = New Map;
-m[s.Kind] = Type("String");
-m["Число"] = "строковый ключ";
-Message(m[TypeOf(42)]);
-Message(m["Число"]);
-Message(m.Count());
-Message(values.Find(TypeOf(1)));
-For Each pair In s Do
-    Message(TypeOf(pair));
-EndDo;
-For Each pair In m Do
-    Message(ТипЗнч(pair) = Type("kEyAnDvAlUe"));
-EndDo;
-Try
-    Type("ValueTree");
-Except
-    Message("неизвестный тип");
-EndTry;
-Try
-    TypeOf(Message);
-Except
-    Message("внешнее значение");
-EndTry;
-Message(TypeOf(kind) = Тип("Тип"));
-'''
-        type_output = ('Не определено\nБулево\nЧисло\nСтрока\nМассив\nСтруктура\n'
-                       'Соответствие\nТип\nДа\nНет\nНет\nСтрока\nстроковый ключ\n'
-                       '2\n0\nКлючИЗначение\nДа\nДа\nнеизвестный тип\nвнешнее значение\nДа\n')
+        type_code, type_output = type_smoke_program()
         type_file = Path(temporary) / 'Типы.bsl'
         type_file.write_text(type_code, encoding='utf-8-sig')
         type_module = Path(temporary) / 'ТипыМодуля.bsl'
         type_module.write_text(
-            'Function Failure() Export\nReturn Type("ValueTree");\nEndFunction\n'
+            'Function Failure() Export\nReturn Type("UnknownTree");\nEndFunction\n'
             'Function Kind(Val value) Export Return TypeOf(value); EndFunction\n'
             'Function Mapping() Export\n'
             'm = New Map; m[Тип("Число")] = Тип("Строка"); Return m;\nEndFunction\n',
@@ -2902,7 +2913,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
             (['-'], type_code, type_output, 0),
             ([], type_code + '/exit\n', type_output, 0),
             ([str(type_importer)], None,
-             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: ValueTree\nДа\n', 0),
+             f'Строка\nТип\n{type_module.resolve()}:2:12: Тип не поддерживается: UnknownTree\nДа\n', 0),
             ([str(region_file)], None, '42\n', 0),
             (['-c', region_code], None, '42\n', 0),
             (['-'], region_code, '42\n', 0),
@@ -2986,18 +2997,18 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed fixed-collection diagnostics {arguments!r}: {result!r}')
         type_errors = [
-            (['-c', 'Type("ValueTree");'], None, '', '<команда>:1:', 'Тип не поддерживается: ValueTree'),
+            (['-c', 'Type("UnknownTree");'], None, '', '<команда>:1:', 'Тип не поддерживается: UnknownTree'),
             (['-c', 'Тип(1);'], None, '', '<команда>:1:', 'Имя типа должно быть строкой'),
             (['-c', 'TypeOf(Message);'], None, '', '<команда>:1:',
              'ТипЗнч для этого значения пока не поддерживается'),
-            (['-'], 'Тип("ДеревоЗначений");\n', '', '<stdin>:1:', 'Тип не поддерживается: ДеревоЗначений'),
+            (['-'], 'Тип("НеизвестноеДерево");\n', '', '<stdin>:1:', 'Тип не поддерживается: НеизвестноеДерево'),
             ([str(type_error_file)], None, '', str(type_error_file) + ':2:',
              'ТипЗнч для этого значения пока не поддерживается'),
             ([str(type_error_importer)], None, '', str(type_module.resolve()) + ':2:',
-             'Тип не поддерживается: ValueTree'),
-            ([], 'kind = Type("Number");\nkind = Type("ValueTree");\n'
+             'Тип не поддерживается: UnknownTree'),
+            ([], 'kind = Type("Number");\nkind = Type("UnknownTree");\n'
              'kind\nTypeOf(kind)\n/exit\n', 'Число\nТип\n', '<консоль>:1:',
-             'Тип не поддерживается: ValueTree'),
+             'Тип не поддерживается: UnknownTree'),
         ]
         for arguments, stdin, stdout, location, message in type_errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,

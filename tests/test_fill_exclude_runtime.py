@@ -12,7 +12,14 @@ from pathlib import Path
 import re
 import unittest
 
-from scripts import native_1c_map_contract as contract
+import importlib.util
+from scripts import native_1c_map_contract as current_contract
+from scripts.native_historical_replay import without_value_tree_probes
+_spec = importlib.util.spec_from_file_location('historical_exclude_map_contract', current_contract.__file__)
+contract = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(contract)
+contract.SOURCE_SHA256 = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'
+contract.RECORD_COUNT = 854
 from yadinassi import BSLRuntimeError, Interpreter
 from yadinassi.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
@@ -79,6 +86,7 @@ class FillExcludeNativeRuntimeTests(unittest.TestCase):
         cls.records = contract._records(cls.native_bytes)
         # Explicit checkout transport normalization of source only.
         cls.source = (ROOT / 'integrational_tests/tests/collections.bsl').read_bytes().replace(b'\r\n', b'\n')
+        cls.source = without_value_tree_probes(cls.source.decode('utf-8-sig')).encode('utf-8-sig')
         cls.messages = []
         vm = Interpreter(cls.messages.append, native_target=LINUX_8_3_27_1508)
         try:

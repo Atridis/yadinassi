@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from test_native_async_fixture import historical_tree_collections_module
 from unittest import mock
 
 import test_native_client_probe as probe
@@ -148,7 +149,8 @@ class ProfileObservationSourceTests(SyntheticFilesystemCase):
         source=linux_fixture(ROOT/full.CLIENT_SOURCE)
         plan=json.loads((ROOT/'integrational_tests/directive_probes/infobase_context_measurement.json').read_text())
         for name,expected in plan['four_adapter_sha256'].items():
-            actual=getattr(suite,'client_'+name+'_module')(linux_fixture(ROOT/f'integrational_tests/tests/{name}.bsl'),source)
+            adapter = historical_tree_collections_module if name == 'collections' else getattr(suite, 'client_'+name+'_module')
+            actual = adapter(linux_fixture(ROOT/f'integrational_tests/tests/{name}.bsl'), source)
             self.assertEqual(full.digest(actual),expected)
         self.assertEqual(full.async_source_identity(linux_fixture(ROOT/'scripts/native_1c_bootstrap/full_suite.py')),plan['async8_identity'])
         new=json.loads((ROOT/'integrational_tests/directive_probes/preprocessor_profiles_measurement.json').read_text())

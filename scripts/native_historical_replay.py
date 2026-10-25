@@ -40,8 +40,28 @@ FILL_EXCLUDE_ORDER_PROBE_BLOCKS = (
 )
 
 
+VALUE_TREE_START = '// Begin bounded ValueTree core observations (candidate; not native evidence).\n'
+VALUE_TREE_END = '// End bounded ValueTree core observations.\n'
+
+
+def without_value_tree_probes(text):
+    """Exact source inverse for old captures only; never truncate native output."""
+    raw = text.encode('utf-8-sig') if not text.startswith('\ufeff') else text.encode('utf-8')
+    if hashlib.sha256(raw).hexdigest() != 'b12fb063732fa8ea16a6e0e88e56d6da99c5958989c9533a07870aee07b72c27':
+        raise ValueError('value tree source binding changed')
+    if text.count(VALUE_TREE_START) != 1 or text.count(VALUE_TREE_END) != 1 or not text.endswith(VALUE_TREE_END):
+        raise ValueError('value tree boundaries changed')
+    result = text.split(VALUE_TREE_START, 1)[0]
+    raw = result.encode('utf-8-sig') if not result.startswith('\ufeff') else result.encode('utf-8')
+    if hashlib.sha256(raw).hexdigest() != '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb':
+        raise ValueError('value tree baseline binding changed')
+    return result
+
+
 def without_fill_exclude_order_probes(text):
     """Restore the exact 852-record PR87 source, never truncate native outputs."""
+    if VALUE_TREE_START in text or VALUE_TREE_END in text:
+        text = without_value_tree_probes(text)
     raw = text.encode('utf-8')
     if not raw.startswith(b'\xef\xbb\xbf'):
         raw = b'\xef\xbb\xbf' + raw

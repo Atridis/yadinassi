@@ -1967,9 +1967,9 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_COLLECTIONS_SOURCE_SHA256 = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'
+CLIENT_COLLECTIONS_SOURCE_SHA256 = 'b12fb063732fa8ea16a6e0e88e56d6da99c5958989c9533a07870aee07b72c27'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_COLLECTIONS_MESSAGE_COUNT = 854
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 866
 
 
 def empty_collections_report() -> dict:
@@ -2305,7 +2305,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
     capture = 'КоллекцииКлиентЗахват'
     reserved = (capture, 'КоллекцииКлиентСообщения',
                 'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
-    if (len(lines) != 3894
+    if (len(lines) != 4000
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())
@@ -2331,6 +2331,8 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         raise FullError('invalid_input')
     # Preserve exact new observer/setup text under a top-level-hash rebase too.
     exclude_blocks = (
+        ('// Begin bounded ValueTree core observations (candidate; not native evidence).\n', '// End bounded ValueTree core observations.\n',
+         '8ceee75f983e89f114aca907ddcd0efa7dc475208b797bed9fd15945517a8e3c'),
         ('// Begin FillPropertyValues EXCLUDE source-order discriminator helpers.\n', '// End FillPropertyValues EXCLUDE source-order discriminator helpers.\n\n',
          '4b79c88f666e55e19a704a1258da7fde10fe7e1f8731290808a27bcc5ab0484e'),
         ('// Begin FillPropertyValues EXCLUDE checkpoint helpers.\n', '// End FillPropertyValues EXCLUDE checkpoint helpers.\n\n',

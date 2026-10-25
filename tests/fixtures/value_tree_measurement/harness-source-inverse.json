@@ -1,0 +1,62 @@
+{
+  "scripts/native_1c_full_host.py": {
+    "base_sha256": "fa3e0a0008a8d0daeb426f3995a3dd8e3ba5c59db8ba450d40580844171400eb",
+    "candidate_sha256": "7ebe4d0a7e292b887b7b6a142e49ab190cfbc77d2296d9fe401f4acec3641442",
+    "edits": [
+      {
+        "old": "APPROVED_IMAGE = \"ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728\"\nCOLLECTIONS_SOURCE_SHA256 = \"42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb\"\nCASE_SECONDS = 10\n",
+        "new": "APPROVED_IMAGE = \"ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728\"\nCOLLECTIONS_SOURCE_SHA256 = \"b12fb063732fa8ea16a6e0e88e56d6da99c5958989c9533a07870aee07b72c27\"\nCASE_SECONDS = 10\n"
+      },
+      {
+        "old": "                or not is_int(data[\"output_size\"], MAX_FILE)\n                or type(data[\"message_count\"]) is not int or data[\"message_count\"] != 854\n                or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):\n",
+        "new": "                or not is_int(data[\"output_size\"], MAX_FILE)\n                or type(data[\"message_count\"]) is not int or data[\"message_count\"] != 866\n                or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):\n"
+      },
+      {
+        "old": "                or server_case[\"status\"] != \"ok\" or server_case[\"source_sha256\"] != source_hash\n                or type(server_case[\"message_count\"]) is not int or server_case[\"message_count\"] != 854):\n            raise ValueError(\"client collections mismatch context\")\n",
+        "new": "                or server_case[\"status\"] != \"ok\" or server_case[\"source_sha256\"] != source_hash\n                or type(server_case[\"message_count\"]) is not int or server_case[\"message_count\"] != 866):\n            raise ValueError(\"client collections mismatch context\")\n"
+      },
+      {
+        "old": "        if (type(mismatch) is not dict or set(mismatch) != keys\n                or not is_int(mismatch[\"count\"], 854) or mismatch[\"count\"] < 1\n                or not is_int(mismatch[\"first\"], 854) or mismatch[\"first\"] < 1\n                or mismatch[\"count\"] > 855 - mismatch[\"first\"]\n                or not is_digest(mismatch[\"client_sha256\"]) or not is_digest(mismatch[\"server_sha256\"])\n",
+        "new": "        if (type(mismatch) is not dict or set(mismatch) != keys\n                or not is_int(mismatch[\"count\"], 866) or mismatch[\"count\"] < 1\n                or not is_int(mismatch[\"first\"], 866) or mismatch[\"first\"] < 1\n                or mismatch[\"count\"] > 867 - mismatch[\"first\"]\n                or not is_digest(mismatch[\"client_sha256\"]) or not is_digest(mismatch[\"server_sha256\"])\n"
+      },
+      {
+        "old": "                or len(mismatch[\"ordinals\"]) != min(mismatch[\"count\"], 16)\n                or any(not is_int(value, 854) or value < 1 for value in mismatch[\"ordinals\"])\n                or mismatch[\"ordinals\"] != sorted(set(mismatch[\"ordinals\"]))\n",
+        "new": "                or len(mismatch[\"ordinals\"]) != min(mismatch[\"count\"], 16)\n                or any(not is_int(value, 866) or value < 1 for value in mismatch[\"ordinals\"])\n                or mismatch[\"ordinals\"] != sorted(set(mismatch[\"ordinals\"]))\n"
+      },
+      {
+        "old": "                or mismatch[\"ordinals\"][0] != mismatch[\"first\"]\n                or mismatch[\"count\"] - len(mismatch[\"ordinals\"]) > 854 - mismatch[\"ordinals\"][-1]):\n            raise ValueError(\"client collections mismatch schema\")\n",
+        "new": "                or mismatch[\"ordinals\"][0] != mismatch[\"first\"]\n                or mismatch[\"count\"] - len(mismatch[\"ordinals\"]) > 866 - mismatch[\"ordinals\"][-1]):\n            raise ValueError(\"client collections mismatch schema\")\n"
+      },
+      {
+        "old": "            or type(result[\"reason\"]) is not str or result[\"reason\"] not in contract.REASONS\n            or not is_int(result[\"records\"], 854) or not is_int(result[\"byte_equal_records\"], result[\"records\"])\n            or type(result[\"accepted_labels\"]) is not list\n",
+        "new": "            or type(result[\"reason\"]) is not str or result[\"reason\"] not in contract.REASONS\n            or not is_int(result[\"records\"], 866) or not is_int(result[\"byte_equal_records\"], result[\"records\"])\n            or type(result[\"accepted_labels\"]) is not list\n"
+      },
+      {
+        "old": "    if result[\"status\"] == \"equivalent\":\n        if (result[\"reason\"] != \"none\" or result[\"records\"] != 854\n                or result[\"byte_equal_records\"] + len(result[\"accepted_labels\"]) != 854\n                or raw_matched != (result[\"byte_equal_records\"] == 854)):\n            raise FullError(\"semantic_result_invalid\")\n",
+        "new": "    if result[\"status\"] == \"equivalent\":\n        if (result[\"reason\"] != \"none\" or result[\"records\"] != 866\n                or result[\"byte_equal_records\"] + len(result[\"accepted_labels\"]) != 866\n                or raw_matched != (result[\"byte_equal_records\"] == 866)):\n            raise FullError(\"semantic_result_invalid\")\n"
+      }
+    ]
+  },
+  "scripts/native_1c_bootstrap/full_suite.py": {
+    "base_sha256": "09b18eb1ff7f17d4d0a1832b84d4bdf92918fcb887c32053983326935a42682a",
+    "candidate_sha256": "78fa44a71bc0c9dc9308423befdf7087cf98968108782983e9ea0fdbd76fa367",
+    "edits": [
+      {
+        "old": "# This is a deliberately source-specific adapter, not a general BSL rewriter.\nCLIENT_COLLECTIONS_SOURCE_SHA256 = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'\nCLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'\n",
+        "new": "# This is a deliberately source-specific adapter, not a general BSL rewriter.\nCLIENT_COLLECTIONS_SOURCE_SHA256 = 'b12fb063732fa8ea16a6e0e88e56d6da99c5958989c9533a07870aee07b72c27'\nCLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'\n"
+      },
+      {
+        "old": "CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'\nCLIENT_COLLECTIONS_MESSAGE_COUNT = 854\n\n",
+        "new": "CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'\nCLIENT_COLLECTIONS_MESSAGE_COUNT = 866\n\n"
+      },
+      {
+        "old": "                '\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438\u041a\u043b\u0438\u0435\u043d\u0442\u0421\u0438\u043c\u0432\u043e\u043b\u044b', '\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438\u041a\u043b\u0438\u0435\u043d\u0442\u0412\u044b\u043f\u043e\u043b\u043d\u0438\u0442\u044c')\n    if (len(lines) != 3894\n            or any(lines[i] != text for i, text in declarations.items())\n",
+        "new": "                '\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438\u041a\u043b\u0438\u0435\u043d\u0442\u0421\u0438\u043c\u0432\u043e\u043b\u044b', '\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438\u041a\u043b\u0438\u0435\u043d\u0442\u0412\u044b\u043f\u043e\u043b\u043d\u0438\u0442\u044c')\n    if (len(lines) != 4000\n            or any(lines[i] != text for i, text in declarations.items())\n"
+      },
+      {
+        "old": "    exclude_blocks = (\n        ('// Begin FillPropertyValues EXCLUDE source-order discriminator helpers.\\n', '// End FillPropertyValues EXCLUDE source-order discriminator helpers.\\n\\n',\n",
+        "new": "    exclude_blocks = (\n        ('// Begin bounded ValueTree core observations (candidate; not native evidence).\\n', '// End bounded ValueTree core observations.\\n',\n         '8ceee75f983e89f114aca907ddcd0efa7dc475208b797bed9fd15945517a8e3c'),\n        ('// Begin FillPropertyValues EXCLUDE source-order discriminator helpers.\\n', '// End FillPropertyValues EXCLUDE source-order discriminator helpers.\\n\\n',\n"
+      }
+    ]
+  }
+}

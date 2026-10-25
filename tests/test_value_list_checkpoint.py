@@ -4,7 +4,7 @@ Host objects below deliberately exercise both accepted and rejected branches.
 Their behavior and SYNTHETIC codec strings are never written as native goldens.
 The unchanged complete-output comparators remain the owner-evidence gate.
 """
-from scripts.native_historical_replay import FILL_EXCLUDE_ORDER_PROBE_BLOCKS, FILL_EXCLUDE_PROBE_BLOCKS, FILL_INCLUDE_PROBE_BLOCKS, DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS
+from scripts.native_historical_replay import without_value_tree_probes, FILL_EXCLUDE_ORDER_PROBE_BLOCKS, FILL_EXCLUDE_PROBE_BLOCKS, FILL_INCLUDE_PROBE_BLOCKS, DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS
 from contextlib import ExitStack
 from copy import deepcopy
 from decimal import Decimal
@@ -35,6 +35,7 @@ FINAL = 'table.list.checkpoint.complete: [ok]'
 
 
 def without_sort_probe(text):
+    text = without_value_tree_probes(text)
     # Historical-source integrity only; full native comparators use the file.
     for start, end in (
         *FILL_EXCLUDE_ORDER_PROBE_BLOCKS, *FILL_EXCLUDE_PROBE_BLOCKS, *FILL_INCLUDE_PROBE_BLOCKS, *DESCRIPTOR_MAP_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS,

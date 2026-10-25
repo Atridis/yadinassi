@@ -18,6 +18,8 @@ from .type_qualifiers import (
     BSLDateQualifiers, BSLNumberQualifiers, BSLStringQualifiers,
 )
 from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
+from .value_trees import (BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeColumn,
+                          BSLValueTreeRow, BSLValueTreeRowCollection)
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
                            BSLValueTableColumn, BSLValueTableRow,
                            BSLCollectionIndexes, BSLCollectionIndex)
@@ -70,6 +72,11 @@ _VALUE_TYPES = (
     (BSLAllowedLengths, BSLType.ALLOWED_LENGTHS, None),
     (BSLDateFractionsNamespace, BSLType.DATE_FRACTIONS_NAMESPACE, None),
     (BSLTypeDescription, BSLType.TYPE_DESCRIPTION, "TypeDescription"),
+    (BSLValueTree, BSLType.VALUE_TREE, "ValueTree"),
+    (BSLValueTreeColumnCollection, BSLType.VALUE_TREE_COLUMN_COLLECTION, "ValueTreeColumnCollection"),
+    (BSLValueTreeColumn, BSLType.VALUE_TREE_COLUMN, "ValueTreeColumn"),
+    (BSLValueTreeRow, BSLType.VALUE_TREE_ROW, "ValueTreeRow"),
+    (BSLValueTreeRowCollection, BSLType.VALUE_TREE_ROW_COLLECTION, "ValueTreeRowCollection"),
     (BSLValueTable, BSLType.VALUE_TABLE, "ValueTable"),
     (BSLValueTableColumnCollection, BSLType.VALUE_TABLE_COLUMN_COLLECTION, "ValueTableColumnCollection"),
     (BSLValueTableColumn, BSLType.VALUE_TABLE_COLUMN, "ValueTableColumn"),

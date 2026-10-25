@@ -3892,3 +3892,109 @@
 ПроверитьПозициюИсключения("first");
 ПроверитьПозициюИсключения("between");
 // End FillPropertyValues EXCLUDE source-order discriminator observations.
+// Begin bounded ValueTree core observations (candidate; not native evidence).
+// Append after existing collections body. No external data, recursion, or I/O.
+// Every reported value is scalar; never serialize a tree/row/column object.
+VTStatus = "ok";
+Попытка
+    VT = Новый ДеревоЗначений;
+    VT.Колонки.Добавить("Code");
+    VTRoot = VT.Строки.Добавить();
+    VTRoot.Code = "root";
+    VTChild = VTRoot.Строки.Добавить();
+    VTChild.Code = "child";
+    VTGrand = VTChild.Строки.Добавить();
+    VTGrand.Code = "grand";
+    VTSibling = VT.Строки.Добавить();
+    VTSibling.Code = "sibling";
+Исключение
+    VTStatus = "error";
+КонецПопытки;
+Показать("tree.core.setup", VTStatus);
+VTResult = "error";
+Попытка
+    VTResult = Строка(ТипЗнч(VT)) + ";" + Строка(ТипЗнч(VT.Строки))
+        + ";" + Строка(ТипЗнч(VTRoot)) + ";" + Строка(ТипЗнч(VT.Колонки))
+        + ";" + Строка(ТипЗнч(VT.Колонки[0]));
+Исключение
+КонецПопытки;
+Показать("tree.core.types", VTResult);
+VTResult = "error";
+Попытка
+    VTResult = Строка(VT.Строки.Количество()) + ";" + Строка(VTRoot.Строки.Количество())
+        + ";" + Строка(VTChild.Строки.Количество()) + ";" + Строка(VTGrand.Строки.Количество())
+        + ";" + VT.Строки[0].Code + ";" + VT.Строки.Получить(1).Code;
+Исключение
+КонецПопытки;
+Показать("tree.core.shape", VTResult);
+VTResult = "error";
+Попытка
+    VTResult = Строка(VTRoot.Уровень()) + ";" + Строка(VTChild.Level())
+        + ";" + Строка(VTGrand.Уровень()) + ";" + Строка(VTSibling.Level());
+Исключение
+КонецПопытки;
+Показать("tree.core.level", VTResult);
+VTResult = "error";
+Попытка
+    VTResult = Строка(VTRoot.Родитель = Неопределено) + ";" + Строка(VTChild.Parent = VTRoot)
+        + ";" + Строка(VTGrand.Parent = VTChild) + ";" + Строка(VTRoot.Владелец() = VT)
+        + ";" + Строка(VTChild.Owner() = VT);
+Исключение
+КонецПопытки;
+Показать("tree.core.row-links", VTResult);
+VTResult = "error";
+Попытка
+    VTResult = Строка(VT.Строки.Родитель = Неопределено)
+        + ";" + Строка(VTRoot.Rows.Parent = VTRoot)
+        + ";" + Строка(VTChild.Строки.Родитель = VTChild);
+Исключение
+КонецПопытки;
+Показать("tree.core.collection-parent", VTResult);
+VTResult = "error";
+Попытка
+    VTColumn = VT.Колонки.Добавить("Amount", Новый ОписаниеТипов("Число"), "Amount title", 12);
+    VTResult = VTColumn.Имя + ";" + VTColumn.Заголовок + ";" + Строка(VTColumn.Ширина)
+        + ";" + Строка(VTColumn.ТипЗначения.СодержитТип(Тип("Число")))
+        + ";" + Строка(VTRoot.Amount) + ";" + Строка(VTGrand.Amount);
+Исключение
+КонецПопытки;
+Показать("tree.core.shared-typed-column", VTResult);
+VTResult = "error";
+Попытка
+    VTChild.Amount = "12.5";
+    VTGrand[1] = 7;
+    VTResult = Строка(ТипЗнч(VTChild.Amount)) + ";" + Строка(VTChild.Amount)
+        + ";" + Строка(VTGrand.Получить(1)) + ";" + Строка(VTRoot.Amount);
+Исключение
+КонецПопытки;
+Показать("tree.core.typed-assignment", VTResult);
+VTResult = "error";
+Попытка
+    VTRoot.Установить(0, "changed");
+    VTResult = VTRoot.Code + ";" + VTRoot[0] + ";" + VTRoot.Get(0)
+        + ";" + Строка(VT.Строки.Индекс(VTSibling))
+        + ";" + Строка(VTRoot.Строки.Индекс(VTChild));
+Исключение
+КонецПопытки;
+Показать("tree.core.cell-access", VTResult);
+VTResult = "error";
+Попытка
+    VT.Колонки.Удалить("Amount");
+    VTResult = Строка(VT.Колонки.Количество()) + ";" + VTGrand.Code;
+Исключение
+КонецПопытки;
+Показать("tree.core.column-delete", VTResult);
+VTResult = "error";
+Попытка
+    VTRoot.Строки.Очистить();
+    VTResult = Строка(VTRoot.Строки.Количество()) + ";" + Строка(VT.Строки.Количество());
+Исключение
+КонецПопытки;
+Показать("tree.core.child-clear", VTResult);
+VTResult = "error";
+Попытка
+    VTResult = VTGrand.Code;
+Исключение
+КонецПопытки;
+Показать("tree.core.detached-grandchild-cell", VTResult);
+// End bounded ValueTree core observations.

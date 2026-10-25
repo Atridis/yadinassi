@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from test_native_async_fixture import historical_tree_collections_module
 from unittest import mock
 from test_native_1c_full_host import SyntheticFilesystemCase
 from test_native_client_probe import full, suite, ROOT, stage_fixture
@@ -301,7 +302,8 @@ class DualWitnessTests(SyntheticFilesystemCase):
             'numbers':'271be42fcb2df2ad497c5e8ba1edcfe94e24779f00820ba3a7191eddc60eb7f2'}
         raw = linux_fixture(ROOT/full.CLIENT_SOURCE)
         for name, expected in hashes.items():
-            module = getattr(suite,'client_'+name+'_module')(linux_fixture(ROOT/f'integrational_tests/tests/{name}.bsl'),raw)
+            adapter = historical_tree_collections_module if name == 'collections' else getattr(suite, 'client_'+name+'_module')
+            module = adapter(linux_fixture(ROOT/f'integrational_tests/tests/{name}.bsl'), raw)
             self.assertEqual(full.digest(module),expected)
             self.assertNotIn(b'DualProbe',module)
 
