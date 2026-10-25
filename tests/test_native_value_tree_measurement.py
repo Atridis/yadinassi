@@ -1,5 +1,6 @@
 """Offline contract for candidate observations; does not establish native behavior."""
 import hashlib
+import os
 from pathlib import Path
 import unittest
 import test_native_1c_full_stage as fixtures
@@ -9,9 +10,21 @@ START = b'// Begin bounded ValueTree core observations (candidate; not native ev
 END = b'// End bounded ValueTree core observations.\n'
 PREFIX_SHA = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'
 
+def offline_checkout_bytes(raw, platform):
+    # Offline fixtures model the LF-pinned Linux executor under Git autocrlf.
+    # Never normalize production input or edit repository source fixtures.
+    return raw.replace(b'\r\n', b'\n') if platform == 'nt' else raw
+
+
 class ValueTreeMeasurementContract(unittest.TestCase):
+    def setUp(self):
+        self.source = offline_checkout_bytes(
+            (ROOT/'integrational_tests/tests/collections.bsl').read_bytes(), os.name)
+        self.template = offline_checkout_bytes(
+            (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes(), os.name)
+
     def test_append_only_fixed_budget(self):
-        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
+        source = self.source
         prefix, marker, block = source.partition(START)
         self.assertEqual(hashlib.sha256(prefix).hexdigest(), PREFIX_SHA)
         self.assertEqual(source.count(START), 1)
@@ -24,8 +37,8 @@ class ValueTreeMeasurementContract(unittest.TestCase):
         self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 866)
 
     def test_full_client_adapter_preserves_probe_expressions(self):
-        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
-        template = (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
+        source = self.source
+        template = self.template
         module = fixtures.suite.client_collections_module(source, template)
         block = source[source.index(START):]
         self.assertIn(block, module)
@@ -33,8 +46,8 @@ class ValueTreeMeasurementContract(unittest.TestCase):
 
     def test_probe_cannot_be_rebased_by_only_replacing_top_level_hash(self):
         from unittest import mock
-        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
-        template = (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
+        source = self.source
+        template = self.template
         tampered = source.replace(b'VTChild.Level()', b'VTChild.Level(1)', 1)
         with mock.patch.object(fixtures.suite, 'CLIENT_COLLECTIONS_SOURCE_SHA256', hashlib.sha256(tampered).hexdigest()):
             with self.assertRaises(fixtures.suite.FullError):
@@ -54,8 +67,8 @@ class ValueTreeMeasurementContract(unittest.TestCase):
 
     def test_historical_adapter_inverse_is_isolated_and_exact(self):
         from test_native_async_fixture import historical_tree_collections_module
-        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
-        template = (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
+        source = self.source
+        template = self.template
         current = fixtures.suite.client_collections_module(source, template)
         historical = historical_tree_collections_module(source, template)
         self.assertEqual(hashlib.sha256(historical).hexdigest(),
@@ -68,3 +81,33 @@ class ValueTreeMeasurementContract(unittest.TestCase):
         prefix = source.partition(START)[0]
         with self.assertRaises(fixtures.suite.FullError):
             fixtures.suite.client_collections_module(prefix, template)
+
+    def test_simulated_crlf_checkout_preserves_canonical_contract(self):
+        source_crlf = self.source.replace(b'\n', b'\r\n')
+        template_crlf = self.template.replace(b'\n', b'\r\n')
+        source = offline_checkout_bytes(source_crlf, 'nt')
+        template = offline_checkout_bytes(template_crlf, 'nt')
+        self.assertEqual(source, self.source)
+        self.assertEqual(template, self.template)
+        self.assertEqual(offline_checkout_bytes(source_crlf, 'posix'), source_crlf)
+        self.assertEqual(offline_checkout_bytes(template_crlf, 'posix'), template_crlf)
+        self.assertEqual(hashlib.sha256(source.partition(START)[0]).hexdigest(), PREFIX_SHA)
+        self.assertEqual(fixtures.suite.client_collections_module(source, template),
+                         fixtures.suite.client_collections_module(self.source, self.template))
+        from test_native_async_fixture import historical_tree_collections_module
+        self.assertEqual(hashlib.sha256(historical_tree_collections_module(source, template)).hexdigest(),
+                         'b8d28abf2a28f7ff11958f9f3a31a966e3032484b8f0cf7d316b24ef8fb847e8')
+
+    def test_production_adapter_still_rejects_raw_crlf_bom_changes_and_tampering(self):
+        bom = b'\xef\xbb\xbf'
+        for name, raw in (('source', self.source), ('template', self.template)):
+            for change, changed in (
+                    ('crlf', raw.replace(b'\n', b'\r\n')),
+                    ('extra_bom', bom + raw),
+                    ('remove_bom', raw[len(bom):] if raw.startswith(bom) else bom + raw),
+                    ('tamper', raw + b'// tampered\n')):
+                with self.subTest(input=name, change=change):
+                    source = changed if name == 'source' else self.source
+                    template = changed if name == 'template' else self.template
+                    with self.assertRaisesRegex(fixtures.suite.FullError, '^invalid_input$'):
+                        fixtures.suite.client_collections_module(source, template)
