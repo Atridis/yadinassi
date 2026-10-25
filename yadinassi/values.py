@@ -70,6 +70,18 @@ class BSLType(Enum):
     VALUE_LIST_ITEM = "ЭлементСпискаЗначений"
 
     def __str__(self) -> str:
+        # Native run 40221284540, collections record 856: TypeOf displays.
+        # Enum values stay unspaced lookup names, not presentation aliases.
+        if self is BSLType.VALUE_TREE:
+            return "Дерево значений"
+        if self is BSLType.VALUE_TREE_ROW_COLLECTION:
+            return "Коллекция строк дерева значений"
+        if self is BSLType.VALUE_TREE_ROW:
+            return "Строка дерева значений"
+        if self is BSLType.VALUE_TREE_COLUMN_COLLECTION:
+            return "Коллекция колонок дерева значений"
+        if self is BSLType.VALUE_TREE_COLUMN:
+            return "Колонка дерева значений"
         if self is BSLType.VALUE_TABLE:
             return "Таблица значений"
         if self is BSLType.COLLECTION_INDEXES:

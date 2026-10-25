@@ -5499,7 +5499,7 @@ Date/Null helpers, append и определение компактного write
 приемки.
 [Provenance, восемь наблюдений и точные границы](docs/date-null-transfer-measurement.md).
 
-### ДеревоЗначений: standalone core (native-unverified)
+### ДеревоЗначений: standalone core (bounded native observations)
 
 `New ValueTree()` / `Новый ДеревоЗначений()` now provides a shared `Columns`
 schema and root `Rows`; each row has child `Rows`, read-only `Parent`, and
@@ -5509,5 +5509,8 @@ iteration over cells and live by-reference cell assignment. Column collections
 support Add/Insert/Delete/Clear/Count/Get/Find/IndexOf, name lookup, iteration,
 and typed defaults/conversion using the existing TypeDescription policy.
 
-This is a locally tested implementation, **not yet verified against real 1C**.
-See [the scope and evidence note](docs/value-tree-core.md); version remains 0.4.2.
+Initial native run 40221284540 matched eleven of twelve bounded tree records;
+the remaining type-display spelling mismatch is corrected from captured bytes.
+**Fresh native acceptance is pending**; object displays and broader edge cases
+are not inferred from type displays. See [scope and evidence](docs/value-tree-core.md);
+version remains 0.4.2.

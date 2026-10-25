@@ -113,6 +113,36 @@ class ValueTreeRuntimeTests(unittest.TestCase):
             with self.assertRaises(BSLError):
                 self.vm.execute(f'x = New {name}();')
 
+    def test_native_type_display_record_856(self):
+        # Actual isolated 1C run 40221284540, not synthesized native evidence.
+        expressions = ('t', 't.Rows', 'r', 't.Columns', 'c')
+        actual = ';'.join(self.vm.execute('String(TypeOf(' + expr + '))')
+                          for expr in expressions)
+        self.assertEqual(actual, 'Дерево значений;Коллекция строк дерева значений;'
+                         'Строка дерева значений;Коллекция колонок дерева значений;'
+                         'Колонка дерева значений')
+
+    def test_type_display_does_not_replace_lookup_or_constructor_aliases(self):
+        aliases = (
+            ('t', 'ValueTree', 'ДеревоЗначений', 'Дерево значений'),
+            ('t.Rows', 'ValueTreeRowCollection', 'КоллекцияСтрокДереваЗначений',
+             'Коллекция строк дерева значений'),
+            ('r', 'ValueTreeRow', 'СтрокаДереваЗначений', 'Строка дерева значений'),
+            ('t.Columns', 'ValueTreeColumnCollection', 'КоллекцияКолонокДереваЗначений',
+             'Коллекция колонок дерева значений'),
+            ('c', 'ValueTreeColumn', 'КолонкаДереваЗначений', 'Колонка дерева значений'))
+        for expr, english, russian, display in aliases:
+            for alias in (english, russian, english.lower(), russian.lower()):
+                with self.subTest(alias=alias):
+                    self.assertTrue(self.vm.execute(f'(Type("{alias}") = TypeOf({expr}))'))
+                    self.assertEqual(self.vm.execute(f'String(Type("{alias}"))'), display)
+            # A display is not a newly inferred lookup alias.
+            with self.assertRaises(BSLError):
+                self.vm.execute(f'Type("{display}")')
+        for alias in ('ValueTree', 'ДеревоЗначений'):
+            self.vm.execute(f'other=New("{alias}");')
+            self.assertTrue(self.vm.execute('(TypeOf(other)=TypeOf(t))'))
+
     def test_iteration_and_references(self):
         self.vm.execute('Procedure Put(x) x = "changed"; EndProcedure '
                         'Put(child.Name); Put(r[0]); Put(c.Title); '

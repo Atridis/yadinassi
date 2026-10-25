@@ -99,3 +99,14 @@ The test-only harness inverse restores the exact actual-main host and container
 harness sources before applying the existing historical inverses. It does not
 introduce a preprocessor inverse, fixture or production admission path. Existing
 native fixtures, workflows and security limits remain byte-identical to main.
+
+## First capture: rejected comparison, localized correction
+
+[Native run 40221284540](https://github.com/Atridis/yadinassi/actions/runs/40221284540)
+produced all twelve tree observations. Record 856 (`tree.core.types`) identified
+five spaced type displays, unlike the initial interpreter labels. The remaining
+eleven tree records were byte-identical; the final `error` is a rejected detached
+grandchild read, not successful access. Only BSLType display labels are corrected;
+object displays, aliases, probes, expected captures and comparison gates remain
+unchanged. The failed report is not full-core acceptance. Fresh CI is pending.
+See [authenticated capture details](value-tree-core.md#first-authenticated-native-capture-and-display-correction).
