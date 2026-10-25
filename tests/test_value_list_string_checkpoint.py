@@ -173,7 +173,6 @@ class ValueListStringCheckpointTests(unittest.TestCase):
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
         self.assertEqual(list((ROOT / 'tests/fixtures/native_windows').glob('*.err')), [])
         self.assertIn(FINAL, (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8'))
-        self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text(encoding='utf-8'))
 
     def test_complete_owner_string_evidence_and_live_cache_boundary(self):
         # Owner Atridis commit 87723a25f22d359bb72163e184a871d6448930d1.

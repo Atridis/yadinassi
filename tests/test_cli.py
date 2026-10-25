@@ -18,6 +18,13 @@ class CLITests(unittest.TestCase):
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
 
+    def test_version_uses_package_version(self):
+        from yadinassi import __version__
+
+        result = self.run_cli("--version")
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, f"yadinassi {__version__}\n", ""))
+
     def test_extended_exceptions_all_inputs_and_console_display_recovery(self):
         from scripts.smoke_test import EXTENDED_EXCEPTION_PROGRAM, EXTENDED_EXCEPTION_OUTPUT
         with tempfile.TemporaryDirectory() as temporary:

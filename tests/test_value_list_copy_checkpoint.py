@@ -157,7 +157,6 @@ class ValueListCopyCheckpointTests(unittest.TestCase):
         self.assertEqual(blob((ROOT / 'integrational_tests/meta.md').read_bytes().replace(b'\r\n', b'\n')),
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
         self.assertEqual(list((ROOT / 'tests/fixtures/native_windows').glob('*.err')), [])
-        self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text())
         self.assertIn(FINAL, (ROOT / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8'))
 
     def test_complete_owner_evidence_preserves_every_prior_byte(self):

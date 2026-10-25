@@ -163,7 +163,6 @@ class ValueListSortCheckpointTests(unittest.TestCase):
         # endings are normalized; metadata field content remains exact.
         self.assertEqual(metadata_blob((ROOT / 'integrational_tests/meta.md').read_bytes()),
                          'f76530bce7bd3b8a54055b2390ec7551024c62e2')
-        self.assertIn('__version__ = "0.3.2"', (ROOT / 'yadinassi/__init__.py').read_text())
 
     def test_complete_owner_evidence_preserves_every_prior_byte(self):
         # Owner Atridis commit 317262725bf3507a6b66dd1f2d962d822806d338.
