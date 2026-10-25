@@ -202,6 +202,7 @@ class _Source:
     def __init__(self, read_at: Callable[[int, int], bytes], size: int, budget: _Budget):
         self.callback, self.size, self.budget = read_at, size, budget
         self.page_count = 0
+        self.mapping_pages = 0
         self.roles = {0: "file_header", 1: "free_header", 2: "root_header"}
 
     def read(self, offset: int, length: int) -> bytes:
@@ -232,7 +233,7 @@ class _Source:
 
 
 class InternalFile:
-    """Root logical range reader; retains no borrowed-source ownership.
+    """Validated internal-file range reader; retains no borrowed-source ownership.
 
     Constructed by CatalogReader. Public read_range calls consume the same
     cumulative budgets as catalog parsing, including their returned byte size.
@@ -240,9 +241,20 @@ class InternalFile:
     """
 
     def __init__(self, source: _Source):
+        self._initialize(source, 2, "root")
+
+    @classmethod
+    def _table_data(cls, source: _Source, header_page: int):
+        if source.roles.get(header_page) != "table_data_header":
+            raise InvalidStructure("table_data_header_role")
+        result = cls.__new__(cls)
+        result._initialize(source, header_page, "table_data")
+        return result
+
+    def _initialize(self, source: _Source, header_page: int, role: str):
         self._source = source
         budget = source.budget
-        raw = source.read(2 * PAGE_SIZE, PAGE_SIZE)
+        raw = source.read(header_page * PAGE_SIZE, PAGE_SIZE)
         if raw[:2] == b"\x1c\xff":
             raise UnsupportedLayout("free_object_header")
         if raw[:2] != b"\x1c\xfd":
@@ -255,8 +267,9 @@ class InternalFile:
         capacity = _HEADER_POINTERS * (_FAT_POINTERS if level else 1)
         if count > capacity:
             raise InvalidStructure("internal_file_addressing_capacity")
-        if count > budget.limits.max_mapping_pages:
+        if source.mapping_pages + count > budget.limits.max_mapping_pages:
             raise ResourceLimit("mapping_pages")
+        source.mapping_pages += count
         required = (count + _FAT_POINTERS - 1) // _FAT_POINTERS if level else count
         budget.charge("output_bytes", PAGE_SIZE - required * 4)
         unused_header = raw[24 + required * 4:]
@@ -268,7 +281,7 @@ class InternalFile:
         for index in range(required):
             budget.charge("bytes_processed", 4)
             page = _u32(raw, 24 + index * 4)
-            source.claim(page, "fat" if level else "root_data")
+            source.claim(page, role + "_fat" if level else role + "_data")
             heads.append(page)
         if not level:
             data_pages = heads
@@ -279,13 +292,13 @@ class InternalFile:
                 for index in range(needed):
                     budget.charge("bytes_processed", 4)
                     target = _u32(pointers, index * 4)
-                    source.claim(target, "root_data")
+                    source.claim(target, role + "_data")
                     data_pages.append(target)
                 if needed < _FAT_POINTERS:
                     budget.charge("output_bytes", PAGE_SIZE - needed * 4 + 8)
                     fat_padding.append((page, pointers[needed * 4:]))
         self._pages = tuple(data_pages)
-        self.info = InternalFileInfo(2, level, tuple(_u32(raw, n) for n in (4, 8, 12)),
+        self.info = InternalFileInfo(header_page, level, tuple(_u32(raw, n) for n in (4, 8, 12)),
                                      length, count, unused_header, tuple(fat_padding))
 
     def read_range(self, offset: int, length: int) -> bytes:
@@ -517,6 +530,8 @@ class CatalogReader:
         self.header = CatalogHeader(version, PAGE_SIZE, count, file_size, raw[16:20])
         self.root = InternalFile(self._source)
         self._used = False
+        self._catalog = None
+        self._table_opened = False
 
     @property
     def usage(self) -> CatalogUsage:
@@ -556,8 +571,21 @@ class CatalogReader:
         for blob_id in ids:
             descriptor = store.chain(blob_id, self._budget.limits.max_description_bytes)
             tables.append(_table(blob_id, descriptor, self._source))
-        return PhysicalCatalog(self.header, self.root.info, locale, raw[:32], tuple(tables),
-                               raw[36 + count * 4:], self.usage)
+        result = PhysicalCatalog(self.header, self.root.info, locale, raw[:32], tuple(tables),
+                                 raw[36 + count * 4:], self.usage)
+        self._catalog = result
+        return result
+
+    def _open_table_data(self, table: PhysicalTable) -> InternalFile:
+        """One identity-bound data header from this completed catalog only."""
+        if self._catalog is None or not any(table is item for item in self._catalog.tables):
+            raise ValueError("table must belong to this completed catalog")
+        if self._table_opened:
+            raise ValueError("table data opening is single-use")
+        self._table_opened = True
+        if not table.files[0]:
+            raise UnsupportedLayout("missing_table_data_header")
+        return InternalFile._table_data(self._source, table.files[0])
 
 
 def read_catalog(read_at: Callable[[int, int], bytes], file_size: int,

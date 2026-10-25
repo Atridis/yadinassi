@@ -177,11 +177,50 @@ class ProjectionTests(unittest.TestCase):
         class Forged(reader.UnsupportedLayout): pass
         for error in (Forged('page_size'), reader.CatalogError('page_size'), reader.ResourceLimit('page_size')):
             with self.assertRaises(OracleError): comparison.reader_failure(error)
-        # Each constant raise in the current production reader is represented by
-        # its exact class, not a shared code union that could conceal class drift.
+        # Catalog-path raises retain the old exact class/code inventory. The two
+        # new private row entry points are not reachable from read_catalog and
+        # have their own exact raises; never widen either historical policy.
         tree = ast.parse((ROOT/comparison.READER_SOURCE).read_text(encoding='utf-8'))
         mapped = {kind.__name__: codes for kind, (_, codes) in comparison.READER_ERRORS.items()}
+        helpers = {('InternalFile','_table_data'):{('InvalidStructure','table_data_header_role')},
+            ('CatalogReader','_open_table_data'):{('UnsupportedLayout','missing_table_data_header'),
+                ('ValueError','table must belong to this completed catalog'),
+                ('ValueError','table data opening is single-use')}}
+        helper_nodes = {}
+        for owner in tree.body:
+            if isinstance(owner,ast.ClassDef):
+                for method in owner.body:
+                    if isinstance(method,ast.FunctionDef) and (owner.name,method.name) in helpers:
+                        helper_nodes[(owner.name,method.name)] = method
+        self.assertEqual(set(helper_nodes),set(helpers))
+        excluded = set()
+        for key,method in helper_nodes.items():
+            raises = [node for node in ast.walk(method) if isinstance(node,ast.Raise)]
+            observed = set()
+            for node in raises:
+                self.assertIsInstance(node.exc,ast.Call)
+                self.assertIsInstance(node.exc.func,ast.Name)
+                self.assertEqual(len(node.exc.args),1)
+                self.assertIsInstance(node.exc.args[0],ast.Constant)
+                observed.add((node.exc.func.id,node.exc.args[0].value))
+            self.assertEqual(observed,helpers[key])
+            excluded.update(id(node) for node in raises)
+        # No catalog method or module wrapper calls the row opener. The sole
+        # lower-level factory call is inside that unreachable private opener.
+        calls = [node for node in ast.walk(tree) if isinstance(node,ast.Call)
+                 and isinstance(node.func,ast.Attribute)]
+        self.assertFalse([node for node in calls if node.func.attr=='_open_table_data'])
+        lower_calls = [node for node in calls if node.func.attr=='_table_data']
+        self.assertEqual(len(lower_calls),1)
+        self.assertIn(lower_calls[0],list(ast.walk(helper_nodes[('CatalogReader','_open_table_data')])))
+        import record_observation
+        for kind,code in ((reader.InvalidStructure,'table_data_header_role'),
+                          (reader.UnsupportedLayout,'missing_table_data_header')):
+            for policy in (comparison,record_observation):
+                with self.assertRaises(OracleError) as caught: policy.reader_failure(kind(code))
+                self.assertEqual(caught.exception.kind,'unexpected_failure')
         for node in ast.walk(tree):
+            if id(node) in excluded: continue
             if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and isinstance(node.exc.func, ast.Name):
                 name = node.exc.func.id
                 if name in mapped and isinstance(node.exc.args[0], ast.Constant):

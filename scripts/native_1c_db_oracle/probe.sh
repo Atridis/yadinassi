@@ -3,9 +3,17 @@
 set -euo pipefail
 umask 077
 exec 2>/dev/null
-[ "$#" -eq 2 ] || { [ "$#" -eq 3 ] && [ "$3" = --record-metadata-observation ]; }
-[ "$1" = --invocation-nonce ] && [[ "$2" =~ ^[0-9a-f]{32}$ ]]
+case "$#" in
+  2) ;;
+  3) case "$3" in
+       --record-metadata-observation|--record-reader-validation) ;;
+       *) exit 2 ;;
+     esac ;;
+  *) exit 2 ;;
+esac
+[ "$1" = --invocation-nonce ] || exit 2
+[[ "$2" =~ ^[0-9a-f]{32}$ ]] || exit 2
 if [ "$#" -eq 3 ]; then
-  exec python3 -B /oracle/run.py --invocation-nonce "$2" --record-metadata-observation
+  exec python3 -B /oracle/run.py --invocation-nonce "$2" "$3"
 fi
 exec python3 -B /oracle/run.py --invocation-nonce "$2"

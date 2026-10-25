@@ -306,12 +306,19 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False):
-        require(type(record_metadata) is bool, 'invalid_input')
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False):
+        require(type(record_metadata) is bool and type(record_reader) is bool
+                and not (record_metadata and record_reader), 'invalid_input')
         self.observation = None
-        if record_metadata:
+        if record_metadata or record_reader:
             import record_observation
             self.observation = record_observation
+        self.record_policy = None; self.record_module = None
+        self.record_pending = None; self.record_names = None; self.record_profile = None
+        if record_reader:
+            import record_validation
+            self.record_policy = record_validation
+            self.record_module = record_validation.load_reader(Path(__file__).with_name('filedb_records.py'))
         self.nonce=nonce; self.provenance=provenance
         self.root=ROOT; self.artifacts=ROOT/'artifacts'; self.evidence=ROOT/'evidence'
         self.budget_base=Path('/tmp')
@@ -658,11 +665,90 @@ class Native:
         for identifier in identifiers: self.remove(self.artifacts/identifier)
 
     def observe(self, identifier, designer):
+        if self.record_policy is not None and identifier in self.record_policy.TARGETS:
+            return self.observe_record_state(identifier, designer)
         with self.temporary_clone(identifier,'observer') as database:
             # Designer redump and runtime read are separate clone sessions. Neither touches frozen bytes.
             self.redump(database,designer)
             data=self.enterprise(database,'observe')
             return logical_from_marker(data,designer)
+
+    def observe_record_state(self, identifier, designer):
+        """Keep the existing redump/observe launch order; freeze only their clone."""
+        policy = self.record_policy
+        require(policy is not None and identifier in policy.TARGETS
+                and self.stage == policy.STAGES[identifier] and designer == 1
+                and self.record_pending is None, 'invalid_input')
+        frozen = self.artifacts / 'record_observer_frozen'
+        absent(frozen)
+        try:
+            with self.temporary_clone(identifier, 'observer') as database:
+                expected = self.physical_summary(self.artifacts / identifier / '1Cv8.1CD')
+                origin = self.physical_summary(database / '1Cv8.1CD')
+                require(origin == expected, 'snapshot_changed')
+                origin = {key: origin[key] for key in ('bytes', 'sha256')}
+                token = secrets.token_hex(16)
+                self.redump(database, designer)
+                data = self.enterprise(database, 'observe', token=token)
+                logical = logical_from_marker(data, designer)
+                validate_logical(logical, identifier)
+                with self.command_context('snapshot_freeze'):
+                    self.budgets(self.physical_summary(database / '1Cv8.1CD')['bytes'])
+                    summary = freeze_database(database, frozen, quiescent=self.quiescent)
+                    self.budgets()
+                evidence = {'snapshot': identifier, 'token': token, 'origin': origin,
+                    'postimage': {key: summary[key] for key in ('bytes', 'sha256')}, 'logical': logical}
+            # The writable observer has been removed before this pending evidence.
+            # Baseline waits only until its already scheduled metadata auditor runs.
+            self.record_pending = (identifier, frozen, evidence)
+            return logical
+        except BaseException:
+            try: self.remove(frozen)
+            except BaseException: pass
+            raise
+
+    def prepare_record_profile(self, evidence, report):
+        capture, self.record_names, self.record_profile = self.record_policy.begin_capture(
+            evidence, report, self.record_module)
+        return capture
+
+    def compare_record_state(self, identifier, report):
+        policy = self.record_policy
+        require(policy is not None and identifier in policy.TARGETS
+                and self.record_pending is not None and self.record_pending[0] == identifier
+                and self.record_profile is not None, 'invalid_input')
+        _, frozen, evidence = self.record_pending
+        try:
+            from snapshots import inspect_frozen_catalog
+            expected = next(item for item in report['snapshots'] if item['id'] == identifier)
+            require(evidence['origin'] == {key: expected['physical'][key] for key in ('bytes','sha256')},
+                    'snapshot_changed')
+            framings = []
+            for path, summary in ((self.artifacts / identifier, evidence['origin']),
+                                  (frozen, evidence['postimage'])):
+                def read_selected(read_at, size, *, limits):
+                    return self.record_module.read_records(read_at, size, profile=self.record_profile,
+                        limits=self.record_module.RecordLimits(max_active_records=1), catalog_limits=limits)
+                self.reader_attempted = True
+                try:
+                    measured, rows = inspect_frozen_catalog(path, quiescent=self.quiescent,
+                        read_catalog=read_selected, limits=filedb_catalog.CatalogLimits(), before_read=self.remaining)
+                except filedb_catalog.CatalogError as error:
+                    raise policy.reader_failure(error) from None
+                require(measured == summary, 'snapshot_changed')
+                framings.append(policy.compare_values(rows, identifier, self.record_names, self.record_module))
+                # Do not retain either private catalog/row object beyond its own comparison.
+                del rows
+            result = policy.bind_state(identifier, evidence, report, *framings)
+        except BaseException:
+            try: self.remove(frozen)
+            except BaseException: pass
+            self.record_pending = None
+            raise
+        else:
+            self.remove(frozen)
+            self.record_pending = None
+            return result
 
     def audit(self, identifier):
         with self.temporary_clone(identifier,'auditor') as database:
@@ -865,7 +951,11 @@ class Controller:
     def __init__(self, backend, report):
         self.backend=backend; self.report=report; self.stage='preflight'
         self.observation = None
-        if report.get('schema') == 5:
+        self.record_policy = None
+        if report.get('schema') == 6:
+            import record_validation
+            self.record_policy = record_validation
+        if report.get('schema') in (5, 6):
             import record_observation
             self.observation = record_observation
 
@@ -909,6 +999,11 @@ class Controller:
         validate_logical(logical,identifier)
         self.report['snapshots'].append({'id':identifier,'physical':summary,'logical':logical,
             'quiescent':True,'copy_verified':True})
+        if self.record_policy is not None and identifier in ('created','updated'):
+            state = self.backend.compare_record_state(identifier, self.report)
+            self.report['record_readback']['states'].append(state)
+            if identifier == 'updated':
+                self.report['record_validation'] = self.record_policy.VERDICT
 
     def paired(self,stage,operation):
         source,control,treatment=COMPARISONS[stage]
@@ -928,6 +1023,7 @@ class Controller:
     def run(self):
         comparison_failure = None
         observation_failure = None
+        readback_failure = None
         try:
             for stage in STAGES[:-1]:
                 self.stage=stage
@@ -936,7 +1032,16 @@ class Controller:
                 elif stage=='seed_v1': database=self.backend.seed()
                 elif stage=='baseline':
                     self.snapshot(database,'baseline')
-                    if self.observation is not None:
+                    if self.record_policy is not None:
+                        data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
+                        capture = self.backend.prepare_record_profile(data, self.report)
+                        self.report['record_readback'] = capture
+                        self.report['reader_validation'] = comparison.VERDICT
+                        self.report['metadata_validation'] = self.observation.METADATA_VERDICT
+                        self.report['mapping_validation'] = self.record_policy.MAPPING_VERDICT
+                        capture['states'].append(self.backend.compare_record_state('baseline', self.report))
+                        self.report['layout_validation'] = self.record_policy.LAYOUT_VERDICT
+                    elif self.observation is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
                         self.report['record_observation'] = self.observation.bind_capture(data, self.report)
                         self.report['reader_validation'] = comparison.VERDICT
@@ -976,12 +1081,18 @@ class Controller:
                 self.done(stage)
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
-            if self.observation is not None and type(error) in (self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
+            if self.record_policy is not None and type(error) is self.record_policy.ReadbackFailure:
+                readback_failure = error
+            elif self.record_policy is not None and type(error) in (self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
+                readback_failure = self.record_policy.ReadbackFailure(error.category, error.code)
+            elif self.observation is not None and type(error) in (self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
                 observation_failure = error
             elif type(error) is comparison.ComparisonFailure and self.stage == 'baseline':
                 comparison_failure = error
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
-            if observation_failure is not None:
+            if readback_failure is not None:
+                kind = self.record_policy.FAILURE_KIND
+            elif observation_failure is not None:
                 kind = self.observation.FAILURE_KIND
             elif type(error) is comparison.ComparisonFailure:
                 kind = 'catalog_comparison_failed' if self.stage == 'baseline' else 'unexpected_failure'
@@ -1022,7 +1133,9 @@ class Controller:
                 self.report.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified')
             if self.report['status']!='ok':
                 self.report['artifacts']=[]
-                if self.observation is not None:
+                if self.record_policy is not None:
+                    self.record_policy.discard_capture(self.report, readback_failure)
+                elif self.observation is not None:
                     if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
                         self.report['reader_validation'] = 'failed'
                     self.observation.discard_capture(self.report, observation_failure)
@@ -1041,15 +1154,20 @@ def main():
     # No arbitrary paths, external DB/config/dump arguments, legacy flags or environment backend selection.
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
-    record_metadata = len(sys.argv)==4
-    if record_metadata and sys.argv[3]!='--record-metadata-observation': return 2
+    flag = sys.argv[3] if len(sys.argv)==4 else None
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation'): return 2
+    record_metadata = flag == '--record-metadata-observation'
+    record_reader = flag == '--record-reader-validation'
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options={'record_metadata':True} if record_metadata else {}
+        options=({'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if record_metadata:
+        if record_reader:
+            import record_validation as selected
+            report=selected.empty_report(nonce,provenance)
+        elif record_metadata:
             import record_observation as selected
             report=selected.empty_report(nonce,provenance)
         else:

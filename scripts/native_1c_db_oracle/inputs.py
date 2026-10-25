@@ -30,11 +30,19 @@ SOURCE_FILES = {**LEGACY_V3_SOURCE_FILES,
 RECORD_SOURCE_FILES = {**SOURCE_FILES,
     'scripts/native_1c_db_oracle/record_observation.py': 'record_observation.py'}
 RECORD_LANE = 'owned_record_metadata_observation_v1'
+# Readback is a distinct, explicitly selected 23-file lane. Neither older
+# inventory acquires the row decoder or readback validation policy.
+ROW_SOURCE_FILES = {**RECORD_SOURCE_FILES,
+    'yadinassi/storage/filedb_records.py': 'filedb_records.py',
+    'scripts/native_1c_db_oracle/record_validation.py': 'record_validation.py'}
+ROW_LANE = 'owned_record_readback_v1'
 MAX_SOURCE=1048576
 
 
-def inventory(record_metadata=False):
-    require(type(record_metadata) is bool, 'invalid_input')
+def inventory(record_metadata=False, *, record_reader=False):
+    require(type(record_metadata) is bool and type(record_reader) is bool
+            and not (record_metadata and record_reader), 'invalid_input')
+    if record_reader: return ROW_SOURCE_FILES
     return RECORD_SOURCE_FILES if record_metadata else SOURCE_FILES
 
 
@@ -54,18 +62,19 @@ def read_source(path):
         raise OracleError('invalid_input') from None
 
 
-def source_hashes(root, *, record_metadata=False):
+def source_hashes(root, *, record_metadata=False, record_reader=False):
+    files=inventory(record_metadata,record_reader=record_reader)
     require(root.is_dir() and not root.is_symlink(),'invalid_input')
     result={}
-    for relative in inventory(record_metadata):
+    for relative in files:
         path=root/relative
         require(not any(parent.is_symlink() for parent in path.parents if parent!=root),'invalid_input')
         result[relative]=hashlib.sha256(read_source(path)).hexdigest()
     return result
 
 
-def staged_hashes(root, *, record_metadata=False):
-    files=inventory(record_metadata)
+def staged_hashes(root, *, record_metadata=False, record_reader=False):
+    files=inventory(record_metadata,record_reader=record_reader)
     allowed=set(files.values()) | {'invocation.json'}
     directories={parent.as_posix() for name in allowed for parent in Path(name).parents if str(parent)!='.'}
     actual=set()
@@ -79,36 +88,42 @@ def staged_hashes(root, *, record_metadata=False):
     return {source:hashlib.sha256(read_source(root/target)).hexdigest() for source,target in files.items()}
 
 
-def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False):
+def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False, record_reader=False):
+    files=inventory(record_metadata,record_reader=record_reader)
     require(not destination.exists() and not destination.is_symlink(),'stale_evidence')
     destination.mkdir(mode=0o755)
-    for source,target in inventory(record_metadata).items():
+    for source,target in files.items():
         path=destination/target; path.parent.mkdir(parents=True,exist_ok=True)
         path.write_bytes(read_source(root/source)); path.chmod(0o444)
     invocation={'schema':1,'nonce':nonce,'provenance':provenance}
-    if record_metadata:
+    if record_reader:
+        invocation.update(schema=3, lane=ROW_LANE)
+    elif record_metadata:
         invocation.update(schema=2, lane=RECORD_LANE)
     (destination/'invocation.json').write_text(json.dumps(invocation,separators=(',',':')),encoding='ascii')
     (destination/'invocation.json').chmod(0o444)
     for path in destination.rglob('*'):
         if path.is_dir(): path.chmod(0o555)
     destination.chmod(0o555)
-    require(staged_hashes(destination,record_metadata=record_metadata)==provenance['sources'],'provenance_mismatch')
+    require(staged_hashes(destination,record_metadata=record_metadata,record_reader=record_reader)
+            ==provenance['sources'],'provenance_mismatch')
 
 
-def verify_inputs(root,nonce, *, record_metadata=False):
+def verify_inputs(root,nonce, *, record_metadata=False, record_reader=False):
+    inventory(record_metadata,record_reader=record_reader)
     require(root.is_dir() and not root.is_symlink(),'invalid_input')
     data=decode(read_source(root/'invocation.json'))
-    inventory(record_metadata)
-    exact(data,{'schema','nonce','provenance'} | ({'lane'} if record_metadata else set()))
-    require(type(data['schema']) is int and data['schema']==(2 if record_metadata else 1)
+    exact(data,{'schema','nonce','provenance'} | ({'lane'} if record_metadata or record_reader else set()))
+    require(type(data['schema']) is int and data['schema']==(3 if record_reader else 2 if record_metadata else 1)
             and data['nonce']==nonce,'provenance_mismatch')
-    if record_metadata: require(data['lane']==RECORD_LANE,'provenance_mismatch')
+    if record_reader: require(data['lane']==ROW_LANE,'provenance_mismatch')
+    elif record_metadata: require(data['lane']==RECORD_LANE,'provenance_mismatch')
     provenance=data['provenance']
     from protocol import validate_provenance
     validate_provenance(provenance,provenance)
     require(provenance['image']==IMAGE and provenance['platform']=='linux/amd64'
             and provenance['locale']=='ru_RU.UTF-8' and provenance['timezone']=='Etc/UTC'
             and provenance['actual_version'] is None,'provenance_mismatch')
-    require(staged_hashes(root,record_metadata=record_metadata)==provenance['sources'],'provenance_mismatch')
+    require(staged_hashes(root,record_metadata=record_metadata,record_reader=record_reader)
+            ==provenance['sources'],'provenance_mismatch')
     return provenance
