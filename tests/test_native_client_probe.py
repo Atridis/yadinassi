@@ -170,7 +170,7 @@ class ClientProbeHarness(unittest.TestCase):
         # Keep this historical strict136 harness fixture explicit. The new
         # source-bound measurement harness has separate tests and no oracle yet.
         path = self.inputs / suite.CLIENT_TARGET
-        path.write_bytes(suite.infobase_shared_source(path.read_bytes().replace(b'\r\n', b'\n')))
+        path.write_bytes(suite.infobase_shared_source(suite.preprocessor_shared_source(path.read_bytes().replace(b'\r\n', b'\n'))))
         if os.name == "nt":
             # Model the reviewed LF source in this private synthetic copy even
             # when Git checked it out with CRLF; production bytes stay strict.
@@ -535,10 +535,10 @@ class ClientOptInTests(host_fixture.SyntheticFilesystemCase):
         self.assertIn('Запрос.mode = "stall"', source)
         self.assertIn("Пока Истина Цикл", source)
         self.assertIn("ЗавершитьРаботуСистемы(Ложь)", source)
-        # All 43 prior declarations remain; three bounded measurement sites added.
-        self.assertEqual(source.count("&AtServer"), 46)
+        # All 46 prior declarations remain; three profile-measurement sites added.
+        self.assertEqual(source.count("&AtServer"), 49)
         baseline = full.date_null_shared_source(full.infobase_shared_source(
-            source.encode("utf-8"))).decode("utf-8")
+            full.preprocessor_shared_source(source.encode("utf-8")))).decode("utf-8")
         self.assertEqual(baseline.count("&AtServer"), 35)
         self.assertEqual(source.count("&НаСервере"), 1)
         self.assertIn("Function DirectiveWitnessValues()", source)
@@ -1117,7 +1117,7 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
         current = (ROOT / suite.CLIENT_SOURCE).read_bytes()
         if os.name == "nt":
             current = current.replace(b"\r\n", b"\n")
-        current = suite.infobase_shared_source(current)
+        current = suite.infobase_shared_source(suite.preprocessor_shared_source(current))
         path.write_bytes(current)
         source = path.read_bytes()
         module = suite.generated_module(source)
@@ -1131,7 +1131,8 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
                                self.inputs, NONCE, client_probe=True)
 
     def test_probe_runs_only_after_all_six_cases_and_includes_24_source_hashes(self):
-        def probe(platform, root, inputs, nonce, hashes):
+        def probe(platform, root, inputs, nonce, hashes, *, preprocessor_measurement=False):
+            self.assertFalse(preprocessor_measurement)
             self.assertEqual(self.events, [(name, mode) for name in suite.SCENARIOS for mode in ("build", "enterprise")])
             self.assertEqual((platform, root, inputs, nonce), (self.platform, self.work / "client-probe", self.inputs, NONCE))
             self.assertEqual(len(hashes), 24)
@@ -1186,7 +1187,8 @@ class ClientSuiteIntegrationTests(unittest.TestCase):
         calls = []
         watchdog = {**self.client, "completed": False, "process_exited": False,
                     "witness_verified": False, "timeout_verified": True}
-        def probe(platform, root, inputs, nonce, hashes):
+        def probe(platform, root, inputs, nonce, hashes, *, preprocessor_measurement=False):
+            self.assertFalse(preprocessor_measurement)
             calls.append("positive")
             self.assertEqual(root, self.work / "client-probe")
             self.assertEqual(len(self.events), 12)

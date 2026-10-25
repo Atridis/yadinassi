@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 from decimal import Decimal
 from test_native_client_probe import full, suite, ROOT, stage_fixture
-from test_native_directive_witness import linux_fixture
+from test_native_directive_witness import linux_fixture, historical_client137
 from yadinassi import Interpreter
 
 class ObjectTransferParityTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class ObjectTransferParityTests(unittest.TestCase):
         self.capture = json.loads((ROOT/'integrational_tests/directive_probes/object_transfer_native.json').read_text())
 
     def test_captured_contract_and_source_identity(self):
-        raw = full.module_context_shared_source(full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))))
+        raw = full.module_context_shared_source(full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(historical_client137())))))
         self.assertEqual(full.digest(raw), self.capture['source_sha256'])
         self.assertEqual(full.digest(full.generated_module(raw)), self.capture['module_sha256'])
         self.assertEqual(self.capture['artifact_sha256'], '2f552e2620500c68823da3bba8bc06c3d9d9e082ca21d5bbfe0966d1404498ba')
@@ -31,7 +31,7 @@ class ObjectTransferParityTests(unittest.TestCase):
 
     def test_exact_whole_source_computes_every_captured_value(self):
         vm = Interpreter(lambda _: self.fail('unexpected output'))
-        vm.execute(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(full.infobase_shared_source(historical_client137()).decode('utf-8-sig'))
         values = list(vm.execute('ВычислитьПробу()'))
         normalized = [int(v) if type(v) is Decimal else v for v in values]
         self.assertEqual(normalized, full.CLIENT_VALUES)
@@ -46,7 +46,7 @@ class ObjectTransferParityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve()/'probe.bsl'; path.write_bytes(changed)
             with self.assertRaisesRegex(full.FullError, '^source_changed$'):
-                full.verify_client_interpreter(ROOT, path, full.digest(changed))
+                full.verify_client_interpreter(ROOT, path, full.digest(changed), preprocessor_measurement=True)
 
     def test_strict_typed_native_contract_and_budgets(self):
         marker = dict(schema=1,nonce='a'*32,phase='completed',witness='client',values=suite.CLIENT_VALUES)
@@ -82,7 +82,7 @@ class ObjectTransferParityTests(unittest.TestCase):
                 for f in fields(node):yield from walk(getattr(node,f.name))
             elif isinstance(node,(list,tuple)):
                 for item in node:yield from walk(item)
-        routines=[n for n in parse(full.module_context_shared_source(full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))))).decode('utf-8-sig')) if isinstance(n,ast.Routine) and (n.name.startswith('ObjectTransfer') or n.name=='RunObjectTransferProbe')]
+        routines=[n for n in parse(full.module_context_shared_source(full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(historical_client137()))))).decode('utf-8-sig')) if isinstance(n,ast.Routine) and (n.name.startswith('ObjectTransfer') or n.name=='RunObjectTransferProbe')]
         self.assertEqual(len(routines),19)
         for routine in routines:
             declared={p.name.casefold() for p in routine.parameters}

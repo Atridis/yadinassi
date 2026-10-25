@@ -1,0 +1,72 @@
+{
+  "artifact_sha256": {
+    "native-1c-full-summary": "sha256:e2e703621fdce6defa16f16d8791ee3f882492eebfdaf6423011270661a2ca01",
+    "native-1c-six-scenario-outputs": "sha256:32f2117c8a4aaad76db85de1fed7d9f483f37050ddd97d6d6301e6fd3cf3fa5e"
+  },
+  "async8_identity": {
+    "modules": [
+      "9c35b55df6f304166f83535490b7cffe51f0bac3383663fa4d2c201dfd4f3317",
+      "2f1521d54fef7ecd73f8dce7f36f983111ff2fdb98112a89bd47f01988072676",
+      "6e1a01c33d77681426c6d3f0c0d648fde353514edad381ba2c6bd2b586284959",
+      "a3959ce4beb9fe01cc1d3f3416bdb2ac7ef56ecb9cdcce11c0b41d96f347bc78",
+      "a5a2d09e4a7be7749121b0a26c30670bcd122d76ae81e6b5158fdb9de7ff2b1b",
+      "761b8ed069ac9451cd9eb918c5e7e7d6d84a9d380155bc56b36ffd05717d76f6",
+      "395dfd07a0171d361fd5c029e6a2400ef8d72097f506e073c75fedb1bc3105f4",
+      "3ac1cd874da474e939006034f5a7216e7d2a26e9f9a9fb87f0c0813b1968a45a"
+    ],
+    "template": "4177f7bc3e4690e6a67e48af06db4dba78405bb76f16151867fd006c35ba713f"
+  },
+  "async_lane_skipped": true,
+  "client_scope": "managed thick client; ordinary synthetic file infobase",
+  "core_sha256": "5cda3cc687bc4b89a223fce03d06602c381a0ef84b57687c4d190897318b1ee7",
+  "declared_native_expected_token": null,
+  "four_parity_modules": {
+    "collections": "b8d28abf2a28f7ff11958f9f3a31a966e3032484b8f0cf7d316b24ef8fb847e8",
+    "dates": "52b307cda539370ec0a7f5f28fbd22e0454934df2a287dcb2eb8e22f9f734d8e",
+    "numbers": "271be42fcb2df2ad497c5e8ba1edcfe94e24779f00820ba3a7191eddc60eb7f2",
+    "values": "814858ce2af10afc86882ec719a19f41589effabb71b83882d94d6077d90e824"
+  },
+  "head": "17493e0b4724c5a08829b996cc98778f20b76b87",
+  "immutable_measurement_manifest_unchanged": true,
+  "language_order": [
+    "English",
+    "Russian"
+  ],
+  "measurement_manifest_sha256": "669c30ae20dc8e6b1607e64b8490be6b635352ad208ca1de39619d8e9692e749",
+  "module_sha256": "6e64719f7a086388730e5ce9d8a8944b67db58a4919866b6562cde6a1369285e",
+  "native_run": 40208015242,
+  "native_target": "linux-8.3.27.1508",
+  "new_async_claim": false,
+  "observation_masks": [
+    135,
+    135,
+    139,
+    139,
+    131,
+    131,
+    131,
+    131,
+    131,
+    131
+  ],
+  "observation_token": "pp.v1:135135139139131131131131131131",
+  "parent": "161db1475f7932773f67dedfa60e2658207a7dee",
+  "platform": "linux/amd64",
+  "preprocessor_parity_claimed": false,
+  "private_marker_bytes_independently_available": false,
+  "root_reproduction": "pending",
+  "run_attempt": 1,
+  "schema": 1,
+  "slot_order": [
+    "client",
+    "server",
+    "server_no_context",
+    "dual_client",
+    "dual_server"
+  ],
+  "source_bound_private_marker_validation_only": true,
+  "source_sha256": "0dc26abc7a2bb786c7875d934fd2821c7e5f9e31175a0cf694c9b1170801f285",
+  "status": "independently_audited_native_observation",
+  "synthetic_merge": "e6e8e198b3a74db68457962f3699c0057687019e",
+  "tree": "79c103f32173c7344002528520bb301e8ddfaf14"
+}
