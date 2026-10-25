@@ -263,6 +263,73 @@ class ObservationPostimageTests(unittest.TestCase):
         self.assertNotIn(b'PRIVATE',protocol.encode(result['reader']))
         self.assertGreaterEqual(self.native.budgets.call_args_list.count(mock.call(self.pre.size)),2)
 
+    def test_real_producer_origin_binds_and_unknown_origin_keys_reject(self):
+        full = self.native.physical_summary(self.artifacts/'baseline'/'1Cv8.1CD')
+        self.assertEqual(set(full), {'bytes', 'sha256', 'header', 'page_analysis'})
+        evidence = self.native.observe_record_metadata('baseline')
+        self.assertEqual(set(evidence['origin']), {'nonce', 'token', 'clone', 'bytes', 'sha256'})
+        provenance = identity(); provenance['actual_version'] = protocol.VERSION
+        report = observation.empty_report(NONCE, provenance)
+        report['snapshots'] = [{'id': 'baseline', 'physical': full}]
+        capture = observation.bind_capture(evidence, report)
+        self.assertEqual(capture['status'], observation.METADATA_VERDICT)
+        self.assertEqual(capture['origin']['sha256'], full['sha256'])
+        self.assertFalse((self.artifacts/'auditor').exists())
+        self.assertFalse((self.artifacts/'auditor_frozen').exists())
+        # The producer projects its internal summary; the strict binder does not
+        # admit known discarded summary fields or any other unknown field.
+        for key, value in (('header', full['header']), ('page_analysis', full['page_analysis']),
+                           ('unknown', 'PRIVATE')):
+            with self.subTest(key=key):
+                changed = copy.deepcopy(evidence); changed['origin'][key] = value
+                with self.assertRaises(OracleError) as caught:
+                    observation.bind_capture(changed, report)
+                self.assertEqual(caught.exception.kind, 'transport_invalid')
+
+    def test_controller_consumes_real_producer_before_completing_baseline(self):
+        native = self.native
+        physical = snapshots.file_summary(self.artifacts/'baseline'/'1Cv8.1CD',
+            header_decoder=fixtures.stage.database_header_facts)
+
+        class Bridge(fixtures.FixtureNative):
+            # Preceding native setup/logical observations are synthetic. The
+            # producer, summaries, clone/freeze, reader, binder and Controller
+            # remain real; only the native enterprise boundary is stubbed by setUp.
+            def begin_stage(inner, name):
+                native.begin_stage(name)
+                if name == 'create':
+                    inner.bound = copy.deepcopy(inner.controller.report['record_observation'])
+                    inner.completed = copy.deepcopy(inner.controller.report['stages'][2])
+                    raise OracleError('timeout')  # Never enter later native work.
+
+            def freeze(inner, database, identifier):
+                assert identifier == 'baseline'
+                return physical
+
+            def observe(inner, identifier, designer):
+                assert (identifier, designer) == ('baseline', 1)
+                return protocol.expected_logical('baseline')
+
+            def observe_record_metadata(inner, identifier):
+                return native.observe_record_metadata(identifier)
+
+        provenance = identity(); native.provenance = provenance
+        report = observation.empty_report(NONCE, provenance)
+        backend = Bridge(provenance); backend.bound = None; backend.completed = None
+        controller = fixtures.stage.Controller(backend, report); backend.controller = controller
+        result = controller.run()
+        observation.validate_report(protocol.encode(result), nonce=NONCE, provenance=provenance)
+        self.assertTrue(native.reader_attempted)
+        self.assertEqual(result['failed_stage'], 'create')
+        self.assertEqual(result['failure_kind'], 'timeout')
+        self.assertEqual(backend.bound['status'], observation.METADATA_VERDICT)
+        self.assertEqual(backend.completed['status'], 'ok')
+        self.assertTrue(all(backend.completed['checks'].values()))
+        # The deliberate later failure still discards the just-bound projection.
+        self.assertIsNone(result['record_observation'])
+        self.assertEqual(result['metadata_validation'], 'discarded')
+        self.assertEqual(result['reader_validation'], 'discarded')
+
     def test_prelaunch_changed_origin_rejects_without_native_call(self):
         original=self.native.clone
         def clone(*args):

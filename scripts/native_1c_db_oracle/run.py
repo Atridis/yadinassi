@@ -743,7 +743,8 @@ class Native:
             if origin != baseline:
                 raise policy.ObservationFailure('io_or_change', 'origin_changed')
             token = secrets.token_hex(16)
-            origin = {**origin, 'clone': 'auditor', 'nonce': self.nonce, 'token': token}
+            origin = {'nonce': self.nonce, 'token': token, 'clone': 'auditor',
+                      'bytes': origin['bytes'], 'sha256': origin['sha256']}
             data = self.enterprise(database, policy.OPERATION, token=token)
             frozen = self.artifacts / 'auditor_frozen'
             absent(frozen)
