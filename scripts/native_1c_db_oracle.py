@@ -33,22 +33,22 @@ MAX_RUNTIME=2400
 OUTPUT=Path('native-db-oracle/report.json')
 
 
-def provenance(*, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity)
+def provenance(*, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
     try:
         repository=smoke.FULL.repository_provenance(ROOT)
     except (smoke.FULL.FullError,OSError):
         raise OracleError('provenance_mismatch') from None
     return {'commit':repository['commit'],'tree':repository['tree'],
-        'sources':source_hashes(ROOT,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity),
+        'sources':source_hashes(ROOT,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport),
         'image':IMAGE,'platform':'linux/amd64','actual_version':None,'locale':'ru_RU.UTF-8','timezone':'Etc/UTC'}
 
 
-def container_command(staged,name,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False):
+def container_command(staged,name,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
     require(type(name) is str and re.fullmatch('onec-db-oracle-[0-9a-f]{32}',name) is not None,'invalid_input')
     require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}',nonce) is not None,'invalid_input')
     require(staged.is_dir() and not staged.is_symlink() and ',' not in str(staged),'invalid_input')
-    staged_hashes(staged,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity)
+    staged_hashes(staged,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
     return ['docker','run','--name',name,'--hostname','onec-db-oracle',
         '--pull','never','--platform','linux/amd64','--network','none',
         '--user','1000:1000','--read-only','--no-healthcheck','--cap-drop','ALL',
@@ -63,6 +63,7 @@ def container_command(staged,name,nonce, *, record_metadata=False, record_reader
         'HOME=/tmp/onec-db-oracle/home','TMPDIR=/tmp/onec-db-oracle/temp','XDG_RUNTIME_DIR=/tmp/runtime','DISPLAY=:99',
         'LANG=ru_RU.UTF-8','LC_ALL=ru_RU.UTF-8','TZ=Etc/UTC',
         '/bin/bash','--noprofile','--norc','/oracle/probe.sh','--invocation-nonce',nonce] + (
+        ['--config-transport-observation'] if config_transport else
         ['--dbnames-identity-validation'] if dbnames_identity else
         ['--params-dbnames-extraction'] if params_extraction else
         ['--params-transport-observation'] if params_transport else
@@ -84,7 +85,10 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False,record_re
     entry['checks']=({key:report['cleanup'][key] for key in CHECKS[stage]} if stage=='cleanup'
                      else {key:False for key in CHECKS[stage]})
     report['artifacts']=[]
-    if report.get('schema') == 9:
+    if report.get('schema') == 10:
+        import config_observation
+        config_observation.discard_capture(report,final=True)
+    elif report.get('schema') == 9:
         import dbnames_identity as identity_policy
         identity_policy.discard_capture(report,final=True)
     elif report.get('schema') == 8:
@@ -103,10 +107,13 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False,record_re
         discard_capture(report)
 
 
-def run_oracle(temp_root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity)
-    options={'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {}
-    if dbnames_identity:
+def run_oracle(temp_root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
+    options={'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {}
+    if config_transport:
+        import config_observation as selected
+        make_report=selected.empty_report; check_report=selected.validate_report
+    elif dbnames_identity:
         import dbnames_identity as selected
         make_report=selected.empty_report; check_report=selected.validate_report
     elif params_extraction:
@@ -236,6 +243,8 @@ def main(argv=None):
         help='explicit bounded baseline metadata/declaration observation; not record acceptance')
     modes.add_argument('--record-reader-validation',action='store_true',
         help='explicit bounded owned-record readback and validation')
+    modes.add_argument('--config-transport-observation',action='store_true',
+        help='observe bounded CONFIG declarations only; no framing or root identity')
     modes.add_argument('--params-transport-observation',action='store_true',
         help='finite PARAMS declaration capture, not DBNames extraction')
     modes.add_argument('--params-dbnames-extraction',action='store_true',
@@ -251,7 +260,8 @@ def main(argv=None):
         parser.error('stale_evidence')
     try:
         root_info=ROOT.stat(); root_identity=(root_info.st_dev,root_info.st_ino)
-        options=({'dbnames_identity':True} if args.dbnames_identity_validation else
+        options=({'config_transport':True} if args.config_transport_observation else
+                 {'dbnames_identity':True} if args.dbnames_identity_validation else
                  {'params_extraction':True} if args.params_dbnames_extraction else
                  {'params_transport':True} if args.params_transport_observation else
                  {'record_reader':True} if args.record_reader_validation else

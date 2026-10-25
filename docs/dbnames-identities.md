@@ -50,8 +50,9 @@ neither rescans the catalog nor resets/refunds budgets.
 `owned_dbnames_identity_validation_v1`, report schema 9, capture schema 10 and
 invocation schema 6. Its exact 26-source inventory is the extraction inventory
 plus the pure parser and separate identity policy. Older 18/20/21/22/23/24 source
-memberships and validators remain closed. The reviewed CI workflow explicitly selects this identity lane; the default
-CLI behavior remains unchanged.
+memberships and validators remain closed. The identity lane remains explicitly selectable. The reviewed CI workflow now
+selects the separate [CONFIG declaration observation](config-declaration-observation.md),
+not identity validation; the default CLI behavior remains unchanged.
 
 Three expected UUIDs are generated owned-fixture metadata, independently read
 from catalog/Payload/Amount XML after the existing successful post-apply native

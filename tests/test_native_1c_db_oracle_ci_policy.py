@@ -500,9 +500,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(binding, native.index("GHCR_TOKEN:"))
         self.assertEqual(re.findall(r"^        run: (.+)$", native, re.M), [
             "python3 -I -B scripts/native_1c_db_oracle_ci_policy.py bind",
-            "python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --dbnames-identity-validation --output native-db-oracle/report.json",
+            "python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --config-transport-observation --output native-db-oracle/report.json",
             'test "${NATIVE_REPORT_READY}" = "true"',
         ])
+        self.assertEqual(native.count('--config-transport-observation'), 1)
+        for selector in ('--dbnames-identity-validation', '--params-dbnames-extraction',
+                         '--params-transport-observation', '--record-reader-validation',
+                         '--record-metadata-observation'):
+            self.assertNotIn(selector, native)
         self.assertEqual(len(re.findall(r"^      - ", native, re.M)), 5)
         for forbidden in ("pip install", "setup-python", "docker run", "docker pull", "container:", "services:",
                           "native_1c_smoke.py", "--export-native-outputs", "--full-suite", "--image", "--commit", "--tree"):
