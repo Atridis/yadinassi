@@ -1,2 +1,6 @@
 # Keep pinned upstream Unicode data byte-exact on every checkout.
 yadinassi/data/*.txt -text
+
+# Keep pinned preprocessor evidence byte-exact on every checkout.
+integrational_tests/directive_probes/preprocessor_profiles_native.json -text
+integrational_tests/directive_probes/preprocessor_profiles_measurement.json -text

@@ -1,7 +1,7 @@
 {
   "scripts/native_1c_full_host.py": {
-    "base_sha256": "c0a8622caf288357e0322d98d76d286b417b04581fe5188dc1307a361efbf804",
-    "candidate_sha256": "2075ac547ea1a65897cbb636f72a30bd068d1c47f06cc64930b45a36422d04fd",
+    "base_sha256": "fa3e0a0008a8d0daeb426f3995a3dd8e3ba5c59db8ba450d40580844171400eb",
+    "candidate_sha256": "7ebe4d0a7e292b887b7b6a142e49ab190cfbc77d2296d9fe401f4acec3641442",
     "edits": [
       {
         "old": "APPROVED_IMAGE = \"ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728\"\nCOLLECTIONS_SOURCE_SHA256 = \"42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb\"\nCASE_SECONDS = 10\n",
@@ -38,8 +38,8 @@
     ]
   },
   "scripts/native_1c_bootstrap/full_suite.py": {
-    "base_sha256": "a932f221e97d31c8e9479d755cce0828dc9e63db7c2d74ab21d10dc4af137b0a",
-    "candidate_sha256": "6d1b41949281fdf9b736e92b14cdea04d86f35a65efb88a8895de3df68d27a9d",
+    "base_sha256": "09b18eb1ff7f17d4d0a1832b84d4bdf92918fcb887c32053983326935a42682a",
+    "candidate_sha256": "78fa44a71bc0c9dc9308423befdf7087cf98968108782983e9ea0fdbd76fa367",
     "edits": [
       {
         "old": "# This is a deliberately source-specific adapter, not a general BSL rewriter.\nCLIENT_COLLECTIONS_SOURCE_SHA256 = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'\nCLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'\n",

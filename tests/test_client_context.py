@@ -149,7 +149,7 @@ class ClientContextTests(unittest.TestCase):
     def test_malformed_conditions_are_not_short_circuited(self):
         for condition in ['Client Or Unknown', 'Server And Unknown', 'Client',
                           '(Client Then', 'Client) Then', 'Then', 'True Then',
-                          'Client Then extra', 'Not Not Client Then', 'ThinClient Then',
+                          'Client Then extra', 'Not Not Client Then', 'UnknownClient Then',
                           'Client = Server Then', 'Client & Server Then']:
             with self.subTest(condition=condition), self.assertRaises(BSLError):
                 self.vm.execute(f'Message("bad");\n#If {condition}\n42\n#EndIf')

@@ -14,7 +14,7 @@ import re
 PROFILE = 'async-language-8-v1'
 SOURCE_BODIES_SHA256 = '09edb17d68c0ff7a5462498b132afa5c2b202912abdcb48e33ae1c676a39c075'
 MAX_ACTUAL_BYTES = 8192
-MAX_SOURCE_BYTES = 262144
+MAX_SOURCE_BYTES = 294912
 SOURCE_SHA256 = '83a6e22dbb4788498985e51e06ea610d2a9bc95702852da396cb6d7779bf1c5a'
 DECLARATIONS = '''Перем АсинхЛистЗначение, АсинхВнутреннее,
     АсинхЗначениеУмолчания, АсинхСбой;

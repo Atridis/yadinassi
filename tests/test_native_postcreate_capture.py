@@ -307,7 +307,8 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
                     self.assertEqual(probe['comparison']['acceptance_status'], 'rejected')
                     self.assertEqual(probe['comparison']['comparison_mode'], mode)
                     self.assertEqual(probe['comparison']['cases'][2]['failure_kind'], full.POST_CREATE_FAILURE)
-                    self.assertTrue(probe['native_evidence_accepted'])
+                    self.assertIs(probe['native_evidence_accepted'], not changed)
+                    self.assertIs(summary['native_evidence_accepted'], not changed)
                     self.assertTrue(probe['private_payloads_removed'])
                     self.assertEqual(exported[0]['functions.out'], native_payload())
                     if mode == full.MAP_MODE:

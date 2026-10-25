@@ -9,7 +9,7 @@ import unittest
 from test_native_async_fixture import historical_tree_collections_module
 from unittest import mock
 from test_native_client_probe import full, suite, ROOT, stage_fixture
-from test_native_directive_witness import linux_fixture
+from test_native_directive_witness import linux_fixture, historical_client137
 
 class NoContextWitnessTests(unittest.TestCase):
     def setUp(self):
@@ -22,7 +22,7 @@ class NoContextWitnessTests(unittest.TestCase):
 
     def test_captured_profile_projection_preserves_other_thirteen_values(self):
         capture=json.loads((ROOT/'integrational_tests/directive_probes/nocontext_native.json').read_text())
-        raw=suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
+        raw=suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(historical_client137())))
         logical=b"#If AtClient Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 2;\n#EndIf"
         historical=b"\n".join(("#If %s Then\n    ProfileMask = ProfileMask + %s;\n#EndIf" % (name, bit)).encode()
             for name,bit in capture['profile_bits'].items())
@@ -64,7 +64,7 @@ class NoContextWitnessTests(unittest.TestCase):
             phase='completed',kind='count',ordinal=134,error_stage=0,nocontext=[False]*14))
 
     def test_inverse_restores_exact_audited119(self):
-        raw = suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
+        raw = suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(historical_client137())))
         restored = full.nocontext_shared_source(raw)
         self.assertEqual(restored, suite.nocontext_shared_source(raw))
         self.assertEqual(full.digest(restored), 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17')
@@ -76,9 +76,9 @@ class NoContextWitnessTests(unittest.TestCase):
         self.assertEqual((suite.MAX_STAGE_REPORT, full.MAX_STAGE_REPORT, full.MAX_REPORT), (8192,8192,32768))
 
     @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
-    def test_whole_source137_interpreter_preflight(self):
+    def test_whole_source138_interpreter_preflight(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
-        full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(raw))
+        full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(raw), preprocessor_measurement=True)
 
     def test_mechanical_source_adapter_and_explicit_locals(self):
         source=(ROOT/'integrational_tests/directive_probes/nocontext_core.bsl').read_text()
@@ -104,7 +104,7 @@ class NoContextWitnessTests(unittest.TestCase):
             self.assertTrue(all(v.casefold() in declared for v in assignments),name)
 
     def test_declarations_precede_the_unchanged_module_initializer_tail(self):
-        raw=suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
+        raw=suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(historical_client137())))
         tail=full.CLIENT_NOCONTEXT_INITIALIZER
         self.assertTrue(raw.endswith(full.CLIENT_NOCONTEXT_BLOCK+tail))
         self.assertTrue(full.nocontext_shared_source(raw).endswith(tail))

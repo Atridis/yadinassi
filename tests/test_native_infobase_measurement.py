@@ -15,7 +15,7 @@ from unittest import mock
 import test_native_client_probe as probe
 import test_native_1c_full_host as host_fixture
 from test_native_1c_full_host import SyntheticFilesystemCase
-from test_native_directive_witness import linux_fixture
+from test_native_directive_witness import linux_fixture, historical_client137
 from infobase_preflight_test_support import offline_fixture
 
 full, suite, ROOT, NONCE = probe.full, probe.suite, probe.ROOT, probe.NONCE
@@ -95,8 +95,8 @@ class InfobaseMarkerTests(unittest.TestCase):
 
 
 class InfobaseSourceTests(SyntheticFilesystemCase):
-    def test_exact_source_core_module_binding_and_tamper_rejection(self):
-        raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
+    def test_historical_source_core_module_binding_and_tamper_rejection(self):
+        raw = historical_client137()
         core = linux_fixture(ROOT / SOURCE)
         self.assertEqual(full.digest(raw), full.INFOBASE_CONTEXT_SOURCE_SHA256)
         self.assertEqual(full.digest(full.generated_module(raw)), full.INFOBASE_CONTEXT_MODULE_SHA256)
@@ -113,7 +113,7 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
             with self.assertRaises(full.FullError): full.infobase_shared_source(changed)
             with self.assertRaises(suite.FullError): suite.infobase_shared_source(changed)
 
-    def test_whole137_preflight_reads_original_source_bytes(self):
+    def test_whole138_preflight_reads_original_source_bytes(self):
         raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
         with tempfile.TemporaryDirectory() as folder, offline_fixture(full):
             path = Path(folder).resolve() / 'candidate.bsl'; path.write_bytes(raw)
@@ -123,16 +123,16 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
                 self.assertEqual(arguments[-1], str(Path('/tmp/onec-smoke/db')))
                 self.assertEqual(path.read_bytes(), raw)
                 seen.append(full.digest(path.read_bytes()))
-                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False,
+                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
                                      separators=(',', ':')).encode(), b''
-            full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=runner)
-            self.assertEqual(seen, [full.INFOBASE_CONTEXT_SOURCE_SHA256])
+            full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=runner, preprocessor_measurement=True)
+            self.assertEqual(seen, [full.PREPROCESSOR_SOURCE_SHA256])
             def altered_runner(arguments, cwd):
                 Path(arguments[-2]).write_bytes(b'changed')
-                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False,
+                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
                                      separators=(',', ':')).encode(), b''
             with self.assertRaises(full.FullError) as raised:
-                full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=altered_runner)
+                full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=altered_runner, preprocessor_measurement=True)
             self.assertEqual(str(raised.exception), 'source_changed')
 
     def test_plan_is_unmeasured_and_binds_all_source_identities(self):
@@ -146,9 +146,9 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
         self.assertEqual(plan['token_bytes'], len(SYNTHETIC))
 
     @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
-    def test_real_interpreter_runs_original_whole137_with_real_context(self):
+    def test_real_interpreter_runs_original_whole138_with_real_context(self):
         raw = linux_fixture(ROOT / full.CLIENT_SOURCE)
-        full.verify_client_interpreter(ROOT, ROOT / full.CLIENT_SOURCE, full.digest(raw))
+        full.verify_client_interpreter(ROOT, ROOT / full.CLIENT_SOURCE, full.digest(raw), preprocessor_measurement=True)
         from yadinassi import Interpreter, BSLError
         with self.assertRaises(BSLError): Interpreter().execute('InfoBaseConnectionString()')
 
@@ -168,13 +168,13 @@ class InfobaseFixtureAdapterTests(unittest.TestCase):
         original = full.read_regular
         self.assertIs(full, host_fixture.full)
         self.assertIs(full, probe.smoke.FULL)
-        case = InfobaseSourceTests('test_whole137_preflight_reads_original_source_bytes')
+        case = InfobaseSourceTests('test_whole138_preflight_reads_original_source_bytes')
         with mock.patch.object(host_fixture, '_USE_SYNTHETIC_FILE_READER', True):
             case.setUp()
             try:
                 reader = full.read_regular
                 self.assertIsNot(reader, original)
-                case.test_whole137_preflight_reads_original_source_bytes()
+                case.test_whole138_preflight_reads_original_source_bytes()
                 self.assertEqual(reader.call_count, 4)
             finally:
                 case.doCleanups()
@@ -187,7 +187,7 @@ class InfobaseHarnessTests(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         f = self.fixture
-        (f.inputs / suite.CLIENT_TARGET).write_bytes(linux_fixture(ROOT / suite.CLIENT_SOURCE))
+        (f.inputs / suite.CLIENT_TARGET).write_bytes(historical_client137())
         f.hashes = suite.input_hashes(f.inputs, client_probe=True)
         f.platform = replace(f.platform, database=Path('/tmp/onec-smoke/db'))
         def tail(mode):
@@ -250,7 +250,7 @@ class InfobaseLifecycleTests(unittest.TestCase):
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         path = fixture.inputs / suite.CLIENT_TARGET
-        path.write_bytes(linux_fixture(ROOT / suite.CLIENT_SOURCE))
+        path.write_bytes(historical_client137())
         fixture.client.update(source_sha256=full.INFOBASE_CONTEXT_SOURCE_SHA256,
             module_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256,
             roundtrip_sha256=full.INFOBASE_CONTEXT_MODULE_SHA256, infobase_context=CAPTURED)

@@ -86,19 +86,20 @@ native server/client outputs and strict interpreter comparison are still require
 before acceptance. Existing fixed `/tmp/onec-smoke` preflight must not overlap
 another worker's exclusive run.
 
-## Independent main-based candidate
+## Integration with current main after strict preprocessor acceptance
 
-This candidate is based directly on main
-`ac9ee48646733a30d00c36bd0f863422fc8a3223`, not on the pending strict
-preprocessor feature. Existing main lexer, parser, preprocessor and CLI sources
-are unchanged. Package version remains 0.4.2. The provenance implementation
-counts 59 files on main and 60 here: the sole added runtime file is
-`yadinassi/value_trees.py`.
+This candidate integrates main
+`70a0a4909ca7752fcb4f8443d00746e16b4c7f87` into the ValueTree branch.
+It retains the accepted strict managed-profile preprocessor and genuine full138
+contract. Package version remains 0.4.2. Host provenance counts 59 files on
+main and 60 here; the sole added runtime file is `yadinassi/value_trees.py`.
 
-The test-only harness inverse restores the exact actual-main host and container
-harness sources before applying the existing historical inverses. It does not
-introduce a preprocessor inverse, fixture or production admission path. Existing
-native fixtures, workflows and security limits remain byte-identical to main.
+The test-only tree harness inverse restores exact current-main host and container
+sources, then the existing preprocessor inverse restores historical whole137
+sources before earlier inverses. No current-source admission is weakened.
+Existing native fixtures, workflows and security limits remain byte-identical to
+current main. Fresh updated-head CI and native comparison are required; the
+previous ValueTree branch capture is not acceptance for this merged source.
 
 ## First capture: rejected comparison, localized correction
 

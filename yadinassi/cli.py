@@ -8,6 +8,7 @@ from . import __version__
 from .database_context import FileDBContext
 from .errors import BSLError, BSLRuntimeError, IncompleteInput
 from .parser import parse
+from .preprocessor import COMPILATION_PROFILES
 from .runtime import Interpreter
 from .values import to_string
 
@@ -85,7 +86,7 @@ def repl(interpreter: Interpreter) -> int:
             continue
         buffer += line + "\n"
         try:
-            program = parse(buffer, "<консоль>")
+            program = parse(buffer, "<консоль>", compilation_profile=interpreter.compilation_profile)
         except IncompleteInput:
             continue
         except (BSLError, RecursionError) as error:
@@ -135,12 +136,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--f", metavar="DIRECTORY",
                         help="каталог offline-копии файловой базы; проверяется только при DB-вызове")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
+    parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
+                        help="профиль условной компиляции (по умолчанию standalone)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(arguments)
     if args.file is not None and args.command is not None:
         parser.error("файл и -c нельзя использовать одновременно")
     database_context = FileDBContext(args.f) if args.f is not None else None
-    interpreter = Interpreter(encoding=args.encoding, database_context=database_context)
+    interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
+                              compilation_profile=args.preprocessor_profile)
     try:
         if args.command is not None:
             interpreter.execute(args.command, "<команда>")

@@ -56,6 +56,40 @@ class FullError(Exception):
         super().__init__(self.kind)
 
 
+# BEGIN bounded preprocessor profile observation binding
+PREPROCESSOR_SOURCE_SHA256 = '0dc26abc7a2bb786c7875d934fd2821c7e5f9e31175a0cf694c9b1170801f285'
+PREPROCESSOR_MODULE_SHA256 = '6e64719f7a086388730e5ce9d8a8944b67db58a4919866b6562cde6a1369285e'
+PREPROCESSOR_BASE_SHA256 = 'baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d'
+PREPROCESSOR_CORE_SHA256 = '5cda3cc687bc4b89a223fce03d06602c381a0ef84b57687c4d190897318b1ee7'
+PREPROCESSOR_DEFAULT_TOKEN = 'pp.v1:005005010010002002001001002002'
+# Audited native run40208015242; independent of runtime execution context.
+PREPROCESSOR_RUNTIME_TOKEN = 'pp.v1:135135139139131131131131131131'
+PREPROCESSOR_COMPILATION_PROFILE = 'managed-thick-file'
+# No native expected token exists until a separately audited capture.
+PREPROCESSOR_CORE = b'// BEGIN bounded preprocessor profile observation\n// Direct literal compilation at each site; never infer flags from execution side.\n&AtClient\nFunction PPClient()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtServer\nFunction PPServer()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtServerNoContext\nFunction PPServerNoContext()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction PPDual()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction PPEncode(Val Mask)\n    Var Digits, Hundreds, Tens, Units;\n    If TypeOf(Mask) <> Type("Number") Then Raise "pp-invalid-type"; EndIf;\n    If Mask < 0 Or Mask > 511 Or Int(Mask) <> Mask Then Raise "pp-invalid-mask"; EndIf;\n    Digits = "0123456789";\n    Hundreds = Int(Mask / 100);\n    Tens = Int(Mask / 10) - Hundreds * 10;\n    Units = Mask - Int(Mask / 10) * 10;\n    Return Mid(Digits, Hundreds + 1, 1) + Mid(Digits, Tens + 1, 1)\n        + Mid(Digits, Units + 1, 1);\nEndFunction\n\n&AtServer\nFunction PPServerDual()\n    Return PPDual();\nEndFunction\n\n&AtClient\nProcedure PPAppend(RecordsOut)\n    Var Encoded;\n    Encoded = "pp.v1:" + PPClient() + PPServer() + PPServerNoContext()\n        + PPDual() + PPServerDual();\n    If StrLen(Encoded) <> 36 Then Raise "pp-invalid-token"; EndIf;\n    RecordsOut.Add(Encoded);\nEndProcedure\n// END bounded preprocessor profile observation\n'
+PREPROCESSOR_CALL = b'    PPAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
+
+
+def preprocessor_shared_source(raw: bytes) -> bytes:
+    """Exact historical adapter inverse, never current-source host admission."""
+    if (type(raw) is not bytes or digest(raw) != PREPROCESSOR_SOURCE_SHA256
+            or raw.count(PREPROCESSOR_CORE) != 1 or raw.count(PREPROCESSOR_CALL) != 1):
+        raise FullError('invalid_input')
+    restored = raw.replace(PREPROCESSOR_CORE, b'', 1).replace(PREPROCESSOR_CALL, b'', 1)
+    if digest(restored) != PREPROCESSOR_BASE_SHA256:
+        raise FullError('invalid_input')
+    return restored
+
+
+def validate_preprocessor_profile(value):
+    """Finite bilingual observation only; no parity or alias-equality assumption."""
+    if (type(value) is not str or len(value) != 36
+            or re.fullmatch(r'pp\.v1:(?:(?:[0-4][0-9]{2}|50[0-9]|51[01])){10}', value) is None):
+        raise ValueError('preprocessor profile token')
+    return value
+# END bounded preprocessor profile observation binding
+
+
 # BEGIN bounded infobase-context measurement binding
 INFOBASE_CONTEXT_SOURCE_SHA256 = 'baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d'
 INFOBASE_CONTEXT_MODULE_SHA256 = '8f0e26621fed3a26f3073764f51dbf1c2164e4ebcc9a50b24f052487ba2b3be9'
@@ -97,6 +131,9 @@ def discard_infobase_capture(report):
     stage = report.get('stage3', report)
     if type(stage) is dict and type(stage.get('client_probe')) is dict:
         stage['client_probe'].pop('infobase_context', None)
+        stage['client_probe'].pop('preprocessor_profile', None)
+        if stage.get('schema') in (5, 9):
+            stage['preprocessor_status'] = 'not_started' if stage.get('status') == 'not_started' else 'failed'
 # END bounded infobase-context measurement binding
 
 
@@ -104,7 +141,11 @@ def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
 
-def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False) -> dict:
+def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, preprocessor_runtime: bool = False) -> dict:
+    if (type(preprocessor_runtime) is not bool or (preprocessor_runtime and (not client_probe or preprocessor_measurement))):
+        raise FullError("invalid_input")
+    if type(preprocessor_measurement) is not bool or (preprocessor_measurement and not client_probe):
+        raise FullError("invalid_input")
     if not valid_nonce(nonce) or ((watchdog_check or client_dates or client_values or client_collections or client_numbers) and not client_probe):
         raise FullError('invalid_input')
     if type(client_async) is not bool or (client_async and (not client_probe or watchdog_check or client_dates or client_values or client_collections or client_numbers)):
@@ -116,7 +157,9 @@ def empty_report(nonce: str, *, client_probe: bool = False, watchdog_check: bool
             **({'client_values': empty_values_report()} if client_values else {}),
             **({'client_collections': empty_collections_report()} if client_collections else {}),
             **({'client_numbers': empty_numbers_report()} if client_numbers else {}),
-            'schema': 1, 'nonce': nonce, 'status': 'not_started',
+            **({'compilation_profile': PREPROCESSOR_COMPILATION_PROFILE} if preprocessor_runtime else {}),
+            **({'preprocessor_status': 'not_started'} if preprocessor_measurement or preprocessor_runtime else {}),
+            'schema': 9 if preprocessor_runtime else (5 if preprocessor_measurement else 1), 'nonce': nonce, 'status': 'not_started',
             'failure_kind': 'prerequisites_failed', 'failed_case': None,
             'input_sha256': {}, 'cases': [
                 {'name': name, 'status': 'not_started', 'source_sha256': None,
@@ -360,8 +403,8 @@ def validate_case_request(command: list[str], directory: Path, post_create: bool
 
 
 def run_suite(launcher, platform, launcher_epf: Path, root: Path,
-              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False) -> dict:
-    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
+              inputs: Path, nonce: str, *, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False) -> dict:
+    report = empty_report(nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), preprocessor_measurement=preprocessor_measurement, preprocessor_runtime=client_probe and not preprocessor_measurement)
     report.update(status='failed', failure_kind='unexpected_failure')
     async_deadline = None
     active = None
@@ -370,6 +413,17 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
         if client_async:
             async_deadline = read_async_deadline(nonce)
         report['input_sha256'] = input_hashes(inputs, client_probe=client_probe)
+        current_profile = report['input_sha256'].get(CLIENT_SOURCE) == PREPROCESSOR_SOURCE_SHA256
+        if preprocessor_measurement and not current_profile:
+            raise FullError('invalid_input')
+        if not preprocessor_measurement and not current_profile:
+            if client_probe and report['input_sha256'].get(CLIENT_SOURCE) not in (
+                    INFOBASE_CONTEXT_SOURCE_SHA256, CLIENT_DIRECTIVE_TEMPLATE_SHA256):
+                raise FullError('invalid_input')
+            # Historical source fixtures retain their closed legacy lane only.
+            report['schema'] = 1
+            report.pop('compilation_profile', None)
+            report.pop('preprocessor_status', None)
         absent(root)
         root.mkdir(mode=0o700)
         if platform.timeout != 120 or platform.user != 'NativeSmoke' or platform.password is not None:
@@ -428,7 +482,8 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
         report['failed_case'] = None
         if client_probe:
             report['client_probe'] = run_client_probe(platform, root / 'client-probe', inputs,
-                                                       nonce, report['input_sha256'])
+                                                       nonce, report['input_sha256'],
+                                                       preprocessor_measurement=preprocessor_measurement)
             if report['client_probe']['status'] != 'ok':
                 raise FullError(report['client_probe']['failure_kind'])
         if client_dates:
@@ -469,6 +524,10 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
             report['failed_case'] = None
             raise FullError('invalid_input')
         report.update(status='ok', failure_kind='none', failed_case=None)
+        if preprocessor_measurement:
+            report['preprocessor_status'] = 'observed'
+        elif report['schema'] == 9:
+            report['preprocessor_status'] = 'matched'
     except Exception as error:
         if isinstance(error, FullError):
             kind = error.kind
@@ -514,6 +573,24 @@ def decode_process_wire(value: object) -> dict:
 
 
 def decode_stage_wire(data: dict) -> dict:
+    if type(data) is dict and type(data.get('schema')) is int and data['schema'] in (9, 10, 11, 12):
+        if (data.get('compilation_profile') != PREPROCESSOR_COMPILATION_PROFILE
+                or data.get('preprocessor_status') not in ('not_started', 'failed', 'matched')
+                or len(json.dumps(data, separators=(',', ':'), allow_nan=False).encode()) > MAX_STAGE_REPORT):
+            raise FullError('invalid_result')
+        base = {key: value for key, value in data.items()
+                if key not in ('compilation_profile', 'preprocessor_status')}
+        base['schema'] = data['schema'] - 8
+        return {**decode_stage_wire(base), 'schema': 9, 'compilation_profile': PREPROCESSOR_COMPILATION_PROFILE,
+                'preprocessor_status': data['preprocessor_status']}
+    if type(data) is dict and type(data.get('schema')) is int and data['schema'] in (5, 6, 7, 8):
+        if (data.get('preprocessor_status') not in ('not_started', 'failed', 'observed')
+                or len(json.dumps(data, separators=(',', ':'), allow_nan=False).encode()) > MAX_STAGE_REPORT):
+            raise FullError('invalid_result')
+        base = {key: value for key, value in data.items() if key != 'preprocessor_status'}
+        base['schema'] = data['schema'] - 4
+        return {**decode_stage_wire(base), 'schema': 5,
+                'preprocessor_status': data['preprocessor_status']}
     if type(data) is dict and type(data.get('schema')) is int and data['schema'] == 4:
         if ('client_async' not in data or 'client_probe' not in data
                 or any(key in data for key in ('client_dates','client_values','client_collections','client_numbers','client_watchdog'))
@@ -568,6 +645,31 @@ def decode_stage_wire(data: dict) -> dict:
 
 
 def encode_stage_wire(report: dict) -> dict:
+    if type(report) is dict and type(report.get('schema')) is int and report['schema'] == 9:
+        if (report.get('compilation_profile') != PREPROCESSOR_COMPILATION_PROFILE
+                or report.get('preprocessor_status') not in ('not_started', 'failed', 'matched')):
+            raise FullError('invalid_result')
+        base = {key: value for key, value in report.items()
+                if key not in ('compilation_profile', 'preprocessor_status')}
+        base['schema'] = 1
+        result = encode_stage_wire(base)
+        result = {**result, 'schema': result['schema'] + 8,
+                  'compilation_profile': PREPROCESSOR_COMPILATION_PROFILE,
+                  'preprocessor_status': report['preprocessor_status']}
+        if decode_stage_wire(result) != report:
+            raise FullError('invalid_result')
+        return result
+    if type(report) is dict and type(report.get('schema')) is int and report['schema'] == 5:
+        if report.get('preprocessor_status') not in ('not_started', 'failed', 'observed'):
+            raise FullError('invalid_result')
+        base = {key: value for key, value in report.items() if key != 'preprocessor_status'}
+        base['schema'] = 1
+        result = encode_stage_wire(base)
+        result = {**result, 'schema': result['schema'] + 4,
+                  'preprocessor_status': report['preprocessor_status']}
+        if decode_stage_wire(result) != report:
+            raise FullError('invalid_result')
+        return result
     if type(report) is dict and 'client_async' in report:
         if type(report.get('schema')) is not int or report['schema'] != 1:
             raise FullError('invalid_result')
@@ -824,7 +926,39 @@ def infobase_client_marker(path: Path, nonce: str, phase: str, *, source_hash: s
     return value
 
 
-def client_marker_diagnostics(path: Path, nonce: str, *, infobase_required=False) -> dict:
+def preprocessor_client_marker(path: Path, nonce: str, phase: str, *, source_hash: str) -> dict:
+    """Observation schema: strict137 parity plus finite, not compared native suffix."""
+    if source_hash != PREPROCESSOR_SOURCE_SHA256:
+        raise FullError('invalid_input')
+    if phase == 'entered':
+        return client_marker(path, nonce, phase)
+    if not valid_nonce(nonce) or phase != 'completed':
+        raise FullError('invalid_input')
+    value = strict_json(secure_bytes(path, 2048), max_depth=3)
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != 138
+            or any(type(a) is not type(b) or a != b
+                   for a, b in zip(value['values'][:137], CLIENT_RUNTIME_VALUES))):
+        raise FullError('invalid_result')
+    try:
+        validate_preprocessor_profile(value['values'][137])
+    except ValueError:
+        raise FullError('invalid_result') from None
+    return value
+
+
+def preprocessor_runtime_marker(path: Path, nonce: str, phase: str, *, source_hash: str) -> dict:
+    value = preprocessor_client_marker(path, nonce, phase, source_hash=source_hash)
+    if phase == 'completed' and value['values'][137] != PREPROCESSOR_RUNTIME_TOKEN:
+        raise FullError('invalid_result')
+    return value
+
+
+def client_marker_diagnostics(path: Path, nonce: str, *, infobase_required=False, preprocessor_required=False) -> dict:
     """Finite failure metadata only; never actual strings, paths or error text."""
     result = {'phase': 'invalid', 'kind': 'none', 'ordinal': -1, 'error_stage': 0}
     try:
@@ -851,8 +985,16 @@ def client_marker_diagnostics(path: Path, nonce: str, *, infobase_required=False
             and 1 <= values[5] <= 11):
         result.update(kind='runtime_error', ordinal=values[5] + 3, error_stage=values[5])
         return result
-    expected_values = CLIENT_RUNTIME_VALUES if infobase_required else CLIENT_VALUES
+    expected_values = (CLIENT_RUNTIME_VALUES + [PREPROCESSOR_DEFAULT_TOKEN] if preprocessor_required else
+                       CLIENT_RUNTIME_VALUES if infobase_required else CLIENT_VALUES)
     for index, (actual, expected) in enumerate(zip(values, expected_values)):
+        if preprocessor_required and index == 137:
+            try:
+                validate_preprocessor_profile(actual)
+            except ValueError:
+                result.update(kind='type' if type(actual) is not str else 'value', ordinal=index)
+                return result
+            continue
         if type(actual) is not type(expected) or actual != expected:
             result.update(kind='type' if type(actual) is not type(expected) else 'value', ordinal=index)
             return result
@@ -1118,7 +1260,7 @@ def final_client_process_census(nonce: str) -> None:
 def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                      hashes: dict, *, stall: bool = False, dates_output: Path | None = None,
                      values_output: Path | None = None, collections_output: Path | None = None,
-                     numbers_output: Path | None = None) -> dict:
+                     numbers_output: Path | None = None, preprocessor_measurement: bool = False) -> dict:
     """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
     parity_output = (numbers_output if numbers_output is not None else
                      collections_output if collections_output is not None else
@@ -1133,8 +1275,10 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                      client_dates_marker if dates_output is not None else client_marker)
     record.update(status='failed', failure_kind='unexpected_failure')
     infobase_measurement = False
+    preprocessor_runtime = False
     try:
-        if (not valid_nonce(nonce) or type(stall) is not bool
+        if (type(preprocessor_measurement) is not bool or (preprocessor_measurement and (stall or parity_output is not None))
+                or not valid_nonce(nonce) or type(stall) is not bool
                 or (parity_output is not None and stall)
                 or (sum(value is not None for value in (dates_output, values_output, collections_output, numbers_output)) > 1)
                 or platform.timeout != 120
@@ -1151,13 +1295,19 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
         if digest(source) != hashes[CLIENT_SOURCE]:
             raise FullError('invalid_input')
+        if preprocessor_measurement and digest(source) != PREPROCESSOR_SOURCE_SHA256:
+            raise FullError('invalid_input')
         infobase_measurement = (parity_output is None and not stall
-                               and digest(source) == INFOBASE_CONTEXT_SOURCE_SHA256)
+                               and digest(source) in (INFOBASE_CONTEXT_SOURCE_SHA256, PREPROCESSOR_SOURCE_SHA256))
+        preprocessor_runtime = (digest(source) == PREPROCESSOR_SOURCE_SHA256
+                                and parity_output is None and not stall and not preprocessor_measurement)
         if infobase_measurement:
             # Candidate literals describe only this known ordinary directory.
             if platform.database != Path('/tmp/onec-smoke/db'):
                 raise FullError('invalid_input')
-            marker_reader = lambda path, nonce, phase: infobase_client_marker(
+            selected_reader = (preprocessor_runtime_marker if preprocessor_runtime else
+                               preprocessor_client_marker if preprocessor_measurement else infobase_client_marker)
+            marker_reader = lambda path, nonce, phase: selected_reader(
                 path, nonce, phase, source_hash=hashes[CLIENT_SOURCE])
         if numbers_output is not None:
             numbers_source = secure_bytes(inputs / 'scenarios/numbers.bsl', MAX_OUTPUT)
@@ -1257,7 +1407,8 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         except FullError as error:
             if error.kind == 'invalid_result' and parity_output is None and not stall:
                 record['marker_diagnostics'] = client_marker_diagnostics(
-                    completed, nonce, infobase_required=infobase_measurement)
+                    completed, nonce, infobase_required=infobase_measurement,
+                    preprocessor_required=preprocessor_measurement or preprocessor_runtime)
             raise
         if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
             raise FullError('invalid_result')
@@ -1290,9 +1441,12 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                           message_count=len(completion['values']))
         record.update(status='ok', failure_kind='none', witness_verified=True)
         if infobase_measurement:
-            record['infobase_context'] = completion['values'][-1]
+            record['infobase_context'] = completion['values'][136]
+        if preprocessor_measurement or preprocessor_runtime:
+            record['preprocessor_profile'] = completion['values'][137]
     except Exception as error:
         record.pop('infobase_context', None)
+        record.pop('preprocessor_profile', None)
         if isinstance(error, ClientProcessError):
             record['process_diagnostics'] = error.diagnostics
         record['failure_kind'] = (error.kind if isinstance(error, FullError) else
@@ -1434,6 +1588,8 @@ CLIENT_LEGACY_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68
 
 
 def client_parity_template(template: bytes) -> bytes:
+    if digest(template) == PREPROCESSOR_SOURCE_SHA256:
+        template = preprocessor_shared_source(template)
     if digest(template) == INFOBASE_CONTEXT_SOURCE_SHA256:
         template = infobase_shared_source(template)
     template = date_null_shared_source(template)
@@ -1472,7 +1628,7 @@ def client_dates_module(source: bytes, template: bytes) -> bytes:
     original module body moves into a client procedure. No server trampoline,
     string conversion, date reference generation or expected values are added.
     """
-    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256, PREPROCESSOR_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_DATES_SOURCE_SHA256
             or digest(template) != CLIENT_DATES_TEMPLATE_SHA256):
@@ -1592,7 +1748,7 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
     body moves into a client procedure. Expressions, conversions and error paths
     stay byte-identical. No server trampoline or reference values are added.
     """
-    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256, PREPROCESSOR_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_VALUES_SOURCE_SHA256
             or digest(template) != CLIENT_VALUES_TEMPLATE_SHA256):
@@ -1859,7 +2015,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
     Expressions, conversions and error paths stay byte-identical. No server
     trampoline or reference collections are added.
     """
-    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256, PREPROCESSOR_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_COLLECTIONS_SOURCE_SHA256
             or digest(template) != CLIENT_COLLECTIONS_TEMPLATE_SHA256):
@@ -2332,7 +2488,7 @@ def client_numbers_module(source: bytes, template: bytes) -> bytes:
     against this run's raw server message, not asserted to measure client UI.
     The other three sites remain string-only. No original expression is changed.
     """
-    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256, PREPROCESSOR_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_NUMBERS_SOURCE_SHA256
             or digest(template) != CLIENT_NUMBERS_TEMPLATE_SHA256):

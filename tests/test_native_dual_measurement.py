@@ -12,7 +12,7 @@ from test_native_async_fixture import historical_tree_collections_module
 from unittest import mock
 from test_native_1c_full_host import SyntheticFilesystemCase
 from test_native_client_probe import full, suite, ROOT, stage_fixture
-from test_native_directive_witness import linux_fixture
+from test_native_directive_witness import linux_fixture, historical_client137
 import test_native_async_budget as budget
 
 NONCE = 'a' * 32
@@ -130,7 +130,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(plan['capture']['summary_zip_sha256'],'7dd804a26fb5cf63cf5de93c2dc1ba908767bba9f64e949f04626344d9278dba')
         self.assertEqual(plan['capture']['acceptance'],'rejected_measurement_only')
         self.assertEqual(plan['fresh_projected_native_validation'],'required_not_yet_obtained')
-        raw=full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))); standalone=linux_fixture(ROOT/SOURCE)
+        raw=full.date_null_shared_source(full.infobase_shared_source(historical_client137())); standalone=linux_fixture(ROOT/SOURCE)
         self.assertEqual(raw.count(LOGICAL),1);self.assertEqual(standalone.count(LOGICAL),1)
         self.assertNotIn(GENERIC,raw);self.assertNotIn(GENERIC,standalone)
         old=raw.replace(LOGICAL,GENERIC+LOGICAL,1).replace(b'BEGIN bounded dual witness',b'BEGIN bounded dual measurement',1)
@@ -148,10 +148,10 @@ class DualWitnessTests(SyntheticFilesystemCase):
 
     def test_historical_inverse_restores134_but_host_never_uses_it(self):
         measurement=linux_fixture(ROOT/full.CLIENT_SOURCE)
-        raw=full.date_null_shared_source(full.infobase_shared_source(measurement))
+        raw=full.date_null_shared_source(full.infobase_shared_source(full.preprocessor_shared_source(measurement)))
         restored=suite.dual_shared_source(raw)
         self.assertEqual(full.digest(restored),BASE_SHA)
-        self.assertEqual(full.CLIENT_WITNESS_SOURCE_SHA256,full.digest(measurement))
+        self.assertEqual(full.PREPROCESSOR_SOURCE_SHA256,full.digest(measurement))
         self.assertEqual(full.DATE_NULL_BASE_SHA256,full.digest(raw))
         self.assertNotIn('DualProbe',restored.decode())
         for changed in (raw+b' ',raw[:-1],restored,
@@ -165,11 +165,11 @@ class DualWitnessTests(SyntheticFilesystemCase):
                 path=Path(folder).resolve()/'source.bsl';path.write_bytes(changed)
                 runner=mock.Mock(side_effect=AssertionError('changed source must not execute'))
                 with self.assertRaisesRegex(full.FullError,'^source_changed$'):
-                    full.verify_client_interpreter(ROOT,path,full.digest(changed),runner=runner)
+                    full.verify_client_interpreter(ROOT,path,full.digest(changed),runner=runner, preprocessor_measurement=True)
                 runner.assert_not_called()
 
     @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
-    def test_preflight_uses_exact_original_whole137_source(self):
+    def test_preflight_uses_exact_original_whole138_source(self):
         path = ROOT / full.CLIENT_SOURCE
         raw = linux_fixture(path)
         seen = []
@@ -186,14 +186,14 @@ class DualWitnessTests(SyntheticFilesystemCase):
         # module/error identity can bypass the uncertain-shutdown boundary.
         with mock.patch.object(full, '_load_infobase_fixture', return_value=fixture), \
                 mock.patch.object(fixture, 'bounded_child', side_effect=spy):
-            full.verify_client_interpreter(ROOT, path, full.digest(raw))
-        self.assertEqual(seen, [full.CLIENT_WITNESS_SOURCE_SHA256])
+            full.verify_client_interpreter(ROOT, path, full.digest(raw), preprocessor_measurement=True)
+        self.assertEqual(seen, [full.PREPROCESSOR_SOURCE_SHA256])
 
     def test_whole136_interpreter_witness_and_standalone_match_projected_capture(self):
         from yadinassi import Interpreter
         from decimal import Decimal
         vm=Interpreter(lambda _:self.fail('unexpected Message'))
-        vm.execute(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(full.infobase_shared_source(historical_client137()).decode('utf-8-sig'))
         actual=[int(v) if type(v) is Decimal else v for v in vm.execute('ВычислитьПробу()')]
         self.assertEqual(actual,full.CLIENT_VALUES)
         self.assertEqual(list(map(type,actual)),list(map(type,full.CLIENT_VALUES)))
@@ -283,7 +283,7 @@ class DualWitnessTests(SyntheticFilesystemCase):
             self.assertNotIn('ThisObject',body)
 
     def test_declarations_and_helpers_precede_module_initializer(self):
-        raw = full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
+        raw = full.date_null_shared_source(full.infobase_shared_source(historical_client137()))
         tail = full.CLIENT_NOCONTEXT_INITIALIZER
         self.assertTrue(raw.startswith(suite.CLIENT_DUAL_PREFIX+full.CLIENT_MODULE_PREFIX))
         self.assertTrue(raw.endswith(full.CLIENT_NOCONTEXT_BLOCK+suite.CLIENT_DUAL_BLOCK+tail))
