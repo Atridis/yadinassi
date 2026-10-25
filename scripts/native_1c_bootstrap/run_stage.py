@@ -164,9 +164,11 @@ def strict_simple_result(path: Path, output: Path) -> str:
     return hashlib.sha256(expected).hexdigest()
 
 
-def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False) -> dict:
+def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False) -> dict:
     if (client_dates or client_values or client_collections or client_numbers) and (not client_probe or full_nonce is None):
         raise StageError("invalid_input")
+    if type(preprocessor_measurement) is not bool or (preprocessor_measurement and (not client_probe or full_nonce is None)):
+        raise ValueError("preprocessor mode")
     if type(client_async) is not bool or (client_async and (not client_probe or full_nonce is None or watchdog_check or client_dates or client_values or client_collections or client_numbers)):
         raise StageError("invalid_input")
     report = empty_report()
@@ -258,10 +260,10 @@ def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_c
         # Stage two keeps its exact legacy schema. Stage three starts only after
         # every fresh bootstrap/security/version/simple-EPF gate has succeeded.
         import full_suite
-        suite = full_suite.empty_report(full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
+        suite = full_suite.empty_report(full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
         if report['status'] == 'ok' and all(report[flag] for flag in FLAGS):
             suite = full_suite.run_suite(launcher, platform, launcher_epf,
-                                        ROOT / ('stage3-' + full_nonce), INPUTS, full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
+                                        ROOT / ('stage3-' + full_nonce), INPUTS, full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
         full_suite.write_report(ROOT / 'stage3-report.json', suite)
     return report
 
@@ -270,6 +272,9 @@ def main(argv: list[str] | None = None) -> int:
     # Fixed full-mode arguments only; the nonce never selects an arbitrary path.
     arguments = [] if argv is None else argv
     full_nonce = None
+    preprocessor_measurement = bool(arguments and arguments[-1] == "--client-preprocessor-measurement")
+    if preprocessor_measurement:
+        arguments = arguments[:-1]
     client_async = bool(arguments and arguments[-1] == "--client-async-measurement")
     if client_async:
         arguments = arguments[:-1]
@@ -289,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     if watchdog_check:
         arguments = arguments[:-1]
     client_probe = bool(arguments and arguments[-1] == "--client-probe")
-    if (watchdog_check or client_dates or client_values or client_collections or client_numbers) and not client_probe:
+    if (preprocessor_measurement or watchdog_check or client_dates or client_values or client_collections or client_numbers) and not client_probe:
         return 2
     if client_async and (not client_probe or watchdog_check or client_dates or client_values or client_collections or client_numbers):
         return 2
@@ -305,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         full_nonce = arguments[2]
     # Only this bounded report is consumed by the shell. No tracebacks/raw errors.
     try:
-        report = run() if full_nonce is None else run(full_nonce=full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, **({"client_values": True} if client_values else {}), **({"client_collections": True} if client_collections else {}), **({"client_numbers": True} if client_numbers else {}), **({"client_async": True} if client_async else {}))
+        report = run() if full_nonce is None else run(full_nonce=full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, **({"client_values": True} if client_values else {}), **({"client_collections": True} if client_collections else {}), **({"client_numbers": True} if client_numbers else {}), **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
     except Exception:
         report = empty_report()
         # An unexpected exception could follow a persisted user write. Never

@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from test_native_client_probe import full, suite, ROOT, stage_fixture
-from test_native_directive_witness import linux_fixture
+from test_native_directive_witness import linux_fixture, historical_client137
 
 LABELS = (
     'entered', 'success.error', 'success.value', 'val.error', 'val.value',
@@ -63,7 +63,7 @@ class ScalarCopybackParityTests(unittest.TestCase):
     def test_exact_whole_source_computes_all_captured_values(self):
         from yadinassi import Interpreter
         vm = Interpreter(lambda value: self.fail('unexpected Message'))
-        vm.execute(full.infobase_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE)).decode('utf-8-sig'))
+        vm.execute(full.infobase_shared_source(historical_client137()).decode('utf-8-sig'))
         actual = list(vm.execute('ВычислитьПробу()'))
         self.assertEqual(actual, suite.CLIENT_VALUES)
         self.assertEqual(vm.execution_context, 'client')

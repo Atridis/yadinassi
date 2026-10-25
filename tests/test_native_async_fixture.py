@@ -289,8 +289,24 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_preprocessor_measurement(source, *, host=False):
+    """Exact test-only inverse to the historical whole137 harness, not admission."""
+    inventory = json.loads((REPOSITORY / 'tests/fixtures/preprocessor_measurement/'
+                            'harness-source-inverse.json').read_text(encoding='utf-8'))
+    path = ('scripts/native_1c_full_host.py' if host
+            else 'scripts/native_1c_bootstrap/full_suite.py')
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
 def without_infobase_runtime(source, *, host=False):
     """Exact reviewed runtime-harness inverse; historical measurement is unchanged."""
+    source = without_preprocessor_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/fixtures/infobase_context_runtime/'
                             'harness-source-inverse.json').read_text(encoding='utf-8'))
     path = ('scripts/native_1c_full_host.py' if host

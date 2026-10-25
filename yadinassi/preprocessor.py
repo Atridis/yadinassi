@@ -2,6 +2,7 @@
 
 from collections.abc import Collection
 from dataclasses import dataclass
+from types import MappingProxyType
 import re
 
 from .errors import BSLError, IncompleteInput
@@ -11,10 +12,42 @@ DIRECTIVES = {
     "если": "if", "if": "if", "иначеесли": "elsif", "elsif": "elsif",
     "иначе": "else", "else": "else", "конецесли": "endif", "endif": "endif",
 }
-SYMBOLS = {
-    "клиент": True, "client": True, "наклиенте": True, "atclient": True,
-    "сервер": False, "server": False, "насервере": False, "atserver": False,
-}
+COMPILATION_PROFILES = ("standalone",)
+# These are standalone language policy, not a native platform mode or host OS.
+# Site-dependent flags must not invert the constant-false application symbols.
+_STANDALONE_FLAGS = MappingProxyType({
+    "client": (True, False, True, False),
+    "server": (False, True, False, True),
+    "server_nocontext": (False, True, False, False),
+    "dual_client": (True, False, False, False),
+    "dual_server": (False, True, False, False),
+})
+_CONTEXT_ALIASES = (("client", "клиент"), ("server", "сервер"),
+                    ("atclient", "наклиенте"), ("atserver", "насервере"))
+_APPLICATION_SYMBOLS = (
+    "thinclient", "тонкийклиент", "webclient", "вебклиент",
+    "thickclientordinaryapplication", "толстыйклиентобычноеприложение",
+    "thickclientmanagedapplication", "толстыйклиентуправляемоеприложение",
+    "externalconnection", "внешнеесоединение",
+)
+_STANDALONE_SYMBOLS = MappingProxyType({
+    site: MappingProxyType({
+        **{alias: value for aliases, value in zip(_CONTEXT_ALIASES, flags)
+           for alias in aliases},
+        **dict.fromkeys(_APPLICATION_SYMBOLS, False),
+    }) for site, flags in _STANDALONE_FLAGS.items()
+})
+
+
+def validate_compilation_profile(name: str) -> str:
+    """Accept a closed identifier, never user defines or an inferred profile."""
+    if type(name) is not str:
+        raise TypeError("compilation_profile must be a string")
+    if name not in COMPILATION_PROFILES:
+        raise ValueError("Unsupported compilation_profile; expected 'standalone'")
+    return name
+
+
 OPERATORS = {"и": "and", "and": "and", "или": "or", "or": "or",
              "не": "not", "not": "not"}
 REGION_DIRECTIVES = {"область": "REGION", "region": "REGION",
@@ -31,19 +64,22 @@ class _Branch:
 
 
 class ConditionalCompilation:
-    def __init__(self, source: str, execution_context: str = "client"):
-        if execution_context not in {"client", "server", "server_nocontext",
-                                     "dual_client", "dual_server"}:
+    def __init__(self, source: str, execution_context: str = "client", *,
+                 compilation_profile: str = "standalone"):
+        self._compilation_profile = validate_compilation_profile(compilation_profile)
+        if execution_context not in _STANDALONE_SYMBOLS:
             raise ValueError("Unknown execution context")
         self.source = source
-        self.symbols = {name: value == (execution_context in {"client", "dual_client"})
-                        for name, value in SYMBOLS.items()}
-        if execution_context in {"server_nocontext", "dual_client", "dual_server"}:
-            # NoContext profiles are not preprocessor symbols. Each retains its
-            # standalone target flags; only the logical context flags differ.
-            for name in ("наклиенте", "atclient", "насервере", "atserver"):
-                self.symbols[name] = False
+        self._symbols = _STANDALONE_SYMBOLS[execution_context]
         self.stack: list[_Branch] = []
+
+    @property
+    def compilation_profile(self) -> str:
+        return self._compilation_profile
+
+    @property
+    def symbols(self):
+        return self._symbols
 
     @property
     def active(self) -> bool:
@@ -158,7 +194,7 @@ class SourceRegions:
 
 
 class _Condition:
-    def __init__(self, text, fail, symbols=SYMBOLS):
+    def __init__(self, text, fail, symbols):
         self.symbols = symbols
         self.fail = fail
         self.tokens = re.findall(r"[^\W\d]\w*|\S", text)
@@ -210,7 +246,7 @@ class _Condition:
             self.fail("Ожидается символ клиентского или серверного контекста")
         name = self.tokens[self.pos]
         self.pos += 1
-        if name.casefold() not in SYMBOLS:
+        if name.casefold() not in self.symbols:
             self.fail(f"Неподдерживаемый символ препроцессора: {name}")
         if name.casefold() in {"наклиенте", "atclient", "насервере", "atserver"}:
             self.logical = True
