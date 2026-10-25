@@ -260,7 +260,7 @@ def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_c
         # Stage two keeps its exact legacy schema. Stage three starts only after
         # every fresh bootstrap/security/version/simple-EPF gate has succeeded.
         import full_suite
-        suite = full_suite.empty_report(full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
+        suite = full_suite.empty_report(full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}), preprocessor_runtime=client_probe and not preprocessor_measurement)
         if report['status'] == 'ok' and all(report[flag] for flag in FLAGS):
             suite = full_suite.run_suite(launcher, platform, launcher_epf,
                                         ROOT / ('stage3-' + full_nonce), INPUTS, full_nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))

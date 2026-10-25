@@ -1,4 +1,4 @@
-"""Synthetic standalone compilation contract, not native-platform evidence.
+"""Explicit compilation contracts; these unit tests are not native evidence.
 
 Every source fixture belongs to this test's resolved TemporaryDirectory. No
 native installation, database fixture, capture, or external artifact is used.
@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from yadinassi import BSLError, Interpreter, ast
+from yadinassi import BSLError, BSLRuntimeError, Interpreter, ast
+from yadinassi.database_context import FileDBContext
 from yadinassi import lexer as lexer_module
 from yadinassi import parser as parser_module
 from yadinassi import runtime as runtime_module
@@ -20,7 +21,7 @@ from yadinassi.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context,
 )
 from yadinassi.parser import parse, parse_expression, parse_fragment
-from yadinassi.preprocessor import ConditionalCompilation
+from yadinassi.preprocessor import COMPILATION_PROFILES, ConditionalCompilation
 
 
 SITES = ("client", "server", "server_nocontext", "dual_client", "dual_server")
@@ -327,6 +328,278 @@ class CompilationProfileTests(unittest.TestCase):
             with self.subTest(symbol=symbol, dynamic="Execute"), self.assertRaises(BSLError):
                 self.vm.execute("Execute(code);")
         self.assertEqual(self.messages, [])
+
+
+MANAGED_PROFILE = "managed-thick-file"
+MANAGED_VALUES = {
+    "client": (True, True, True, False),
+    "server": (True, True, False, True),
+    "server_nocontext": (True, True, False, False),
+    "dual_client": (True, True, False, False),
+    "dual_server": (True, True, False, False),
+}
+
+
+class ManagedCompilationProfileTests(unittest.TestCase):
+    def setUp(self):
+        self.messages = []
+        self.vm = Interpreter(self.messages.append, compilation_profile=MANAGED_PROFILE)
+        self.addCleanup(self.vm.close)
+
+    def test_exact_public_identifier_and_read_only_properties(self):
+        self.assertEqual(COMPILATION_PROFILES, ("standalone", MANAGED_PROFILE))
+        for factory in (lambda name: Interpreter(compilation_profile=name),
+                        lambda name: Lexer("42", compilation_profile=name),
+                        lambda name: ConditionalCompilation("profile", compilation_profile=name)):
+            obj = factory(MANAGED_PROFILE)
+            if isinstance(obj, Interpreter):
+                self.addCleanup(obj.close)
+            self.assertEqual(obj.compilation_profile, MANAGED_PROFILE)
+            with self.assertRaises(AttributeError):
+                obj.compilation_profile = "standalone"
+            with self.assertRaises(AttributeError):
+                del obj.compilation_profile
+            for invalid in ("Managed-Thick-File", "MANAGED-THICK-FILE", "managed_thick_file",
+                            "managed-thick", "managed-thick-file ", " managed-thick-file"):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    factory(invalid)
+        self.assertEqual(parse("42", compilation_profile=MANAGED_PROFILE), parse("42"))
+
+    def test_bilingual_case_insensitive_truth_table_and_immutable_isolation(self):
+        for site in SITES:
+            expected_values = MANAGED_VALUES[site] + (False, False, False, True, False)
+            for aliases, expected in zip(OLD_ALIASES + FALSE_ALIASES, expected_values):
+                for alias in aliases:
+                    for spelling in (alias, alias.lower(), alias.upper(), alias.swapcase()):
+                        with self.subTest(site=site, symbol=spelling):
+                            compilation = ConditionalCompilation(
+                                "flags", site, compilation_profile=MANAGED_PROFILE)
+                            self.assertIs(compilation.symbols[alias.casefold()], expected)
+                            compilation.process(f"#If {spelling} Then", 1, 1)
+                            self.assertIs(compilation.active, expected)
+                            compilation.process("#Else", 2, 1)
+                            self.assertIs(compilation.active, not expected)
+                            compilation.process("#EndIf", 3, 1)
+                            compilation.finish(4, 1)
+            with self.assertRaises(TypeError):
+                compilation.symbols["server"] = False
+            with self.assertRaises(TypeError):
+                del compilation.symbols["client"]
+            with self.assertRaises(AttributeError):
+                compilation.symbols = {}
+            standalone = ConditionalCompilation("old", site)
+            self.assertEqual(tuple(standalone.symbols[aliases[0].casefold()]
+                                   for aliases in OLD_ALIASES), OLD_VALUES[site])
+            self.assertTrue(all(not standalone.symbols[alias.casefold()]
+                                for aliases in FALSE_ALIASES for alias in aliases))
+
+    def test_ordinary_mixed_client_server_conditions_use_profile_at_every_site(self):
+        conditions = (
+            ("Client And Server", True), ("Client Or Server", True),
+            ("Not Client Or Not Server", False), ("Client And Not Server", False),
+            ("Not Client And Server", False), ("Not (Client And Server)", False),
+            ("ThinClient Or Client And Server", True),
+            ("(ThinClient Or Client) And Not WebClient And Server", True),
+            ("Клиент И Сервер И Не ВнешнееСоединение", True),
+            ("Не Клиент Или Не Сервер", False),
+        )
+        for condition, expected in conditions:
+            for annotation in ("&AtClient", "&AtServer", "&AtServerNoContext",
+                               "&AtClientAtServerNoContext"):
+                source = (f"{annotation}\nFunction Chosen()\n#If {condition} Then\n"
+                          "Return 42;\n#Else\nReturn 0;\n#EndIf\nEndFunction")
+                with self.subTest(condition=condition, annotation=annotation):
+                    routines = [node for node in parse(source, compilation_profile=MANAGED_PROFILE)
+                                if isinstance(node, ast.Routine)]
+                    self.assertEqual(len(routines), 2 if "ClientAtServer" in annotation else 1)
+                    self.assertTrue(all(node.body[0].value.value == Decimal(42 if expected else 0)
+                                        for node in routines))
+        self.assertEqual(self.vm.execute("#If Server Then\n#If Client Then\n42\n"
+                                         "#Else\ninvalid !!!\n#EndIf\n#Else\ninvalid !!!\n#EndIf"),
+                         Decimal(42))
+
+    def test_first_true_branch_wins_when_client_and_server_are_both_true(self):
+        for first, second in (("Client", "Server"), ("Server", "Client")):
+            with self.subTest(first=first):
+                self.assertEqual(self.vm.execute(f"#If {first} Then\n42\n#ElsIf {second} Then\n"
+                                                  "invalid !!!\n#Else\ninvalid !!!\n#EndIf"),
+                                 Decimal(42))
+
+    def test_profile_reaches_all_passes_and_skipped_routine_compilations(self):
+        with mock.patch.object(parser_module, "Lexer", wraps=Lexer) as lexers, \
+                mock.patch.object(lexer_module, "ConditionalCompilation",
+                                  wraps=ConditionalCompilation) as compilations:
+            parse(weighted_program(), compilation_profile=MANAGED_PROFILE)
+        self.assertEqual([call.kwargs.get("execution_context", "client")
+                          for call in lexers.call_args_list], list(SITES))
+        self.assertGreater(compilations.call_count, 10)
+        observed = set()
+        for call in lexers.call_args_list + compilations.call_args_list:
+            self.assertEqual(call.kwargs.get("compilation_profile"), MANAGED_PROFILE)
+        for call in compilations.call_args_list:
+            observed.add(call.args[1] if len(call.args) > 1 else call.kwargs["execution_context"])
+        self.assertEqual(observed, set(SITES))
+        for annotation in ("&AtClient", "&AtServer", "&AtServerNoContext",
+                           "&AtClientAtServerNoContext"):
+            source = (f"{annotation}\nFunction Chosen()\n#If Not (Client And Server) Then\n"
+                      "invalid !!! syntax \"\nFunction Unfinished(\n// #Import Missing.bsl\n"
+                      "#ElsIf ThickClientManagedApplication Then\nReturn 42;\n"
+                      "#Else\ninvalid !!!\n#EndIf\nEndFunction")
+            with self.subTest(annotation=annotation):
+                routines = [node for node in parse(source, compilation_profile=MANAGED_PROFILE)
+                            if isinstance(node, ast.Routine)]
+                self.assertEqual(len(routines), 2 if "ClientAtServer" in annotation else 1)
+                self.assertTrue(all(node.body[0].value.value == Decimal(42) for node in routines))
+
+    def test_weighted_runtime_signature_and_unchanged_measurement_core(self):
+        self.vm.execute(weighted_program())
+        self.assertEqual(self.messages, ["135", "135", "139", "139", "131", "131",
+                                        "131", "131", "131", "131"])
+        self.messages.clear()
+        core = Path(__file__).resolve().parents[1] / (
+            "integrational_tests/directive_probes/preprocessor_profiles_core.bsl")
+        # Execute the immutable original source, then an ordinary caller. There
+        # is no source rewrite or replacement implementation of its routines.
+        self.vm.execute(core.read_text(encoding="utf-8"), str(core))
+        self.vm.execute("Records = New Array; PPAppend(Records); Message(Records[0]);")
+        self.assertEqual(self.messages, ["pp.v1:135135139139131131131131131131"])
+        self.assertEqual(self.vm.execution_context, "client")
+
+    def test_nested_imports_and_context_and_nocontext_activations_inherit_profile(self):
+        with tempfile.TemporaryDirectory(prefix="managed-compilation-profile-") as temporary:
+            root = Path(temporary).resolve()
+            (root / "Leaf.bsl").write_text(
+                "#If Not (Client And Server And ThickClientManagedApplication) Then\n"
+                "invalid !!!\n#EndIf\n&AtServer\nFunction ServerValue() Export\n"
+                + weighted_body(0) + "\nEndFunction\n"
+                "&AtServerNoContext\nFunction NoContextValue() Export\n"
+                + weighted_body(1) + "\nEndFunction\n", encoding="utf-8")
+            (root / "Middle.bsl").write_text(
+                "// #Import Leaf.bsl\nFunction Value() Export\n"
+                "Return Leaf.ServerValue() + Leaf.NoContextValue();\nEndFunction\n",
+                encoding="utf-8")
+            original_init = Interpreter.__init__
+            with mock.patch.object(Interpreter, "__init__", autospec=True,
+                                   side_effect=original_init) as constructor:
+                self.vm.execute("// #Import Middle.bsl\nMessage(Middle.Value());",
+                                str(root / "Main.bsl"))
+                for has_context in (True, False):
+                    server = self.vm._new_server_activation(module_context=has_context)
+                    self.assertEqual(server.compilation_profile, MANAGED_PROFILE)
+            self.assertGreaterEqual(constructor.call_count, 6)
+            for call in constructor.call_args_list:
+                self.assertEqual(call.kwargs.get("compilation_profile"), MANAGED_PROFILE)
+            middle = self.vm.imports["middle"].interpreter
+            self.assertEqual(middle.compilation_profile, MANAGED_PROFILE)
+            self.assertEqual(middle.imports["leaf"].interpreter.compilation_profile, MANAGED_PROFILE)
+            self.assertEqual(self.messages, ["270"])
+
+    def test_explicit_profile_and_native_target_are_independent_of_host_and_environment(self):
+        environment = {"YADINASSI_PREPROCESSOR_PROFILE": MANAGED_PROFILE,
+                       "YADINASSI_COMPILATION_PROFILE": MANAGED_PROFILE,
+                       "COMPILATION_PROFILE": MANAGED_PROFILE}
+        for target in (WINDOWS_8_3_27_2342, LINUX_8_3_27_1508):
+            for host in ("win32", "linux", "darwin"):
+                with self.subTest(target=target, host=host), \
+                        mock.patch.dict(os.environ, environment), \
+                        mock.patch("sys.platform", host), target_context(target):
+                    default = Interpreter(native_target=target)
+                    managed = Interpreter(native_target=target, compilation_profile=MANAGED_PROFILE)
+                    self.addCleanup(default.close)
+                    self.addCleanup(managed.close)
+                    self.assertEqual(default.compilation_profile, "standalone")
+                    for vm in (default, managed):
+                        self.assertEqual(vm.native_target, target)
+                        self.assertEqual(vm.execution_context, "client")
+                    source = "#If Client And Server Then\n42\n#Else\n5\n#EndIf"
+                    self.assertEqual(default.execute(source), Decimal(5))
+                    self.assertEqual(managed.execute(source), Decimal(42))
+        self.assertEqual(self.vm.native_target, WINDOWS_8_3_27_2342)
+
+    def test_profile_never_changes_dispatch_or_turns_server_symbol_into_runtime_side(self):
+        seen = []
+        self.vm.register_function("Observe", lambda: seen.append(
+            (self.vm.execution_context, self.vm._has_module_context)))
+        self.vm.execute('''
+#If Server Then
+Function Ordinary() Return 42; EndFunction
+Observe();
+#EndIf
+&AtClientAtServerNoContext
+Function Dual()
+Observe();
+#If Client And Server Then
+Return "both";
+#Else
+Return "wrong";
+#EndIf
+EndFunction
+&AtServer
+Function ServerCall() R = Dual(); Observe(); Return R; EndFunction
+&AtServerNoContext
+Function Detached() R = Dual(); Observe(); Return R; EndFunction
+Message(Dual()); Message(ServerCall()); Message(Detached());
+''')
+        self.assertEqual(self.messages, ["both", "both", "both"])
+        self.assertEqual(seen, [("client", True), ("client", False), ("server", False),
+                               ("server", True), ("server", False), ("server", False)])
+        self.assertEqual(self.vm.routines["ordinary"].execution_context, "client")
+        self.assertNotIn("ordinary", self.vm.server_routines)
+        self.assertEqual(self.vm._context_stack, ["client"])
+        self.assertEqual(self.vm._module_context_stack, [True])
+        self.vm.execute("&AtServer\nFunction Denied() Return Ordinary(); EndFunction")
+        with self.assertRaisesRegex(BSLError, "клиентской подпрограммы с сервера"):
+            self.vm.execute("Denied()")
+
+    def test_database_context_and_builtin_availability_are_not_selected_by_profile(self):
+        with tempfile.TemporaryDirectory(prefix="managed-profile-db-") as temporary:
+            context = FileDBContext(Path(temporary) / "missing-unused-base")
+            for db in (None, context):
+                standalone = Interpreter(database_context=db)
+                managed = Interpreter(database_context=db, compilation_profile=MANAGED_PROFILE)
+                self.addCleanup(standalone.close)
+                self.addCleanup(managed.close)
+                self.assertIs(managed.database_context, db)
+                self.assertEqual(set(managed.functions), set(standalone.functions))
+                self.assertEqual(set(managed.types), set(standalone.types))
+                with self.assertRaises(AttributeError):
+                    managed.database_context = None
+                for has_context in (True, False):
+                    server = managed._new_server_activation(module_context=has_context)
+                    self.assertIs(server.database_context, db)
+                    self.assertEqual(server.native_target, managed.native_target)
+                self.assertEqual(managed.execute("42"), Decimal(42))
+        self.assertIsNone(self.vm.database_context)
+        with self.assertRaisesRegex(BSLRuntimeError, "db required for further code execution"):
+            self.vm.execute("InfoBaseConnectionString()")
+        with self.assertRaises(BSLRuntimeError):
+            self.vm.execute("New Form")
+
+    def test_unknown_and_combined_side_symbols_still_fail_before_effects(self):
+        for unknown in ("UnknownProfileFlag", "MobileClient", "AtClientAtServer",
+                        "ClientAtServer", "НаКлиентеНаСервере", "КлиентНаСервере"):
+            for condition in (unknown, f"Client Or {unknown}", f"ThinClient And {unknown}"):
+                for annotation in ("&AtClient", "&AtServer", "&AtServerNoContext",
+                                   "&AtClientAtServerNoContext"):
+                    source = (f'Message("must-not-run");\n{annotation}\nFunction F()\n'
+                              f"#If ThinClient Then\n#If {condition} Then\n"
+                              "Return 0;\n#EndIf\n#EndIf\nReturn 42;\nEndFunction")
+                    with self.subTest(condition=condition, annotation=annotation), \
+                            self.assertRaisesRegex(BSLError, "Неподдерживаемый символ"):
+                        self.vm.execute(source)
+        self.assertEqual(self.messages, [])
+
+    def test_execute_program_keeps_parse_time_profile_and_dynamic_directives_stay_forbidden(self):
+        source = "#If Client And Server Then\n42\n#Else\n5\n#EndIf"
+        for compilation_profile, expected in (("standalone", 5), (MANAGED_PROFILE, 42)):
+            program = parse(source, compilation_profile=compilation_profile)
+            with mock.patch.object(runtime_module, "parse",
+                                   side_effect=AssertionError("unexpected recompile")):
+                self.assertEqual(self.vm.execute_program(program), Decimal(expected))
+        self.vm.variables["code"] = source
+        for call in ("Eval(code)", "Execute(code);"):
+            with self.subTest(call=call), self.assertRaises(BSLError):
+                self.vm.execute(call)
 
 
 if __name__ == "__main__":

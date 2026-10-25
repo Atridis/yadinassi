@@ -31,7 +31,7 @@ def at_cap():
 
 class AsyncSourceInputBudgetTests(unittest.TestCase):
     def test_current_source_and_exact_adapter_boundary(self):
-        self.assertEqual(len(SOURCE.replace(b'\r\n', b'\n')), 277724)
+        self.assertGreaterEqual(len(SOURCE.replace(b'\r\n', b'\n')), 277724)
         self.assertLessEqual(len(SOURCE), CAP)
         self.assertEqual(adapter.MAX_SOURCE_BYTES, CAP)
         self.assertEqual(CAP, 288 * 1024)

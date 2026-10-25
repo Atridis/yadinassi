@@ -182,7 +182,7 @@ class ProfileObservationHarnessTests(unittest.TestCase):
             full.validate_client_probe(record,full.PREPROCESSOR_SOURCE_SHA256,full.PREPROCESSOR_MODULE_SHA256,infobase_allowed=True)
         self.assertEqual(f.events,['build','dump','enterprise'])
         self.assertNotIn('PRIVATE',json.dumps(record));self.assertNotIn('/tmp/',json.dumps(record))
-        f.reset();record=f.run_probe();self.assertEqual(record['failure_kind'],'invalid_input');self.assertEqual(f.events,[])
+        f.reset();record=f.run_probe();self.assertEqual(record['failure_kind'],'invalid_result');self.assertEqual(f.events,['build','dump','enterprise'])
 
     def test_failed_exit_late_module_and_missing_marker_never_export(self):
         f=self.fixture
@@ -243,8 +243,8 @@ class ProfileObservationTransportTests(SyntheticFilesystemCase):
         source=(ROOT/'.github/workflows/native-1c-isolated-smoke.yml').read_text()
         commands=[line for line in source.splitlines() if line.strip().startswith('run: python3 scripts/native_1c_smoke.py')]
         self.assertEqual(len(commands),2)
-        self.assertTrue(all(line.endswith(' --client-preprocessor-measurement') for line in commands))
-        self.assertEqual(source.count('--client-preprocessor-measurement'),2)
+        self.assertTrue(all('--client-preprocessor-measurement' not in line for line in commands))
+        self.assertEqual(source.count('--client-preprocessor-measurement'),0)
         self.assertEqual(source.count('packages: read'),1);self.assertNotIn(': write',source)
         script=smoke.PROBE.read_text().split("<<'PY'\n",1)[1].split('\nPY\n',1)[0]
         compile(script,'embedded-report-emitter','exec')

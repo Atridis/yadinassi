@@ -19,8 +19,8 @@ policy = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(policy)
 SHA = "1234567890abcdef" * 2 + "12345678"
 REF = "refs/heads/codex/async-client-measurement"
-STANDARD_COMMAND = "python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-watchdog-check --client-dates-parity --client-values-parity --client-collections-parity --client-numbers-parity --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1 --client-preprocessor-measurement"
-MEASUREMENT_COMMAND = "python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-async-measurement --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1 --client-preprocessor-measurement"
+STANDARD_COMMAND = "python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-watchdog-check --client-dates-parity --client-values-parity --client-collections-parity --client-numbers-parity --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1"
+MEASUREMENT_COMMAND = "python3 scripts/native_1c_smoke.py --execute-approved-image --full-suite --client-probe --client-async-measurement --output native-smoke/report.json --export-native-outputs --native-target linux-8.3.27.1508 --comparison-mode typed-map-order-v1"
 
 
 def fixture(sha=SHA):

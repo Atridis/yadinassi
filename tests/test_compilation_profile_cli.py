@@ -1,4 +1,4 @@
-"""UTF-8 CLI entry points for the synthetic standalone compilation profile."""
+"""UTF-8 CLI entry points for explicit compilation profiles, not native evidence."""
 
 from contextlib import redirect_stderr, redirect_stdout
 import io
@@ -12,6 +12,7 @@ from unittest import mock
 
 from yadinassi import Interpreter, cli
 from yadinassi.parser import parse
+from yadinassi.preprocessor import COMPILATION_PROFILES
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +34,7 @@ def run_cli(*arguments, stdin=None, cwd=ROOT):
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(
         filter(None, (str(ROOT), environment.get("PYTHONPATH"))))
-    return subprocess.run([sys.executable, "-m", "yadinassi", *arguments],
+    return subprocess.run([sys.executable, "-B", "-m", "yadinassi", *arguments],
                           input=stdin, text=True, encoding="utf-8", errors="strict",
                           capture_output=True, cwd=cwd, env=environment, timeout=15)
 
@@ -181,6 +182,111 @@ class CompilationProfileCLITests(unittest.TestCase):
         (self.root / "--user").write_text("Message(42);\n", encoding="utf-8")
         result = run_cli("--preprocessor-profile", "standalone", "--", "--user", cwd=self.root)
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "42\n", ""))
+
+
+MANAGED_PROFILE = "managed-thick-file"
+MANAGED_PROGRAM = """#If Client And Server And ThickClientManagedApplication Then
+#If AtClient And Not AtServer And Not (ThinClient Or WebClient Or ThickClientOrdinaryApplication Or ExternalConnection) Then
+Message("managed:Я😀");
+#Else
+Message("wrong-context");
+#EndIf
+#Else
+// #Import Missing.bsl
+invalid !!! syntax "
+#EndIf
+"""
+
+
+class ManagedCompilationProfileCLITests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="managed-profile-cli-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        self.source = self.root / "Управляемый профиль с пробелами.bsl"
+        self.source.write_text(MANAGED_PROGRAM, encoding="utf-8")
+
+    def test_explicit_profile_in_command_file_stdin_and_console(self):
+        entries = [((flag, MANAGED_PROGRAM), None) for flag in ("-c", "-с", "--command")]
+        entries.extend((((str(self.source),), None), (("-",), MANAGED_PROGRAM),
+                        ((), MANAGED_PROGRAM + "/exit\n")))
+        for profile in (("--preprocessor-profile", MANAGED_PROFILE),
+                        ("--preprocessor-profile=" + MANAGED_PROFILE,)):
+            for arguments, stdin in entries:
+                with self.subTest(profile=profile, arguments=arguments):
+                    result = run_cli(*profile, *arguments, stdin=stdin, cwd=self.root)
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, "managed:Я😀\n", ""))
+        self.source.write_text("\ufeff" + MANAGED_PROGRAM, encoding="utf-8")
+        result = run_cli("--preprocessor-profile", MANAGED_PROFILE, str(self.source), cwd=self.root)
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, "managed:Я😀\n", ""))
+
+    def test_help_uses_closed_profile_choices_and_rejects_approximate_identifiers(self):
+        result = run_cli("--help", cwd=self.root)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("{" + ",".join(COMPILATION_PROFILES) + "}", result.stdout)
+        for value in ("Managed-Thick-File", "managed_thick_file", "managed-thick-file ",
+                      " managed-thick-file", "managed-thick", "MANAGED-THICK-FILE"):
+            with self.subTest(value=value):
+                result = run_cli("--preprocessor-profile", value, "-c",
+                                 'Message("MUST_NOT_EXECUTE");', cwd=self.root)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("--preprocessor-profile", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_and_repl_pass_explicit_profile_without_changing_root_context(self):
+        with mock.patch.object(cli, "Interpreter", wraps=Interpreter) as constructor, \
+                redirect_stdout(io.StringIO()) as stdout, redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(cli.main(["--preprocessor-profile", MANAGED_PROFILE,
+                                       "--command", MANAGED_PROGRAM]), 0)
+        self.assertEqual(constructor.call_args.kwargs.get("compilation_profile"), MANAGED_PROFILE)
+        self.assertEqual((stdout.getvalue(), stderr.getvalue()), ("managed:Я😀\n", ""))
+        output = []
+        interpreter = Interpreter(output.append, compilation_profile=MANAGED_PROFILE)
+        self.addCleanup(interpreter.close)
+        with mock.patch.object(cli, "parse", wraps=parse) as parser, \
+                mock.patch("sys.stdin.isatty", return_value=False), \
+                mock.patch("builtins.input", side_effect=[*MANAGED_PROGRAM.splitlines(), "/exit"]), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(cli.repl(interpreter), 0)
+        self.assertEqual(output, ["managed:Я😀"])
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(parser.call_count, len(MANAGED_PROGRAM.splitlines()))
+        self.assertEqual(interpreter.execution_context, "client")
+        for call in parser.call_args_list:
+            self.assertEqual(call.kwargs.get("compilation_profile"), MANAGED_PROFILE)
+
+    def test_managed_profile_does_not_create_database_context_or_allow_authentication(self):
+        result = run_cli("--preprocessor-profile", MANAGED_PROFILE, "-c",
+                         "InfoBaseConnectionString()", cwd=self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("db required for further code execution", result.stderr)
+        for arguments in (("--user", "synthetic-secret"), ("--psw=synthetic-secret",)):
+            result = run_cli("--preprocessor-profile", MANAGED_PROFILE, *arguments,
+                             "-c", 'Message("MUST_NOT_EXECUTE");', cwd=self.root)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (2, "", AUTH_ERROR))
+
+    def test_unknown_combined_symbols_fail_before_effects_and_console_recovers(self):
+        for symbol in ("ClientAtServer", "AtClientAtServer", "НаКлиентеНаСервере"):
+            code = f'Message("MUST_NOT_EXECUTE");\n#If Client Or {symbol} Then\n#EndIf\n'
+            self.source.write_text(code, encoding="utf-8")
+            for arguments, stdin in ((("-c", code), None), ((str(self.source),), None),
+                                     (("-",), code)):
+                with self.subTest(symbol=symbol, arguments=arguments):
+                    result = run_cli("--preprocessor-profile", MANAGED_PROFILE, *arguments,
+                                     stdin=stdin, cwd=self.root)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("Неподдерживаемый символ", result.stderr)
+                    self.assertIn(symbol, result.stderr)
+            result = run_cli("--preprocessor-profile", MANAGED_PROFILE,
+                             stdin=f"#If {symbol} Then\nMessage(42);\n/exit\n", cwd=self.root)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "42\n")
+            self.assertIn("Неподдерживаемый символ", result.stderr)
 
 
 if __name__ == "__main__":

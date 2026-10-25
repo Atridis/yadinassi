@@ -225,7 +225,7 @@ if bootstrap == "true":
 if full_mode == "true":
     sys.path.insert(0, "/smoke/bootstrap")
     import full_suite
-    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true", **({"client_async": True} if async_mode == "true" else {}), **({"preprocessor_measurement": True} if preprocessor_mode == "true" else {}))
+    suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true", **({"client_async": True} if async_mode == "true" else {}), **({"preprocessor_measurement": True} if preprocessor_mode == "true" else {}), preprocessor_runtime=client_mode == "true" and preprocessor_mode != "true")
     try:
         path = Path("/tmp/onec-smoke/stage3-report.json")
         if path.exists() or path.is_symlink():
@@ -234,7 +234,7 @@ if full_mode == "true":
         elif (report.get("stage2") or {}).get("status") == "ok":
             suite.update(status="failed", failure_kind="unexpected_failure")
     except Exception:
-        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true", **({"client_async": True} if async_mode == "true" else {}), **({"preprocessor_measurement": True} if preprocessor_mode == "true" else {}))
+        suite = full_suite.empty_report(nonce, client_probe=client_mode == "true", watchdog_check=watchdog_mode == "true", client_dates=dates_mode == "true", client_values=values_mode == "true", client_collections=collections_mode == "true", client_numbers=numbers_mode == "true", **({"client_async": True} if async_mode == "true" else {}), **({"preprocessor_measurement": True} if preprocessor_mode == "true" else {}), preprocessor_runtime=client_mode == "true" and preprocessor_mode != "true")
         suite.update(status="failed", failure_kind="export_failed")
     report["stage3"] = suite
     # A failed stage-three exit is not a failed bootstrap; preserve both outcomes.

@@ -1,4 +1,4 @@
-"""Conditional compilation and source regions for the standalone client profile."""
+"""Conditional compilation and source regions for explicit source profiles."""
 
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ DIRECTIVES = {
     "если": "if", "if": "if", "иначеесли": "elsif", "elsif": "elsif",
     "иначе": "else", "else": "else", "конецесли": "endif", "endif": "endif",
 }
-COMPILATION_PROFILES = ("standalone",)
+COMPILATION_PROFILES = ("standalone", "managed-thick-file")
 # These are standalone language policy, not a native platform mode or host OS.
 # Site-dependent flags must not invert the constant-false application symbols.
 _STANDALONE_FLAGS = MappingProxyType({
@@ -39,12 +39,30 @@ _STANDALONE_SYMBOLS = MappingProxyType({
 })
 
 
+# Bounded measured managed-thick-client file-mode compilation policy. Client and
+# Server are both true here, but are NOT execution-side or dispatch selectors.
+# Preserve logical At* flags and keep the standalone policy above unchanged.
+_MANAGED_THICK_FILE_SYMBOLS = MappingProxyType({
+    site: MappingProxyType({
+        **symbols,
+        **dict.fromkeys(("client", "клиент", "server", "сервер",
+                         "thickclientmanagedapplication",
+                         "толстыйклиентуправляемоеприложение"), True),
+    }) for site, symbols in _STANDALONE_SYMBOLS.items()
+})
+_PROFILE_SYMBOLS = MappingProxyType({
+    "standalone": _STANDALONE_SYMBOLS,
+    "managed-thick-file": _MANAGED_THICK_FILE_SYMBOLS,
+})
+
+
 def validate_compilation_profile(name: str) -> str:
     """Accept a closed identifier, never user defines or an inferred profile."""
     if type(name) is not str:
         raise TypeError("compilation_profile must be a string")
     if name not in COMPILATION_PROFILES:
-        raise ValueError("Unsupported compilation_profile; expected 'standalone'")
+        expected = ", ".join(repr(profile) for profile in COMPILATION_PROFILES)
+        raise ValueError(f"Unsupported compilation_profile; expected one of {expected}")
     return name
 
 
@@ -67,10 +85,11 @@ class ConditionalCompilation:
     def __init__(self, source: str, execution_context: str = "client", *,
                  compilation_profile: str = "standalone"):
         self._compilation_profile = validate_compilation_profile(compilation_profile)
-        if execution_context not in _STANDALONE_SYMBOLS:
+        profile_symbols = _PROFILE_SYMBOLS[self.compilation_profile]
+        if execution_context not in profile_symbols:
             raise ValueError("Unknown execution context")
         self.source = source
-        self._symbols = _STANDALONE_SYMBOLS[execution_context]
+        self._symbols = profile_symbols[execution_context]
         self.stack: list[_Branch] = []
 
     @property

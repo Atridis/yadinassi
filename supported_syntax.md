@@ -14,7 +14,7 @@
 
 ## Профиль условной компиляции
 
-Единственный публичный профиль `standalone` применяется по умолчанию и явно
+Публичный профиль `standalone` применяется по умолчанию и явно
 через `Interpreter(compilation_profile="standalone")`, `parse(..., compilation_profile="standalone")`
 или CLI `--preprocessor-profile standalone` во всех режимах ввода.
 Прежние флаги `Client` / `Server` / `AtClient` / `AtServer` и их русские
@@ -27,7 +27,18 @@
 Профиль наследуется импортами и серверными активациями, не выбирается ОС
 и не меняет `native_target`, включая Windows-умолчание. Это автономная
 политика компиляции, не поддержка исполнения этих режимов платформы.
-Точная таблица и ограничения приведены в [features.md](features.md).
+Отдельный профиль `managed-thick-file` выбирается только явно теми же API
+или CLI `--preprocessor-profile managed-thick-file`. Во всех пяти местах
+компиляции он делает истинными `Client`, `Server` и
+`ThickClientManagedApplication`. `AtClient` истинен только на клиенте,
+`AtServer` только на контекстном сервере; оба ложны в NoContext/dual.
+Остальные четыре application-символа ложны. Русские псевдонимы равноправны.
+Это ограниченная измеренная таблица managed thick file на Linux 8.3.27.1508,
+не UI/клиентская эмуляция и не Windows native parity. Профиль меняет только
+выбор исходного кода при компиляции: dispatch, логический `execution_context`,
+доступность builtins, необязательный `database_context` и `native_target`
+остаются независимыми. Корневой модуль по-прежнему исполняется на клиенте.
+Точные таблицы и ограничения приведены в [features.md](features.md).
 
 ## Собственный модуль / ThisObject
 

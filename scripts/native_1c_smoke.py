@@ -491,6 +491,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
     interpreter = FULL.interpreter_provenance(ROOT) if full_suite else None
     work_name = None
     report = None
+    preprocessor_host_profile = None
     try:
         with tempfile.TemporaryDirectory(prefix="onec-smoke-", dir=temp_root) as work_name:
             work = Path(work_name).resolve()
@@ -503,6 +504,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 FULL.verify_client_interpreter(ROOT, staged / "bootstrap/client_probe.bsl",
                                                input_hashes[FULL.CLIENT_SOURCE],
                                                **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
+                if not preprocessor_measurement and input_hashes[FULL.CLIENT_SOURCE] == FULL.PREPROCESSOR_SOURCE_SHA256:
+                    preprocessor_host_profile = FULL.PREPROCESSOR_COMPILATION_PROFILE
                 module_hashes["client_probe"] = FULL.digest(FULL.generated_module(
                     FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)))
             if client_dates:
@@ -578,6 +581,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                               private_payloads_removed=False,
                               comparison={"schema": 2, "status": "not_run", "acceptance_status": "not_run",
                                           "native_target": native_target, "comparison_mode": comparison_mode, "cases": []})
+            if report is not None and preprocessor_host_profile is not None:
+                report["preprocessor_host_profile"] = preprocessor_host_profile
             if primary_error or cleanup_error:
                 payloads.clear()
                 raise SmokeError(primary_error or cleanup_error, security_uncertain=bootstrap,
@@ -640,6 +645,19 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 finally:
                     retained_outputs.clear()
     return report
+
+
+def _revoke_acceptance(report: dict) -> None:
+    """Exceptional rejection revokes claims/readiness, not execution facts."""
+    for rejected in (report, report.get("probe")):
+        if type(rejected) is not dict:
+            continue
+        for claim in ("native_evidence_accepted", "interpreter_acceptance_completed",
+                      "preprocessor_parity_claimed", "client_async_parity_claimed",
+                      "native_output_artifact_ready"):
+            if claim in rejected:
+                rejected[claim] = False
+    FULL.discard_infobase_capture(report.get("probe"))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -742,12 +760,14 @@ def main(argv: list[str] | None = None) -> int:
             report["cleanup_error"] = error.cleanup_error
         if getattr(error, "security_uncertain", args.full_suite):
             report["security_settings_changed"] = None
+        _revoke_acceptance(report)
         success = False
     except Exception:
         # Never emit traceback/exception text that could contain external output.
         report["error"] = "unexpected_host_failure"
         if args.bootstrap_simple_epf or args.full_suite:
             report["security_settings_changed"] = None
+        _revoke_acceptance(report)
         success = False
     if args.full_suite:
         report["purpose"] = ("isolated-six-scenario-client-watchdog-proof" if args.client_watchdog_check else
@@ -795,7 +815,27 @@ def main(argv: list[str] | None = None) -> int:
                 FULL.validate_preprocessor_profile(stage["client_probe"].get("preprocessor_profile"))
             except (ValueError, TypeError):
                 success = False
-    elif report.get("probe", {}).get("stage3", {}).get("schema") == 5:
+    elif args.client_probe and args.full_suite and (
+            report.get("probe", {}).get("stage3", {}).get("schema") == 9
+            or report.get("probe", {}).get("trusted_input_sha256", {}).get(FULL.CLIENT_SOURCE) == FULL.PREPROCESSOR_SOURCE_SHA256
+            or report.get("probe", {}).get("stage3", {}).get("client_probe", {}).get("source_sha256") == FULL.PREPROCESSOR_SOURCE_SHA256):
+        report["purpose"] = "client-preprocessor-runtime-v1"
+        report["compilation_profile"] = FULL.PREPROCESSOR_COMPILATION_PROFILE
+        stage = report.get("probe", {}).get("stage3", {})
+        try:
+            if (stage.get("schema") != 9 or stage.get("preprocessor_status") != "matched"
+                    or stage.get("compilation_profile") != FULL.PREPROCESSOR_COMPILATION_PROFILE
+                    or report.get("probe", {}).get("preprocessor_host_profile") != FULL.PREPROCESSOR_COMPILATION_PROFILE):
+                raise ValueError("preprocessor runtime profile or status")
+            FULL.validate_client_probe(stage.get("client_probe"), FULL.PREPROCESSOR_SOURCE_SHA256,
+                FULL.PREPROCESSOR_MODULE_SHA256, infobase_allowed=True,
+                preprocessor_allowed=True, preprocessor_runtime=True)
+            if stage["client_probe"].get("preprocessor_profile") != FULL.PREPROCESSOR_RUNTIME_TOKEN:
+                raise ValueError("preprocessor runtime token")
+        except (ValueError, TypeError, KeyError):
+            success = False
+        report["preprocessor_parity_claimed"] = bool(success)
+    elif report.get("probe", {}).get("stage3", {}).get("schema") in (5, 9):
         success = False
     report["smoke_completed"] = success
     if not success:
@@ -815,8 +855,7 @@ def main(argv: list[str] | None = None) -> int:
             report["probe"]["native_output_artifact_ready"] = False
             report["error"] = str(error)
             report["smoke_completed"] = success = False
-            if args.client_async_measurement:
-                report["client_async_parity_claimed"] = False
+            _revoke_acceptance(report)
             rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
             report_within_limit = len(rendered.encode("utf-8")) <= MAX_OUTPUT
             if not report_within_limit:
