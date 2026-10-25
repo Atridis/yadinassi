@@ -251,6 +251,14 @@ class InternalFile:
         result._initialize(source, header_page, "table_data")
         return result
 
+    @classmethod
+    def _table_blob(cls, source: _Source, header_page: int):
+        if source.roles.get(header_page) != "table_blob_header":
+            raise InvalidStructure("table_blob_header_role")
+        result = cls.__new__(cls)
+        result._initialize(source, header_page, "table_blob")
+        return result
+
     def _initialize(self, source: _Source, header_page: int, role: str):
         self._source = source
         budget = source.budget
@@ -532,6 +540,8 @@ class CatalogReader:
         self._used = False
         self._catalog = None
         self._table_opened = False
+        self._selected_table = None
+        self._table_blob_opened = False
 
     @property
     def usage(self) -> CatalogUsage:
@@ -585,7 +595,27 @@ class CatalogReader:
         self._table_opened = True
         if not table.files[0]:
             raise UnsupportedLayout("missing_table_data_header")
-        return InternalFile._table_data(self._source, table.files[0])
+        result = InternalFile._table_data(self._source, table.files[0])
+        self._selected_table = table
+        return result
+
+    def _open_table_blob(self, table: PhysicalTable) -> InternalFile:
+        """One BLOB header for the identical, successfully opened data table.
+
+        Its mapping shares every physical role and budget with the catalog and
+        table data. Logical BLOB ownership is separate from the root store.
+        Index contents remain unopened.
+        """
+        if self._catalog is None or not any(table is item for item in self._catalog.tables):
+            raise ValueError("table must belong to this completed catalog")
+        if self._selected_table is not table:
+            raise ValueError("table BLOB requires the same opened data table")
+        if self._table_blob_opened:
+            raise ValueError("table BLOB opening is single-use")
+        self._table_blob_opened = True
+        if not table.files[1]:
+            raise UnsupportedLayout("missing_table_blob_header")
+        return InternalFile._table_blob(self._source, table.files[1])
 
 
 def read_catalog(read_at: Callable[[int, int], bytes], file_size: int,
