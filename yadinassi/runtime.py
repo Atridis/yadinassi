@@ -29,6 +29,7 @@ from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
 from .collation import string_key
 from .parser import parse, parse_expression, parse_fragment, validate_labels, validate_async
 from .lexer import KEYWORDS
+from .preprocessor import validate_compilation_profile
 from .maps import BSLFixedMap, BSLMap
 from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
 from .structures import BSLFixedStructure, BSLStructure, fill_property_values
@@ -131,7 +132,9 @@ class _Namespace:
 class Interpreter:
     def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig",
                  native_target: str = WINDOWS_8_3_27_2342,
-                 database_context: FileDBContext | None = None):
+                 database_context: FileDBContext | None = None,
+                 compilation_profile: str = "standalone"):
+        self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         self._database_context = database_context
         self._scheduler = Scheduler(self._native_target)
@@ -309,6 +312,11 @@ class Interpreter:
         return self._scheduler.run_inline(self._visit(node))
 
     @property
+    def compilation_profile(self) -> str:
+        """Immutable source-compilation policy, independent of native_target."""
+        return self._compilation_profile
+
+    @property
     def native_target(self) -> str:
         """The explicitly selected native checkpoint, shared by this VM's imports."""
         return self._native_target
@@ -413,9 +421,10 @@ class Interpreter:
             self._execute_depth[0] -= 1
 
     def execute(self, text: str, source: str = "<строка>") -> object:
-        return self.execute_program(parse(text, source))
+        return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
 
     def execute_program(self, program: list[ast.Node]) -> object:
+        """Execute already-compiled AST; this does not select source branches."""
         outermost = not self._scheduler.is_active
         procedure_errors = len(self._scheduler.procedure_errors)
         with target_context(self.native_target):
@@ -1063,7 +1072,8 @@ class Interpreter:
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
         server = Interpreter(self.output, encoding=self.encoding, native_target=self.native_target,
-                             database_context=self.database_context)
+                             database_context=self.database_context,
+                             compilation_profile=self.compilation_profile)
         server._scheduler = self._scheduler
         server._logical_side = "server"
         server._context_stack = self._context_stack
@@ -1304,7 +1314,8 @@ class Interpreter:
                 raise ValueError(f"Не удалось прочитать модуль {path}: {error}") from None
             child = Interpreter(self.output, encoding=self.encoding,
                                 native_target=self.native_target,
-                                database_context=self.database_context)
+                                database_context=self.database_context,
+                                compilation_profile=self.compilation_profile)
             child._scheduler = self._scheduler
             child._diagnostic_owner = self._diagnostic_owner
             child.functions = self.functions.copy()

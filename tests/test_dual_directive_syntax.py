@@ -62,9 +62,9 @@ class DualDirectiveSyntaxTests(unittest.TestCase):
         self.assertEqual((server['client'], server['server'], server['atclient'], server['atserver']),
                          (False, True, False, True))
 
-    def test_no_new_preprocessor_symbols_or_targets(self):
+    def test_no_dual_or_mobile_preprocessor_symbols(self):
         for symbol in ('AtClientAtServerNoContext', 'НаКлиентеНаСервереБезКонтекста',
-                       'dual_client', 'dual_server', 'ThickClientManagedApplication'):
+                       'dual_client', 'dual_server', 'MobileClient'):
             with self.subTest(symbol=symbol), self.assertRaisesRegex(BSLError, 'Неподдерживаемый символ'):
                 parse(f'&AtClientAtServerNoContext\nFunction F()\n#If {symbol} Then\n#EndIf\nEndFunction')
 

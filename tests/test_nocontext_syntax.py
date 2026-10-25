@@ -43,11 +43,13 @@ class NoContextSyntaxTests(unittest.TestCase):
         self.assertFalse(client['server'])
         self.assertFalse(server['client'])
         self.assertTrue(server['server'])
-        # Native six-bit target observations do not add standalone target support.
+        # Recognized application symbols remain false: this is standalone
+        # policy, not the native six-bit target observation.
         for target in ('ThickClientManagedApplication', 'ThickClientOrdinaryApplication',
                        'ТолстыйКлиентУправляемоеПриложение', 'ТолстыйКлиентОбычноеПриложение'):
-            with self.subTest(target=target), self.assertRaisesRegex(BSLError, 'Неподдерживаемый символ'):
-                parse(f'#If {target} Then\n#EndIf')
+            with self.subTest(target=target):
+                self.assertFalse(nocontext[target.casefold()])
+                self.assertEqual(parse(f'#If {target} Then\ninvalid !!!\n#EndIf'), [])
 
     def test_no_context_name_is_not_a_preprocessor_symbol(self):
         for symbol in ('AtServerNoContext', 'НаСервереБезКонтекста'):

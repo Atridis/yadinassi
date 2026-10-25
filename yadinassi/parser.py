@@ -551,18 +551,22 @@ def validate_labels(statements: list[ast.Node]) -> None:
             fail(node, f"Переход внутрь другого блока пока не поддерживается: {node.name}")
 
 
-def parse(text: str, source: str = "<строка>") -> list[ast.Node]:
-    client = Parser(Lexer(text, source).tokens(), "client").parse()
+def parse(text: str, source: str = "<строка>", *,
+          compilation_profile: str = "standalone") -> list[ast.Node]:
+    client = Parser(Lexer(text, source, compilation_profile=compilation_profile).tokens(), "client").parse()
     server_tokens = Lexer(text, source, execution_context="server",
-                          server_declarations_only=True).tokens()
+                          server_declarations_only=True,
+                          compilation_profile=compilation_profile).tokens()
     server = Parser(server_tokens, "server").parse()
-    nocontext_tokens = Lexer(text, source, execution_context="server_nocontext").tokens()
+    nocontext_tokens = Lexer(text, source, execution_context="server_nocontext",
+                             compilation_profile=compilation_profile).tokens()
     nocontext = Parser(nocontext_tokens, "server_nocontext").parse()
     # Side selection and logical context are independent. Compile two bodies,
     # retaining the original function token as their shared family provenance.
     dual = []
     for profile in ("dual_client", "dual_server"):
-        tokens = Lexer(text, source, execution_context=profile).tokens()
+        tokens = Lexer(text, source, execution_context=profile,
+                       compilation_profile=compilation_profile).tokens()
         dual.extend(Parser(tokens, profile).parse())
     return [node for node in client if not (
         isinstance(node, (ast.Routine, ast.Var)) and node.execution_context == "server"

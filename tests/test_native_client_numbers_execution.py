@@ -1,7 +1,6 @@
 """Offline execution orchestration tests, not native 1C evidence."""
 import json
 import os
-import shutil
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -191,7 +190,11 @@ class NumbersSuiteOrderTests(unittest.TestCase):
         harness = probe.stage_fixture.FullSuiteHarness()
         harness.setUp()
         self.addCleanup(harness.doCleanups)
-        shutil.copyfile(probe.ROOT / suite.CLIENT_SOURCE, harness.inputs / suite.CLIENT_TARGET)
+        # Historical 137-value default lane; not current 138-value admission.
+        source = (probe.ROOT / suite.CLIENT_SOURCE).read_bytes()
+        if os.name == 'nt':
+            source = source.replace(b'\r\n', b'\n')
+        (harness.inputs / suite.CLIENT_TARGET).write_bytes(suite.preprocessor_shared_source(source))
         calls = []
         def client(platform, root, inputs, nonce, hashes, **kwargs):
             calls.append(root.name)

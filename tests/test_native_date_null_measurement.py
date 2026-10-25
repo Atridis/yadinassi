@@ -31,7 +31,7 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
     def setUp(self):
         super().setUp()
         self.source = linux_fixture(ROOT / full.CLIENT_SOURCE)
-        self.strict136 = full.infobase_shared_source(self.source)
+        self.strict136 = full.infobase_shared_source(full.preprocessor_shared_source(self.source))
         if os.name == 'nt':
             patch = mock.patch.object(suite, 'secure_bytes',
                                       new=stage_fixture.portable_fixture_bytes)
@@ -108,7 +108,7 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
         self.assertEqual(full.async_source_identity(linux_fixture(ROOT/'scripts/native_1c_bootstrap/full_suite.py')),
                          plan['async8_identity'])
 
-    def test_current_preflight_passes_original_whole137_source(self):
+    def test_current_preflight_passes_original_whole138_source(self):
         calls=[]
         with tempfile.TemporaryDirectory() as temporary, offline_fixture(full):
             path=Path(temporary).resolve()/'source.bsl'; path.write_bytes(self.source)
@@ -116,16 +116,16 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
                 calls.append(command)
                 self.assertEqual(Path(command[-2]), path)
                 self.assertEqual(path.read_bytes(), self.source)
-                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False, separators=(',',':')).encode(), b''
-            full.verify_client_interpreter(ROOT,path,full.digest(self.source),runner=runner)
+                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False, separators=(',',':')).encode(), b''
+            full.verify_client_interpreter(ROOT,path,full.digest(self.source),runner=runner, preprocessor_measurement=True)
             self.assertEqual(len(calls),1)
             with self.assertRaises(full.FullError):
-                full.verify_client_interpreter(ROOT,path,'0'*64,runner=runner)
+                full.verify_client_interpreter(ROOT,path,'0'*64,runner=runner, preprocessor_measurement=True)
             self.assertEqual(len(calls),1)
 
     @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
-    def test_real_interpreter_computes_whole137_from_exact_native_source(self):
-        full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(self.source))
+    def test_real_interpreter_computes_whole138_from_exact_native_source(self):
+        full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(self.source), preprocessor_measurement=True)
 
     def test_compact_writer_kept_native_only_and_cap_not_increased(self):
         self.assertIn(suite.DATE_NULL_COMPACT_WRITER, self.source)

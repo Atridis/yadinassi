@@ -6,7 +6,7 @@ import re
 
 from .errors import BSLError, IncompleteInput
 from .dates import literal_date
-from .preprocessor import ConditionalCompilation, SourceRegions
+from .preprocessor import ConditionalCompilation, SourceRegions, validate_compilation_profile
 
 
 KEYWORDS: dict[str, str] = {}
@@ -75,7 +75,9 @@ class Token:
 
 class Lexer:
     def __init__(self, text: str, source: str = "<строка>", *, allow_directives: bool = True,
-                 execution_context: str = "client", server_declarations_only: bool = False):
+                 execution_context: str = "client", server_declarations_only: bool = False,
+                 compilation_profile: str = "standalone"):
+        self._compilation_profile = validate_compilation_profile(compilation_profile)
         self.text = text.removeprefix("\ufeff")
         self.source = source
         self.source_lines = [line.removesuffix("\r") for line in self.text.split("\n")]
@@ -85,6 +87,10 @@ class Lexer:
         self.pos = 0
         self.line = 1
         self.column = 1
+
+    @property
+    def compilation_profile(self) -> str:
+        return self._compilation_profile
 
     def peek(self, offset: int = 0) -> str:
         pos = self.pos + offset
@@ -107,7 +113,8 @@ class Lexer:
         declarations_only = self.server_declarations_only or nocontext
         selected_annotation = ("ATCLIENTATSERVERNOCONTEXT" if dual else
                                "ATSERVERNOCONTEXT" if nocontext else "ATSERVER")
-        compilation = ConditionalCompilation(self.source, self.execution_context)
+        compilation = ConditionalCompilation(
+            self.source, self.execution_context, compilation_profile=self.compilation_profile)
         capturing_server = False
         capturing_variable = False
         capturing_routine = False
@@ -119,7 +126,8 @@ class Lexer:
         root_fragment = False
         root_depth = 0
         excluded_root_blocks = []
-        client_compilation = ConditionalCompilation(self.source, "client")
+        client_compilation = ConditionalCompilation(
+            self.source, "client", compilation_profile=self.compilation_profile)
         skipping_client = False
         skipped_depth = 0
         regions = SourceRegions(self.source)
@@ -312,7 +320,8 @@ class Lexer:
                         if skipped_dual:
                             side = "client" if self.execution_context in {"client", "dual_client"} else "server"
                             skipped_profile = "dual_" + side
-                        skipped_compilation = ConditionalCompilation(self.source, skipped_profile)
+                        skipped_compilation = ConditionalCompilation(
+                            self.source, skipped_profile, compilation_profile=self.compilation_profile)
                         skipped_conditional_depth = len(compilation.stack)
                     if not declarations_only:
                         # Retain a declaration skeleton in the client parse so

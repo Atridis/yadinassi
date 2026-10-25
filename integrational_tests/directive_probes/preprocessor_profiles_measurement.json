@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "status": "unmeasured_candidate",
+  "native_expected_token": null,
+  "native_execution": "pending",
+  "source_sha256": "0dc26abc7a2bb786c7875d934fd2821c7e5f9e31175a0cf694c9b1170801f285",
+  "module_sha256": "6e64719f7a086388730e5ce9d8a8944b67db58a4919866b6562cde6a1369285e",
+  "base_source_sha256": "baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d",
+  "core_sha256": "5cda3cc687bc4b89a223fce03d06602c381a0ef84b57687c4d190897318b1ee7",
+  "source_path": "scripts/native_1c_bootstrap/client_probe.bsl",
+  "core_path": "integrational_tests/directive_probes/preprocessor_profiles_core.bsl",
+  "preflight": "exact whole138 standalone; genuine FileDBContext; no source inverse",
+  "default_runtime_token": "pp.v1:005005010010002002001001002002",
+  "native_suffix_parity_claimed": false,
+  "prefix_values": 137,
+  "completed_values": 138,
+  "token_bytes": 36,
+  "slot_order": [
+    "client",
+    "server",
+    "server_no_context",
+    "dual_client",
+    "dual_server"
+  ],
+  "slot_encoding": "English mask then Russian mask, each three ASCII decimal digits 000..511",
+  "bits": {
+    "Client": 1,
+    "Server": 2,
+    "AtClient": 4,
+    "AtServer": 8,
+    "ThinClient": 16,
+    "WebClient": 32,
+    "ThickClientOrdinaryApplication": 64,
+    "ThickClientManagedApplication": 128,
+    "ExternalConnection": 256
+  },
+  "caps": {
+    "private_marker": 2048,
+    "stage_wire": 8192,
+    "public_summary": 32768
+  },
+  "staged_input_count": 24,
+  "native_scope": "8.3.27.1508 Linux/amd64 managed thick client, ordinary synthetic file infobase"
+}

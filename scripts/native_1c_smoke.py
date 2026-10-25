@@ -258,7 +258,9 @@ def client_numbers_module_hash(staged: Path) -> str:
 
 
 def container_command(probe: Path, name: str, *, bootstrap: bool = False,
-                      full_suite: bool = False, nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False) -> list[str]:
+                      full_suite: bool = False, nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False) -> list[str]:
+    if type(preprocessor_measurement) is not bool or (preprocessor_measurement and (not client_probe or not full_suite)):
+        raise SmokeError("preprocessor_measurement_requires_client_full_suite")
     if type(client_async) is not bool or (client_async and (not client_probe or not full_suite or watchdog_check or client_dates or client_values or client_collections or client_numbers)):
         raise SmokeError("client_async_requires_separate_client_full_measurement")
     if client_numbers and (not client_probe or not full_suite):
@@ -302,7 +304,7 @@ def container_command(probe: Path, name: str, *, bootstrap: bool = False,
         "LANG=ru_RU.UTF-8", "LC_ALL=ru_RU.UTF-8", "TZ=Etc/UTC",
         "/bin/bash", "--noprofile", "--norc", "/smoke/probe.sh",
     ] + (["--full-suite", "--invocation-nonce", nonce] if full_suite else
-         ["--bootstrap-simple-epf"] if bootstrap else []) + (["--client-probe"] if client_probe else []) + (["--client-watchdog-check"] if watchdog_check else []) + (["--client-dates-parity"] if client_dates else []) + (["--client-values-parity"] if client_values else []) + (["--client-collections-parity"] if client_collections else []) + (["--client-numbers-parity"] if client_numbers else []) + (["--client-async-measurement"] if client_async else [])
+         ["--bootstrap-simple-epf"] if bootstrap else []) + (["--client-probe"] if client_probe else []) + (["--client-watchdog-check"] if watchdog_check else []) + (["--client-dates-parity"] if client_dates else []) + (["--client-values-parity"] if client_values else []) + (["--client-collections-parity"] if client_collections else []) + (["--client-numbers-parity"] if client_numbers else []) + (["--client-async-measurement"] if client_async else []) + (["--client-preprocessor-measurement"] if preprocessor_measurement else [])
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -453,7 +455,9 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
 
 def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
               export_native_outputs: bool = False, native_target: str = FULL.WINDOWS_TARGET,
-              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False) -> dict[str, object]:
+              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False) -> dict[str, object]:
+    if type(preprocessor_measurement) is not bool or (preprocessor_measurement and (not client_probe or not full_suite)):
+        raise SmokeError("preprocessor_measurement_requires_client_full_suite")
     if type(client_async) is not bool or (client_async and (not client_probe or not full_suite or watchdog_check or client_dates or client_values or client_collections or client_numbers)):
         raise SmokeError("client_async_requires_separate_client_full_measurement")
     if client_numbers and (not client_probe or not full_suite):
@@ -487,6 +491,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
     interpreter = FULL.interpreter_provenance(ROOT) if full_suite else None
     work_name = None
     report = None
+    preprocessor_host_profile = None
     try:
         with tempfile.TemporaryDirectory(prefix="onec-smoke-", dir=temp_root) as work_name:
             work = Path(work_name).resolve()
@@ -497,7 +502,10 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 for case in FULL.SCENARIOS} if full_suite else None)
             if client_probe:
                 FULL.verify_client_interpreter(ROOT, staged / "bootstrap/client_probe.bsl",
-                                               input_hashes[FULL.CLIENT_SOURCE])
+                                               input_hashes[FULL.CLIENT_SOURCE],
+                                               **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
+                if not preprocessor_measurement and input_hashes[FULL.CLIENT_SOURCE] == FULL.PREPROCESSOR_SOURCE_SHA256:
+                    preprocessor_host_profile = FULL.PREPROCESSOR_COMPILATION_PROFILE
                 module_hashes["client_probe"] = FULL.digest(FULL.generated_module(
                     FULL.read_regular(staged / "bootstrap/client_probe.bsl", FULL.MAX_FILE, nonempty=True)))
             if client_dates:
@@ -527,7 +535,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
             if code != 0 or platform.strip() != b"linux/amd64|0":
                 raise SmokeError("unexpected_image_platform_or_volumes")
             run_command = container_command(staged if bootstrap else PROBE, name, bootstrap=bootstrap,
-                                            full_suite=full_suite, nonce=nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
+                                            full_suite=full_suite, nonce=nonce, client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
             payloads = {}
             report = None
             primary_error = None
@@ -536,7 +544,7 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                 runtime = FULL_MAX_RUNTIME if full_suite else BOOTSTRAP_MAX_RUNTIME if bootstrap else MAX_RUNTIME
                 if full_suite:
                     code, raw = bounded_run(run_command, env, runtime, FULL.MAX_TRANSPORT)
-                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}))
+                    report, payloads = FULL.validate_envelope(raw, nonce, input_hashes, module_hashes, validate_report, watchdog_check=watchdog_check, client_dates=client_dates, client_values=client_values, client_collections=client_collections, client_numbers=client_numbers, **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
                     del raw
                 else:
                     code, raw = bounded_run(run_command, env, runtime)
@@ -573,6 +581,8 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                               private_payloads_removed=False,
                               comparison={"schema": 2, "status": "not_run", "acceptance_status": "not_run",
                                           "native_target": native_target, "comparison_mode": comparison_mode, "cases": []})
+            if report is not None and preprocessor_host_profile is not None:
+                report["preprocessor_host_profile"] = preprocessor_host_profile
             if primary_error or cleanup_error:
                 payloads.clear()
                 raise SmokeError(primary_error or cleanup_error, security_uncertain=bootstrap,
@@ -637,6 +647,19 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
     return report
 
 
+def _revoke_acceptance(report: dict) -> None:
+    """Exceptional rejection revokes claims/readiness, not execution facts."""
+    for rejected in (report, report.get("probe")):
+        if type(rejected) is not dict:
+            continue
+        for claim in ("native_evidence_accepted", "interpreter_acceptance_completed",
+                      "preprocessor_parity_claimed", "client_async_parity_claimed",
+                      "native_output_artifact_ready"):
+            if claim in rejected:
+                rejected[claim] = False
+    FULL.discard_infobase_capture(report.get("probe"))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute-approved-image", action="store_true", required=True,
@@ -657,6 +680,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Also require private full client/server numbers byte parity")
     parser.add_argument("--client-async-measurement", action="store_true",
                         help="Compare eight finite client Async language cases with this staged interpreter; incompatible with other parity/watchdog extras")
+    parser.add_argument("--client-preprocessor-measurement", action="store_true",
+                        help="Explicit schema5 observation: strict137 prefix and finite preprocessor suffix, not suffix parity")
     parser.add_argument("--client-probe", action="store_true",
                         help="Also require fresh managed-form client-only execution proof")
     parser.add_argument("--export-native-outputs", action="store_true",
@@ -667,6 +692,8 @@ def main(argv: list[str] | None = None) -> int:
                         default=FULL.BYTE_EXACT, help="Raw-byte comparison or the reviewed, source-bound typed Map contract")
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
+    if args.client_preprocessor_measurement and (not args.client_probe or not args.full_suite):
+        parser.error("--client-preprocessor-measurement requires --full-suite --client-probe")
     if args.client_async_measurement and (not args.client_probe or not args.full_suite or args.client_watchdog_check or args.client_dates_parity or args.client_values_parity or args.client_collections_parity or args.client_numbers_parity):
         parser.error("--client-async-measurement requires separate --full-suite --client-probe without parity/watchdog extras")
     if args.client_numbers_parity and (not args.client_probe or not args.full_suite):
@@ -696,7 +723,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     artifact_evidence_validated = False
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check, client_dates=args.client_dates_parity, client_values=args.client_values_parity, client_collections=args.client_collections_parity, client_numbers=args.client_numbers_parity, **({"client_async": True} if args.client_async_measurement else {}))
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check, client_dates=args.client_dates_parity, client_values=args.client_values_parity, client_collections=args.client_collections_parity, client_numbers=args.client_numbers_parity, **({"client_async": True} if args.client_async_measurement else {}), **({"preprocessor_measurement": True} if args.client_preprocessor_measurement else {}))
         if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")
@@ -733,12 +760,14 @@ def main(argv: list[str] | None = None) -> int:
             report["cleanup_error"] = error.cleanup_error
         if getattr(error, "security_uncertain", args.full_suite):
             report["security_settings_changed"] = None
+        _revoke_acceptance(report)
         success = False
     except Exception:
         # Never emit traceback/exception text that could contain external output.
         report["error"] = "unexpected_host_failure"
         if args.bootstrap_simple_epf or args.full_suite:
             report["security_settings_changed"] = None
+        _revoke_acceptance(report)
         success = False
     if args.full_suite:
         report["purpose"] = ("isolated-six-scenario-client-watchdog-proof" if args.client_watchdog_check else
@@ -773,6 +802,41 @@ def main(argv: list[str] | None = None) -> int:
             report["client_async_parity_claimed"] = success
         except FULL.FullError:
             success = False
+    if args.client_preprocessor_measurement:
+        report["purpose"] = "client-preprocessor-observation-v1"
+        report["preprocessor_parity_claimed"] = False
+        stage = report.get("probe", {}).get("stage3", {})
+        if success:
+            try:
+                if (stage.get("schema") != 5 or stage.get("preprocessor_status") != "observed"
+                        or stage.get("client_probe", {}).get("source_sha256") != FULL.PREPROCESSOR_SOURCE_SHA256
+                        or stage.get("client_probe", {}).get("module_sha256") != FULL.PREPROCESSOR_MODULE_SHA256):
+                    raise ValueError("preprocessor observation identity")
+                FULL.validate_preprocessor_profile(stage["client_probe"].get("preprocessor_profile"))
+            except (ValueError, TypeError):
+                success = False
+    elif args.client_probe and args.full_suite and (
+            report.get("probe", {}).get("stage3", {}).get("schema") == 9
+            or report.get("probe", {}).get("trusted_input_sha256", {}).get(FULL.CLIENT_SOURCE) == FULL.PREPROCESSOR_SOURCE_SHA256
+            or report.get("probe", {}).get("stage3", {}).get("client_probe", {}).get("source_sha256") == FULL.PREPROCESSOR_SOURCE_SHA256):
+        report["purpose"] = "client-preprocessor-runtime-v1"
+        report["compilation_profile"] = FULL.PREPROCESSOR_COMPILATION_PROFILE
+        stage = report.get("probe", {}).get("stage3", {})
+        try:
+            if (stage.get("schema") != 9 or stage.get("preprocessor_status") != "matched"
+                    or stage.get("compilation_profile") != FULL.PREPROCESSOR_COMPILATION_PROFILE
+                    or report.get("probe", {}).get("preprocessor_host_profile") != FULL.PREPROCESSOR_COMPILATION_PROFILE):
+                raise ValueError("preprocessor runtime profile or status")
+            FULL.validate_client_probe(stage.get("client_probe"), FULL.PREPROCESSOR_SOURCE_SHA256,
+                FULL.PREPROCESSOR_MODULE_SHA256, infobase_allowed=True,
+                preprocessor_allowed=True, preprocessor_runtime=True)
+            if stage["client_probe"].get("preprocessor_profile") != FULL.PREPROCESSOR_RUNTIME_TOKEN:
+                raise ValueError("preprocessor runtime token")
+        except (ValueError, TypeError, KeyError):
+            success = False
+        report["preprocessor_parity_claimed"] = bool(success)
+    elif report.get("probe", {}).get("stage3", {}).get("schema") in (5, 9):
+        success = False
     report["smoke_completed"] = success
     if not success:
         FULL.discard_infobase_capture(report.get('probe'))
@@ -791,8 +855,7 @@ def main(argv: list[str] | None = None) -> int:
             report["probe"]["native_output_artifact_ready"] = False
             report["error"] = str(error)
             report["smoke_completed"] = success = False
-            if args.client_async_measurement:
-                report["client_async_parity_claimed"] = False
+            _revoke_acceptance(report)
             rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
             report_within_limit = len(rendered.encode("utf-8")) <= MAX_OUTPUT
             if not report_within_limit:

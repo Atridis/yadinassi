@@ -17,6 +17,11 @@ def linux_fixture(path):
     return raw.replace(b"\r\n", b"\n") if os.name == "nt" else raw
 
 
+def historical_client137():
+    """Exact historical137 source for historical capture/adapter assertions only."""
+    return full.preprocessor_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE))
+
+
 class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
     def setUp(self):
         super().setUp()
@@ -50,7 +55,7 @@ class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
     @unittest.skipUnless(sys.platform == "linux", "fixed native fixture is Linux-only")
     def test_whole_staged_source_computes_contract_in_real_interpreter(self):
         source = ROOT / full.CLIENT_SOURCE
-        full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()))
+        full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()), preprocessor_measurement=True)
 
     @unittest.skipUnless(sys.platform == "linux", "fixed native fixture is Linux-only")
     def test_changed_callee_is_rejected_by_exact_source_gate(self):
@@ -61,13 +66,13 @@ class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
             path = Path(temporary).resolve() / "probe.bsl"
             path.write_bytes(changed)
             with self.assertRaisesRegex(full.FullError, "^source_changed$"):
-                full.verify_client_interpreter(ROOT, path, full.digest(changed))
+                full.verify_client_interpreter(ROOT, path, full.digest(changed), preprocessor_measurement=True)
 
     def test_hash_mismatch_never_executes(self):
         source = ROOT / full.CLIENT_SOURCE
         runner = mock.Mock()
         with self.assertRaisesRegex(full.FullError, "^source_changed$"):
-            full.verify_client_interpreter(ROOT, source, "0" * 64, runner=runner)
+            full.verify_client_interpreter(ROOT, source, "0" * 64, runner=runner, preprocessor_measurement=True)
         runner.assert_not_called()
 
     def test_child_failure_stderr_and_wrong_typed_result_fail_closed(self):
@@ -75,14 +80,14 @@ class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
         self.addCleanup(temporary.cleanup)
         source = Path(temporary.name).resolve() / "probe.bsl"
         source.write_bytes(linux_fixture(ROOT / full.CLIENT_SOURCE))
-        good = json.dumps(full.CLIENT_RUNTIME_VALUES, ensure_ascii=False,
+        good = json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
                           separators=(",", ":")).encode()
         for result in [(1, good, b""), (0, good, b"error"),
                        (0, b"[]", b""), (0, good.replace(b"42,", b"42.0,", 1), b"")]:
             with self.subTest(result=result), offline_fixture(full), self.assertRaisesRegex(
                     full.FullError, "^interpreter_failed$"):
                 full.verify_client_interpreter(ROOT, source, full.digest(source.read_bytes()),
-                                               runner=lambda *args: result)
+                                               runner=lambda *args: result, preprocessor_measurement=True)
 
     def test_each_directive_label_is_required_by_native_marker(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -181,7 +186,7 @@ class NativeDirectiveDiagnosticTests(unittest.TestCase):
 
     def test_real_interpreter_records_literal_stage_without_native_error_text(self):
         from yadinassi import Interpreter
-        source = full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT / full.CLIENT_SOURCE))))).decode('utf-8-sig')
+        source = full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(historical_client137())))).decode('utf-8-sig')
         source = source.replace('Return A + B;', 'Raise "PRIVATE_ERROR";')
         vm = Interpreter()
         vm.execute(source)
