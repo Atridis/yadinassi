@@ -11,7 +11,7 @@ import hashlib
 import zlib
 
 from .filedb_catalog import (BLOB_SIZE, CatalogLimits, CatalogReader, CatalogUsage,
-                             InternalFile, InvalidStructure, ResourceLimit,
+                             InternalFile, InvalidStructure, PhysicalCatalog, ResourceLimit,
                              UnsupportedLayout, UnsupportedSharing,
                              _Budget)
 
@@ -347,6 +347,32 @@ def read_dbnames(read_at, file_size: int, *, profile: DBNamesProfile,
         raise ResourceLimit("dbnames_record_bytes")
     reader = CatalogReader(read_at, file_size, limits=catalog_limits)
     catalog = reader.read_catalog()
+    return _read_dbnames_from_catalog(reader, catalog, profile=profile, limits=limits)
+
+
+def _read_dbnames_from_catalog(reader: CatalogReader, catalog: PhysicalCatalog, *,
+                             profile: DBNamesProfile,
+                             limits: NamedFileLimits | None = None) -> NamedFileBytes:
+    """Private same-reader seam; one attempt consumes its extraction state.
+
+    Only the identical completed catalog is admitted. All mapping, BLOB ownership
+    and cumulative accounting stay on its originating reader. No caller values
+    can replace a table, choose a filename or reset a failed reader's state.
+    """
+    if (type(reader) is not CatalogReader or type(catalog) is not PhysicalCatalog
+            or reader._catalog is not catalog or not reader._used):
+        raise ValueError("extraction requires the identical completed catalog")
+    if (getattr(reader, "_dbnames_attempted", False) or reader._table_opened
+            or reader._table_blob_opened):
+        raise ValueError("DBNames extraction is single-use")
+    reader._dbnames_attempted = True
+    if type(profile) is not DBNamesProfile:
+        raise ValueError("profile must be DBNamesProfile")
+    if limits is not None and type(limits) is not NamedFileLimits:
+        raise ValueError("limits must be NamedFileLimits")
+    limits = limits if limits is not None else NamedFileLimits()
+    if profile.record_size > limits.max_record_bytes:
+        raise ResourceLimit("dbnames_record_bytes")
     selected = None
     for table in catalog.tables:
         if _ascii_equal(table.name, "PARAMS"):
