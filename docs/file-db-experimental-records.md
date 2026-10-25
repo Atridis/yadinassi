@@ -32,7 +32,8 @@ or multi-type branch is implemented.
 
 The seven-field fixture vector, if separately admitted, yields stride 127 and
 original descriptor-order offsets `(17, 1, 33, 34, 50, 56, 122)`. This is a
-predicted layout, not a measurement. No names or suffixes are inferred from it.
+predicted layout, not an independent offset measurement. The bounded accepted
+fixture readback is described below; no names or suffixes are inferred from it.
 
 The exact integer `0` is the sole predeclared experimental `format_item`
 admission. Its semantics are unknown. String `"0"` is not equivalent. A mismatch
@@ -124,9 +125,14 @@ connector during reconstruction.
   deliberately narrower.
 
 Native metadata capture can bind physical declarations and logical names, but
-cannot by itself prove offsets or these binary codecs. The future acceptance
-must independently read original and closed observer baseline/created/updated
-files with the same pinned mapping/profile and compare expected values/counts.
+cannot by itself prove offsets or these binary codecs. Independently audited
+native run 40184433888 at head `2973444c4234477429b05eb52831173a4745578a`
+accepted six original/closed-observer baseline/created/updated fixture reads with
+the same pinned mapping/profile and expected counts/four mapped values. Both
+empty images had valid-header zero-length framing; reserved-only empty framing
+remains synthetic-only. This is source-bound producer proof, not retained-DB
+replay or general compatibility. See the exact source/profile/artifact hashes and
+[acceptance limits](native-record-readback.md#accepted-source-bound-fixture-evidence).
 No automatic alternative layout/encoding search follows a failed hypothesis.
 
 ## Outputs, budgets and standalone staging

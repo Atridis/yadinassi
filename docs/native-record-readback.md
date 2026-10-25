@@ -4,7 +4,8 @@ This is a narrow experimental lane of the existing file-database oracle, not
 query support or a general logical metadata mapper. The ordinary names-only
 contract `exact_tables_ascii_fields_v1` is unchanged. The metadata-only lane
 still reports declarations only; neither old schema admits row verdicts.
-No native row/layout acceptance has yet been established for this source.
+The source-bound v2 fixture run below is accepted for its six bounded reads.
+That does not establish general file compatibility or certify arbitrary inputs.
 
 ## Explicit route and source boundary
 
@@ -65,7 +66,8 @@ Profile `owned_v1_rv16_nvc_bcd127_intzero_v1` fixes record lock string `"0"`,
 stride 127, declaration-order offsets `(17,1,33,34,50,56,122)` and widths
 `(16,16,1,16,6,66,5)`. The source-bound canonical profile hash includes the logical
 roles, all declarations, layout, codecs, empty framing and format hypothesis.
-These are predicted experimental mechanics, not measured offsets.
+These are deterministic experimental mechanics, not independently measured
+offsets. The accepted run below validates their bounded fixture readback only.
 
 The sole format admission is exact integer `0`, never string `"0"`. Its semantics
 remain unknown. The pinned Tool1CD source skips that descriptor item and comments
@@ -85,6 +87,34 @@ failure capture binds the source/run/stage through its enclosing report, but
 omits per-read target and observer hash. It is therefore a run rejection, not an
 image-specific format observation suitable for automatically changing admission.
 Any changed admission requires separate source review and new source binding.
+
+## Accepted source-bound fixture evidence
+
+[Run 40184433888](https://github.com/Atridis/yadinassi/actions/runs/40184433888)
+was independently audited and accepted at head
+`2973444c4234477429b05eb52831173a4745578a`, tree
+`1e8df805210555f69a5433bc89a2dc9b83448708`, with profile SHA-256
+`d70941ed1b52696a483ec7672aedff116595f24b796ffb8df29036be8c357d71`.
+Artifact `12595546687` is 4,913 ZIP bytes, SHA-256
+`2f81ee9cc8263d9b8eb1501043b580688ccd989e7e854f74c6cc900bac569bf9`;
+its 20,036-byte report has SHA-256
+`a5740e333bd423e082a4b0014729a2fb2a4ef90dfb8227d4ce7de60b157db4c4`.
+
+The source-bound producer proof covers six original/closed-observer-postimage
+reads, v1 empty/create/update, counts and Code/Payload/Amount/DeletionMark only.
+Both baseline images admitted `empty_zero_length`; both created and both updated
+images admitted `reserved_and_active`. The reserved-only empty variant remains
+synthetic-only. The four mapped values matched the fixed states below with the
+same pinned profile, source inventory and fresh metadata mapping.
+
+Raw database images are not retained/exported, so this is an audited producer
+proof, not an independent replay of retained DB bytes. It establishes neither
+v2/deletion/free-slot behavior nor reference/version semantics, arbitrary
+configurations, queries or general compatibility. The reader module still returns
+native acceptance `pending`: it cannot self-certify arbitrary files. Reuse of
+this evidence requires all 23 native source pins to remain byte-identical;
+changed native inputs require a fresh source-bound run and audit. Test/document
+changes do not substitute for current OS and standard-runtime validation gates.
 
 ## Images, lifecycle and private comparison
 
@@ -164,5 +194,6 @@ Focused tests exercise independent constructed bytes through the real producer,
 freezer, actual standard-library reader and strict report validator. Wrong decoded
 values/count, wrong original/postimage binding, format mismatch, mapping changes,
 source changes or any cleanup gate prevent the row verdict. Synthetic tests are
-not native evidence. Publication/real execution must follow source review and
-fresh whole-artifact audit; no native acceptance is claimed by this document.
+not native evidence. The limited native claim is exclusively the exact source-bound
+run above; publication and subsequent changes remain subject to source review,
+current validation gates and whole-artifact audit.

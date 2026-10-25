@@ -4,7 +4,9 @@ from __future__ import annotations
 import contextlib
 import copy
 import importlib
+import importlib.machinery
 import importlib.util
+import inspect
 import io
 import json
 import os
@@ -23,6 +25,23 @@ NONCE = 'a' * 32
 APPROVED = ['--execute-approved-image', '--file-db-oracle']
 MODES = ({}, {'record_metadata': True}, {'record_reader': True})
 FLAGS = ([], ['--record-metadata-observation'], ['--record-reader-validation'])
+
+
+def allowed_module_origin(name, location, module, *, staged, stdlib, extension_root):
+    """Test-only import census; the Windows exception is one exact DLLs root."""
+    if {'site-packages','dist-packages'}.intersection(part.casefold() for part in location.parts):
+        return False
+    if staged in location.parents or stdlib in location.parents:
+        return True
+    loader=getattr(module,'__loader__',None); spec=getattr(module,'__spec__',None)
+    return (extension_root is not None and location.parent==extension_root
+        and name in sys.stdlib_module_names
+        and type(loader) is importlib.machinery.ExtensionFileLoader
+        and getattr(spec,'loader',None) is loader and getattr(spec,'name',None)==name
+        and loader.name==name and type(getattr(spec,'origin',None)) is str
+        and Path(loader.path).resolve()==location and Path(spec.origin).resolve()==location
+        and location.name in {name.rsplit('.',1)[-1]+suffix
+                             for suffix in importlib.machinery.EXTENSION_SUFFIXES})
 
 
 def load(name, path):
@@ -186,6 +205,10 @@ class HostRouteTests(RouteCase):
 import sys
 from pathlib import Path
 import sysconfig
+import importlib.machinery
+stdlib = Path(sysconfig.get_path('stdlib')).resolve()
+extension_root = (Path(sys.base_prefix) / 'DLLs').resolve() if sys.platform == 'win32' else None
+""" + inspect.getsource(allowed_module_origin) + """
 staged = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(staged))
 import inputs, run, filedb_catalog, record_validation
@@ -200,19 +223,59 @@ assert Path(native.record_module.__file__).resolve() == staged / 'filedb_records
 assert 'enterprise_audit_record_metadata' in native.command_stages()
 assert not any(name == 'yadinassi' or name.startswith('yadinassi.') or 'interpreter' in name.lower()
                for name in sys.modules)
-stdlib = Path(sysconfig.get_path('stdlib')).resolve()
 for name, module in tuple(sys.modules.items()):
     location = getattr(module, '__file__', None)
     if not location or location.startswith('<'):
         continue
     location = Path(location).resolve()
-    assert not {'site-packages', 'dist-packages'}.intersection(location.parts), (name, location)
-    assert staged in location.parents or stdlib in location.parents, (name, location)
+    assert allowed_module_origin(name, location, module, staged=staged, stdlib=stdlib,
+                                 extension_root=extension_root), (name, location)
 """
         result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', code, str(target)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10, check=False)
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8'))
         self.assertEqual(result.stdout, b'')
+
+    def test_interpreter_extension_exception_is_exact_and_not_a_search_root(self):
+        base=self.root/'interpreter'; extension_root=base/'DLLs'
+        staged=self.root/'staged'; stdlib=base/'Lib'
+        name='_hashlib'; suffix=importlib.machinery.EXTENSION_SUFFIXES[0]
+        def module(path, *, kind=importlib.machinery.ExtensionFileLoader):
+            loader=kind(name,str(path))
+            return SimpleNamespace(__loader__=loader,
+                __spec__=importlib.machinery.ModuleSpec(name,loader,origin=str(path)))
+        def allowed(path, value, root=extension_root):
+            return allowed_module_origin(name,path,value,staged=staged,stdlib=stdlib,extension_root=root)
+        path=extension_root/(name+suffix)
+        self.assertTrue(allowed(path,module(path)))
+        self.assertFalse(allowed(path,module(path),None))  # No non-Windows exception.
+        for other in (self.root/'DLLs',base,extension_root/'nested',
+                      extension_root/'site-packages',extension_root/'DIST-Packages',
+                      stdlib/'Site-Packages',staged/'dist-packages'):
+            wrong=other/path.name
+            self.assertFalse(allowed(wrong,module(wrong)),str(wrong))
+        for filename in (name+'.py',name+'.pyc',name+'.dll','unrelated'+suffix):
+            wrong=extension_root/filename
+            self.assertFalse(allowed(wrong,module(wrong)),filename)
+        class Forged(importlib.machinery.ExtensionFileLoader): pass
+        for kind in (importlib.machinery.SourceFileLoader,Forged):
+            self.assertFalse(allowed(path,module(path,kind=kind)))
+        edits=(lambda m:setattr(m,'__loader__',None),
+               lambda m:setattr(m.__spec__,'loader',None),
+               lambda m:setattr(m.__spec__,'name','wrong'),
+               lambda m:setattr(m.__loader__,'name','wrong'),
+               lambda m:setattr(m.__loader__,'path',str(base/path.name)),
+               lambda m:setattr(m.__spec__,'origin',str(base/path.name)))
+        for edit in edits:
+            value=module(path);edit(value)
+            self.assertFalse(allowed(path,value))
+        foreign='not_a_standard_library_module'
+        wrong=extension_root/(foreign+suffix)
+        loader=importlib.machinery.ExtensionFileLoader(foreign,str(wrong))
+        value=SimpleNamespace(__loader__=loader,
+            __spec__=importlib.machinery.ModuleSpec(foreign,loader,origin=str(wrong)))
+        self.assertFalse(allowed_module_origin(foreign,wrong,value,staged=staged,
+            stdlib=stdlib,extension_root=extension_root))
 
     def test_older_staged_runtimes_import_without_row_modules_or_interpreter(self):
         for index, options in enumerate(MODES[:2]):

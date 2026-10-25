@@ -146,7 +146,9 @@ class ByteBackend(fixture.FixtureNative):
 def run_fixture(test, **kwargs):
     temp=tempfile.TemporaryDirectory(); test.addCleanup(temp.cleanup)
     value=identity(); report=policy.empty_report(NONCE,value)
-    backend=ByteBackend(Path(temp.name),value,**kwargs)
+    # Resolve only our owned test root (macOS may alias /var to /private/var).
+    # Production descriptor-relative no-symlink guards remain unchanged.
+    backend=ByteBackend(Path(temp.name).resolve(),value,**kwargs)
     controller=fixture.stage.Controller(backend,report); backend.controller=controller
     return controller.run(),backend
 
@@ -157,6 +159,22 @@ class ProducerReaderReportTests(unittest.TestCase):
 
     def validate(self,report,final=False):
         return policy.validate_report(protocol.encode(report),nonce=NONCE,provenance=report['provenance'],final=final)
+
+    def test_owned_temporary_alias_resolves_without_relaxing_production_guard(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve()
+            actual=root/'actual';actual.mkdir()
+            alias=root/'alias';alias.symlink_to(actual,target_is_directory=True)
+            with mock.patch.object(tempfile,'tempdir',str(alias)):
+                report,backend=run_fixture(self)
+            self.assertEqual(report['status'],'ok',report)
+            self.validate(report)
+            self.assertEqual(backend.root,backend.root.resolve())
+            self.assertIn(actual,backend.root.parents)
+            self.assertNotIn(alias,backend.root.parents)
+            with self.assertRaises(OracleError) as caught:
+                with snapshots._directory(alias): pass
+            self.assertEqual(caught.exception.kind,'invalid_input')
 
     def test_actual_reader_full_lifecycle_and_opaque_postimage_difference(self):
         report,backend=run_fixture(self)

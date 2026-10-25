@@ -19,6 +19,19 @@ read-only контекст Interpreter и CLI описан в следующем
 анализ страниц не поддержан. Для заявления измеренной совместимости требуется
 свежий source-bound native-прогон. [Контракт и границы](docs/filedb-header-inspection.md).
 
+## Экспериментальное низкоуровневое чтение физических записей
+
+Отдельный Python API `yadinassi.storage.filedb_records.read_records` читает
+согласованную offline-копию только с явно заданным именем таблицы и точным
+ограниченным профилем полей. Это read-only API хранения, не BSL-доступ к базе
+и не поддержка запросов, записи или CF/DT. Принятый source-bound native-прогон
+40184433888 проверяет только шесть исходных/закрытых observer-копий собственного
+v1-справочника: пустое состояние, создание и обновление, количество строк и
+Code/Payload/Amount/DeletionMark. Ссылки и версии остаются непрозрачными;
+произвольные базы, v2 и удаление этим не подтверждены.
+[API и ограничения](docs/file-db-experimental-records.md),
+[точные исходники и доказательства](docs/native-record-readback.md#accepted-source-bound-fixture-evidence).
+
 ## Необязательный контекст файловой базы
 
 `--f DIRECTORY` и Python API `FileDBContext(directory)` задают неизменяемый
