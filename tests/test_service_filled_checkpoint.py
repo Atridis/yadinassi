@@ -1,3 +1,4 @@
+from scripts.native_historical_replay import without_uuid_probes
 """Source-only service-value observations: local execution is not native evidence."""
 import hashlib
 from pathlib import Path
@@ -25,7 +26,7 @@ CASES = (
 
 class ServiceFilledCheckpointTests(unittest.TestCase):
     def source(self):
-        return (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+        return without_uuid_probes((ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8'))
 
     def test_exact_prior_source_and_every_prior_observation_are_preserved(self):
         source = self.source()

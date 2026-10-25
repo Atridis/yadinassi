@@ -291,6 +291,14 @@ def without_request_site_diagnostic(template):
 
 def without_value_tree_measurement(source, *, host=False):
     """Exact test-only inverse to the actual-main historical harness, not admission."""
+    inventory = json.loads((REPOSITORY / 'tests/uuid_source_inverse.json').read_text(encoding='utf-8'))
+    path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
     tree_inventory = json.loads((REPOSITORY / 'tests/fixtures/value_tree_measurement/'
                                  'harness-source-inverse.json').read_text(encoding='utf-8'))
     tree_path = ('scripts/native_1c_full_host.py' if host
@@ -312,6 +320,20 @@ def historical_tree_collections_module(source, template):
     exec(compile(restored, str(SNIPPET), 'exec'), namespace)
     original = without_value_tree_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
     return namespace['client_collections_module'](original, template)
+
+
+def historical_uuid_values_module(source, template):
+    """Replay exact values402 with its restored adapter, never admit it as441."""
+    from scripts.native_historical_replay import without_uuid_probes
+    # The existing two independently hash-bound inverses restore the historical
+    # suite; ValueTree did not change its values adapter. No live globals change.
+    restored = without_value_tree_measurement(SNIPPET.read_text(encoding='utf-8'))
+    namespace = {'__name__': 'historical_uuid_values_suite'}
+    exec(compile(restored, str(SNIPPET), 'exec'), namespace)
+    original = without_uuid_probes(source.decode('utf-8')).encode('utf-8')
+    assert hashlib.sha256(original).hexdigest() == 'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12'
+    assert namespace['CLIENT_VALUES_MESSAGE_COUNT'] == 402
+    return namespace['client_values_module'](original, template)
 
 
 def without_preprocessor_measurement(source, *, host=False):

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.native_historical_replay import without_fixed_string_probes, without_service_filled_probes
+from scripts.native_historical_replay import without_uuid_probes, without_fixed_string_probes, without_service_filled_probes
 from yadinassi import Interpreter
 from yadinassi.serialization import value_from_string_internal, value_to_string_internal
 from yadinassi.type_descriptions import BSLTypeDescription as TD
@@ -46,7 +46,7 @@ class FixedStringDefaultTests(unittest.TestCase):
             self.assertEqual(value_to_string_internal(item), encoded)
 
     def test_entire_live_source_matches_all_measured_fixed_default_records(self):
-        source = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+        source = without_uuid_probes((ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8'))
         fixture = json.loads((ROOT / 'tests/fixtures/fixed_string_default_linux.json').read_text(encoding='utf-8'))
         self.assertEqual(fixture['native_run'], 39769351606)
         self.assertEqual(fixture['contexts'], ['server', 'managed-client'])

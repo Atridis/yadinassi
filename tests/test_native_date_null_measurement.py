@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 import tempfile
 import unittest
-from test_native_async_fixture import historical_tree_collections_module
+from test_native_async_fixture import historical_tree_collections_module, historical_uuid_values_module
 from infobase_preflight_test_support import offline_fixture
 from unittest import mock
 
@@ -105,7 +105,7 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
         plan = json.loads((ROOT/PLAN).read_text(encoding='utf-8'))
         for name, expected in plan['four_adapter_sha256'].items():
             scenario = linux_fixture(ROOT/f'integrational_tests/tests/{name}.bsl')
-            adapter = historical_tree_collections_module if name == 'collections' else getattr(suite, f'client_{name}_module')
+            adapter = historical_tree_collections_module if name == 'collections' else historical_uuid_values_module if name == 'values' else getattr(suite, f'client_{name}_module')
             self.assertEqual(full.digest(adapter(scenario, self.source)), expected)
         self.assertEqual(full.async_source_identity(linux_fixture(ROOT/'scripts/native_1c_bootstrap/full_suite.py')),
                          plan['async8_identity'])

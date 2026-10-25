@@ -5,7 +5,7 @@ import re
 import unittest
 
 from scripts.native_historical_replay import (
-    without_fill_exclude_probes, EXTENDED_EXCEPTION_PROBE_BLOCKS, HISTORICAL_FUNCTIONS_BLOB,
+    without_uuid_probes, without_fill_exclude_probes, EXTENDED_EXCEPTION_PROBE_BLOCKS, HISTORICAL_FUNCTIONS_BLOB,
     HISTORICAL_FUNCTIONS_OUTPUT_BLOB, git_blob, historical_functions_source,
     without_extended_exception_probes, without_exception_context_probes,
 )
@@ -115,6 +115,8 @@ class ExtendedExceptionCheckpointTests(unittest.TestCase):
         self.assertEqual(sum(count for _, count in UNCHANGED_SCENARIOS.values()), 1849)
         for name, (expected, _) in UNCHANGED_SCENARIOS.items():
             raw = (ROOT / f'integrational_tests/tests/{name}.bsl').read_bytes()
+            if name == 'values':
+                raw = without_uuid_probes(raw.replace(b'\r\n', b'\n').decode('utf-8')).encode('utf-8')
             if name == 'collections':
                 raw = without_fill_exclude_probes(raw.replace(b'\r\n', b'\n').decode('utf-8-sig')).encode('utf-8-sig')
             self.assertEqual(hashlib.sha256(raw.replace(b'\r\n', b'\n')).hexdigest(), expected)

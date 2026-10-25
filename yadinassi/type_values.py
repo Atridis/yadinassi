@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 
+from .unique_identifiers import BSLUUID
 from .dates import BSLDate
 from .error_info import BSLErrorInfo, BSLErrorCategory
 from .xml_processing import BSLXMLStringProcessingManager
@@ -30,6 +31,7 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
     (BSLErrorInfo, BSLType.ERROR_INFO, "ErrorInfo"),
     (BSLErrorCategory, BSLType.ERROR_CATEGORY, "ErrorCategory"),

@@ -31,9 +31,10 @@ class DynamicNewTests(unittest.TestCase):
             if value_type in (BSLType.ARRAY, BSLType.STRUCTURE, BSLType.MAP, BSLType.FIXED_STRUCTURE,
                               BSLType.NUMBER_QUALIFIERS, BSLType.STRING_QUALIFIERS,
                               BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
-                              BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE, BSLType.VALUE_LIST, BSLType.VALUE_TREE):
+                              BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE, BSLType.VALUE_LIST, BSLType.VALUE_TREE,
+                              BSLType.UUID):
                 self.assertEqual(self.vm.execute('TypeOf(New(kind))'), value_type)
-            else:  # FixedArray/FixedMap need arguments; scalar types have no factory.
+            else:  # FixedArray/FixedMap need arguments; other scalar types have no factory.
                 with self.assertRaises(BSLError):
                     self.vm.execute('New(kind)')
 

@@ -221,8 +221,33 @@ SERVICE_FILLED_PROBE_BLOCK = (
 )
 
 
+UUID_PROBE_BLOCKS = (
+    ('// Begin bounded UUID codec helpers (candidate; not native evidence).\n', '// End bounded UUID codec helpers.\n\n'),
+    ('// Begin bounded UUID codec observations (candidate; not native evidence).\n', '// End bounded UUID codec observations.\n'),
+    ('// Begin bounded UUID helpers (candidate; not native evidence).\n', '// End bounded UUID helpers.\n\n'),
+    ('// Begin bounded UUID observations (candidate; not native evidence).\n', '// End bounded UUID observations.\n'),
+)
+
+
+def without_uuid_probes(text):
+    """Offline historical replay only; exact input/output hashes, never admission."""
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != '0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c':
+        raise ValueError('UUID candidate source binding changed')
+    for start, end in UUID_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('UUID probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != 'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12':
+        raise ValueError('UUID historical source binding changed')
+    return text
+
+
 def without_service_filled_probes(text):
     """Restore the exact native-verified 377-record source, not an output prefix."""
+    if any(boundary in text for pair in UUID_PROBE_BLOCKS for boundary in pair):
+        text = without_uuid_probes(text)
     start, end = SERVICE_FILLED_PROBE_BLOCK
     if text.count(start) != 1 or text.count(end) != 1:
         raise ValueError("service filled probe boundaries changed")
