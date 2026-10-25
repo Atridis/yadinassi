@@ -306,7 +306,19 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False):
+        require(type(record_metadata) is bool and type(record_reader) is bool
+                and not (record_metadata and record_reader), 'invalid_input')
+        self.observation = None
+        if record_metadata or record_reader:
+            import record_observation
+            self.observation = record_observation
+        self.record_policy = None; self.record_module = None
+        self.record_pending = None; self.record_names = None; self.record_profile = None
+        if record_reader:
+            import record_validation
+            self.record_policy = record_validation
+            self.record_module = record_validation.load_reader(Path(__file__).with_name('filedb_records.py'))
         self.nonce=nonce; self.provenance=provenance
         self.root=ROOT; self.artifacts=ROOT/'artifacts'; self.evidence=ROOT/'evidence'
         self.budget_base=Path('/tmp')
@@ -342,23 +354,34 @@ class Native:
         finally:
             self.seed_pending=None; self.seed_launched=None
 
+    def command_stages(self):
+        # Do not import or admit the observation operation in the default lane.
+        return ({**COMMAND_STAGES, 'enterprise_audit_record_metadata': ('baseline',)}
+                if self.observation is not None else COMMAND_STAGES)
+
+    def check_failure_context(self, value, stage):
+        validator = (self.observation.validate_failure_context if self.observation is not None
+                     else validate_failure_context)
+        return validator(value, stage)
+
     @contextmanager
     def command_context(self, operation):
-        require(type(operation) is str and operation in COMMAND_STAGES, 'invalid_input')
+        commands = self.command_stages()
+        require(type(operation) is str and operation in commands, 'invalid_input')
         entered_stage=self.stage
         try:
             yield
         except BaseException as original:
             error=original if isinstance(original,OracleError) else OracleError('unexpected_failure')
             # No mutable pending operation survives a launch or stage transition.
-            if self.stage==entered_stage and entered_stage in COMMAND_STAGES[operation]:
+            if self.stage==entered_stage and entered_stage in commands[operation]:
                 context={'operation':operation,'site':getattr(error,'oracle_site','operation'),
                     'bsl_phase':getattr(error,'bsl_phase',None),
                     'region':error.region if isinstance(error,SandboxInventoryError) else None,
                     'reason':error.reason if isinstance(error,SandboxInventoryError) else None}
                 if operation in ('snapshot_freeze','snapshot_clone') and isinstance(error,DatabaseEntryError):
                     context.update(entry_class=error.entry_class,entry_shape=error.shape)
-                validate_failure_context(context,entered_stage)
+                self.check_failure_context(context,entered_stage)
                 error.failure_context=context
                 error.failure_context_stage=entered_stage
             else:
@@ -519,8 +542,8 @@ class Native:
         return database
 
     def enterprise(self, database, operation, *, token=None):
-        require(type(operation) is str and 'enterprise_'+operation in COMMAND_STAGES,'invalid_input')
-        if operation == 'audit_contract':
+        require(type(operation) is str and 'enterprise_'+operation in self.command_stages(),'invalid_input')
+        if operation in ('audit_contract', 'audit_record_metadata'):
             require(self.stage == 'baseline', 'invalid_input')
         with self.command_context('enterprise_'+operation):
             return self._enterprise(database,operation,token=token)
@@ -532,20 +555,28 @@ class Native:
         completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
         absent(control,result,completion,pending)
         control.write_text(json.dumps({'schema':1,'nonce':self.nonce,'token':token,'operation':operation}),encoding='utf-8')
-        user=None if operation=='bootstrap' else (SETUP_USER if operation in ('audit','audit_contract') else CRUD_USER)
+        user=None if operation=='bootstrap' else (SETUP_USER if operation in ('audit','audit_contract','audit_record_metadata') else CRUD_USER)
         try:
             log=self.evidence/f'{self.counter+1:03}-{operation}.log'; absent(log)
             self.process(self.command('ENTERPRISE',database,user)+['/RunModeManagedApplication',
                 '/C',token,'/Out',str(log)],operation)
-            if operation == 'audit_contract':
+            observed = operation == 'audit_record_metadata'
+            require(not observed or self.observation is not None,'invalid_input')
+            if operation in ('audit_contract','audit_record_metadata'):
                 absent(pending)
-            finished=completion_marker(regular_bytes(completion,4096),nonce=self.nonce,token=token,operation=operation)
+            finish = self.observation.completion_marker if observed else completion_marker
+            finished=finish(regular_bytes(completion,4096),nonce=self.nonce,token=token,operation=operation)
             if finished['status']=='error':
-                kind = ('artifact_limit' if operation == 'audit_contract' and finished['phase'] == 'contract_limit' else 'process_failed')
+                kind = ('artifact_limit' if ((operation == 'audit_contract' and finished['phase'] == 'contract_limit')
+                    or (observed and finished['phase'] == 'record_limit')) else 'process_failed')
                 error=OracleError(kind); error.oracle_site='result'; error.bsl_phase=finished['phase']
                 raise error
-            data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation,
-                        contract_version=comparison.SCHEMA)
+            if observed:
+                data=self.observation.marker(regular_bytes(result,MAX_REPORT_BYTES),
+                    nonce=self.nonce,token=token,operation=operation)
+            else:
+                data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation,
+                            contract_version=comparison.SCHEMA)
             self.provenance['actual_version']=data['actual_version']
             return data
         finally:
@@ -634,11 +665,90 @@ class Native:
         for identifier in identifiers: self.remove(self.artifacts/identifier)
 
     def observe(self, identifier, designer):
+        if self.record_policy is not None and identifier in self.record_policy.TARGETS:
+            return self.observe_record_state(identifier, designer)
         with self.temporary_clone(identifier,'observer') as database:
             # Designer redump and runtime read are separate clone sessions. Neither touches frozen bytes.
             self.redump(database,designer)
             data=self.enterprise(database,'observe')
             return logical_from_marker(data,designer)
+
+    def observe_record_state(self, identifier, designer):
+        """Keep the existing redump/observe launch order; freeze only their clone."""
+        policy = self.record_policy
+        require(policy is not None and identifier in policy.TARGETS
+                and self.stage == policy.STAGES[identifier] and designer == 1
+                and self.record_pending is None, 'invalid_input')
+        frozen = self.artifacts / 'record_observer_frozen'
+        absent(frozen)
+        try:
+            with self.temporary_clone(identifier, 'observer') as database:
+                expected = self.physical_summary(self.artifacts / identifier / '1Cv8.1CD')
+                origin = self.physical_summary(database / '1Cv8.1CD')
+                require(origin == expected, 'snapshot_changed')
+                origin = {key: origin[key] for key in ('bytes', 'sha256')}
+                token = secrets.token_hex(16)
+                self.redump(database, designer)
+                data = self.enterprise(database, 'observe', token=token)
+                logical = logical_from_marker(data, designer)
+                validate_logical(logical, identifier)
+                with self.command_context('snapshot_freeze'):
+                    self.budgets(self.physical_summary(database / '1Cv8.1CD')['bytes'])
+                    summary = freeze_database(database, frozen, quiescent=self.quiescent)
+                    self.budgets()
+                evidence = {'snapshot': identifier, 'token': token, 'origin': origin,
+                    'postimage': {key: summary[key] for key in ('bytes', 'sha256')}, 'logical': logical}
+            # The writable observer has been removed before this pending evidence.
+            # Baseline waits only until its already scheduled metadata auditor runs.
+            self.record_pending = (identifier, frozen, evidence)
+            return logical
+        except BaseException:
+            try: self.remove(frozen)
+            except BaseException: pass
+            raise
+
+    def prepare_record_profile(self, evidence, report):
+        capture, self.record_names, self.record_profile = self.record_policy.begin_capture(
+            evidence, report, self.record_module)
+        return capture
+
+    def compare_record_state(self, identifier, report):
+        policy = self.record_policy
+        require(policy is not None and identifier in policy.TARGETS
+                and self.record_pending is not None and self.record_pending[0] == identifier
+                and self.record_profile is not None, 'invalid_input')
+        _, frozen, evidence = self.record_pending
+        try:
+            from snapshots import inspect_frozen_catalog
+            expected = next(item for item in report['snapshots'] if item['id'] == identifier)
+            require(evidence['origin'] == {key: expected['physical'][key] for key in ('bytes','sha256')},
+                    'snapshot_changed')
+            framings = []
+            for path, summary in ((self.artifacts / identifier, evidence['origin']),
+                                  (frozen, evidence['postimage'])):
+                def read_selected(read_at, size, *, limits):
+                    return self.record_module.read_records(read_at, size, profile=self.record_profile,
+                        limits=self.record_module.RecordLimits(max_active_records=1), catalog_limits=limits)
+                self.reader_attempted = True
+                try:
+                    measured, rows = inspect_frozen_catalog(path, quiescent=self.quiescent,
+                        read_catalog=read_selected, limits=filedb_catalog.CatalogLimits(), before_read=self.remaining)
+                except filedb_catalog.CatalogError as error:
+                    raise policy.reader_failure(error) from None
+                require(measured == summary, 'snapshot_changed')
+                framings.append(policy.compare_values(rows, identifier, self.record_names, self.record_module))
+                # Do not retain either private catalog/row object beyond its own comparison.
+                del rows
+            result = policy.bind_state(identifier, evidence, report, *framings)
+        except BaseException:
+            try: self.remove(frozen)
+            except BaseException: pass
+            self.record_pending = None
+            raise
+        else:
+            self.remove(frozen)
+            self.record_pending = None
+            return result
 
     def audit(self, identifier):
         with self.temporary_clone(identifier,'auditor') as database:
@@ -700,6 +810,54 @@ class Native:
                             nonce=self.nonce, provenance=self.provenance, baseline=baseline,
                             before_scan=self.remaining) from None
                     raise
+                evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
+            except BaseException:
+                try: self.remove(frozen)
+                except BaseException: pass
+                raise
+            else:
+                self.remove(frozen)
+                return evidence
+
+    def observe_record_metadata(self, identifier):
+        """One baseline metadata call; complete independent declarations, never rows."""
+        policy = self.observation
+        require(policy is not None and self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
+        with self.temporary_clone(identifier, 'auditor') as database:
+            baseline = self.physical_summary(self.artifacts / identifier / '1Cv8.1CD')
+            origin = self.physical_summary(database / '1Cv8.1CD')
+            if origin != baseline:
+                raise policy.ObservationFailure('io_or_change', 'origin_changed')
+            token = secrets.token_hex(16)
+            origin = {'nonce': self.nonce, 'token': token, 'clone': 'auditor',
+                      'bytes': origin['bytes'], 'sha256': origin['sha256']}
+            data = self.enterprise(database, policy.OPERATION, token=token)
+            frozen = self.artifacts / 'auditor_frozen'
+            absent(frozen)
+            try:
+                with self.command_context('snapshot_freeze'):
+                    # Reserve postimage while both baseline and writable clone exist.
+                    self.budgets(self.physical_summary(database / '1Cv8.1CD')['bytes'])
+                    postimage = freeze_database(database, frozen, quiescent=self.quiescent)
+                    self.budgets()
+                try:
+                    from snapshots import inspect_frozen_catalog
+                    self.reader_attempted = True
+                    summary, catalog = inspect_frozen_catalog(frozen, quiescent=self.quiescent,
+                        read_catalog=filedb_catalog.read_catalog, limits=filedb_catalog.CatalogLimits(),
+                        before_read=self.remaining)
+                except filedb_catalog.CatalogError as error:
+                    raise policy.reader_failure(error) from None
+                except OracleError as error:
+                    if error.kind in ('snapshot_changed', 'snapshot_not_quiescent', 'artifact_missing', 'invalid_input'):
+                        raise policy.ObservationFailure('io_or_change', error.kind) from None
+                    if error.kind == 'artifact_limit':
+                        raise policy.ObservationFailure('resource_limit', 'projection_limit') from None
+                    raise
+                if summary != {key: postimage[key] for key in ('bytes', 'sha256')}:
+                    raise policy.ObservationFailure('io_or_change', 'postimage_changed')
+                # Native names only select after the complete independent parse.
+                _, projected = policy.project_catalog(catalog, data['record_metadata'])
                 evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
             except BaseException:
                 try: self.remove(frozen)
@@ -792,6 +950,14 @@ class Controller:
     """Lifecycle orchestration, injectable only for offline tests, not a CLI backend."""
     def __init__(self, backend, report):
         self.backend=backend; self.report=report; self.stage='preflight'
+        self.observation = None
+        self.record_policy = None
+        if report.get('schema') == 6:
+            import record_validation
+            self.record_policy = record_validation
+        if report.get('schema') in (5, 6):
+            import record_observation
+            self.observation = record_observation
 
     def done(self,stage):
         entry=self.report['stages'][STAGES.index(stage)]
@@ -833,6 +999,11 @@ class Controller:
         validate_logical(logical,identifier)
         self.report['snapshots'].append({'id':identifier,'physical':summary,'logical':logical,
             'quiescent':True,'copy_verified':True})
+        if self.record_policy is not None and identifier in ('created','updated'):
+            state = self.backend.compare_record_state(identifier, self.report)
+            self.report['record_readback']['states'].append(state)
+            if identifier == 'updated':
+                self.report['record_validation'] = self.record_policy.VERDICT
 
     def paired(self,stage,operation):
         source,control,treatment=COMPARISONS[stage]
@@ -851,6 +1022,8 @@ class Controller:
 
     def run(self):
         comparison_failure = None
+        observation_failure = None
+        readback_failure = None
         try:
             for stage in STAGES[:-1]:
                 self.stage=stage
@@ -859,7 +1032,22 @@ class Controller:
                 elif stage=='seed_v1': database=self.backend.seed()
                 elif stage=='baseline':
                     self.snapshot(database,'baseline')
-                    if self.report['schema'] == comparison.SCHEMA:
+                    if self.record_policy is not None:
+                        data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
+                        capture = self.backend.prepare_record_profile(data, self.report)
+                        self.report['record_readback'] = capture
+                        self.report['reader_validation'] = comparison.VERDICT
+                        self.report['metadata_validation'] = self.observation.METADATA_VERDICT
+                        self.report['mapping_validation'] = self.record_policy.MAPPING_VERDICT
+                        capture['states'].append(self.backend.compare_record_state('baseline', self.report))
+                        self.report['layout_validation'] = self.record_policy.LAYOUT_VERDICT
+                    elif self.observation is not None:
+                        data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
+                        self.report['record_observation'] = self.observation.bind_capture(data, self.report)
+                        self.report['reader_validation'] = comparison.VERDICT
+                        self.report['metadata_validation'] = 'metadata_projection_captured'
+                        self.report['layout_validation'] = 'declarations_only'
+                    elif self.report['schema'] == comparison.SCHEMA:
                         comparison.require_ascii_field_policy(self.report)
                         data = self.baseline_step('audit', self.backend.compare_catalog, 'baseline')
                         self.report['storage_contract'] = comparison.bind_ascii_fields_capture(data, self.report)
@@ -893,10 +1081,20 @@ class Controller:
                 self.done(stage)
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
-            if type(error) is comparison.ComparisonFailure and self.stage == 'baseline':
+            if self.record_policy is not None and type(error) is self.record_policy.ReadbackFailure:
+                readback_failure = error
+            elif self.record_policy is not None and type(error) in (self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
+                readback_failure = self.record_policy.ReadbackFailure(error.category, error.code)
+            elif self.observation is not None and type(error) in (self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
+                observation_failure = error
+            elif type(error) is comparison.ComparisonFailure and self.stage == 'baseline':
                 comparison_failure = error
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
-            if type(error) is comparison.ComparisonFailure:
+            if readback_failure is not None:
+                kind = self.record_policy.FAILURE_KIND
+            elif observation_failure is not None:
+                kind = self.observation.FAILURE_KIND
+            elif type(error) is comparison.ComparisonFailure:
                 kind = 'catalog_comparison_failed' if self.stage == 'baseline' else 'unexpected_failure'
             elif isinstance(error,BaselineInputError):
                 kind=('baseline_' + error.operation + ('_invalid_input' if error.entry_class is None else
@@ -914,7 +1112,8 @@ class Controller:
                 context={'operation':'inventory','site':'scan','bsl_phase':None,'region':error.region,'reason':error.reason}
             if context is not None:
                 try:
-                    validate_failure_context(context,self.stage)
+                    (self.observation.validate_failure_context if self.observation is not None
+                     else validate_failure_context)(context,self.stage)
                 except OracleError:
                     pass  # A stale or forged context is never exported.
                 else:
@@ -934,10 +1133,17 @@ class Controller:
                 self.report.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified')
             if self.report['status']!='ok':
                 self.report['artifacts']=[]
-                contract.discard_capture(self.report)
-                if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
-                    self.report['reader_validation'] = 'failed'
-                comparison.discard_capture(self.report, comparison_failure)
+                if self.record_policy is not None:
+                    self.record_policy.discard_capture(self.report, readback_failure)
+                elif self.observation is not None:
+                    if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
+                        self.report['reader_validation'] = 'failed'
+                    self.observation.discard_capture(self.report, observation_failure)
+                else:
+                    contract.discard_capture(self.report)
+                    if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
+                        self.report['reader_validation'] = 'failed'
+                    comparison.discard_capture(self.report, comparison_failure)
             if not(processes and files) or self.report['status']=='ok':
                 self.report.pop('rejected_basename',None)
                 self.report.pop('failure_context',None)
@@ -946,16 +1152,29 @@ class Controller:
 
 def main():
     # No arbitrary paths, external DB/config/dump arguments, legacy flags or environment backend selection.
-    if len(sys.argv)!=3 or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
+    if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
+    flag = sys.argv[3] if len(sys.argv)==4 else None
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation'): return 2
+    record_metadata = flag == '--record-metadata-observation'
+    record_reader = flag == '--record-reader-validation'
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        provenance=verify_inputs(INPUTS,nonce)
-        report=comparison.empty_report(nonce,provenance)
-        report=Controller(Native(nonce,provenance),report).run()
+        options=({'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        provenance=verify_inputs(INPUTS,nonce,**options)
+        selected=comparison
+        if record_reader:
+            import record_validation as selected
+            report=selected.empty_report(nonce,provenance)
+        elif record_metadata:
+            import record_observation as selected
+            report=selected.empty_report(nonce,provenance)
+        else:
+            report=comparison.empty_report(nonce,provenance)
+        report=Controller(Native(nonce,provenance,**options),report).run()
         raw=encode(report)
-        comparison.validate_report(raw,nonce=nonce,provenance=provenance)
+        selected.validate_report(raw,nonce=nonce,provenance=provenance)
         sys.stdout.buffer.write(raw+b'\n'); sys.stdout.buffer.flush()
         return 0 if report['status']=='ok' else 1
     except BaseException:

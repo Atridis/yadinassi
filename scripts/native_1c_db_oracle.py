@@ -26,27 +26,29 @@ from protocol import (CHECKS, IMAGE, MAX_REPORT_BYTES, STAGES, decode,
     encode, require)
 from comparison import empty_report, validate_report, discard_capture
 from snapshots import OracleError
-from inputs import source_hashes, stage_inputs, staged_hashes
+from inputs import inventory, source_hashes, stage_inputs, staged_hashes
 import native_1c_smoke as smoke
 
 MAX_RUNTIME=2400
 OUTPUT=Path('native-db-oracle/report.json')
 
 
-def provenance():
+def provenance(*, record_metadata=False, record_reader=False):
+    inventory(record_metadata,record_reader=record_reader)
     try:
         repository=smoke.FULL.repository_provenance(ROOT)
     except (smoke.FULL.FullError,OSError):
         raise OracleError('provenance_mismatch') from None
-    return {'commit':repository['commit'],'tree':repository['tree'],'sources':source_hashes(ROOT),
+    return {'commit':repository['commit'],'tree':repository['tree'],
+        'sources':source_hashes(ROOT,record_metadata=record_metadata,record_reader=record_reader),
         'image':IMAGE,'platform':'linux/amd64','actual_version':None,'locale':'ru_RU.UTF-8','timezone':'Etc/UTC'}
 
 
-def container_command(staged,name,nonce):
+def container_command(staged,name,nonce, *, record_metadata=False, record_reader=False):
     require(type(name) is str and re.fullmatch('onec-db-oracle-[0-9a-f]{32}',name) is not None,'invalid_input')
     require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}',nonce) is not None,'invalid_input')
     require(staged.is_dir() and not staged.is_symlink() and ',' not in str(staged),'invalid_input')
-    staged_hashes(staged)
+    staged_hashes(staged,record_metadata=record_metadata,record_reader=record_reader)
     return ['docker','run','--name',name,'--hostname','onec-db-oracle',
         '--pull','never','--platform','linux/amd64','--network','none',
         '--user','1000:1000','--read-only','--no-healthcheck','--cap-drop','ALL',
@@ -60,10 +62,13 @@ def container_command(staged,name,nonce):
         'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
         'HOME=/tmp/onec-db-oracle/home','TMPDIR=/tmp/onec-db-oracle/temp','XDG_RUNTIME_DIR=/tmp/runtime','DISPLAY=:99',
         'LANG=ru_RU.UTF-8','LC_ALL=ru_RU.UTF-8','TZ=Etc/UTC',
-        '/bin/bash','--noprofile','--norc','/oracle/probe.sh','--invocation-nonce',nonce]
+        '/bin/bash','--noprofile','--norc','/oracle/probe.sh','--invocation-nonce',nonce] + (
+        ['--record-reader-validation'] if record_reader else
+        ['--record-metadata-observation'] if record_metadata else [])
 
 
-def fail_report(report,kind,stage='preflight',*,preserve_primary=False):
+def fail_report(report,kind,stage='preflight',*,preserve_primary=False,record_reader=False):
+    require(type(record_reader) is bool,'invalid_input')
     report.pop('rejected_basename',None)
     report.pop('failure_context',None)
     # Cleanup has its own checks; do not erase a validated primary failure.
@@ -76,20 +81,37 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False):
     entry['checks']=({key:report['cleanup'][key] for key in CHECKS[stage]} if stage=='cleanup'
                      else {key:False for key in CHECKS[stage]})
     report['artifacts']=[]
-    discard_capture(report)
+    if record_reader:
+        import record_validation
+        record_validation.discard_capture(report,final=True)
+    elif report.get('schema') == 5:
+        import record_observation
+        record_observation.discard_capture(report)
+    else:
+        discard_capture(report)
 
 
-def run_oracle(temp_root):
+def run_oracle(temp_root, *, record_metadata=False, record_reader=False):
+    inventory(record_metadata,record_reader=record_reader)
+    options={'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {}
+    if record_reader:
+        import record_validation as selected
+        make_report=selected.empty_report; check_report=selected.validate_report
+    elif record_metadata:
+        import record_observation as selected
+        make_report=selected.empty_report; check_report=selected.validate_report
+    else:
+        make_report=empty_report; check_report=validate_report
     # Credentials are removed before git, Docker or any other external process.
     token=os.environ.pop('GHCR_TOKEN',''); actor=os.environ.pop('GHCR_USER','')
     nonce=uuid.uuid4().hex; name='onec-db-oracle-'+uuid.uuid4().hex
-    identity=provenance(); report=empty_report(nonce,identity.copy())
+    identity=provenance(**options); report=make_report(nonce,identity.copy())
     work_name=None; attempted=False; container_removed=True; native_cleanup=False
     primary=None; validated=False
     try:
         with tempfile.TemporaryDirectory(prefix='onec-db-oracle-',dir=temp_root) as work_name:
             work=Path(work_name).resolve(); staged=work/'inputs'
-            stage_inputs(ROOT,staged,nonce,identity)
+            stage_inputs(ROOT,staged,nonce,identity,**options)
             require(bool(token) and re.fullmatch('[A-Za-z0-9-]{1,39}',actor) is not None,'registry_credentials_missing')
             auth=work/'auth'; auth.mkdir(mode=0o700)
             try:
@@ -105,8 +127,8 @@ def run_oracle(temp_root):
             require(code==0 and value.strip()==b'linux/amd64|0','container_unavailable')
             try:
                 attempted=True; container_removed=False
-                code,raw=smoke.bounded_run(container_command(staged,name,nonce),env,MAX_RUNTIME,MAX_REPORT_BYTES)
-                report=validate_report(raw,nonce=nonce,provenance=identity)
+                code,raw=smoke.bounded_run(container_command(staged,name,nonce,**options),env,MAX_RUNTIME,MAX_REPORT_BYTES)
+                report=check_report(raw,nonce=nonce,provenance=identity)
                 validated=True
                 require((code==0)==(report['status']=='ok'),'transport_invalid')
                 native_cleanup=all(report['cleanup'][key] for key in ('native_processes_stopped','raw_files_removed'))
@@ -118,7 +140,7 @@ def run_oracle(temp_root):
                     container_removed=code==0 and not value.strip()
                 except smoke.SmokeError:
                     container_removed=False
-            require(provenance()==identity,'provenance_mismatch')
+            require(provenance(**options)==identity,'provenance_mismatch')
     except OracleError as error:
         primary=error.kind
     except smoke.SmokeError as error:
@@ -129,21 +151,21 @@ def run_oracle(temp_root):
         token=''
     private_removed=work_name is not None and not Path(work_name).exists()
     if primary:
-        if not validated: report=empty_report(nonce,identity.copy())
-        fail_report(report,primary,'cleanup' if validated else 'preflight')
+        if not validated: report=make_report(nonce,identity.copy())
+        fail_report(report,primary,'cleanup' if validated else 'preflight',record_reader=record_reader)
     if not attempted or (container_removed and not validated):
         native_cleanup=True
         report['cleanup'].update(native_processes_stopped=True,raw_files_removed=True)
     report['cleanup'].update(container_removed=container_removed,private_staging_removed=private_removed)
     if not container_removed or not private_removed:
-        fail_report(report,'cleanup_unverified','cleanup',preserve_primary=validated)
+        fail_report(report,'cleanup_unverified','cleanup',preserve_primary=validated,record_reader=record_reader)
     elif not attempted or not validated:
         entry=report['stages'][-1]; entry['status']='ok'; entry['checks']={key:True for key in CHECKS['cleanup']}
     if not all(report['cleanup'].values()):
         report.pop('rejected_basename',None)
         report.pop('failure_context',None)
     report['accepted']=report['status']=='ok' and all(report['cleanup'].values())
-    validate_report(encode(report),nonce=nonce,provenance=identity,final=True)
+    check_report(encode(report),nonce=nonce,provenance=identity,final=True)
     return report
 
 
@@ -185,9 +207,14 @@ class Arguments(argparse.ArgumentParser):
 
 
 def main(argv=None):
-    parser=Arguments(description=__doc__)
+    parser=Arguments(description=__doc__,allow_abbrev=False)
     parser.add_argument('--execute-approved-image',action='store_true')
     parser.add_argument('--file-db-oracle',action='store_true')
+    modes=parser.add_mutually_exclusive_group()
+    modes.add_argument('--record-metadata-observation',action='store_true',
+        help='explicit bounded baseline metadata/declaration observation; not record acceptance')
+    modes.add_argument('--record-reader-validation',action='store_true',
+        help='explicit bounded owned-record readback and validation')
     parser.add_argument('--output',default=str(OUTPUT))
     args=parser.parse_args(argv)
     if not args.execute_approved_image or not args.file_db_oracle or args.output!=str(OUTPUT):
@@ -197,7 +224,9 @@ def main(argv=None):
         parser.error('stale_evidence')
     try:
         root_info=ROOT.stat(); root_identity=(root_info.st_dev,root_info.st_ino)
-        report=run_oracle(Path(tempfile.gettempdir()))
+        options=({'record_reader':True} if args.record_reader_validation else
+                 {'record_metadata':True} if args.record_metadata_observation else {})
+        report=run_oracle(Path(tempfile.gettempdir()),**options)
         raw=encode(report)
         export_report(raw,root_identity)
         if 'GITHUB_OUTPUT' in os.environ:
