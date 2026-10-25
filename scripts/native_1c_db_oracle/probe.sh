@@ -6,7 +6,7 @@ exec 2>/dev/null
 case "$#" in
   2) ;;
   3) case "$3" in
-       --record-metadata-observation|--record-reader-validation|--params-transport-observation|--params-dbnames-extraction) ;;
+       --record-metadata-observation|--record-reader-validation|--params-transport-observation|--params-dbnames-extraction|--dbnames-identity-validation) ;;
        *) exit 2 ;;
      esac ;;
   *) exit 2 ;;

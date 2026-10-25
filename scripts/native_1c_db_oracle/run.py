@@ -306,21 +306,26 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
-                and sum((record_metadata, record_reader, params_transport, params_extraction)) <= 1, 'invalid_input')
+                and type(dbnames_identity) is bool
+                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity)) <= 1, 'invalid_input')
         self.observation = None
-        if record_metadata or record_reader or params_transport or params_extraction:
+        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity:
             import record_observation
             self.observation = record_observation
         self.params_policy = None
-        if params_extraction:
+        if dbnames_identity:
+            import dbnames_identity as identity_policy
+            self.params_policy = identity_policy
+        elif params_extraction:
             import params_extraction as extraction_policy
             self.params_policy = extraction_policy
         elif params_transport:
             import params_observation
             self.params_policy = params_observation
+        self.identity_manifest = None; self.identity_baseline_verified = False
         self.record_policy = None; self.record_module = None
         self.record_pending = None; self.record_names = None; self.record_profile = None
         if record_reader:
@@ -616,7 +621,19 @@ class Native:
         target=self.root/f'redump-{self.counter+1:03}'; absent(target)
         self.batch(database,['/DumpConfigToFiles',str(target),'-Format','Hierarchical'],'redump',user)
         try:
-            verify_redump(self.v1 if version==1 else self.v2,target,version=version)
+            expected = self.v1 if version == 1 else self.v2
+            verify_redump(expected,target,version=version)
+            if (getattr(self, 'params_policy', None) is not None and self.params_policy.SCHEMA == 9
+                    and version == 1 and self.stage in ('seed_v1', 'baseline')):
+                manifest = self.params_policy.build_identity_manifest(
+                    expected, target, nonce=self.nonce, version=version)
+                if self.stage == 'seed_v1':
+                    require(self.identity_manifest is None, 'metadata_rejected')
+                    self.identity_manifest = manifest
+                else:
+                    require(self.identity_manifest is not None and manifest == self.identity_manifest,
+                            'metadata_rejected')
+                    self.identity_baseline_verified = True
         except (ValueError,OSError):
             raise OracleError('metadata_rejected') from None
         finally:
@@ -832,6 +849,9 @@ class Native:
         params_policy = getattr(self, 'params_policy', None)
         policy = params_policy or self.observation
         require(policy is not None and self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
+        if params_policy is not None and params_policy.SCHEMA == 9:
+            require(self.identity_baseline_verified and self.identity_manifest is not None,
+                    'metadata_rejected')
         with self.temporary_clone(identifier, 'auditor') as database:
             baseline = self.physical_summary(self.artifacts / identifier / '1Cv8.1CD')
             origin = self.physical_summary(database / '1Cv8.1CD')
@@ -872,6 +892,10 @@ class Native:
                 else:
                     _, projected = policy.project_catalog(catalog, data['record_metadata'])
                 evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
+                if params_policy is not None and params_policy.SCHEMA == 9:
+                    require(self.identity_baseline_verified and self.identity_manifest is not None,
+                            'metadata_rejected')
+                    evidence['identity_manifest'] = self.identity_manifest
             except BaseException:
                 try: self.remove(frozen)
                 except BaseException: pass
@@ -966,7 +990,10 @@ class Controller:
         self.observation = None
         self.record_policy = None
         self.params_policy = None
-        if report.get('schema') == 8:
+        if report.get('schema') == 9:
+            import dbnames_identity
+            self.params_policy = dbnames_identity
+        elif report.get('schema') == 8:
             import params_extraction
             self.params_policy = params_extraction
         elif report.get('schema') == 7:
@@ -975,7 +1002,7 @@ class Controller:
         if report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6, 7, 8):
+        if report.get('schema') in (5, 6, 7, 8, 9):
             import record_observation
             self.observation = record_observation
 
@@ -1055,10 +1082,14 @@ class Controller:
                     self.snapshot(database,'baseline')
                     if self.params_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
-                        capture_key = 'params_extraction' if self.report['schema'] == 8 else 'params_observation'
-                        validation_key = 'extraction_validation' if self.report['schema'] == 8 else 'observation_validation'
+                        capture_key = ('dbnames_identity' if self.report['schema'] == 9 else
+                            'params_extraction' if self.report['schema'] == 8 else 'params_observation')
+                        validation_key = ('mapping_validation' if self.report['schema'] == 9 else
+                            'extraction_validation' if self.report['schema'] == 8 else 'observation_validation')
                         self.report[capture_key] = self.params_policy.bind_capture(data, self.report)
                         self.report['reader_validation'] = self.report[validation_key] = self.params_policy.VERDICT
+                        if self.report['schema'] == 9:
+                            self.report['extraction_validation'] = 'extraction_observed'
                     elif self.record_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
                         capture = self.backend.prepare_record_profile(data, self.report)
@@ -1191,18 +1222,22 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
     params_transport = flag == '--params-transport-observation'
     params_extraction = flag == '--params-dbnames-extraction'
+    dbnames_identity = flag == '--dbnames-identity-validation'
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if params_extraction:
+        if dbnames_identity:
+            import dbnames_identity as selected
+            report=selected.empty_report(nonce,provenance)
+        elif params_extraction:
             import params_extraction as selected
             report=selected.empty_report(nonce,provenance)
         elif params_transport:

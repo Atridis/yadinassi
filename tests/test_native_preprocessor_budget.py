@@ -50,7 +50,7 @@ def source_provenance():
     # availability is irrelevant to this byte budget, so supply pinned versions.
     with mock.patch.object(full.importlib.metadata,'version',side_effect=lambda name:full.DEPENDENCIES[name]):
         result=full.interpreter_provenance(ROOT)
-    if result['source_file_count'] != 60:
+    if result['source_file_count'] != 61:
         raise AssertionError(('Unexpected runtime inventory',result['source_file_count']))
     return result
 
@@ -114,7 +114,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
             options=dict(zip(ib.OPTION_NAMES,selected));wire=self.roundtrip(stage,inputs,modules,**options)
             schemas.add(json.loads(wire)['schema'])
             public,code=summary(report_for(stage,accepted=True),selected=selected)
-            self.assertEqual(code,0);self.assertEqual(json.loads(public)['probe']['interpreter']['source_file_count'],60)
+            self.assertEqual(code,0);self.assertEqual(json.loads(public)['probe']['interpreter']['source_file_count'],61)
             for downgrade in ('schema','status','token','identity'):
                 raw=json.loads(wire)
                 if downgrade=='schema': raw['schema']-=4;raw.pop('preprocessor_status')
@@ -219,7 +219,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
             manifest=json.loads(files['provenance.json'])
             self.assertFalse(manifest['preprocessor_parity_claimed'])
             self.assertEqual(manifest['purpose'],'client-preprocessor-observation-v1')
-            self.assertEqual(manifest['interpreter']['source_file_count'],60)
+            self.assertEqual(manifest['interpreter']['source_file_count'],61)
             self.assertNotIn(TOKEN,files['provenance.json'].decode())
             # The complete production builder also sees the longest supported
             # comparison partition, including Async error rows when requested.
@@ -247,7 +247,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
                         self.assertEqual(suite.preprocessor_client_marker(path,value['nonce'],phase,
                             source_hash=full.PREPROCESSOR_SOURCE_SHA256),value)
         BOUNDS['private_marker_upper']=max(markers);self.assertLessEqual(max(markers),2048)
-        provenance=source_provenance();self.assertEqual(provenance['source_file_count'],60)
+        provenance=source_provenance();self.assertEqual(provenance['source_file_count'],61)
         BOUNDS['runtime_source_count']=provenance['source_file_count']
         self.assertEqual(full.ARTIFACT_FILES,ab.ARTIFACT_CLASSES)
         self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,smoke.MAX_OUTPUT),(8192,8192,32768))
