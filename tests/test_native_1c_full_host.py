@@ -543,14 +543,20 @@ class ProvenanceTests(SyntheticFilesystemCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             (root / "yadinassi").mkdir()
-            (root / "yadinassi/__init__.py").write_text("# clean")
-            state = {"dirty": b""}
+            (root / "yadinassi/__init__.py").write_text("# clean", encoding="utf-8")
+            (root / "scripts").mkdir()
+            (root / "scripts/native_infobase_fixture.py").write_text("# owned helper", encoding="utf-8")
+            state = {"dirty": b"", "helper_tracked": True}
             def git(args, cwd, **kwargs):
                 command = args[3:]
                 if command == ["rev-parse", "HEAD^{commit}"]: return 0, b"c" * 40 + b"\n", b""
                 if command == ["rev-parse", "HEAD^{tree}"]: return 0, b"d" * 40 + b"\n", b""
                 if command[0] == "status": return 0, state["dirty"], b""
-                if command[0] == "ls-files": return 0, b"yadinassi/__init__.py\n", b""
+                if command[0] == "ls-files":
+                    files = b"yadinassi/__init__.py\n"
+                    if state["helper_tracked"]:
+                        files += b"scripts/native_infobase_fixture.py\n"
+                    return 0, files, b""
                 raise AssertionError(command)
             with mock.patch.object(full, "bounded_child", side_effect=git), mock.patch.dict(os.environ, {}, clear=True):
                 self.assertEqual(full.repository_provenance(root), {"commit":"c"*40,"tree":"d"*40})
@@ -559,7 +565,11 @@ class ProvenanceTests(SyntheticFilesystemCase):
                 state["dirty"] = b""
                 with mock.patch.dict(os.environ, {"GITHUB_SHA":"e"*40}):
                     with self.assertRaisesRegex(full.FullError, "repository_commit_mismatch"): full.repository_provenance(root)
-                (root / "yadinassi/ignored.py").write_text("# hidden by .gitignore")
+                state["helper_tracked"] = False
+                with self.assertRaisesRegex(full.FullError, "repository_sources_unverified"):
+                    full.repository_provenance(root)
+                state["helper_tracked"] = True
+                (root / "yadinassi/ignored.py").write_text("# hidden by .gitignore", encoding="utf-8")
                 with self.assertRaisesRegex(full.FullError, "repository_sources_unverified"): full.repository_provenance(root)
 
     def test_fixed_dependency_versions_and_bounded_interpreter_digest(self):

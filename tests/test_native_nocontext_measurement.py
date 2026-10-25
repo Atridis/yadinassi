@@ -1,6 +1,7 @@
 """Historical NoContext capture and current exact whole-source witness."""
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import tempfile
@@ -20,7 +21,7 @@ class NoContextWitnessTests(unittest.TestCase):
 
     def test_captured_profile_projection_preserves_other_thirteen_values(self):
         capture=json.loads((ROOT/'integrational_tests/directive_probes/nocontext_native.json').read_text())
-        raw=suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
+        raw=suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
         logical=b"#If AtClient Then\n    ProfileMask = ProfileMask + 1;\n#EndIf\n#If AtServer Then\n    ProfileMask = ProfileMask + 2;\n#EndIf"
         historical=b"\n".join(("#If %s Then\n    ProfileMask = ProfileMask + %s;\n#EndIf" % (name, bit)).encode()
             for name,bit in capture['profile_bits'].items())
@@ -62,7 +63,7 @@ class NoContextWitnessTests(unittest.TestCase):
             phase='completed',kind='count',ordinal=134,error_stage=0,nocontext=[False]*14))
 
     def test_inverse_restores_exact_audited119(self):
-        raw = suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
+        raw = suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
         restored = full.nocontext_shared_source(raw)
         self.assertEqual(restored, suite.nocontext_shared_source(raw))
         self.assertEqual(full.digest(restored), 'a3e4fd9b809013b1d704a6a7af5b77353e04a129f3a0cd0ca3a40692458c1e17')
@@ -73,8 +74,8 @@ class NoContextWitnessTests(unittest.TestCase):
         self.assertEqual(full.CLIENT_VALUES, suite.CLIENT_VALUES)
         self.assertEqual((suite.MAX_STAGE_REPORT, full.MAX_STAGE_REPORT, full.MAX_REPORT), (8192,8192,32768))
 
-    @unittest.skipIf(os.name=='nt', 'production bounded interpreter child is POSIX-only')
-    def test_whole_source136_interpreter_preflight(self):
+    @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
+    def test_whole_source137_interpreter_preflight(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         full.verify_client_interpreter(ROOT, ROOT/full.CLIENT_SOURCE, full.digest(raw))
 
@@ -102,7 +103,7 @@ class NoContextWitnessTests(unittest.TestCase):
             self.assertTrue(all(v.casefold() in declared for v in assignments),name)
 
     def test_declarations_precede_the_unchanged_module_initializer_tail(self):
-        raw=suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))
+        raw=suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
         tail=full.CLIENT_NOCONTEXT_INITIALIZER
         self.assertTrue(raw.endswith(full.CLIENT_NOCONTEXT_BLOCK+tail))
         self.assertTrue(full.nocontext_shared_source(raw).endswith(tail))

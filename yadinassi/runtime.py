@@ -9,6 +9,7 @@ from typing import Callable
 
 from . import ast, bits, clocks, date_time_conversions, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
+from .database_context import FileDBContext, require_database_context
 from .round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
@@ -129,8 +130,10 @@ class _Namespace:
 
 class Interpreter:
     def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig",
-                 native_target: str = WINDOWS_8_3_27_2342):
+                 native_target: str = WINDOWS_8_3_27_2342,
+                 database_context: FileDBContext | None = None):
         self._native_target = validate_native_target(native_target)
+        self._database_context = database_context
         self._scheduler = Scheduler(self._native_target)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
@@ -166,6 +169,11 @@ class Interpreter:
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
         self.register_function("Булево", boolean, "Boolean")
+        # Bind only immutable startup data, never the interpreter's client frame.
+        connection_string = (database_context.connection_string if database_context is not None
+                             else require_database_context)
+        self.register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
+                               "InfoBaseConnectionString")
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
                                "FillPropertyValues", returns_value=False)
         self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
@@ -196,6 +204,10 @@ class Interpreter:
         self.register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
         self.register_type("КвалификаторыДаты", BSLDateQualifiers, "DateQualifiers")
         self.register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
+
+    @property
+    def database_context(self) -> FileDBContext | None:
+        return self._database_context
 
     @property
     def locals(self):
@@ -1050,7 +1062,8 @@ class Interpreter:
 
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
-        server = Interpreter(self.output, encoding=self.encoding, native_target=self.native_target)
+        server = Interpreter(self.output, encoding=self.encoding, native_target=self.native_target,
+                             database_context=self.database_context)
         server._scheduler = self._scheduler
         server._logical_side = "server"
         server._context_stack = self._context_stack
@@ -1290,7 +1303,8 @@ class Interpreter:
             except (OSError, UnicodeError, LookupError) as error:
                 raise ValueError(f"Не удалось прочитать модуль {path}: {error}") from None
             child = Interpreter(self.output, encoding=self.encoding,
-                                native_target=self.native_target)
+                                native_target=self.native_target,
+                                database_context=self.database_context)
             child._scheduler = self._scheduler
             child._diagnostic_owner = self._diagnostic_owner
             child.functions = self.functions.copy()

@@ -3,7 +3,10 @@
 `yadinassi.storage.filedb.inspect_header(path, *, max_pages=4294967295,
 max_file_bytes=281474976645120)` is a small Python API for inspecting the header
 and physical length of a **caller-provided consistent offline copy**. There is
-no CLI, BSL API, Interpreter change, live connection or automatic snapshot.
+no CLI, BSL API, live connection or automatic snapshot in this inspection module.
+The separate [optional file-database context](file-database-context.md) integrates
+this inspector with Interpreter and `--f`; it does not add a native session or
+strengthen the header-only validity guarantees below.
 The implementation uses only Python's standard library; importing through the
 existing `yadinassi` package still loads its normal interpreter dependencies.
 The native test harness stages the same source as a standalone module, without

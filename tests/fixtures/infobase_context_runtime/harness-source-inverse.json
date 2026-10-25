@@ -1,0 +1,102 @@
+{
+  "scripts/native_1c_full_host.py": {
+    "base_sha256": "cc9479534665d48b50fc622c470615babdc3dc8d1263f862de11073d0e26f662",
+    "candidate_sha256": "c0a8622caf288357e0322d98d76d286b417b04581fe5188dc1307a361efbf804",
+    "edits": [
+      {
+        "old": "",
+        "new": "import types\n"
+      },
+      {
+        "old": "",
+        "new": "# Historical 136 values remain unchanged for legacy adapters and their proofs.\n# Current source-bound admission executes and requires all 137 values.\nCLIENT_RUNTIME_VALUES = CLIENT_VALUES + ['ibc.v1:121122221122021122021122021122']\n"
+      },
+      {
+        "old": "vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError(\"unexpected message\")))\n",
+        "new": "from yadinassi.database_context import FileDBContext\nvm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError(\"unexpected message\")),\n                 database_context=FileDBContext(sys.argv[3]))\n"
+      },
+      {
+        "old": "",
+        "new": "# Independently audited capture: run 40137786320, not a synthetic prediction.\nINFOBASE_CONTEXT_EXPECTED_TOKEN = 'ibc.v1:121122221122021122021122021122'\n"
+      },
+      {
+        "old": "",
+        "new": "def _load_infobase_fixture():\n    \"\"\"Load the source-inventoried Linux fixture helper from this checkout only.\"\"\"\n    path = Path(__file__).with_name(\"native_infobase_fixture.py\")\n    source = read_regular(path, 4 * MAX_FILE, nonempty=True)\n    # Never execute ignored timestamp-valid bytecode beside this safety helper.\n    module = types.ModuleType(\"_native_infobase_fixture\")\n    module.__file__ = str(path)\n    exec(compile(source, str(path), \"exec\"), module.__dict__)\n    return module\n\n\n"
+      },
+      {
+        "old": "    \"\"\"Execute the exact restored strict136 source, not the unimplemented new API.\"\"\"\n",
+        "new": "    \"\"\"Execute the exact whole137 source with a real, exclusively owned file DB.\n\n    This preflight is Linux-only and assumes a trusted single-job host. Its\n    fixture is header-recognized synthetic storage, not a valid native database.\n    The historical inverse is used by legacy adapters only, never admission.\n    \"\"\"\n"
+      },
+      {
+        "old": "    restored = infobase_shared_source(raw)\n    runner = bounded_child if runner is None else runner\n    with tempfile.TemporaryDirectory(prefix=\"client-interpreter-cache-\") as cache:\n        baseline = Path(cache) / \"strict136.bsl\"\n        baseline.write_bytes(restored)\n        code, output, stderr = runner(\n            [sys.executable, \"-I\", \"-B\", \"-X\", \"pycache_prefix=\" + cache,\n             \"-c\", CLIENT_EXECUTE_SCRIPT, str(root), str(baseline)], root)\n        if baseline.read_bytes() != restored:\n            raise FullError(\"source_changed\")\n    expected = json.dumps(CLIENT_VALUES, ensure_ascii=False, separators=(\",\", \":\")).encode()\n    if code != 0 or stderr or output != expected:\n        raise FullError(\"interpreter_failed\")\n    if read_regular(source, MAX_FILE, nonempty=True) != raw:\n        raise FullError(\"source_changed\")\n",
+        "new": "    fixture_module = _load_infobase_fixture()\n    try:\n        with fixture_module.OwnedInfobase() as fixture:\n            fixture.verify()\n            with tempfile.TemporaryDirectory(prefix=\"client-interpreter-cache-\") as cache:\n                arguments = [sys.executable, \"-I\", \"-B\", \"-X\", \"pycache_prefix=\" + cache,\n                             \"-c\", CLIENT_EXECUTE_SCRIPT, str(root), str(source), str(fixture.directory)]\n                if runner is None:\n                    code, output, stderr = fixture.run_child(\n                        arguments, root, env=child_environment(), seconds=CASE_SECONDS,\n                        stdout_limit=MAX_FILE, stderr_limit=MAX_STDERR)\n                else:\n                    # Explicit offline injection only; production always runs\n                    # the bounded child above with the genuine runtime context.\n                    code, output, stderr = runner(arguments, root)\n                fixture.verify()\n                if read_regular(source, MAX_FILE, nonempty=True) != raw:\n                    raise FullError(\"source_changed\")\n            expected = json.dumps(CLIENT_RUNTIME_VALUES, ensure_ascii=False,\n                                  separators=(\",\", \":\")).encode()\n            if code != 0 or stderr or output != expected:\n                raise FullError(\"interpreter_failed\")\n    except fixture_module.FixtureError as error:\n        # Translation stays outside the owner so an uncertain child shutdown\n        # prevents fixture removal before finite public reporting.\n        raise FullError(error.code) from None\n"
+      },
+      {
+        "old": "            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_VALUES)\n",
+        "new": "            or type(value['ordinal']) is not int or not -1 <= value['ordinal'] <= len(CLIENT_RUNTIME_VALUES)\n"
+      },
+      {
+        "old": "        valid = 0 <= value['ordinal'] <= len(CLIENT_VALUES) and value['error_stage'] == 0\n",
+        "new": "        valid = 0 <= value['ordinal'] <= len(CLIENT_RUNTIME_VALUES) and value['error_stage'] == 0\n"
+      },
+      {
+        "old": "        valid = 0 <= value['ordinal'] < len(CLIENT_VALUES) and value['error_stage'] == 0\n",
+        "new": "        valid = 0 <= value['ordinal'] < len(CLIENT_RUNTIME_VALUES) and value['error_stage'] == 0\n"
+      },
+      {
+        "old": "",
+        "new": "        if data['infobase_context'] != INFOBASE_CONTEXT_EXPECTED_TOKEN:\n            raise ValueError('infobase context runtime mismatch')\n"
+      },
+      {
+        "old": "    tracked = set(git(\"ls-files\", \"--\", \"yadinassi\").splitlines())\n",
+        "new": "    tracked = set(git(\"ls-files\", \"--\", \"yadinassi\", \"scripts/native_infobase_fixture.py\").splitlines())\n"
+      },
+      {
+        "old": "",
+        "new": "    actual.add(\"scripts/native_infobase_fixture.py\")\n"
+      },
+      {
+        "old": "              root / \"scripts/native_1c_map_contract.py\", root / \"scripts/native_async_comparison.py\"]\n",
+        "new": "              root / \"scripts/native_1c_map_contract.py\", root / \"scripts/native_async_comparison.py\",\n              root / \"scripts/native_infobase_fixture.py\"]\n"
+      }
+    ]
+  },
+  "scripts/native_1c_bootstrap/full_suite.py": {
+    "base_sha256": "86e71657d572955d7528f7d73a0ff99f61707e2e7e32cfacdbc3fb552f27bcf5",
+    "candidate_sha256": "a932f221e97d31c8e9479d755cce0828dc9e63db7c2d74ab21d10dc4af137b0a",
+    "edits": [
+      {
+        "old": "",
+        "new": "# Independently audited capture: run 40137786320, not a synthetic prediction.\nINFOBASE_CONTEXT_EXPECTED_TOKEN = 'ibc.v1:121122221122021122021122021122'\n"
+      },
+      {
+        "old": "",
+        "new": "# Historical 136 values remain unchanged for legacy adapters and their proofs.\n# Current source-bound admission executes and requires all 137 values.\nCLIENT_RUNTIME_VALUES = CLIENT_VALUES + ['ibc.v1:121122221122021122021122021122']\n"
+      },
+      {
+        "old": "    \"\"\"Typed strict136 prefix plus one independent source-bound observation.\"\"\"\n",
+        "new": "    \"\"\"Current source-bound strict137 contract from an audited native capture.\"\"\"\n"
+      },
+      {
+        "old": "",
+        "new": "        if value['values'][-1] != INFOBASE_CONTEXT_EXPECTED_TOKEN:\n            raise ValueError('infobase context runtime mismatch')\n"
+      },
+      {
+        "old": "def client_marker_diagnostics(path: Path, nonce: str) -> dict:\n",
+        "new": "def client_marker_diagnostics(path: Path, nonce: str, *, infobase_required=False) -> dict:\n"
+      },
+      {
+        "old": "    for index, (actual, expected) in enumerate(zip(values, CLIENT_VALUES)):\n",
+        "new": "    expected_values = CLIENT_RUNTIME_VALUES if infobase_required else CLIENT_VALUES\n    for index, (actual, expected) in enumerate(zip(values, expected_values)):\n"
+      },
+      {
+        "old": "    if len(values) != len(CLIENT_VALUES):\n        result.update(kind='count', ordinal=min(len(values), len(CLIENT_VALUES)))\n",
+        "new": "    if len(values) != len(expected_values):\n        result.update(kind='count', ordinal=min(len(values), len(expected_values)))\n"
+      },
+      {
+        "old": "                record['marker_diagnostics'] = client_marker_diagnostics(completed, nonce)\n",
+        "new": "                record['marker_diagnostics'] = client_marker_diagnostics(\n                    completed, nonce, infobase_required=infobase_measurement)\n"
+      }
+    ]
+  }
+}

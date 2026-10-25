@@ -56,6 +56,50 @@ class FullError(Exception):
         super().__init__(self.kind)
 
 
+# BEGIN bounded infobase-context measurement binding
+INFOBASE_CONTEXT_SOURCE_SHA256 = 'baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d'
+INFOBASE_CONTEXT_MODULE_SHA256 = '8f0e26621fed3a26f3073764f51dbf1c2164e4ebcc9a50b24f052487ba2b3be9'
+INFOBASE_CONTEXT_BASE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
+# Independently audited capture: run 40137786320, not a synthetic prediction.
+INFOBASE_CONTEXT_EXPECTED_TOKEN = 'ibc.v1:121122221122021122021122021122'
+INFOBASE_CONTEXT_CORE = b'// BEGIN bounded infobase context measurement\n// Only ordinary /tmp/onec-smoke/db, verified by the native host.\n// Zero-argument calls are direct; arity rejection is dynamic, not static.\n&AtClient\nFunction IBCClient()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServer\nFunction IBCServer()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServerNoContext\nFunction IBCNoContext()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCDual()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCObserve(Val Profile, Val EnglishValue, Val RussianValue)\n    Var Shape, Aliases, EnglishArity, RussianArity, IBCArityTemporary;\n    If TypeOf(EnglishValue) <> Type("String") Or TypeOf(RussianValue) <> Type("String") Then\n        Return IBCEncode(Profile, 3, 0, 0, 0, 0);\n    EndIf;\n    Shape = 0;\n    If EnglishValue = "File=""/tmp/onec-smoke/db"";" Then Shape = 1; EndIf;\n    If EnglishValue = "File=""/tmp/onec-smoke/db""" Then Shape = 2; EndIf;\n    Aliases = 0;\n    If EnglishValue = RussianValue Then Aliases = 1; EndIf;\n    // Arity runs in this dual no-context observer, on the same side.\n    // It does not measure the originating routine\'s arity profile.\n    EnglishArity = 1;\n    Try\n        Execute("IBCArityTemporary = InfoBaseConnectionString(1);");\n    Except\n        EnglishArity = 2;\n    EndTry;\n    RussianArity = 1;\n    Try\n        Execute("IBCArityTemporary = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b(1);");\n    Except\n        RussianArity = 2;\n    EndTry;\n    Return IBCEncode(Profile, 2, Shape, Aliases, EnglishArity, RussianArity);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCEncode(Val Profile, Val Status, Val Shape, Val Aliases, Val EnglishArity, Val RussianArity)\n    Return Mid("0123", Profile + 1, 1) + Mid("0123", Status + 1, 1)\n        + Mid("012", Shape + 1, 1) + Mid("01", Aliases + 1, 1)\n        + Mid("012", EnglishArity + 1, 1) + Mid("012", RussianArity + 1, 1);\nEndFunction\n\n&AtServer\nFunction IBCServerDual()\n    Return IBCDual();\nEndFunction\n\n&AtClient\nProcedure IBCAppend(RecordsOut)\n    Var Encoded;\n    Encoded = "ibc.v1:" + IBCClient() + IBCServer() + IBCNoContext()\n        + IBCDual() + IBCServerDual();\n    If StrLen(Encoded) <> 37 Then Raise "ibc-invalid-token"; EndIf;\n    RecordsOut.Add(Encoded);\nEndProcedure\n// END bounded infobase context measurement\n'
+INFOBASE_CONTEXT_CALL = '    IBCAppend(Значения);\n'.encode('utf-8')
+
+
+def infobase_shared_source(raw: bytes) -> bytes:
+    """Exact measurement inverse; no generic routine stripping or API emulation."""
+    if (type(raw) is not bytes or digest(raw) != INFOBASE_CONTEXT_SOURCE_SHA256
+            or raw.count(INFOBASE_CONTEXT_CORE) != 1 or raw.count(INFOBASE_CONTEXT_CALL) != 1):
+        raise FullError('source_changed')
+    restored = raw.replace(INFOBASE_CONTEXT_CORE, b'', 1).replace(INFOBASE_CONTEXT_CALL, b'', 1)
+    if digest(restored) != INFOBASE_CONTEXT_BASE_SHA256:
+        raise FullError('source_changed')
+    return restored
+
+
+def validate_infobase_context(value):
+    """Finite native observation, not a native expected result or parity claim."""
+    if (type(value) is not str or len(value) != 37
+            or re.fullmatch(r'ibc\.v1:(?:[0-3][1-3][0-2][01][0-2][0-2]){5}', value) is None):
+        raise ValueError('infobase context token')
+    for offset in range(7, 37, 6):
+        slot = value[offset:offset + 6]
+        if ((slot[1] in '13' and slot[2:] != '0000')
+                or (slot[1] == '2' and (slot[4] not in '12' or slot[5] not in '12'))):
+            raise ValueError('infobase context observation combination')
+    return value
+
+
+def discard_infobase_capture(report):
+    """Discard only optional observation after later failure; retain old evidence."""
+    if type(report) is not dict:
+        return
+    stage = report.get('stage3', report)
+    if type(stage) is dict and type(stage.get('client_probe')) is dict:
+        stage['client_probe'].pop('infobase_context', None)
+# END bounded infobase-context measurement binding
+
+
 def valid_nonce(nonce: object) -> bool:
     return type(nonce) is str and re.fullmatch(r'[0-9a-f]{32}', nonce) is not None
 
@@ -439,6 +483,8 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
         report['failure_kind'] = kind
     finally:
         launcher.read_result, launcher.run_process, launcher.build_epf = old_reader, old_process, old_build
+        if report['status'] != 'ok':
+            discard_infobase_capture(report)
     return report
 
 
@@ -604,6 +650,8 @@ def build_envelope(report: dict, nonce: str, root: Path, *, quiet: bool) -> byte
         raise FullError('invalid_input')
     outputs = []
     stage = report['stage3']
+    if not quiet or report['status'] != 'ok' or stage['status'] != 'ok':
+        discard_infobase_capture(stage)
     if report['status'] == 'ok' and stage['status'] == 'ok':
         try:
             if not quiet or stage['nonce'] != nonce:
@@ -626,6 +674,7 @@ def build_envelope(report: dict, nonce: str, root: Path, *, quiet: bool) -> byte
             outputs = []
             stage.update(status='failed', failure_kind='export_failed', failed_case=None)
             report.update(status='stage3_failed', native_tests_completed=False)
+            discard_infobase_capture(stage)
     if len(json.dumps(report, separators=(',', ':'), allow_nan=False).encode('utf-8')) > MAX_REPORT:
         raise FullError('export_failed')
     wire_report = {**report, 'stage3': encode_stage_wire(stage)}
@@ -673,6 +722,9 @@ CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
 
 # Audited native checkpoint40078699477; exact eight Date/Null observations.
 CLIENT_VALUES += ['dn.v1:22222277']
+# Historical 136 values remain unchanged for legacy adapters and their proofs.
+# Current source-bound admission executes and requires all 137 values.
+CLIENT_RUNTIME_VALUES = CLIENT_VALUES + ['ibc.v1:121122221122021122021122021122']
 
 
 CLIENT_FLAGS = ('entered', 'completed', 'process_exited', 'quiet', 'witness_verified')
@@ -745,7 +797,34 @@ def client_marker(path: Path, nonce: str, phase: str) -> dict:
     return value
 
 
-def client_marker_diagnostics(path: Path, nonce: str) -> dict:
+def infobase_client_marker(path: Path, nonce: str, phase: str, *, source_hash: str) -> dict:
+    """Current source-bound strict137 contract from an audited native capture."""
+    if source_hash != INFOBASE_CONTEXT_SOURCE_SHA256:
+        raise FullError('invalid_input')
+    if phase == 'entered':
+        return client_marker(path, nonce, phase)
+    if not valid_nonce(nonce) or phase != 'completed':
+        raise FullError('invalid_input')
+    value = strict_json(secure_bytes(path, 2048), max_depth=3)
+    if (type(value) is not dict
+            or set(value) != {'schema', 'nonce', 'phase', 'witness', 'values'}
+            or type(value['schema']) is not int or value['schema'] != 1
+            or value['nonce'] != nonce or value['phase'] != phase
+            or value['witness'] != 'client' or type(value['values']) is not list
+            or len(value['values']) != len(CLIENT_VALUES) + 1
+            or any(type(a) is not type(b) or a != b
+                   for a, b in zip(value['values'][:-1], CLIENT_VALUES))):
+        raise FullError('invalid_result')
+    try:
+        validate_infobase_context(value['values'][-1])
+        if value['values'][-1] != INFOBASE_CONTEXT_EXPECTED_TOKEN:
+            raise ValueError('infobase context runtime mismatch')
+    except ValueError:
+        raise FullError('invalid_result') from None
+    return value
+
+
+def client_marker_diagnostics(path: Path, nonce: str, *, infobase_required=False) -> dict:
     """Finite failure metadata only; never actual strings, paths or error text."""
     result = {'phase': 'invalid', 'kind': 'none', 'ordinal': -1, 'error_stage': 0}
     try:
@@ -772,12 +851,13 @@ def client_marker_diagnostics(path: Path, nonce: str) -> dict:
             and 1 <= values[5] <= 11):
         result.update(kind='runtime_error', ordinal=values[5] + 3, error_stage=values[5])
         return result
-    for index, (actual, expected) in enumerate(zip(values, CLIENT_VALUES)):
+    expected_values = CLIENT_RUNTIME_VALUES if infobase_required else CLIENT_VALUES
+    for index, (actual, expected) in enumerate(zip(values, expected_values)):
         if type(actual) is not type(expected) or actual != expected:
             result.update(kind='type' if type(actual) is not type(expected) else 'value', ordinal=index)
             return result
-    if len(values) != len(CLIENT_VALUES):
-        result.update(kind='count', ordinal=min(len(values), len(CLIENT_VALUES)))
+    if len(values) != len(expected_values):
+        result.update(kind='count', ordinal=min(len(values), len(expected_values)))
     return result
 
 
@@ -1002,6 +1082,7 @@ def client_process_baseline(nonce: str) -> set[tuple[int, str]]:
 def fail_client_process_checkpoint(suite: dict, watchdog_check: bool, diagnostics=None) -> None:
     """Keep a final teardown/census failure valid, finite and non-exportable."""
     suite.update(status='failed', failure_kind='process_failed')
+    discard_infobase_capture(suite)
     if 'client_async' in suite and suite['client_async']['status'] != 'not_started':
         fail_async_process_checkpoint(suite['client_async'], diagnostics)
         return
@@ -1051,6 +1132,7 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                      client_values_marker if values_output is not None else
                      client_dates_marker if dates_output is not None else client_marker)
     record.update(status='failed', failure_kind='unexpected_failure')
+    infobase_measurement = False
     try:
         if (not valid_nonce(nonce) or type(stall) is not bool
                 or (parity_output is not None and stall)
@@ -1069,6 +1151,14 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         source = secure_bytes(inputs / CLIENT_TARGET, MAX_OUTPUT)
         if digest(source) != hashes[CLIENT_SOURCE]:
             raise FullError('invalid_input')
+        infobase_measurement = (parity_output is None and not stall
+                               and digest(source) == INFOBASE_CONTEXT_SOURCE_SHA256)
+        if infobase_measurement:
+            # Candidate literals describe only this known ordinary directory.
+            if platform.database != Path('/tmp/onec-smoke/db'):
+                raise FullError('invalid_input')
+            marker_reader = lambda path, nonce, phase: infobase_client_marker(
+                path, nonce, phase, source_hash=hashes[CLIENT_SOURCE])
         if numbers_output is not None:
             numbers_source = secure_bytes(inputs / 'scenarios/numbers.bsl', MAX_OUTPUT)
             if digest(numbers_source) != hashes['integrational_tests/tests/numbers.bsl']:
@@ -1166,7 +1256,8 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             completion = marker_reader(completed, nonce, 'completed')
         except FullError as error:
             if error.kind == 'invalid_result' and parity_output is None and not stall:
-                record['marker_diagnostics'] = client_marker_diagnostics(completed, nonce)
+                record['marker_diagnostics'] = client_marker_diagnostics(
+                    completed, nonce, infobase_required=infobase_measurement)
             raise
         if completed.stat().st_mtime_ns < entered.stat().st_mtime_ns:
             raise FullError('invalid_result')
@@ -1198,7 +1289,10 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             record.update(output_sha256=digest(client_output), output_size=len(client_output),
                           message_count=len(completion['values']))
         record.update(status='ok', failure_kind='none', witness_verified=True)
+        if infobase_measurement:
+            record['infobase_context'] = completion['values'][-1]
     except Exception as error:
+        record.pop('infobase_context', None)
         if isinstance(error, ClientProcessError):
             record['process_diagnostics'] = error.diagnostics
         record['failure_kind'] = (error.kind if isinstance(error, FullError) else
@@ -1340,6 +1434,8 @@ CLIENT_LEGACY_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68
 
 
 def client_parity_template(template: bytes) -> bytes:
+    if digest(template) == INFOBASE_CONTEXT_SOURCE_SHA256:
+        template = infobase_shared_source(template)
     template = date_null_shared_source(template)
     template = dual_shared_source(template)
     template = nocontext_shared_source(template)
@@ -1376,7 +1472,7 @@ def client_dates_module(source: bytes, template: bytes) -> bytes:
     original module body moves into a client procedure. No server trampoline,
     string conversion, date reference generation or expected values are added.
     """
-    if digest(template) == CLIENT_DIRECTIVE_TEMPLATE_SHA256:
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_DATES_SOURCE_SHA256
             or digest(template) != CLIENT_DATES_TEMPLATE_SHA256):
@@ -1496,7 +1592,7 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
     body moves into a client procedure. Expressions, conversions and error paths
     stay byte-identical. No server trampoline or reference values are added.
     """
-    if digest(template) == CLIENT_DIRECTIVE_TEMPLATE_SHA256:
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_VALUES_SOURCE_SHA256
             or digest(template) != CLIENT_VALUES_TEMPLATE_SHA256):
@@ -1763,7 +1859,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
     Expressions, conversions and error paths stay byte-identical. No server
     trampoline or reference collections are added.
     """
-    if digest(template) == CLIENT_DIRECTIVE_TEMPLATE_SHA256:
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_COLLECTIONS_SOURCE_SHA256
             or digest(template) != CLIENT_COLLECTIONS_TEMPLATE_SHA256):
@@ -2234,7 +2330,7 @@ def client_numbers_module(source: bytes, template: bytes) -> bytes:
     against this run's raw server message, not asserted to measure client UI.
     The other three sites remain string-only. No original expression is changed.
     """
-    if digest(template) == CLIENT_DIRECTIVE_TEMPLATE_SHA256:
+    if digest(template) in (CLIENT_DIRECTIVE_TEMPLATE_SHA256, INFOBASE_CONTEXT_SOURCE_SHA256):
         template = client_parity_template(template)
     if (digest(source) != CLIENT_NUMBERS_SOURCE_SHA256
             or digest(template) != CLIENT_NUMBERS_TEMPLATE_SHA256):

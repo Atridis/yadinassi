@@ -1,5 +1,11 @@
 # Isolated six-scenario native regression
 
+The [infobase-context contract](infobase-context-measurement.md) extends the
+managed client witness to strict137 using the independently audited native token.
+Current host preflight executes the unchanged full source with a genuine owned
+synthetic header and real optional file DB context. The historical strict136
+inverse remains only for legacy adapter identity and capture history.
+
 This extends the digest-pinned disposable bootstrap described in
 [native-1c-isolated-smoke.md](native-1c-isolated-smoke.md). The real bootstrap,
 singleton role/protection readbacks, measured `SystemInfo.AppVersion`

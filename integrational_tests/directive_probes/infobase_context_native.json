@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "status": "independently_audited_native_capture",
+  "native_run": 40137786320,
+  "native_run_url": "https://github.com/Atridis/yadinassi/actions/runs/40137786320",
+  "capture_commit": "1d220ded50a6c2afa458b248bbaa66b3d53cd8db",
+  "capture_tree": "032f19f8b65e132510deddc5156bda8b54b7ee13",
+  "native_target": "8.3.27.1508 Linux/amd64 managed thick client, synthetic file infobase",
+  "expected_token": "ibc.v1:121122221122021122021122021122",
+  "source_sha256": "baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d",
+  "module_sha256": "8f0e26621fed3a26f3073764f51dbf1c2164e4ebcc9a50b24f052487ba2b3be9",
+  "strict136_source_sha256": "56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751",
+  "summary_artifact": {
+    "id": 12578161873,
+    "sha256": "70c1f2e618b593c110a4333d053d4e5a82eeb4bafe57c020fcba393eb063cb5c"
+  },
+  "outputs_artifact": {
+    "id": 12577737600,
+    "sha256": "b6c8a370e1f037a9e824a0862aaa0d01eea3181f25bc392220e416eb481ef298"
+  },
+  "audited_capture_source_file_count": 435,
+  "staged_pin_count": 24,
+  "runtime_provenance_count": 55,
+  "capture_evidence": "Source-bound producer proof; private raw marker bytes are not independently available.",
+  "runtime_contract": "Original whole137 source with real FileDBContext and inspect_header; historical capture alone does not prove implementation parity.",
+  "scope": "Five direct zero-argument bilingual sites; profile masks 1,2,0,0,0; exact ordinary POSIX descriptor with trailing semicolon. Dynamic one-argument calls run in the same-side dual observer, not separate static or originating-directive arity evidence.",
+  "exclusions": [
+    "Windows native function return parity",
+    "general path canonicalization",
+    "authenticated native session",
+    "database logical validity"
+  ]
+}

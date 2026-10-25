@@ -2,6 +2,7 @@
 import copy
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import tempfile
@@ -17,7 +18,7 @@ class ModuleContextParityTests(unittest.TestCase):
             p.start();self.addCleanup(p.stop)
     def test_capture_identity_and_full_contract(self):
         capture=json.loads((ROOT/'integrational_tests/directive_probes/module_context_native.json').read_text())
-        raw=full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
+        raw=full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))))
         self.assertEqual(full.digest(raw),capture['source_sha256'])
         self.assertEqual(full.digest(full.generated_module(raw)),capture['module_sha256'])
         self.assertEqual(full.CLIENT_VALUES[109:119],['module.context.v1']+capture['values'])
@@ -27,12 +28,12 @@ class ModuleContextParityTests(unittest.TestCase):
         from yadinassi import Interpreter
         from decimal import Decimal
         vm=Interpreter(lambda _: self.fail('unexpected output'))
-        vm.execute(linux_fixture(ROOT/full.CLIENT_SOURCE).decode('utf-8-sig'))
+        vm.execute(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)).decode('utf-8-sig'))
         actual=[int(v) if type(v) is Decimal else v for v in vm.execute('ВычислитьПробу()')]
         self.assertEqual(actual,full.CLIENT_VALUES)
         self.assertEqual([type(v) for v in actual],[type(v) for v in full.CLIENT_VALUES])
 
-    @unittest.skipIf(os.name=='nt','bounded native preflight is POSIX-only')
+    @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
     def test_whole_source_preflight_and_changed_initializer_rejection(self):
         raw=linux_fixture(ROOT/full.CLIENT_SOURCE)
         with tempfile.TemporaryDirectory() as folder:
@@ -60,7 +61,7 @@ class ModuleContextParityTests(unittest.TestCase):
         self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,full.MAX_REPORT),(8192,8192,32768))
 
     def test_exact_three_part_inverse_preserves_audited_object_source(self):
-        raw=full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE))))
+        raw=full.nocontext_shared_source(suite.dual_shared_source(full.date_null_shared_source(full.infobase_shared_source(linux_fixture(ROOT/full.CLIENT_SOURCE)))))
         restored=full.module_context_shared_source(raw)
         self.assertEqual(restored,suite.module_context_shared_source(raw))
         self.assertEqual(full.digest(restored),'6e29d85372e623c412e0662ad7514fbc76963fb5bd42bde6a100a4b5c7a2b120')
