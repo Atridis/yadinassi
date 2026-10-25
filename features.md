@@ -32,6 +32,21 @@ Code/Payload/Amount/DeletionMark. Ссылки и версии остаются 
 [API и ограничения](docs/file-db-experimental-records.md),
 [точные исходники и доказательства](docs/native-record-readback.md#accepted-source-bound-fixture-evidence).
 
+## Экспериментальное извлечение PARAMS/DBNames
+
+Python API `yadinassi.storage.filedb_named_file.read_dbnames` возвращает
+неизменяемые распакованные байты единственного файла PARAMS/DBNames из
+согласованной offline-копии `.1CD`. Нужен явный точный `DBNamesProfile`;
+поддержан только один семипольный профиль формата `8.3.8.0` / 8192 байта.
+Чтение таблицы, BLOB-цепочки и raw DEFLATE используют общие ограниченные
+бюджеты; дубликаты, multipart и неподдержанный layout отклоняются.
+Это низкоуровневый read-only Python API без зависимости от установленной 1С,
+не разбор содержимого DBNames, не логические метаданные и не BSL-доступ к базе.
+CONFIG/CONFIGSAVE, запросы и команды CF/DT не добавлены. Нативные доказательства
+извлечения требуют отдельного source-bound прогона и не означают побайтовое
+сравнение с ответом платформы. [API и ограничения](docs/file-db-named-file-transport.md),
+[контракт измерения](docs/params-dbnames-transport.md).
+
 ## Необязательный контекст файловой базы
 
 `--f DIRECTORY` и Python API `FileDBContext(directory)` задают неизменяемый

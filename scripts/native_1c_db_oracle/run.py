@@ -306,16 +306,19 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
-                and type(params_transport) is bool
-                and sum((record_metadata, record_reader, params_transport)) <= 1, 'invalid_input')
+                and type(params_transport) is bool and type(params_extraction) is bool
+                and sum((record_metadata, record_reader, params_transport, params_extraction)) <= 1, 'invalid_input')
         self.observation = None
-        if record_metadata or record_reader or params_transport:
+        if record_metadata or record_reader or params_transport or params_extraction:
             import record_observation
             self.observation = record_observation
         self.params_policy = None
-        if params_transport:
+        if params_extraction:
+            import params_extraction as extraction_policy
+            self.params_policy = extraction_policy
+        elif params_transport:
             import params_observation
             self.params_policy = params_observation
         self.record_policy = None; self.record_module = None
@@ -825,7 +828,7 @@ class Native:
                 return evidence
 
     def observe_record_metadata(self, identifier):
-        """One baseline metadata call; complete independent declarations, never rows."""
+        """One baseline metadata call; a fixed owned reader on the frozen postimage."""
         params_policy = getattr(self, 'params_policy', None)
         policy = params_policy or self.observation
         require(policy is not None and self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
@@ -963,13 +966,16 @@ class Controller:
         self.observation = None
         self.record_policy = None
         self.params_policy = None
-        if report.get('schema') == 7:
+        if report.get('schema') == 8:
+            import params_extraction
+            self.params_policy = params_extraction
+        elif report.get('schema') == 7:
             import params_observation
             self.params_policy = params_observation
         if report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6, 7):
+        if report.get('schema') in (5, 6, 7, 8):
             import record_observation
             self.observation = record_observation
 
@@ -1049,8 +1055,10 @@ class Controller:
                     self.snapshot(database,'baseline')
                     if self.params_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
-                        self.report['params_observation'] = self.params_policy.bind_capture(data, self.report)
-                        self.report['reader_validation'] = self.report['observation_validation'] = self.params_policy.VERDICT
+                        capture_key = 'params_extraction' if self.report['schema'] == 8 else 'params_observation'
+                        validation_key = 'extraction_validation' if self.report['schema'] == 8 else 'observation_validation'
+                        self.report[capture_key] = self.params_policy.bind_capture(data, self.report)
+                        self.report['reader_validation'] = self.report[validation_key] = self.params_policy.VERDICT
                     elif self.record_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
                         capture = self.backend.prepare_record_profile(data, self.report)
@@ -1183,17 +1191,21 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
     params_transport = flag == '--params-transport-observation'
+    params_extraction = flag == '--params-dbnames-extraction'
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if params_transport:
+        if params_extraction:
+            import params_extraction as selected
+            report=selected.empty_report(nonce,provenance)
+        elif params_transport:
             import params_observation as selected
             report=selected.empty_report(nonce,provenance)
         elif record_reader:
