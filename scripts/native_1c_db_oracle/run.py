@@ -306,17 +306,20 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
-                and type(dbnames_identity) is bool
-                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity)) <= 1, 'invalid_input')
+                and type(dbnames_identity) is bool and type(config_transport) is bool
+                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport)) <= 1, 'invalid_input')
         self.observation = None
-        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity:
+        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport:
             import record_observation
             self.observation = record_observation
         self.params_policy = None
-        if dbnames_identity:
+        if config_transport:
+            import config_observation as selected
+            self.params_policy = selected
+        elif dbnames_identity:
             import dbnames_identity as identity_policy
             self.params_policy = identity_policy
         elif params_extraction:
@@ -886,7 +889,7 @@ class Native:
                     raise
                 if summary != {key: postimage[key] for key in ('bytes', 'sha256')}:
                     raise policy.ObservationFailure('io_or_change', 'postimage_changed')
-                # PARAMS selection is fixed and independent of native names.
+                # System-table selection is fixed and independent of native names.
                 if params_policy is not None:
                     projected = catalog
                 else:
@@ -990,7 +993,10 @@ class Controller:
         self.observation = None
         self.record_policy = None
         self.params_policy = None
-        if report.get('schema') == 9:
+        if report.get('schema') == 10:
+            import config_observation
+            self.params_policy = config_observation
+        elif report.get('schema') == 9:
             import dbnames_identity
             self.params_policy = dbnames_identity
         elif report.get('schema') == 8:
@@ -1002,7 +1008,7 @@ class Controller:
         if report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6, 7, 8, 9):
+        if report.get('schema') in (5, 6, 7, 8, 9, 10):
             import record_observation
             self.observation = record_observation
 
@@ -1082,7 +1088,7 @@ class Controller:
                     self.snapshot(database,'baseline')
                     if self.params_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
-                        capture_key = ('dbnames_identity' if self.report['schema'] == 9 else
+                        capture_key = ('config_observation' if self.report['schema'] == 10 else 'dbnames_identity' if self.report['schema'] == 9 else
                             'params_extraction' if self.report['schema'] == 8 else 'params_observation')
                         validation_key = ('mapping_validation' if self.report['schema'] == 9 else
                             'extraction_validation' if self.report['schema'] == 8 else 'observation_validation')
@@ -1222,19 +1228,23 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
+    config_transport = flag == '--config-transport-observation'
     params_transport = flag == '--params-transport-observation'
     params_extraction = flag == '--params-dbnames-extraction'
     dbnames_identity = flag == '--dbnames-identity-validation'
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if dbnames_identity:
+        if config_transport:
+            import config_observation as selected
+            report=selected.empty_report(nonce,provenance)
+        elif dbnames_identity:
             import dbnames_identity as selected
             report=selected.empty_report(nonce,provenance)
         elif params_extraction:
