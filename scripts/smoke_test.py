@@ -2572,6 +2572,11 @@ uid = New UUID("01234567-89ab-4cde-8f01-23456789abcd");
 Message(TypeOf(uid) = Type("УникальныйИдентификатор"));
 Message(uid = New УникальныйИдентификатор(String(uid)));
 Message(String(uid));
+Message(String(TypeOf(uid)));
+Message(ValueToStringInternal(uid));
+ud = New TypeDescription("УникальныйИдентификатор");
+Message(String(ud.AdjustValue()));
+Message(XMLValue(Type("UUID"), XMLString(uid)) = uid);
 tree = New ValueTree;
 Message(TypeOf(tree) = Type("ДеревоЗначений"));
 Message(TypeOf(New("ДеревоЗначений")) = Type("ValueTree"));
@@ -2581,6 +2586,9 @@ Message(String(TypeOf(tree)));
                    'Соответствие\nТип\nДа\nНет\nНет\nСтрока\nстроковый ключ\n'
                    '2\n0\nКлючИЗначение\nДа\nДа\nнеизвестный тип\nвнешнее значение\nДа\n'
                    'Да\nДа\n01234567-89ab-4cde-8f01-23456789abcd\n'
+                   'Уникальный идентификатор\n'
+                   '{"#",fc01b5df-97fe-449b-83d4-218a090e681e,01234567-89ab-4cde-8f01-23456789abcd}\n'
+                   '00000000-0000-0000-0000-000000000000\nДа\n'
                    'Да\nДа\nДерево значений\n')
     return type_code, type_output
 

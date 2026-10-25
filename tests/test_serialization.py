@@ -76,7 +76,7 @@ class InternalSerializationTests(unittest.TestCase):
 
     def test_every_implemented_type_has_native_readback_behavior(self):
         vm = Interpreter()
-        expressions = ['Null', 'Date(1,1,1)', 'Undefined', 'True', 'False', '0', '"text"', 'New Array',
+        expressions = ['New UUID("01234567-89ab-4cde-8f01-23456789abcd")', 'Null', 'Date(1,1,1)', 'Undefined', 'True', 'False', '0', '"text"', 'New Array',
                        'New FixedArray(New Array)', 'New Structure',
                        'New FixedStructure(New Structure)', 'New Map',
                        'New FixedMap(New Map)', 'Type("Number")',

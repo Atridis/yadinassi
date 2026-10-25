@@ -1,5 +1,8 @@
 # Combined UUID runtime and observation candidate — local only
 
+> Historical initial-candidate design below. For the subsequent authenticated
+> PR112 observations and current bounded support, see [native alignment](uuid-native-alignment.md).
+
 This combines the scalar runtime prototype with the independently authored v3
 native-observation source. Native behavior is **unmeasured**. Passing host tests,
 a host ledger, and historical native replay are not native UUID agreement.

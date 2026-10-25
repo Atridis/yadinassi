@@ -1,4 +1,4 @@
-"""Local candidate expectations only: no test here is native evidence."""
+"""Bounded UUID tests; observed cases cite PR112, restrictions stay explicit."""
 from dataclasses import FrozenInstanceError
 from decimal import Decimal
 import unittest
@@ -89,10 +89,8 @@ class UUIDCandidateTests(unittest.TestCase):
 
     def test_unmeasured_surfaces_fail_closed(self):
         self.vm.execute(f'u = New UUID("{A}"); ts = New Array; ts.Add(Type("UUID"));')
-        for expr in ['ValueToStringInternal(u)', 'ValueToStringInternal(Type("UUID"))',
-                     'XMLString(u)', 'XMLValue(Type("UUID"), String(u))',
-                     'New TypeDescription("UUID")', 'New TypeDescription(ts)',
-                     'New TypeDescription("String,UUID")']:
+        for expr in ['New TypeDescription(ts)',
+                     'New TypeDescription("String,UUID")', 'Type("Уникальный идентификатор")']:
             with self.subTest(expr=expr), self.assertRaises(BSLError):
                 self.vm.execute(expr)
         with self.assertRaises(TypeError):

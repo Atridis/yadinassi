@@ -1,8 +1,8 @@
-"""Provisional UUID scalar; native parity has NOT been established.
+"""Bounded UUID scalar aligned to authenticated PR112 native observations.
 
-The canonical-only grammar, lowercase presentation, zero/filled and generated
-v4 policy are local candidate choices pending the independent native checkpoint.
-No host UUID parser, codecs, descriptor coercion or transport is implied.
+Canonical lowercase/uppercase construction, zero/filled and default version4
+were observed on Linux8.3.27.1508. Other spellings remain local restrictions;
+no cross-version generation guarantee or context transport is implied.
 """
 from dataclasses import dataclass
 import re
@@ -21,8 +21,8 @@ class BSLUUID(BSLObject):
 
     def __init__(self, value=_OMITTED):
         if value is _OMITTED:
-            # Explicit local generation policy, NOT evidence of 1C's default
-            # version. The native probe only compares stable projections.
+            # Native PR112 default.version observed4; generation quality and
+            # all other platforms/versions remain outside that observation.
             data = bytearray(secrets.token_bytes(16))
             data[6] = (data[6] & 0x0f) | 0x40
             data[8] = (data[8] & 0x3f) | 0x80
@@ -43,3 +43,12 @@ class BSLUUID(BSLObject):
 
     def is_filled(self):
         return self.text != _ZERO
+
+
+def canonical_codec_uuid(text):
+    """Native fixed/zero codec forms only: lowercase canonical ASCII, no trim."""
+    if type(text) is not str:
+        raise TypeError("UUID codec: ожидается строка")
+    if len(text) != 36 or text != text.lower():
+        raise ValueError("UUID codec: неподдерживаемое представление")
+    return BSLUUID(text)

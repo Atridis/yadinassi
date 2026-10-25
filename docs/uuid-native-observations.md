@@ -1,5 +1,8 @@
 # UUID scalar observation candidate — LOCAL, NOT NATIVE EVIDENCE
 
+> Historical initial-candidate design below. For the subsequent authenticated
+> PR112 observations and current bounded support, see [native alignment](uuid-native-alignment.md).
+
 Base: `value-tree-post109-preview-v1`, expected future core tree
 `ec130478a8620dc5e6d046ab02bed9bc26103b14` (not a claim of a merged commit).
 This slice does not implement UUID and does not derive expected native answers

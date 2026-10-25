@@ -1,5 +1,8 @@
 # UUID scalar: local provisional candidate, not native-verified
 
+> Historical initial-candidate design below. For the subsequent authenticated
+> PR112 observations and current bounded support, see [native alignment](uuid-native-alignment.md).
+
 The scalar prototype is isolated from the active ValueTree PR and based on the
 `ci-build-dedup-main-v1` anticipated source snapshot. In this combined local candidate,
 independent native probes/adapters are integrated as described in

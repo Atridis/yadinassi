@@ -137,11 +137,24 @@ class UUIDMeasurementContract(unittest.TestCase):
         self.assertEqual(without_uuid_probes(checkout(crlf, 'nt').decode()),
                          without_uuid_probes(self.text))
 
+    def test_utf8_source_reads_ignore_legacy_default_encoding(self):
+        original_read = Path.read_text
+        def legacy_default(path, *args, **kwargs):
+            if not args and kwargs.get('encoding') is None:
+                kwargs['encoding'] = 'cp1252'
+            return original_read(path, *args, **kwargs)
+        # Exact source bytes reproduce the original Windows decoding failure;
+        # the fixture must choose UTF-8, not depend on interpreter locale.
+        with self.assertRaises(UnicodeDecodeError):
+            original_read(ROOT/'scripts/native_1c_bootstrap/full_suite.py', encoding='cp1252')
+        with mock.patch.object(Path, 'read_text', legacy_default):
+            self.test_harness_inverse_exact_hash_fails_closed()
+
     def test_harness_inverse_exact_hash_fails_closed(self):
         from test_native_async_fixture import without_value_tree_measurement
         for host, path in ((False, 'scripts/native_1c_bootstrap/full_suite.py'),
                            (True, 'scripts/native_1c_full_host.py')):
-            source = (ROOT/path).read_text()
+            source = (ROOT/path).read_text(encoding='utf-8')
             without_value_tree_measurement(source, host=host)
             with self.assertRaises(AssertionError):
                 without_value_tree_measurement(source+'\n', host=host)

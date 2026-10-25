@@ -73,6 +73,8 @@ class BSLType(Enum):
     def __str__(self) -> str:
         # Native run 40221284540, collections record 856: TypeOf displays.
         # Enum values stay unspaced lookup names, not presentation aliases.
+        if self is BSLType.UUID:
+            return "Уникальный идентификатор"
         if self is BSLType.VALUE_TREE:
             return "Дерево значений"
         if self is BSLType.VALUE_TREE_ROW_COLLECTION:

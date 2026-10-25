@@ -7,6 +7,7 @@ New runtime types must be added explicitly to the codec policy and its completen
 
 from dataclasses import dataclass
 
+from .unique_identifiers import BSLUUID, canonical_codec_uuid
 from .dates import codec_text, read_codec
 from decimal import Decimal
 import re
@@ -42,6 +43,8 @@ _MAX_TOKENS_PER_NODE = 32
 FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
 # These are implementation resource budgets, not inferred native limits.
 _TYPE_IDS = {
+    # Authenticated Linux PR112 run40240060498, records433..435.
+    BSLType.UUID: "fc01b5df-97fe-449b-83d4-218a090e681e",
     BSLType.XML_STRING_PROCESSING_MANAGER: "8f646b4e-fc39-44c7-85a2-c2eb39cdf361",
     BSLType.NULL: "af40a278-63bc-478e-91a8-19e0d16b10b5",
     BSLType.UNDEFINED: "ee8d3e7c-f930-4a76-8aad-4ff9083a6ea6",
@@ -86,7 +89,7 @@ _TYPE_IDS = {
 # their types. Keep an explicit refusal policy instead of inventing native GUIDs.
 _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
-_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE, BSLType.UUID}) | _TREE_CODEC_TYPES
+_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE}) | _TREE_CODEC_TYPES
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
@@ -115,7 +118,7 @@ _OPAQUE_TYPES = frozenset({
     BSLType.COLLECTION_INDEXES, BSLType.COLLECTION_INDEX,
 })
 _OPAQUE_IDS = frozenset(_TYPE_IDS[kind] for kind in _OPAQUE_TYPES)
-_CODECS = (frozenset({BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
+_CODECS = (frozenset({BSLType.UUID, BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
                      BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
                      BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE,
                      BSLType.VALUE_LIST, BSLType.VALUE_LIST_ITEM})
@@ -152,6 +155,8 @@ def _number(value: Decimal) -> str:
 
 def _require_representable_description(value: BSLTypeDescription) -> None:
     """Never silently erase settings for types absent from the Pattern."""
+    if BSLType.UUID in value.types:
+        raise ValueError("Сериализация ОписаниеТипов UUID пока не поддерживается")
     n, s, d, b = (value.number_qualifiers, value.string_qualifiers,
                   value.date_qualifiers, value.binary_data_qualifiers)
     if ((BSLType.NUMBER not in value.types and
@@ -243,6 +248,8 @@ class _Writer:
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов ошибок пока не поддерживается")
         if kind not in _CODECS:
             raise ValueError("ЗначениеВСтрокуВнутр: для типа не задана политика сериализации Yadinassi")
+        if depth and (kind is BSLType.UUID or (kind is BSLType.TYPE and value is BSLType.UUID)):
+            raise ValueError("Вложенная сериализация UUID пока не поддерживается")
         if kind is BSLType.UNDEFINED:
             self.emit('{"U"}')
         elif kind is BSLType.NULL:
@@ -257,6 +264,8 @@ class _Writer:
             self.emit('}')
         elif kind is BSLType.DATE:
             self.emit('{"D",' + codec_text(value, nested=depth > 0) + '}')
+        elif kind is BSLType.UUID:
+            self.emit('{"#",' + _TYPE_IDS[kind] + ',' + value.text + '}')
         elif kind is BSLType.TYPE:
             self.emit('{"T",' + _TYPE_IDS[value] + '}')
         elif kind in _ENUM_TYPES:
@@ -795,8 +804,17 @@ class _Reader:
             self.fail()
         kind = _TYPES_BY_ID[group[1].text]
         if tag == 'T':
+            if kind is BSLType.UUID:
+                self.fail()  # UUID Type record inverse has not been measured.
             return kind
         body = group[2]
+        if kind is BSLType.UUID:
+            if depth or type(body) is not _Atom:
+                self.fail()
+            try:
+                return canonical_codec_uuid(body.text)
+            except (TypeError, ValueError):
+                self.fail()
         if kind in _ENUM_MEMBERS:
             if type(body) is not _Atom or body.text not in _ENUM_MEMBERS[kind]:
                 self.fail()

@@ -1,6 +1,7 @@
 """A bounded scalar TypeDescription, grounded in native checkpoint probes.
 
-Supported types are Boolean, String, Date, Number and standalone Null. Binary
+Supported types are Boolean, String, Date, Number, standalone Null and the
+separately bounded UUID singleton. Binary
 runtime values, arbitrary object types, mixed Null ordering and ambiguous union
 fallbacks are intentionally excluded. Qualifiers and their internal value-stream
 codec are separate concerns; this module does not manufacture codec evidence.
@@ -11,6 +12,7 @@ Explicit resource limits are Yadinassi budgets, not inferred native maxima.
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, localcontext
 
+from .unique_identifiers import BSLUUID
 from .dates import BSLDate, TICKS_PER_SECOND, date
 from .numbers import round_number
 from .type_qualifiers import (
@@ -24,7 +26,7 @@ from .values import BSLArray, BSLObject, BSLType, HostFunction, NULL, number, to
 _ORDER = (BSLType.BOOLEAN, BSLType.STRING, BSLType.DATE, BSLType.NUMBER,
           BSLType.NULL)
 _NAMES = {name.casefold(): value_type
-          for value_type, alias in ((BSLType.BOOLEAN, "Boolean"),
+          for value_type, alias in ((BSLType.UUID, "UUID"), (BSLType.BOOLEAN, "Boolean"),
                                     (BSLType.STRING, "String"),
                                     (BSLType.DATE, "Date"),
                                     (BSLType.NUMBER, "Number"),
@@ -70,13 +72,17 @@ def _type_set(value):
             raise TypeError("ОписаниеТипов: элементы массива должны иметь тип Тип")
         if kind is BSLType.UNDEFINED:
             continue  # Native Undefined and Undefined,Number have no U entry.
-        if kind not in _ORDER:
+        if kind not in _ORDER and kind is not BSLType.UUID:
             _unsupported(f"тип {kind}")
         result.add(kind)
     return result
 
 
 def _canonical(kinds):
+    if BSLType.UUID in kinds:
+        if len(kinds) != 1:
+            _unsupported("составное описание УникальныйИдентификатор")
+        return (BSLType.UUID,)
     if BSLType.NULL in kinds and len(kinds) > 1:
         _unsupported("сочетание Null с другими типами")
     return tuple(kind for kind in _ORDER if kind in kinds)
@@ -219,6 +225,10 @@ class BSLTypeDescription(BSLObject):
                 raise TypeError("ОписаниеТипов: ожидается не более 5 аргументов")
             types = _canonical(_type_set(source))
             qualifier_args = args
+        if BSLType.UUID in types and (type(source) is not str or args):
+            _unsupported("перегрузка конструктора УникальныйИдентификатор")
+        if type(source) is BSLTypeDescription and BSLType.UUID in source.types:
+            _unsupported("копирование описания УникальныйИдентификатор")
         object.__setattr__(self, "types", types)
         for index, (attribute, qualifier_type) in enumerate(_QUALIFIERS):
             supplied = qualifier_args[index] if index < len(qualifier_args) else None
@@ -266,6 +276,18 @@ class BSLTypeDescription(BSLObject):
         return kind in self.types
 
     def adjust_value(self, value=_OMITTED):
+        if self.types == (BSLType.UUID,):
+            # Native PR112 observations418..422: omitted/Undefined/canonical
+            # String default to zero; UUID stays UUID. No string conversion.
+            if value is _OMITTED or value is None:
+                return BSLUUID("00000000-0000-0000-0000-000000000000")
+            if type(value) is BSLUUID:
+                return value
+            if type(value) is str:
+                # Only canonical input strings are within this measured slice.
+                BSLUUID(value)
+                return BSLUUID("00000000-0000-0000-0000-000000000000")
+            _unsupported("приведение к УникальныйИдентификатор")
         if value is _OMITTED:
             if len(self.types) != 1:
                 return None
