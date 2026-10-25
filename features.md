@@ -59,6 +59,15 @@ CONFIG/CONFIGSAVE, запросы и команды CF/DT не добавлен�
 сравнение с ответом платформы. [API и ограничения](docs/file-db-named-file-transport.md),
 [контракт измерения](docs/params-dbnames-transport.md).
 
+## Ограниченное наблюдение деклараций CONFIG
+
+Отдельный режим oracle `--config-transport-observation` наблюдает только
+ограниченные декларации системной таблицы CONFIG, длины внутренних файлов и
+класс первого байта данных на существующей замороженной baseline-копии.
+Это не извлечение CONFIG, не framing/root-парсер и не BSL `Метаданные`.
+CONFIGSAVE не используется как замена; новый нативный результат ещё не получен.
+[Контракт и ограничения](docs/config-declaration-observation.md).
+
 ## Необязательный контекст файловой базы
 
 `--f DIRECTORY` и Python API `FileDBContext(directory)` задают неизменяемый
