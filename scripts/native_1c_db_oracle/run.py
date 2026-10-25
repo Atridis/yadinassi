@@ -306,13 +306,18 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
-                and not (record_metadata and record_reader), 'invalid_input')
+                and type(params_transport) is bool
+                and sum((record_metadata, record_reader, params_transport)) <= 1, 'invalid_input')
         self.observation = None
-        if record_metadata or record_reader:
+        if record_metadata or record_reader or params_transport:
             import record_observation
             self.observation = record_observation
+        self.params_policy = None
+        if params_transport:
+            import params_observation
+            self.params_policy = params_observation
         self.record_policy = None; self.record_module = None
         self.record_pending = None; self.record_names = None; self.record_profile = None
         if record_reader:
@@ -821,7 +826,8 @@ class Native:
 
     def observe_record_metadata(self, identifier):
         """One baseline metadata call; complete independent declarations, never rows."""
-        policy = self.observation
+        params_policy = getattr(self, 'params_policy', None)
+        policy = params_policy or self.observation
         require(policy is not None and self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
         with self.temporary_clone(identifier, 'auditor') as database:
             baseline = self.physical_summary(self.artifacts / identifier / '1Cv8.1CD')
@@ -844,7 +850,8 @@ class Native:
                     from snapshots import inspect_frozen_catalog
                     self.reader_attempted = True
                     summary, catalog = inspect_frozen_catalog(frozen, quiescent=self.quiescent,
-                        read_catalog=filedb_catalog.read_catalog, limits=filedb_catalog.CatalogLimits(),
+                        read_catalog=(policy.read_projection if params_policy is not None else filedb_catalog.read_catalog),
+                        limits=filedb_catalog.CatalogLimits(),
                         before_read=self.remaining)
                 except filedb_catalog.CatalogError as error:
                     raise policy.reader_failure(error) from None
@@ -856,8 +863,11 @@ class Native:
                     raise
                 if summary != {key: postimage[key] for key in ('bytes', 'sha256')}:
                     raise policy.ObservationFailure('io_or_change', 'postimage_changed')
-                # Native names only select after the complete independent parse.
-                _, projected = policy.project_catalog(catalog, data['record_metadata'])
+                # PARAMS selection is fixed and independent of native names.
+                if params_policy is not None:
+                    projected = catalog
+                else:
+                    _, projected = policy.project_catalog(catalog, data['record_metadata'])
                 evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
             except BaseException:
                 try: self.remove(frozen)
@@ -952,10 +962,14 @@ class Controller:
         self.backend=backend; self.report=report; self.stage='preflight'
         self.observation = None
         self.record_policy = None
+        self.params_policy = None
+        if report.get('schema') == 7:
+            import params_observation
+            self.params_policy = params_observation
         if report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6):
+        if report.get('schema') in (5, 6, 7):
             import record_observation
             self.observation = record_observation
 
@@ -1024,6 +1038,7 @@ class Controller:
         comparison_failure = None
         observation_failure = None
         readback_failure = None
+        params_failure = None
         try:
             for stage in STAGES[:-1]:
                 self.stage=stage
@@ -1032,7 +1047,11 @@ class Controller:
                 elif stage=='seed_v1': database=self.backend.seed()
                 elif stage=='baseline':
                     self.snapshot(database,'baseline')
-                    if self.record_policy is not None:
+                    if self.params_policy is not None:
+                        data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
+                        self.report['params_observation'] = self.params_policy.bind_capture(data, self.report)
+                        self.report['reader_validation'] = self.report['observation_validation'] = self.params_policy.VERDICT
+                    elif self.record_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
                         capture = self.backend.prepare_record_profile(data, self.report)
                         self.report['record_readback'] = capture
@@ -1081,7 +1100,10 @@ class Controller:
                 self.done(stage)
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
-            if self.record_policy is not None and type(error) is self.record_policy.ReadbackFailure:
+            if self.params_policy is not None and type(error) in (self.params_policy.ObservationFailure,
+                    self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
+                params_failure = self.params_policy.ObservationFailure(error.category, error.code)
+            elif self.record_policy is not None and type(error) is self.record_policy.ReadbackFailure:
                 readback_failure = error
             elif self.record_policy is not None and type(error) in (self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
                 readback_failure = self.record_policy.ReadbackFailure(error.category, error.code)
@@ -1090,7 +1112,9 @@ class Controller:
             elif type(error) is comparison.ComparisonFailure and self.stage == 'baseline':
                 comparison_failure = error
             kind=error.kind if isinstance(error,OracleError) and error.kind in FAILURES else 'unexpected_failure'
-            if readback_failure is not None:
+            if params_failure is not None:
+                kind = self.params_policy.FAILURE_KIND
+            elif readback_failure is not None:
                 kind = self.record_policy.FAILURE_KIND
             elif observation_failure is not None:
                 kind = self.observation.FAILURE_KIND
@@ -1133,7 +1157,11 @@ class Controller:
                 self.report.update(status='failed',failed_stage='cleanup',failure_kind='cleanup_unverified')
             if self.report['status']!='ok':
                 self.report['artifacts']=[]
-                if self.record_policy is not None:
+                if self.params_policy is not None:
+                    if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
+                        self.report['reader_validation'] = 'failed'
+                    self.params_policy.discard_capture(self.report, params_failure)
+                elif self.record_policy is not None:
                     self.record_policy.discard_capture(self.report, readback_failure)
                 elif self.observation is not None:
                     if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
@@ -1155,16 +1183,20 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
+    params_transport = flag == '--params-transport-observation'
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if record_reader:
+        if params_transport:
+            import params_observation as selected
+            report=selected.empty_report(nonce,provenance)
+        elif record_reader:
             import record_validation as selected
             report=selected.empty_report(nonce,provenance)
         elif record_metadata:

@@ -178,11 +178,16 @@ class ProjectionTests(unittest.TestCase):
         for error in (Forged('page_size'), reader.CatalogError('page_size'), reader.ResourceLimit('page_size')):
             with self.assertRaises(OracleError): comparison.reader_failure(error)
         # Catalog-path raises retain the old exact class/code inventory. The two
-        # new private row entry points are not reachable from read_catalog and
+        # private data/BLOB entry points are not reachable from read_catalog and
         # have their own exact raises; never widen either historical policy.
         tree = ast.parse((ROOT/comparison.READER_SOURCE).read_text(encoding='utf-8'))
         mapped = {kind.__name__: codes for kind, (_, codes) in comparison.READER_ERRORS.items()}
         helpers = {('InternalFile','_table_data'):{('InvalidStructure','table_data_header_role')},
+            ('InternalFile','_table_blob'):{('InvalidStructure','table_blob_header_role')},
+            ('CatalogReader','_open_table_blob'):{('UnsupportedLayout','missing_table_blob_header'),
+                ('ValueError','table must belong to this completed catalog'),
+                ('ValueError','table BLOB requires the same opened data table'),
+                ('ValueError','table BLOB opening is single-use')},
             ('CatalogReader','_open_table_data'):{('UnsupportedLayout','missing_table_data_header'),
                 ('ValueError','table must belong to this completed catalog'),
                 ('ValueError','table data opening is single-use')}}
@@ -209,13 +214,16 @@ class ProjectionTests(unittest.TestCase):
         # lower-level factory call is inside that unreachable private opener.
         calls = [node for node in ast.walk(tree) if isinstance(node,ast.Call)
                  and isinstance(node.func,ast.Attribute)]
-        self.assertFalse([node for node in calls if node.func.attr=='_open_table_data'])
-        lower_calls = [node for node in calls if node.func.attr=='_table_data']
-        self.assertEqual(len(lower_calls),1)
-        self.assertIn(lower_calls[0],list(ast.walk(helper_nodes[('CatalogReader','_open_table_data')])))
+        for role in ('data','blob'):
+            self.assertFalse([node for node in calls if node.func.attr=='_open_table_'+role])
+            lower_calls = [node for node in calls if node.func.attr=='_table_'+role]
+            self.assertEqual(len(lower_calls),1)
+            self.assertIn(lower_calls[0],list(ast.walk(helper_nodes[('CatalogReader','_open_table_'+role)])))
         import record_observation
         for kind,code in ((reader.InvalidStructure,'table_data_header_role'),
-                          (reader.UnsupportedLayout,'missing_table_data_header')):
+                          (reader.UnsupportedLayout,'missing_table_data_header'),
+                          (reader.InvalidStructure,'table_blob_header_role'),
+                          (reader.UnsupportedLayout,'missing_table_blob_header')):
             for policy in (comparison,record_observation):
                 with self.assertRaises(OracleError) as caught: policy.reader_failure(kind(code))
                 self.assertEqual(caught.exception.kind,'unexpected_failure')

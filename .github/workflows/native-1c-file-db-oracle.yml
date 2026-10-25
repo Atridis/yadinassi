@@ -185,7 +185,7 @@ jobs:
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --record-reader-validation --output native-db-oracle/report.json
+        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --params-transport-observation --output native-db-oracle/report.json
       - name: Require validated report readiness on native success
         if: always() && steps.native.outcome == 'success'
         env:
