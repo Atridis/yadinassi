@@ -1,4 +1,8 @@
-# Synthetic native file-database oracle, version 4
+# Synthetic native file-database oracle, version 4 (default CLI lane)
+
+This document describes the no-flag v4 lane and its historical predecessors.
+Its projections, evidence and budgets do not apply to the separate
+[metadata/declaration observation](native-record-metadata-observation.md).
 
 Version 4 runs the independent physical-catalog reader against the baseline
 native auditor's frozen post-session image and applies the fixture-only
@@ -25,11 +29,19 @@ of a future independent database implementation.
 
 ## Invocation and reviewed CI
 
-From a clean, immutable checkout, the only supported host invocation is:
+From a clean, immutable checkout, the names-only default CLI invocation is:
 
 ```sh
 python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --output native-db-oracle/report.json
 ```
+
+The reviewed-branch workflow explicitly adds `--record-metadata-observation` to
+this command, selecting the separate [baseline metadata/declaration observation](native-record-metadata-observation.md):
+report schema 5, capture schema 6 and a 21-entry source inventory. Omitting the
+flag retains the default above: report schema 4, matched capture schema 5 and
+20 source entries. The v4 evidence, validators and budget calculations below
+remain scoped to that default lane; they do not prove the new observation's
+native result, logical mapping or record acceptance.
 
 The host requires the existing GHCR_USER/GHCR_TOKEN credentials for the approved
 image pull. It removes them from the environment before external processes,
@@ -124,7 +136,7 @@ their matching source revision, not silently accepted as v2 header evidence.
 
 ## Version 4 fixture-only physical field identity
 
-The current host accepts only `schema=4`,
+Without `--record-metadata-observation`, the host accepts only `schema=4`,
 `lane=native-file-db-catalog-compare-dbms-names-true-ascii-fields-v1`, mandatory
 `projection_mode=dbms_names_true` and
 `comparison_policy=exact_tables_ascii_fields_v1`. Its strict validator retains every v2
@@ -574,7 +586,7 @@ latency or a guarantee that every command can consume its individual maximum.
 The total deadline always wins; exhaustion fails closed, never increases caps.
 The 50-minute CI job includes registry setup/pull and teardown outside that run.
 
-## What leaves the container
+## What leaves the container (default v4)
 
 Only strict JSON containing fixed stage/state enums, booleans, exact expected
 logical tokens, bounded numeric counters, hashes and sizes, plus the narrowly
