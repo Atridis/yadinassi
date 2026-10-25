@@ -1,0 +1,70 @@
+"""Offline contract for candidate observations; does not establish native behavior."""
+import hashlib
+from pathlib import Path
+import unittest
+import test_native_1c_full_stage as fixtures
+
+ROOT = Path(__file__).resolve().parents[1]
+START = b'// Begin bounded ValueTree core observations (candidate; not native evidence).\n'
+END = b'// End bounded ValueTree core observations.\n'
+PREFIX_SHA = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'
+
+class ValueTreeMeasurementContract(unittest.TestCase):
+    def test_append_only_fixed_budget(self):
+        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
+        prefix, marker, block = source.partition(START)
+        self.assertEqual(hashlib.sha256(prefix).hexdigest(), PREFIX_SHA)
+        self.assertEqual(source.count(START), 1)
+        self.assertTrue(block.endswith(END))
+        self.assertLess(len(marker + block), 6000)
+        self.assertEqual(block.count('Показать("tree.core.'.encode()), 12)
+        self.assertEqual(block.count('Новый ДеревоЗначений'.encode()), 1)
+        for forbidden in ('Сообщить(', 'Выполнить(', 'Пока ', 'Для ', 'ЗначениеВСтрокуВнутр(', 'Записать', 'Прочитать'):
+            self.assertNotIn(forbidden.encode(), block)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 866)
+
+    def test_full_client_adapter_preserves_probe_expressions(self):
+        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
+        template = (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
+        module = fixtures.suite.client_collections_module(source, template)
+        block = source[source.index(START):]
+        self.assertIn(block, module)
+        self.assertEqual(module.count(START), 1)
+
+    def test_probe_cannot_be_rebased_by_only_replacing_top_level_hash(self):
+        from unittest import mock
+        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
+        template = (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
+        tampered = source.replace(b'VTChild.Level()', b'VTChild.Level(1)', 1)
+        with mock.patch.object(fixtures.suite, 'CLIENT_COLLECTIONS_SOURCE_SHA256', hashlib.sha256(tampered).hexdigest()):
+            with self.assertRaises(fixtures.suite.FullError):
+                fixtures.suite.client_collections_module(tampered, template)
+
+    def test_fresh_comparison_cannot_accept_historical_prefix_or_drop_tree_records(self):
+        import test_native_1c_map_contract as map_fixtures
+        from scripts import native_1c_map_contract as contract
+        rows = map_fixtures.records()
+        self.assertEqual(len(rows), 866)
+        fresh = map_fixtures.encode(rows)
+        old = map_fixtures.encode(rows[:854])
+        current_sha = fixtures.suite.CLIENT_COLLECTIONS_SOURCE_SHA256
+        self.assertEqual(contract.compare_collections(old, old, current_sha)['reason'], 'record_mismatch')
+        self.assertEqual(contract.compare_collections(fresh, fresh, PREFIX_SHA)['reason'], 'source_mismatch')
+        self.assertEqual(contract.compare_collections(fresh, old, current_sha)['status'], 'rejected')
+
+    def test_historical_adapter_inverse_is_isolated_and_exact(self):
+        from test_native_async_fixture import historical_tree_collections_module
+        source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
+        template = (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
+        current = fixtures.suite.client_collections_module(source, template)
+        historical = historical_tree_collections_module(source, template)
+        self.assertEqual(hashlib.sha256(historical).hexdigest(),
+                         'b8d28abf2a28f7ff11958f9f3a31a966e3032484b8f0cf7d316b24ef8fb847e8')
+        self.assertEqual(fixtures.suite.client_collections_module(source, template), current)
+        self.assertIn(START, current)
+        self.assertNotIn(START, historical)
+        with self.assertRaises(ValueError):
+            historical_tree_collections_module(source + b'\n', template)
+        prefix = source.partition(START)[0]
+        with self.assertRaises(fixtures.suite.FullError):
+            fixtures.suite.client_collections_module(prefix, template)

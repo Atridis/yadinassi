@@ -375,8 +375,8 @@ def semantic_report(*, equal=False):
     comparison.update(native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                       acceptance_status="accepted")
     comparison["cases"][0].update(acceptance_status="accepted", semantic={
-        "status":"equivalent", "profile":full.MAP_MODE, "records":854,
-        "byte_equal_records":854 if equal else 853,
+        "status":"equivalent", "profile":full.MAP_MODE, "records":866,
+        "byte_equal_records":866 if equal else 865,
         "accepted_labels":[] if equal else [full.map_contract().ELIGIBLE_LABELS[0]], "reason":"none"})
     return report
 

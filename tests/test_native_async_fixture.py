@@ -289,8 +289,34 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_value_tree_measurement(source, *, host=False):
+    """Exact test-only inverse to the actual-main historical harness, not admission."""
+    tree_inventory = json.loads((REPOSITORY / 'tests/fixtures/value_tree_measurement/'
+                                 'harness-source-inverse.json').read_text(encoding='utf-8'))
+    tree_path = ('scripts/native_1c_full_host.py' if host
+                 else 'scripts/native_1c_bootstrap/full_suite.py')
+    tree_contract = tree_inventory[tree_path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == tree_contract['candidate_sha256']
+    for edit in reversed(tree_contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == tree_contract['base_sha256']
+    return source
+
+
+def historical_tree_collections_module(source, template):
+    """Test-only exact main adapter/source inverse; never alter live suite globals."""
+    from scripts.native_historical_replay import without_value_tree_probes
+    restored = without_value_tree_measurement(SNIPPET.read_text(encoding='utf-8'))
+    namespace = {'__name__': 'historical_value_tree_suite'}
+    exec(compile(restored, str(SNIPPET), 'exec'), namespace)
+    original = without_value_tree_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
+    return namespace['client_collections_module'](original, template)
+
+
 def without_infobase_runtime(source, *, host=False):
     """Exact reviewed runtime-harness inverse; historical measurement is unchanged."""
+    source = without_value_tree_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/fixtures/infobase_context_runtime/'
                             'harness-source-inverse.json').read_text(encoding='utf-8'))
     path = ('scripts/native_1c_full_host.py' if host

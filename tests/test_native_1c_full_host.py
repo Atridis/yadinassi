@@ -607,8 +607,8 @@ class SemanticComparisonTests(ComparisonTests):
         self.contract = full.map_contract()
 
     def verdict(self, *, equal=False):
-        return {"profile":full.MAP_MODE, "status":"equivalent", "records":854,
-                "byte_equal_records":854 if equal else 853,
+        return {"profile":full.MAP_MODE, "status":"equivalent", "records":866,
+                "byte_equal_records":866 if equal else 865,
                 "accepted_labels":[] if equal else [self.contract.ELIGIBLE_LABELS[0]], "reason":"none"}
 
     def semantic_compare(self, *, verdict=None, equal=False, other_diff=False, context=None):
@@ -686,7 +686,7 @@ class SemanticComparisonTests(ComparisonTests):
         edits = [lambda v:v.update(extra="PRIVATE"), lambda v:v.pop("profile"),
             lambda v:v.update(profile="typed-map-order-v2"), lambda v:v.update(status=[]),
             lambda v:v.update(records=True), lambda v:v.update(records=853),
-            lambda v:v.update(byte_equal_records=854), lambda v:v.update(accepted_labels=[]),
+            lambda v:v.update(byte_equal_records=866), lambda v:v.update(accepted_labels=[]),
             lambda v:v.update(accepted_labels=["PRIVATE"]), lambda v:v.update(reason="PRIVATE"),
             lambda v:v.update(reason=[]), lambda v:v.update(status="rejected", reason="typed_difference")]
         for edit in edits:

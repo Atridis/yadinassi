@@ -5498,3 +5498,16 @@ Date/Null helpers, append и определение компактного write
 и source archaeology. Свежий native strict136 и обязательные CI-гейты еще ожидают
 приемки.
 [Provenance, восемь наблюдений и точные границы](docs/date-null-transfer-measurement.md).
+
+### ДеревоЗначений: standalone core (native-unverified)
+
+`New ValueTree()` / `Новый ДеревоЗначений()` now provides a shared `Columns`
+schema and root `Rows`; each row has child `Rows`, read-only `Parent`, and
+`Owner()` / `Level()`. Row collections support Add/Insert/Delete/Clear/Count/
+Get/IndexOf and iteration. Rows support column names, numeric indices, Get/Set,
+iteration over cells and live by-reference cell assignment. Column collections
+support Add/Insert/Delete/Clear/Count/Get/Find/IndexOf, name lookup, iteration,
+and typed defaults/conversion using the existing TypeDescription policy.
+
+This is a locally tested implementation, **not yet verified against real 1C**.
+See [the scope and evidence note](docs/value-tree-core.md); version remains 0.4.2.

@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from scripts.native_historical_replay import historical_collections_source
+from scripts.native_historical_replay import historical_collections_source, without_value_tree_probes
 
 from yadinassi import Interpreter, ast, serialization
 from yadinassi.parser import parse
@@ -42,7 +42,7 @@ def observations():
 
 class IndexProbeTests(unittest.TestCase):
     def test_old_source_and_all_owner_goldens_are_byte_exact(self):
-        old = source()
+        old = without_value_tree_probes(source())
         for start, end in (
             *FILL_EXCLUDE_ORDER_PROBE_BLOCKS, *FILL_EXCLUDE_PROBE_BLOCKS, *FILL_INCLUDE_PROBE_BLOCKS, *DESCRIPTOR_MAP_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS,
             ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),

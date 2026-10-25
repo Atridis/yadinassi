@@ -3,7 +3,7 @@
 Synthetic conversions deliberately disagree and fail independently. Their output
 is never saved as native evidence. Complete-output comparators remain strict.
 """
-from scripts.native_historical_replay import FILL_EXCLUDE_ORDER_PROBE_BLOCKS, FILL_EXCLUDE_PROBE_BLOCKS, FILL_INCLUDE_PROBE_BLOCKS, DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS, without_descriptor_map_probes
+from scripts.native_historical_replay import FILL_EXCLUDE_ORDER_PROBE_BLOCKS, FILL_EXCLUDE_PROBE_BLOCKS, FILL_INCLUDE_PROBE_BLOCKS, DESCRIPTOR_MAP_PROBE_BLOCKS, FIELD_REFERENCE_BLOCKS, without_descriptor_map_probes, without_value_tree_probes
 from collections import Counter
 from contextlib import ExitStack
 from decimal import Decimal
@@ -45,6 +45,7 @@ def section(markers):
 
 
 def strip_probe(text):
+    text = without_value_tree_probes(text)
     for start, end in (
         *FILL_EXCLUDE_ORDER_PROBE_BLOCKS, *FILL_EXCLUDE_PROBE_BLOCKS, *FILL_INCLUDE_PROBE_BLOCKS, *DESCRIPTOR_MAP_PROBE_BLOCKS, *FIELD_REFERENCE_BLOCKS,
         ('// Начало заключительных проб пустой строки кэша списка.\n', '// Конец заключительных проб пустой строки кэша списка.\n\n'),

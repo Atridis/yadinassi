@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import tempfile
 import unittest
+from test_native_async_fixture import historical_tree_collections_module
 from unittest import mock
 
 import test_native_client_probe as probe
@@ -156,7 +157,8 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
         plan = json.loads((ROOT / 'integrational_tests/directive_probes/date_null_measurement.json').read_text(encoding='utf-8'))
         for name, expected in plan['four_adapter_sha256'].items():
             scenario = linux_fixture(ROOT / f'integrational_tests/tests/{name}.bsl')
-            self.assertEqual(full.digest(getattr(suite, f'client_{name}_module')(scenario, raw)), expected)
+            adapter = historical_tree_collections_module if name == 'collections' else getattr(suite, f'client_{name}_module')
+            self.assertEqual(full.digest(adapter(scenario, raw)), expected)
         self.assertEqual(full.async_source_identity(linux_fixture(ROOT / 'scripts/native_1c_bootstrap/full_suite.py')),
                          plan['async8_identity'])
 
