@@ -27,7 +27,7 @@ class ClientValuesHostTests(unittest.TestCase):
         self.server = stage["cases"][full.SCENARIOS.index("values")]
         self.inputs[full.VALUES_SOURCE] = full.VALUES_SOURCE_SHA256
         self.server["source_sha256"] = full.VALUES_SOURCE_SHA256
-        self.server["message_count"] = 485  # Messages need not equal physical lines.
+        self.server["message_count"] = 534  # Messages need not equal physical lines.
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": "c" * 64,
                        "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
                        "process_diagnostics": process_diagnostics(),
@@ -73,7 +73,7 @@ class ClientValuesHostTests(unittest.TestCase):
         report, outputs = self.validate()
         self.assertEqual(outputs["values"], self.payload)
         self.assertEqual(list(outputs), list(full.SCENARIOS))
-        self.assertEqual(report["stage3"]["client_values"]["message_count"], 485)
+        self.assertEqual(report["stage3"]["client_values"]["message_count"], 534)
         self.assertEqual(len(self.inputs), 24)
         self.assertEqual(len(full.ARTIFACT_FILES), 7)
         self.assertNotIn("fresh values", json.dumps(report))
@@ -98,11 +98,16 @@ class ClientValuesHostTests(unittest.TestCase):
             self.validate()
 
     def test_matching_source_claims_cannot_replace_the_reviewed_values_source(self):
-        self.inputs[full.VALUES_SOURCE] = "0" * 64
-        self.server["source_sha256"] = "0" * 64
-        self.values["source_sha256"] = "0" * 64
-        with self.assertRaises(full.FullError):
-            self.validate()
+        for source_sha in ("0" * 64,
+                "9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4",
+                "be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76",
+                "0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c",
+                "dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12"):
+            self.inputs[full.VALUES_SOURCE] = source_sha
+            self.server["source_sha256"] = source_sha
+            self.values["source_sha256"] = source_sha
+            with self.subTest(source_sha=source_sha), self.assertRaises(full.FullError):
+                self.validate()
 
     def test_rejects_missing_extra_fields_invalid_types_and_false_completion(self):
         edits = [lambda d: d.update(raw_output="PRIVATE"), lambda d: d.update(status="failed"),
@@ -132,7 +137,7 @@ class ClientValuesHostTests(unittest.TestCase):
         # Another successful case's bytes are not a substitute for values.
         alternate = b"different server case\n"
         other = self.envelope["report"]["stage3"]["cases"][0]
-        other.update(output_sha256=full.digest(alternate), output_size=len(alternate), message_count=485)
+        other.update(output_sha256=full.digest(alternate), output_size=len(alternate), message_count=534)
         self.envelope["outputs"][0].update(sha256=full.digest(alternate), size=len(alternate),
                                           data_b64=base64.b64encode(alternate).decode())
         self.validate()
@@ -141,7 +146,7 @@ class ClientValuesHostTests(unittest.TestCase):
             self.validate()
 
     def test_matching_but_wrong_server_and_client_message_counts_are_rejected(self):
-        for count in (0, 402, 432, 440, 442, 32768, True, "485"):
+        for count in (0, 402, 432, 440, 441, 442, 485, 520, 521, 522, 533, 535, 32768, True, "534"):
             envelope = copy.deepcopy(self.envelope)
             envelope["report"]["stage3"]["cases"][full.SCENARIOS.index("values")]["message_count"] = count
             envelope["report"]["stage3"]["client_values"]["message_count"] = count
@@ -257,8 +262,8 @@ class ClientValuesHostTests(unittest.TestCase):
 
     def test_duplicate_trailing_json_nonfinite_and_stale_stage_nonce_fail_closed(self):
         raw = host_fixture.encode(self.envelope)
-        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":485', b'"message_count":485,"message_count":485'),
-                     raw.replace(b'"message_count":485', b'"message_count":NaN')]
+        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":534', b'"message_count":534,"message_count":534'),
+                     raw.replace(b'"message_count":534', b'"message_count":NaN')]
         for value in malformed:
             with self.subTest(value=value[:30]), self.assertRaises(full.FullError):
                 full.validate_envelope(value, host_fixture.NONCE, self.inputs, self.modules,
@@ -291,8 +296,8 @@ class ClientValuesHostTests(unittest.TestCase):
             case.update(output_size=209715, message_count=32768)
         self.envelope["report"]["stage3"]["cases"][1]["message_count"] = 185
         dates.update(output_size=209715, message_count=185)
-        self.server.update(output_size=1048576, message_count=485)
-        self.values.update(output_size=1048576, message_count=485)
+        self.server.update(output_size=1048576, message_count=534)
+        self.values.update(output_size=1048576, message_count=534)
         self.envelope["report"].update(python_version="99.99.999")
         self.envelope["report"]["configuration_format"].update(
             schema_version="99.999.999.999", element_count=4096, known_elements=sorted(smoke.KNOWN_ELEMENTS))

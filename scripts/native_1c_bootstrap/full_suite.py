@@ -1730,9 +1730,9 @@ def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
         raise FullError('invalid_result') from None
     return value
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_VALUES_SOURCE_SHA256 = 'be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76'
+CLIENT_VALUES_SOURCE_SHA256 = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'
 CLIENT_VALUES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_VALUES_MESSAGE_COUNT = 485
+CLIENT_VALUES_MESSAGE_COUNT = 534
 
 
 def empty_values_report() -> dict:
@@ -1743,8 +1743,8 @@ def empty_values_report() -> dict:
 def client_values_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned values source in the pinned managed-client form.
 
-    All 49 helpers (45 previous and four bounded TextDocument helpers) remain in their original order with client directives.
-    Only the 31 verified message-call identifiers change, and the complete module
+    All 51 helpers (49 previous and two bounded NStr helpers) remain in their original order with client directives.
+    Only the 34 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Expressions, conversions and error paths
     stay byte-identical. No server trampoline or reference values are added.
     """
@@ -1808,6 +1808,8 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         524: 'Функция ОтветТекстовогоДокумента(Знач Значение)\n',
         536: 'Функция СнимокТекстовогоДокумента(Знач Документ)\n',
         570: 'Процедура НаблюдатьТекстовыйДокумент(Знач Метка, Знач Настройка, Знач Действие, Знач Чтение)\n',
+        602: 'Функция КодыНСтр(Знач Текст)\n',
+        621: 'Процедура НаблюдатьНСтр(Знач Метка, Знач Выражение)\n',
     }
     endings = {
         16: 'КонецПроцедуры\n',
@@ -1859,6 +1861,8 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         534: 'КонецФункции\n',
         568: 'КонецФункции\n',
         597: 'КонецПроцедуры\n',
+        619: 'КонецФункции\n',
+        635: 'КонецПроцедуры\n',
     }
     sites = {
         7: '        Сообщить("null." + Метка + ": [error]");\n',
@@ -1884,20 +1888,23 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         577: '        Сообщить("textdoc." + Метка + ": [setup-error]");\n',
         593: '        Сообщить("textdoc." + Метка + ": [readback-error|" + Статус + "]");\n',
         596: '    Сообщить("textdoc." + Метка + ": [" + Запись + "]");\n',
-        651: 'Сообщить("null.checkpoint.complete: [ok]");\n',
-        730: 'Сообщить("xml.checkpoint.complete: [ok]");\n',
-        867: 'Сообщить("types.checkpoint.complete: [ok]");\n',
-        895: 'Сообщить("types-extra.checkpoint.complete: [ok]");\n',
-        955: 'Сообщить("chars.checkpoint.complete: [ok]");\n',
-        997: 'Сообщить("chars.index.checkpoint.complete: [ok]");\n',
-        1016: 'Сообщить("types-extra.fixed-default.checkpoint.complete: [ok]");\n',
-        1044: 'Сообщить("types-extra.service-filled.checkpoint.complete: [ok]");\n',
+        625: '        Сообщить("nstr." + Метка + ": [action-error]");\n',
+        631: '        Сообщить("nstr." + Метка + ": [observer-error]");\n',
+        634: '    Сообщить("nstr." + Метка + ": [ok|" + Запись + "]");\n',
+        688: 'Сообщить("null.checkpoint.complete: [ok]");\n',
+        767: 'Сообщить("xml.checkpoint.complete: [ok]");\n',
+        904: 'Сообщить("types.checkpoint.complete: [ok]");\n',
+        932: 'Сообщить("types-extra.checkpoint.complete: [ok]");\n',
+        992: 'Сообщить("chars.checkpoint.complete: [ok]");\n',
+        1034: 'Сообщить("chars.index.checkpoint.complete: [ok]");\n',
+        1053: 'Сообщить("types-extra.fixed-default.checkpoint.complete: [ok]");\n',
+        1081: 'Сообщить("types-extra.service-filled.checkpoint.complete: [ok]");\n',
     }
-    body_start = 602
+    body_start = 639
     capture = 'ЗначенияКлиентЗахват'
     reserved = (capture, 'ЗначенияКлиентСообщения',
                 'ЗначенияКлиентСимволы', 'ЗначенияКлиентВыполнить')
-    if (len(lines) != 1135
+    if (len(lines) != 1225
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())

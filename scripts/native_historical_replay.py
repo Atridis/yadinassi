@@ -221,6 +221,50 @@ SERVICE_FILLED_PROBE_BLOCK = (
 )
 
 
+NSTR_PROBE_BLOCKS = (
+    ('// Begin bounded NStr helpers (measurement only; no native answers).\n', '// End bounded NStr helpers.\n\n'),
+    ('// Begin bounded NStr observations (measurement only; no native answers).\n', '// End bounded NStr observations.\n'),
+)
+
+
+NSTR_DISCRIMINATOR_BLOCK = (
+    '// Begin bounded NStr discriminators (measurement only; no native answers).\n',
+    '// End bounded NStr discriminators.\n',
+)
+
+
+def without_nstr_discriminators(text):
+    """Exact values534-to-521 source inverse; never edit any native output."""
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5':
+        raise ValueError('NStr discriminator candidate source binding changed')
+    start, end = NSTR_DISCRIMINATOR_BLOCK
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise ValueError('NStr discriminator boundaries changed')
+    before, rest = text.split(start, 1)
+    _, after = rest.split(end, 1)
+    text = before + after
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != '9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4':
+        raise ValueError('NStr discriminator historical source binding changed')
+    return text
+
+
+def without_nstr_probes(text):
+    """Exact values521-to-485 source inverse; never filter output or admit old input."""
+    if any(boundary in text for boundary in NSTR_DISCRIMINATOR_BLOCK):
+        text = without_nstr_discriminators(text)
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != '9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4':
+        raise ValueError('NStr candidate source binding changed')
+    for start, end in NSTR_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('NStr probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != 'be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76':
+        raise ValueError('NStr historical source binding changed')
+    return text
+
+
 TEXT_DOCUMENT_PROBE_BLOCKS = (
     ('// Begin bounded TextDocument helpers (measurement only; no native answers).\n', '// End bounded TextDocument helpers.\n\n\n'),
     ('// Begin bounded TextDocument observations (measurement only; no native answers).\n', '// End bounded TextDocument observations.\n'),
@@ -229,6 +273,8 @@ TEXT_DOCUMENT_PROBE_BLOCKS = (
 
 def without_text_document_probes(text):
     """Restore exact values441 source; never filter outputs or admit old source."""
+    if any(boundary in text for pair in NSTR_PROBE_BLOCKS for boundary in pair):
+        text = without_nstr_probes(text)
     if hashlib.sha256(text.encode('utf-8')).hexdigest() != 'be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76':
         raise ValueError('TextDocument candidate source binding changed')
     for start, end in TEXT_DOCUMENT_PROBE_BLOCKS:

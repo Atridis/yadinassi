@@ -1,0 +1,34 @@
+{
+  "scripts/native_1c_bootstrap/full_suite.py": {
+    "base_sha256": "d73687d65388de24f197c3146b10432ca2ecd45841c3c3ce7521cc8b3840154b",
+    "candidate_sha256": "22856e3668c53af0d7fd896ae4f70f9767122b6f163048593adb6e726b4e4862",
+    "edits": [
+      {
+        "old": "9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4",
+        "new": "16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5"
+      },
+      {
+        "old": "CLIENT_VALUES_MESSAGE_COUNT = 521\n",
+        "new": "CLIENT_VALUES_MESSAGE_COUNT = 534\n"
+      },
+      {
+        "old": "    if (len(lines) != 1210\n",
+        "new": "    if (len(lines) != 1225\n"
+      }
+    ]
+  },
+  "scripts/native_1c_full_host.py": {
+    "base_sha256": "d6923fe683a0e566d834d41dd2d42a8f586f6439fd77490fa8840a499a49450c",
+    "candidate_sha256": "2b319b76e0adc5358b17540233f76946188943f3975c6a22aa07ab1be92d35c1",
+    "edits": [
+      {
+        "old": "9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4",
+        "new": "16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5"
+      },
+      {
+        "old": "data[\"message_count\"] != 521\n",
+        "new": "data[\"message_count\"] != 534\n"
+      }
+    ]
+  }
+}

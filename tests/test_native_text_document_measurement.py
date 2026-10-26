@@ -11,7 +11,7 @@ from yadinassi.parser import parse
 from yadinassi.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SHA = 'be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76'
+SOURCE_SHA = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'
 HELPERS_SHA = 'a33ebfaedf963fd19251e2898c7d0034ee11d8e673ba5fc6f0141641a1e4a086'
 CALLS_SHA = '682cbf0abd63990df8ab4a3a6cb0cf73b7f3439ce1afe3bb9c03d506dcf4e09e'
 HELPER_START = '// Begin bounded TextDocument helpers (measurement only; no native answers).\n'
@@ -29,7 +29,7 @@ def source_bytes():
 def fragments():
     text = source_bytes().decode('utf-8')
     helpers = HELPER_START + text.split(HELPER_START)[1].split(HELPER_END)[0] + HELPER_END
-    calls = CALL_START + text.split(CALL_START)[1]
+    calls = CALL_START + text.split(CALL_START)[1].split(CALL_END)[0] + CALL_END
     return helpers, calls
 
 
@@ -134,13 +134,14 @@ class TextDocumentSourceContracts(unittest.TestCase):
         helpers, calls = fragments()
         self.assertEqual(hashlib.sha256(helpers.encode()).hexdigest(), HELPERS_SHA)
         self.assertEqual(hashlib.sha256(calls.encode()).hexdigest(), CALLS_SHA)
-        self.assertEqual(len(raw.splitlines()), 1135)
-        self.assertEqual(f.suite.CLIENT_VALUES_MESSAGE_COUNT, 485)
+        self.assertEqual(len(raw.splitlines()), 1225)
+        self.assertEqual(f.suite.CLIENT_VALUES_MESSAGE_COUNT, 534)
         self.assertEqual(f.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 866)
         previous = without_text_document_probes(raw.decode())
         self.assertEqual(hashlib.sha256(previous.encode()).hexdigest(),
                          '0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c')
-        self.assertLess(len(raw) - len(previous.encode()), 22000)
+        from scripts.native_historical_replay import without_nstr_probes
+        self.assertLess(len(without_nstr_probes(raw.decode()).encode()) - len(previous.encode()), 22000)
         self.assertEqual(hashlib.sha256(without_uuid_probes(raw.decode()).encode()).hexdigest(),
                          'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12')
 
@@ -179,7 +180,7 @@ class TextDocumentSourceContracts(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     without_text_document_probes(changed.decode())
 
-    def test_exact_441_and_402_adapters_are_separate_from_current_485(self):
+    def test_exact_441_and_402_adapters_are_separate_from_current_534(self):
         import test_native_1c_full_stage as f
         from test_native_async_fixture import (historical_text_document_values_module,
                                               historical_uuid_values_module,
