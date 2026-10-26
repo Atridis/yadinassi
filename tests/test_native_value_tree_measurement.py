@@ -24,7 +24,8 @@ class ValueTreeMeasurementContract(unittest.TestCase):
             (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes(), os.name)
 
     def test_append_only_fixed_budget(self):
-        source = self.source
+        from scripts.native_historical_replay import without_tree_findrows_probes
+        source = without_tree_findrows_probes(self.source.decode('utf-8-sig')).encode('utf-8-sig')
         prefix, marker, block = source.partition(START)
         self.assertEqual(hashlib.sha256(prefix).hexdigest(), PREFIX_SHA)
         self.assertEqual(source.count(START), 1)
@@ -34,7 +35,7 @@ class ValueTreeMeasurementContract(unittest.TestCase):
         self.assertEqual(block.count('Новый ДеревоЗначений'.encode()), 1)
         for forbidden in ('Сообщить(', 'Выполнить(', 'Пока ', 'Для ', 'ЗначениеВСтрокуВнутр(', 'Записать', 'Прочитать'):
             self.assertNotIn(forbidden.encode(), block)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 866)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 902)
 
     def test_full_client_adapter_preserves_probe_expressions(self):
         source = self.source
@@ -57,7 +58,7 @@ class ValueTreeMeasurementContract(unittest.TestCase):
         import test_native_1c_map_contract as map_fixtures
         from scripts import native_1c_map_contract as contract
         rows = map_fixtures.records()
-        self.assertEqual(len(rows), 866)
+        self.assertEqual(len(rows), 902)
         fresh = map_fixtures.encode(rows)
         old = map_fixtures.encode(rows[:854])
         current_sha = fixtures.suite.CLIENT_COLLECTIONS_SOURCE_SHA256
@@ -91,7 +92,9 @@ class ValueTreeMeasurementContract(unittest.TestCase):
         self.assertEqual(template, self.template)
         self.assertEqual(offline_checkout_bytes(source_crlf, 'posix'), source_crlf)
         self.assertEqual(offline_checkout_bytes(template_crlf, 'posix'), template_crlf)
-        self.assertEqual(hashlib.sha256(source.partition(START)[0]).hexdigest(), PREFIX_SHA)
+        from scripts.native_historical_replay import without_tree_findrows_probes
+        old_source = without_tree_findrows_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
+        self.assertEqual(hashlib.sha256(old_source.partition(START)[0]).hexdigest(), PREFIX_SHA)
         self.assertEqual(fixtures.suite.client_collections_module(source, template),
                          fixtures.suite.client_collections_module(self.source, self.template))
         from test_native_async_fixture import historical_tree_collections_module

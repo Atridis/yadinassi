@@ -12,7 +12,7 @@ SPEC = importlib.util.spec_from_file_location(
 contract = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(contract)
 
-SOURCE = "b12fb063732fa8ea16a6e0e88e56d6da99c5958989c9533a07870aee07b72c27"
+SOURCE = "5468d16850a9774251d4ef80ae5e938afdfabef69fe496cb3a6cb579d0564782"
 MAP = b"3d48feae-a9c6-4c5a-a099-9eb6477630c6"
 FIXED_MAP = b"220455ea-6c85-4513-996f-bbe79ed07774"
 ARRAY = b"51e7a0d2-530b-11d4-b98a-008048da3034"
@@ -65,7 +65,7 @@ def nested(pairs):
 
 
 def records(pairs=PAIRS):
-    rows = [(f"record.{number}", b"ok") for number in range(1, 867)]
+    rows = [(f"record.{number}", b"ok") for number in range(1, 903)]
     for ordinal, base in BASES:
         before = mapping(pairs) if ordinal != 303 else nested(pairs)
         after = mapping(tuple(reversed(pairs))) if ordinal != 303 else nested(tuple(reversed(pairs)))
@@ -117,7 +117,7 @@ class MapContractTests(unittest.TestCase):
                 self.assertEqual(result["status"], "equivalent", result)
                 expected = [] if permutation == PAIRS else list(contract.ELIGIBLE_LABELS)
                 self.assertEqual(result["accepted_labels"], expected)
-                self.assertEqual(result["byte_equal_records"], 866 - len(expected))
+                self.assertEqual(result["byte_equal_records"], 902 - len(expected))
 
     def test_alternate_legitimate_typed_bindings_and_counts(self):
         extra_array = (scalar("L"), sequence(ARRAY, (string("a"), string("b"))))
@@ -232,7 +232,7 @@ class MapContractTests(unittest.TestCase):
         a, b = records(pairs), records(pairs[::-1])
         result = self.compare(a, b)
         self.assertEqual(result["status"], "equivalent", result)
-        self.assertEqual(result["records"], 866)
+        self.assertEqual(result["records"], 902)
         self.assertNotIn("PRIVATE", json.dumps(result))
 
     def test_complete_payload_consumption_and_pair_arity(self):
@@ -259,7 +259,7 @@ class MapContractTests(unittest.TestCase):
 
     def test_nonscoped_records_remain_byte_exact_including_other_maps(self):
         original = records()
-        for ordinal in (1, 275, 282, 295, 296, 297, 298, 299, 300, 301, 302, 314, *range(759, 867)):
+        for ordinal in (1, 275, 282, 295, 296, 297, 298, 299, 300, 301, 302, 314, *range(759, 903)):
             self.reject(original, change(original, ordinal, b"different"), "ineligible_difference")
         a = change(original, 100, mapping(PAIRS))
         b = change(original, 100, mapping(PAIRS[::-1]))

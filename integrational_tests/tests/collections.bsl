@@ -2821,6 +2821,209 @@
 КонецФункции
 // End descriptor Map-key checkpoint helpers.
 
+// Begin bounded ValueTree FindRows helpers (measurement only; no native answers).
+Функция TreeSearchFresh(Знач Kind)
+    T = Новый ДеревоЗначений;
+    T.Колонки.Добавить("Id");
+    T.Колонки.Добавить("Key");
+    T.Колонки.Добавить("Group");
+    T.Колонки.Добавить("Mark");
+    A = T.Строки.Добавить();
+    B = T.Строки.Добавить();
+    B1 = B.Строки.Добавить();
+    A1 = A.Строки.Добавить();
+    A2 = A.Строки.Добавить();
+    A11 = A1.Строки.Добавить();
+    A.Id = 1; B.Id = 2; B1.Id = 3; A1.Id = 4; A2.Id = 5; A11.Id = 6;
+    A.Key = "hit"; B.Key = "hit"; B1.Key = "hit";
+    A1.Key = "hit"; A2.Key = "hit"; A11.Key = "hit";
+    A.Group = "x"; B.Group = "y"; B1.Group = "x";
+    A1.Group = "x"; A2.Group = "y"; A11.Group = "y";
+    A.Mark = "base"; B.Mark = "base"; B1.Mark = "base";
+    A1.Mark = "base"; A2.Mark = "base"; A11.Mark = "base";
+    Если Kind = "descendants" Тогда
+        A.Key = "miss"; B.Key = "miss"; A1.Key = "miss";
+    ИначеЕсли Kind = "scalars" Тогда
+        A.Key = 1; B.Key = Истина; B1.Key = 2;
+        A1.Key = "1"; A2.Key = Ложь; A11.Key = Неопределено;
+    ИначеЕсли Kind = "strings" Тогда
+        A.Key = "x"; B.Key = "X"; B1.Key = "x ";
+        A1.Key = "X "; A2.Key = "xx"; A11.Key = "x";
+    ИначеЕсли Kind = "nullish" Тогда
+        A.Key = Неопределено; B.Key = Null; B1.Key = Неопределено;
+        A1.Key = ""; A2.Key = 0; A11.Key = Null;
+    КонецЕсли;
+    Возврат Новый Структура("Tree,A,B,B1,A1,A2,A11", T, A, B, B1, A1, A2, A11);
+КонецФункции
+
+Функция TreeSearchMark(Знач Value)
+    Если ТипЗнч(Value) <> Тип("Строка") Тогда
+        ВызватьИсключение "tree-search-mark-type";
+    КонецЕсли;
+    Если Value <> "base" И Value <> "from-result" И Value <> "from-source" Тогда
+        ВызватьИсключение "tree-search-mark-value";
+    КонецЕсли;
+    Возврат Value;
+КонецФункции
+
+Функция TreeSearchCell(Знач Value)
+    Если ТипЗнч(Value) = Тип("Неопределено") Тогда
+        Возврат "u";
+    ИначеЕсли ТипЗнч(Value) = Тип("Null") Тогда
+        Возврат "l";
+    ИначеЕсли ТипЗнч(Value) = Тип("Булево") Тогда
+        Если Value Тогда Возврат "b1"; Иначе Возврат "b0"; КонецЕсли;
+    ИначеЕсли ТипЗнч(Value) = Тип("Число") Тогда
+        Если Value < 0 Или Value > 7 Или Цел(Value) <> Value Тогда
+            ВызватьИсключение "tree-search-cell-number";
+        КонецЕсли;
+        Возврат "n" + Строка(Value);
+    ИначеЕсли ТипЗнч(Value) = Тип("Строка") Тогда
+        Если СтрДлина(Value) > 16 Тогда
+            ВызватьИсключение "tree-search-cell-length";
+        КонецЕсли;
+        Text = "s";
+        Для I = 1 По СтрДлина(Value) Цикл
+            Code = КодСимвола(Value, I);
+            Если Code < 32 Или Code > 126 Тогда
+                ВызватьИсключение "tree-search-cell-ascii";
+            КонецЕсли;
+            Text = Text + Строка(Code) + ".";
+        КонецЦикла;
+        Возврат Text;
+    КонецЕсли;
+    ВызватьИсключение "tree-search-cell-type";
+КонецФункции
+
+Функция TreeSearchState(Знач S)
+    Counts = Новый Массив;
+    Counts.Добавить(S.Tree.Rows.Count());
+    Counts.Добавить(S.A.Rows.Count());
+    Counts.Добавить(S.B.Rows.Count());
+    Counts.Добавить(S.A1.Rows.Count());
+    Counts.Добавить(S.A2.Rows.Count());
+    Counts.Добавить(S.B1.Rows.Count());
+    Counts.Добавить(S.A11.Rows.Count());
+    Text = "";
+    Для Каждого N Из Counts Цикл
+        Если ТипЗнч(N) <> Тип("Число") Или N < 0 Или N > 7 Или Цел(N) <> N Тогда
+            ВызватьИсключение "tree-search-state-count";
+        КонецЕсли;
+        Text = Text + Строка(N) + ",";
+    КонецЦикла;
+    Nodes = Новый Массив;
+    Nodes.Добавить(S.A); Nodes.Добавить(S.B); Nodes.Добавить(S.B1);
+    Nodes.Добавить(S.A1); Nodes.Добавить(S.A2); Nodes.Добавить(S.A11);
+    Для Каждого R Из Nodes Цикл
+        Text = Text + ";" + TreeSearchCell(R.Id) + "/" + TreeSearchCell(R.Key)
+            + "/" + TreeSearchCell(R.Group) + "/" + TreeSearchMark(R.Mark);
+    КонецЦикла;
+    Возврат Text;
+КонецФункции
+
+Функция TreeSearchResult(Знач Result)
+    Если ТипЗнч(Result) = Тип("Массив") Тогда
+        Tag = "array";
+    ИначеЕсли ТипЗнч(Result) = Тип("ФиксированныйМассив") Тогда
+        Tag = "fixed-array";
+    ИначеЕсли ТипЗнч(Result) = Тип("Неопределено") Тогда
+        Возврат "undefined";
+    ИначеЕсли ТипЗнч(Result) = Тип("Null") Тогда
+        Возврат "null";
+    ИначеЕсли ТипЗнч(Result) = Тип("Число") Тогда
+        Возврат "number";
+    ИначеЕсли ТипЗнч(Result) = Тип("Булево") Тогда
+        Возврат "boolean";
+    ИначеЕсли ТипЗнч(Result) = Тип("Строка") Тогда
+        Возврат "string";
+    ИначеЕсли ТипЗнч(Result) = Тип("Структура") Тогда
+        Возврат "structure";
+    ИначеЕсли ТипЗнч(Result) = Тип("ФиксированнаяСтруктура") Тогда
+        Возврат "fixed-structure";
+    ИначеЕсли ТипЗнч(Result) = Тип("ДеревоЗначений") Тогда
+        Возврат "tree";
+    ИначеЕсли ТипЗнч(Result) = Тип("СтрокаДереваЗначений") Тогда
+        Возврат "tree-row";
+    ИначеЕсли ТипЗнч(Result) = Тип("КоллекцияСтрокДереваЗначений") Тогда
+        Возврат "tree-rows";
+    Иначе
+        ВызватьИсключение "tree-search-result-type";
+    КонецЕсли;
+    Count = Result.Количество();
+    Если Count < 0 Или Count > 7 Тогда
+        ВызватьИсключение "tree-search-result-count";
+    КонецЕсли;
+    Text = Tag + ":" + Строка(Count) + ":";
+    Для Каждого R Из Result Цикл
+        Если ТипЗнч(R) <> Тип("СтрокаДереваЗначений") Тогда
+            ВызватьИсключение "tree-search-result-row";
+        КонецЕсли;
+        Id = R.Id;
+        Если ТипЗнч(Id) <> Тип("Число") Или Id < 1 Или Id > 7 Или Цел(Id) <> Id Тогда
+            ВызватьИсключение "tree-search-result-id";
+        КонецЕсли;
+        Text = Text + Строка(Id) + ",";
+    КонецЦикла;
+    Возврат Text;
+КонецФункции
+
+Функция TreeSearchProbe(Знач Expression, Знач Kind = "base", Знач Change = "none")
+    Попытка
+        S = TreeSearchFresh(Kind);
+        Filter = Новый Структура("Key", "hit");
+    Исключение
+        Возврат "setup-error";
+    КонецПопытки;
+    Status = "ok";
+    Second = Неопределено;
+    Попытка
+        Result = Вычислить(Expression);
+    Исключение
+        Status = "action-error";
+    КонецПопытки;
+    ChangeStatus = "none";
+    Если Status = "ok" И Change <> "none" Тогда
+        ChangeStatus = "ok";
+        Попытка
+        Если Change = "number-boolean" Тогда
+            Second = S.Tree.Rows.FindRows(Новый Структура("Key", Истина), Истина);
+        ИначеЕсли Change = "result-to-source" Тогда
+            Result[0].Mark = "from-result";
+        ИначеЕсли Change = "source-to-result" Тогда
+            S.A1.Mark = "from-source";
+        ИначеЕсли Change = "array-delete" Тогда
+            Result.Удалить(0);
+        ИначеЕсли Change = "add-node" Тогда
+            Added = S.A.Rows.Add();
+            Added.Id = 7; Added.Key = "hit"; Added.Group = "x"; Added.Mark = "base";
+            Second = S.Tree.Rows.FindRows(Filter, Истина);
+        ИначеЕсли Change = "filter-change" Тогда
+            Filter.Вставить("Key", "miss");
+            Second = S.Tree.Rows.FindRows(Filter, Истина);
+        КонецЕсли;
+        Исключение
+            ChangeStatus = "change-error";
+        КонецПопытки;
+    КонецЕсли;
+    Попытка
+        State = TreeSearchState(S);
+        Если Status = "action-error" Тогда
+            Возврат Status + "|state=" + State;
+        КонецЕсли;
+        Text = "ok|change=" + ChangeStatus + "|result=" + TreeSearchResult(Result);
+        Если Change = "number-boolean" Или Change = "add-node" Или Change = "filter-change" Тогда
+            Text = Text + "|second=" + TreeSearchResult(Second);
+        ИначеЕсли (Change = "result-to-source" Или Change = "source-to-result") И ChangeStatus = "ok" Тогда
+            Text = Text + "|result-mark=" + TreeSearchMark(Result[0].Mark);
+        КонецЕсли;
+        Возврат Text + "|state=" + State;
+    Исключение
+        Возврат Status + "|change=" + ChangeStatus + "|observer-error";
+    КонецПопытки;
+КонецФункции
+
+// End bounded ValueTree FindRows helpers.
+
 #Область МассивыИСтруктуры
 // Типичный конвейер: массив записей, расчет суммы и сбор кодов для выгрузки.
 Позиции = Новый Массив;
@@ -3998,3 +4201,41 @@ VTResult = "error";
 КонецПопытки;
 Показать("tree.core.detached-grandchild-cell", VTResult);
 // End bounded ValueTree core observations.
+// Begin bounded ValueTree FindRows observations (measurement only; no native answers).
+Показать("tree.findrows.alias.ru", TreeSearchProbe("S.Tree.Строки.НайтиСтроки(Filter, Истина)"));
+Показать("tree.findrows.alias.en", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, True)"));
+Показать("tree.findrows.root.false", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, False)"));
+Показать("tree.findrows.root.omitted", TreeSearchProbe("S.Tree.Rows.FindRows(Filter)"));
+Показать("tree.findrows.child.true", TreeSearchProbe("S.A.Rows.FindRows(Filter, True)"));
+Показать("tree.findrows.child.false", TreeSearchProbe("S.A.Rows.FindRows(Filter, False)"));
+Показать("tree.findrows.child.omitted", TreeSearchProbe("S.A.Rows.FindRows(Filter)"));
+Показать("tree.findrows.leaf", TreeSearchProbe("S.A11.Rows.FindRows(Filter, True)"));
+Показать("tree.findrows.no-match", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Key"", ""absent""), True)"));
+Показать("tree.findrows.nonmatching-parents", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, True)", "descendants"));
+Показать("tree.findrows.conjunction", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Key,Group"", ""hit"", ""x""), True)", "descendants"));
+Показать("tree.findrows.conjunction-reversed", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Group,Key"", ""x"", ""hit""), True)", "descendants"));
+Показать("tree.findrows.column-case", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""kEy,gRoUp"", ""hit"", ""x""), True)", "descendants"));
+Показать("tree.findrows.empty-filter.nonempty", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure, True)"));
+Показать("tree.findrows.empty-filter.empty", TreeSearchProbe("S.A11.Rows.FindRows(New Structure, True)"));
+Показать("tree.findrows.number-boolean", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Key"", 1), True)", "scalars", "number-boolean"));
+Показать("tree.findrows.string-case", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Key"", ""x""), True)", "strings"));
+Показать("tree.findrows.string-space", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Key"", ""x ""), True)", "strings"));
+Показать("tree.findrows.undefined-value", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Key"", Undefined), True)", "nullish"));
+Показать("tree.findrows.null-value", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Key"", Null), True)", "nullish"));
+Показать("tree.findrows.result-to-source", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Id"", 4), True)", "base", "result-to-source"));
+Показать("tree.findrows.source-to-result", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Id"", 4), True)", "base", "source-to-result"));
+Показать("tree.findrows.array-delete", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, True)", "base", "array-delete"));
+Показать("tree.findrows.add-node", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, True)", "base", "add-node"));
+Показать("tree.findrows.filter-change", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, True)", "base", "filter-change"));
+Показать("tree.findrows.unknown-column.nonempty", TreeSearchProbe("S.Tree.Rows.FindRows(New Structure(""Missing"", 1), True)"));
+Показать("tree.findrows.unknown-column.empty", TreeSearchProbe("S.A11.Rows.FindRows(New Structure(""Missing"", 1), True)"));
+Показать("tree.findrows.missing-filter", TreeSearchProbe("S.Tree.Rows.FindRows()"));
+Показать("tree.findrows.undefined-filter", TreeSearchProbe("S.Tree.Rows.FindRows(Undefined, True)"));
+Показать("tree.findrows.number-filter", TreeSearchProbe("S.Tree.Rows.FindRows(1, True)"));
+Показать("tree.findrows.fixed-filter", TreeSearchProbe("S.Tree.Rows.FindRows(New FixedStructure(Filter), True)"));
+Показать("tree.findrows.undefined-flag", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, Undefined)"));
+Показать("tree.findrows.number-flag", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, 1)"));
+Показать("tree.findrows.string-flag", TreeSearchProbe("S.Tree.Rows.FindRows(Filter, ""True"")"));
+Показать("tree.findrows.wrong-tree", TreeSearchProbe("S.Tree.FindRows(Filter, True)"));
+Показать("tree.findrows.wrong-row", TreeSearchProbe("S.A.FindRows(Filter, True)"));
+// End bounded ValueTree FindRows observations.
