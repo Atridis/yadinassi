@@ -6,7 +6,7 @@ exec 2>/dev/null
 case "$#" in
   2) ;;
   3) case "$3" in
-       --config-zero-marker-filename-observation|--config-slot-marker-observation|--config-framing-observation|--config-transport-observation|--record-metadata-observation|--record-reader-validation|--params-transport-observation|--params-dbnames-extraction|--dbnames-identity-validation) ;;
+       --config-entry-reference-observation|--config-zero-marker-filename-observation|--config-slot-marker-observation|--config-framing-observation|--config-transport-observation|--record-metadata-observation|--record-reader-validation|--params-transport-observation|--params-dbnames-extraction|--dbnames-identity-validation) ;;
        *) exit 2 ;;
      esac ;;
   *) exit 2 ;;
