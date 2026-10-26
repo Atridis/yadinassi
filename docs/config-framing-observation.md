@@ -7,7 +7,7 @@ audited native run is required before accepting this framing hypothesis on an
 owned fixture. Synthetic tests and activation are not native evidence.
 
 `--config-framing-observation` selects `owned_config_framing_observation_v1`,
-report schema 11, capture schema 12 and invocation schema 8. The reviewed workflow now selects a separate [marker census](config-marker-census.md).
+report schema 11, capture schema 12 and invocation schema 8. The reviewed workflow now selects the separate [zero-marker filename-field observation](config-zero-marker-filename-observation.md); the [marker-only census](config-marker-census.md) also remains explicit.
 This strict mode remains explicitly available without changing triggers, actor/checkout admission,
 immutable image, rights, artifact destinations or report-ready gates. The old
 CONFIG declaration mode remains explicitly available with its original closed

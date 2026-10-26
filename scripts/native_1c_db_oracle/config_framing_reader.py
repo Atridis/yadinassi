@@ -292,3 +292,142 @@ def observe_config_marker_census(read_at, file_size, *, profile,
     return ConfigMarkerCensusObservation(profile.identifier, profile.recipe_sha256,
         data.info.logical_length, blob.info.logical_length, slots, first,
         counts['zero'], counts['one'], counts['other'], reader.usage)
+
+
+@dataclass(frozen=True)
+class ConfigZeroMarkerFilenameProfile:
+    """Separate field-only hypothesis; zero is not an active-file identity."""
+
+    declarations: tuple[tuple[str, str, int, int, int, str], ...]
+    recordlock: str
+    format_item: int
+    identifier: str = field(default='config_zero_marker_filename_8380_8192_v1', init=False)
+    candidate_stride: int = field(init=False)
+    filename_offset: int = field(init=False)
+    filename_width: int = field(init=False)
+    recipe_sha256: str = field(init=False)
+
+    def __post_init__(self):
+        layout = ConfigFramingProfile(self.declarations, self.recordlock, self.format_item)
+        object.__setattr__(self, 'candidate_stride', layout.record_size)
+        object.__setattr__(self, 'filename_offset', layout.placements[0][0])
+        object.__setattr__(self, 'filename_width', layout.placements[0][1])
+        raw = json.dumps(self.recipe(), ensure_ascii=True, sort_keys=True,
+                         separators=(',', ':'), allow_nan=False).encode('ascii')
+        object.__setattr__(self, 'recipe_sha256', hashlib.sha256(raw).hexdigest())
+
+    def recipe(self):
+        return {'identifier': self.identifier, 'declarations': self.declarations,
+                'recordlock': self.recordlock, 'format_item': self.format_item,
+                'candidate_stride': self.candidate_stride,
+                'filename_offset': self.filename_offset, 'filename_width': self.filename_width,
+                'first_marker': 'one_reserved_opaque_v1',
+                'later_selection': 'zero_validate_nonzero_opaque_v1',
+                'filename': 'u16le_units_at_most_128_strict_utf16le_v1',
+                'selection': 'CONFIG_ascii_case_only_no_fallback_v1',
+                'empty_data': 'unsupported', 'nonempty_witness': 'required',
+                'framing': 'not_accepted'}
+
+
+@dataclass(frozen=True)
+class ConfigZeroMarkerFilenameObservation:
+    recipe_id: str
+    recipe_sha256: str
+    data_logical_bytes: int
+    blob_logical_bytes: int
+    candidate_slots: int
+    first_marker_class: str
+    later_zero_count: int
+    later_one_count: int
+    later_other_count: int
+    validated_zero_count: int
+    empty_filenames: int
+    nonempty_filenames: int
+    max_filename_units: int
+    usage: CatalogUsage
+    candidate_stride: int = field(default=301, init=False)
+    target: str = field(default='CONFIG', init=False)
+    capability: str = field(default='experimental_config_zero_marker_filename', init=False)
+    framing_validation: str = field(default='not_accepted', init=False)
+    filename_validation: str = field(default='zero_marker_bounded_utf16le', init=False)
+    root_identity: str = field(default='not_observed', init=False)
+    native_acceptance: str = field(default='pending', init=False)
+
+
+def observe_config_zero_marker_filenames(read_at, file_size, *, profile,
+                                         limits=None, catalog_limits=None):
+    """Validate only zero-marker filename fields, with a nonempty witness.
+
+    First-slot payload and every nonzero candidate payload remain opaque. Every
+    zero candidate is checked, even if its unread BLOB pointer might be empty.
+    Thus this is not upstream file selection, a free-list model or whole-row
+    framing. Names are never selected, normalized, retained or returned.
+    """
+    if type(profile) is not ConfigZeroMarkerFilenameProfile:
+        raise ValueError('profile must be ConfigZeroMarkerFilenameProfile')
+    if limits is not None and type(limits) is not ConfigFramingLimits:
+        raise ValueError('limits must be ConfigFramingLimits')
+    if catalog_limits is not None and type(catalog_limits) is not CatalogLimits:
+        raise ValueError('catalog_limits must be CatalogLimits')
+    limits = limits if limits is not None else ConfigFramingLimits()
+    if profile.candidate_stride > limits.max_record_bytes:
+        raise ResourceLimit('config_record_bytes')
+    reader = CatalogReader(read_at, file_size, limits=catalog_limits)
+    catalog = reader.read_catalog()
+    selected = None
+    for table in catalog.tables:
+        if _ascii_config(table.name):
+            if selected is not None:
+                raise UnsupportedLayout('config_table_ambiguous')
+            selected = table
+    if selected is None:
+        raise UnsupportedLayout('config_table_missing')
+    if (type(selected.format_item) is not int or selected.format_item != profile.format_item
+            or selected.recordlock != profile.recordlock
+            or len(selected.fields) != len(profile.declarations)
+            or any(item.raw != wanted for item, wanted in zip(selected.fields, profile.declarations))):
+        raise UnsupportedLayout('config_profile_mismatch')
+    data = reader._open_table_data(selected)
+    blob = reader._open_table_blob(selected)
+    if data.info.logical_length % profile.candidate_stride:
+        raise InvalidStructure('config_record_length')
+    slots = data.info.logical_length // profile.candidate_stride
+    if not slots:
+        raise UnsupportedLayout('config_empty_data')
+    if slots > limits.max_slots:
+        raise ResourceLimit('config_slots')
+    zero, one, other, empty, maximum = 0, 0, 0, 0, 0
+    for slot in range(slots):
+        base = slot * profile.candidate_stride
+        marker = _scalar(data, base, 1)
+        if slot == 0:
+            if marker != b'\x01':
+                raise UnsupportedLayout('config_reserved_slot')
+            continue
+        if marker != b'\x00':
+            if marker == b'\x01':
+                one += 1
+            else:
+                other += 1
+            continue
+        offset = base + profile.filename_offset
+        units = int.from_bytes(_scalar(data, offset, 2), 'little')
+        if units > 128:
+            raise InvalidStructure('config_filename_length')
+        reader._budget.charge('output_bytes', 128 + 4 * units)
+        raw = _scalar(data, offset + 2, 2 * units)
+        try:
+            raw.decode('utf-16-le', errors='strict')
+        except UnicodeDecodeError:
+            raise UnsupportedLayout('config_filename_encoding') from None
+        zero += 1
+        empty += units == 0
+        maximum = max(maximum, units)
+    # No vacuous filename-decoding success. This is a local observation-witness
+    # requirement, not a claim that native 1C rejects empty CONFIG filenames.
+    if zero == empty:
+        raise UnsupportedLayout('config_filename_no_nonempty_witness')
+    reader._budget.charge('output_bytes', 4096)
+    return ConfigZeroMarkerFilenameObservation(profile.identifier, profile.recipe_sha256,
+        data.info.logical_length, blob.info.logical_length, slots, 'one',
+        zero, one, other, zero, empty, zero - empty, maximum, reader.usage)

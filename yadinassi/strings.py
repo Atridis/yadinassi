@@ -10,7 +10,7 @@ import re
 
 from .collation import caseless_string_key
 from .search_directions import BSLSearchDirection
-from .values import BSLArray, BSLFixedArray, boolean, number, to_string
+from .values import BSLArray, BSLFixedArray, NULL, boolean, number, to_string
 
 
 # Unicode White_Space, explicitly listed instead of Python's wider isspace()
@@ -333,7 +333,118 @@ def compare(first: object, second: object) -> Decimal:
     return Decimal((left > right) - (left < right))
 
 
+# Deliberate standalone compatibility policy, not an observed configuration
+# metadata value or a universal native default. No environment/locale lookup.
+_NSTR_DEFAULT_LANGUAGE = "ru"
+_NSTR_SPACE = " \t"
+# Local resource limits, independent of the measurement observer's 64 units.
+_NSTR_MAX_TEMPLATE_UNITS = 1_000_000
+_NSTR_MAX_CODE_UNITS = 128
+
+
+def _nstr_scalar(value: object) -> str:
+    kind = type(value)
+    # Class equality/membership can invoke a hostile metaclass __eq__. Identity
+    # checks must precede every conversion, including primitive subclasses.
+    if (value is not None and value is not NULL
+            and kind is not str and kind is not Decimal and kind is not bool):
+        raise TypeError("НСтр: поддержаны только Строка, Число, Булево, Неопределено и Null")
+    # Never call arbitrary objects' __str__. Number presentation retains its
+    # existing independent bounds; this is not a general native coercion claim.
+    return to_string(value)
+
+
+def _nstr_bound(text: str, maximum: int) -> None:
+    if len(text) > maximum or len(text) + sum(ord(c) > 0xffff for c in text) > maximum:
+        raise ValueError("НСтр: превышен предел текста или кода языка Yadinassi")
+
+
+def _nstr_letter(character: str) -> bool:
+    # Explicit bounded alphabet: no host Unicode identifier/casefold expansion.
+    return ("a" <= character <= "z" or "A" <= character <= "Z"
+            or "а" <= character <= "я" or "А" <= character <= "Я"
+            or character in "ёЁ")
+
+
+def nstr(value: object, language: object = _OMITTED) -> str:
+    """Bounded multilingual selection; see docs/nstr-runtime.md for policy.
+
+    Parse the whole input even after finding the first matching key. A malformed
+    later entry invalidates the earlier selection. No template/output table,
+    dynamic evaluation, recursive grammar or locale-dependent fallback is used.
+    """
+    text = _nstr_scalar(value)
+    code = "" if language is _OMITTED else _nstr_scalar(language)
+    _nstr_bound(text, _NSTR_MAX_TEMPLATE_UNITS)
+    _nstr_bound(code, _NSTR_MAX_CODE_UNITS)
+    if not code:
+        code = _NSTR_DEFAULT_LANGUAGE
+    # Numeric presentations are not language codes in this bounded grammar.
+    # The native Number/String(Number) control was empty, not conversion proof.
+    selected_code = code.lower() if all(_nstr_letter(c) for c in code) else None
+    position, length = 0, len(text)
+    selected = None
+    while position < length:
+        while position < length and text[position] in _NSTR_SPACE + ";":
+            position += 1
+        if position == length:
+            break
+        start = position
+        while position < length and _nstr_letter(text[position]):
+            position += 1
+        if position == start:
+            return ""
+        if position - start > _NSTR_MAX_CODE_UNITS:
+            raise ValueError("НСтр: превышен предел кода языка Yadinassi")
+        capture = selected is None and text[start:position].lower() == selected_code
+        while position < length and text[position] in _NSTR_SPACE:
+            position += 1
+        if position == length or text[position] != "=":
+            return ""
+        position += 1
+        while position < length and text[position] in _NSTR_SPACE:
+            position += 1
+        if position < length and text[position] == "'":
+            position += 1
+            start = position
+            parts = [] if capture else None
+            while position < length:
+                if text[position] != "'":
+                    position += 1
+                    continue
+                if position + 1 < length and text[position + 1] == "'":
+                    if parts is not None:
+                        parts.extend((text[start:position], "'"))
+                    position += 2
+                    start = position
+                    continue
+                if parts is not None:
+                    parts.append(text[start:position])
+                position += 1
+                break
+            else:
+                return ""  # No closing quote, including a final doubled quote.
+            while position < length and text[position] in _NSTR_SPACE:
+                position += 1
+            if position < length and text[position] != ";":
+                return ""
+            if parts is not None:
+                selected = "".join(parts)
+        else:
+            start = position
+            while position < length and text[position] != ";":
+                if text[position] == "'":
+                    return ""
+                position += 1
+            if capture:
+                selected = text[start:position].strip(_NSTR_SPACE)
+        if position < length:
+            position += 1  # The verified separator; every loop moves forward.
+    return "" if selected is None else _text(selected)
+
+
 BUILTINS = (
+    ("НСтр", nstr, "NStr"),
     ("СтрСравнить", compare, "StrCompare"),
     ("СтрЧислоВхождений", occurrence_count, "StrOccurrenceCount"),
     ("СтрЧислоСтрок", line_count, "StrLineCount"),

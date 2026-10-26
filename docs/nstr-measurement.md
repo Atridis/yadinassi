@@ -1,7 +1,9 @@
 # НСтр / NStr: measurement and language discriminators
 
-This revision is **measurement-only**. It does not implement either function,
-claim runtime support, or add a supported syntax entry. The initial 36 independent
+This document records the **measurement-only revisions**. They did not implement
+either function or claim runtime support. The later bounded implementation and
+its deliberately fixed default are described in [nstr-runtime.md](nstr-runtime.md).
+The initial 36 independent
 input-only expressions remain byte-for-byte unchanged. This revision appends
 13 discriminators to the existing complete values scenario, taking its message
 count from **521 to 534** (49 NStr observations in total). Native observations must be captured and
