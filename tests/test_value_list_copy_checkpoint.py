@@ -12,8 +12,9 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, ast, serialization
-from yadinassi.parser import parse
+from yadinassi import Interpreter, serialization
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from yadinassi.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.values import BSLArray, HostFunction
 

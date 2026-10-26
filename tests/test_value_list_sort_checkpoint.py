@@ -11,8 +11,9 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from yadinassi import type_values, serialization, runtime
 from yadinassi.search_directions import BSLSearchDirection
 from yadinassi.value_lists import BSLValueList, BSLValueListItem

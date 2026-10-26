@@ -9,9 +9,10 @@ from scripts.native_historical_replay import (
     HISTORICAL_FUNCTIONS_OUTPUT_BLOB, git_blob, historical_functions_source,
     without_extended_exception_probes, without_exception_context_probes,
 )
-from yadinassi import Interpreter, ast
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
 from yadinassi.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = (

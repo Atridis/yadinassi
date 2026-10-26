@@ -8,8 +8,9 @@ from scripts.native_historical_replay import (
     git_blob, without_exported_context_probes, without_exported_variable_probes,
     without_exported_postcreate_probes,
 )
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from yadinassi.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508
 ROOT = Path(__file__).resolve().parents[1]
 LABELS = ('static-read', 'static-write', 'static-routine', 'execute-read', 'execute-routine')

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from scripts.native_historical_replay import historical_numbers_source
 from yadinassi import BSLError, Interpreter
-from yadinassi.numbers import number_from_binary_string, number_from_hex_string
+from yadinassi.numeric.numbers import number_from_binary_string, number_from_hex_string
 
 ROOT = Path(__file__).resolve().parents[1]
 

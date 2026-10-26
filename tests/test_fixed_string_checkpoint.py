@@ -6,8 +6,9 @@ import unittest
 from scripts.native_historical_replay import (
     without_service_filled_probes, FIXED_STRING_PROBE_BLOCKS, historical_values_source, without_fixed_string_probes,
 )
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse, parse_expression
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse, parse_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'

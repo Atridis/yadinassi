@@ -3,9 +3,9 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import ast
+from yadinassi.syntax import ast
 from yadinassi.errors import IncompleteInput
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 
 class DefaultParameterTests(unittest.TestCase):

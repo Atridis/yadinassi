@@ -1,9 +1,9 @@
 """Parser-only integration of async client routines and server module setup."""
 import unittest
 
-from yadinassi import ast
+from yadinassi.syntax import ast
 from yadinassi.errors import BSLError
-from yadinassi.parser import parse, validate_async, validate_labels
+from yadinassi.syntax.parser import parse, validate_async, validate_labels
 
 
 class AsyncModuleSyntaxTests(unittest.TestCase):

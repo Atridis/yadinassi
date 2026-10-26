@@ -93,7 +93,7 @@ class MetadataTest(unittest.TestCase):
             self.assertNotIn("ОписаниеОшибки", text)
 
     def test_rendered_modules_parse_without_native_execution(self):
-        from yadinassi.parser import parse
+        from yadinassi.syntax.parser import parse
         for name in m.MODULE_FILES:
             with self.subTest(name=name):
                 text = m._module(name, NONCE, "/tmp/onec-db-oracle/evidence").decode("utf-8-sig")

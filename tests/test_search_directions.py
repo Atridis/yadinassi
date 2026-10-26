@@ -9,7 +9,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.errors import BSLRuntimeError
 from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
+from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.search_directions import (
     BSLSearchDirection, BSLSearchDirections, SEARCH_DIRECTIONS,
 )

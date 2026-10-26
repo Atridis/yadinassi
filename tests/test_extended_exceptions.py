@@ -4,9 +4,9 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import ast
+from yadinassi.syntax import ast
 from yadinassi.errors import BSLRuntimeError
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 
 class ExtendedExceptionTests(unittest.TestCase):
@@ -152,7 +152,7 @@ Except saved=ErrorInfo(); EndTry;''', 'division.bsl')
         self.assertFalse(self.vm.execute('saved.IsErrorOfCategory(ErrorCategory.ExceptionRaisedFromScript)'))
 
     def test_source_line_snapshot_survives_reusing_source_label(self):
-        from yadinassi.lexer import Lexer
+        from yadinassi.syntax.lexer import Lexer
         tokens = Lexer('a = 1; b = 2;\r\n').tokens()
         self.assertEqual(tokens[0].source_line, 'a = 1; b = 2;')
         self.assertTrue(all(token.source_line is tokens[0].source_line

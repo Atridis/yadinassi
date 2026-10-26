@@ -7,10 +7,11 @@ guards. The AST, bilingual and async checks do not claim separate native probes.
 from decimal import Decimal
 import unittest
 
-from yadinassi import Interpreter, ast
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
 from yadinassi.async_runtime import Promise
 from yadinassi.errors import BSLRuntimeError
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 
 ROUTINES = '''

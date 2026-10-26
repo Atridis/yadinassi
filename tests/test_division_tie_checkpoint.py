@@ -9,8 +9,9 @@ from scripts.native_historical_replay import (
     historical_numbers_source, git_blob, HISTORICAL_NUMBERS_BLOB,
     CURRENT_NUMBERS_BLOB, HISTORICAL_NUMBERS_OUTPUT_BLOB,
 )
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from yadinassi.values import divide
 
 ROOT = Path(__file__).resolve().parents[1]

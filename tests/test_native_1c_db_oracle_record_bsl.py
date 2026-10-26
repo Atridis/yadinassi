@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from yadinassi import Interpreter
 from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 from yadinassi.structures import BSLStructure
 from yadinassi.value_tables import BSLValueTableRow
 from yadinassi.values import BSLArray, BSLType, HostFunction

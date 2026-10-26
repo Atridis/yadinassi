@@ -20,8 +20,9 @@ if __package__:
 else:
     from native_observations import read_observation
 
-from yadinassi import Interpreter, ast, serialization
-from yadinassi.parser import parse
+from yadinassi import Interpreter, serialization
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from yadinassi.structures import BSLStructure
 from yadinassi.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.values import BSLArray, HostFunction, NULL

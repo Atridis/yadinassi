@@ -18,9 +18,9 @@ from yadinassi.dates import (
     literal_date, shift_date,
 )
 from yadinassi.errors import BSLRuntimeError, IncompleteInput
-from yadinassi.lexer import Lexer
+from yadinassi.syntax.lexer import Lexer
 from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.parser import parse, parse_expression
+from yadinassi.syntax.parser import parse, parse_expression
 from yadinassi.serialization import (
     FORMAT_ERROR, value_from_string_internal as read,
     value_to_string_internal as write,

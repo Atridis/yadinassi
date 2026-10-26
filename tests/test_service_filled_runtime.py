@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
+from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
 from yadinassi.type_descriptions import BSLTypeDescription
 from yadinassi.type_qualifiers import (
     ALLOWED_LENGTHS, ALLOWED_SIGNS, DATE_FRACTIONS,

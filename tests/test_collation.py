@@ -12,7 +12,7 @@ from yadinassi import BSLError, Interpreter
 from yadinassi.collation import (
     MAX_STRING_LENGTH, TABLE_NAME, TABLE_SHA256, _collator, string_key,
 )
-from yadinassi.numbers import minimum, maximum
+from yadinassi.numeric.numbers import minimum, maximum
 
 
 class CollationTests(unittest.TestCase):

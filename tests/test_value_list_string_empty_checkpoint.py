@@ -9,8 +9,8 @@ import unittest
 from unittest.mock import patch
 import weakref
 
-from yadinassi import ast
-from yadinassi.parser import parse
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from yadinassi.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.values import BSLArray
 

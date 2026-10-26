@@ -10,8 +10,9 @@ from scripts.native_historical_replay import (
     CHARS_PROBE_BLOCKS, HISTORICAL_VALUES_BLOB, HISTORICAL_VALUES_OUTPUT_BLOB,
     without_uuid_probes, git_blob, historical_values_source, without_chars_probes, without_fixed_string_probes,
 )
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse, parse_expression
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse, parse_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'

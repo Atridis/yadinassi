@@ -6,7 +6,7 @@ from yadinassi import BSLError, Interpreter
 from yadinassi.maps import BSLMap, BSLFixedMap
 from yadinassi.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
 from yadinassi.values import BSLArray, BSLFixedArray, BSLType
-from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
+from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.strings import _WHITESPACE
 from yadinassi.value_checks import value_is_filled
 

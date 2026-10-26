@@ -7,8 +7,9 @@ import unittest
 from scripts.native_historical_replay import (
     CURRENT_DATES_BLOB, HISTORICAL_DATES_BLOB, git_blob, historical_dates_source,
 )
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/dates.bsl'

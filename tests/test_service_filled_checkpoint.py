@@ -7,8 +7,9 @@ import unittest
 from scripts.native_historical_replay import (
     SERVICE_FILLED_PROBE_BLOCK, without_service_filled_probes, historical_values_source,
 )
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse, parse_expression
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse, parse_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = (

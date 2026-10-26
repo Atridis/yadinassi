@@ -6,7 +6,7 @@ import unittest
 from yadinassi import Interpreter
 from yadinassi.errors import BSLRuntimeError
 from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
+from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
 from yadinassi.serialization import (
     FORMAT_ERROR, value_from_string_internal, value_to_string_internal,
 )

@@ -99,7 +99,7 @@ class ExtendedStrFindTests(unittest.TestCase):
         self.assertEqual(str_find('', 'a', END), 0)
 
     def test_invalid_direction_and_explicit_undefined_occurrence(self):
-        from yadinassi.round_modes import BSLRoundMode
+        from yadinassi.numeric.round_modes import BSLRoundMode
         for direction in (None, Decimal(0), False, 'FromBegin', BSLRoundMode.ROUND15_AS10, object()):
             with self.subTest(direction=direction), self.assertRaises(TypeError):
                 str_find('abc', 'b', direction)

@@ -9,8 +9,8 @@ import unittest
 from scripts.native_historical_replay import historical_numbers_source
 from unittest.mock import patch
 
-from yadinassi.binary_exp import binary_exp
-from yadinassi.math_conversion import UnsupportedConversionRange, decimal_to_binary64
+from yadinassi.numeric.binary_exp import binary_exp
+from yadinassi.numeric.math_conversion import UnsupportedConversionRange, decimal_to_binary64
 
 
 MODULE = importlib.import_module('yadinassi.numeric.binary_exp')

@@ -7,7 +7,7 @@ import unittest
 
 from scripts.native_historical_replay import TEXT_DOCUMENT_PROBE_BLOCKS, without_text_document_probes
 from yadinassi import Interpreter
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 import test_native_1c_full_stage as fixtures
 
 ROOT = Path(__file__).resolve().parents[1]

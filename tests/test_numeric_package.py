@@ -1,4 +1,4 @@
-"""Canonical numeric imports and the intentionally narrow legacy shims."""
+"""Canonical numeric identities and retired root-module imports."""
 
 import ast
 import importlib
@@ -44,20 +44,54 @@ class NumericPackageTests(unittest.TestCase):
         )
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
 
-    def test_legacy_exports_are_the_same_objects(self):
+    def test_canonical_package_and_symbol_imports_are_the_same_objects(self):
+        package = importlib.import_module("yadinassi.numeric")
         for name, exports in EXPORTS.items():
-            legacy = importlib.import_module(f"yadinassi.{name}")
             canonical = importlib.import_module(f"yadinassi.numeric.{name}")
+            namespace = {}
+            exec(f"from yadinassi.numeric.{name} import " + ", ".join(exports), namespace)
             with self.subTest(module=name):
-                self.assertIsNot(legacy, canonical)
-                self.assertEqual(tuple(legacy.__all__), exports)
-                self.assertEqual({name for name in vars(legacy) if not name.startswith("_")},
-                                 set(exports))
+                self.assertIs(getattr(package, name), canonical)
             for symbol in exports:
                 with self.subTest(module=name, symbol=symbol):
-                    self.assertIs(getattr(legacy, symbol), getattr(canonical, symbol))
+                    self.assertIs(namespace[symbol], getattr(canonical, symbol))
 
-    def test_every_public_numeric_definition_has_a_legacy_export(self):
+    def test_retired_module_specs_and_imports_are_absent(self):
+        for name in EXPORTS:
+            with self.subTest(module=name):
+                self.run_python(f"""
+                    import importlib
+                    import importlib.util
+                    import sys
+                    retired = "yadinassi." + {name!r}
+                    assert importlib.util.find_spec(retired) is None, retired
+                    try:
+                        importlib.import_module(retired)
+                    except ModuleNotFoundError as error:
+                        assert error.name == retired, error.name
+                    else:
+                        raise AssertionError("Retired module imported: " + retired)
+                    assert retired not in sys.modules
+                """)
+
+    def test_retired_root_attribute_imports_are_absent(self):
+        for name in EXPORTS:
+            with self.subTest(module=name):
+                self.run_python(f"""
+                    import yadinassi
+                    name = {name!r}
+                    assert not hasattr(yadinassi, name), name
+                    try:
+                        exec("from yadinassi import " + name, {{}})
+                    except ImportError as error:
+                        assert type(error) is ImportError, type(error)
+                        assert error.name == "yadinassi", error.name
+                    else:
+                        raise AssertionError("Retired root import succeeded: " + name)
+                    assert not hasattr(yadinassi, name), name
+                """)
+
+    def test_every_public_numeric_definition_is_covered(self):
         for name, exports in EXPORTS.items():
             source = ROOT / "yadinassi" / "numeric" / f"{name}.py"
             definitions = set()
@@ -79,19 +113,26 @@ class NumericPackageTests(unittest.TestCase):
         self.assertEqual(len(module.body), 1)
 
     def test_fresh_process_import_orders_preserve_symbol_identity(self):
+        # The root initializer is eager: these are requested-import orders,
+        # not claims that leaf modules initialize before the root package.
         for name, exports in EXPORTS.items():
-            for legacy_first in (False, True):
-                names = [f"yadinassi.numeric.{name}", f"yadinassi.{name}"]
-                if legacy_first:
+            for consumer_first in (False, True):
+                names = [f"yadinassi.numeric.{name}", "yadinassi.runtime"]
+                if consumer_first:
                     names.reverse()
-                with self.subTest(module=name, legacy_first=legacy_first):
+                with self.subTest(module=name, consumer_first=consumer_first):
                     self.run_python(f"""
                         import importlib
-                        first = importlib.import_module({names[0]!r})
-                        second = importlib.import_module({names[1]!r})
-                        assert first is not second
+                        importlib.import_module({names[0]!r})
+                        importlib.import_module({names[1]!r})
+                        canonical = importlib.import_module("yadinassi.numeric." + {name!r})
+                        package = importlib.import_module("yadinassi.numeric")
+                        assert getattr(package, {name!r}) is canonical
+                        namespace = {{}}
+                        exec("from yadinassi.numeric." + {name!r} + " import " +
+                             ", ".join({exports!r}), namespace)
                         for symbol in {exports!r}:
-                            assert getattr(first, symbol) is getattr(second, symbol), symbol
+                            assert namespace[symbol] is getattr(canonical, symbol), symbol
                     """)
 
     def test_public_embedding_import_does_not_load_legacy_numeric_shims(self):
@@ -112,9 +153,9 @@ class NumericPackageTests(unittest.TestCase):
                 assert "yadinassi." + name not in sys.modules
         """)
 
-    def test_legacy_exception_catches_canonical_errors(self):
+    def test_canonical_exception_catches_canonical_errors(self):
         from decimal import Decimal
-        from yadinassi.math_conversion import UnsupportedConversionRange
+        from yadinassi.numeric.math_conversion import UnsupportedConversionRange
         from yadinassi.numeric.math_conversion import decimal_to_binary64
 
         with self.assertRaises(UnsupportedConversionRange):
@@ -141,7 +182,7 @@ class NumericPackageTests(unittest.TestCase):
 
     def test_canonical_numeric_globals_and_runtime_builtins(self):
         from yadinassi import collation, runtime, type_descriptions, values
-        from yadinassi.numeric import bits, numbers, round_modes
+        from yadinassi.numeric import bits, elementary, numbers, round_modes
 
         self.assertIs(runtime.bits, bits)
         self.assertIs(runtime.numbers, numbers)
@@ -155,7 +196,7 @@ class NumericPackageTests(unittest.TestCase):
         self.assertIs(numbers.round_number.__defaults__[1],
                       round_modes.BSLRoundMode.ROUND15_AS20)
         vm = runtime.Interpreter()
-        for module in (bits, numbers):
+        for module in (bits, elementary, numbers):
             for name, function, alias in module.BUILTINS:
                 with self.subTest(module=module.__name__, function=function.__name__):
                     self.assertIs(function.__globals__, vars(module))
@@ -176,14 +217,14 @@ class NumericPackageTests(unittest.TestCase):
                 self.run_python(f"""
                     import importlib
                     importlib.import_module("yadinassi." + {consumer!r})
-                    from yadinassi import round_modes as legacy
+                    from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
                     from yadinassi import serialization, type_values, value_checks
                     from yadinassi.numeric import numbers, round_modes as canonical
                     from yadinassi.values import BSLType
 
-                    assert legacy.BSLRoundMode is canonical.BSLRoundMode
-                    assert legacy.BSLRoundModes is canonical.BSLRoundModes
-                    assert legacy.ROUND_MODES is canonical.ROUND_MODES
+                    assert BSLRoundMode is canonical.BSLRoundMode
+                    assert BSLRoundModes is canonical.BSLRoundModes
+                    assert ROUND_MODES is canonical.ROUND_MODES
                     assert numbers.round_number.__defaults__[1] is canonical.BSLRoundMode.ROUND15_AS20
                     assert serialization.BSLRoundMode is canonical.BSLRoundMode
                     assert serialization._ENUM_TYPES[BSLType.ROUND_MODE] is canonical.BSLRoundMode

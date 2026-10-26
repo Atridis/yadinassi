@@ -4,8 +4,9 @@ from pathlib import Path
 import unittest
 
 from integrational_tests.test_launcher import collect_scripts
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/dates.bsl'

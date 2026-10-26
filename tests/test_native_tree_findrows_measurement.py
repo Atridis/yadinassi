@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 from yadinassi.values import BSLArray, BSLFixedArray, HostFunction
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeRow, BSLValueTreeRowCollection
 from scripts.native_historical_replay import without_tree_findrows_probes, without_value_tree_probes

@@ -7,7 +7,7 @@ import unittest
 from yadinassi import Interpreter, BSLError
 from yadinassi.async_runtime import Promise
 from yadinassi.errors import BSLRuntimeError
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 
 class AsyncRuntimeTests(unittest.TestCase):

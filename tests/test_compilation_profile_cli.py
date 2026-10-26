@@ -11,8 +11,8 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter, cli
-from yadinassi.parser import parse
-from yadinassi.preprocessor import COMPILATION_PROFILES
+from yadinassi.syntax.parser import parse
+from yadinassi.syntax.preprocessor import COMPILATION_PROFILES
 
 
 ROOT = Path(__file__).resolve().parents[1]
