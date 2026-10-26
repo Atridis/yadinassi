@@ -875,3 +875,13 @@ A copy of `1Cv8.1CD` alone is not advertised as a general database backup. The
 restored clone still must pass all reopened row/reference, metadata and user-role
 checks before the oracle can succeed. This policy change is not native proof that
 restoration succeeded; that remains an exact-source native execution gate.
+
+### Private CONFIG root-reference relation
+
+The separate explicit `config-root-reference` mode fully parses one narrow
+BOM-prefixed `{2,bare-GUID}` locator from selected fixed key `root`, privately
+resolves and positively decodes that selected target, then completes every
+remaining selected chain/content on one cumulative graph. This is a new
+source-informed experiment, not semantic root/applied-state/native byte equality.
+It preserves the 23-source closure, security and lifecycle caps; see
+[grammar, budgets, finite envelope and stop conditions](config-root-reference-observation.md).
