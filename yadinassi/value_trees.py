@@ -3,10 +3,11 @@
 No recursive host traversal, UI, codecs, transport, or database integration.
 Limits apply to the whole tree, not independently to each child collection.
 """
-from decimal import Decimal
+from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, Rounded
 
-from .values import BSLObject
-from .type_descriptions import BSLTypeDescription
+from .values import BSLArray, BSLObject, NULL, equal
+from .structures import BSLStructure
+from .type_descriptions import BSLTypeDescription, _boolean_value, _number_value, _MAX_NUMBER_DIGITS
 from .value_tables import (BSLValueTableColumn, BSLValueTableColumnCollection,
                            _default, _adjust, _method, _text)
 
@@ -15,6 +16,79 @@ _MAX_COLUMNS = 4096
 _MAX_CELLS = 1_000_000
 _MAX_DEPTH = 256
 _MAX_DEFAULT_TEXT = 1_000_000
+_MAX_SEARCH_WORK = 8_000_000
+_MAX_SEARCH_TEXT = 1_000_000
+
+
+class _SearchBudget:
+    """Local logical-work limit, not a native platform limit."""
+    def __init__(self):
+        self.remaining = _MAX_SEARCH_WORK
+
+    def charge(self, units):
+        if units > self.remaining:
+            raise ValueError("ДеревоЗначений: превышен предел работы поиска Yadinassi")
+        self.remaining -= units
+
+
+def _search_scalar(value, budget):
+    # Identity-only type gates: even type membership/equality can call an
+    # extension metaclass. Unknown objects never supply conversion/equality.
+    kind = type(value)
+    if value is None or value is NULL or kind is bool:
+        units = 1
+    elif kind is str:
+        units = max(1, len(value))
+        if units > _MAX_SEARCH_TEXT:
+            raise ValueError("ДеревоЗначений: превышен предел текста поиска Yadinassi")
+    elif kind is Decimal:
+        # Reserve before coefficient inspection/conversion. A bounded Decimal
+        # context first rejects oversized coefficients without materializing an
+        # arbitrarily large Python digits tuple (including trailing zeroes).
+        reserve = 3 * _MAX_NUMBER_DIGITS
+        budget.charge(reserve)
+        if not value.is_finite():
+            raise ValueError("ДеревоЗначений: ожидается конечное число поиска")
+        try:
+            context = Context(prec=_MAX_NUMBER_DIGITS, Emax=MAX_EMAX, Emin=MIN_EMIN,
+                              traps=[Rounded, InvalidOperation, Overflow])
+            # Scale only the temporary validation value, so extreme exponents
+            # neither expand text nor underflow an otherwise bounded coefficient.
+            context.scaleb(value, -value.adjusted())
+        except DecimalException:
+            raise ValueError("ДеревоЗначений: число вне ресурсных границ поиска") from None
+        _number_value(value)  # Existing validated converter, now size-bounded.
+        units = len(value.as_tuple().digits)
+        budget.remaining += reserve - 3 * units
+        return units
+    else:
+        raise TypeError("ДеревоЗначений: этот тип значения поиска пока не поддерживается")
+    budget.charge(units)
+    return units
+
+
+def _search_name(name, budget):
+    if type(name) is not str:
+        raise TypeError("ДеревоЗначений: ожидается имя колонки")
+    _search_scalar(name, budget)  # Charge before casefold, not after its work.
+    key = name.casefold()
+    _search_scalar(key, budget)  # Charge before hashing/comparing normalized text.
+    return key
+
+
+def _search_recursive(value, budget):
+    # Undefined differs from omission here, unlike TypeDescription's converter.
+    kind = type(value)
+    if value is None or value is NULL or not (kind is bool or kind is Decimal or kind is str):
+        raise TypeError("ДеревоЗначений: неподдерживаемый флаг поиска")
+    units = _search_scalar(value, budget)
+    if kind is str and value != "True":
+        raise ValueError("ДеревоЗначений: неподдерживаемый строковый флаг поиска")
+    # Number 1 and String True were measured for FindRows. Other bounded finite
+    # Decimal flags use the separately evidenced converter as a local extension,
+    # not a claim that all native FindRows flag coercions have been established.
+    budget.charge(units)  # Converter repeats number validation/string comparison.
+    return _boolean_value(value)
 
 
 def _position(value, count, inserting=False):
@@ -256,6 +330,69 @@ class BSLValueTreeRowCollection(BSLObject):
             raise TypeError("Ожидается строка дерева")
         return Decimal(next((i for i, item in enumerate(self.items) if item is row), -1))
 
+    def find_rows(self, filters, recursive=False):
+        """Native-backed scalar search; membership snapshot, shared live rows."""
+        self._live()
+        if type(filters) is not BSLStructure:
+            raise TypeError("Ожидается Структура отбора")
+        if len(filters._items) > _MAX_COLUMNS or len(self.tree.columns.items) > _MAX_COLUMNS:
+            raise ValueError("ДеревоЗначений: превышен предел колонок поиска Yadinassi")
+        budget = _SearchBudget()
+        recursive = _search_recursive(recursive, budget)
+        result = BSLArray()
+        if not filters._items:
+            return result
+
+        # Resolve every field before any empty-receiver shortcut or cell scan.
+        # This temporary schema map is not a row index; hierarchy determines order.
+        columns = {_search_name(column.name, budget): column
+                   for column in self.tree.columns.items}
+        selected = []
+        for name, value in filters._items.values():
+            key = _search_name(name, budget)
+            column = columns.get(key)
+            if column is None:
+                raise ValueError("Колонка поиска дерева не найдена")
+            selected.append((column, value))
+        prepared = [(column, value, _search_scalar(value, budget))
+                    for column, value in selected]
+
+        # Iterator frames, not recursion or the insertion-order _all_rows registry.
+        pending = [(self, iter(self.items))]
+        visited = cells = 0
+        while pending:
+            collection, iterator = pending[-1]
+            try:
+                row = next(iterator)
+            except StopIteration:
+                pending.pop()
+                continue
+            visited += 1
+            cells += len(prepared)
+            if visited > _MAX_ROWS or cells > _MAX_CELLS:
+                raise ValueError("ДеревоЗначений: превышен предел ресурсов поиска Yadinassi")
+            budget.charge(1)
+            if type(row) is not BSLValueTreeRow or row.tree is not self.tree or row.collection is not collection:
+                raise ValueError("Строка не принадлежит коллекции поиска дерева")
+            row._live()
+            if row.depth > _MAX_DEPTH:
+                raise ValueError("ДеревоЗначений: превышена глубина поиска Yadinassi")
+            values = []
+            # Validate ALL selected cells before conjunction short-circuiting.
+            # Charge both operands before equality, including repeated query text.
+            for column, query, units in prepared:
+                value = row.cells[column]
+                _search_scalar(value, budget)
+                budget.charge(units)
+                values.append(value)
+            if all(equal(value, query) for value, (_, query, _) in zip(values, prepared)):
+                result.items.append(row)
+            if recursive and row.rows.items:
+                if len(pending) >= _MAX_DEPTH + 1:
+                    raise ValueError("ДеревоЗначений: превышена глубина поиска Yadinassi")
+                pending.append((row.rows, iter(row.rows.items)))
+        return result
+
     def _remove_subtrees(self, roots):
         pending = list(roots)
         while pending:
@@ -289,6 +426,7 @@ class BSLValueTreeRowCollection(BSLObject):
     def get_method(self, name):
         return _method(name, {"count": self.count, "количество": self.count,
             "get": self.get, "получить": self.get, "indexof": self.index_of, "индекс": self.index_of,
+            "findrows": self.find_rows, "найтистроки": self.find_rows,
             "add": self.add, "добавить": self.add, "insert": self.insert, "вставить": self.insert,
             "delete": self.delete, "удалить": self.delete, "clear": self.clear, "очистить": self.clear})
 

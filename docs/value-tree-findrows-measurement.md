@@ -117,3 +117,11 @@ bytes, and decide coverage for every accepted native input. Comparison failure
 remains failure, never successful measurement acceptance. No Find/Copy/Sort,
 indexes, codecs, transport, detached-row lifetime, cap increases or broadened
 source admission are part of this slice.
+
+## Subsequent authenticated capture and bounded alignment
+
+The initial native run now supplies all 36 observations; its failed comparison
+is not acceptance. The unchanged probes are used by the subsequent
+[bounded runtime alignment](value-tree-findrows-runtime.md), including the
+accepted Number 1 and String `"True"` recursion arguments. The measurement-only
+statements above describe the original source/probe preparation stage.

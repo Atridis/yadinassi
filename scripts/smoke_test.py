@@ -2577,6 +2577,50 @@ def check_text_document(executable, *, directory, env):
           'RU/EN aliases, closed file API; command flags, BOM file, stdin and console')
 
 
+def tree_findrows_smoke_program() -> tuple[str, str]:
+    """Bounded composition of native-backed operations; no new native capture."""
+    code = '''tree = New ValueTree;
+idColumn = tree.Columns.Add("Id"); keyColumn = tree.Columns.Add("Key");
+a = tree.Rows.Add(); a.Id = 1;
+b = tree.Rows.Add(); b.Id = 2;
+b1 = b.Rows.Add(); b1.Id = 3;
+a1 = a.Rows.Add(); a1.Id = 4;
+a11 = a1.Rows.Add(); a11.Id = 5;
+a.Key = "hit"; b.Key = "hit"; b1.Key = "hit"; a1.Key = "hit"; a11.Key = "hit";
+filter = New Structure("Key", "hit");
+found = tree.Строки.НайтиСтроки(filter, "True");
+order = ""; For Each row In found Do order = order + String(row.Id); EndDo;
+Message(order);
+Message(tree.Rows.FindRows(filter).Count());
+Message(a.Rows.FindRows(filter, 1).Count());
+found[1].Key = "changed"; Message(a1.Key);
+found.Delete(0); Message(tree.Rows.Count());
+Message(tree.Rows.FindRows(New Structure, True).Count());
+Try tree.Rows.FindRows(filter, Undefined); Except Message("undefined flag rejected"); EndTry;
+Try a11.Rows.FindRows(New Structure("Missing", 1)); Except Message("unknown column rejected"); EndTry;
+'''
+    expected = ('14523\n2\n2\nchanged\n2\n0\n'
+                'undefined flag rejected\nunknown column rejected\n')
+    return code, expected
+
+
+def check_tree_findrows(executable, *, directory, env):
+    code, expected = tree_findrows_smoke_program()
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ПоискСтрокДерева.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed bounded tree FindRows {arguments!r}: {result!r}')
+    print('Binary tree FindRows passed: hierarchy DFS, local default, shared rows, '
+          'numeric/string flags and observed errors; command flags, BOM file, stdin and console')
+
+
 def type_smoke_program() -> tuple[str, str]:
     """Shared exact type smoke; unit tests exercise the packaged program too."""
     type_code = '''Сообщить(ТипЗнч(Неопределено));
@@ -2659,6 +2703,7 @@ def main() -> None:
         # the subprocess cwd canonical too (e.g. macOS /var, Windows aliases,
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
+        check_tree_findrows(executable, directory=Path(temporary) / "tree-findrows", env=env)
         check_text_document(executable, directory=Path(temporary) / "text-document", env=env)
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
         check_clocks(executable, directory=Path(temporary) / "clocks", env=env)

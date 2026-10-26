@@ -68,6 +68,16 @@ CONFIG/CONFIGSAVE, запросы и команды CF/DT не добавлен�
 CONFIGSAVE не используется как замена; новый нативный результат ещё не получен.
 [Контракт и ограничения](docs/config-declaration-observation.md).
 
+## Закрытое декодирование single-part CONFIG
+
+Отдельный экспериментальный режим oracle `--config-content-decode-observation`
+читает все выбранные single-part цепочки CONFIG и приватно проверяет plain/raw
+DEFLATE по закреплённому правилу имён. Дубликаты, multipart и динамические имена
+отклоняются; наружу выходят только конечные счётчики. Это не публичное извлечение
+файлов, не root/metadata-парсер и не выбор применённой конфигурации. Нативный
+положительный результат требует отдельного точного source-bound прогона.
+[Гипотеза, бюджеты и ограничения](docs/config-content-decode-observation.md).
+
 ## Необязательный контекст файловой базы
 
 `--f DIRECTORY` и Python API `FileDBContext(directory)` задают неизменяемый
@@ -5571,7 +5581,10 @@ Date/Null helpers, append и определение компактного write
 `New ValueTree()` / `Новый ДеревоЗначений()` now provides a shared `Columns`
 schema and root `Rows`; each row has child `Rows`, read-only `Parent`, and
 `Owner()` / `Level()`. Row collections support Add/Insert/Delete/Clear/Count/
-Get/IndexOf and iteration. Rows support column names, numeric indices, Get/Set,
+Get/IndexOf and iteration. Rows.FindRows / Строки.НайтиСтроки adds bounded scalar
+conjunction and optional iterative recursive search with shared-row Array results;
+see [native observations and local extensions](docs/value-tree-findrows-runtime.md).
+Rows support column names, numeric indices, Get/Set,
 iteration over cells and live by-reference cell assignment. Column collections
 support Add/Insert/Delete/Clear/Count/Get/Find/IndexOf, name lookup, iteration,
 and typed defaults/conversion using the existing TypeDescription policy.
