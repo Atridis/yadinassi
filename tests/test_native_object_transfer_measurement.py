@@ -74,8 +74,8 @@ class ObjectTransferParityTests(unittest.TestCase):
 
     def test_all_probe_locals_explicit(self):
         from dataclasses import fields
-        from yadinassi import ast
-        from yadinassi.parser import parse
+        from yadinassi.syntax import ast
+        from yadinassi.syntax.parser import parse
         def walk(node):
             if isinstance(node,ast.Node):
                 yield node

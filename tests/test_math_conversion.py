@@ -4,7 +4,7 @@ from decimal import Decimal, Inexact, Rounded, ROUND_UP, localcontext
 import math
 import unittest
 
-from yadinassi.math_conversion import decimal_to_binary64, UnsupportedConversionRange
+from yadinassi.numeric.math_conversion import decimal_to_binary64, UnsupportedConversionRange
 
 
 class MathConversionTests(unittest.TestCase):

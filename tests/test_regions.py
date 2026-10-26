@@ -7,8 +7,8 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.errors import IncompleteInput
-from yadinassi.lexer import Lexer
-from yadinassi.parser import parse
+from yadinassi.syntax.lexer import Lexer
+from yadinassi.syntax.parser import parse
 
 
 class RegionTests(unittest.TestCase):

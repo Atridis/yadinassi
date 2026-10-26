@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 
 class ExecutionDirectiveTests(unittest.TestCase):

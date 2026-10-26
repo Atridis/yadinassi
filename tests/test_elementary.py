@@ -5,7 +5,7 @@ import unittest
 
 from scripts.native_historical_replay import historical_numbers_source
 from yadinassi import BSLError, Interpreter
-from yadinassi import elementary
+from yadinassi.numeric import elementary
 
 
 class ElementaryTests(unittest.TestCase):
@@ -83,7 +83,7 @@ class ElementaryTests(unittest.TestCase):
 
     def test_unverified_conversion_domain_edge_is_explicit(self):
         # Local model limit, not a native expected value or a reason to clamp.
-        from yadinassi.math_conversion import UnsupportedConversionRange
+        from yadinassi.numeric.math_conversion import UnsupportedConversionRange
         for value in (Decimal('0.' + '9' * 37), Decimal('-0.' + '9' * 37)):
             for function in (elementary.asin, elementary.acos):
                 with self.subTest(value=value, function=function.__name__):

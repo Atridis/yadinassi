@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 from yadinassi import Interpreter, BSLError
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 class ModuleContextTests(unittest.TestCase):
     def setUp(self):

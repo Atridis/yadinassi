@@ -19,14 +19,15 @@ import unittest
 
 from scripts.native_historical_replay import historical_dates_source
 
-from yadinassi import BSLError, Interpreter, ast
+from yadinassi import BSLError, Interpreter
+from yadinassi.syntax import ast
 from yadinassi.dates import (
     BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, add_month,
     begin_period, component, date, date_difference, day_of_year, end_period,
     shift_date, week_day, week_of_year,
 )
 from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 from yadinassi.serialization import (
     value_from_string_internal as read, value_to_string_internal as write,
 )

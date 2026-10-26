@@ -14,8 +14,9 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, ast, runtime, serialization, type_values
-from yadinassi.parser import parse
+from yadinassi import Interpreter, runtime, serialization, type_values
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from yadinassi.structures import BSLStructure
 from yadinassi.type_descriptions import BSLTypeDescription
 from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, equal

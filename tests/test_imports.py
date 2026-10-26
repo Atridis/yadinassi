@@ -8,8 +8,8 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import ast
-from yadinassi.parser import parse
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 
 
 class ImportTests(unittest.TestCase):

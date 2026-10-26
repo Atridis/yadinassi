@@ -4,7 +4,7 @@ from decimal import Decimal, Inexact, ROUND_UP, localcontext
 import sys
 import unittest
 
-from yadinassi.powers import integral_power
+from yadinassi.numeric.powers import integral_power
 from yadinassi.values import divide
 
 

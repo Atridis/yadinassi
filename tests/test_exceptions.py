@@ -7,9 +7,9 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import ast
+from yadinassi.syntax import ast
 from yadinassi.errors import BSLRuntimeError, IncompleteInput
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 
 ROOT = Path(__file__).resolve().parents[1]

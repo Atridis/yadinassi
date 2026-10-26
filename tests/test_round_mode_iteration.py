@@ -4,7 +4,7 @@ import unittest
 
 from yadinassi import Interpreter
 from yadinassi.errors import BSLRuntimeError
-from yadinassi.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
+from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
 from yadinassi.values import BSLObject
 
 

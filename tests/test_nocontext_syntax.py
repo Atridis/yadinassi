@@ -2,11 +2,11 @@
 from decimal import Decimal
 import unittest
 
-from yadinassi import ast
+from yadinassi.syntax import ast
 from yadinassi.errors import BSLError, IncompleteInput
-from yadinassi.lexer import Lexer
-from yadinassi.parser import Parser, parse, parse_expression, parse_fragment
-from yadinassi.preprocessor import ConditionalCompilation
+from yadinassi.syntax.lexer import Lexer
+from yadinassi.syntax.parser import Parser, parse, parse_expression, parse_fragment
+from yadinassi.syntax.preprocessor import ConditionalCompilation
 
 
 class NoContextSyntaxTests(unittest.TestCase):

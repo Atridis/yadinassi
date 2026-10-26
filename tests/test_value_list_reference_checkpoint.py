@@ -6,7 +6,7 @@ import unittest
 from scripts.native_1c_map_contract import RECORD_COUNT, SOURCE_SHA256, compare_collections
 from scripts.native_historical_replay import FIELD_REFERENCE_BLOCKS, without_field_reference_probes
 from yadinassi import Interpreter
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'

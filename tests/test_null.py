@@ -11,10 +11,11 @@ import re
 import unittest
 
 from scripts.smoke_test import null_checkpoint_output, null_checkpoint_source
-from yadinassi import BSLError, Interpreter, ast
-from yadinassi.lexer import Lexer
+from yadinassi import BSLError, Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.lexer import Lexer
 from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 from yadinassi.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )

@@ -2,9 +2,9 @@
 from dataclasses import fields
 import unittest
 
-from yadinassi import ast
+from yadinassi.syntax import ast
 from yadinassi.errors import BSLError
-from yadinassi.parser import parse, validate_async
+from yadinassi.syntax.parser import parse, validate_async
 
 
 class NoContextAsyncSyntaxTests(unittest.TestCase):

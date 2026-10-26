@@ -188,31 +188,32 @@ git push origin v0.2.0
 методы объектов.
 `cli.py` отвечает за файлы и консоль. Код BSL не передается в Python `eval`/`exec`.
 
-Новый внутренний код импортирует фронтенд из `yadinassi.syntax.*`.
-Прежние модули `yadinassi.ast`, `yadinassi.lexer`, `yadinassi.parser` и
-`yadinassi.preprocessor` пока сохраняют явные compatibility-экспорты: узлы AST,
-`Token`, `Lexer`, `Parser`, функции разбора и проверки, классы препроцессора и
-их публичные константы. Старые и новые импорты этих символов возвращают те же
-объекты; случайно импортированные вспомогательные имена не входят в контракт.
-Это отдельные модули, не aliases: для monkeypatch зависимостей используйте
-канонический `yadinassi.syntax.*`. Прозрачность `__module__`, introspection и
-pickle-метаданных не гарантируется. Публичный embedding API (`Interpreter`,
-`BSLError`, `BSLRuntimeError`, `__version__`) и пути `yadinassi.storage.*`
-не изменены. Удаление старых модулей — отдельное решение о совместимости.
+Фронтенд импортируется из `yadinassi.syntax.*`. Временные модули
+`yadinassi.ast`, `yadinassi.lexer`, `yadinassi.parser` и `yadinassi.preprocessor`
+удалены: это намеренное нарушение совместимости прямых Python-импортов.
+Замените `import yadinassi.parser` на `import yadinassi.syntax.parser`,
+`from yadinassi.parser import parse` на `from yadinassi.syntax.parser import parse`,
+а `from yadinassi import ast` на `from yadinassi.syntax import ast`.
+Аналогично перенесите импорты остальных модулей и обращения к их пространствам
+имён; для monkeypatch используйте канонический `yadinassi.syntax.*`.
+Совместимость старых Python pickle и introspection со старыми путями не
+гарантируется. Публичный embedding API (`Interpreter`, `BSLError`,
+`BSLRuntimeError`, `__version__`), пути `yadinassi.storage.*`, поведение BSL
+и запуск CLI не изменены.
 
 Числовые реализации находятся в `yadinassi.numeric`: `math_conversion`,
 `binary_exp`, `powers`, `elementary`, `bits`, `numbers` и `round_modes`.
-`runtime.py` и другие внутренние потребители используют канонические пути.
-Старые семь модулей сохраняют явные экспорты своих публичных функций,
-исключения `UnsupportedConversionRange`, таблиц `BUILTINS`, классов
-`BSLRoundMode`, `BSLRoundModes` и singleton `ROUND_MODES`: старый и новый
-импорт возвращают один объект, включая значения перечисления и умолчание
-`round_number`. Вспомогательные импортированные имена не входят в этот контракт. Это отдельные модули, не aliases; зависимости
-для monkeypatch нужно менять в `yadinassi.numeric.*` (например, `Context` в
-`yadinassi.numeric.binary_exp`). Прозрачность `__module__`, introspection и
-pickle-метаданных не гарантируется. Пакет `numeric` не экспортирует функции
-поверх одноимённых подмодулей. Числовое поведение и публичный embedding API
-не меняются; compatibility-модули пока остаются в корне пакета.
+Их прежние пути `yadinassi.<имя>` также удалены без совместимых aliases.
+Например, замените `from yadinassi.numbers import round_number` на
+`from yadinassi.numeric.numbers import round_number`, а
+`from yadinassi import round_modes` на `from yadinassi.numeric import round_modes`.
+Импорты функций, исключения `UnsupportedConversionRange`, таблиц `BUILTINS`,
+классов `BSLRoundMode`, `BSLRoundModes` и singleton `ROUND_MODES` должны
+использовать канонические модули. Зависимости для monkeypatch меняйте там же
+(например, `Context` в `yadinassi.numeric.binary_exp`). Пакет `numeric`
+не экспортирует функции поверх одноимённых подмодулей. Числовое поведение,
+включая BSL-сериализацию, не изменено; старые прямые Python-импорты больше
+не поддерживаются.
 
 Для новой конструкции добавьте токены при необходимости, узел AST, правило
 парсера и метод `Interpreter.visit_ИмяУзла`, затем тесты поведения и ошибок.

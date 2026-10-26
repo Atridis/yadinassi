@@ -4,8 +4,8 @@ from decimal import Decimal, Inexact, Rounded, ROUND_UP, ROUND_HALF_UP, ROUND_HA
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.numbers import round_number
-from yadinassi.round_modes import BSLRoundMode
+from yadinassi.numeric.numbers import round_number
+from yadinassi.numeric.round_modes import BSLRoundMode
 
 
 class RoundingTests(unittest.TestCase):

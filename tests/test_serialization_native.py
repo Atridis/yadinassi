@@ -18,7 +18,7 @@ from yadinassi import Interpreter, serialization
 from yadinassi.unique_identifiers import BSLUUID
 from yadinassi.dates import BSLDate
 from yadinassi.xml_processing import XML_STRING_PROCESSING
-from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
+from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
 from yadinassi.sort_directions import BSLSortDirection
 from yadinassi.maps import BSLFixedMap, BSLMap

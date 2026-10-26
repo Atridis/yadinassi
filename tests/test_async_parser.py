@@ -5,10 +5,10 @@ can be grouped explicitly; native ungrouped precedence has not been measured.
 """
 import unittest
 
-from yadinassi import ast
+from yadinassi.syntax import ast
 from yadinassi.errors import BSLError
-from yadinassi.lexer import Lexer
-from yadinassi.parser import parse, parse_expression, parse_fragment, validate_async
+from yadinassi.syntax.lexer import Lexer
+from yadinassi.syntax.parser import parse, parse_expression, parse_fragment, validate_async
 
 
 class AsyncParserTests(unittest.TestCase):

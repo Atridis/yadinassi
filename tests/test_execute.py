@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.parser import parse_fragment
+from yadinassi.syntax.parser import parse_fragment
 
 
 class ExecuteTests(unittest.TestCase):

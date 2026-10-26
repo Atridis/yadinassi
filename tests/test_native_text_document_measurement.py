@@ -7,7 +7,7 @@ import re
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 from yadinassi.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]

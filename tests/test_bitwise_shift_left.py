@@ -3,7 +3,7 @@ from decimal import Decimal, Inexact, Rounded, localcontext
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.bits import bitwise_shift_left
+from yadinassi.numeric.bits import bitwise_shift_left
 
 
 class BitwiseShiftLeftTests(unittest.TestCase):

@@ -11,8 +11,8 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import ast
-from yadinassi.parser import parse
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 
 
 DUAL = '&AtClientAtServerNoContext\n'

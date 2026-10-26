@@ -6,7 +6,7 @@ import unittest
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.errors import BSLRuntimeError, IncompleteInput
-from yadinassi.parser import parse_expression
+from yadinassi.syntax.parser import parse_expression
 from yadinassi.runtime import EVAL_MAX_DEPTH, EVAL_MAX_SOURCE
 from yadinassi.serialization import value_to_string_internal, value_from_string_internal
 

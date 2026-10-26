@@ -6,7 +6,7 @@ import unittest
 
 from scripts.native_historical_replay import historical_numbers_source
 from yadinassi import BSLError, Interpreter
-from yadinassi.numbers import integer_part, minimum, maximum
+from yadinassi.numeric.numbers import integer_part, minimum, maximum
 
 
 class NumericHelperTests(unittest.TestCase):

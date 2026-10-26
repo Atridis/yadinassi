@@ -5,8 +5,9 @@ from pathlib import Path
 import unittest
 
 from integrational_tests.test_launcher import collect_scripts
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse, parse_expression
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse, parse_expression
 from yadinassi.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]

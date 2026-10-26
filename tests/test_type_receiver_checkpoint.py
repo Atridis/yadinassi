@@ -3,8 +3,9 @@ from pathlib import Path
 import hashlib
 import unittest
 
-from yadinassi import Interpreter, ast
-from yadinassi.parser import parse, parse_expression
+from yadinassi import Interpreter
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse, parse_expression
 from yadinassi.errors import BSLError
 from yadinassi.values import BSLObject, HostFunction
 

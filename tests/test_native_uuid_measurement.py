@@ -10,7 +10,7 @@ from unittest import mock
 import test_native_1c_full_stage as fixtures
 from scripts.native_historical_replay import without_uuid_probes
 from yadinassi import Interpreter
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'

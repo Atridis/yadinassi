@@ -10,7 +10,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.errors import BSLRuntimeError
-from yadinassi.parser import parse, parse_expression, parse_fragment
+from yadinassi.syntax.parser import parse, parse_expression, parse_fragment
 from yadinassi.type_qualifiers import BSLDateFractions
 from yadinassi.values import BSLArray
 

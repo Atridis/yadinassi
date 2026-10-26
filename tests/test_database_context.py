@@ -15,7 +15,7 @@ from unittest import mock
 from yadinassi import BSLRuntimeError, Interpreter
 from yadinassi.database_context import FileDBContext, _normalize_directory
 from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
-from yadinassi.parser import parse
+from yadinassi.syntax.parser import parse
 from yadinassi.storage import filedb
 
 

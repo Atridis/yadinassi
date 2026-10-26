@@ -14,7 +14,7 @@ from tests.native_observations import extract_payload, inverse_stream, read_obse
 from yadinassi import Interpreter, serialization
 from yadinassi.errors import BSLRuntimeError
 from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.round_modes import BSLRoundMode
+from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.search_directions import BSLSearchDirection
 from yadinassi.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,

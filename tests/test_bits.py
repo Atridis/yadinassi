@@ -7,7 +7,7 @@ from decimal import Decimal, Inexact, Rounded, localcontext
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import bits
+from yadinassi.numeric import bits
 
 
 class BitOperationTests(unittest.TestCase):

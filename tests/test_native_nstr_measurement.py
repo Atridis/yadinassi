@@ -8,8 +8,8 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import ast
-from yadinassi.parser import parse
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
 from scripts.native_historical_replay import (
     without_nstr_discriminators, without_nstr_probes,
     without_text_document_probes, without_uuid_probes,
