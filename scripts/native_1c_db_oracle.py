@@ -33,22 +33,22 @@ MAX_RUNTIME=2400
 OUTPUT=Path('native-db-oracle/report.json')
 
 
-def provenance(*, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain)
+def provenance(*, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode)
     try:
         repository=smoke.FULL.repository_provenance(ROOT)
     except (smoke.FULL.FullError,OSError):
         raise OracleError('provenance_mismatch') from None
     return {'commit':repository['commit'],'tree':repository['tree'],
-        'sources':source_hashes(ROOT,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain),
+        'sources':source_hashes(ROOT,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode),
         'image':IMAGE,'platform':'linux/amd64','actual_version':None,'locale':'ru_RU.UTF-8','timezone':'Etc/UTC'}
 
 
-def container_command(staged,name,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False):
+def container_command(staged,name,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False):
     require(type(name) is str and re.fullmatch('onec-db-oracle-[0-9a-f]{32}',name) is not None,'invalid_input')
     require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}',nonce) is not None,'invalid_input')
     require(staged.is_dir() and not staged.is_symlink() and ',' not in str(staged),'invalid_input')
-    staged_hashes(staged,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain)
+    staged_hashes(staged,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode)
     return ['docker','run','--name',name,'--hostname','onec-db-oracle',
         '--pull','never','--platform','linux/amd64','--network','none',
         '--user','1000:1000','--read-only','--no-healthcheck','--cap-drop','ALL',
@@ -63,6 +63,7 @@ def container_command(staged,name,nonce, *, record_metadata=False, record_reader
         'HOME=/tmp/onec-db-oracle/home','TMPDIR=/tmp/onec-db-oracle/temp','XDG_RUNTIME_DIR=/tmp/runtime','DISPLAY=:99',
         'LANG=ru_RU.UTF-8','LC_ALL=ru_RU.UTF-8','TZ=Etc/UTC',
         '/bin/bash','--noprofile','--norc','/oracle/probe.sh','--invocation-nonce',nonce] + (
+        ['--config-content-decode-observation'] if config_content_decode else
         ['--config-blob-chain-observation'] if config_blob_chain else
         ['--config-entry-reference-observation'] if config_entry_reference else
         ['--config-zero-marker-filename-observation'] if config_zero_marker_filename else
@@ -90,7 +91,10 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False,record_re
     entry['checks']=({key:report['cleanup'][key] for key in CHECKS[stage]} if stage=='cleanup'
                      else {key:False for key in CHECKS[stage]})
     report['artifacts']=[]
-    if report.get('schema') == 15:
+    if report.get('schema') == 17:
+        import config_content_decode
+        config_content_decode.discard_capture(report,final=True)
+    elif report.get('schema') == 15:
         import config_blob_chain
         config_blob_chain.discard_capture(report,final=True)
     elif report.get('schema') == 14:
@@ -127,10 +131,13 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False,record_re
         discard_capture(report)
 
 
-def run_oracle(temp_root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain)
-    options={'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {}
-    if config_blob_chain:
+def run_oracle(temp_root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode)
+    options={'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {}
+    if config_content_decode:
+        import config_content_decode as selected
+        make_report=selected.empty_report; check_report=selected.validate_report
+    elif config_blob_chain:
         import config_blob_chain as selected
         make_report=selected.empty_report; check_report=selected.validate_report
     elif config_entry_reference:
@@ -278,6 +285,8 @@ def main(argv=None):
         help='explicit bounded baseline metadata/declaration observation; not record acceptance')
     modes.add_argument('--record-reader-validation',action='store_true',
         help='explicit bounded owned-record readback and validation')
+    modes.add_argument('--config-content-decode-observation',action='store_true',
+        help='bounded single-part CONFIG content decode; no native byte equivalence or applied state')
     modes.add_argument('--config-blob-chain-observation',action='store_true',
         help='bounded exact CONFIG selected stored-byte chains; no file or content acceptance')
     modes.add_argument('--config-entry-reference-observation',action='store_true',
@@ -305,7 +314,8 @@ def main(argv=None):
         parser.error('stale_evidence')
     try:
         root_info=ROOT.stat(); root_identity=(root_info.st_dev,root_info.st_ino)
-        options=({'config_blob_chain':True} if args.config_blob_chain_observation else
+        options=({'config_content_decode':True} if args.config_content_decode_observation else
+                 {'config_blob_chain':True} if args.config_blob_chain_observation else
                  {'config_entry_reference':True} if args.config_entry_reference_observation else
                  {'config_zero_marker_filename':True} if args.config_zero_marker_filename_observation else
                  {'config_marker_census':True} if args.config_slot_marker_observation else
