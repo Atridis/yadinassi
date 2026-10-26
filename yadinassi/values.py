@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    TEXT_DOCUMENT = "ТекстовыйДокумент"
     UUID = "УникальныйИдентификатор"
     PROMISE = "Обещание"
     """Opaque, immutable type identities; presentations are not their identity."""
@@ -73,6 +74,8 @@ class BSLType(Enum):
     def __str__(self) -> str:
         # Native run 40221284540, collections record 856: TypeOf displays.
         # Enum values stay unspaced lookup names, not presentation aliases.
+        if self is BSLType.TEXT_DOCUMENT:
+            return "Текстовый документ"
         if self is BSLType.UUID:
             return "Уникальный идентификатор"
         if self is BSLType.VALUE_TREE:

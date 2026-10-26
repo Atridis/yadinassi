@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 
+from .text_documents import BSLTextDocument
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
 from .error_info import BSLErrorInfo, BSLErrorCategory
@@ -31,6 +32,7 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLTextDocument, BSLType.TEXT_DOCUMENT, "TextDocument"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
     (BSLErrorInfo, BSLType.ERROR_INFO, "ErrorInfo"),

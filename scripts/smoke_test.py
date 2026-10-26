@@ -2527,6 +2527,56 @@ def check_trailing_omitted_arguments(executable, *, directory, env):
           'direct positive witness, BOM file, command flags, stdin and console')
 
 
+def text_document_smoke_program() -> tuple[str, str]:
+    """Bounded composition of observed operations, not a new native capture."""
+    code = '''d = New TextDocument();
+Message(TypeOf(d) = Type("ТекстовыйДокумент"));
+Message(String(TypeOf(d)));
+Message(String(d));
+d.SetText("A" + Char(13) + Char(10) + "B");
+Message(d.LineCount());
+Message(d.GetLine(2));
+Message(d.GetText() = "A" + Char(13) + Char(10) + "B");
+d.AddLine("C");
+d.ВставитьСтроку(0, "Z");
+d.ReplaceLine(2, "R");
+d.УдалитьСтроку(3);
+Message(d.GetText() = "Z" + Char(10) + "R" + Char(10) + "C" + Char(10));
+Message(d.GetLine(0) = "");
+d.DeleteLine(0);
+Message(d.LineCount());
+d.ДобавитьСтроку("");
+Message(d.GetText() = Char(10));
+d.Очистить();
+Message(d.LineCount());
+Try d.AddLine("unmeasured" + Char(13)); Except Message("line-boundary"); EndTry;
+Try d.Write("must-not-write"); Except Message("file-api-closed"); EndTry;
+'''
+    expected = ('Да\nТекстовый документ\nТекстовыйДокумент\n2\nB\nДа\n'
+                'Да\nДа\n0\nДа\n0\nline-boundary\nfile-api-closed\n')
+    return code, expected
+
+
+def check_text_document(executable, *, directory, env):
+    """Exercise the in-memory API through the packaged CLI; never file methods."""
+    code, expected = text_document_smoke_program()
+    directory = directory.resolve()
+    directory.mkdir()
+    source = directory / 'ТекстовыйДокумент.bsl'
+    source.write_text(code, encoding='utf-8-sig')
+    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
+    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    for arguments, stdin in cases:
+        result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
+                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+        if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
+            raise AssertionError(f'Failed bounded TextDocument {arguments!r}: {result!r}')
+    if (directory / 'must-not-write').exists():
+        raise AssertionError('TextDocument unexpectedly exposed filesystem Write')
+    print('Binary TextDocument passed: bounded in-memory edits, exact separators, '
+          'RU/EN aliases, closed file API; command flags, BOM file, stdin and console')
+
+
 def type_smoke_program() -> tuple[str, str]:
     """Shared exact type smoke; unit tests exercise the packaged program too."""
     type_code = '''Сообщить(ТипЗнч(Неопределено));
@@ -2609,6 +2659,7 @@ def main() -> None:
         # the subprocess cwd canonical too (e.g. macOS /var, Windows aliases,
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
+        check_text_document(executable, directory=Path(temporary) / "text-document", env=env)
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
         check_clocks(executable, directory=Path(temporary) / "clocks", env=env)
         check_fixed_offset_conversions(executable, directory=Path(temporary) / "fixed-gmt", env=env)

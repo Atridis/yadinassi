@@ -1780,7 +1780,7 @@ class ClientFinalReportEmitterTests(unittest.TestCase):
             "process_diagnostics": process_diagnostics(), **dict.fromkeys(suite.CLIENT_FLAGS, True)}
         envelope["report"]["stage3"]["client_probe"] = client
         for scenario, enabled, count, module_hash in (("dates", dates, 185, "e" * 64),
-                                                       ("values", values, 441, "f" * 64),
+                                                       ("values", values, 485, "f" * 64),
                                                        ("collections", collections, 866, "9" * 64),
                                                        ("numbers", numbers, 421, "8" * 64)):
             if not enabled:
