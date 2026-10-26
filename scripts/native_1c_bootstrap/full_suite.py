@@ -1730,9 +1730,9 @@ def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
         raise FullError('invalid_result') from None
     return value
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_VALUES_SOURCE_SHA256 = 'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12'
+CLIENT_VALUES_SOURCE_SHA256 = '0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c'
 CLIENT_VALUES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_VALUES_MESSAGE_COUNT = 402
+CLIENT_VALUES_MESSAGE_COUNT = 441
 
 
 def empty_values_report() -> dict:
@@ -1743,8 +1743,8 @@ def empty_values_report() -> dict:
 def client_values_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned values source in the pinned managed-client form.
 
-    All 40 helpers (39 previous and one fixed String projection) remain in their original order with client directives.
-    Only the 22 verified message-call identifiers change, and the complete module
+    All 45 helpers (40 previous and five bounded UUID/codec helpers) remain in their original order with client directives.
+    Only the 28 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Expressions, conversions and error paths
     stay byte-identical. No server trampoline or reference values are added.
     """
@@ -1799,6 +1799,11 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         403: 'Функция ПолучательСимволов(Знач Пространство)\n',
         407: 'Функция ЗаписьИндексаСимвола(Знач Пространство, Знач Поле)\n',
         426: 'Функция ПроекцияУмолчанияСтроки(Знач Итог)\n',
+        436: 'Процедура НаблюдатьUUID(Знач Метка, Знач Код)\n',
+        446: 'Функция ФорматUUID(Знач Текст)\n',
+        458: 'Функция ПроекцияВходаUUID(Знач Значение)\n',
+        470: 'Функция ОграниченныйКодекUUID(Знач Текст)\n',
+        476: 'Процедура НаблюдатьКодекUUID(Знач Метка, Знач Настройка, Знач Кодирование, Знач Декодирование)\n',
     }
     endings = {
         16: 'КонецПроцедуры\n',
@@ -1841,6 +1846,11 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         405: 'КонецФункции\n',
         421: 'КонецФункции\n',
         433: 'КонецФункции\n',
+        444: 'КонецПроцедуры\n',
+        457: 'КонецФункции\n',
+        464: 'КонецФункции\n',
+        474: 'КонецФункции\n',
+        501: 'КонецПроцедуры\n',
     }
     sites = {
         7: '        Сообщить("null." + Метка + ": [error]");\n',
@@ -1857,20 +1867,26 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         247: '        Сообщить("types." + Метка + ": [serialize-error]");\n',
         362: '        Сообщить("chars." + Метка + ": [" + Запись + "]");\n',
         364: '        Сообщить("chars." + Метка + ": [error]");\n',
-        486: 'Сообщить("null.checkpoint.complete: [ok]");\n',
-        565: 'Сообщить("xml.checkpoint.complete: [ok]");\n',
-        702: 'Сообщить("types.checkpoint.complete: [ok]");\n',
-        730: 'Сообщить("types-extra.checkpoint.complete: [ok]");\n',
-        790: 'Сообщить("chars.checkpoint.complete: [ok]");\n',
-        832: 'Сообщить("chars.index.checkpoint.complete: [ok]");\n',
-        851: 'Сообщить("types-extra.fixed-default.checkpoint.complete: [ok]");\n',
-        879: 'Сообщить("types-extra.service-filled.checkpoint.complete: [ok]");\n',
+        440: '        Сообщить("uuid." + Метка + ": [" + Строка(Результат) + "]");\n',
+        442: '        Сообщить("uuid." + Метка + ": [error]");\n',
+        483: '        Сообщить("uuid.codec." + Метка + ": [setup-error]");\n',
+        490: '        Сообщить("uuid.codec." + Метка + ": [encode-error]");\n',
+        497: '        Сообщить("uuid.codec." + Метка + ": [decode-error]");\n',
+        500: '    Сообщить("uuid.codec." + Метка + ": [" + Результат + "]");\n',
+        554: 'Сообщить("null.checkpoint.complete: [ok]");\n',
+        633: 'Сообщить("xml.checkpoint.complete: [ok]");\n',
+        770: 'Сообщить("types.checkpoint.complete: [ok]");\n',
+        798: 'Сообщить("types-extra.checkpoint.complete: [ok]");\n',
+        858: 'Сообщить("chars.checkpoint.complete: [ok]");\n',
+        900: 'Сообщить("chars.index.checkpoint.complete: [ok]");\n',
+        919: 'Сообщить("types-extra.fixed-default.checkpoint.complete: [ok]");\n',
+        947: 'Сообщить("types-extra.service-filled.checkpoint.complete: [ok]");\n',
     }
-    body_start = 437
+    body_start = 505
     capture = 'ЗначенияКлиентЗахват'
     reserved = (capture, 'ЗначенияКлиентСообщения',
                 'ЗначенияКлиентСимволы', 'ЗначенияКлиентВыполнить')
-    if (len(lines) != 881
+    if (len(lines) != 992
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())

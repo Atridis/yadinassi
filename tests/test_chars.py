@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-from scripts.native_historical_replay import without_fixed_string_probes
+from scripts.native_historical_replay import without_fixed_string_probes, without_uuid_probes
 from yadinassi import Interpreter
 from yadinassi.chars import CHARS
 from yadinassi.errors import BSLRuntimeError
@@ -122,7 +122,11 @@ class CharsTests(unittest.TestCase):
         fixture = json.loads((root / 'tests/fixtures/chars_namespace_linux.json').read_text(encoding="utf-8"))
         self.assertEqual(fixture['native_run'], 39746207974)
         self.assertEqual(fixture['server_and_managed_client_message_count'], 361)
-        source = (root / 'integrational_tests/tests/values.bsl').read_text(encoding="utf-8")
+        # This is historical native replay, not fresh current-source parity.
+        # The complete current source remains mandatory on the 441-record route.
+        source = without_uuid_probes((root / 'integrational_tests/tests/values.bsl').read_text(encoding="utf-8"))
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(),
+                         'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12')
         previous = without_fixed_string_probes(source)
         self.assertEqual(hashlib.sha256(previous.encode()).hexdigest(), fixture['source_sha256'])
         output = []

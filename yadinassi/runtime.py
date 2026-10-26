@@ -3,6 +3,7 @@
 from decimal import Decimal, localcontext
 from types import GeneratorType
 
+from .unique_identifiers import BSLUUID
 from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
 from pathlib import Path
 from typing import Callable
@@ -197,6 +198,7 @@ class Interpreter:
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
+        self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
         self.register_type("Соответствие", BSLMap, "Map")

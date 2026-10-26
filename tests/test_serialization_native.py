@@ -15,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, serialization
+from yadinassi.unique_identifiers import BSLUUID
 from yadinassi.dates import BSLDate
 from yadinassi.xml_processing import XML_STRING_PROCESSING
 from yadinassi.round_modes import BSLRoundMode, ROUND_MODES
@@ -224,7 +225,11 @@ class NativeEvidenceTests(unittest.TestCase):
                         BSLType.XML_STRING_PROCESSING_MANAGER}
         family_types = {type_of(value) for _, value in
                         [*type_family_samples(), *table_family_samples(), *index_family_samples(), *list_family_samples()]}
-        self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types,
+        # UUID comes from independent Linux PR112 run40240060498, not the
+        # immutable Windows fixture families below. Type inverse is unmeasured.
+        self.assertEqual(write(BSLType.UUID),
+                         '{"T",fc01b5df-97fe-449b-83d4-218a090e681e}')
+        self.assertEqual({type_by_name(name) for name in TYPE_GUIDS} | search_types | family_types | {BSLType.UUID},
                          set(serialization._CODECS))
         sort_snapshot = read_observation(self.native('collections', 'table.list.sort.enum.asc-codec'))
         self.assertEqual(write(BSLType.SORT_DIRECTION), sort_snapshot.get('TypeWrite'))
@@ -316,7 +321,7 @@ class NativeEvidenceTests(unittest.TestCase):
         table_labels = {type_of(value): label for label, value in table_family}
         index_labels = {type_of(value): label for label, value in index_family}
         family_labels = {type_of(value): label for label, value in family}
-        samples = [NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
+        samples = [BSLUUID("01234567-89ab-4cde-8f01-23456789abcd"), NULL, None, False, BSLDate(0), Decimal("12.5"), "Ёж🙂е́", BSLType.NUMBER,
                    BSLKeyAndValue("Ключ", Decimal(7)), *collection_samples().values(),
                    BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20, ROUND_MODES,
                    BSLSearchDirection.FROM_BEGIN, BSLSearchDirection.FROM_END, SEARCH_DIRECTIONS,
@@ -353,6 +358,10 @@ class NativeEvidenceTests(unittest.TestCase):
                     self.assertEqual(payload, snapshot.get('Write'))
                     self.assertEqual(write(restored), inverse_stream(snapshot))
                     self.assertEqual(str(type_of(restored)), snapshot.get('ReadType'))
+                elif type(value) is BSLUUID:
+                    # Independently authenticated Linux scalar record433/436.
+                    self.assertEqual(payload, '{"#",fc01b5df-97fe-449b-83d4-218a090e681e,01234567-89ab-4cde-8f01-23456789abcd}')
+                    self.assertEqual(restored, value)
                 elif value is ROUND_MODES:
                     self.assertIsNone(restored)
                     self.assertEqual(payload, self.native("numbers", "round.namespace.payload"))

@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 
+from .unique_identifiers import BSLUUID
 from .dates import BSLDate
 from .type_descriptions import BSLTypeDescription
 
@@ -15,6 +16,8 @@ def _key(value: object) -> tuple[type, object]:
     # semantics. Each entry retains the original object, so its id cannot be
     # reused while the entry exists.
     kind = type(value)
+    if kind is BSLUUID:
+        return kind, value.text
     if kind is BSLTypeDescription:
         # Native descriptor-key histories establish value-based lookup,
         # replacement and deletion, including reordered types and qualifiers.

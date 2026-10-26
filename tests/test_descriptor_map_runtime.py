@@ -339,7 +339,8 @@ class DescriptorMapKeyContractTests(unittest.TestCase):
         self.assertEqual(len(mapping._items), len(keys))
         for index, key in enumerate(keys):
             self.assertEqual(mapping.get(TD(key)), D(index))
-        for unsupported in ('Map', 'Array', 'BinaryData', 'UUID', 'Null,Number'):
+        self.assertEqual(TD('UUID').types, (BSLType.UUID,))
+        for unsupported in ('Map', 'Array', 'BinaryData', 'UUID,Number', 'Null,Number'):
             with self.subTest(type=unsupported), self.assertRaises(ValueError):
                 TD(unsupported)
         self.assertEqual(len(mapping._items), len(keys))

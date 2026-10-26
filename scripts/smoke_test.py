@@ -13,13 +13,13 @@ import tempfile
 
 
 if __package__:
-    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
+    from .native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_uuid_probes, without_exported_variable_probes
     from .native_historical_replay import (
         TRAILING_OMITTED_PROBE_BLOCKS, TRAILING_OMITTED_SOURCE_SHA256,
         without_trailing_omitted_direct_probe,
     )
 else:
-    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_exported_variable_probes
+    from native_historical_replay import historical_functions_source, historical_numbers_source, historical_dates_source, historical_collections_source, historical_values_source, without_fixed_string_probes, without_service_filled_probes, without_uuid_probes, without_exported_variable_probes
     from native_historical_replay import (
         TRAILING_OMITTED_PROBE_BLOCKS, TRAILING_OMITTED_SOURCE_SHA256,
         without_trailing_omitted_direct_probe,
@@ -1189,7 +1189,7 @@ def check_service_filled_checkpoint(executable: str, *, directory: Path, env: di
     """Check exact prior output and the independently measured native suffix."""
     directory = directory.resolve()
     directory.mkdir()
-    complete = (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+    complete = without_uuid_probes((ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8'))
     previous = without_service_filled_probes(complete)
     captures = []
     for source in (previous, complete):
@@ -2568,6 +2568,15 @@ Except
     Message("внешнее значение");
 EndTry;
 Message(TypeOf(kind) = Тип("Тип"));
+uid = New UUID("01234567-89ab-4cde-8f01-23456789abcd");
+Message(TypeOf(uid) = Type("УникальныйИдентификатор"));
+Message(uid = New УникальныйИдентификатор(String(uid)));
+Message(String(uid));
+Message(String(TypeOf(uid)));
+Message(ValueToStringInternal(uid));
+ud = New TypeDescription("УникальныйИдентификатор");
+Message(String(ud.AdjustValue()));
+Message(XMLValue(Type("UUID"), XMLString(uid)) = uid);
 tree = New ValueTree;
 Message(TypeOf(tree) = Type("ДеревоЗначений"));
 Message(TypeOf(New("ДеревоЗначений")) = Type("ValueTree"));
@@ -2576,6 +2585,10 @@ Message(String(TypeOf(tree)));
     type_output = ('Не определено\nБулево\nЧисло\nСтрока\nМассив\nСтруктура\n'
                    'Соответствие\nТип\nДа\nНет\nНет\nСтрока\nстроковый ключ\n'
                    '2\n0\nКлючИЗначение\nДа\nДа\nнеизвестный тип\nвнешнее значение\nДа\n'
+                   'Да\nДа\n01234567-89ab-4cde-8f01-23456789abcd\n'
+                   'Уникальный идентификатор\n'
+                   '{"#",fc01b5df-97fe-449b-83d4-218a090e681e,01234567-89ab-4cde-8f01-23456789abcd}\n'
+                   '00000000-0000-0000-0000-000000000000\nДа\n'
                    'Да\nДа\nДерево значений\n')
     return type_code, type_output
 

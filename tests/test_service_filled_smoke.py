@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import smoke_test
-from scripts.native_historical_replay import without_service_filled_probes
+from scripts.native_historical_replay import without_service_filled_probes, without_uuid_probes
 from test_service_filled_checkpoint import CASES
 
 
@@ -32,7 +32,7 @@ class ServiceFilledSmokeTests(unittest.TestCase):
 
     def test_both_entire_sources_execute_and_match_measured_fixture(self):
         run = self.invoke()
-        complete = (smoke_test.ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8')
+        complete = without_uuid_probes((smoke_test.ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8'))
         self.assertEqual(run.call_count, 2)
         self.assertEqual(run.call_args_list[0].kwargs['input'], without_service_filled_probes(complete))
         self.assertEqual(run.call_args_list[1].kwargs['input'], complete)

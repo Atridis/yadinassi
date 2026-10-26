@@ -9,6 +9,7 @@ from .dates import (
     codec_text,
 )
 from .values import BSLType, NULL
+from .unique_identifiers import BSLUUID, canonical_codec_uuid
 
 
 # Implementation budgets, not inferred limits of native Number or XML values.
@@ -118,6 +119,8 @@ def _date_value(text: str) -> BSLDate:
 
 def xml_string(value: object) -> str:
     # Exact types: no host hooks, implicit String(), escaping or entity parsing.
+    if type(value) is BSLUUID:
+        return value.text
     if type(value) is str:
         return value
     if type(value) is bool:
@@ -139,6 +142,8 @@ def xml_value(value_type: object, text: object) -> object:
         raise TypeError("XMLЗначение: первый аргумент должен иметь тип Тип")
     if type(text) is not str:
         raise TypeError("XMLЗначение: второй аргумент должен иметь тип Строка")
+    if value_type is BSLType.UUID:
+        return canonical_codec_uuid(text)
     if value_type is BSLType.STRING:
         return text
     if value_type is BSLType.BOOLEAN:

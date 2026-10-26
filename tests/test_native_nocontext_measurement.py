@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
-from test_native_async_fixture import historical_tree_collections_module
+from test_native_async_fixture import historical_tree_collections_module, historical_uuid_values_module
 from unittest import mock
 from test_native_client_probe import full, suite, ROOT, stage_fixture
 from test_native_directive_witness import linux_fixture, historical_client137
@@ -129,6 +129,6 @@ class NoContextWitnessTests(unittest.TestCase):
             'collections':'b8d28abf2a28f7ff11958f9f3a31a966e3032484b8f0cf7d316b24ef8fb847e8',
             'numbers':'271be42fcb2df2ad497c5e8ba1edcfe94e24779f00820ba3a7191eddc60eb7f2'}
         for name, expected in hashes.items():
-            adapter = historical_tree_collections_module if name == 'collections' else getattr(suite, 'client_'+name+'_module')
+            adapter = historical_tree_collections_module if name == 'collections' else historical_uuid_values_module if name == 'values' else getattr(suite, 'client_'+name+'_module')
             actual = adapter(linux_fixture(ROOT/f'integrational_tests/tests/{name}.bsl'), linux_fixture(ROOT/full.CLIENT_SOURCE))
             self.assertEqual(full.digest(actual),expected)

@@ -71,7 +71,7 @@ class XMLValueTests(unittest.TestCase):
             with self.assertRaises(TypeError):
                 xml_value(BSLType.STRING, text)
         for kind in BSLType:
-            if kind not in (BSLType.STRING, BSLType.BOOLEAN, BSLType.NUMBER, BSLType.NULL, BSLType.UNDEFINED, BSLType.DATE):
+            if kind not in (BSLType.STRING, BSLType.BOOLEAN, BSLType.NUMBER, BSLType.NULL, BSLType.UNDEFINED, BSLType.DATE, BSLType.UUID):
                 with self.assertRaisesRegex(TypeError, 'пока поддерживаются'):
                     xml_value(kind, '')
 
