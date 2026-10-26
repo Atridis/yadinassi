@@ -770,10 +770,10 @@ ID и истории их выделения. Поддержана только 
 Регистрация API: [runtime.py](yadinassi/runtime.py). Реализация объектов:
 [values.py](yadinassi/values.py), [structures.py](yadinassi/structures.py),
 [maps.py](yadinassi/maps.py), [type_values.py](yadinassi/type_values.py),
-[round_modes.py](yadinassi/round_modes.py),
+[round_modes.py](yadinassi/numeric/round_modes.py),
 [search_directions.py](yadinassi/search_directions.py). Функции:
-[strings.py](yadinassi/strings.py), [numbers.py](yadinassi/numbers.py),
-[dates.py](yadinassi/dates.py), [bits.py](yadinassi/bits.py), [value_checks.py](yadinassi/value_checks.py),
+[strings.py](yadinassi/strings.py), [numbers.py](yadinassi/numeric/numbers.py),
+[dates.py](yadinassi/dates.py), [bits.py](yadinassi/numeric/bits.py), [value_checks.py](yadinassi/value_checks.py),
 [xml_values.py](yadinassi/xml_values.py), [serialization.py](yadinassi/serialization.py).
 Проверки находятся в [tests](tests); подтвержденные ручные прогоны 1С —
 в [integrational_tests](integrational_tests). Наличие локального теста само по себе

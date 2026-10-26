@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation, localcontext
 
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate, TICKS_PER_SECOND, date
-from .numbers import round_number
+from .numeric.numbers import round_number
 from .type_qualifiers import (
     BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
     BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,

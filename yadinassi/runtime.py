@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Callable
 
 from .syntax import ast
-from .numeric import elementary
-from . import bits, clocks, date_time_conversions, dates, numbers, serialization, strings, type_values, value_checks, xml_values
+from .numeric import bits, elementary, numbers
+from . import clocks, date_time_conversions, dates, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
 from .database_context import FileDBContext, require_database_context
-from .round_modes import BSLRoundModes, ROUND_MODES
+from .numeric.round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
 from .xml_processing import XML_STRING_PROCESSING

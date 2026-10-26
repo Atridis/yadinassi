@@ -1,4 +1,4 @@
-"""Canonical math imports and the intentionally narrow legacy shims."""
+"""Canonical numeric imports and the intentionally narrow legacy shims."""
 
 import ast
 import importlib
@@ -19,6 +19,16 @@ EXPORTS = {
         "sqrt", "log", "log10", "exp", "sin", "cos", "tan", "asin", "acos",
         "atan", "power", "BUILTINS",
     ),
+    "bits": (
+        "bitwise_and", "bitwise_or", "bitwise_xor", "bitwise_not", "bitwise_and_not",
+        "check_bit", "check_by_bit_mask", "set_bit", "bitwise_shift_right",
+        "bitwise_shift_left", "BUILTINS",
+    ),
+    "numbers": (
+        "integer_part", "round_number", "minimum", "maximum",
+        "number_from_binary_string", "number_from_hex_string", "BUILTINS",
+    ),
+    "round_modes": ("BSLRoundMode", "BSLRoundModes", "ROUND_MODES"),
 }
 
 
@@ -47,7 +57,7 @@ class NumericPackageTests(unittest.TestCase):
                 with self.subTest(module=name, symbol=symbol):
                     self.assertIs(getattr(legacy, symbol), getattr(canonical, symbol))
 
-    def test_every_public_math_definition_has_a_legacy_export(self):
+    def test_every_public_numeric_definition_has_a_legacy_export(self):
         for name, exports in EXPORTS.items():
             source = ROOT / "yadinassi" / "numeric" / f"{name}.py"
             definitions = set()
@@ -84,7 +94,7 @@ class NumericPackageTests(unittest.TestCase):
                             assert getattr(first, symbol) is getattr(second, symbol), symbol
                     """)
 
-    def test_public_embedding_import_does_not_load_legacy_math_shims(self):
+    def test_public_embedding_import_does_not_load_legacy_numeric_shims(self):
         self.run_python("""
             import sys
             import yadinassi
@@ -96,7 +106,8 @@ class NumericPackageTests(unittest.TestCase):
             assert yadinassi.BSLRuntimeError is BSLRuntimeError
             assert isinstance(yadinassi.__version__, str) and yadinassi.__version__
             assert Interpreter().execute("Pow(6, 2) + Sqrt(36)") == 42
-            for name in ("math_conversion", "binary_exp", "powers", "elementary"):
+            for name in ("math_conversion", "binary_exp", "powers", "elementary",
+                         "bits", "numbers", "round_modes"):
                 assert "yadinassi.numeric." + name in sys.modules
                 assert "yadinassi." + name not in sys.modules
         """)
@@ -127,6 +138,90 @@ class NumericPackageTests(unittest.TestCase):
         self.assertIs(binary_exp.UnsupportedConversionRange,
                       math_conversion.UnsupportedConversionRange)
         self.assertIs(binary_exp.binary_exp.__globals__, vars(binary_exp))
+
+    def test_canonical_numeric_globals_and_runtime_builtins(self):
+        from yadinassi import collation, runtime, type_descriptions, values
+        from yadinassi.numeric import bits, numbers, round_modes
+
+        self.assertIs(runtime.bits, bits)
+        self.assertIs(runtime.numbers, numbers)
+        self.assertIs(runtime.BSLRoundModes, round_modes.BSLRoundModes)
+        self.assertIs(runtime.ROUND_MODES, round_modes.ROUND_MODES)
+        self.assertIs(type_descriptions.round_number, numbers.round_number)
+        self.assertIs(numbers.number, values.number)
+        self.assertIs(numbers.string_key, collation.string_key)
+        self.assertIs(numbers.BSLRoundMode, round_modes.BSLRoundMode)
+        self.assertEqual(round_modes.BSLRoundModes.__bases__, (values.BSLObject,))
+        self.assertIs(numbers.round_number.__defaults__[1],
+                      round_modes.BSLRoundMode.ROUND15_AS20)
+        vm = runtime.Interpreter()
+        for module in (bits, numbers):
+            for name, function, alias in module.BUILTINS:
+                with self.subTest(module=module.__name__, function=function.__name__):
+                    self.assertIs(function.__globals__, vars(module))
+                    self.assertIs(vm.functions[name.casefold()].function, function)
+                    self.assertIs(vm.functions[alias.casefold()].function, function)
+        for name in ("RoundMode", "РежимОкругления"):
+            self.assertIs(vm.execute(name), round_modes.ROUND_MODES)
+        vm.execute("modes = New Array; For Each mode In RoundMode Do modes.Add(mode); EndDo;")
+        self.assertIs(vm.variables["modes"].items[0], round_modes.BSLRoundMode.ROUND15_AS10)
+        self.assertIs(vm.variables["modes"].items[1], round_modes.BSLRoundMode.ROUND15_AS20)
+
+    def test_fresh_consumer_first_imports_preserve_round_mode_registries_and_codec(self):
+        # Importing any submodule runs the eager package initializer first. These
+        # are requested-import orders, not claims about class creation order.
+        for consumer in ("runtime", "serialization", "type_values", "value_checks",
+                         "type_descriptions"):
+            with self.subTest(consumer=consumer):
+                self.run_python(f"""
+                    import importlib
+                    importlib.import_module("yadinassi." + {consumer!r})
+                    from yadinassi import round_modes as legacy
+                    from yadinassi import serialization, type_values, value_checks
+                    from yadinassi.numeric import numbers, round_modes as canonical
+                    from yadinassi.values import BSLType
+
+                    assert legacy.BSLRoundMode is canonical.BSLRoundMode
+                    assert legacy.BSLRoundModes is canonical.BSLRoundModes
+                    assert legacy.ROUND_MODES is canonical.ROUND_MODES
+                    assert numbers.round_number.__defaults__[1] is canonical.BSLRoundMode.ROUND15_AS20
+                    assert serialization.BSLRoundMode is canonical.BSLRoundMode
+                    assert serialization._ENUM_TYPES[BSLType.ROUND_MODE] is canonical.BSLRoundMode
+                    for module in (type_values, value_checks):
+                        assert module.BSLRoundMode is canonical.BSLRoundMode
+                        assert module.BSLRoundModes is canonical.BSLRoundModes
+                    assert value_checks.ROUND_MODES is canonical.ROUND_MODES
+                    for cls, kind in ((canonical.BSLRoundMode, BSLType.ROUND_MODE),
+                                      (canonical.BSLRoundModes, BSLType.ROUND_MODES)):
+                        entries = [entry for entry in type_values._VALUE_TYPES if entry[0] is cls]
+                        assert len(entries) == 1 and entries[0][1] is kind
+
+                    write = serialization.value_to_string_internal
+                    read = serialization.value_from_string_internal
+                    mode_id = "32c82ccd-fef3-4070-beb5-b9c52afc781d"
+                    namespace_id = "a47c4665-311c-405a-828e-0c5a3ca3bdda"
+                    members = serialization._ENUM_MEMBERS[BSLType.ROUND_MODE]
+                    assert set(members) == {{"0", "1"}}
+                    for index, member in enumerate((canonical.BSLRoundMode.ROUND15_AS10,
+                                                    canonical.BSLRoundMode.ROUND15_AS20)):
+                        assert member.value == index
+                        assert members[str(index)] is member
+                        payload = '{{"#",' + mode_id + ',' + str(index) + '}}'
+                        assert write(member) == payload and read(payload) is member
+                        assert type_values.type_of(member) is BSLType.ROUND_MODE
+                        assert value_checks.value_is_filled(member) is True
+                    namespace = canonical.ROUND_MODES
+                    assert type(namespace) is canonical.BSLRoundModes
+                    assert type_values.type_of(namespace) is BSLType.ROUND_MODES
+                    assert value_checks.value_is_filled(namespace) is True
+                    payload = '{{"#",' + namespace_id + '}}'
+                    assert write(namespace) == payload and read(payload) is None
+                    assert type_values.type_of(read(payload)) is BSLType.UNDEFINED
+                    for kind, identifier in ((BSLType.ROUND_MODE, mode_id),
+                                             (BSLType.ROUND_MODES, namespace_id)):
+                        payload = '{{"T",' + identifier + '}}'
+                        assert write(kind) == payload and read(payload) is kind
+                """)
 
 
 if __name__ == "__main__":
