@@ -9,7 +9,8 @@ from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
 from pathlib import Path
 from typing import Callable
 
-from . import ast, bits, clocks, date_time_conversions, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
+from .syntax import ast
+from . import bits, clocks, date_time_conversions, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
 from .database_context import FileDBContext, require_database_context
 from .round_modes import BSLRoundModes, ROUND_MODES
@@ -31,9 +32,9 @@ from .errors import BSLError, BSLRuntimeError
 from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
                          FORBIDDEN_RAISE_CATEGORIES, empty_error_info)
 from .collation import string_key
-from .parser import parse, parse_expression, parse_fragment, validate_labels, validate_async
-from .lexer import KEYWORDS
-from .preprocessor import validate_compilation_profile
+from .syntax.parser import parse, parse_expression, parse_fragment, validate_labels, validate_async
+from .syntax.lexer import KEYWORDS
+from .syntax.preprocessor import validate_compilation_profile
 from .maps import BSLFixedMap, BSLMap
 from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
 from .structures import BSLFixedStructure, BSLStructure, fill_property_values

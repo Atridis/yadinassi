@@ -7,8 +7,8 @@ import sys
 from . import __version__
 from .database_context import FileDBContext
 from .errors import BSLError, BSLRuntimeError, IncompleteInput
-from .parser import parse
-from .preprocessor import COMPILATION_PROFILES
+from .syntax.parser import parse
+from .syntax.preprocessor import COMPILATION_PROFILES
 from .runtime import Interpreter
 from .values import to_string
 
