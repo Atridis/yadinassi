@@ -16,9 +16,10 @@ boundary, but does not establish the edge semantics below:
   distinguishes tree scanning from ValueTable search indexes. No table-index
   machinery is attached to this tree implementation.
 
-Primary documentation located so far does not settle Find/FindRows/Copy argument
-or traversal contracts; these are intentionally not implemented. Local tests
-must not be relabeled as native evidence. Native measurement is a separate track.
+Primary documentation alone does not settle Find/FindRows/Copy edge contracts.
+Rows.FindRows now has a separately authenticated bounded checkpoint and local
+alignment; see [search scope and evidence](value-tree-findrows-runtime.md).
+Find/Copy remain deferred. Local-only tests are not native evidence.
 
 ## First authenticated native capture and display correction
 
@@ -77,7 +78,7 @@ Rows/Parent or Russian equivalents are rejected, including rename. Deleting the
 last column of a populated tree or clearing its columns is rejected before any
 mutation. Deleted object lifetime/presentation is not claimed as compatible.
 
-No Copy/Find/FindRows, Move, Sort, Total, FillValues, LoadColumn, UnloadColumn, UI,
+No Copy/Find, Move, Sort, Total, FillValues, LoadColumn, UnloadColumn, UI,
 XML/internal serialization or transport. Internal serialization also explicitly
 rejects Type("ValueTree") and the four dependent type identities, rather than
 inventing native UUIDs. Object string presentations and conversion edge cases remain unverified; the

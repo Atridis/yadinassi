@@ -40,12 +40,40 @@ FILL_EXCLUDE_ORDER_PROBE_BLOCKS = (
 )
 
 
+TREE_FINDROWS_HELPERS_START = '// Begin bounded ValueTree FindRows helpers (measurement only; no native answers).\n'
+TREE_FINDROWS_HELPERS_END = '// End bounded ValueTree FindRows helpers.\n\n'
+TREE_FINDROWS_CALLS_START = '// Begin bounded ValueTree FindRows observations (measurement only; no native answers).\n'
+TREE_FINDROWS_CALLS_END = '// End bounded ValueTree FindRows observations.\n'
+
+
+def without_tree_findrows_probes(text):
+    """Exact source-only collections902 -> 866 inverse; never edit native output."""
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != '5468d16850a9774251d4ef80ae5e938afdfabef69fe496cb3a6cb579d0564782':
+        raise ValueError('tree FindRows source binding changed')
+    if not text.endswith(TREE_FINDROWS_CALLS_END):
+        raise ValueError('tree FindRows tail changed')
+    for begin, end in ((TREE_FINDROWS_HELPERS_START, TREE_FINDROWS_HELPERS_END),
+                       (TREE_FINDROWS_CALLS_START, TREE_FINDROWS_CALLS_END)):
+        if text.count(begin) != 1 or text.count(end) != 1:
+            raise ValueError('tree FindRows boundaries changed')
+        before, rest = text.split(begin, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != 'b12fb063732fa8ea16a6e0e88e56d6da99c5958989c9533a07870aee07b72c27':
+        raise ValueError('tree FindRows baseline binding changed')
+    return text
+
+
 VALUE_TREE_START = '// Begin bounded ValueTree core observations (candidate; not native evidence).\n'
 VALUE_TREE_END = '// End bounded ValueTree core observations.\n'
 
 
 def without_value_tree_probes(text):
     """Exact source inverse for old captures only; never truncate native output."""
+    if TREE_FINDROWS_HELPERS_START in text or TREE_FINDROWS_CALLS_START in text:
+        text = without_tree_findrows_probes(text)
     raw = text.encode('utf-8-sig') if not text.startswith('\ufeff') else text.encode('utf-8')
     if hashlib.sha256(raw).hexdigest() != 'b12fb063732fa8ea16a6e0e88e56d6da99c5958989c9533a07870aee07b72c27':
         raise ValueError('value tree source binding changed')

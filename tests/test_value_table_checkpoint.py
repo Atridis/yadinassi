@@ -4,8 +4,9 @@ from dataclasses import fields, is_dataclass
 import hashlib
 from pathlib import Path
 import unittest
+from unittest import mock
 
-from scripts.native_historical_replay import historical_collections_source
+from scripts.native_historical_replay import historical_collections_source, without_tree_findrows_probes
 
 from yadinassi import Interpreter, ast
 from yadinassi.parser import parse
@@ -23,7 +24,7 @@ def source():
 
 
 def parts():
-    full = source()
+    full = without_tree_findrows_probes(source())
     # Isolate this already owner-confirmed checkpoint from the next native
     # checkpoint. Complete source/native comparisons below remain strict.
     for start, end in (
@@ -122,6 +123,15 @@ class ValueTableCheckpointTests(unittest.TestCase):
                     position += 1
             self.assertEqual(value_from_string_internal(''.join(restored)), value)
         self.assertEqual(len(set(encoded)), len(pairs))
+
+    def test_findrows_inverse_rejects_changed_source_before_legacy_projection(self):
+        current = source()
+        for changed in (current + '\n', current.replace('TreeSearchFresh(Знач Kind)',
+                                                        'TreeSearchFresh(Знач Other)', 1)):
+            self.assertNotEqual(changed, current)
+            with mock.patch(__name__ + '.source', return_value=changed):
+                with self.assertRaises(ValueError):
+                    parts()
 
     def test_legacy_source_and_owner_output_are_untouched(self):
         old, _, _ = parts()

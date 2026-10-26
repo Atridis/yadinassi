@@ -5581,7 +5581,10 @@ Date/Null helpers, append и определение компактного write
 `New ValueTree()` / `Новый ДеревоЗначений()` now provides a shared `Columns`
 schema and root `Rows`; each row has child `Rows`, read-only `Parent`, and
 `Owner()` / `Level()`. Row collections support Add/Insert/Delete/Clear/Count/
-Get/IndexOf and iteration. Rows support column names, numeric indices, Get/Set,
+Get/IndexOf and iteration. Rows.FindRows / Строки.НайтиСтроки adds bounded scalar
+conjunction and optional iterative recursive search with shared-row Array results;
+see [native observations and local extensions](docs/value-tree-findrows-runtime.md).
+Rows support column names, numeric indices, Get/Set,
 iteration over cells and live by-reference cell assignment. Column collections
 support Add/Insert/Delete/Clear/Count/Get/Find/IndexOf, name lookup, iteration,
 and typed defaults/conversion using the existing TypeDescription policy.
