@@ -3,7 +3,8 @@
 This is a separately selected **observation-only** lane. It does not extract a
 configuration file, decode row framing, identify a root entry, establish applied
 configuration semantics, or add BSL `Metadata`/`Метаданные` managers. Synthetic
-unit tests are not native evidence; this lane has no accepted native result yet.
+unit tests are not native evidence. Historical declaration-only acceptance is
+bound to run 40240681339 and its exact sources, not to later framing changes.
 
 ## Selection and evidence boundaries
 
@@ -13,13 +14,18 @@ capture schema 11 and invocation schema 7. Its exact 22-source inventory is the
 record-observation inventory plus `config_observation.py`; it does not import or
 stage the PARAMS policy, DBNames parser or extraction reader. Existing default,
 PARAMS, DBNames and record lanes keep their schemas and source memberships.
-The existing reviewed workflow explicitly selects this declaration lane with
-`--config-transport-observation`, replacing its previous identity selector. Its
-trigger, immutable checkout/actor admission, image, permissions and report-ready
-gates are unchanged. This activation is not a native result: no CONFIG observation
-has yet been accepted. The explicit DBNames identity mode remains available but
-is not exercised by this workflow selection; standard native runtime checks do
-not substitute for a dedicated CONFIG observation.
+The reviewed workflow now explicitly selects the separate
+[CONFIG marker census](config-marker-census.md). This declaration
+mode remains available with the same exact inventory and schemas. Triggers,
+immutable checkout/actor admission, image, permissions and report-ready gates
+remain unchanged. Standard runtime checks are not dedicated CONFIG evidence.
+
+Historical [run 40240681339](https://github.com/Atridis/yadinassi/actions/runs/40240681339),
+head `706f11f9a1b9d49e5bbc302680289efe50d700f8`, captured the seven ordered
+fields, lock `0`, integer-zero format, data/BLOB lengths 4816/20992 and initial
+byte class one. It established no framing, root, extraction or applied state.
+Changing shared source hashes never retroactively rebinds that observation.
+
 
 The observation uses the existing baseline auditor's frozen post-session image.
 There are no extra 1C commands, users, permissions, lifecycle stages, clones or
@@ -73,9 +79,9 @@ python -m unittest discover -s tests -p 'test_native_1c_db_oracle_config*.py' -v
 
 ## Next acceptance boundary
 
-An explicitly reviewed native observation must first establish actual CONFIG
-declarations on the owned generated fixture. Independently reviewed evidence can
-then justify one bounded storage/filename hypothesis. Root-file extraction,
+The historical declaration observation can inform one separately reviewed
+storage/filename hypothesis. That new hypothesis still requires a fresh
+source-bound observation on a new owned image. Root-file extraction,
 logical metadata grammar and public BSL managers are separate subsequent steps.
 The existing fixture's applied-v1 / loaded-unapplied-v2 / applied-v2 states can
 later discriminate applied metadata; this baseline declaration capture does not
