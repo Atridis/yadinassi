@@ -5612,3 +5612,15 @@ measurement-only прогон отклонил старый runtime и не яв
 ОписаниеТипов и межконтекстная передача не открываются случайно. Старые fixtures,
 полный values485 source и строгие native guards неизменны; runtime inventory
 растёт до 63 файлов. Требуются свежие native/4-OS gates. Версия остаётся 0.4.2.
+
+## File DB oracle: приватная ссылка CONFIG/root → выбранная запись
+
+Отдельный экспериментальный режим `config-root-reference` разбирает полную узкую
+BOM+`{2,bare-GUID}` грамматику, использует приватный GUID для однократного выбора
+целевой CONFIG-записи с положительным decoded content и завершает все остальные
+выбранные цепочки/потоки на том же budget/ownership. Наружу выходят только
+конечные счётчики/класс связи; ключи, payload и их хеши не экспортируются.
+Это source-informed гипотеза, **не** semantic root, applied configuration,
+metadata compatibility или native byte-equivalence. Прежние режимы/API и лимиты
+не меняются; native acceptance нового пути ожидает отдельного genuine witness.
+[Точная грамматика, ресурсы и stop conditions](docs/config-root-reference-observation.md).

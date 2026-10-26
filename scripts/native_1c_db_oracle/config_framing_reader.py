@@ -1264,3 +1264,611 @@ def observe_config_content_decode(read_at, file_size, *, profile,
         selected_count, reference_excluded, name_excluded, part_zero, part_nonzero,
         reader.usage, completed, total_bytes, total_hops, max_hops, multi, zero_used,
         plain_count, deflate_count, positive_count, plain_bytes, inflated_bytes, decoder.total_calls)
+
+
+# Separate fixed-key, complete locator grammar and one-hop content dependency.
+# This local hypothesis does not identify a semantic/native configuration root.
+@dataclass(frozen=True)
+class ConfigRootReferenceProfile(ConfigContentDecodeProfile):
+    identifier: str = field(default='config_root_reference_8380_8192_v1', init=False)
+
+    def recipe(self):
+        result = super().recipe()
+        result.update({
+            'phases': 'all_selected_guards_then_root_target_remaining_once_v1',
+            'locator_selector': 'root',
+            'locator_grammar': 'initial_utf8_bom_ws_lbrace_2_comma_bare_guid_rbrace_ws_eof_v1',
+            'locator_whitespace': (32, 9, 13, 10),
+            'locator_guid': 'ascii_hex_8_4_4_4_12_case_fold_no_semantic_constraints_v1',
+            'locator_limit': 1024,
+            'locator_limit_stage': 'after_unchanged_content_decode_before_syntax_scan_v1',
+            'reference_resolution': 'private_selected_name_map_exactly_one_positive_target_v1',
+            'reference_order': 'root_then_target_then_remaining_insertion_order_no_cache_reread_v1',
+            'reference_attempt': 'single_use_poison_shared_decoder_and_chains_on_any_failure_v1',
+            'reference_map_weights': (512, 8, 4, 32),
+            'reference_parser_weights': (1024, 4, 128, 512),
+            'reference_lookup_weights': (256, 128),
+            'reference_observation_weight': 4096,
+            'reference_relation': 'fixed_key_guid_reference_resolved_v1',
+        })
+        return result
+
+
+@dataclass(frozen=True)
+class ConfigRootReferenceLimits:
+    max_input_bytes: int = 1024
+
+    def __post_init__(self):
+        if type(self.max_input_bytes) is not int or not 1 <= self.max_input_bytes <= 1024:
+            raise ValueError('invalid CONFIG root reference limit')
+
+
+@dataclass(frozen=True)
+class ConfigRootReferenceObservation(ConfigContentDecodeObservation):
+    parsed_locator_count: int
+    resolved_positive_target_count: int
+    capability: str = field(default='experimental_config_root_reference', init=False)
+    relation_validation: str = field(default='fixed_key_guid_reference_resolved_v1', init=False)
+
+
+def _parse_config_root_reference(content, budget, limits):
+    """Complete byte-wise local grammar, returning only a private fixed-size key.
+
+    Mandatory BOM and tag 2 are narrow admission, not universal native facts.
+    No AST, whole decoded string, Unicode normalization or permissive fallback.
+    """
+    if type(content) is not bytes:
+        raise InvalidStructure('config_root_input')
+    length = len(content)
+    if length > limits.max_input_bytes:
+        raise ResourceLimit('config_root_input_bytes')
+    budget.charge('bytes_processed', 4 * length + 128)
+    budget.charge('output_bytes', 512)
+    if length < 3 or content[0] != 239 or content[1] != 187 or content[2] != 191:
+        raise UnsupportedLayout('config_root_bom')
+    cursor = 3
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 123:
+        raise InvalidStructure('config_root_grammar')
+    cursor += 1
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 50:
+        raise UnsupportedLayout('config_root_tag')
+    cursor += 1
+    # A non-delimited 2 is not the canonical admitted scalar (02/+2/2.0/22).
+    if cursor < length and content[cursor] not in (32, 9, 13, 10, 44, 125):
+        raise UnsupportedLayout('config_root_tag')
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 44:
+        raise InvalidStructure('config_root_grammar')
+    cursor += 1
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    key = bytearray(36)
+    for index in range(36):
+        if cursor == length:
+            raise InvalidStructure('config_root_guid')
+        value = content[cursor]
+        if index in (8, 13, 18, 23):
+            if value != 45:
+                raise InvalidStructure('config_root_guid')
+        elif not (48 <= value <= 57 or 65 <= value <= 70 or 97 <= value <= 102):
+            raise InvalidStructure('config_root_guid')
+        key[index] = value + 32 if 65 <= value <= 70 else value
+        cursor += 1
+    if cursor < length and content[cursor] not in (32, 9, 13, 10, 44, 125):
+        raise InvalidStructure('config_root_guid')
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 125:
+        raise InvalidStructure('config_root_grammar')
+    cursor += 1
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor != length:
+        raise InvalidStructure('config_root_trailing')
+    return key.decode('ascii')
+
+
+class _ConfigRootReferenceOperation:
+    """One guarded operation; failed parsing/lookup cannot reuse healthy inflation."""
+
+    __slots__ = ('reader', 'profile', 'limits', 'chain_limits', 'content_limits',
+                 'root_limits', 'chains', 'decoder', 'used', 'plain_count',
+                 'deflate_count', 'positive_count', 'plain_bytes', 'inflated_bytes',
+                 'completed', 'total_bytes', 'total_hops', 'max_hops', 'multi', 'zero_used')
+
+    def __init__(self, reader, profile, limits, chain_limits, content_limits, root_limits):
+        self.reader, self.profile, self.limits = reader, profile, limits
+        self.chain_limits, self.content_limits, self.root_limits = chain_limits, content_limits, root_limits
+        self.chains = self.decoder = None
+        self.used = False
+
+    def run(self):
+        if self.used:
+            raise InvalidStructure('config_root_failed_attempt')
+        self.used = True
+        try:
+            return self._run()
+        except BaseException:
+            if self.decoder is not None:
+                self.decoder.failed = True
+            if self.chains is not None:
+                self.chains.failed = True
+            raise
+
+    def _take(self, references, key, missing):
+        budget = self.reader._budget
+        budget.charge('bytes_processed', 256)
+        budget.charge('output_bytes', 128)
+        reference = references.pop(key, None)
+        if reference is None:
+            raise UnsupportedLayout(missing)
+        return reference
+
+    def _consume(self, reference):
+        start, length, content_class = reference
+        payload, hops, zeros = self.chains.read(start, length)
+        content = self.decoder.decode(payload, content_class)
+        if content_class == 'plain':
+            self.plain_count += 1
+            self.plain_bytes += len(content)
+        else:
+            self.deflate_count += 1
+            self.positive_count += bool(content)
+            self.inflated_bytes += len(content)
+        self.total_bytes += len(payload)
+        del payload
+        self.completed += 1
+        self.total_hops += hops
+        self.max_hops = max(self.max_hops, hops)
+        self.multi += hops > 1
+        self.zero_used += zeros
+        return content
+
+    def _run(self):
+        reader, profile, limits = self.reader, self.profile, self.limits
+        catalog = reader.read_catalog()
+        selected = None
+        for table in catalog.tables:
+            if _ascii_config(table.name):
+                if selected is not None:
+                    raise UnsupportedLayout('config_table_ambiguous')
+                selected = table
+        if selected is None:
+            raise UnsupportedLayout('config_table_missing')
+        if (type(selected.format_item) is not int or selected.format_item != profile.format_item
+                or selected.recordlock != profile.recordlock
+                or len(selected.fields) != len(profile.declarations)
+                or any(item.raw != wanted for item, wanted in zip(selected.fields, profile.declarations))):
+            raise UnsupportedLayout('config_profile_mismatch')
+        data = reader._open_table_data(selected)
+        blob = reader._open_table_blob(selected)
+        if data.info.logical_length % profile.candidate_stride:
+            raise InvalidStructure('config_record_length')
+        slots = data.info.logical_length // profile.candidate_stride
+        if not slots:
+            raise UnsupportedLayout('config_empty_data')
+        if slots > limits.max_slots:
+            raise ResourceLimit('config_slots')
+        if blob.info.logical_length % 256:
+            raise InvalidStructure('config_blob_alignment')
+        blocks = blob.info.logical_length // 256
+        if blocks < 2:
+            raise UnsupportedLayout('config_blob_capacity')
+        capacity = min(2**32 - 1, 250 * (blocks - 1))
+        zero, one, other, empty, maximum = 0, 0, 0, 0, 0
+        selected_count, reference_excluded, name_excluded, part_zero, part_nonzero = 0, 0, 0, 0, 0
+        reader._budget.charge('output_bytes', 512)
+        references, keys = {}, set()
+        for slot in range(slots):
+            base = slot * profile.candidate_stride
+            marker = _scalar(data, base, 1)
+            if slot == 0:
+                if marker != b'\x01':
+                    raise UnsupportedLayout('config_reserved_slot')
+                continue
+            if marker != b'\x00':
+                if marker == b'\x01':
+                    one += 1
+                else:
+                    other += 1
+                continue
+            offset = base + profile.filename_offset
+            reader._budget.charge('output_bytes', 128)
+            units = int.from_bytes(_scalar(data, offset, 2), 'little')
+            if units > 128:
+                raise InvalidStructure('config_filename_length')
+            reader._budget.charge('output_bytes', 128 + 4 * units)
+            raw = _scalar(data, offset + 2, 2 * units)
+            try:
+                name = raw.decode('utf-16-le', errors='strict')
+            except UnicodeDecodeError:
+                raise UnsupportedLayout('config_filename_encoding') from None
+            del raw
+            zero += 1
+            empty += units == 0
+            maximum = max(maximum, units)
+            reference = _scalar(data, base + profile.binarydata_offset, profile.binarydata_width)
+            reader._budget.charge('output_bytes', 128)
+            start = int.from_bytes(reference[:4], 'little')
+            length = int.from_bytes(reference[4:], 'little')
+            if start == 0 or length == 0:
+                reference_excluded += 1
+                del name
+                continue
+            if units == 0:
+                name_excluded += 1
+                del name
+                continue
+            if start >= blocks or length > capacity:
+                raise InvalidStructure('config_reference_bounds')
+            reader._budget.charge('output_bytes', 128)
+            reader._budget.charge('bytes_processed', 10)
+            part = _config_partno(_scalar(data, base + profile.partno_offset, profile.partno_width))
+            if part != 0:
+                raise UnsupportedLayout('config_content_nonzero_part')
+            content_class = _config_content_name(name, units, reader._budget, keys)
+            # The guard set and lookup map retain distinct folded strings. Reserve
+            # the second normalization/key/entry before any corresponding work.
+            reader._budget.charge('output_bytes', 512 + 8 * units)
+            reader._budget.charge('bytes_processed', 4 * units + 32)
+            key = ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in name)
+            del name
+            references[key] = (start, length, content_class)
+            del key
+            selected_count += 1
+            part_zero += part == 0
+            part_nonzero += part != 0
+        del keys
+        # Contexts share the reader's already charged global budget and ownership.
+        self.chains = _ConfigBlobChains(blob, self.chain_limits)
+        self.decoder = _ConfigContentDecoder(self.chains, self.content_limits)
+        self.plain_count = self.deflate_count = self.positive_count = 0
+        self.plain_bytes = self.inflated_bytes = self.completed = self.total_bytes = 0
+        self.total_hops = self.max_hops = self.multi = self.zero_used = 0
+        root_reference = self._take(references, 'root', 'config_root_missing_selected_root')
+        content = self._consume(root_reference)
+        target_key = _parse_config_root_reference(content, reader._budget, self.root_limits)
+        del content, root_reference
+        target_reference = self._take(references, target_key, 'config_root_missing_selected_target')
+        del target_key
+        content = self._consume(target_reference)
+        if not content:
+            raise UnsupportedLayout('config_root_empty_target')
+        del content, target_reference
+        for reference in references.values():
+            content = self._consume(reference)
+            del content
+        del references
+        reader._budget.charge('output_bytes', 4096)
+        return ConfigRootReferenceObservation(profile.identifier, profile.recipe_sha256,
+            data.info.logical_length, blob.info.logical_length, slots, 'one',
+            zero, one, other, zero, empty, zero - empty, maximum,
+            selected_count, reference_excluded, name_excluded, part_zero, part_nonzero,
+            reader.usage, self.completed, self.total_bytes, self.total_hops,
+            self.max_hops, self.multi, self.zero_used,
+            self.plain_count, self.deflate_count, self.positive_count, self.plain_bytes,
+            self.inflated_bytes, self.decoder.total_calls, 1, 1)
+
+
+def observe_config_root_reference(read_at, file_size, *, profile,
+                                  limits=None, chain_limits=None, content_limits=None,
+                                  root_limits=None, catalog_limits=None):
+    """Resolve one private content-derived selected-entry relation, all or nothing.
+
+    All selected content still completes once on the same budget and ownership.
+    Neither semantic root identity nor applied state/native equivalence is read.
+    """
+    if type(profile) is not ConfigRootReferenceProfile:
+        raise ValueError('profile must be ConfigRootReferenceProfile')
+    if limits is not None and type(limits) is not ConfigFramingLimits:
+        raise ValueError('limits must be ConfigFramingLimits')
+    if chain_limits is not None and type(chain_limits) is not ConfigBlobChainLimits:
+        raise ValueError('chain_limits must be ConfigBlobChainLimits')
+    if content_limits is not None and type(content_limits) is not ConfigContentDecodeLimits:
+        raise ValueError('content_limits must be ConfigContentDecodeLimits')
+    if catalog_limits is not None and type(catalog_limits) is not CatalogLimits:
+        raise ValueError('catalog_limits must be CatalogLimits')
+    if root_limits is not None and type(root_limits) is not ConfigRootReferenceLimits:
+        raise ValueError('root_limits must be ConfigRootReferenceLimits')
+    defaults = CatalogLimits()
+    catalog_limits = catalog_limits if catalog_limits is not None else defaults
+    if any(getattr(catalog_limits, item.name) > getattr(defaults, item.name)
+           for item in _dataclass_fields(CatalogLimits)):
+        raise ValueError('CONFIG chain shared limits may only be lowered')
+    if type(file_size) is not int or file_size < 0:
+        raise ValueError('file_size must be a nonnegative exact integer')
+    if file_size > 67108864:
+        raise ResourceLimit('config_chain_image_bytes')
+    limits = limits if limits is not None else ConfigFramingLimits()
+    chain_limits = chain_limits if chain_limits is not None else ConfigBlobChainLimits()
+    content_limits = content_limits if content_limits is not None else ConfigContentDecodeLimits()
+    if profile.candidate_stride > limits.max_record_bytes:
+        raise ResourceLimit('config_record_bytes')
+    reader = CatalogReader(read_at, file_size, limits=catalog_limits)
+    root_limits = root_limits if root_limits is not None else ConfigRootReferenceLimits()
+    reader._budget.charge('output_bytes', 1024)
+    operation = _ConfigRootReferenceOperation(reader, profile, limits, chain_limits, content_limits, root_limits)
+    return operation.run()
+
+
+# Failure-only delimiter diagnosis of one fresh witness, never root acceptance.
+@dataclass(frozen=True)
+class ConfigRootDiagnosticProfile(ConfigContentDecodeProfile):
+    identifier: str = field(default='config_root_diagnostic_8380_8192_v1', init=False)
+
+    def recipe(self):
+        result = super().recipe()
+        result.update({
+            'selected_part_zero_witness': 'fixed_root_chain_only_no_all_selected_witness_v1',
+            'chain_ownership': 'visited_root_chain_only_no_sharing_stricter_local_hypothesis_v1',
+            'phases': 'all_selected_guards_then_fixed_root_diagnostic_stop_v1',
+            'positive_decoded_witness': 'not_claimed_diagnostic_failure_only_v1',
+            'locator_selector': 'root',
+            'locator_grammar': 'initial_utf8_bom_ws_lbrace_2_comma_bare_guid_rbrace_ws_eof_v1',
+            'locator_whitespace': (32, 9, 13, 10),
+            'locator_guid': 'ascii_hex_8_4_4_4_12_no_key_materialization_v1',
+            'locator_limit': 1024,
+            'locator_limit_stage': 'after_unchanged_content_decode_before_syntax_scan_v1',
+            'diagnostic_resolution': 'not_run',
+            'diagnostic_order': 'root_once_then_stop_no_target_or_remaining_reads_v1',
+            'diagnostic_attempt': 'single_use_poison_shared_decoder_and_chains_on_any_stop_v1',
+            'diagnostic_result': 'failed_nonaccepted_three_delimiter_classes_or_complete_stop_v1',
+            'diagnostic_map_weights': (512, 8, 4, 32),
+            'diagnostic_parser_weights': (1024, 4, 128, 512),
+            'diagnostic_lookup_weights': (256, 128),
+            'diagnostic_context_weights': (1024, 256, 128),
+            'diagnostic_failure_weight': 4096,
+        })
+        return result
+
+
+class _ConfigRootDiagnosticComplete(InvalidStructure):
+    """Exact private CatalogError subtype; only the diagnostic policy maps it.
+
+    Its literal code means an intentional non-accepted stop, never a relation.
+    No key, bytes, length, offset, usage graph or arbitrary message is retained.
+    """
+
+    def __init__(self):
+        super().__init__('config_root_diagnostic_complete')
+
+
+def _diagnose_config_root_syntax(content, budget, limits):
+    """Scan exactly the old literal language once, without a lookup key.
+
+    Delimiter codes disclose only progression on this new witness, not the
+    unexpected token and not a retrospective fact about an earlier postimage.
+    Completion always raises an exact finite non-accepted diagnostic stop.
+    """
+    if type(content) is not bytes:
+        raise InvalidStructure('config_root_input')
+    length = len(content)
+    if length > limits.max_input_bytes:
+        raise ResourceLimit('config_root_input_bytes')
+    budget.charge('bytes_processed', 4 * length + 128)
+    budget.charge('output_bytes', 512)
+    if length < 3 or content[0] != 239 or content[1] != 187 or content[2] != 191:
+        raise UnsupportedLayout('config_root_bom')
+    cursor = 3
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 123:
+        raise InvalidStructure('config_root_open_brace')
+    cursor += 1
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 50:
+        raise UnsupportedLayout('config_root_tag')
+    cursor += 1
+    # A non-delimited 2 is not the canonical admitted scalar (02/+2/2.0/22).
+    if cursor < length and content[cursor] not in (32, 9, 13, 10, 44, 125):
+        raise UnsupportedLayout('config_root_tag')
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 44:
+        raise InvalidStructure('config_root_comma')
+    cursor += 1
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    for index in range(36):
+        if cursor == length:
+            raise InvalidStructure('config_root_guid')
+        value = content[cursor]
+        if index in (8, 13, 18, 23):
+            if value != 45:
+                raise InvalidStructure('config_root_guid')
+        elif not (48 <= value <= 57 or 65 <= value <= 70 or 97 <= value <= 102):
+            raise InvalidStructure('config_root_guid')
+        cursor += 1
+    if cursor < length and content[cursor] not in (32, 9, 13, 10, 44, 125):
+        raise InvalidStructure('config_root_guid')
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor == length or content[cursor] != 125:
+        raise InvalidStructure('config_root_close_brace')
+    cursor += 1
+    while cursor < length and content[cursor] in (32, 9, 13, 10):
+        cursor += 1
+    if cursor != length:
+        raise InvalidStructure('config_root_trailing')
+    raise _ConfigRootDiagnosticComplete()
+
+
+class _ConfigRootDiagnosticOperation:
+    """One root-only diagnostic attempt; every stop poisons all constructed helpers."""
+
+    __slots__ = ('reader', 'profile', 'limits', 'chain_limits', 'content_limits',
+                 'root_limits', 'chains', 'decoder', 'used')
+
+    def __init__(self, reader, profile, limits, chain_limits, content_limits, root_limits):
+        self.reader, self.profile, self.limits = reader, profile, limits
+        self.chain_limits, self.content_limits, self.root_limits = chain_limits, content_limits, root_limits
+        self.chains = self.decoder = None
+        self.used = False
+
+    def run(self):
+        if self.used:
+            raise InvalidStructure('config_root_failed_attempt')
+        self.used = True
+        try:
+            return self._run()
+        except BaseException:
+            if self.decoder is not None:
+                self.decoder.failed = True
+            if self.chains is not None:
+                self.chains.failed = True
+            raise
+
+    def _take(self, references, key, missing):
+        budget = self.reader._budget
+        budget.charge('bytes_processed', 256)
+        budget.charge('output_bytes', 128)
+        reference = references.pop(key, None)
+        if reference is None:
+            raise UnsupportedLayout(missing)
+        return reference
+
+    def _run(self):
+        reader, profile, limits = self.reader, self.profile, self.limits
+        catalog = reader.read_catalog()
+        selected = None
+        for table in catalog.tables:
+            if _ascii_config(table.name):
+                if selected is not None:
+                    raise UnsupportedLayout('config_table_ambiguous')
+                selected = table
+        if selected is None:
+            raise UnsupportedLayout('config_table_missing')
+        if (type(selected.format_item) is not int or selected.format_item != profile.format_item
+                or selected.recordlock != profile.recordlock
+                or len(selected.fields) != len(profile.declarations)
+                or any(item.raw != wanted for item, wanted in zip(selected.fields, profile.declarations))):
+            raise UnsupportedLayout('config_profile_mismatch')
+        data = reader._open_table_data(selected)
+        blob = reader._open_table_blob(selected)
+        if data.info.logical_length % profile.candidate_stride:
+            raise InvalidStructure('config_record_length')
+        slots = data.info.logical_length // profile.candidate_stride
+        if not slots:
+            raise UnsupportedLayout('config_empty_data')
+        if slots > limits.max_slots:
+            raise ResourceLimit('config_slots')
+        if blob.info.logical_length % 256:
+            raise InvalidStructure('config_blob_alignment')
+        blocks = blob.info.logical_length // 256
+        if blocks < 2:
+            raise UnsupportedLayout('config_blob_capacity')
+        capacity = min(2**32 - 1, 250 * (blocks - 1))
+        reader._budget.charge('output_bytes', 512)
+        references, keys = {}, set()
+        for slot in range(slots):
+            base = slot * profile.candidate_stride
+            marker = _scalar(data, base, 1)
+            if slot == 0:
+                if marker != b'\x01':
+                    raise UnsupportedLayout('config_reserved_slot')
+                continue
+            if marker != b'\x00':
+                continue
+            offset = base + profile.filename_offset
+            reader._budget.charge('output_bytes', 128)
+            units = int.from_bytes(_scalar(data, offset, 2), 'little')
+            if units > 128:
+                raise InvalidStructure('config_filename_length')
+            reader._budget.charge('output_bytes', 128 + 4 * units)
+            raw = _scalar(data, offset + 2, 2 * units)
+            try:
+                name = raw.decode('utf-16-le', errors='strict')
+            except UnicodeDecodeError:
+                raise UnsupportedLayout('config_filename_encoding') from None
+            del raw
+            reference = _scalar(data, base + profile.binarydata_offset, profile.binarydata_width)
+            reader._budget.charge('output_bytes', 128)
+            start = int.from_bytes(reference[:4], 'little')
+            length = int.from_bytes(reference[4:], 'little')
+            if start == 0 or length == 0:
+                del name
+                continue
+            if units == 0:
+                del name
+                continue
+            if start >= blocks or length > capacity:
+                raise InvalidStructure('config_reference_bounds')
+            reader._budget.charge('output_bytes', 128)
+            reader._budget.charge('bytes_processed', 10)
+            part = _config_partno(_scalar(data, base + profile.partno_offset, profile.partno_width))
+            if part != 0:
+                raise UnsupportedLayout('config_content_nonzero_part')
+            content_class = _config_content_name(name, units, reader._budget, keys)
+            # The guard set and lookup map retain distinct folded strings. Reserve
+            # the second normalization/key/entry before any corresponding work.
+            reader._budget.charge('output_bytes', 512 + 8 * units)
+            reader._budget.charge('bytes_processed', 4 * units + 32)
+            key = ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in name)
+            del name
+            references[key] = (start, length, content_class)
+            del key
+        del keys
+        # Contexts share the reader's already charged global budget and ownership.
+        self.chains = _ConfigBlobChains(blob, self.chain_limits)
+        self.decoder = _ConfigContentDecoder(self.chains, self.content_limits)
+        root_reference = self._take(references, 'root', 'config_root_missing_selected_root')
+        start, length, content_class = root_reference
+        payload, _, _ = self.chains.read(start, length)
+        content = self.decoder.decode(payload, content_class)
+        del payload, root_reference, references
+        # No target key, target lookup, second parse or remaining entry read.
+        _diagnose_config_root_syntax(content, reader._budget, self.root_limits)
+        # Defensive guard: a future accidental scanner return cannot create success.
+        raise InvalidStructure('config_root_failed_attempt')
+
+
+def observe_config_root_diagnostic(read_at, file_size, *, profile,
+                                  limits=None, chain_limits=None, content_limits=None,
+                                  root_limits=None, catalog_limits=None):
+    """One fresh root syntax observation, always failed and non-accepted.
+
+    All selected row guards complete, but no target or remaining chain is read.
+    No returned projection, all-selected transport or relation witness exists.
+    """
+    if type(profile) is not ConfigRootDiagnosticProfile:
+        raise ValueError('profile must be ConfigRootDiagnosticProfile')
+    if limits is not None and type(limits) is not ConfigFramingLimits:
+        raise ValueError('limits must be ConfigFramingLimits')
+    if chain_limits is not None and type(chain_limits) is not ConfigBlobChainLimits:
+        raise ValueError('chain_limits must be ConfigBlobChainLimits')
+    if content_limits is not None and type(content_limits) is not ConfigContentDecodeLimits:
+        raise ValueError('content_limits must be ConfigContentDecodeLimits')
+    if catalog_limits is not None and type(catalog_limits) is not CatalogLimits:
+        raise ValueError('catalog_limits must be CatalogLimits')
+    if root_limits is not None and type(root_limits) is not ConfigRootReferenceLimits:
+        raise ValueError('root_limits must be ConfigRootReferenceLimits')
+    defaults = CatalogLimits()
+    catalog_limits = catalog_limits if catalog_limits is not None else defaults
+    if any(getattr(catalog_limits, item.name) > getattr(defaults, item.name)
+           for item in _dataclass_fields(CatalogLimits)):
+        raise ValueError('CONFIG chain shared limits may only be lowered')
+    if type(file_size) is not int or file_size < 0:
+        raise ValueError('file_size must be a nonnegative exact integer')
+    if file_size > 67108864:
+        raise ResourceLimit('config_chain_image_bytes')
+    limits = limits if limits is not None else ConfigFramingLimits()
+    chain_limits = chain_limits if chain_limits is not None else ConfigBlobChainLimits()
+    content_limits = content_limits if content_limits is not None else ConfigContentDecodeLimits()
+    if profile.candidate_stride > limits.max_record_bytes:
+        raise ResourceLimit('config_record_bytes')
+    reader = CatalogReader(read_at, file_size, limits=catalog_limits)
+    root_limits = root_limits if root_limits is not None else ConfigRootReferenceLimits()
+    # Inherited construction's bounded reads are already charged. Prepay every
+    # new wrapper/state/final-record allocation before operation construction.
+    reader._budget.charge('output_bytes', 1024)
+    reader._budget.charge('output_bytes', 256)
+    reader._budget.charge('bytes_processed', 128)
+    reader._budget.charge('output_bytes', 4096)
+    operation = _ConfigRootDiagnosticOperation(reader, profile, limits, chain_limits, content_limits, root_limits)
+    return operation.run()
