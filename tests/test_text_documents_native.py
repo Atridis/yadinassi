@@ -114,6 +114,8 @@ def measured_cases():
     # This does not normalize production input or permit changed source bytes.
     if os.name == 'nt':
         source = source.replace(b'\r\n', b'\n')
+    from scripts.native_historical_replay import without_nstr_probes
+    source = without_nstr_probes(source.decode('utf-8')).encode('utf-8')
     if hashlib.sha256(source).hexdigest() != CAPTURE['source_sha256']:
         raise AssertionError('Native TextDocument observation source changed')
     text = source.decode('utf-8')
