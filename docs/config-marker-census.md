@@ -12,6 +12,16 @@ The original [strict framing profile](config-framing-observation.md), recipe
 function are retained unchanged. Nonzero later markers still fail that function.
 No previously captured report is relabeled as diagnostic success.
 
+## Historical native evidence
+
+Run [40261287269](https://github.com/Atridis/yadinassi/actions/runs/40261287269),
+head `008b2b9a91ca8d90d7cac55525ce50ed894b61e2`, tree
+`30982a9529001b179a675e2a6fbfa8cbd97de5c7`, was independently accepted for this
+marker census only:16 candidates, first one, later zero14/one1/other0. Framing,
+filenames, free-chain semantics and root remained unaccepted/unobserved. The
+recipe does not expect those counts; this evidence cannot be rebound to later
+source revisions or used as filename validation.
+
 ## Why a separate observation
 
 Primary Tool1CD sources at commit
@@ -81,7 +91,7 @@ produces zero later counts, not evidence of a filename or root.
 python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --config-slot-marker-observation --output native-db-oracle/report.json
 ```
 
-The reviewed workflow selects this diagnostic mode. Lane
+The reviewed workflow now selects the separate [zero-marker filename-field observation](config-zero-marker-filename-observation.md). This marker-only diagnostic remains explicitly selectable. Lane
 `owned_config_marker_census_v1` uses report schema 12, capture schema 13 and
 invocation schema 9. It stages exactly 23 files: the existing 21-source metadata
 inventory, the common core and the new census policy. The old strict policy is
@@ -115,8 +125,9 @@ tests accept only exact LF or CRLF; production report serialization is unchanged
 python -m unittest discover -s tests -p 'test_native_1c_db_oracle_config_marker_census*.py' -v
 ```
 
-A fresh source-bound native run and independent finite audit are still required;
-these tests and the earlier failed run are not census evidence. Freeze actual
+For acceptance on any new source revision, a fresh source-bound native run and
+independent finite audit are required; synthetic tests and the earlier strict
+failed run are not census evidence. Freeze actual
 head/tree/workflow, the 23 staged source hashes and recipe before capture. Verify
 artifact framing, final production validation and independent mutation controls.
 The only possible new acceptance is a marker census on that owned postimage.

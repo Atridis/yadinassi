@@ -2,6 +2,7 @@
 import base64
 import contextlib
 import copy
+import errno
 import io
 import json
 import os
@@ -82,6 +83,138 @@ def encode(data):
 
 def validate(data, inputs, modules):
     return full.validate_envelope(encode(data), NONCE, inputs, modules, smoke.validate_report)
+
+
+def child_failure_diagnostic(error):
+    """Finite test diagnostics only; never format exception text or raw frames."""
+    classes = {OSError: "os_error", PermissionError: "permission_error",
+        ProcessLookupError: "process_lookup_error", FileNotFoundError: "file_not_found_error",
+        TimeoutError: "timeout_error", InterruptedError: "interrupted_error",
+        BlockingIOError: "blocking_io_error", ChildProcessError: "child_process_error",
+        ValueError: "value_error", RuntimeError: "runtime_error", AssertionError: "assertion_error"}
+    nodes, seen, terminal = [], set(), "end"
+    while error is not None:
+        if id(error) in seen:
+            terminal = "cycle"
+            break
+        if len(nodes) == 4:
+            terminal = "limit"
+            break
+        seen.add(id(error))
+        kind = type(error)
+        number = error.errno if kind in classes and issubclass(kind, OSError) else None
+        if type(number) is not int or not 0 <= number <= 4095:
+            number = None
+        frames, visited, frame_terminal = [], 0, "end"
+        frame = BaseException.__traceback__.__get__(error)
+        while frame is not None:
+            if visited == 64 or len(frames) == 4:
+                frame_terminal = "limit"
+                break
+            visited += 1
+            if frame.tb_frame.f_code is full.bounded_child.__code__:
+                line = frame.tb_lineno
+                if type(line) is int and 1 <= line <= 1_000_000:
+                    frames.append({"function": "bounded_child", "line": line})
+            frame = frame.tb_next
+        nodes.append({"class": classes.get(kind, "other"), "errno": number,
+                      "frames": frames, "frame_terminal": frame_terminal})
+        error = BaseException.__context__.__get__(error)
+    return {"nodes": nodes, "terminal": terminal}
+
+
+def assert_child_output_limit(case, invoke):
+    """Keep the original exact error assertion, adding only bounded diagnostics."""
+    diagnostic = child_failure_diagnostic(None)
+    try:
+        with case.assertRaisesRegex(full.FullError, "^interpreter_output_limit$"):
+            try:
+                invoke()
+            except Exception as error:
+                # unittest clears a caught exception's traceback on exit.
+                # Snapshot only the finite projection before that cleanup.
+                diagnostic = child_failure_diagnostic(error)
+                raise
+    except Exception:
+        # Suppress both unittest's mismatch text and the implicit context: either
+        # might otherwise include an arbitrary exception message or raw path.
+        summary = json.dumps(diagnostic, sort_keys=True)
+        raise AssertionError("exact interpreter_output_limit assertion failed; " + summary) from None
+
+
+class ChildFailureDiagnosticTests(unittest.TestCase):
+    def test_masked_overflow_reports_finite_cleanup_cause_and_still_fails(self):
+        process = mock.MagicMock()
+        process.__enter__.return_value = process
+        process.pid = 123
+        selector = mock.MagicMock()
+        selector.__enter__.return_value = selector
+        selector.get_map.return_value = {1: True}
+        key = mock.Mock(data="stderr")
+        selector.select.return_value = [(key, 1)]
+        with mock.patch.object(full.subprocess, "Popen", return_value=process), \
+             mock.patch.object(full.selectors, "DefaultSelector", return_value=selector), \
+             mock.patch.object(full.os, "read", return_value=b"PRIVATE" * 100), \
+             mock.patch.object(full.signal, "SIGKILL", 9, create=True), \
+             mock.patch.object(full.os, "killpg", create=True,
+                               side_effect=PermissionError(errno.EPERM, "PRIVATE cleanup", "PRIVATE path")):
+            with self.assertRaises(AssertionError) as failure:
+                assert_child_output_limit(self, lambda: full.bounded_child(
+                    ["PRIVATE argument"], Path("PRIVATE cwd"), stdout_limit=64, stderr_limit=64))
+        message = str(failure.exception)
+        diagnostic = json.loads(message.split("; ", 1)[1])
+        self.assertEqual([node["class"] for node in diagnostic["nodes"]],
+                         ["other", "permission_error", "other"])
+        self.assertEqual(diagnostic["nodes"][1]["errno"], errno.EPERM)
+        self.assertTrue(all(node["frames"] for node in diagnostic["nodes"]))
+        self.assertNotIn("PRIVATE", message)
+        self.assertTrue(failure.exception.__suppress_context__)
+
+    def test_exact_error_still_required_and_wrong_or_missing_error_still_fails(self):
+        def raise_error(error):
+            raise error
+        assert_child_output_limit(self, lambda: raise_error(full.FullError("interpreter_output_limit")))
+        for error in (full.FullError("interpreter_unavailable"),
+                      full.FullError("interpreter_output_limit PRIVATE"),
+                      ValueError("PRIVATE")):
+            with self.subTest(kind=type(error).__name__), self.assertRaises(AssertionError) as failure:
+                assert_child_output_limit(self, lambda: raise_error(error))
+            self.assertNotIn("PRIVATE", str(failure.exception))
+        with self.assertRaises(AssertionError):
+            assert_child_output_limit(self, lambda: None)
+
+    def test_context_cycle_length_and_errno_are_bounded(self):
+        errors = [PermissionError(errno.EPERM, "PRIVATE") for _ in range(6)]
+        for previous, following in zip(errors, errors[1:]):
+            previous.__context__ = following
+        value = child_failure_diagnostic(errors[0])
+        self.assertEqual((len(value["nodes"]), value["terminal"]), (4, "limit"))
+        errors[1].__context__ = errors[0]
+        value = child_failure_diagnostic(errors[0])
+        self.assertEqual((len(value["nodes"]), value["terminal"]), (2, "cycle"))
+        for invalid in (True, -1, 4096, 1.5, "PRIVATE", None):
+            error = OSError()
+            error.errno = invalid
+            self.assertIsNone(child_failure_diagnostic(error)["nodes"][0]["errno"])
+        self.assertNotIn("PRIVATE", json.dumps(value))
+
+    def test_formatted_test_failure_never_exposes_private_exception_or_traceback(self):
+        class PrivateFailure(Exception):
+            def __str__(self):
+                raise RuntimeError("PRIVATE formatter must not run")
+            def __repr__(self):
+                raise RuntimeError("PRIVATE repr must not run")
+        class SyntheticCase(unittest.TestCase):
+            def runTest(self):
+                def invoke():
+                    raise PrivateFailure("PRIVATE payload", "PRIVATE path")
+                assert_child_output_limit(self, invoke)
+        stream = io.StringIO()
+        result = unittest.TextTestRunner(stream=stream).run(SyntheticCase())
+        self.assertEqual((len(result.failures), len(result.errors)), (1, 0))
+        self.assertNotIn("PRIVATE", stream.getvalue())
+        self.assertNotIn("PrivateFailure", stream.getvalue())
+        self.assertIn('"class": "other"', stream.getvalue())
 
 
 class SyntheticReaderTests(unittest.TestCase):
@@ -365,8 +498,9 @@ class ChildTests(unittest.TestCase):
             # Delay past that short deadline to regress the original masking.
             for script in ("import time; time.sleep(.25); print('PRIVATE'*100)",
                            "import time, sys; time.sleep(.25); sys.stderr.write('PRIVATE'*100)"):
-                with self.subTest(script=script), self.assertRaisesRegex(full.FullError, "^interpreter_output_limit$"):
-                    full.bounded_child([sys.executable, "-c", script], root, seconds=10, stdout_limit=64, stderr_limit=64)
+                with self.subTest(channel="stderr" if "sys.stderr" in script else "stdout"):
+                    assert_child_output_limit(self, lambda: full.bounded_child(
+                        [sys.executable, "-c", script], root, seconds=10, stdout_limit=64, stderr_limit=64))
 
     def test_timeout_has_its_own_short_deadline(self):
         with tempfile.TemporaryDirectory() as temporary:
