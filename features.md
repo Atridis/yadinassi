@@ -68,6 +68,16 @@ CONFIG/CONFIGSAVE, запросы и команды CF/DT не добавлен�
 CONFIGSAVE не используется как замена; новый нативный результат ещё не получен.
 [Контракт и ограничения](docs/config-declaration-observation.md).
 
+## Закрытое декодирование single-part CONFIG
+
+Отдельный экспериментальный режим oracle `--config-content-decode-observation`
+читает все выбранные single-part цепочки CONFIG и приватно проверяет plain/raw
+DEFLATE по закреплённому правилу имён. Дубликаты, multipart и динамические имена
+отклоняются; наружу выходят только конечные счётчики. Это не публичное извлечение
+файлов, не root/metadata-парсер и не выбор применённой конфигурации. Нативный
+положительный результат требует отдельного точного source-bound прогона.
+[Гипотеза, бюджеты и ограничения](docs/config-content-decode-observation.md).
+
 ## Необязательный контекст файловой базы
 
 `--f DIRECTORY` и Python API `FileDBContext(directory)` задают неизменяемый

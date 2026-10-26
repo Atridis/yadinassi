@@ -35,13 +35,13 @@ From a clean, immutable checkout, the names-only default CLI invocation is:
 python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --output native-db-oracle/report.json
 ```
 
-The reviewed-branch workflow explicitly adds `--record-metadata-observation` to
-this command, selecting the separate [baseline metadata/declaration observation](native-record-metadata-observation.md):
-report schema 5, capture schema 6 and a 21-entry source inventory. Omitting the
+The reviewed-branch workflow currently adds `--config-content-decode-observation`,
+selecting the separate [bounded single-part CONFIG content lane](config-content-decode-observation.md):
+report schema 17, capture schema 18 and a 23-entry source inventory. Omitting the
 flag retains the default above: report schema 4, matched capture schema 5 and
-20 source entries. The v4 evidence, validators and budget calculations below
-remain scoped to that default lane; they do not prove the new observation's
-native result, logical mapping or record acceptance.
+20 source entries. Historical v4 evidence, validators and budget calculations
+below remain scoped to that default lane; they do not prove the new content
+observation's native result, root identity or applied-state acceptance.
 
 The host requires the existing GHCR_USER/GHCR_TOKEN credentials for the approved
 image pull. It removes them from the environment before external processes,
