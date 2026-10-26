@@ -289,8 +289,33 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_text_document_measurement(source, *, host=False):
+    """Exact test-only restoration of values441 harness; never production admission."""
+    inventory = json.loads((REPOSITORY / 'tests/text_document_source_inverse.json').read_text(encoding='utf-8'))
+    path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
+def historical_text_document_values_module(source, template):
+    """Restore the complete values441 source/adapter, not a prefix of new output."""
+    from scripts.native_historical_replay import without_text_document_probes
+    restored = without_text_document_measurement(SNIPPET.read_text(encoding='utf-8'))
+    namespace = {'__name__': 'historical_text_document_values_suite'}
+    exec(compile(restored, str(SNIPPET), 'exec'), namespace)
+    original = without_text_document_probes(source.decode('utf-8')).encode('utf-8')
+    assert namespace['CLIENT_VALUES_MESSAGE_COUNT'] == 441
+    return namespace['client_values_module'](original, template)
+
+
 def without_value_tree_measurement(source, *, host=False):
     """Exact test-only inverse to the actual-main historical harness, not admission."""
+    source = without_text_document_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/uuid_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]

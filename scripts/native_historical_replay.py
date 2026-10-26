@@ -221,6 +221,27 @@ SERVICE_FILLED_PROBE_BLOCK = (
 )
 
 
+TEXT_DOCUMENT_PROBE_BLOCKS = (
+    ('// Begin bounded TextDocument helpers (measurement only; no native answers).\n', '// End bounded TextDocument helpers.\n\n\n'),
+    ('// Begin bounded TextDocument observations (measurement only; no native answers).\n', '// End bounded TextDocument observations.\n'),
+)
+
+
+def without_text_document_probes(text):
+    """Restore exact values441 source; never filter outputs or admit old source."""
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != 'be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76':
+        raise ValueError('TextDocument candidate source binding changed')
+    for start, end in TEXT_DOCUMENT_PROBE_BLOCKS:
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError('TextDocument probe boundaries changed')
+        before, rest = text.split(start, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != '0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c':
+        raise ValueError('TextDocument historical source binding changed')
+    return text
+
+
 UUID_PROBE_BLOCKS = (
     ('// Begin bounded UUID codec helpers (candidate; not native evidence).\n', '// End bounded UUID codec helpers.\n\n'),
     ('// Begin bounded UUID codec observations (candidate; not native evidence).\n', '// End bounded UUID codec observations.\n'),
@@ -231,6 +252,8 @@ UUID_PROBE_BLOCKS = (
 
 def without_uuid_probes(text):
     """Offline historical replay only; exact input/output hashes, never admission."""
+    if any(boundary in text for pair in TEXT_DOCUMENT_PROBE_BLOCKS for boundary in pair):
+        text = without_text_document_probes(text)
     if hashlib.sha256(text.encode('utf-8')).hexdigest() != '0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c':
         raise ValueError('UUID candidate source binding changed')
     for start, end in UUID_PROBE_BLOCKS:

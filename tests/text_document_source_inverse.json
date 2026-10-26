@@ -1,0 +1,54 @@
+{
+  "scripts/native_1c_bootstrap/full_suite.py": {
+    "base_sha256": "c7fb4fa4996eb6729bd67135d421fd30bb80574186e165f772c3f06b7051a4b6",
+    "candidate_sha256": "aaeabae34c3194670928959b552cc8784258dea725894a96ab06805c8473275e",
+    "edits": [
+      {
+        "old": "CLIENT_VALUES_SOURCE_SHA256 = '0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c'\n",
+        "new": "CLIENT_VALUES_SOURCE_SHA256 = 'be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76'\n"
+      },
+      {
+        "old": "CLIENT_VALUES_MESSAGE_COUNT = 441\n",
+        "new": "CLIENT_VALUES_MESSAGE_COUNT = 485\n"
+      },
+      {
+        "old": "    All 45 helpers (40 previous and five bounded UUID/codec helpers) remain in their original order with client directives.\n    Only the 28 verified message-call identifiers change, and the complete module\n",
+        "new": "    All 49 helpers (45 previous and four bounded TextDocument helpers) remain in their original order with client directives.\n    Only the 31 verified message-call identifiers change, and the complete module\n"
+      },
+      {
+        "old": "",
+        "new": "        505: 'Функция КодыТекстовогоДокумента(Знач Текст)\\n',\n        524: 'Функция ОтветТекстовогоДокумента(Знач Значение)\\n',\n        536: 'Функция СнимокТекстовогоДокумента(Знач Документ)\\n',\n        570: 'Процедура НаблюдатьТекстовыйДокумент(Знач Метка, Знач Настройка, Знач Действие, Знач Чтение)\\n',\n"
+      },
+      {
+        "old": "",
+        "new": "        522: 'КонецФункции\\n',\n        534: 'КонецФункции\\n',\n        568: 'КонецФункции\\n',\n        597: 'КонецПроцедуры\\n',\n"
+      },
+      {
+        "old": "        554: 'Сообщить(\"null.checkpoint.complete: [ok]\");\\n',\n        633: 'Сообщить(\"xml.checkpoint.complete: [ok]\");\\n',\n        770: 'Сообщить(\"types.checkpoint.complete: [ok]\");\\n',\n        798: 'Сообщить(\"types-extra.checkpoint.complete: [ok]\");\\n',\n        858: 'Сообщить(\"chars.checkpoint.complete: [ok]\");\\n',\n        900: 'Сообщить(\"chars.index.checkpoint.complete: [ok]\");\\n',\n        919: 'Сообщить(\"types-extra.fixed-default.checkpoint.complete: [ok]\");\\n',\n        947: 'Сообщить(\"types-extra.service-filled.checkpoint.complete: [ok]\");\\n',\n",
+        "new": "        577: '        Сообщить(\"textdoc.\" + Метка + \": [setup-error]\");\\n',\n        593: '        Сообщить(\"textdoc.\" + Метка + \": [readback-error|\" + Статус + \"]\");\\n',\n        596: '    Сообщить(\"textdoc.\" + Метка + \": [\" + Запись + \"]\");\\n',\n        651: 'Сообщить(\"null.checkpoint.complete: [ok]\");\\n',\n        730: 'Сообщить(\"xml.checkpoint.complete: [ok]\");\\n',\n        867: 'Сообщить(\"types.checkpoint.complete: [ok]\");\\n',\n        895: 'Сообщить(\"types-extra.checkpoint.complete: [ok]\");\\n',\n        955: 'Сообщить(\"chars.checkpoint.complete: [ok]\");\\n',\n        997: 'Сообщить(\"chars.index.checkpoint.complete: [ok]\");\\n',\n        1016: 'Сообщить(\"types-extra.fixed-default.checkpoint.complete: [ok]\");\\n',\n        1044: 'Сообщить(\"types-extra.service-filled.checkpoint.complete: [ok]\");\\n',\n"
+      },
+      {
+        "old": "    body_start = 505\n",
+        "new": "    body_start = 602\n"
+      },
+      {
+        "old": "    if (len(lines) != 992\n",
+        "new": "    if (len(lines) != 1135\n"
+      }
+    ]
+  },
+  "scripts/native_1c_full_host.py": {
+    "base_sha256": "9fd0ba8125ef4694127c1e5a5c2f7adfe97995f7181b8bf6a73475fd4c4c4c24",
+    "candidate_sha256": "17d5917f18efadf1e3c7e7c259c5441c6926c0913deb61a44c3eb50a45a251dd",
+    "edits": [
+      {
+        "old": "VALUES_SOURCE_SHA256 = \"0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c\"\n",
+        "new": "VALUES_SOURCE_SHA256 = \"be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76\"\n"
+      },
+      {
+        "old": "                or type(data[\"message_count\"]) is not int or data[\"message_count\"] != 441\n",
+        "new": "                or type(data[\"message_count\"]) is not int or data[\"message_count\"] != 485\n"
+      }
+    ]
+  }
+}

@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import unittest
 
+from scripts.native_historical_replay import TEXT_DOCUMENT_PROBE_BLOCKS, without_text_document_probes
 from yadinassi import Interpreter
 from yadinassi.parser import parse
 import test_native_1c_full_stage as fixtures
@@ -19,6 +20,8 @@ BLOCKS = (
 
 def without_codec_blocks(text):
     # Exact test-only inverse to the frozen v2 observation source, not admission.
+    if any(boundary in text for pair in TEXT_DOCUMENT_PROBE_BLOCKS for boundary in pair):
+        text = without_text_document_probes(text)
     if hashlib.sha256(text.encode()).hexdigest() != V3_SHA:
         raise ValueError('UUID codec candidate source changed')
     for start, end in BLOCKS:
@@ -50,15 +53,15 @@ class UUIDCodecMeasurementContract(unittest.TestCase):
 
     def test_exact_nine_records_preserve_frozen_v2_and_fresh_count(self):
         previous = without_codec_blocks(self.source)
-        self.assertLess(len(self.raw) - len(previous.encode()), 8000)
+        self.assertLess(len(without_text_document_probes(self.source).encode()) - len(previous.encode()), 8000)
         self.assertEqual(len(self.calls), 9)
         self.assertEqual({x[0] for x in self.calls}, {
             'internal.fixed', 'internal.zero', 'internal.type',
             'internal.roundtrip.fixed', 'internal.roundtrip.zero',
             'xml.fixed', 'xml.zero', 'xml.roundtrip.fixed', 'xml.roundtrip.zero'})
-        self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 441)
+        self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 485)
         self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 866)
-        self.assertEqual(hashlib.sha256(self.raw).hexdigest(), V3_SHA)
+        self.assertEqual(hashlib.sha256(without_text_document_probes(self.source).encode()).hexdigest(), V3_SHA)
         with self.assertRaises(fixtures.suite.FullError):
             fixtures.suite.client_values_module(previous.encode(), self.template)
 
