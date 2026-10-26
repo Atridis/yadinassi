@@ -9,7 +9,7 @@ from .error_info import BSLErrorInfo, BSLErrorCategory
 from .xml_processing import BSLXMLStringProcessingManager
 
 from .maps import BSLFixedMap, BSLMap
-from .round_modes import BSLRoundMode, BSLRoundModes
+from .numeric.round_modes import BSLRoundMode, BSLRoundModes
 from .search_directions import BSLSearchDirection, BSLSearchDirections
 from .sort_directions import BSLSortDirection
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure

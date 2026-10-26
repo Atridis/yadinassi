@@ -200,13 +200,14 @@ pickle-метаданных не гарантируется. Публичный 
 `BSLError`, `BSLRuntimeError`, `__version__`) и пути `yadinassi.storage.*`
 не изменены. Удаление старых модулей — отдельное решение о совместимости.
 
-Математические реализации находятся в `yadinassi.numeric`: `math_conversion`,
-`binary_exp`, `powers` и `elementary`. `runtime.py` использует канонический
-`numeric.elementary`; `bits.py`, `numbers.py` и `round_modes.py` пока остаются
-на прежних местах. Старые четыре math-модуля сохраняют явные экспорты своих
-публичных функций, исключения `UnsupportedConversionRange` и `BUILTINS`:
-старый и новый импорт возвращают один объект. Вспомогательные импортированные
-имена не входят в этот контракт. Это отдельные модули, не aliases; зависимости
+Числовые реализации находятся в `yadinassi.numeric`: `math_conversion`,
+`binary_exp`, `powers`, `elementary`, `bits`, `numbers` и `round_modes`.
+`runtime.py` и другие внутренние потребители используют канонические пути.
+Старые семь модулей сохраняют явные экспорты своих публичных функций,
+исключения `UnsupportedConversionRange`, таблиц `BUILTINS`, классов
+`BSLRoundMode`, `BSLRoundModes` и singleton `ROUND_MODES`: старый и новый
+импорт возвращают один объект, включая значения перечисления и умолчание
+`round_number`. Вспомогательные импортированные имена не входят в этот контракт. Это отдельные модули, не aliases; зависимости
 для monkeypatch нужно менять в `yadinassi.numeric.*` (например, `Context` в
 `yadinassi.numeric.binary_exp`). Прозрачность `__module__`, introspection и
 pickle-метаданных не гарантируется. Пакет `numeric` не экспортирует функции

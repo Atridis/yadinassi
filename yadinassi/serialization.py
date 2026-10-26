@@ -13,7 +13,7 @@ from decimal import Decimal
 import re
 
 from .maps import BSLFixedMap, BSLMap
-from .round_modes import BSLRoundMode
+from .numeric.round_modes import BSLRoundMode
 from .search_directions import BSLSearchDirection
 from .sort_directions import BSLSortDirection
 from .structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure

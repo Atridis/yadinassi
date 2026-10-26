@@ -9,7 +9,7 @@ from .maps import BSLFixedMap, BSLMap
 from .strings import is_blank
 from .structures import BSLFixedStructure, BSLStructure
 from .values import BSLArray, BSLFixedArray, BSLType, NULL
-from .round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
+from .numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
                               BSLDateQualifiers, BSLBinaryDataQualifiers,
