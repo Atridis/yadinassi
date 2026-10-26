@@ -42,6 +42,11 @@ PARAMS_SOURCE_FILES = {**RECORD_SOURCE_FILES,
 CONFIG_SOURCE_FILES = {**RECORD_SOURCE_FILES,
     'scripts/native_1c_db_oracle/config_observation.py': 'config_observation.py'}
 CONFIG_LANE = 'owned_config_transport_observation_v1'
+# Framing is separately selected; older inventories do not acquire its core/policy.
+CONFIG_FRAMING_SOURCE_FILES = {**RECORD_SOURCE_FILES,
+    'scripts/native_1c_db_oracle/config_framing_reader.py': 'config_framing_reader.py',
+    'scripts/native_1c_db_oracle/config_framing.py': 'config_framing.py'}
+CONFIG_FRAMING_LANE = 'owned_config_framing_observation_v1'
 PARAMS_LANE = 'owned_params_transport_observation_v1'
 # Extraction is a separate lane; no older inventory acquires its reader/policy.
 EXTRACTION_SOURCE_FILES = {**PARAMS_SOURCE_FILES,
@@ -56,11 +61,12 @@ IDENTITY_LANE = 'owned_dbnames_identity_validation_v1'
 MAX_SOURCE=1048576
 
 
-def inventory(record_metadata=False, *, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
+def inventory(record_metadata=False, *, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False):
     require(type(record_metadata) is bool and type(record_reader) is bool
             and type(params_transport) is bool and type(params_extraction) is bool
-            and type(dbnames_identity) is bool and type(config_transport) is bool
-            and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport)) <= 1, 'invalid_input')
+            and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool
+            and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing)) <= 1, 'invalid_input')
+    if config_framing: return CONFIG_FRAMING_SOURCE_FILES
     if config_transport: return CONFIG_SOURCE_FILES
     if dbnames_identity: return IDENTITY_SOURCE_FILES
     if params_extraction: return EXTRACTION_SOURCE_FILES
@@ -85,8 +91,8 @@ def read_source(path):
         raise OracleError('invalid_input') from None
 
 
-def source_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
-    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
+def source_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False):
+    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing)
     require(root.is_dir() and not root.is_symlink(),'invalid_input')
     result={}
     for relative in files:
@@ -96,8 +102,8 @@ def source_hashes(root, *, record_metadata=False, record_reader=False, params_tr
     return result
 
 
-def staged_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
-    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
+def staged_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False):
+    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing)
     allowed=set(files.values()) | {'invocation.json'}
     directories={parent.as_posix() for name in allowed for parent in Path(name).parents if str(parent)!='.'}
     actual=set()
@@ -111,15 +117,17 @@ def staged_hashes(root, *, record_metadata=False, record_reader=False, params_tr
     return {source:hashlib.sha256(read_source(root/target)).hexdigest() for source,target in files.items()}
 
 
-def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
-    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
+def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False):
+    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing)
     require(not destination.exists() and not destination.is_symlink(),'stale_evidence')
     destination.mkdir(mode=0o755)
     for source,target in files.items():
         path=destination/target; path.parent.mkdir(parents=True,exist_ok=True)
         path.write_bytes(read_source(root/source)); path.chmod(0o444)
     invocation={'schema':1,'nonce':nonce,'provenance':provenance}
-    if config_transport:
+    if config_framing:
+        invocation.update(schema=8, lane=CONFIG_FRAMING_LANE)
+    elif config_transport:
         invocation.update(schema=7, lane=CONFIG_LANE)
     elif dbnames_identity:
         invocation.update(schema=6, lane=IDENTITY_LANE)
@@ -136,18 +144,19 @@ def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False,
     for path in destination.rglob('*'):
         if path.is_dir(): path.chmod(0o555)
     destination.chmod(0o555)
-    require(staged_hashes(destination,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
+    require(staged_hashes(destination,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing)
             ==provenance['sources'],'provenance_mismatch')
 
 
-def verify_inputs(root,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
+def verify_inputs(root,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing)
     require(root.is_dir() and not root.is_symlink(),'invalid_input')
     data=decode(read_source(root/'invocation.json'))
-    exact(data,{'schema','nonce','provenance'} | ({'lane'} if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport else set()))
-    require(type(data['schema']) is int and data['schema']==(7 if config_transport else 6 if dbnames_identity else 5 if params_extraction else 4 if params_transport else 3 if record_reader else 2 if record_metadata else 1)
+    exact(data,{'schema','nonce','provenance'} | ({'lane'} if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing else set()))
+    require(type(data['schema']) is int and data['schema']==(8 if config_framing else 7 if config_transport else 6 if dbnames_identity else 5 if params_extraction else 4 if params_transport else 3 if record_reader else 2 if record_metadata else 1)
             and data['nonce']==nonce,'provenance_mismatch')
-    if config_transport: require(data['lane']==CONFIG_LANE,'provenance_mismatch')
+    if config_framing: require(data['lane']==CONFIG_FRAMING_LANE,'provenance_mismatch')
+    elif config_transport: require(data['lane']==CONFIG_LANE,'provenance_mismatch')
     elif dbnames_identity: require(data['lane']==IDENTITY_LANE,'provenance_mismatch')
     elif params_extraction: require(data['lane']==EXTRACTION_LANE,'provenance_mismatch')
     elif params_transport: require(data['lane']==PARAMS_LANE,'provenance_mismatch')
@@ -159,6 +168,6 @@ def verify_inputs(root,nonce, *, record_metadata=False, record_reader=False, par
     require(provenance['image']==IMAGE and provenance['platform']=='linux/amd64'
             and provenance['locale']=='ru_RU.UTF-8' and provenance['timezone']=='Etc/UTC'
             and provenance['actual_version'] is None,'provenance_mismatch')
-    require(staged_hashes(root,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport)
+    require(staged_hashes(root,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing)
             ==provenance['sources'],'provenance_mismatch')
     return provenance
