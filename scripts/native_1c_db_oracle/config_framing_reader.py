@@ -431,3 +431,203 @@ def observe_config_zero_marker_filenames(read_at, file_size, *, profile,
     return ConfigZeroMarkerFilenameObservation(profile.identifier, profile.recipe_sha256,
         data.info.logical_length, blob.info.logical_length, slots, 'one',
         zero, one, other, zero, empty, zero - empty, maximum, reader.usage)
+
+
+def _config_partno(raw):
+    """Canonical bounded numeric hypothesis, deliberately not native ToIntDef."""
+    if len(raw) != 6 or raw[0] >> 4 != 1 or raw[-1] & 15:
+        raise UnsupportedLayout('config_partno_encoding')
+    value = 0
+    for index in range(1, 11):
+        digit = (raw[index // 2] >> (4 if index % 2 == 0 else 0)) & 15
+        if digit > 9:
+            raise UnsupportedLayout('config_partno_encoding')
+        value = value * 10 + digit
+    if value > 4095:
+        raise ResourceLimit('config_partno_limit')
+    return value
+
+
+@dataclass(frozen=True)
+class ConfigEntryReferenceProfile:
+    """Bounded selected-reference prerequisites, not a file or chain reader."""
+
+    declarations: tuple[tuple[str, str, int, int, int, str], ...]
+    recordlock: str
+    format_item: int
+    identifier: str = field(default='config_entry_reference_8380_8192_v1', init=False)
+    candidate_stride: int = field(init=False)
+    filename_offset: int = field(init=False)
+    filename_width: int = field(init=False)
+    binarydata_offset: int = field(init=False)
+    binarydata_width: int = field(init=False)
+    partno_offset: int = field(init=False)
+    partno_width: int = field(init=False)
+    recipe_sha256: str = field(init=False)
+
+    def __post_init__(self):
+        layout = ConfigFramingProfile(self.declarations, self.recordlock, self.format_item)
+        object.__setattr__(self, 'candidate_stride', layout.record_size)
+        object.__setattr__(self, 'filename_offset', layout.placements[0][0])
+        object.__setattr__(self, 'filename_width', layout.placements[0][1])
+        object.__setattr__(self, 'binarydata_offset', layout.placements[5][0])
+        object.__setattr__(self, 'binarydata_width', layout.placements[5][1])
+        object.__setattr__(self, 'partno_offset', layout.placements[6][0])
+        object.__setattr__(self, 'partno_width', layout.placements[6][1])
+        raw = json.dumps(self.recipe(), ensure_ascii=True, sort_keys=True,
+                         separators=(',', ':'), allow_nan=False).encode('ascii')
+        object.__setattr__(self, 'recipe_sha256', hashlib.sha256(raw).hexdigest())
+
+    def recipe(self):
+        return {'identifier': self.identifier, 'declarations': self.declarations,
+                'recordlock': self.recordlock, 'format_item': self.format_item,
+                'candidate_stride': self.candidate_stride,
+                'filename_offset': self.filename_offset, 'filename_width': self.filename_width,
+                'first_marker': 'one_reserved_opaque_v1',
+                'later_selection': 'zero_validate_nonzero_opaque_v1',
+                'filename': 'u16le_units_at_most_128_strict_utf16le_v1',
+                'selection': 'CONFIG_ascii_case_only_no_fallback_v1',
+                'binarydata_offset': self.binarydata_offset, 'binarydata_width': self.binarydata_width,
+                'partno_offset': self.partno_offset, 'partno_width': self.partno_width,
+                'reference': 'u32le_start_length_both_positive_nonempty_name_v1',
+                'locator': 'aligned_256_start_in_range_length_at_most_250_capacity_v1',
+                'partno': 'positive_sign1_ten_decimal_digits_pad0_at_most_4095_v1',
+                'empty_data': 'unsupported', 'selected_part_zero_witness': 'required',
+                'framing': 'not_accepted'}
+
+
+@dataclass(frozen=True)
+class ConfigEntryReferenceObservation:
+    recipe_id: str
+    recipe_sha256: str
+    data_logical_bytes: int
+    blob_logical_bytes: int
+    candidate_slots: int
+    first_marker_class: str
+    later_zero_count: int
+    later_one_count: int
+    later_other_count: int
+    validated_zero_count: int
+    empty_filenames: int
+    nonempty_filenames: int
+    max_filename_units: int
+    selected_reference_count: int
+    reference_excluded_count: int
+    empty_name_excluded_count: int
+    selected_part_zero_count: int
+    selected_part_nonzero_count: int
+    usage: CatalogUsage
+    candidate_stride: int = field(default=301, init=False)
+    target: str = field(default='CONFIG', init=False)
+    capability: str = field(default='experimental_config_entry_reference', init=False)
+    framing_validation: str = field(default='not_accepted', init=False)
+    filename_validation: str = field(default='zero_marker_bounded_utf16le', init=False)
+    locator_validation: str = field(default='selected_capacity_bounds_only', init=False)
+    partno_validation: str = field(default='selected_canonical_bcd_0_4095', init=False)
+    root_identity: str = field(default='not_observed', init=False)
+    native_acceptance: str = field(default='pending', init=False)
+
+
+def observe_config_entry_references(read_at, file_size, *, profile,
+                                         limits=None, catalog_limits=None):
+    """Validate every zero-marker name, then selected locator/part prerequisites.
+
+    Selection requires both positive reference components and a nonempty name.
+    Either-zero references are excluded before empty-name exclusion; excluded
+    PARTNO and all nonzero-marker payloads stay opaque. No BLOB block header or payload,
+    DATASIZE, grouping, identity, chain or applied-state evidence is read.
+    All selected candidates must pass; no result survives a later bad candidate.
+    """
+    if type(profile) is not ConfigEntryReferenceProfile:
+        raise ValueError('profile must be ConfigEntryReferenceProfile')
+    if limits is not None and type(limits) is not ConfigFramingLimits:
+        raise ValueError('limits must be ConfigFramingLimits')
+    if catalog_limits is not None and type(catalog_limits) is not CatalogLimits:
+        raise ValueError('catalog_limits must be CatalogLimits')
+    limits = limits if limits is not None else ConfigFramingLimits()
+    if profile.candidate_stride > limits.max_record_bytes:
+        raise ResourceLimit('config_record_bytes')
+    reader = CatalogReader(read_at, file_size, limits=catalog_limits)
+    catalog = reader.read_catalog()
+    selected = None
+    for table in catalog.tables:
+        if _ascii_config(table.name):
+            if selected is not None:
+                raise UnsupportedLayout('config_table_ambiguous')
+            selected = table
+    if selected is None:
+        raise UnsupportedLayout('config_table_missing')
+    if (type(selected.format_item) is not int or selected.format_item != profile.format_item
+            or selected.recordlock != profile.recordlock
+            or len(selected.fields) != len(profile.declarations)
+            or any(item.raw != wanted for item, wanted in zip(selected.fields, profile.declarations))):
+        raise UnsupportedLayout('config_profile_mismatch')
+    data = reader._open_table_data(selected)
+    blob = reader._open_table_blob(selected)
+    if data.info.logical_length % profile.candidate_stride:
+        raise InvalidStructure('config_record_length')
+    slots = data.info.logical_length // profile.candidate_stride
+    if not slots:
+        raise UnsupportedLayout('config_empty_data')
+    if slots > limits.max_slots:
+        raise ResourceLimit('config_slots')
+    if blob.info.logical_length % 256:
+        raise InvalidStructure('config_blob_alignment')
+    blocks = blob.info.logical_length // 256
+    if blocks < 2:
+        raise UnsupportedLayout('config_blob_capacity')
+    capacity = min(2**32 - 1, 250 * (blocks - 1))
+    zero, one, other, empty, maximum = 0, 0, 0, 0, 0
+    selected_count, reference_excluded, name_excluded, part_zero, part_nonzero = 0, 0, 0, 0, 0
+    for slot in range(slots):
+        base = slot * profile.candidate_stride
+        marker = _scalar(data, base, 1)
+        if slot == 0:
+            if marker != b'\x01':
+                raise UnsupportedLayout('config_reserved_slot')
+            continue
+        if marker != b'\x00':
+            if marker == b'\x01':
+                one += 1
+            else:
+                other += 1
+            continue
+        offset = base + profile.filename_offset
+        units = int.from_bytes(_scalar(data, offset, 2), 'little')
+        if units > 128:
+            raise InvalidStructure('config_filename_length')
+        reader._budget.charge('output_bytes', 128 + 4 * units)
+        raw = _scalar(data, offset + 2, 2 * units)
+        try:
+            raw.decode('utf-16-le', errors='strict')
+        except UnicodeDecodeError:
+            raise UnsupportedLayout('config_filename_encoding') from None
+        zero += 1
+        empty += units == 0
+        maximum = max(maximum, units)
+        reference = _scalar(data, base + profile.binarydata_offset, profile.binarydata_width)
+        reader._budget.charge('output_bytes', 128)
+        start = int.from_bytes(reference[:4], 'little')
+        length = int.from_bytes(reference[4:], 'little')
+        if start == 0 or length == 0:
+            reference_excluded += 1
+            continue
+        if units == 0:
+            name_excluded += 1
+            continue
+        if start >= blocks or length > capacity:
+            raise InvalidStructure('config_reference_bounds')
+        reader._budget.charge('output_bytes', 128)
+        reader._budget.charge('bytes_processed', 10)
+        part = _config_partno(_scalar(data, base + profile.partno_offset, profile.partno_width))
+        selected_count += 1
+        part_zero += part == 0
+        part_nonzero += part != 0
+    if not part_zero:
+        raise UnsupportedLayout('config_reference_no_part_zero_witness')
+    reader._budget.charge('output_bytes', 4096)
+    return ConfigEntryReferenceObservation(profile.identifier, profile.recipe_sha256,
+        data.info.logical_length, blob.info.logical_length, slots, 'one',
+        zero, one, other, zero, empty, zero - empty, maximum,
+        selected_count, reference_excluded, name_excluded, part_zero, part_nonzero,
+        reader.usage)
