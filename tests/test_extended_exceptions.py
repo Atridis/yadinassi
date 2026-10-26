@@ -166,7 +166,8 @@ Except saved=ErrorInfo(); EndTry;''', 'division.bsl')
         from yadinassi import serialization
         from yadinassi.values import BSLType
         self.assertEqual(serialization._UNSUPPORTED_CODEC_TYPES,
-                         {BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE}
+                         {BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE,
+                          BSLType.TEXT_DOCUMENT}
                          | serialization._TREE_CODEC_TYPES)
         self.vm.execute('Try Raise "x"; Except saved=ErrorInfo(); EndTry;')
         for expression in ['saved', 'ErrorCategory.ConfigurationError',

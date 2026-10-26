@@ -5574,3 +5574,21 @@ the remaining type-display spelling mismatch is corrected from captured bytes.
 **Fresh native acceptance is pending**; object displays and broader edge cases
 are not inferred from type displays. See [scope and evidence](docs/value-tree-core.md);
 version remains 0.4.2.
+
+
+## ТекстовыйДокумент: ограниченная работа с текстом в памяти
+
+Добавлен автономный `TextDocument / ТекстовыйДокумент`: точный SetText/GetText,
+LineCount/GetLine и основные строковые мутации без доступа к файлам или UI.
+Основа — 44 независимо проверенных наблюдения native run 40254792139; этот
+measurement-only прогон отклонил старый runtime и не является приёмкой новой
+реализации. CR/LF/CRLF исходного текста сохраняются; новые и заменённые строки
+используют LF. Нулевые и слишком большие номера имеют измеренные специальные
+случаи, описанные вместе с границами алгоритмического обобщения в
+[docs/text-document-native-alignment.md](docs/text-document-native-alignment.md).
+
+Проверки ресурсов атомарны; локальные лимиты — 1 000 000 UTF-16 единиц и 100 000
+строк. Непроверенные coercions/формы разделителей, файловые методы, кодеки,
+ОписаниеТипов и межконтекстная передача не открываются случайно. Старые fixtures,
+полный values485 source и строгие native guards неизменны; runtime inventory
+растёт до 63 файлов. Требуются свежие native/4-OS gates. Версия остаётся 0.4.2.

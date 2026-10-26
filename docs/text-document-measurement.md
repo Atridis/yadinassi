@@ -1,10 +1,11 @@
-# TextDocument: bounded in-memory measurement plan
+# TextDocument: initial in-memory measurement plan (historical)
 
-This is a **measurement-only candidate**, not a claim that TextDocument is
-implemented or native-compatible. The runtime remains unchanged until the native
-observations have been obtained and independently verified. A first native run
-may fail strict semantic comparison because Yadinassi does not yet construct this
-type; that failure is not acceptance or a replacement for the later full gate.
+This document records the **measurement-only** revision `72dad51`, not the
+current runtime status. Its native run obtained all 44 observations and failed
+semantic comparison because that revision intentionally lacked TextDocument.
+The later bounded implementation and exact evidence are described in
+[text-document-native-alignment.md](text-document-native-alignment.md). That
+measurement failure is not acceptance; a fresh complete native gate is required.
 
 ## Why this slice
 
