@@ -13,7 +13,7 @@ from yadinassi.binary_exp import binary_exp
 from yadinassi.math_conversion import UnsupportedConversionRange, decimal_to_binary64
 
 
-MODULE = importlib.import_module('yadinassi.binary_exp')
+MODULE = importlib.import_module('yadinassi.numeric.binary_exp')
 
 
 class BinaryExpTests(unittest.TestCase):

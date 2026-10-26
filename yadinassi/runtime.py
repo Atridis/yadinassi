@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Callable
 
 from .syntax import ast
-from . import bits, clocks, date_time_conversions, dates, elementary, numbers, serialization, strings, type_values, value_checks, xml_values
+from .numeric import elementary
+from . import bits, clocks, date_time_conversions, dates, numbers, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
 from .database_context import FileDBContext, require_database_context
 from .round_modes import BSLRoundModes, ROUND_MODES
