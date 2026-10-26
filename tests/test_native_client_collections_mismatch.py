@@ -150,7 +150,7 @@ class CollectionsMismatchHostTests(unittest.TestCase):
         # present, not dropped to make room for the finite diagnostic.
         for case in stage["cases"]:
             case.update(output_size=209715, message_count=32768)
-        for name, count in (("dates", 185), ("values", 485), ("collections", 866)):
+        for name, count in (("dates", 185), ("values", 521), ("collections", 866)):
             case = stage["cases"][full.SCENARIOS.index(name)]
             case["message_count"] = count
             if name != "collections":
