@@ -109,7 +109,9 @@ class ConfigFramingRoutingTests(unittest.TestCase):
             'assert not any(n=="yadinassi" or n.startswith("yadinassi.") for n in sys.modules);print("validated")')
         result=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(staged)],
             input=protocol.encode(report),stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,timeout=30)
-        self.assertEqual((result.returncode,result.stdout),(0,b'validated\n'),result.stderr)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(result.stderr,b'')
+        self.assertIn(result.stdout,(b'validated\n',b'validated\r\n'))
 
     def test_missing_tampered_or_extra_staged_reader_rejected_at_invocation_admission(self):
         staged=self.root/'physical-admission'

@@ -15,7 +15,7 @@ record-observation inventory plus `config_observation.py`; it does not import or
 stage the PARAMS policy, DBNames parser or extraction reader. Existing default,
 PARAMS, DBNames and record lanes keep their schemas and source memberships.
 The reviewed workflow now explicitly selects the separate
-[CONFIG framing observation](config-framing-observation.md). This declaration
+[CONFIG marker census](config-marker-census.md). This declaration
 mode remains available with the same exact inventory and schemas. Triggers,
 immutable checkout/actor admission, image, permissions and report-ready gates
 remain unchanged. Standard runtime checks are not dedicated CONFIG evidence.

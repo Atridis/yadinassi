@@ -306,17 +306,20 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
-                and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool
-                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing)) <= 1, 'invalid_input')
+                and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool
+                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census)) <= 1, 'invalid_input')
         self.observation = None
-        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing:
+        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census:
             import record_observation
             self.observation = record_observation
         self.params_policy = None
-        if config_framing:
+        if config_marker_census:
+            import config_marker_census as selected
+            self.params_policy = selected
+        elif config_framing:
             import config_framing as selected
             self.params_policy = selected
         elif config_transport:
@@ -996,7 +999,10 @@ class Controller:
         self.observation = None
         self.record_policy = None
         self.params_policy = None
-        if report.get('schema') == 11:
+        if report.get('schema') == 12:
+            import config_marker_census
+            self.params_policy = config_marker_census
+        elif report.get('schema') == 11:
             import config_framing
             self.params_policy = config_framing
         elif report.get('schema') == 10:
@@ -1014,7 +1020,7 @@ class Controller:
         if report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11):
+        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11, 12):
             import record_observation
             self.observation = record_observation
 
@@ -1094,7 +1100,7 @@ class Controller:
                     self.snapshot(database,'baseline')
                     if self.params_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
-                        capture_key = ('config_framing' if self.report['schema'] == 11 else 'config_observation' if self.report['schema'] == 10 else 'dbnames_identity' if self.report['schema'] == 9 else
+                        capture_key = ('config_marker_census' if self.report['schema'] == 12 else 'config_framing' if self.report['schema'] == 11 else 'config_observation' if self.report['schema'] == 10 else 'dbnames_identity' if self.report['schema'] == 9 else
                             'params_extraction' if self.report['schema'] == 8 else 'params_observation')
                         validation_key = ('mapping_validation' if self.report['schema'] == 9 else
                             'extraction_validation' if self.report['schema'] == 8 else 'observation_validation')
@@ -1234,21 +1240,25 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
     config_transport = flag == '--config-transport-observation'
     config_framing = flag == '--config-framing-observation'
+    config_marker_census = flag == '--config-slot-marker-observation'
     params_transport = flag == '--params-transport-observation'
     params_extraction = flag == '--params-dbnames-extraction'
     dbnames_identity = flag == '--dbnames-identity-validation'
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if config_framing:
+        if config_marker_census:
+            import config_marker_census as selected
+            report=selected.empty_report(nonce,provenance)
+        elif config_framing:
             import config_framing as selected
             report=selected.empty_report(nonce,provenance)
         elif config_transport:

@@ -7,11 +7,20 @@ audited native run is required before accepting this framing hypothesis on an
 owned fixture. Synthetic tests and activation are not native evidence.
 
 `--config-framing-observation` selects `owned_config_framing_observation_v1`,
-report schema 11, capture schema 12 and invocation schema 8. The reviewed workflow
-explicitly selects it without changing triggers, actor/checkout admission,
+report schema 11, capture schema 12 and invocation schema 8. The reviewed workflow now selects a separate [marker census](config-marker-census.md).
+This strict mode remains explicitly available without changing triggers, actor/checkout admission,
 immutable image, rights, artifact destinations or report-ready gates. The old
 CONFIG declaration mode remains explicitly available with its original closed
 schemas and inventory. The new mode is mutually exclusive with every old mode.
+
+## Genuine failed experiment
+
+[Run 40255869028](https://github.com/Atridis/yadinassi/actions/runs/40255869028),
+head `d6553aebc2d1c2e1c00e2edea5e5db69b2dc12c7`, failed at baseline with
+`config_framing_failed / unsupported_layout / config_nonreserved_slot`. The
+all-later-zero requirement was refuted on that owned postimage. This is not
+framing/filename/root acceptance; the profile and strict function remain unchanged.
+A separate diagnostic census must not turn that failure into success.
 
 ## Evidence and one falsifiable hypothesis
 

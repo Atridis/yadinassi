@@ -187,3 +187,108 @@ def observe_config_framing(read_at, file_size, *, profile,
     return ConfigFramingObservation(profile.identifier, profile.recipe_sha256,
         data.info.logical_length, blob.info.logical_length, slots, active,
         empty, active - empty, maximum, reader.usage)
+
+
+@dataclass(frozen=True)
+class ConfigMarkerCensusProfile:
+    """A separate diagnostic recipe, never a relaxed framing-success profile."""
+
+    declarations: tuple[tuple[str, str, int, int, int, str], ...]
+    recordlock: str
+    format_item: int
+    identifier: str = field(default='config_marker_census_8380_8192_v1', init=False)
+    candidate_stride: int = field(init=False)
+    recipe_sha256: str = field(init=False)
+
+    def __post_init__(self):
+        layout = ConfigFramingProfile(self.declarations, self.recordlock, self.format_item)
+        object.__setattr__(self, 'candidate_stride', layout.record_size)
+        raw = json.dumps(self.recipe(), ensure_ascii=True, sort_keys=True,
+                         separators=(',', ':'), allow_nan=False).encode('ascii')
+        object.__setattr__(self, 'recipe_sha256', hashlib.sha256(raw).hexdigest())
+
+    def recipe(self):
+        return {'identifier': self.identifier, 'declarations': self.declarations,
+                'recordlock': self.recordlock, 'format_item': self.format_item,
+                'candidate_stride': self.candidate_stride,
+                'observation': 'first_and_later_zero_one_other_candidate_markers_v1',
+                'selection': 'CONFIG_ascii_case_only_no_fallback_v1',
+                'empty_data': 'unsupported', 'single_candidate': 'admitted',
+                'framing': 'not_accepted', 'filename': 'not_read'}
+
+
+@dataclass(frozen=True)
+class ConfigMarkerCensusObservation:
+    recipe_id: str
+    recipe_sha256: str
+    data_logical_bytes: int
+    blob_logical_bytes: int
+    candidate_slots: int
+    first_marker_class: str
+    later_zero_count: int
+    later_one_count: int
+    later_other_count: int
+    usage: CatalogUsage
+    candidate_stride: int = field(default=301, init=False)
+    target: str = field(default='CONFIG', init=False)
+    capability: str = field(default='experimental_config_marker_census', init=False)
+    framing_validation: str = field(default='not_accepted', init=False)
+    filename_validation: str = field(default='not_run', init=False)
+    root_identity: str = field(default='not_observed', init=False)
+    native_acceptance: str = field(default='pending', init=False)
+
+
+def observe_config_marker_census(read_at, file_size, *, profile,
+                                 limits=None, catalog_limits=None):
+    """Count neutral marker classes at candidate boundaries; no row semantics.
+
+    All candidates are counted, including first/nonzero/other markers. Neither
+    active/removed/free status nor UTF16 filenames or free-list links are read
+    or validated. This cannot turn the strict framing hypothesis into success.
+    """
+    if type(profile) is not ConfigMarkerCensusProfile:
+        raise ValueError('profile must be ConfigMarkerCensusProfile')
+    if limits is not None and type(limits) is not ConfigFramingLimits:
+        raise ValueError('limits must be ConfigFramingLimits')
+    if catalog_limits is not None and type(catalog_limits) is not CatalogLimits:
+        raise ValueError('catalog_limits must be CatalogLimits')
+    limits = limits if limits is not None else ConfigFramingLimits()
+    if profile.candidate_stride > limits.max_record_bytes:
+        raise ResourceLimit('config_record_bytes')
+    reader = CatalogReader(read_at, file_size, limits=catalog_limits)
+    catalog = reader.read_catalog()
+    selected = None
+    for table in catalog.tables:
+        if _ascii_config(table.name):
+            if selected is not None:
+                raise UnsupportedLayout('config_table_ambiguous')
+            selected = table
+    if selected is None:
+        raise UnsupportedLayout('config_table_missing')
+    if (type(selected.format_item) is not int or selected.format_item != profile.format_item
+            or selected.recordlock != profile.recordlock
+            or len(selected.fields) != len(profile.declarations)
+            or any(item.raw != wanted for item, wanted in zip(selected.fields, profile.declarations))):
+        raise UnsupportedLayout('config_profile_mismatch')
+    data = reader._open_table_data(selected)
+    blob = reader._open_table_blob(selected)
+    if data.info.logical_length % profile.candidate_stride:
+        raise InvalidStructure('config_record_length')
+    slots = data.info.logical_length // profile.candidate_stride
+    if not slots:
+        raise UnsupportedLayout('config_empty_data')
+    if slots > limits.max_slots:
+        raise ResourceLimit('config_slots')
+    counts = {'zero': 0, 'one': 0, 'other': 0}
+    first = None
+    for slot in range(slots):
+        marker = _scalar(data, slot * profile.candidate_stride, 1)
+        marker_class = 'zero' if marker == b'\x00' else 'one' if marker == b'\x01' else 'other'
+        if slot == 0:
+            first = marker_class
+        else:
+            counts[marker_class] += 1
+    reader._budget.charge('output_bytes', 4096)
+    return ConfigMarkerCensusObservation(profile.identifier, profile.recipe_sha256,
+        data.info.logical_length, blob.info.logical_length, slots, first,
+        counts['zero'], counts['one'], counts['other'], reader.usage)
