@@ -51,7 +51,7 @@ neither rescans the catalog nor resets/refunds budgets.
 invocation schema 6. Its exact 26-source inventory is the extraction inventory
 plus the pure parser and separate identity policy. Older 18/20/21/22/23/24 source
 memberships and validators remain closed. The identity lane remains explicitly selectable. The reviewed CI workflow now
-selects the separate [CONFIG marker census](config-marker-census.md),
+selects the separate [zero-marker CONFIG filename-field observation](config-zero-marker-filename-observation.md),
 not identity validation; the default CLI behavior remains unchanged.
 
 Three expected UUIDs are generated owned-fixture metadata, independently read
