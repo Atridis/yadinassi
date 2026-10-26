@@ -11,17 +11,18 @@ import tempfile
 import unittest
 from unittest import mock
 
-from yadinassi import BSLError, BSLRuntimeError, Interpreter, ast
+from yadinassi import BSLError, BSLRuntimeError, Interpreter
+from yadinassi.syntax import ast
 from yadinassi.database_context import FileDBContext
-from yadinassi import lexer as lexer_module
-from yadinassi import parser as parser_module
+from yadinassi.syntax import lexer as lexer_module
+from yadinassi.syntax import parser as parser_module
 from yadinassi import runtime as runtime_module
-from yadinassi.lexer import Lexer
+from yadinassi.syntax.lexer import Lexer
 from yadinassi.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context,
 )
-from yadinassi.parser import parse, parse_expression, parse_fragment
-from yadinassi.preprocessor import COMPILATION_PROFILES, ConditionalCompilation
+from yadinassi.syntax.parser import parse, parse_expression, parse_fragment
+from yadinassi.syntax.preprocessor import COMPILATION_PROFILES, ConditionalCompilation
 
 
 SITES = ("client", "server", "server_nocontext", "dual_client", "dual_server")

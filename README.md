@@ -178,13 +178,27 @@ git push origin v0.2.0
 ## Расширение интерпретатора
 
 ```text
-исходный BSL → lexer.py → parser.py → ast.py → runtime.py → values.py
+исходный BSL → syntax/lexer.py → syntax/parser.py → syntax/ast.py → runtime.py → values.py
 ```
 
-`lexer.py` содержит токены и словарь ключевых слов; `parser.py` строит AST,
-не исполняя код; `ast.py` описывает узлы. `runtime.py` исполняет дерево, а
-`values.py` задает значения, преобразования и явно доступные методы объектов.
+`syntax/lexer.py` содержит токены и словарь ключевых слов; `syntax/parser.py`
+строит AST, не исполняя код; `syntax/ast.py` описывает узлы. Условная компиляция
+и области исходного кода находятся в `syntax/preprocessor.py`. `runtime.py`
+исполняет дерево, а `values.py` задает значения, преобразования и явно доступные
+методы объектов.
 `cli.py` отвечает за файлы и консоль. Код BSL не передается в Python `eval`/`exec`.
+
+Новый внутренний код импортирует фронтенд из `yadinassi.syntax.*`.
+Прежние модули `yadinassi.ast`, `yadinassi.lexer`, `yadinassi.parser` и
+`yadinassi.preprocessor` пока сохраняют явные compatibility-экспорты: узлы AST,
+`Token`, `Lexer`, `Parser`, функции разбора и проверки, классы препроцессора и
+их публичные константы. Старые и новые импорты этих символов возвращают те же
+объекты; случайно импортированные вспомогательные имена не входят в контракт.
+Это отдельные модули, не aliases: для monkeypatch зависимостей используйте
+канонический `yadinassi.syntax.*`. Прозрачность `__module__`, introspection и
+pickle-метаданных не гарантируется. Публичный embedding API (`Interpreter`,
+`BSLError`, `BSLRuntimeError`, `__version__`) и пути `yadinassi.storage.*`
+не изменены. Удаление старых модулей — отдельное решение о совместимости.
 
 Для новой конструкции добавьте токены при необходимости, узел AST, правило
 парсера и метод `Interpreter.visit_ИмяУзла`, затем тесты поведения и ошибок.
