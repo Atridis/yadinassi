@@ -30,7 +30,7 @@ SIZE_TOKEN = full.INFOBASE_CONTEXT_EXPECTED_TOKEN
 OPTION_NAMES = ('client_dates', 'client_values', 'client_collections',
                 'client_numbers', 'watchdog_check')
 RECORD_NAMES = OPTION_NAMES[:-1] + ('client_watchdog',)
-COUNTS = {'dates': 185, 'values': 521, 'collections': 866, 'numbers': 421}
+COUNTS = {'dates': 185, 'values': 534, 'collections': 866, 'numbers': 421}
 CLI_FLAGS = ('--client-dates-parity', '--client-values-parity',
              '--client-collections-parity', '--client-numbers-parity',
              '--client-watchdog-check')

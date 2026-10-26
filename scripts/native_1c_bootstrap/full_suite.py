@@ -1730,9 +1730,9 @@ def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
         raise FullError('invalid_result') from None
     return value
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_VALUES_SOURCE_SHA256 = '9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4'
+CLIENT_VALUES_SOURCE_SHA256 = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'
 CLIENT_VALUES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_VALUES_MESSAGE_COUNT = 521
+CLIENT_VALUES_MESSAGE_COUNT = 534
 
 
 def empty_values_report() -> dict:
@@ -1904,7 +1904,7 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
     capture = 'ЗначенияКлиентЗахват'
     reserved = (capture, 'ЗначенияКлиентСообщения',
                 'ЗначенияКлиентСимволы', 'ЗначенияКлиентВыполнить')
-    if (len(lines) != 1210
+    if (len(lines) != 1225
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())

@@ -1,9 +1,10 @@
-# НСтр / NStr: explicit-language measurement plan
+# НСтр / NStr: measurement and language discriminators
 
 This revision is **measurement-only**. It does not implement either function,
-claim native behavior, or add a supported syntax entry. It adds 36 independent
-input-only expressions to the existing complete values scenario, taking its
-message count from **485 to 521**. Native observations must be captured and
+claim runtime support, or add a supported syntax entry. The initial 36 independent
+input-only expressions remain byte-for-byte unchanged. This revision appends
+13 discriminators to the existing complete values scenario, taking its message
+count from **521 to 534** (49 NStr observations in total). Native observations must be captured and
 audited before selecting any runtime grammar, language-selection rule, fallback
 or coercion. A failed measurement comparison is not implementation acceptance.
 
@@ -13,16 +14,19 @@ The intended later slice is bounded multilingual string selection through
 `НСтр / NStr` with an explicit String language argument. Its implementation, if
 justified by evidence, belongs in the existing `yadinassi/strings.py`; this
 measurement changes no runtime file and keeps the runtime inventory at 63.
-Locale-dependent implicit selection, omitted/empty/non-string language arguments,
-non-string templates, malformed grammar and duplicate-key rules may remain
-unsupported even when this matrix observes their native behavior. No filesystem,
+The initial explicit-language-only scope cannot establish complete scenario
+parity while any retained observation remains unsupported. The initial capture
+returned Strings for all 36 expressions; that does not establish a universal
+grammar, scalar conversion rule or configuration language. The omitted, empty,
+Undefined and Null language cases all used the same ru-first template, leaving
+default-language selection versus entry-order behavior unresolved. No filesystem,
 UI, database, metadata, environment lookup or cross-context transport API is added.
 
 ## Fixed input matrix
 
 Each row invokes the function independently. There is no shared parsed template,
 expected selected value, native error text or interpreter-derived native golden.
-All normal rows explicitly pass a language; the six argument-policy rows are
+The initial normal rows explicitly pass a language; the six language-policy rows are
 clearly separated from the prospective explicit-language subset.
 
 | Labels | Question, not an expected answer |
@@ -46,6 +50,32 @@ lengths are independently pinned in the tests: **0–27 UTF-16 units**, includin
 the tab-composed input; language strings use zero or two units. These are INPUT
 bounds, not a prediction that NStr returns a substring or a particular length.
 
+## Thirteen independent discriminators
+
+| Labels | Fixed inputs and question |
+| --- | --- |
+| `default.reordered.omitted`, `.empty`, `.undefined`, `.null` | `en='B';ru='А'` with omitted language, empty String, Undefined or Null; distinguish the original ru-first inputs from this reversed order |
+| `default.enonly.omitted`, `.empty`, `.undefined`, `.null` | `en='B'` with the same four independent argument forms; observe absence of a ru entry |
+| `default.enonly.explicit` | `en='B'` with explicit `en`; positive single-entry syntax control |
+| `coercion.number.value`, `.string` | `1='N';ru='R'` with Number `1` versus `String(1)` |
+| `coercion.boolean.value`, `.string` | `Да='T';ru='R'` with Boolean `True` versus `String(True)` |
+
+The additional templates use 6–13 UTF-16 units. Each expression is independent;
+the two String calls convert only fixed literal scalars, never earlier outputs
+or objects. The String-language control must select positively before a matching
+scalar result supports conversion. Two empty results can instead reflect key
+grammar rejection and are not coercion evidence. The probes contain no expected
+native selected values, fallback table or language-environment assumption.
+
+Official 1C documentation distinguishes configuration language (current user's
+configured language, otherwise configuration default) from platform language and
+application locale, and assigns omitted NStr language to the former. See
+[Parameters that affect user interface language](https://1c-dn.com/library/parameters_that_affect_user_interface_language/).
+The runtime has no configuration-language startup contract today. Any later
+bounded profile must be designed and source-bound separately after capture;
+neither the host OS, `/L`, Russian number presentation nor synthetic test XML
+establishes that contract. All 49 observations remain mandatory for acceptance.
+
 ## Independent action and observer stages
 
 `НаблюдатьНСтр` evaluates one fixed expression and emits exactly one record:
@@ -63,32 +93,35 @@ still runs after either failure. Host-injected functions in unit tests exercise
 instrumentation only; they never parse or model NStr grammar.
 
 With the independent label bound of fewer than 40 ASCII characters, the complete
-record including LF is at most **312 bytes**. All 36 additional records therefore
-fit in 11,232 bytes even at that deliberately loose maximum. The existing full
+record including LF is at most **312 bytes**. The new 13 records fit in 4,056 bytes;
+all 49 NStr records fit in 15,288 bytes at that deliberately loose maximum. The existing full
 one-megabyte output bound is unchanged and still applies to the entire scenario.
 
 ## Exact source, historical replay and live admission
 
-- Current values521 source SHA-256:
-  `9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4`.
-- It has 1,210 lines, 51 helper declarations and 34 message-call sites. The source
+- Current values534 source SHA-256:
+  `16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5`.
+- It has 1,225 lines, 51 helper declarations and 34 message-call sites. The source
   hash, shape, message count and server/client admission pins advance together.
-- The exact source-only inverse reconstructs every byte of values485, SHA-256
+- The new exact source-only inverse reconstructs every byte of values521, SHA-256
+  `9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4`.
+  Its original 36-probe block and helper hashes remain unchanged. The existing
+  exact inverse then reconstructs every byte of values485, SHA-256
   `be2cdd08643e14747c4375d6f2f8a9f995c88e8ef028470fc29066329eeece76`.
   Its existing independently bound inverses then reconstruct values441 and402.
 - Test-only harness inverses reconstruct the prior complete client adapters.
   Historical captures and finite native TextDocument witnesses keep their
   original identity. No output prefix is accepted, stripped or regenerated.
-- The current live adapter rejects values485,441,402, altered helper/call shapes,
+- The current live adapter rejects values521,485,441,402, altered helper/call shapes,
   changed input bytes, BOM and CRLF. Historical replay never changes live globals.
-- The server and managed-client routes execute the full staged values521 source.
+- The server and managed-client routes execute the full staged values534 source.
   There is no new scenario, observation channel, transport field or exception.
 
 ## Resource proof and validation boundary
 
 The staged source inventory (24 files), six scenarios, historical captures, other scenario sources,
 workflows, images, permissions, timeouts and all transport caps remain unchanged.
-The existing finite production-serializer proof was rerun with values521 and
+The existing finite production-serializer proof was rerun with values534 and
 63 runtime members. Its conservative maxima remain **8,185 / 8,192 bytes** for
 async stage wire and **32,531 / 32,768 bytes** for public summary. It also checks
 all 32 parity subsets, 240 client failure frontiers, 224 early/server frontiers,

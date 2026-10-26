@@ -289,8 +289,33 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_nstr_discriminator_measurement(source, *, host=False):
+    """Exact test-only values521 harness inverse; no historical live admission."""
+    inventory = json.loads((REPOSITORY / 'tests/nstr_discriminators_source_inverse.json').read_text(encoding='utf-8'))
+    path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
+def historical_nstr_discriminator_values_module(source, template):
+    """Restore complete values521 source and adapter, not an output prefix."""
+    from scripts.native_historical_replay import without_nstr_discriminators
+    restored = without_nstr_discriminator_measurement(SNIPPET.read_text(encoding='utf-8'))
+    namespace = {'__name__': 'historical_nstr_discriminator_values_suite'}
+    exec(compile(restored, str(SNIPPET), 'exec'), namespace)
+    original = without_nstr_discriminators(source.decode('utf-8')).encode('utf-8')
+    assert namespace['CLIENT_VALUES_MESSAGE_COUNT'] == 521
+    return namespace['client_values_module'](original, template)
+
+
 def without_nstr_measurement(source, *, host=False):
     """Exact test-only values485 harness inverse, not live source admission."""
+    source = without_nstr_discriminator_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/nstr_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]

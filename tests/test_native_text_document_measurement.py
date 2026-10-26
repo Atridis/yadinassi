@@ -11,7 +11,7 @@ from yadinassi.parser import parse
 from yadinassi.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SHA = '9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4'
+SOURCE_SHA = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'
 HELPERS_SHA = 'a33ebfaedf963fd19251e2898c7d0034ee11d8e673ba5fc6f0141641a1e4a086'
 CALLS_SHA = '682cbf0abd63990df8ab4a3a6cb0cf73b7f3439ce1afe3bb9c03d506dcf4e09e'
 HELPER_START = '// Begin bounded TextDocument helpers (measurement only; no native answers).\n'
@@ -134,8 +134,8 @@ class TextDocumentSourceContracts(unittest.TestCase):
         helpers, calls = fragments()
         self.assertEqual(hashlib.sha256(helpers.encode()).hexdigest(), HELPERS_SHA)
         self.assertEqual(hashlib.sha256(calls.encode()).hexdigest(), CALLS_SHA)
-        self.assertEqual(len(raw.splitlines()), 1210)
-        self.assertEqual(f.suite.CLIENT_VALUES_MESSAGE_COUNT, 521)
+        self.assertEqual(len(raw.splitlines()), 1225)
+        self.assertEqual(f.suite.CLIENT_VALUES_MESSAGE_COUNT, 534)
         self.assertEqual(f.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 866)
         previous = without_text_document_probes(raw.decode())
         self.assertEqual(hashlib.sha256(previous.encode()).hexdigest(),
@@ -180,7 +180,7 @@ class TextDocumentSourceContracts(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     without_text_document_probes(changed.decode())
 
-    def test_exact_441_and_402_adapters_are_separate_from_current_521(self):
+    def test_exact_441_and_402_adapters_are_separate_from_current_534(self):
         import test_native_1c_full_stage as f
         from test_native_async_fixture import (historical_text_document_values_module,
                                               historical_uuid_values_module,

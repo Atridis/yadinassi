@@ -109,7 +109,7 @@ class FixedStringSmokeTests(unittest.TestCase):
     def test_changed_previous_source_rejected_before_checkpoint_execution(self):
         self.source_path.write_text(self.full_source.replace('NULL', 'Null', 1), encoding='utf-8')
         with patch.object(smoke_test.subprocess, 'run', side_effect=self.results()) as run:
-            with self.assertRaisesRegex(ValueError, '^NStr candidate source binding changed$'):
+            with self.assertRaisesRegex(ValueError, '^NStr discriminator candidate source binding changed$'):
                 self.invoke()
             self.assertEqual(run.call_count, 7)
 

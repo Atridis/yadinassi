@@ -13,7 +13,7 @@ from yadinassi import Interpreter
 from yadinassi.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]
-SHA = '9e1af33c93352aebf9166bf5f702f526f221df7e9945ba139ccbc3d1fd0a34e4'
+SHA = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'
 OLD_SHA = 'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12'
 START = '// Begin bounded UUID observations (candidate; not native evidence).\n'
 HELPERS = '// Begin bounded UUID helpers (candidate; not native evidence).\n'
@@ -38,7 +38,7 @@ class UUIDMeasurementContract(unittest.TestCase):
         self.assertLess(len(without_codec_blocks(self.text).encode()) - len(previous.encode()), 12000)
         self.assertEqual(len(self.calls), 30)
         self.assertEqual(len(self.codes), 30)
-        self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 521)
+        self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 534)
         self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 866)
         self.assertEqual(self.text.count(HELPERS), 1)
         self.assertEqual(self.text.count(START), 1)
@@ -168,7 +168,7 @@ class UUIDHistoricalAdapterBoundary(unittest.TestCase):
         module = historical_uuid_values_module(source, template)
         self.assertEqual(hashlib.sha256(module).hexdigest(),
                          '814858ce2af10afc86882ec719a19f41589effabb71b83882d94d6077d90e824')
-        self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 521)
+        self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 534)
         with self.assertRaises(fixtures.suite.FullError):
             fixtures.suite.client_values_module(without_uuid_probes(source.decode()).encode(), template)
         for changed in (source+b'\n', source.replace(b'uuid-fixed-input', b'uuid-fixed-other', 1)):

@@ -1208,3 +1208,18 @@
 НаблюдатьНСтр("template.number", "НСтр(1, ""ru"")");
 НаблюдатьНСтр("template.undefined", "НСтр(Неопределено, ""ru"")");
 // End bounded NStr observations.
+// Begin bounded NStr discriminators (measurement only; no native answers).
+НаблюдатьНСтр("default.reordered.omitted", "НСтр(""en='B';ru='А'"")");
+НаблюдатьНСтр("default.reordered.empty", "НСтр(""en='B';ru='А'"", """")");
+НаблюдатьНСтр("default.reordered.undefined", "НСтр(""en='B';ru='А'"", Неопределено)");
+НаблюдатьНСтр("default.reordered.null", "НСтр(""en='B';ru='А'"", Null)");
+НаблюдатьНСтр("default.enonly.omitted", "НСтр(""en='B'"")");
+НаблюдатьНСтр("default.enonly.empty", "НСтр(""en='B'"", """")");
+НаблюдатьНСтр("default.enonly.undefined", "НСтр(""en='B'"", Неопределено)");
+НаблюдатьНСтр("default.enonly.null", "НСтр(""en='B'"", Null)");
+НаблюдатьНСтр("default.enonly.explicit", "НСтр(""en='B'"", ""en"")");
+НаблюдатьНСтр("coercion.number.value", "НСтр(""1='N';ru='R'"", 1)");
+НаблюдатьНСтр("coercion.number.string", "НСтр(""1='N';ru='R'"", Строка(1))");
+НаблюдатьНСтр("coercion.boolean.value", "НСтр(""Да='T';ru='R'"", Истина)");
+НаблюдатьНСтр("coercion.boolean.string", "НСтр(""Да='T';ru='R'"", Строка(Истина))");
+// End bounded NStr discriminators.
