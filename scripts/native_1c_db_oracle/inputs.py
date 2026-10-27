@@ -78,6 +78,14 @@ CONFIG_ROOT_REFERENCE_PROJECTION_SOURCE_FILES = {**RECORD_SOURCE_FILES,
     'scripts/native_1c_db_oracle/config_root_reference_projection.py': 'config_root_reference_projection.py',
     'yadinassi/storage/config_root_projection.py': 'config_root_projection.py'}
 CONFIG_ROOT_REFERENCE_PROJECTION_LANE = 'owned_config_root_reference_projection_v1'
+# Catalog declarations add one private parser; all earlier inventories stay closed.
+CONFIG_CATALOG_OBSERVATION_SOURCE_FILES = {**RECORD_SOURCE_FILES,
+    'scripts/native_1c_db_oracle/config_framing_reader.py': 'config_framing_reader.py',
+    'scripts/native_1c_db_oracle/config_catalog_observation.py': 'config_catalog_observation.py',
+    'yadinassi/storage/config_root_projection.py': 'config_root_projection.py',
+    'yadinassi/storage/config_catalog_references.py': 'config_catalog_references.py'}
+CONFIG_CATALOG_OBSERVATION_LANE = 'owned_config_catalog_observation_v1'
+
 PARAMS_LANE = 'owned_params_transport_observation_v1'
 # Extraction is a separate lane; no older inventory acquires its reader/policy.
 EXTRACTION_SOURCE_FILES = {**PARAMS_SOURCE_FILES,
@@ -92,11 +100,12 @@ IDENTITY_LANE = 'owned_dbnames_identity_validation_v1'
 MAX_SOURCE=1048576
 
 
-def inventory(record_metadata=False, *, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False):
+def inventory(record_metadata=False, *, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False):
     require(type(record_metadata) is bool and type(record_reader) is bool
             and type(params_transport) is bool and type(params_extraction) is bool
-            and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool
-            and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection)) <= 1, 'invalid_input')
+            and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool and type(config_catalog_observation) is bool
+            and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation)) <= 1, 'invalid_input')
+    if config_catalog_observation: return CONFIG_CATALOG_OBSERVATION_SOURCE_FILES
     if config_root_reference_projection: return CONFIG_ROOT_REFERENCE_PROJECTION_SOURCE_FILES
     if config_content_decode: return CONFIG_CONTENT_DECODE_SOURCE_FILES
     if config_blob_chain: return CONFIG_BLOB_CHAIN_SOURCE_FILES
@@ -128,8 +137,8 @@ def read_source(path):
         raise OracleError('invalid_input') from None
 
 
-def source_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False):
-    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection)
+def source_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False):
+    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation)
     require(root.is_dir() and not root.is_symlink(),'invalid_input')
     result={}
     for relative in files:
@@ -139,8 +148,8 @@ def source_hashes(root, *, record_metadata=False, record_reader=False, params_tr
     return result
 
 
-def staged_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False):
-    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection)
+def staged_hashes(root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False):
+    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation)
     allowed=set(files.values()) | {'invocation.json'}
     directories={parent.as_posix() for name in allowed for parent in Path(name).parents if str(parent)!='.'}
     actual=set()
@@ -154,15 +163,17 @@ def staged_hashes(root, *, record_metadata=False, record_reader=False, params_tr
     return {source:hashlib.sha256(read_source(root/target)).hexdigest() for source,target in files.items()}
 
 
-def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False):
-    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection)
+def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False):
+    files=inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation)
     require(not destination.exists() and not destination.is_symlink(),'stale_evidence')
     destination.mkdir(mode=0o755)
     for source,target in files.items():
         path=destination/target; path.parent.mkdir(parents=True,exist_ok=True)
         path.write_bytes(read_source(root/source)); path.chmod(0o444)
     invocation={'schema':1,'nonce':nonce,'provenance':provenance}
-    if config_root_reference_projection:
+    if config_catalog_observation:
+        invocation.update(schema=17, lane=CONFIG_CATALOG_OBSERVATION_LANE)
+    elif config_root_reference_projection:
         invocation.update(schema=16, lane=CONFIG_ROOT_REFERENCE_PROJECTION_LANE)
     elif config_content_decode:
         invocation.update(schema=13, lane=CONFIG_CONTENT_DECODE_LANE)
@@ -193,18 +204,19 @@ def stage_inputs(root, destination, nonce, provenance, *, record_metadata=False,
     for path in destination.rglob('*'):
         if path.is_dir(): path.chmod(0o555)
     destination.chmod(0o555)
-    require(staged_hashes(destination,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection)
+    require(staged_hashes(destination,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation)
             ==provenance['sources'],'provenance_mismatch')
 
 
-def verify_inputs(root,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection)
+def verify_inputs(root,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation)
     require(root.is_dir() and not root.is_symlink(),'invalid_input')
     data=decode(read_source(root/'invocation.json'))
-    exact(data,{'schema','nonce','provenance'} | ({'lane'} if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection else set()))
-    require(type(data['schema']) is int and data['schema']==(16 if config_root_reference_projection else 13 if config_content_decode else 12 if config_blob_chain else 11 if config_entry_reference else 10 if config_zero_marker_filename else 9 if config_marker_census else 8 if config_framing else 7 if config_transport else 6 if dbnames_identity else 5 if params_extraction else 4 if params_transport else 3 if record_reader else 2 if record_metadata else 1)
+    exact(data,{'schema','nonce','provenance'} | ({'lane'} if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection or config_catalog_observation else set()))
+    require(type(data['schema']) is int and data['schema']==(17 if config_catalog_observation else 16 if config_root_reference_projection else 13 if config_content_decode else 12 if config_blob_chain else 11 if config_entry_reference else 10 if config_zero_marker_filename else 9 if config_marker_census else 8 if config_framing else 7 if config_transport else 6 if dbnames_identity else 5 if params_extraction else 4 if params_transport else 3 if record_reader else 2 if record_metadata else 1)
             and data['nonce']==nonce,'provenance_mismatch')
-    if config_root_reference_projection: require(data['lane']==CONFIG_ROOT_REFERENCE_PROJECTION_LANE,'provenance_mismatch')
+    if config_catalog_observation: require(data['lane']==CONFIG_CATALOG_OBSERVATION_LANE,'provenance_mismatch')
+    elif config_root_reference_projection: require(data['lane']==CONFIG_ROOT_REFERENCE_PROJECTION_LANE,'provenance_mismatch')
     elif config_content_decode: require(data['lane']==CONFIG_CONTENT_DECODE_LANE,'provenance_mismatch')
     elif config_blob_chain: require(data['lane']==CONFIG_BLOB_CHAIN_LANE,'provenance_mismatch')
     elif config_entry_reference: require(data['lane']==CONFIG_ENTRY_REFERENCE_LANE,'provenance_mismatch')
@@ -223,6 +235,6 @@ def verify_inputs(root,nonce, *, record_metadata=False, record_reader=False, par
     require(provenance['image']==IMAGE and provenance['platform']=='linux/amd64'
             and provenance['locale']=='ru_RU.UTF-8' and provenance['timezone']=='Etc/UTC'
             and provenance['actual_version'] is None,'provenance_mismatch')
-    require(staged_hashes(root,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection)
+    require(staged_hashes(root,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation)
             ==provenance['sources'],'provenance_mismatch')
     return provenance

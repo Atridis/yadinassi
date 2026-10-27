@@ -680,8 +680,107 @@ class HomeSocketInventoryTests(unittest.TestCase):
             (1000,1000,0,'link_count'),(1000,1000,-1,'link_count'),(1000,1000,2,'hardlink'))
         for uid,gid,links,reason in cases:
             leaf=self.leaf('onec-db-oracle/home/private/ipc',uid=uid,gid=gid,links=links)
+            leaf[0].write_bytes(b'present')  # Persistent entry, not an ENOENT race.
             with self.subTest(uid=uid,gid=gid,links=links),self.inventory(leaf):
                 self.assert_socket_rejection(stage.capture_home_anchor(self.root),'home',reason)
+
+    def test_zero_link_disappearance_uses_one_fresh_parent_relative_lookup(self):
+        for mode in (stat.S_IFREG,stat.S_IFSOCK):
+            leaf=self.leaf('onec-db-oracle/home/nested/gone',mode=mode,links=0,size=999)
+            path,entry=leaf
+            path.write_bytes(b'old')
+            def unlink_then_stat(*,follow_symlinks):
+                self.assertFalse(follow_symlinks)
+                path.unlink()
+                return entry.stat.return_value
+            entry.stat.side_effect=unlink_then_stat
+            with self.subTest(mode=mode),self.inventory(leaf):
+                anchor=stage.capture_home_anchor(self.root)
+                real_stat=stage.os.stat
+                checks=[]
+                def fresh(name,*args,**kwargs):
+                    if name==path.name:
+                        checks.append(kwargs)
+                        self.assertEqual(self.identity(os.fstat(kwargs['dir_fd'])),self.identity(path.parent.stat()))
+                        self.assertFalse(kwargs['follow_symlinks'])
+                    return real_stat(name,*args,**kwargs)
+                with mock.patch.object(stage.os,'stat',side_effect=fresh):
+                    self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=anchor),0)
+                self.assertEqual(len(checks),1)
+                entry.stat.assert_called_once_with(follow_symlinks=False)
+
+    def test_zero_link_present_replacements_never_adopted(self):
+        for mode in (stat.S_IFREG,stat.S_IFSOCK):
+            for replacement in (stat.S_IFREG,stat.S_IFSOCK,stat.S_IFLNK,stat.S_IFDIR):
+                for links in (0,1,2):
+                    leaf=self.leaf('onec-db-oracle/home/private/gone',mode=mode,links=0)
+                    with self.subTest(mode=mode,replacement=replacement,links=links),self.inventory(leaf):
+                        anchor=stage.capture_home_anchor(self.root); real_stat=stage.os.stat
+                        def fresh(name,*args,**kwargs):
+                            if name=='gone':
+                                return mock.Mock(st_mode=replacement,st_nlink=links,st_uid=0,st_gid=0)
+                            return real_stat(name,*args,**kwargs)
+                        with mock.patch.object(stage.os,'stat',side_effect=fresh):
+                            self.assert_socket_rejection(anchor,'home','link_count')
+
+    def test_zero_link_lookup_errors_are_finite_and_not_retried(self):
+        leaf=self.leaf('onec-db-oracle/home/private/gone',mode=stat.S_IFREG,links=0)
+        for number,reason in ((errno.EACCES,'access'),(errno.EIO,'otherio'),
+                              (errno.ENOTDIR,'otherio'),(errno.ESTALE,'race')):
+            with self.subTest(number=number),self.inventory(leaf):
+                anchor=stage.capture_home_anchor(self.root); real_stat=stage.os.stat; calls=[]
+                def fresh(name,*args,**kwargs):
+                    if name=='gone':
+                        calls.append(name)
+                        raise OSError(number,'SECRET','/PRIVATE')
+                    return real_stat(name,*args,**kwargs)
+                with mock.patch.object(stage.os,'stat',side_effect=fresh):
+                    self.assert_socket_rejection(anchor,'home',reason)
+                self.assertEqual(calls,['gone'])
+
+    def test_disappearing_entries_still_consume_entry_budget(self):
+        for count in (4094,4095):
+            leaves=[self.leaf(f'onec-db-oracle/home/gone-{index}',mode=stat.S_IFREG,links=0)
+                    for index in range(count)]
+            with self.subTest(count=count),self.inventory(*leaves):
+                anchor=stage.capture_home_anchor(self.root)
+                if count==4094: self.assertEqual(stage.sandbox_bytes(self.root,home_anchor=anchor),0)
+                else: self.assert_kind('artifact_limit',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+
+    def test_zero_link_does_not_bypass_admission_or_scope(self):
+        cases=((stat.S_IFSOCK,0,1000,'unexpected_socket'),
+               (stat.S_IFSOCK,1000,0,'unexpected_socket'),
+               (stat.S_IFREG,0,1000,'link_count'),
+               (stat.S_IFREG,1000,0,'link_count'),
+               (stat.S_IFLNK,1000,1000,'symlink'),
+               (stat.S_IFIFO,1000,1000,'special'))
+        for mode,uid,gid,reason in cases:
+            leaf=self.leaf('onec-db-oracle/home/gone',mode=mode,uid=uid,gid=gid,links=0)
+            with self.subTest(mode=mode,uid=uid,gid=gid),self.inventory(leaf):
+                self.assert_socket_rejection(stage.capture_home_anchor(self.root),'home',reason)
+        for relative in ('onec-db-oracle/temp/gone','onec-db-oracle/home-other/gone','runtime/gone'):
+            leaf=self.leaf(relative,mode=stat.S_IFREG,links=0)
+            with self.subTest(relative=relative),self.inventory(leaf):
+                with self.assertRaises(stage.SandboxInventoryError) as failure:
+                    stage.sandbox_bytes(self.root,home_anchor=stage.capture_home_anchor(self.root))
+                self.assertEqual(failure.exception.reason,'link_count')
+        leaf=self.leaf('onec-db-oracle/home/gone',mode=stat.S_IFREG,links=0)
+        with self.inventory(leaf): self.assert_socket_rejection(None,'home','link_count')
+
+    def test_disappearance_revalidates_nested_parent_and_final_home_anchor(self):
+        for mode in (stat.S_IFREG,stat.S_IFSOCK):
+            for target in ('nested','home'):
+                leaf=self.leaf('onec-db-oracle/home/nested/gone',mode=mode,links=0)
+                directory=leaf[0].parent if target=='nested' else self.home
+                identity=self.identity(directory.stat()); moved=self.park/'replaced'
+                def replace(scanned):
+                    if scanned==identity and not moved.exists():
+                        directory.rename(moved); directory.mkdir()
+                with self.subTest(mode=mode,target=target),self.inventory(leaf,after_scan=replace):
+                    anchor=stage.capture_home_anchor(self.root)
+                    self.assert_kind('snapshot_changed',lambda: stage.sandbox_bytes(self.root,home_anchor=anchor))
+                if moved.exists():
+                    directory.rmdir(); moved.rename(directory)
 
     def test_unpinned_calls_preserve_strict_home_socket_rejection(self):
         with self.inventory(self.leaf('onec-db-oracle/home/ipc')):
@@ -707,6 +806,7 @@ class HomeSocketInventoryTests(unittest.TestCase):
                 self.assert_socket_rejection(stage.capture_home_anchor(self.root),'runtime','unexpected_socket')
 
     def test_pinned_scans_still_reject_other_specials_and_links(self):
+        (self.home/'entry').write_bytes(b'present')
         for mode,links,reason in ((stat.S_IFLNK,1,'symlink'),(stat.S_IFIFO,1,'special'),
                 (stat.S_IFCHR,1,'special'),(stat.S_IFREG,2,'hardlink'),(stat.S_IFREG,0,'link_count')):
             with self.subTest(mode=mode,links=links),self.inventory(

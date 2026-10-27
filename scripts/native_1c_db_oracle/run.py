@@ -194,15 +194,16 @@ def capture_home_anchor(root):
 
 
 def sandbox_bytes(root, reserve=0, *, home_anchor=None):
-    """Account the same private tmpfs entries without changing admission policy.
+    """Account private tmpfs entries with narrowly checked disappearance races.
 
     Error classifications contain fixed regions/reasons only. Disappearing entry
     stat/child-open races remain tolerated exactly as before; other existing
-    rejections remain failures except the explicit pinned, owned HOME socket policy.
+    rejections remain failures except pinned, owned HOME sockets and an owned
+    HOME zero-link entry freshly confirmed absent from the same opened parent.
     """
     require(type(reserve) is int and 0 <= reserve <= MAX_LIVE_BYTES,'artifact_limit')
     sockets={'.X11-unix/X99','runtime/session-bus/bus'}
-    total=0; entries=0; home_sockets=0
+    total=0; entries=0; home_sockets=0; disappeared=0
     def reject(relative,reason):
         raise SandboxInventoryError(inventory_region(relative),reason)
     def io(relative,action,*,missing=False):
@@ -212,8 +213,25 @@ def sandbox_bytes(root, reserve=0, *, home_anchor=None):
             raise SandboxInventoryError(inventory_region(relative),inventory_io_reason(error)) from None
         except OSError as error:
             raise SandboxInventoryError(inventory_region(relative),inventory_io_reason(error)) from None
-    def links(relative,info):
+    def links(relative,info,descriptor,name):
+        nonlocal disappeared
+        if (info.st_nlink==0 and home_anchor is not None
+                and relative.startswith('onec-db-oracle/home/')
+                and (info.st_uid,info.st_gid)==(1000,1000)):
+            # DirEntry.stat may cache the unlinked inode. Only a fresh lookup
+            # relative to this still-open parent can establish disappearance.
+            # Any present replacement (even an ordinary owned file) still fails.
+            def fresh_entry():
+                try: return os.stat(name,dir_fd=descriptor,follow_symlinks=False)
+                except FileNotFoundError as error:
+                    if error.errno==errno.ENOENT: return None
+                    raise
+            current=io(relative,fresh_entry)
+            if current is None:
+                disappeared+=1
+                return False
         if info.st_nlink!=1: reject(relative,'hardlink' if info.st_nlink>1 else 'link_count')
+        return True
     def walk(descriptor,prefix,depth):
         nonlocal total,entries,home_sockets
         require(depth<=16,'artifact_limit')
@@ -234,9 +252,9 @@ def sandbox_bytes(root, reserve=0, *, home_anchor=None):
                                 offset=0 if relative=='onec-db-oracle' else 4
                                 require((actual.st_dev,actual.st_ino,actual.st_uid,actual.st_gid)==home_anchor[offset:offset+4],
                                         'snapshot_changed')
-                            before=home_sockets
+                            before=(home_sockets,disappeared)
                             walk(child,relative+'/',depth+1)
-                            if home_sockets>before:
+                            if (home_sockets,disappeared)!=before:
                                 # The new exception is valid only while this path still names the opened directory.
                                 try: after=os.stat(entry.name,dir_fd=descriptor,follow_symlinks=False)
                                 except OSError: raise OracleError('snapshot_changed') from None
@@ -245,17 +263,17 @@ def sandbox_bytes(root, reserve=0, *, home_anchor=None):
                         finally: io(relative,lambda: os.close(child))
                     elif stat.S_ISSOCK(info.st_mode):
                         if relative in sockets:
-                            links(relative,info)
+                            if not links(relative,info,descriptor,entry.name): continue
                         elif home_anchor is not None and relative.startswith('onec-db-oracle/home/'):
                             if (info.st_uid,info.st_gid)!=(1000,1000): reject(relative,'unexpected_socket')
-                            links(relative,info)
+                            if not links(relative,info,descriptor,entry.name): continue
                             home_sockets+=1
                             require(home_sockets<=MAX_HOME_SOCKETS,'artifact_limit')
                         else: reject(relative,'unexpected_socket')
                     else:
                         if stat.S_ISLNK(info.st_mode): reject(relative,'symlink')
                         if not stat.S_ISREG(info.st_mode): reject(relative,'special')
-                        links(relative,info)
+                        if not links(relative,info,descriptor,entry.name): continue
                         require(0<=info.st_size<=MAX_FILE_BYTES,'artifact_limit')
                         total+=info.st_size
                         require(total+reserve<=MAX_LIVE_BYTES,'artifact_limit')
@@ -306,17 +324,20 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
-                and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool
-                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection)) <= 1, 'invalid_input')
+                and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool and type(config_catalog_observation) is bool
+                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation)) <= 1, 'invalid_input')
         self.observation = None
-        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection:
+        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection or config_catalog_observation:
             import record_observation
             self.observation = record_observation
         self.params_policy = None
-        if config_root_reference_projection:
+        if config_catalog_observation:
+            import config_catalog_observation as selected
+            self.params_policy = selected
+        elif config_root_reference_projection:
             import config_root_reference_projection as selected
             self.params_policy = selected
         elif config_content_decode:
@@ -897,7 +918,8 @@ class Native:
                     from snapshots import inspect_frozen_catalog
                     self.reader_attempted = True
                     summary, catalog = inspect_frozen_catalog(frozen, quiescent=self.quiescent,
-                        read_catalog=(policy.read_projection if params_policy is not None else filedb_catalog.read_catalog),
+                        read_catalog=(policy.read_owned_projection if params_policy is not None and params_policy.SCHEMA == 25
+                            else policy.read_projection if params_policy is not None else filedb_catalog.read_catalog),
                         limits=filedb_catalog.CatalogLimits(),
                         before_read=self.remaining)
                 except filedb_catalog.CatalogError as error:
@@ -1014,7 +1036,10 @@ class Controller:
         self.observation = None
         self.record_policy = None
         self.params_policy = None
-        if report.get('schema') == 23:
+        if report.get('schema') == 25:
+            import config_catalog_observation
+            self.params_policy = config_catalog_observation
+        elif report.get('schema') == 23:
             import config_root_reference_projection
             self.params_policy = config_root_reference_projection
         elif report.get('schema') == 17:
@@ -1050,7 +1075,7 @@ class Controller:
         if report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 23):
+        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 23, 25):
             import record_observation
             self.observation = record_observation
 
@@ -1130,13 +1155,13 @@ class Controller:
                     self.snapshot(database,'baseline')
                     if self.params_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
-                        capture_key = ('config_root_reference_projection' if self.report['schema'] == 23 else 'config_content_decode' if self.report['schema'] == 17 else 'config_blob_chain' if self.report['schema'] == 15 else 'config_entry_reference' if self.report['schema'] == 14 else 'config_zero_marker_filename' if self.report['schema'] == 13 else 'config_marker_census' if self.report['schema'] == 12 else 'config_framing' if self.report['schema'] == 11 else 'config_observation' if self.report['schema'] == 10 else 'dbnames_identity' if self.report['schema'] == 9 else
+                        capture_key = ('config_catalog_observation' if self.report['schema'] == 25 else 'config_root_reference_projection' if self.report['schema'] == 23 else 'config_content_decode' if self.report['schema'] == 17 else 'config_blob_chain' if self.report['schema'] == 15 else 'config_entry_reference' if self.report['schema'] == 14 else 'config_zero_marker_filename' if self.report['schema'] == 13 else 'config_marker_census' if self.report['schema'] == 12 else 'config_framing' if self.report['schema'] == 11 else 'config_observation' if self.report['schema'] == 10 else 'dbnames_identity' if self.report['schema'] == 9 else
                             'params_extraction' if self.report['schema'] == 8 else 'params_observation')
                         validation_key = ('mapping_validation' if self.report['schema'] == 9 else
                             'extraction_validation' if self.report['schema'] == 8 else 'observation_validation')
                         self.report[capture_key] = self.params_policy.bind_capture(data, self.report)
                         self.report['reader_validation'] = self.report[validation_key] = self.params_policy.VERDICT
-                        if self.report['schema'] in (17, 23):
+                        if self.report['schema'] in (17, 23, 25):
                             self.report['decompression_validation'] = self.params_policy.DECOMPRESSION_VERDICT
                         if self.report['schema'] == 9:
                             self.report['extraction_validation'] = 'extraction_observed'
@@ -1272,7 +1297,7 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
     config_transport = flag == '--config-transport-observation'
@@ -1282,6 +1307,7 @@ def main():
     config_entry_reference = flag == '--config-entry-reference-observation'
     config_blob_chain = flag == '--config-blob-chain-observation'
     config_content_decode = flag == '--config-content-decode-observation'
+    config_catalog_observation = flag == '--config-catalog-reference-observation'
     config_root_reference_projection = flag == '--config-root-reference-projection-observation'
     params_transport = flag == '--params-transport-observation'
     params_extraction = flag == '--params-dbnames-extraction'
@@ -1289,10 +1315,13 @@ def main():
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if config_root_reference_projection:
+        if config_catalog_observation:
+            import config_catalog_observation as selected
+            report=selected.empty_report(nonce,provenance)
+        elif config_root_reference_projection:
             import config_root_reference_projection as selected
             report=selected.empty_report(nonce,provenance)
         elif config_content_decode:
