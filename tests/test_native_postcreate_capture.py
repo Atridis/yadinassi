@@ -288,7 +288,17 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
         for mode in (full.BYTE_EXACT, full.MAP_MODE):
             # The actual semantic verifier checks these synthetic typed records;
             # no mocked verdict or invented native observation is used.
-            collections = map_fixtures.encode(map_fixtures.records()) if mode == full.MAP_MODE else None
+            collections = None
+            if mode == full.MAP_MODE:
+                from test_native_tree_load_contract import synthetic_records
+                rows = map_fixtures.records()
+                # Preserve every old typed Map witness. The new suffix must
+                # satisfy the independent observer gate, not use generic "ok".
+                original = map_fixtures.encode(rows[:976])
+                rows[976:] = [(label, payload) for label, _, payload in synthetic_records()[976:]]
+                collections = map_fixtures.encode(rows)
+                self.assertEqual(map_fixtures.encode(rows[:976]), original)
+                self.assertEqual(full.validate_tree_load_observations(collections)['records'], 45)
             for changed in (False, True):
                 with self.subTest(mode=mode, changed=changed):
                     result, exported, retained = harness.invoke(post_create=(native_payload(), self.actual_response),
@@ -313,5 +323,5 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
                     self.assertEqual(exported[0]['functions.out'], native_payload())
                     if mode == full.MAP_MODE:
                         semantic = probe['comparison']['cases'][0]['semantic']
-                        self.assertEqual((semantic['status'], semantic['records']), ('equivalent', 976))
+                        self.assertEqual((semantic['status'], semantic['records']), ('equivalent', 1021))
                         self.assertIsNone(probe['comparison']['cases'][2]['semantic'])

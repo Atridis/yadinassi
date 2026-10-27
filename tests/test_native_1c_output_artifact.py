@@ -44,8 +44,12 @@ def accepted_report(*, mismatch=False):
 
 
 def artifact_files(report=None):
-    return full.output_artifact_files(dict.fromkeys(full.ARTIFACT_FILES[:-1], PAYLOAD),
-                                      report or accepted_report(), smoke.IMAGE)
+    report = report or accepted_report()
+    payloads = dict.fromkeys(full.ARTIFACT_FILES[:-1], PAYLOAD)
+    if report['stage3']['cases'][0]['source_sha256'] == full.COLLECTIONS_SOURCE_SHA256:
+        from test_native_tree_load_contract import synthetic_output
+        payloads['collections.out'] = synthetic_output()
+    return full.output_artifact_files(payloads, report, smoke.IMAGE)
 
 
 class ManifestTests(SyntheticFilesystemCase):
@@ -68,6 +72,27 @@ class ManifestTests(SyntheticFilesystemCase):
         for case in metadata["cases"]:
             self.assertEqual(case["output_sha256"], full.digest(PAYLOAD))
             self.assertEqual(case["source_sha256"], report["stage3"]["input_sha256"][f'integrational_tests/tests/{case["name"]}.bsl'])
+
+    def test_native_observer_gate_is_required_before_artifact_export(self):
+        from test_native_tree_load_contract import synthetic_output
+        valid = synthetic_output()
+        invalid = valid.replace(b'TL45: [', b'TL45: [!', 1)
+        for payload, accepted in ((valid, True), (invalid, False)):
+            report = accepted_report()
+            source_key = 'integrational_tests/tests/collections.bsl'
+            report['stage3']['input_sha256'][source_key] = full.COLLECTIONS_SOURCE_SHA256
+            report['trusted_input_sha256'][source_key] = full.COLLECTIONS_SOURCE_SHA256
+            report['stage3']['cases'][0].update(source_sha256=full.COLLECTIONS_SOURCE_SHA256,
+                output_sha256=full.digest(payload),output_size=len(payload),message_count=1021)
+            report['comparison']['cases'][0].update(native_sha256=full.digest(payload),native_size=len(payload),
+                interpreter_sha256=full.digest(payload),interpreter_size=len(payload))
+            payloads = dict.fromkeys(full.ARTIFACT_FILES[:-1], PAYLOAD)
+            payloads['collections.out'] = payload
+            if accepted:
+                self.assertEqual(full.output_artifact_files(payloads,report,smoke.IMAGE)['collections.out'],payload)
+                report['stage3']['cases'][0]['message_count'] = 1020
+            with self.assertRaisesRegex(full.FullError,'^native_artifact_evidence_invalid$'):
+                full.output_artifact_files(payloads,report,smoke.IMAGE)
 
     def test_every_evidence_cleanup_and_integrity_gate_required(self):
         for gate in ("native_evidence_accepted", "native_transport_validated", "native_cases_completed",
@@ -224,6 +249,13 @@ class OrchestrationTests(SyntheticFilesystemCase):
                collections_payload=None):
         operations=[]; exported=[]; retained=[]; original_retain=full.retain_output_bytes
         original_temporary=tempfile.TemporaryDirectory; good=accepted_report(mismatch=mismatch)
+        if collections_payload is None:
+            from test_native_tree_load_contract import synthetic_output
+            collections_payload = synthetic_output()
+        good['comparison']['cases'][0].update(native_size=len(collections_payload),
+            native_sha256=full.digest(collections_payload),interpreter_size=len(collections_payload),
+            interpreter_sha256='0'*64 if mismatch else full.digest(collections_payload),
+            mismatch=full.mismatch_metadata(collections_payload,b'x'*len(collections_payload)) if mismatch else None)
         original_compare=full.compare_outputs; original_export=full.export_output_artifact
         original_verify=full.verify_output_artifact; final_verifications=[]
         def silent(args,env,seconds,input_bytes=None): operations.append(args[1])
@@ -235,14 +267,16 @@ class OrchestrationTests(SyntheticFilesystemCase):
             inputs={src:full.digest((directory/dst).read_bytes()) for src,dst in smoke.FULL_STAGED_FILES.items()}
             modules={name:full.digest(full.generated_module((directory/f"scenarios/{name}.bsl").read_bytes())) for name in full.SCENARIOS}
             data=fixture(PAYLOAD,input_hashes=inputs,modules=modules)[0]; data["nonce"]=data["report"]["stage3"]["nonce"]=args[-1]
-            if post_create is not None:
-                replacements={2:post_create[0]}
-                if collections_payload is not None: replacements[0]=collections_payload
-                for index,payload in replacements.items():
-                    data["report"]["stage3"]["cases"][index].update(output_sha256=full.digest(payload),
-                        output_size=len(payload),message_count=payload.count(b"\n"))
-                    data["outputs"][index].update(sha256=full.digest(payload),size=len(payload),
-                        data_b64=base64.b64encode(payload).decode("ascii"))
+            replacements={0:collections_payload}
+            if post_create is not None: replacements[2]=post_create[0]
+            for index,payload in replacements.items():
+                # Collections frames may contain multiline typed Map values.
+                # Native message_count counts frames, not physical LF bytes.
+                count = len(full.map_contract()._records(payload)) if index == 0 else payload.count(b"\n")
+                data["report"]["stage3"]["cases"][index].update(output_sha256=full.digest(payload),
+                    output_size=len(payload),message_count=count)
+                data["outputs"][index].update(sha256=full.digest(payload),size=len(payload),
+                    data_b64=base64.b64encode(payload).decode("ascii"))
             return 0,encode(data)
         def compare(root,capture,stage3,inputs,**kwargs):
             self.assertEqual(operations[-1],"ps"); self.assertTrue(capture.is_dir())
@@ -371,12 +405,18 @@ def semantic_report(*, equal=False):
     report["stage3"]["input_sha256"][source_key] = full.COLLECTIONS_SOURCE_SHA256
     report["stage3"]["cases"][0]["source_sha256"] = full.COLLECTIONS_SOURCE_SHA256
     report["trusted_input_sha256"] = dict(report["stage3"]["input_sha256"])
+    from test_native_tree_load_contract import synthetic_output
+    payload = synthetic_output()
+    report['stage3']['cases'][0].update(output_size=len(payload), output_sha256=full.digest(payload), message_count=1021)
     comparison = report["comparison"]
+    comparison['cases'][0].update(native_size=len(payload), native_sha256=full.digest(payload),
+        interpreter_size=len(payload), interpreter_sha256=full.digest(payload) if equal else '0'*64,
+        mismatch=None if equal else full.mismatch_metadata(payload, b'x'*len(payload)))
     comparison.update(native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                       acceptance_status="accepted")
     comparison["cases"][0].update(acceptance_status="accepted", semantic={
-        "status":"equivalent", "profile":full.MAP_MODE, "records":976,
-        "byte_equal_records":976 if equal else 975,
+        "status":"equivalent", "profile":full.MAP_MODE, "records":1021,
+        "byte_equal_records":1021 if equal else 1020,
         "accepted_labels":[] if equal else [full.map_contract().ELIGIBLE_LABELS[0]], "reason":"none"})
     return report
 
@@ -395,7 +435,8 @@ class SemanticManifestTests(SyntheticFilesystemCase):
         self.assertEqual(manifest["cases"][0]["comparison_status"],"mismatched")
         self.assertEqual(manifest["cases"][0]["mismatch"],report["comparison"]["cases"][0]["mismatch"])
         self.assertEqual(manifest["interpreter"]["map_contract_sha256"],report["interpreter"]["map_contract_sha256"])
-        self.assertEqual(files["collections.out"],PAYLOAD)
+        from test_native_tree_load_contract import synthetic_output
+        self.assertEqual(files["collections.out"],synthetic_output())
         self.assertTrue(all(case["semantic"] is None for case in manifest["cases"][1:]))
 
     def test_manifest_rejects_missing_inconsistent_stale_and_unbounded_claims(self):

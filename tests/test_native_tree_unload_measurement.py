@@ -26,7 +26,9 @@ CALLS_END = '// End bounded ValueTree UnloadColumn observations.\n'
 
 def raw_source():
     data = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
-    return data.replace(b'\r\n', b'\n') if os.name == 'nt' else data
+    data = data.replace(b'\r\n', b'\n') if os.name == 'nt' else data
+    from scripts.native_historical_replay import without_tree_load_probes
+    return without_tree_load_probes(data.decode('utf-8-sig')).encode('utf-8-sig')
 
 
 def block(text, start, end):
@@ -172,8 +174,11 @@ class UnloadSourceContractTests(unittest.TestCase):
         source = raw_source()
         template = (ROOT / fixtures.suite.CLIENT_SOURCE).read_bytes()
         if os.name == 'nt': template = template.replace(b'\r\n', b'\n')
-        module = fixtures.suite.client_collections_module(source, template)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 976)
+        from test_native_async_fixture import historical_tree_load_collections_module
+        current = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
+        if os.name == 'nt': current = current.replace(b'\r\n', b'\n')
+        module = historical_tree_load_collections_module(current, template)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 1021)
         self.assertEqual(hashlib.sha256(module).hexdigest(), 'a7bfc4e3361bdb1bfde5794b211f3fd1c0594f5c81b4f5e3dafecac4c3049786')
         restored = without_tree_unload_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
         self.assertEqual(hashlib.sha256(restored).hexdigest(), BASE_SHA)
@@ -192,13 +197,13 @@ class UnloadSourceContractTests(unittest.TestCase):
         rows = f.records()
         for ordinal,row in enumerate(INPUTS,947): rows[ordinal-1] = ('tree.unload.'+row[0], b'array:2:n1,n2,')
         encoded = f.encode(rows)
-        self.assertEqual(f.contract.compare_collections(encoded,encoded,SOURCE_SHA)['status'],'equivalent')
+        self.assertEqual(f.contract.compare_collections(encoded,encoded,f.SOURCE)['status'],'equivalent')
         for ordinal,row in enumerate(INPUTS,947):
             self.assertNotIn('tree.unload.'+row[0],f.contract.ELIGIBLE_LABELS)
             changed=f.encode(f.change(rows,ordinal,payload=b'array:2:n2,n1,'))
-            self.assertEqual(f.contract.compare_collections(encoded,changed,SOURCE_SHA)['reason'],'ineligible_difference')
+            self.assertEqual(f.contract.compare_collections(encoded,changed,f.SOURCE)['reason'],'ineligible_difference')
         for changed in (f.encode(rows[:946]), f.encode(rows[:-1]), encoded[:-1]):
-            self.assertEqual(f.contract.compare_collections(encoded,changed,SOURCE_SHA)['status'],'rejected')
+            self.assertEqual(f.contract.compare_collections(encoded,changed,f.SOURCE)['status'],'rejected')
 
 INPUTS = (('alias.ru', 'S.Tree.Строки.ВыгрузитьКолонку("Id")'), ('alias.en', 'S.Tree.Rows.UnloadColumn("Id")'), ('child', 'S.A.Rows.UnloadColumn("Id")'), ('leaf', 'S.A11.Rows.UnloadColumn("Id")'), ('empty', 'S.Tree.Rows.UnloadColumn("Id")', 'empty'), ('no-columns', 'S.Tree.Rows.UnloadColumn("Id")', 'no-columns'), ('selector.case', 'S.Tree.Rows.UnloadColumn("iD")'), ('selector.index-zero', 'S.Tree.Rows.UnloadColumn(0)'), ('selector.index-one', 'S.Tree.Rows.UnloadColumn(1)'), ('selector.fraction', 'S.Tree.Rows.UnloadColumn(0.5)'), ('selector.negative', 'S.Tree.Rows.UnloadColumn(-1)'), ('selector.out-of-range', 'S.Tree.Rows.UnloadColumn(4)'), ('selector.own-column', 'S.Tree.Rows.UnloadColumn(S.Tree.Columns.Get(1))'), ('selector.foreign-column', 'S.Tree.Rows.UnloadColumn(Foreign.Columns.Get(0))'), ('selector.unknown', 'S.Tree.Rows.UnloadColumn("Missing")'), ('selector.unknown-empty', 'S.A11.Rows.UnloadColumn("Missing")'), ('selector.undefined', 'S.Tree.Rows.UnloadColumn(Undefined)'), ('selector.boolean', 'S.Tree.Rows.UnloadColumn(True)'), ('missing-argument', 'S.Tree.Rows.UnloadColumn()'), ('extra-argument', 'S.Tree.Rows.UnloadColumn("Id", True)'), ('wrong-tree', 'S.Tree.UnloadColumn("Id")'), ('values.scalars', 'S.Tree.Rows.UnloadColumn("Key")', 'scalars'), ('values.nullish', 'S.Tree.Rows.UnloadColumn("Key")', 'nullish'), ('array-delete', 'S.Tree.Rows.UnloadColumn("Id")', 'base', 'array-delete'), ('source-add', 'S.Tree.Rows.UnloadColumn("Id")', 'base', 'source-add'), ('mutable.result-to-source', 'S.Tree.Rows.UnloadColumn("Key")', 'mutable', 'result-to-source'), ('mutable.source-to-result', 'S.Tree.Rows.UnloadColumn("Key")', 'mutable', 'source-to-result'))
 INPUTS += (('selector.fraction-one-half', 'S.Tree.Rows.UnloadColumn(1.5)'), ('selector.fraction-one-nine', 'S.Tree.Rows.UnloadColumn(1.9)'), ('selector.fraction-negative-half', 'S.Tree.Rows.UnloadColumn(-0.5)'))

@@ -12,7 +12,7 @@ SPEC = importlib.util.spec_from_file_location(
 contract = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(contract)
 
-SOURCE = "5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4"
+SOURCE = "0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b"
 MAP = b"3d48feae-a9c6-4c5a-a099-9eb6477630c6"
 FIXED_MAP = b"220455ea-6c85-4513-996f-bbe79ed07774"
 ARRAY = b"51e7a0d2-530b-11d4-b98a-008048da3034"
@@ -65,7 +65,7 @@ def nested(pairs):
 
 
 def records(pairs=PAIRS):
-    rows = [(f"record.{number}", b"ok") for number in range(1, 977)]
+    rows = [(f"record.{number}", b"ok") for number in range(1, 1022)]
     for ordinal, base in BASES:
         before = mapping(pairs) if ordinal != 303 else nested(pairs)
         after = mapping(tuple(reversed(pairs))) if ordinal != 303 else nested(tuple(reversed(pairs)))
@@ -117,7 +117,7 @@ class MapContractTests(unittest.TestCase):
                 self.assertEqual(result["status"], "equivalent", result)
                 expected = [] if permutation == PAIRS else list(contract.ELIGIBLE_LABELS)
                 self.assertEqual(result["accepted_labels"], expected)
-                self.assertEqual(result["byte_equal_records"], 976 - len(expected))
+                self.assertEqual(result["byte_equal_records"], 1021 - len(expected))
 
     def test_alternate_legitimate_typed_bindings_and_counts(self):
         extra_array = (scalar("L"), sequence(ARRAY, (string("a"), string("b"))))
@@ -232,7 +232,7 @@ class MapContractTests(unittest.TestCase):
         a, b = records(pairs), records(pairs[::-1])
         result = self.compare(a, b)
         self.assertEqual(result["status"], "equivalent", result)
-        self.assertEqual(result["records"], 976)
+        self.assertEqual(result["records"], 1021)
         self.assertNotIn("PRIVATE", json.dumps(result))
 
     def test_complete_payload_consumption_and_pair_arity(self):

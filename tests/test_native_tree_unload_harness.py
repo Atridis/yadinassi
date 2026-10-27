@@ -87,7 +87,7 @@ class UnloadSupplementHarnessHistoryTests(unittest.TestCase):
     def test_supplement_inverse_rejects_drift_even_with_rebased_outer_hash(self):
         inventory = json.loads((ROOT/'tests/tree_unload_supplement_source_inverse.json').read_text(encoding='utf-8'))
         for path in PATHS:
-            source = (ROOT/path).read_text(encoding='utf-8')
+            source = history.without_tree_load_measurement((ROOT/path).read_text(encoding='utf-8'), host=path.endswith('full_host.py'))
             for changed in (source+'\n',source.replace('976','977',1),source.replace('\n','\r\n')):
                 with self.subTest(path=path), self.assertRaises(AssertionError):
                     history.without_tree_unload_supplement_measurement(changed,host=path.endswith('full_host.py'))
