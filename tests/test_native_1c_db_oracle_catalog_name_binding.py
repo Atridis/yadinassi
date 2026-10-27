@@ -218,7 +218,7 @@ class CatalogNameBindingTests(unittest.TestCase):
 class CatalogNameManifestTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name);self.expected=self.root/'expected';self.actual=self.root/'actual'
+        self.root=Path(self.temp.name).resolve();self.expected=self.root/'expected';self.actual=self.root/'actual'
         import inject_metadata
         self.inject=inject_metadata
         self.xml=(f'<MetaDataObject xmlns="{inject_metadata.NS}" version="{inject_metadata.FORMAT}">'
@@ -228,6 +228,28 @@ class CatalogNameManifestTests(unittest.TestCase):
             (directory/'Catalogs/NativeOracleItems.xml').write_text(self.xml,encoding='utf-8')
 
     def build(self):return policy.build_identity_manifest(self.expected,self.actual,nonce=NONCE,version=1)
+
+    def test_fixture_resolves_temp_parent_but_manifest_rejects_alias(self):
+        # Model a system temporary directory reached through a symlink, as on
+        # macOS. Resolve only the test-owned root; do not weaken reader policy.
+        real=self.root/'real';real.mkdir()
+        alias=self.root/'alias'
+        try:
+            alias.symlink_to(real,target_is_directory=True)
+        except (OSError,NotImplementedError):
+            self.skipTest('directory symlink creation unavailable')
+        temporary=mock.Mock();temporary.name=str(alias/'fixture')
+        case=CatalogNameManifestTests('test_exact_independent_redump_manifest_and_whole_xml_binding')
+        self.addCleanup(case.doCleanups)
+        with mock.patch.object(tempfile,'TemporaryDirectory',return_value=temporary):
+            case.setUp()
+        self.assertEqual(case.root,real/'fixture')
+        value=case.build()
+        self.assertEqual((value.key,value.name),(A,'NativeOracleItems'))
+        for expected,actual in ((alias/'fixture/expected',case.actual),
+                                (case.expected,alias/'fixture/actual')):
+            with self.assertRaises(policy.ObservationFailure):
+                policy.build_identity_manifest(expected,actual,nonce=NONCE,version=1)
 
     def test_exact_independent_redump_manifest_and_whole_xml_binding(self):
         value=self.build();self.assertEqual((value.key,value.name),(A,'NativeOracleItems'))
