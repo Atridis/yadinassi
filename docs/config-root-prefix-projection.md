@@ -1,10 +1,12 @@
 # Experimental partial CONFIG/root reference projection
 
-This is a standalone lexical utility, not a new native observation lane or a
-complete CONFIG/root parser. It has synthetic coverage only. No production
-reader, workflow, reviewed-runner branch, source-staging policy, report envelope,
-or acceptance decision calls it. The closed #122/#124 experiments remain closed;
-their failed complete-document hypothesis is not reclassified as successful.
+This is a standalone lexical utility, not a complete CONFIG/root parser. It has
+synthetic coverage only. The separately selected experimental
+[partial-reference observation lane](config-root-reference-projection-observation.md)
+uses it on privately decoded content; ordinary/default readers and older lanes
+remain unchanged. This use does not validate the complete document or establish
+native acceptance. The closed #122/#124 experiments remain closed; their failed
+complete-document hypothesis is not reclassified as successful.
 
 ## Why a separate projection
 
@@ -84,13 +86,14 @@ work/output weights before parsing the identical immutable bytes/profile/limits,
 without budget reset or refund. The supplied input has separate caller ownership.
 All errors have a finite code and never include source values.
 
-The prospective caller is a separately reviewed experimental CONFIG consumer
-that already obtained privately decoded bytes through one same-reader resource
-graph. This increment deliberately does **not** connect that caller. Target
-lookup, same-table uniqueness, complete target transport, native source binding,
-closed diagnostics, and any actual file-database observation require a subsequent
-explicit contract and genuine native evidence. No reference or suffix is exported
-by the current oracle because it does not call this utility.
+The separately selected experimental CONFIG consumer obtains privately decoded
+bytes through one same-reader resource graph. Its
+[explicit observation contract](config-root-reference-projection-observation.md)
+adds same-table candidate lookup, complete target transport and closed diagnostics,
+without exporting a reference or suffix. Synthetic integration does not establish
+actual file-database compatibility: that requires a dedicated exact-source native
+observation. No ordinary/default reader silently uses this utility as an
+acceptance fallback.
 
 ## Rejected alternatives
 
