@@ -9,9 +9,10 @@ prefix and that name resolves to one completely decoded positive entry in the
 
 It does not validate the complete root document, unknown suffix, target content
 semantics, metadata identity, applied configuration, or native byte equivalence.
-All current evidence is synthetic. The lane has not been executed against a
-native file database; `native_acceptance` remains `pending`. Earlier closed
-full-root and failure-diagnostic experiments are not reopened or reclassified.
+The bounded partial-reference relationship was observed in the dedicated native
+run recorded below. This is not full file-format or configuration acceptance.
+Earlier closed full-root and failure-diagnostic experiments are not reopened or
+reclassified.
 
 ## Source evidence and limits of the hypothesis
 
@@ -111,7 +112,7 @@ The workflow changes only its existing reviewed command's selector from
 Admission, credentials, image, network isolation, limits and cleanup are
 unchanged. Publishing this change to an ordinary PR branch does not execute the
 dedicated workflow; its trigger remains the separately approved normal advance
-of the exact reviewed-runner branch. No dedicated run has yet been performed.
+of the exact reviewed-runner branch. The single approved run is recorded below.
 
 - Lane: `owned_config_root_reference_projection_v1`
 - Report / capture / invocation schemas: 23 / 24 / 16 (not reused historical IDs)
@@ -143,10 +144,26 @@ empty target, exact and one-less resource limits, exact projector charge orderin
 poisoned failure contexts, cold flat imports, physical postimage binding,
 finite report mutations and all four cleanup gates.
 
-A future native observation must bind the actual reviewed commit/tree, all 24
-source hashes, recipe, approved image and native identity, executed command/jobs,
-sole hardened report archive, production final validator, finite counters and
-cleanup. Only then may this narrow **partial-reference observation** be described
-as witnessed on that exact file database. It still will not validate the unknown
-root suffix, target metadata, applied configuration or native byte equivalence.
-No failed hypothesis is grounds to widen grammar or budgets automatically.
+### Recorded native partial-reference observation
+
+[Dedicated run 40494629654](https://github.com/Atridis/yadinassi/actions/runs/40494629654),
+attempt 1, executed reviewed head
+`bd5909154f8e41eae2884fbd5dc1dd18d33deb92`, tree
+`da61cc8ac1492ff8fd2c8cf60aa5347fa1617aea`, against the owned generated
+1C 8.3.27.1508 file database. All 24 staged source hashes and the recipe above
+were bound to that exact revision. The cold production final validator and a
+separately frozen readiness checker accepted the bounded report; 114 negative
+controls rejected altered bindings, omitted evidence or unsupported claims.
+
+Finite observed counts: one projected root candidate, one resolved same-table
+candidate target and one positive decoded target; all 14 selected entries
+completed. Stored bytes read: 17975; decoded bytes: 90300; inflate calls: 14.
+All 13 lifecycle stages and all four cleanup gates passed. Only the bounded
+status/count report was exported, not GUIDs, names or root/target content.
+
+This establishes only the **partial-prefix candidate-reference relationship**
+on that exact generated file database. It does not validate the complete root,
+unknown suffix, target metadata identity, applied configuration or native byte
+equivalence. The later documentation-only update preserves every staged source,
+recipe, workflow and runtime input byte-for-byte; it does not claim another
+native run. No failed hypothesis is grounds to widen grammar or budgets.
