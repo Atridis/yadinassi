@@ -1264,3 +1264,247 @@ def observe_config_content_decode(read_at, file_size, *, profile,
         selected_count, reference_excluded, name_excluded, part_zero, part_nonzero,
         reader.usage, completed, total_bytes, total_hops, max_hops, multi, zero_used,
         plain_count, deflate_count, positive_count, plain_bytes, inflated_bytes, decoder.total_calls)
+
+
+# Explicit partial-reference lane. The previous observer remains byte-for-byte
+# unchanged: duplicated framing scan avoids widening historical pinned contracts.
+@dataclass(frozen=True)
+class ConfigRootReferenceProjectionProfile(ConfigContentDecodeProfile):
+    identifier: str = field(default='config_root_reference_projection_8380_8192_v1', init=False)
+
+    def recipe(self):
+        result = super().recipe()
+        result.update({
+            'phases': 'all_selected_guards_root_then_target_then_remaining_once_v1',
+            'reference_projection': 'config_root_bom_uint_bare_guid_prefix_v1',
+            'root_selection': 'unique_ascii_folded_literal_root_same_CONFIG_v1',
+            'target_selection': 'unique_ascii_folded_projected_guid_same_CONFIG_v1',
+            'target_content': 'complete_positive_decoded_content_local_policy_v1',
+            'root_document_validation': 'not_performed',
+            'root_suffix_validation': 'not_performed',
+            'projection_limits': (4194304, 1024, 2048),
+            'projection_reservation': 'same_shared_budget_before_parse_no_refund_v1',
+            'private_reference_weights': (256, 4, 256),
+            'failure_policy': 'poison_chain_and_decoder_no_partial_result_v1',
+        })
+        return result
+
+
+@dataclass(frozen=True)
+class ConfigRootReferenceProjectionObservation(ConfigContentDecodeObservation):
+    projected_root_count: int
+    resolved_target_count: int
+    positive_target_count: int
+    capability: str = field(default='experimental_config_root_reference_projection', init=False)
+    reference_validation: str = field(default='partial_prefix_candidate_same_table', init=False)
+    root_document_validation: str = field(default='not_performed', init=False)
+    root_suffix_validation: str = field(default='not_performed', init=False)
+
+
+def observe_config_root_reference_projection(read_at, file_size, *, profile,
+                               limits=None, chain_limits=None, content_limits=None, catalog_limits=None):
+    """Resolve one partial root reference on one private CONFIG resource graph.
+
+    Every selected entry is validated and decoded exactly once before return.
+    No complete root grammar, suffix validity, metadata identity or applied state
+    is established. All private names/content stay inside this invocation.
+    """
+    if type(profile) is not ConfigRootReferenceProjectionProfile:
+        raise ValueError('profile must be ConfigRootReferenceProjectionProfile')
+    if limits is not None and type(limits) is not ConfigFramingLimits:
+        raise ValueError('limits must be ConfigFramingLimits')
+    if chain_limits is not None and type(chain_limits) is not ConfigBlobChainLimits:
+        raise ValueError('chain_limits must be ConfigBlobChainLimits')
+    if content_limits is not None and type(content_limits) is not ConfigContentDecodeLimits:
+        raise ValueError('content_limits must be ConfigContentDecodeLimits')
+    if catalog_limits is not None and type(catalog_limits) is not CatalogLimits:
+        raise ValueError('catalog_limits must be CatalogLimits')
+    defaults = CatalogLimits()
+    catalog_limits = catalog_limits if catalog_limits is not None else defaults
+    if any(getattr(catalog_limits, item.name) > getattr(defaults, item.name)
+           for item in _dataclass_fields(CatalogLimits)):
+        raise ValueError('CONFIG chain shared limits may only be lowered')
+    if type(file_size) is not int or file_size < 0:
+        raise ValueError('file_size must be a nonnegative exact integer')
+    if file_size > 67108864:
+        raise ResourceLimit('config_chain_image_bytes')
+    limits = limits if limits is not None else ConfigFramingLimits()
+    chain_limits = chain_limits if chain_limits is not None else ConfigBlobChainLimits()
+    content_limits = content_limits if content_limits is not None else ConfigContentDecodeLimits()
+    if profile.candidate_stride > limits.max_record_bytes:
+        raise ResourceLimit('config_record_bytes')
+    reader = CatalogReader(read_at, file_size, limits=catalog_limits)
+    catalog = reader.read_catalog()
+    selected = None
+    for table in catalog.tables:
+        if _ascii_config(table.name):
+            if selected is not None:
+                raise UnsupportedLayout('config_table_ambiguous')
+            selected = table
+    if selected is None:
+        raise UnsupportedLayout('config_table_missing')
+    if (type(selected.format_item) is not int or selected.format_item != profile.format_item
+            or selected.recordlock != profile.recordlock
+            or len(selected.fields) != len(profile.declarations)
+            or any(item.raw != wanted for item, wanted in zip(selected.fields, profile.declarations))):
+        raise UnsupportedLayout('config_profile_mismatch')
+    data = reader._open_table_data(selected)
+    blob = reader._open_table_blob(selected)
+    if data.info.logical_length % profile.candidate_stride:
+        raise InvalidStructure('config_record_length')
+    slots = data.info.logical_length // profile.candidate_stride
+    if not slots:
+        raise UnsupportedLayout('config_empty_data')
+    if slots > limits.max_slots:
+        raise ResourceLimit('config_slots')
+    if blob.info.logical_length % 256:
+        raise InvalidStructure('config_blob_alignment')
+    blocks = blob.info.logical_length // 256
+    if blocks < 2:
+        raise UnsupportedLayout('config_blob_capacity')
+    capacity = min(2**32 - 1, 250 * (blocks - 1))
+    zero, one, other, empty, maximum = 0, 0, 0, 0, 0
+    selected_count, reference_excluded, name_excluded, part_zero, part_nonzero = 0, 0, 0, 0, 0
+    reader._budget.charge('output_bytes', 512)
+    references, keys = {}, set()
+    for slot in range(slots):
+        base = slot * profile.candidate_stride
+        marker = _scalar(data, base, 1)
+        if slot == 0:
+            if marker != b'\x01':
+                raise UnsupportedLayout('config_reserved_slot')
+            continue
+        if marker != b'\x00':
+            if marker == b'\x01':
+                one += 1
+            else:
+                other += 1
+            continue
+        offset = base + profile.filename_offset
+        reader._budget.charge('output_bytes', 128)
+        units = int.from_bytes(_scalar(data, offset, 2), 'little')
+        if units > 128:
+            raise InvalidStructure('config_filename_length')
+        reader._budget.charge('output_bytes', 128 + 4 * units)
+        raw = _scalar(data, offset + 2, 2 * units)
+        try:
+            name = raw.decode('utf-16-le', errors='strict')
+        except UnicodeDecodeError:
+            raise UnsupportedLayout('config_filename_encoding') from None
+        del raw
+        zero += 1
+        empty += units == 0
+        maximum = max(maximum, units)
+        reference = _scalar(data, base + profile.binarydata_offset, profile.binarydata_width)
+        reader._budget.charge('output_bytes', 128)
+        start = int.from_bytes(reference[:4], 'little')
+        length = int.from_bytes(reference[4:], 'little')
+        if start == 0 or length == 0:
+            reference_excluded += 1
+            del name
+            continue
+        if units == 0:
+            name_excluded += 1
+            del name
+            continue
+        if start >= blocks or length > capacity:
+            raise InvalidStructure('config_reference_bounds')
+        reader._budget.charge('output_bytes', 128)
+        reader._budget.charge('bytes_processed', 10)
+        part = _config_partno(_scalar(data, base + profile.partno_offset, profile.partno_width))
+        if part != 0:
+            raise UnsupportedLayout('config_content_nonzero_part')
+        content_class = _config_content_name(name, units, reader._budget, keys)
+        # Reserve the additional folded key and dictionary association before
+        # allocation; the older classification reservation is not reused/refunded.
+        reader._budget.charge('output_bytes', 256 + 4 * units)
+        reader._budget.charge('bytes_processed', units)
+        key = ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in name)
+        del name
+        references[key] = (start, length, content_class)
+        selected_count += 1
+        part_zero += part == 0
+        part_nonzero += part != 0
+    if not part_zero:
+        raise UnsupportedLayout('config_reference_no_part_zero_witness')
+    del keys
+    chains = _ConfigBlobChains(blob, chain_limits)
+    decoder = _ConfigContentDecoder(chains, content_limits)
+    plain_count = deflate_count = positive_count = plain_bytes = inflated_bytes = 0
+    completed = total_bytes = total_hops = max_hops = multi = zero_used = completed_part_zero = 0
+    def decode_entry(reference):
+        nonlocal plain_count, deflate_count, positive_count, plain_bytes, inflated_bytes
+        nonlocal completed, total_bytes, total_hops, max_hops, multi, zero_used, completed_part_zero
+        start, length, content_class = reference
+        payload, hops, zeros = chains.read(start, length)
+        content = decoder.decode(payload, content_class)
+        # Count only completed chain/content pairs; retain no bytes between them.
+        if content_class == 'plain':
+            plain_count += 1
+            plain_bytes += len(content)
+        else:
+            deflate_count += 1
+            positive_count += bool(content)
+            inflated_bytes += len(content)
+        total_bytes += len(payload)
+        del payload
+        completed += 1
+        total_hops += hops
+        max_hops = max(max_hops, hops)
+        multi += hops > 1
+        zero_used += zeros
+        completed_part_zero += 1
+        return content
+
+    try:
+        if 'root' not in references:
+            raise UnsupportedLayout('config_projection_root_missing')
+        root_content = decode_entry(references['root'])
+        # Flat staging imports only the reviewed stdlib projector; no interpreter.
+        import config_root_projection as projector
+        reader._budget.charge('output_bytes', 256)
+        p_profile = projector.RootProjectionProfile(projector.PROFILE_IDENTIFIER)
+        p_limits = projector.RootProjectionLimits()
+        try:
+            reservation = projector.reserve_root_projection(root_content, profile=p_profile, limits=p_limits)
+            reader._budget.charge('output_bytes', reservation.output_bytes)
+            reader._budget.charge('bytes_processed', reservation.bytes_processed)
+            projected = projector.project_root_reference_prefix(root_content, profile=p_profile, limits=p_limits)
+        except projector.RootProjectionError as error:
+            if error.code in ('input_bytes', 'prefix_bytes', 'output_bytes'):
+                raise ResourceLimit('config_projection_' + error.code) from None
+            raise InvalidStructure('config_projection_prefix') from None
+        target_key = projected.reference
+        del root_content, projected, reservation, p_profile, p_limits
+        if target_key not in references:
+            raise UnsupportedLayout('config_projection_target_missing')
+        target_content = decode_entry(references[target_key])
+        if not target_content:
+            raise UnsupportedLayout('config_projection_target_empty')
+        del target_content
+        for key, reference in references.items():
+            if key != 'root' and key != target_key:
+                content = decode_entry(reference)
+                del content
+        del target_key
+    except BaseException:
+        # This context cannot be reused after projection, selection or content
+        # failure. Charges and ownership remain cumulative; no partial result.
+        decoder.failed = chains.failed = True
+        raise
+    try:
+        if not completed_part_zero:
+            raise UnsupportedLayout('config_chain_no_part_zero_witness')
+        if not positive_count:
+            raise UnsupportedLayout('config_content_no_positive_witness')
+        reader._budget.charge('output_bytes', 4096)
+        return ConfigRootReferenceProjectionObservation(profile.identifier, profile.recipe_sha256,
+            data.info.logical_length, blob.info.logical_length, slots, 'one',
+            zero, one, other, zero, empty, zero - empty, maximum,
+            selected_count, reference_excluded, name_excluded, part_zero, part_nonzero,
+            reader.usage, completed, total_bytes, total_hops, max_hops, multi, zero_used,
+            plain_count, deflate_count, positive_count, plain_bytes, inflated_bytes, decoder.total_calls,
+            1, 1, 1)
+    except BaseException:
+        decoder.failed = chains.failed = True
+        raise
