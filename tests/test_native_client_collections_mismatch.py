@@ -63,7 +63,7 @@ class CollectionsMismatchHostTests(unittest.TestCase):
     def test_counts_ordinals_sizes_and_digests_reject_bad_types_and_bounds(self):
         edits = []
         for key in ("count", "first"):
-            for value in (True, False, None, 0, -1, 945, 1.0, "1"):
+            for value in (True, False, None, 0, -1, 947, 1.0, "1"):
                 edits.append((key, value))
         for key in ("client_size", "server_size"):
             for value in (True, False, None, 0, -1, full.MAX_FILE + 1, 1.0, "1"):
@@ -72,19 +72,19 @@ class CollectionsMismatchHostTests(unittest.TestCase):
             for value in (None, True, 1, "A" * 64, "a" * 63, "PRIVATE"):
                 edits.append((key, value))
         for value in (None, True, (), "PRIVATE", [], [3], [3, 7, 9], [7, 3], [3, 3],
-                      [3, 945], [0, 7], [True, 7], [3, 7.0], [3, "7"], [4, 7]):
+                      [3, 947], [0, 7], [True, 7], [3, 7.0], [3, "7"], [4, 7]):
             edits.append(("ordinals", value))
         for key, value in edits:
             metadata = dict(self.metadata(), **{key: value})
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 self.validate(dict(self.record, mismatch=metadata))
-        for edits in ({"client_sha256": "2" * 64}, {"count": 943},
-                      {"count": 17, "ordinals": list(range(3, 18)) + [944]}):
+        for edits in ({"client_sha256": "2" * 64}, {"count": 945},
+                      {"count": 17, "ordinals": list(range(3, 18)) + [946]}):
             with self.subTest(edits=edits), self.assertRaises(ValueError):
                 self.validate(dict(self.record, mismatch=dict(self.metadata(), **edits)))
 
     def test_exact_first_sixteen_ordinal_prefix_is_bounded(self):
-        for count, first in ((1, 944), (16, 929), (17, 928), (944, 1)):
+        for count, first in ((1, 946), (16, 931), (17, 930), (946, 1)):
             metadata = dict(self.metadata(), count=count, first=first,
                             ordinals=list(range(first, first + min(count, 16))))
             self.validate(dict(self.record, mismatch=metadata))
@@ -104,7 +104,7 @@ class CollectionsMismatchHostTests(unittest.TestCase):
             record["process_diagnostics"][key] = value
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 self.validate(record)
-        for key, value in (("status", "failed"), ("message_count", 943),
+        for key, value in (("status", "failed"), ("message_count", 945),
                            ("message_count", True), ("source_sha256", "a" * 64)):
             server = dict(self.server, **{key: value})
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
@@ -150,7 +150,7 @@ class CollectionsMismatchHostTests(unittest.TestCase):
         # present, not dropped to make room for the finite diagnostic.
         for case in stage["cases"]:
             case.update(output_size=209715, message_count=32768)
-        for name, count in (("dates", 185), ("values", 534), ("collections", 944)):
+        for name, count in (("dates", 185), ("values", 534), ("collections", 946)):
             case = stage["cases"][full.SCENARIOS.index(name)]
             case["message_count"] = count
             if name != "collections":

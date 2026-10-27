@@ -4355,4 +4355,6 @@ VTResult = "error";
 Показать("tree.find.empty-tree", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", True)", "empty"));
 Показать("tree.find.no-columns", TreeFindProbe("S.Tree.Rows.Find(""hit"")", "no-columns"));
 Показать("tree.find.empty-token", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key,,Group"", True)"));
+Показать("tree.find.flag.number-descendants", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", 1)", "descendants"));
+Показать("tree.find.flag.string-descendants", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", ""True"")", "descendants"));
 // End bounded ValueTree Find observations.

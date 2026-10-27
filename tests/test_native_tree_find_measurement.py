@@ -18,10 +18,10 @@ import test_native_1c_full_stage as fixtures
 from test_native_tree_findrows_measurement import fragments as old_fragments, PRESENT
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SHA = 'd94101cf391fa84668b7f94bb9295655d62d3ff6baa084de17a48b62966a0901'
+SOURCE_SHA = '9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3'
 BASE_SHA = '5468d16850a9774251d4ef80ae5e938afdfabef69fe496cb3a6cb579d0564782'
 HELPER_SHA = 'a43a652d9327fe026a3b61f7063c35eac014ee0fe385f37605396198354ba679'
-CALLS_SHA = 'f289a6a06ed23a2bf1af90800255473491a73e433bf7f21a10a98180d60457be'
+CALLS_SHA = '9e1e3a3659c34c05658274e7019d502404f6fee34a4e7c84436a9d12574a4bb7'
 HELPER_START = '// Begin bounded ValueTree Find helpers (measurement only; no native answers).\n'
 HELPER_END = '// End bounded ValueTree Find helpers.\n\n'
 CALLS_START = '// Begin bounded ValueTree Find observations (measurement only; no native answers).\n'
@@ -72,7 +72,7 @@ class FindInstrumentationTests(unittest.TestCase):
             fields = tuple(x.replace('""', '"') for x in re.findall(r'"((?:[^"]|"")*)"', line))
             parsed.append((fields[0].removeprefix('tree.find.'), *fields[1:]))
         self.assertEqual(tuple(parsed), INPUTS)
-        self.assertEqual(len({row[0] for row in INPUTS}), 42)
+        self.assertEqual(len({row[0] for row in INPUTS}), 44)
         self.assertEqual(helper.count('Result = Вычислить(Expression);'), 1)
         for forbidden in ('ОписаниеОшибки', 'Выполнить(', 'ЗначениеВСтрокуВнутр', '_all_rows', 'Записать', 'Прочитать', 'Пока '):
             self.assertNotIn(forbidden, helper + calls)
@@ -84,8 +84,8 @@ class FindInstrumentationTests(unittest.TestCase):
             return tree.rows.items[0].rows.items[0] if tree.rows.items else None
         with self.witness(capture):
             self.vm.execute(calls)
-        self.assertEqual(len(seen), 42)
-        self.assertEqual(len({id(row[0]) for row in seen}), 42)
+        self.assertEqual(len(seen), 44)
+        self.assertEqual(len({id(row[0]) for row in seen}), 44)
         self.assertEqual([row[2] for row in seen[:2]], ['Найти', 'Find'])
         self.assertEqual([row[3] for row in seen[:4]], [('hit','Key',True), ('hit','Key',True), ('hit','Key',False), ('hit','Key')])
         self.assertEqual([row[1].parent.get_member('Id') for row in seen[4:8]], [D(1),D(1),D(1),D(6)])
@@ -95,7 +95,7 @@ class FindInstrumentationTests(unittest.TestCase):
         self.assertEqual(seen[34][3], ('hit','Key',None))
         self.assertIs(type(seen[37][1]), BSLValueTree)
         self.assertIs(type(seen[38][1]), BSLValueTreeRow)
-        self.assertEqual(len(self.output),42)
+        self.assertEqual(len(self.output),44)
         self.assertTrue(all(x.isascii() and len(x)<2048 for x in self.output))
         self.assertFalse(any('setup-error' in x or 'observer-error' in x for x in self.output))
 
@@ -163,7 +163,7 @@ class FindSourceContractTests(unittest.TestCase):
     def test_exact_new_and_old_source_and_live_module(self):
         source=raw_source(); helper,calls=fragments()
         self.assertEqual(hashlib.sha256(source).hexdigest(),SOURCE_SHA)
-        self.assertEqual(len(source.splitlines()),4358)
+        self.assertEqual(len(source.splitlines()),4360)
         self.assertEqual(hashlib.sha256(helper.encode()).hexdigest(),HELPER_SHA)
         self.assertEqual(hashlib.sha256(calls.encode()).hexdigest(),CALLS_SHA)
         old=without_tree_find_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
@@ -172,7 +172,7 @@ class FindSourceContractTests(unittest.TestCase):
         template=(ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
         if os.name=='nt':template=template.replace(b'\r\n',b'\n')
         module=fixtures.suite.client_collections_module(source,template)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,944)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,946)
         self.assertIn(calls.encode(),module)
         for changed in (old,source+b'\n',source[3:],source.replace(b'\n',b'\r\n')):
             with self.assertRaises(fixtures.suite.FullError):fixtures.suite.client_collections_module(changed,template)
@@ -196,6 +196,6 @@ class FindSourceContractTests(unittest.TestCase):
             self.assertEqual(f.contract.compare_collections(encoded,changed,SOURCE_SHA)['status'],'rejected')
 
 
-INPUTS = (('alias.ru', 'S.Tree.Строки.Найти("hit", "Key", Истина)'), ('alias.en', 'S.Tree.Rows.Find("hit", "Key", True)'), ('root.false', 'S.Tree.Rows.Find("hit", "Key", False)'), ('root.omitted', 'S.Tree.Rows.Find("hit", "Key")'), ('child.true', 'S.A.Rows.Find("hit", "Key", True)'), ('child.false', 'S.A.Rows.Find("hit", "Key", False)'), ('child.omitted', 'S.A.Rows.Find("hit", "Key")'), ('leaf', 'S.A11.Rows.Find("hit", "Key", True)'), ('no-match', 'S.Tree.Rows.Find("absent", "Key", True)'), ('descendants.true', 'S.Tree.Rows.Find("hit", "Key", True)', 'descendants'), ('descendants.false', 'S.Tree.Rows.Find("hit", "Key", False)', 'descendants'), ('descendants.omitted', 'S.Tree.Rows.Find("hit", "Key")', 'descendants'), ('child-descendants', 'S.A.Rows.Find("hit", "Key", True)', 'descendants'), ('columns.omitted', 'S.Tree.Rows.Find("x")'), ('columns.empty', 'S.Tree.Rows.Find("x", "", True)'), ('columns.undefined', 'S.Tree.Rows.Find("x", Undefined, True)'), ('columns.case', 'S.Tree.Rows.Find("hit", "kEy", True)'), ('columns.order', 'S.Tree.Rows.Find("hit", "Key,Group", True)', 'cross-columns'), ('columns.reversed', 'S.Tree.Rows.Find("hit", "Group,Key", True)', 'cross-columns'), ('columns.spaces', 'S.Tree.Rows.Find("hit", " Key , Group ", True)', 'cross-columns'), ('columns.duplicate', 'S.Tree.Rows.Find("hit", "Key,Key", True)'), ('columns.unknown', 'S.Tree.Rows.Find("hit", "Missing", True)'), ('columns.unknown-empty', 'S.A11.Rows.Find("hit", "Missing", True)'), ('columns.known-unknown', 'S.Tree.Rows.Find("hit", "Key,Missing", True)'), ('columns.number', 'S.Tree.Rows.Find("hit", 1, True)'), ('value.number', 'S.Tree.Rows.Find(1, "Key", True)', 'scalars'), ('value.boolean', 'S.Tree.Rows.Find(True, "Key", True)', 'scalars'), ('value.string-case', 'S.Tree.Rows.Find("X", "Key", True)', 'strings'), ('value.string-space', 'S.Tree.Rows.Find("x ", "Key", True)', 'strings'), ('value.undefined', 'S.Tree.Rows.Find(Undefined, "Key", True)', 'nullish'), ('value.null', 'S.Tree.Rows.Find(Null, "Key", True)', 'nullish'), ('result-to-source', 'S.Tree.Rows.Find(4, "Id", True)', 'base', 'result-to-source'), ('source-to-result', 'S.Tree.Rows.Find(4, "Id", True)', 'base', 'source-to-result'), ('missing-value', 'S.Tree.Rows.Find()'), ('flag.undefined', 'S.Tree.Rows.Find("hit", "Key", Undefined)'), ('flag.number', 'S.Tree.Rows.Find("hit", "Key", 1)'), ('flag.string', 'S.Tree.Rows.Find("hit", "Key", "True")'), ('wrong-tree', 'S.Tree.Find("hit", "Key", True)'), ('wrong-row', 'S.A.Find("hit", "Key", True)'), ('empty-tree', 'S.Tree.Rows.Find("hit", "Key", True)', 'empty'), ('no-columns', 'S.Tree.Rows.Find("hit")', 'no-columns'), ('empty-token', 'S.Tree.Rows.Find("hit", "Key,,Group", True)'))
+INPUTS = (('alias.ru', 'S.Tree.Строки.Найти("hit", "Key", Истина)'), ('alias.en', 'S.Tree.Rows.Find("hit", "Key", True)'), ('root.false', 'S.Tree.Rows.Find("hit", "Key", False)'), ('root.omitted', 'S.Tree.Rows.Find("hit", "Key")'), ('child.true', 'S.A.Rows.Find("hit", "Key", True)'), ('child.false', 'S.A.Rows.Find("hit", "Key", False)'), ('child.omitted', 'S.A.Rows.Find("hit", "Key")'), ('leaf', 'S.A11.Rows.Find("hit", "Key", True)'), ('no-match', 'S.Tree.Rows.Find("absent", "Key", True)'), ('descendants.true', 'S.Tree.Rows.Find("hit", "Key", True)', 'descendants'), ('descendants.false', 'S.Tree.Rows.Find("hit", "Key", False)', 'descendants'), ('descendants.omitted', 'S.Tree.Rows.Find("hit", "Key")', 'descendants'), ('child-descendants', 'S.A.Rows.Find("hit", "Key", True)', 'descendants'), ('columns.omitted', 'S.Tree.Rows.Find("x")'), ('columns.empty', 'S.Tree.Rows.Find("x", "", True)'), ('columns.undefined', 'S.Tree.Rows.Find("x", Undefined, True)'), ('columns.case', 'S.Tree.Rows.Find("hit", "kEy", True)'), ('columns.order', 'S.Tree.Rows.Find("hit", "Key,Group", True)', 'cross-columns'), ('columns.reversed', 'S.Tree.Rows.Find("hit", "Group,Key", True)', 'cross-columns'), ('columns.spaces', 'S.Tree.Rows.Find("hit", " Key , Group ", True)', 'cross-columns'), ('columns.duplicate', 'S.Tree.Rows.Find("hit", "Key,Key", True)'), ('columns.unknown', 'S.Tree.Rows.Find("hit", "Missing", True)'), ('columns.unknown-empty', 'S.A11.Rows.Find("hit", "Missing", True)'), ('columns.known-unknown', 'S.Tree.Rows.Find("hit", "Key,Missing", True)'), ('columns.number', 'S.Tree.Rows.Find("hit", 1, True)'), ('value.number', 'S.Tree.Rows.Find(1, "Key", True)', 'scalars'), ('value.boolean', 'S.Tree.Rows.Find(True, "Key", True)', 'scalars'), ('value.string-case', 'S.Tree.Rows.Find("X", "Key", True)', 'strings'), ('value.string-space', 'S.Tree.Rows.Find("x ", "Key", True)', 'strings'), ('value.undefined', 'S.Tree.Rows.Find(Undefined, "Key", True)', 'nullish'), ('value.null', 'S.Tree.Rows.Find(Null, "Key", True)', 'nullish'), ('result-to-source', 'S.Tree.Rows.Find(4, "Id", True)', 'base', 'result-to-source'), ('source-to-result', 'S.Tree.Rows.Find(4, "Id", True)', 'base', 'source-to-result'), ('missing-value', 'S.Tree.Rows.Find()'), ('flag.undefined', 'S.Tree.Rows.Find("hit", "Key", Undefined)'), ('flag.number', 'S.Tree.Rows.Find("hit", "Key", 1)'), ('flag.string', 'S.Tree.Rows.Find("hit", "Key", "True")'), ('wrong-tree', 'S.Tree.Find("hit", "Key", True)'), ('wrong-row', 'S.A.Find("hit", "Key", True)'), ('empty-tree', 'S.Tree.Rows.Find("hit", "Key", True)', 'empty'), ('no-columns', 'S.Tree.Rows.Find("hit")', 'no-columns'), ('empty-token', 'S.Tree.Rows.Find("hit", "Key,,Group", True)'), ('flag.number-descendants', 'S.Tree.Rows.Find("hit", "Key", 1)', 'descendants'), ('flag.string-descendants', 'S.Tree.Rows.Find("hit", "Key", "True")', 'descendants'))
 
 if __name__ == '__main__': unittest.main()

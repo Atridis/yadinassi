@@ -2001,9 +2001,9 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_COLLECTIONS_SOURCE_SHA256 = 'd94101cf391fa84668b7f94bb9295655d62d3ff6baa084de17a48b62966a0901'
+CLIENT_COLLECTIONS_SOURCE_SHA256 = '9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_COLLECTIONS_MESSAGE_COUNT = 944
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 946
 
 
 def empty_collections_report() -> dict:
@@ -2355,7 +2355,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
     capture = 'КоллекцииКлиентЗахват'
     reserved = (capture, 'КоллекцииКлиентСообщения',
                 'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
-    if (len(lines) != 4358
+    if (len(lines) != 4360
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())
@@ -2384,7 +2384,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         ('// Begin bounded ValueTree Find helpers (measurement only; no native answers).\n', '// End bounded ValueTree Find helpers.\n\n',
          'a43a652d9327fe026a3b61f7063c35eac014ee0fe385f37605396198354ba679'),
         ('// Begin bounded ValueTree Find observations (measurement only; no native answers).\n', '// End bounded ValueTree Find observations.\n',
-         'f289a6a06ed23a2bf1af90800255473491a73e433bf7f21a10a98180d60457be'),
+         '9e1e3a3659c34c05658274e7019d502404f6fee34a4e7c84436a9d12574a4bb7'),
         ('// Begin bounded ValueTree FindRows helpers (measurement only; no native answers).\n', '// End bounded ValueTree FindRows helpers.\n\n',
          '6bcf3286bb2394fc3e8dd46701a3e8eacb611bc0d825be63989e83a47dd8c74d'),
         ('// Begin bounded ValueTree FindRows observations (measurement only; no native answers).\n', '// End bounded ValueTree FindRows observations.\n',

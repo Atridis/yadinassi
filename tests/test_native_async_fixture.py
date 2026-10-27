@@ -290,7 +290,7 @@ def without_request_site_diagnostic(template):
 
 
 def without_tree_find_measurement(source, *, host=False):
-    """Exact test-only collections944 harness -> 902 inverse, never admission."""
+    """Exact test-only collections946 harness -> 902 inverse, never admission."""
     inventory = json.loads((REPOSITORY / 'tests/tree_find_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]

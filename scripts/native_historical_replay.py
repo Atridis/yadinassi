@@ -47,9 +47,9 @@ TREE_FIND_CALLS_END = '// End bounded ValueTree Find observations.\n'
 
 
 def without_tree_find_probes(text):
-    """Exact source-only collections944 -> 902 inverse; never edit native output."""
+    """Exact source-only collections946 -> 902 inverse; never edit native output."""
     raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
-    if hashlib.sha256(raw).hexdigest() != 'd94101cf391fa84668b7f94bb9295655d62d3ff6baa084de17a48b62966a0901':
+    if hashlib.sha256(raw).hexdigest() != '9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3':
         raise ValueError('tree Find source binding changed')
     if not text.endswith(TREE_FIND_CALLS_END):
         raise ValueError('tree Find tail changed')

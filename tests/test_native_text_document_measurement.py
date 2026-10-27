@@ -136,7 +136,7 @@ class TextDocumentSourceContracts(unittest.TestCase):
         self.assertEqual(hashlib.sha256(calls.encode()).hexdigest(), CALLS_SHA)
         self.assertEqual(len(raw.splitlines()), 1225)
         self.assertEqual(f.suite.CLIENT_VALUES_MESSAGE_COUNT, 534)
-        self.assertEqual(f.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 944)
+        self.assertEqual(f.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 946)
         previous = without_text_document_probes(raw.decode())
         self.assertEqual(hashlib.sha256(previous.encode()).hexdigest(),
                          '0030822843abe4e84d275fefcebc7a534d4e53fe43e671007a0848c7a28ee13c')
