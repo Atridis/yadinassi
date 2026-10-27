@@ -103,6 +103,9 @@ checks can establish supported behavior. The original 27 were authenticated from
 Root/child calls return only local rows; arrays have independent membership and
 the one-field Structure cell is shared in both mutation directions. The exact
 0.5 selector chose column zero, but this alone does not establish a general
-numeric conversion rule. The three supplemental cases have not yet been
-measured. Neither this failed measurement nor local runtime work is feature
-acceptance.
+numeric conversion rule. The three supplemental cases were subsequently authenticated in
+[run40525937279](https://github.com/Atridis/yadinassi/actions/runs/40525937279):
+1.5 and 1.9 select Key (index1), -0.5 selects Id (index0), with unchanged state.
+All prior973 native records remain byte-identical. Both measurement runs failed
+host comparison before implementation; neither is feature acceptance. See the
+[bounded runtime contract and pending gates](value-tree-unload-column-runtime.md).

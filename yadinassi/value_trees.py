@@ -3,7 +3,7 @@
 No recursive host traversal, UI, codecs, transport, or database integration.
 Limits apply to the whole tree, not independently to each child collection.
 """
-from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, Rounded
+from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, ROUND_DOWN, Rounded
 
 from .values import BSLArray, BSLObject, NULL, equal
 from .structures import BSLStructure
@@ -486,6 +486,56 @@ class BSLValueTreeRowCollection(BSLObject):
                 pending.append((row.rows, iter(row.rows.items)))
         return result
 
+    def unload_column(self, column):
+        """Local-row value snapshot; cells are shared, array membership is not."""
+        self._live()
+        columns = self.tree.columns.items
+        if type(columns) is not list or type(self.items) is not list:
+            raise ValueError("Неверная коллекция выгрузки дерева")
+        if len(columns) > _MAX_COLUMNS or len(self.items) > _MAX_ROWS:
+            raise ValueError("ДеревоЗначений: превышен предел выгрузки Yadinassi")
+        budget = _SearchBudget()
+        kind = type(column)
+        if kind is str:
+            key = _search_name(column, budget)
+        elif kind is Decimal:
+            _search_scalar(column, budget)  # Bound before numeric comparison/conversion.
+            # Native 0.5/1.5/1.9/-0.5 witnesses select 0/1/1/0. This
+            # method-local conversion does not change other tree index rules.
+            integral = column.to_integral_value(rounding=ROUND_DOWN)
+            if not 0 <= integral < len(columns):
+                raise IndexError("Индекс колонки дерева вне границ")
+            index = int(integral)  # Convert only after the bounded schema check.
+        elif kind is not BSLValueTreeColumn:
+            raise TypeError("ДеревоЗначений: неподдерживаемый селектор колонки")
+        selected = None
+        for position, candidate in enumerate(columns):
+            if (type(candidate) is not BSLValueTreeColumn
+                    or candidate.table is not self.tree or candidate._deleted):
+                raise ValueError("Колонка не принадлежит дереву выгрузки")
+            if kind is str:
+                matches = _search_name(candidate.name, budget) == key
+            elif kind is Decimal:
+                matches = position == index
+            else:
+                matches = candidate is column
+            if matches:
+                selected = candidate
+        # Resolve before empty-receiver shortcuts: unknown columns still fail.
+        if selected is None:
+            raise ValueError("Колонка выгрузки дерева не найдена")
+        result = BSLArray()
+        for row in self.items:
+            if (type(row) is not BSLValueTreeRow or row.tree is not self.tree
+                    or row.collection is not self):
+                raise ValueError("Строка не принадлежит коллекции выгрузки дерева")
+            row._live()
+            if type(row.cells) is not dict:
+                raise ValueError("Неверные ячейки строки выгрузки дерева")
+            # Opaque references: no equality, copying, conversion or descendant walk.
+            result.items.append(row.cells[selected])
+        return result
+
     def _remove_subtrees(self, roots):
         pending = list(roots)
         while pending:
@@ -521,6 +571,7 @@ class BSLValueTreeRowCollection(BSLObject):
             "get": self.get, "получить": self.get, "indexof": self.index_of, "индекс": self.index_of,
             "find": self.find, "найти": self.find,
             "findrows": self.find_rows, "найтистроки": self.find_rows,
+            "unloadcolumn": self.unload_column, "выгрузитьколонку": self.unload_column,
             "add": self.add, "добавить": self.add, "insert": self.insert, "вставить": self.insert,
             "delete": self.delete, "удалить": self.delete, "clear": self.clear, "очистить": self.clear})
 
