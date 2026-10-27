@@ -1,9 +1,10 @@
 # Experimental partial Catalog standard-property projection
 
-This is a local, synthetic-tested parser and explicit oracle-lane candidate.
-No native result verifies this entrypoint or lane yet. It is not connected to
-the Interpreter or ordinary BSL CLI. The local workflow selector targets the explicit standard-binding lane; no
-remote activation or native dispatch has occurred.
+The explicit oracle lane has accepted source-bound native evidence for the
+existing owned Catalog fixture: external declaration key, Name, CodeLength2,
+CodeTypeString and DescriptionLength0. See the original run/source identity below.
+This remains a partial-prefix parser, not Interpreter or ordinary BSL CLI
+database-object support.
 
 `yadinassi.storage.config_catalog_name.project_catalog_standard_prefix(data, *,
 budget, limits=None)` returns an immutable private `CatalogStandardPrefix` with:
@@ -18,8 +19,9 @@ budget, limits=None)` returns an immutable private `CatalogStandardPrefix` with:
 Only immutable decoded bytes and the caller's cumulative budget enter this
 function. Expected XML values, names, declaration keys, UUIDs, paths, readers,
 and platform APIs are not inputs. It performs no I/O and emits no public report.
-The separate lane below compares independently verified XML; source-bound native
-verification remains future work. Synthetic acceptance is not platform compatibility.
+The separate lane below compares independently verified XML. Its accepted native
+evidence is limited to the original source and owned fixture below; synthetic
+acceptance alone is not platform compatibility.
 
 ## Source facts and interpretation boundary
 
@@ -88,7 +90,7 @@ reservation of65536, which remains unchanged.
 `CatalogStandardError` contains only a closed finite code, never raw input,
 field values, paths or offsets. New diagnostics distinguish unsupported integer
 syntax, integer admission overflow, and unsupported CodeType. The result and
-source bytes are private; a future oracle must compare them privately and emit
+source bytes are private; the separate oracle compares them privately and emits
 only finite statuses/counts/hashes.
 
 There is no added runtime file: the actual-main runtime inventory remains68.
@@ -110,14 +112,14 @@ Run it together with the unchanged Name and Catalog-reference tests:
 PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests -p 'test_config_catalog_*.py' -v
 ```
 
-## Explicit local standard-binding lane
+## Explicit standard-binding lane
 
 `--config-catalog-standard-binding` selects only
 `owned_config_catalog_standard_binding_v1`, invocation19/report29/capture30.
 It stages26 sources, replacing the Name policy with
 `config_catalog_standard_binding.py` while keeping the same runtime parser
-module. Other lane flags are mutually exclusive. The dedicated workflow now selects this flag locally. This source change is not
-a native dispatch or evidence of a completed run.
+module. Other lane flags are mutually exclusive. The dedicated workflow selects this flag. The accepted run below, rather than
+selector presence alone, supplies the bounded native evidence.
 
 `ConfigCatalogStandardProfile` has recipe
 `config_catalog_standard_8380_8192_v1`, SHA256
@@ -140,9 +142,9 @@ The comparator receives the completed reader result only after all selected
 entries finish, requires exactly one owned Catalog, and checks key, Name and
 each of the three standard fields. Changing any one field rejects the result.
 
-The existing owned fixture is only2/String/0. Future measurement can establish
-that combination through the source-bound producer; it cannot establish every
-length/enum combination merely because synthetic tests cover them. The old
+The existing owned fixture is only2/String/0. The accepted measurement establishes
+that combination through the original source-bound producer; it does not establish
+every length/enum combination merely because synthetic tests cover them. The old
 Name-only run is not evidence for this new path.
 
 Public projection adds only
@@ -170,9 +172,10 @@ collections, optional diagnostics and their128-byte domain allowance, and the
 existing full enclosing capture cap. Tests enumerate every policy diagnostic
 and map every parser diagnostic, including new mismatch/resource/syntax paths;
 all diagnostic/context domains fit their charged widths. No cap is raised, no
-field is removed to fit. Final integrated independent review, ordinary gates,
-frozen readiness/acceptance checker and source-bound dedicated native evidence
-remain required before publication/native acceptance decisions.
+field is removed to fit. Integrated independent review, ordinary gates and the
+frozen readiness/acceptance checker remain part of the acceptance process. The
+dedicated result below satisfies only its stated original-source/fixture claim;
+future changes need their own impact assessment and applicable gates.
 
 ## Narrow workflow-selector activation
 
@@ -192,6 +195,33 @@ Name schemas27/28/recipe, and pin the approved image digest. Existing CI-policy
 tests still assert exact job permissions, reviewed-ref/exact-SHA admission,
 readiness and artifact gates.
 
-This is a local candidate only. Independent activation review and ordinary
-gates precede any separately authorized publication or dedicated native run.
-The parser and standard binding remain without native evidence.
+## Accepted native evidence and exact scope
+
+[Dedicated run40589978091](https://github.com/Atridis/yadinassi/actions/runs/40589978091)
+was accepted at original source commit
+`026bb4d6c28ae72f4178226c9e0243da80bde528`, tree
+`58b68846e62c374b793bc7315382e48ee56ea1f7`. All619 source blobs and26 staged
+sources were verified. Production final validation ran first, the independently
+frozen checker second;413 actual-report negative controls were exercised.
+All14 selected entries completed, with13 stages,11 snapshots,5 comparisons,
+3 artifacts and all4 cleanup gates. Report SHA256:
+`d99f44ffde394cc2ae39d95867dc9a5e79d306a8dcfbdc9f94a11498894b3870`.
+
+The accepted claim is only the owned external declaration-key/Name binding plus
+CodeLength2, CodeTypeString and DescriptionLength0 matched to independently
+verified canonical owned XML through that pinned producer. No embedded UUID,
+full Catalog schema/grammar, general length/enum coverage, arbitrary applied
+configuration, runtime Catalog manager, or BSL CRUD support is established.
+Manifest hashes are provenance, not separately replayable equality proofs.
+
+[Ordinary run40589739416](https://github.com/Atridis/yadinassi/actions/runs/40589739416)
+was independently accepted at the same original source with runtime inventory68
+and whole138 values coverage. It is separate ordinary-runtime evidence, not an
+expansion of the dedicated Catalog claim.
+
+This documentation-only follow-up does not relabel either run as having executed
+against a later commit. The local5666-test result (one unavailable-UNIX-socket
+skip),17 launcher checks and fresh isolated wheel proof also belong to the
+original executable inputs. Their applicability here rests on unchanged code,
+tests, fixtures, build inputs, workflows and staged/runtime source inventories;
+this paragraph does not claim those gates were rerun for the prose-only change.
