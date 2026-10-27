@@ -13,7 +13,7 @@ from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeRow, BSLValueTreeRowCollection
 from yadinassi.values import BSLArray, HostFunction
-from scripts.native_historical_replay import without_tree_find_probes
+from scripts.native_historical_replay import without_tree_find_probes, without_tree_unload_probes
 import test_native_1c_full_stage as fixtures
 from test_native_tree_findrows_measurement import fragments as old_fragments, PRESENT
 
@@ -30,7 +30,8 @@ CALLS_END = '// End bounded ValueTree Find observations.\n'
 
 def raw_source():
     raw = (ROOT / 'integrational_tests/tests/collections.bsl').read_bytes()
-    return raw.replace(b'\r\n', b'\n') if os.name == 'nt' else raw
+    raw = raw.replace(b'\r\n', b'\n') if os.name == 'nt' else raw
+    return without_tree_unload_probes(raw.decode('utf-8-sig')).encode('utf-8-sig')
 
 
 def fragments():
@@ -171,8 +172,11 @@ class FindSourceContractTests(unittest.TestCase):
         self.assertEqual((len(old),len(old.splitlines())),(327655,4241))
         template=(ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes()
         if os.name=='nt':template=template.replace(b'\r\n',b'\n')
-        module=fixtures.suite.client_collections_module(source,template)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,946)
+        from test_native_async_fixture import historical_tree_unload_collections_module
+        current=(ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
+        if os.name=='nt': current=current.replace(b'\r\n',b'\n')
+        module=historical_tree_unload_collections_module(current,template)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,976)
         self.assertIn(calls.encode(),module)
         for changed in (old,source+b'\n',source[3:],source.replace(b'\n',b'\r\n')):
             with self.assertRaises(fixtures.suite.FullError):fixtures.suite.client_collections_module(changed,template)
@@ -187,13 +191,13 @@ class FindSourceContractTests(unittest.TestCase):
         rows=f.records()
         for ordinal,row in enumerate(INPUTS,903):rows[ordinal-1]=('tree.find.'+row[0],b'row:4')
         encoded=f.encode(rows)
-        self.assertEqual(f.contract.compare_collections(encoded,encoded,SOURCE_SHA)['status'],'equivalent')
+        self.assertEqual(f.contract.compare_collections(encoded,encoded,f.SOURCE)['status'],'equivalent')
         for ordinal,row in enumerate(INPUTS,903):
             self.assertNotIn('tree.find.'+row[0],f.contract.ELIGIBLE_LABELS)
             changed=f.encode(f.change(rows,ordinal,payload=b'row:5'))
-            self.assertEqual(f.contract.compare_collections(encoded,changed,SOURCE_SHA)['reason'],'ineligible_difference')
+            self.assertEqual(f.contract.compare_collections(encoded,changed,f.SOURCE)['reason'],'ineligible_difference')
         for changed in (f.encode(rows[:902]),f.encode(rows[:-1]),encoded[:-1]):
-            self.assertEqual(f.contract.compare_collections(encoded,changed,SOURCE_SHA)['status'],'rejected')
+            self.assertEqual(f.contract.compare_collections(encoded,changed,f.SOURCE)['status'],'rejected')
 
 
 INPUTS = (('alias.ru', 'S.Tree.Строки.Найти("hit", "Key", Истина)'), ('alias.en', 'S.Tree.Rows.Find("hit", "Key", True)'), ('root.false', 'S.Tree.Rows.Find("hit", "Key", False)'), ('root.omitted', 'S.Tree.Rows.Find("hit", "Key")'), ('child.true', 'S.A.Rows.Find("hit", "Key", True)'), ('child.false', 'S.A.Rows.Find("hit", "Key", False)'), ('child.omitted', 'S.A.Rows.Find("hit", "Key")'), ('leaf', 'S.A11.Rows.Find("hit", "Key", True)'), ('no-match', 'S.Tree.Rows.Find("absent", "Key", True)'), ('descendants.true', 'S.Tree.Rows.Find("hit", "Key", True)', 'descendants'), ('descendants.false', 'S.Tree.Rows.Find("hit", "Key", False)', 'descendants'), ('descendants.omitted', 'S.Tree.Rows.Find("hit", "Key")', 'descendants'), ('child-descendants', 'S.A.Rows.Find("hit", "Key", True)', 'descendants'), ('columns.omitted', 'S.Tree.Rows.Find("x")'), ('columns.empty', 'S.Tree.Rows.Find("x", "", True)'), ('columns.undefined', 'S.Tree.Rows.Find("x", Undefined, True)'), ('columns.case', 'S.Tree.Rows.Find("hit", "kEy", True)'), ('columns.order', 'S.Tree.Rows.Find("hit", "Key,Group", True)', 'cross-columns'), ('columns.reversed', 'S.Tree.Rows.Find("hit", "Group,Key", True)', 'cross-columns'), ('columns.spaces', 'S.Tree.Rows.Find("hit", " Key , Group ", True)', 'cross-columns'), ('columns.duplicate', 'S.Tree.Rows.Find("hit", "Key,Key", True)'), ('columns.unknown', 'S.Tree.Rows.Find("hit", "Missing", True)'), ('columns.unknown-empty', 'S.A11.Rows.Find("hit", "Missing", True)'), ('columns.known-unknown', 'S.Tree.Rows.Find("hit", "Key,Missing", True)'), ('columns.number', 'S.Tree.Rows.Find("hit", 1, True)'), ('value.number', 'S.Tree.Rows.Find(1, "Key", True)', 'scalars'), ('value.boolean', 'S.Tree.Rows.Find(True, "Key", True)', 'scalars'), ('value.string-case', 'S.Tree.Rows.Find("X", "Key", True)', 'strings'), ('value.string-space', 'S.Tree.Rows.Find("x ", "Key", True)', 'strings'), ('value.undefined', 'S.Tree.Rows.Find(Undefined, "Key", True)', 'nullish'), ('value.null', 'S.Tree.Rows.Find(Null, "Key", True)', 'nullish'), ('result-to-source', 'S.Tree.Rows.Find(4, "Id", True)', 'base', 'result-to-source'), ('source-to-result', 'S.Tree.Rows.Find(4, "Id", True)', 'base', 'source-to-result'), ('missing-value', 'S.Tree.Rows.Find()'), ('flag.undefined', 'S.Tree.Rows.Find("hit", "Key", Undefined)'), ('flag.number', 'S.Tree.Rows.Find("hit", "Key", 1)'), ('flag.string', 'S.Tree.Rows.Find("hit", "Key", "True")'), ('wrong-tree', 'S.Tree.Find("hit", "Key", True)'), ('wrong-row', 'S.A.Find("hit", "Key", True)'), ('empty-tree', 'S.Tree.Rows.Find("hit", "Key", True)', 'empty'), ('no-columns', 'S.Tree.Rows.Find("hit")', 'no-columns'), ('empty-token', 'S.Tree.Rows.Find("hit", "Key,,Group", True)'), ('flag.number-descendants', 'S.Tree.Rows.Find("hit", "Key", 1)', 'descendants'), ('flag.string-descendants', 'S.Tree.Rows.Find("hit", "Key", "True")', 'descendants'))

@@ -3097,6 +3097,117 @@
 
 // End bounded ValueTree Find helpers.
 
+// Begin bounded ValueTree UnloadColumn helpers (measurement only; no native answers).
+Функция TreeUnloadCell(Знач Value)
+    Если ТипЗнч(Value) = Тип("Структура") Тогда
+        Если Value.Count() <> 1 Тогда
+            ВызватьИсключение "tree-unload-cell-shape";
+        КонецЕсли;
+        Возврат "structure-mark:" + TreeSearchMark(Value.Mark);
+    КонецЕсли;
+    Возврат TreeSearchCell(Value);
+КонецФункции
+
+Функция TreeUnloadResult(Знач Result)
+    Если ТипЗнч(Result) = Тип("Массив") Тогда
+        Tag = "array";
+    ИначеЕсли ТипЗнч(Result) = Тип("ФиксированныйМассив") Тогда
+        Tag = "fixed-array";
+    Иначе
+        Возврат TreeSearchResult(Result);
+    КонецЕсли;
+    Count = Result.Count();
+    Если Count < 0 Или Count > 7 Тогда
+        ВызватьИсключение "tree-unload-result-count";
+    КонецЕсли;
+    Text = Tag + ":" + Строка(Count) + ":";
+    Для Каждого Value Из Result Цикл
+        Text = Text + TreeUnloadCell(Value) + ",";
+    КонецЦикла;
+    Возврат Text;
+КонецФункции
+
+Функция TreeUnloadState(Знач S)
+    Counts = Новый Массив;
+    Counts.Add(S.Tree.Rows.Count()); Counts.Add(S.A.Rows.Count());
+    Counts.Add(S.B.Rows.Count()); Counts.Add(S.A1.Rows.Count());
+    Counts.Add(S.A2.Rows.Count()); Counts.Add(S.B1.Rows.Count());
+    Counts.Add(S.A11.Rows.Count());
+    Text = "";
+    Для Каждого N Из Counts Цикл
+        Если ТипЗнч(N) <> Тип("Число") Или N < 0 Или N > 7 Или Цел(N) <> N Тогда
+            ВызватьИсключение "tree-unload-state-count";
+        КонецЕсли;
+        Text = Text + Строка(N) + ",";
+    КонецЦикла;
+    Nodes = Новый Массив;
+    Nodes.Add(S.A); Nodes.Add(S.B); Nodes.Add(S.B1);
+    Nodes.Add(S.A1); Nodes.Add(S.A2); Nodes.Add(S.A11);
+    Для Каждого R Из Nodes Цикл
+        Text = Text + ";" + TreeUnloadCell(R.Id) + "/" + TreeUnloadCell(R.Key)
+            + "/" + TreeUnloadCell(R.Group) + "/" + TreeSearchMark(R.Mark);
+    КонецЦикла;
+    Возврат Text;
+КонецФункции
+
+Функция TreeUnloadProbe(Знач Expression, Знач Kind = "base", Знач Change = "none")
+    Попытка
+        S = TreeSearchFresh(Kind);
+        Foreign = Новый ДеревоЗначений;
+        Foreign.Columns.Add("Id");
+        Если Kind = "mutable" Тогда
+            S.A.Key = Новый Структура("Mark", "base");
+        ИначеЕсли Kind = "empty" Тогда
+            S.Tree.Rows.Clear();
+        ИначеЕсли Kind = "no-columns" Тогда
+            S.Tree.Rows.Clear();
+            S.Tree.Columns.Clear();
+        КонецЕсли;
+    Исключение
+        Возврат "setup-error";
+    КонецПопытки;
+    Status = "ok";
+    Попытка
+        Result = Вычислить(Expression);
+    Исключение
+        Status = "action-error";
+    КонецПопытки;
+    ChangeStatus = "none";
+    Если Status = "ok" И Change <> "none" Тогда
+        ChangeStatus = "ok";
+        Попытка
+            Если Change = "array-delete" Тогда
+                Result.Delete(0);
+            ИначеЕсли Change = "source-add" Тогда
+                Added = S.Tree.Rows.Add();
+                Added.Id = 7; Added.Key = "new"; Added.Group = "x"; Added.Mark = "base";
+            ИначеЕсли Change = "result-to-source" Тогда
+                Result[0].Mark = "from-result";
+            ИначеЕсли Change = "source-to-result" Тогда
+                S.A.Key.Mark = "from-source";
+            КонецЕсли;
+        Исключение
+            ChangeStatus = "change-error";
+        КонецПопытки;
+    КонецЕсли;
+    Попытка
+        Если Kind = "empty" Или Kind = "no-columns" Тогда
+            State = "empty:rows=" + TreeSearchCell(S.Tree.Rows.Count())
+                + ":columns=" + TreeSearchCell(S.Tree.Columns.Count());
+        Иначе
+            State = TreeUnloadState(S);
+        КонецЕсли;
+        Если Status = "action-error" Тогда
+            Возврат Status + "|state=" + State;
+        КонецЕсли;
+        Возврат "ok|change=" + ChangeStatus + "|result=" + TreeUnloadResult(Result) + "|state=" + State;
+    Исключение
+        Возврат Status + "|change=" + ChangeStatus + "|observer-error";
+    КонецПопытки;
+КонецФункции
+
+// End bounded ValueTree UnloadColumn helpers.
+
 #Область МассивыИСтруктуры
 // Типичный конвейер: массив записей, расчет суммы и сбор кодов для выгрузки.
 Позиции = Новый Массив;
@@ -4358,3 +4469,36 @@ VTResult = "error";
 Показать("tree.find.flag.number-descendants", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", 1)", "descendants"));
 Показать("tree.find.flag.string-descendants", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", ""True"")", "descendants"));
 // End bounded ValueTree Find observations.
+
+// Begin bounded ValueTree UnloadColumn observations (measurement only; no native answers).
+Показать("tree.unload.alias.ru", TreeUnloadProbe("S.Tree.Строки.ВыгрузитьКолонку(""Id"")"));
+Показать("tree.unload.alias.en", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Id"")"));
+Показать("tree.unload.child", TreeUnloadProbe("S.A.Rows.UnloadColumn(""Id"")"));
+Показать("tree.unload.leaf", TreeUnloadProbe("S.A11.Rows.UnloadColumn(""Id"")"));
+Показать("tree.unload.empty", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Id"")", "empty"));
+Показать("tree.unload.no-columns", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Id"")", "no-columns"));
+Показать("tree.unload.selector.case", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""iD"")"));
+Показать("tree.unload.selector.index-zero", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(0)"));
+Показать("tree.unload.selector.index-one", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1)"));
+Показать("tree.unload.selector.fraction", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(0.5)"));
+Показать("tree.unload.selector.negative", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(-1)"));
+Показать("tree.unload.selector.out-of-range", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(4)"));
+Показать("tree.unload.selector.own-column", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(S.Tree.Columns.Get(1))"));
+Показать("tree.unload.selector.foreign-column", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(Foreign.Columns.Get(0))"));
+Показать("tree.unload.selector.unknown", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Missing"")"));
+Показать("tree.unload.selector.unknown-empty", TreeUnloadProbe("S.A11.Rows.UnloadColumn(""Missing"")"));
+Показать("tree.unload.selector.undefined", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(Undefined)"));
+Показать("tree.unload.selector.boolean", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(True)"));
+Показать("tree.unload.missing-argument", TreeUnloadProbe("S.Tree.Rows.UnloadColumn()"));
+Показать("tree.unload.extra-argument", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Id"", True)"));
+Показать("tree.unload.wrong-tree", TreeUnloadProbe("S.Tree.UnloadColumn(""Id"")"));
+Показать("tree.unload.values.scalars", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Key"")", "scalars"));
+Показать("tree.unload.values.nullish", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Key"")", "nullish"));
+Показать("tree.unload.array-delete", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Id"")", "base", "array-delete"));
+Показать("tree.unload.source-add", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Id"")", "base", "source-add"));
+Показать("tree.unload.mutable.result-to-source", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Key"")", "mutable", "result-to-source"));
+Показать("tree.unload.mutable.source-to-result", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Key"")", "mutable", "source-to-result"));
+Показать("tree.unload.selector.fraction-one-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1.5)"));
+Показать("tree.unload.selector.fraction-one-nine", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1.9)"));
+Показать("tree.unload.selector.fraction-negative-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(-0.5)"));
+// End bounded ValueTree UnloadColumn observations.

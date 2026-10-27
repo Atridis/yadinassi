@@ -165,6 +165,7 @@ class CleanupHistoricalInverseTests(unittest.TestCase):
         import json
         import test_native_async_fixture as history
         source = (history.REPOSITORY / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_tree_unload_measurement(source, host=True)
         contract = json.loads((history.REPOSITORY / 'tests/child_cleanup_source_inverse.json').read_text(encoding='utf-8'))
         return history, source, contract
 

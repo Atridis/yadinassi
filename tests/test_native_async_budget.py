@@ -236,7 +236,7 @@ def comparison(stage3):
                           interpreter_line_count=1048577))
         if native['name'] == 'collections':
             item.update(acceptance_status='accepted', semantic=dict(status='equivalent',
-                profile=full.MAP_MODE, records=946, byte_equal_records=938,
+                profile=full.MAP_MODE, records=976, byte_equal_records=968,
                 accepted_labels=list(contract.ELIGIBLE_LABELS), reason='none'))
         result['cases'].append(item)
     full.validate_comparison(result, stage3, full.LINUX_TARGET, full.MAP_MODE)
@@ -285,7 +285,7 @@ def accepted_comparison(stage3):
         case.update(status='matched', acceptance_status='accepted', mismatch=None,
                     interpreter_size=native['output_size'], interpreter_sha256=native['output_sha256'])
         if case['name'] == 'collections':
-            case['semantic'].update(byte_equal_records=946, accepted_labels=[])
+            case['semantic'].update(byte_equal_records=976, accepted_labels=[])
     full.validate_comparison(result, stage3, full.LINUX_TARGET, full.MAP_MODE)
     return result
 
