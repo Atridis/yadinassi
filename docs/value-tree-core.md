@@ -21,6 +21,8 @@ Rows.FindRows now has a separately authenticated bounded checkpoint and local
 alignment; see [search scope and evidence](value-tree-findrows-runtime.md).
 Rows.Find now has a separately authenticated 44-observation checkpoint and bounded
 implementation; see [current scope and acceptance gates](value-tree-find-runtime.md).
+Rows.UnloadColumn has an authenticated 30-observation checkpoint and bounded
+implementation; see [scope and acceptance gates](value-tree-unload-column-runtime.md).
 Copy remains deferred. Local-only tests are not native evidence.
 
 ## First authenticated native capture and display correction
@@ -74,13 +76,14 @@ Native output bytes, fixtures, source probes and capture gates were not rewritte
 
 ## Conservative restrictions pending native measurements
 
-Strict finite integral in-range indices only; tree column widths must be integral
+Except for the separately measured method-local UnloadColumn selector conversion,
+strict finite integral in-range indices only; tree column widths must be integral
 and in 0..2^32-1. No implicit ValueTable index coercion is assumed. Names matching
 Rows/Parent or Russian equivalents are rejected, including rename. Deleting the
 last column of a populated tree or clearing its columns is rejected before any
 mutation. Deleted object lifetime/presentation is not claimed as compatible.
 
-No Copy, Move, Sort, Total, FillValues, LoadColumn, UnloadColumn, UI,
+No Copy, Move, Sort, Total, FillValues, LoadColumn, UI,
 XML/internal serialization or transport. Internal serialization also explicitly
 rejects Type("ValueTree") and the four dependent type identities, rather than
 inventing native UUIDs. Object string presentations and conversion edge cases remain unverified; the

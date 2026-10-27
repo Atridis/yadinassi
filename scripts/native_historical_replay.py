@@ -40,6 +40,51 @@ FILL_EXCLUDE_ORDER_PROBE_BLOCKS = (
 )
 
 
+TREE_UNLOAD_HELPERS_START = '// Begin bounded ValueTree UnloadColumn helpers (measurement only; no native answers).\n'
+TREE_UNLOAD_HELPERS_END = '// End bounded ValueTree UnloadColumn helpers.\n\n'
+TREE_UNLOAD_CALLS_START = '\n// Begin bounded ValueTree UnloadColumn observations (measurement only; no native answers).\n'
+TREE_UNLOAD_CALLS_END = '// End bounded ValueTree UnloadColumn observations.\n'
+
+
+TREE_UNLOAD_SUPPLEMENT = 'Показать("tree.unload.selector.fraction-one-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1.5)"));\nПоказать("tree.unload.selector.fraction-one-nine", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1.9)"));\nПоказать("tree.unload.selector.fraction-negative-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(-0.5)"));\n'
+
+
+def without_tree_unload_supplement(text):
+    """Exact source-only collections976 -> 973 inverse; no native output edits."""
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4':
+        raise ValueError('tree UnloadColumn supplement source binding changed')
+    if text.count(TREE_UNLOAD_SUPPLEMENT) != 1:
+        raise ValueError('tree UnloadColumn supplement boundary changed')
+    text = text.replace(TREE_UNLOAD_SUPPLEMENT, '', 1)
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != 'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada':
+        raise ValueError('tree UnloadColumn original27 binding changed')
+    return text
+
+
+def without_tree_unload_probes(text):
+    """Exact source-only collections973 -> 946 inverse; never edit native output."""
+    if 'tree.unload.selector.fraction-one-half' in text:
+        text = without_tree_unload_supplement(text)
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != 'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada':
+        raise ValueError('tree UnloadColumn source binding changed')
+    if not text.endswith(TREE_UNLOAD_CALLS_END):
+        raise ValueError('tree UnloadColumn tail changed')
+    for begin, end in ((TREE_UNLOAD_HELPERS_START, TREE_UNLOAD_HELPERS_END),
+                       (TREE_UNLOAD_CALLS_START, TREE_UNLOAD_CALLS_END)):
+        if text.count(begin) != 1 or text.count(end) != 1:
+            raise ValueError('tree UnloadColumn boundaries changed')
+        before, rest = text.split(begin, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != '9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3':
+        raise ValueError('tree UnloadColumn baseline binding changed')
+    return text
+
+
 TREE_FIND_HELPERS_START = '// Begin bounded ValueTree Find helpers (measurement only; no native answers).\n'
 TREE_FIND_HELPERS_END = '// End bounded ValueTree Find helpers.\n\n'
 TREE_FIND_CALLS_START = '// Begin bounded ValueTree Find observations (measurement only; no native answers).\n'
@@ -48,6 +93,8 @@ TREE_FIND_CALLS_END = '// End bounded ValueTree Find observations.\n'
 
 def without_tree_find_probes(text):
     """Exact source-only collections946 -> 902 inverse; never edit native output."""
+    if TREE_UNLOAD_HELPERS_START in text or TREE_UNLOAD_CALLS_START in text:
+        text = without_tree_unload_probes(text)
     raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
     if hashlib.sha256(raw).hexdigest() != '9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3':
         raise ValueError('tree Find source binding changed')
