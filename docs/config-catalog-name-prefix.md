@@ -4,7 +4,8 @@
 budget, limits=None)` is a pure local candidate. It returns an immutable private
 `CatalogNamePrefix(name)` from the zero-based positional path `[1][9][1][2]` in
 already-decoded Catalog bytes. It takes no expected name, UUID, declaration key,
-path, file reader, or platform API. It has no native evidence yet. The explicit oracle lane below uses this parser;
+path, file reader, or platform API. The dedicated lane has accepted native evidence
+for external declaration-key and partial Name binding only (see below). The explicit oracle lane below uses this parser;
 it is not connected to the Interpreter or ordinary BSL CLI.
 
 ## Meaning and non-claims
@@ -126,3 +127,18 @@ file images, manifest lifecycle, independent mismatches, source changes,
 cleanup failures and report validation without Docker, native execution or the
 shared smoke fixture. A separately source-bound native run is still required
 before reporting this binding as observed on the platform.
+
+## Accepted dedicated Name-only evidence
+
+[Dedicated run40568714408](https://github.com/Atridis/yadinassi/actions/runs/40568714408)
+was accepted against original source commit
+`edcd54789297f4a113df88eb176169d55b988bf2`, tree
+`e7819fe6f91362ecb0c6147dadf9400a2b0ca49b`. Source613 blobs and26 staged
+sources were verified; all14 selected entries completed. The run retained
+13 stages,11 snapshots,5 comparisons and all4 cleanup gates. Report SHA256:
+`ed99d424e83c507439c36463b2eb22653ccdeec1e307061f2721940acf241e5d`.
+
+The accepted claim is only that an external declaration key and partial parsed
+Name matched independently verified owned XML through that pinned producer.
+It is not evidence for the newer standard-property entrypoint, embedded UUID,
+full grammar, arbitrary applied configuration, or BSL database-object support.
