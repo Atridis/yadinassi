@@ -60,7 +60,7 @@ class UUIDCodecMeasurementContract(unittest.TestCase):
             'internal.roundtrip.fixed', 'internal.roundtrip.zero',
             'xml.fixed', 'xml.zero', 'xml.roundtrip.fixed', 'xml.roundtrip.zero'})
         self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 534)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 973)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 976)
         self.assertEqual(hashlib.sha256(without_text_document_probes(self.source).encode()).hexdigest(), V3_SHA)
         with self.assertRaises(fixtures.suite.FullError):
             fixtures.suite.client_values_module(previous.encode(), self.template)

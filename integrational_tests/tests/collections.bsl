@@ -4498,4 +4498,7 @@ VTResult = "error";
 Показать("tree.unload.source-add", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Id"")", "base", "source-add"));
 Показать("tree.unload.mutable.result-to-source", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Key"")", "mutable", "result-to-source"));
 Показать("tree.unload.mutable.source-to-result", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(""Key"")", "mutable", "source-to-result"));
+Показать("tree.unload.selector.fraction-one-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1.5)"));
+Показать("tree.unload.selector.fraction-one-nine", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1.9)"));
+Показать("tree.unload.selector.fraction-negative-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(-0.5)"));
 // End bounded ValueTree UnloadColumn observations.

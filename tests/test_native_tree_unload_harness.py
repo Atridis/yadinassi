@@ -23,7 +23,7 @@ class UnloadHarnessHistoryTests(unittest.TestCase):
         inventory = self.inventory()
         self.assertEqual(set(inventory), set(PATHS))
         for path in PATHS:
-            source = (ROOT/path).read_text(encoding='utf-8')
+            source = history.without_tree_unload_supplement_measurement((ROOT/path).read_text(encoding='utf-8'), host=path.endswith('full_host.py'))
             restored = history.without_tree_unload_measurement(source, host=path.endswith('full_host.py'))
             self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), inventory[path]['base_sha256'])
             self.assertIn('946', restored)
@@ -49,7 +49,7 @@ class UnloadHarnessHistoryTests(unittest.TestCase):
 
     def test_inverse_rejects_source_drift_without_normalization(self):
         for path in PATHS:
-            source = (ROOT/path).read_text(encoding='utf-8')
+            source = history.without_tree_unload_supplement_measurement((ROOT/path).read_text(encoding='utf-8'), host=path.endswith('full_host.py'))
             for changed in (source+'\n', source.replace('\n', '\r\n'), source.replace('973', '974', 1)):
                 with self.subTest(path=path), self.assertRaises(AssertionError):
                     history.without_tree_unload_measurement(changed, host=path.endswith('full_host.py'))
@@ -57,12 +57,44 @@ class UnloadHarnessHistoryTests(unittest.TestCase):
     def test_rebased_outer_hash_cannot_hide_changed_pinned_block_or_suffix(self):
         inventory = self.inventory()
         for path in PATHS:
-            source = (ROOT/path).read_text(encoding='utf-8')
+            source = history.without_tree_unload_supplement_measurement((ROOT/path).read_text(encoding='utf-8'), host=path.endswith('full_host.py'))
             for changed in (source+'\n', source.replace('973', '974', 1)):
                 forged = copy.deepcopy(inventory)
                 forged[path]['candidate_sha256'] = hashlib.sha256(changed.encode()).hexdigest()
                 with mock.patch.object(history.json, 'loads', return_value=forged), self.assertRaises(AssertionError):
                     history.without_tree_unload_measurement(changed, host=path.endswith('full_host.py'))
+
+
+class UnloadSupplementHarnessHistoryTests(unittest.TestCase):
+    def test_exact973_harness_and_complete_module_restored(self):
+        for path in PATHS:
+            current = (ROOT/path).read_text(encoding='utf-8')
+            original = history.without_tree_unload_supplement_measurement(current, host=path.endswith('full_host.py'))
+            old_contract = json.loads((ROOT/'tests/tree_unload_source_inverse.json').read_text(encoding='utf-8'))[path]
+            self.assertEqual(hashlib.sha256(original.encode()).hexdigest(), old_contract['candidate_sha256'])
+            self.assertNotEqual(current, original)
+            if not path.endswith('full_host.py'):
+                namespace = {'__name__': 'historical_original27'}
+                exec(compile(original, path, 'exec'), namespace)
+                from scripts.native_historical_replay import without_tree_unload_supplement
+                source = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes().replace(b'\r\n',b'\n')
+                source = without_tree_unload_supplement(source.decode('utf-8-sig')).encode('utf-8-sig')
+                template = (ROOT/fixtures.suite.CLIENT_SOURCE).read_bytes().replace(b'\r\n',b'\n')
+                self.assertEqual(namespace['CLIENT_COLLECTIONS_MESSAGE_COUNT'],973)
+                self.assertEqual(hashlib.sha256(namespace['client_collections_module'](source,template)).hexdigest(),
+                                 '66b2e8263c9a1a68c21996e02dd153bb3390cb3fb2481456b54d0c5990e39188')
+
+    def test_supplement_inverse_rejects_drift_even_with_rebased_outer_hash(self):
+        inventory = json.loads((ROOT/'tests/tree_unload_supplement_source_inverse.json').read_text(encoding='utf-8'))
+        for path in PATHS:
+            source = (ROOT/path).read_text(encoding='utf-8')
+            for changed in (source+'\n',source.replace('976','977',1),source.replace('\n','\r\n')):
+                with self.subTest(path=path), self.assertRaises(AssertionError):
+                    history.without_tree_unload_supplement_measurement(changed,host=path.endswith('full_host.py'))
+                forged = copy.deepcopy(inventory)
+                forged[path]['candidate_sha256'] = hashlib.sha256(changed.encode()).hexdigest()
+                with mock.patch.object(history.json,'loads',return_value=forged), self.assertRaises(AssertionError):
+                    history.without_tree_unload_supplement_measurement(changed,host=path.endswith('full_host.py'))
 
 
 if __name__ == '__main__':

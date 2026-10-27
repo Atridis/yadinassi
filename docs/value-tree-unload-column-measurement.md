@@ -5,7 +5,9 @@ expected-output fixture**. The receiver is `ValueTreeRowCollection`, through roo
 or child `Rows`. `ValueTable.UnloadColumn` is a separate API; its implementation
 and column conversion rules are not evidence of native tree behavior.
 
-The candidate starts at main `15fdcddaebb7e022aec08733a7eca4c6eea05238`.
+The initial candidate starts at main `15fdcddaebb7e022aec08733a7eca4c6eea05238`.
+This three-input supplement follows measurement head
+`04d67b04f03b7d4f4a397d2753a86ca8eeba2c84`.
 Interpreter package source/data, workflows, old native literals and all existing
 946 collection inputs remain unchanged. The current provenance inventory remains
 66 files, but the pinned host/comparison adapters change its aggregate digest.
@@ -14,7 +16,8 @@ raised.
 
 ## Fixed matrix
 
-There are exactly 27 new records, ordinals 947–973:
+There are exactly 30 new records, ordinals 947–976. The first 27 inputs
+remain byte-for-byte unchanged; their fixed matrix is:
 
 - Russian and English root calls on Id; child, empty leaf, genuinely empty tree
   and empty-schema receivers. The unchanged six-node `TreeSearchFresh` helper
@@ -29,6 +32,11 @@ There are exactly 27 new records, ordinals 947–973:
 - Both directions of mutation through a one-field Structure cell. Only the known
   `Mark` field is observed, and only `base`, `from-result`, `from-source` values
   are admitted. This distinguishes shared cell identity from equal presentation.
+
+Three supplemental selectors (`1.5`, `1.9`, `-0.5`) use the existing fresh
+tree whose Id, Key and Group columns have distinct values. Together with the
+original 0, 1 and 0.5 selectors, these distinguish truncation, rounding and
+negative-fraction handling without adding another coercion domain.
 
 No predicted success/error, selected values, recursion or coercion outcome is
 encoded in the inputs. No additional LoadColumn, Copy, Sort, codecs, detached
@@ -65,16 +73,21 @@ source inverse removes only the four-helper block and the appended newline/call
 block, restoring every old source byte; a plain prefix-preservation claim would
 be incorrect.
 
-Current collections973 has 4501 lines and SHA256
+The original collections973 had 4501 lines and SHA256
 `bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada`.
+The supplement contains 4504 lines and SHA256
+`5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4`.
+Removing only the three supplemental call lines restores exact collections973.
 There are 130 declarations/endings and 16 message sites; the zero-based body line
 is 3210. Helper/call hashes independently reject altered probes even if an outer
-source hash is changed. The generated full-client module SHA256 is
-`66b2e8263c9a1a68c21996e02dd153bb3390cb3fb2481456b54d0c5990e39188`.
+source hash is changed. The original 27-case generated full-client module SHA256 was
+`66b2e8263c9a1a68c21996e02dd153bb3390cb3fb2481456b54d0c5990e39188`;
+the supplement generated-module SHA256 is
+`a7bfc4e3361bdb1bfde5794b211f3fd1c0594f5c81b4f5e3dafecac4c3049786`.
 
 A new isolated test-only harness inverse restores exact main15fd adapters before
 existing cleanup, Find and older historical inverses. Old hashes/fixtures remain
-unchanged and are not made live-admissible. All 27 new observations are strict
+unchanged and are not made live-admissible. All 30 new observations are strict
 byte comparisons; the eight existing Map-order exceptions are unchanged.
 
 ## Required acceptance
@@ -84,5 +97,12 @@ independently authenticate run, head/tree, staged sources and complete outputs.
 Inspect every new record. A comparison failure while host UnloadColumn is absent
 is expected, but remains a failed workflow rather than feature acceptance.
 Only a later bounded implementation with fresh native/full-host and four-platform
-checks can establish supported behavior. No native measurement has yet been
-performed for this source.
+checks can establish supported behavior. The original 27 were authenticated from failed measurement run
+[40496124727](https://github.com/Atridis/yadinassi/actions/runs/40496124727):
+16 succeeded, 11 reported action errors, no setup/change/observer failures.
+Root/child calls return only local rows; arrays have independent membership and
+the one-field Structure cell is shared in both mutation directions. The exact
+0.5 selector chose column zero, but this alone does not establish a general
+numeric conversion rule. The three supplemental cases have not yet been
+measured. Neither this failed measurement nor local runtime work is feature
+acceptance.

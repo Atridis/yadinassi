@@ -242,7 +242,7 @@ class NStrSourceContracts(unittest.TestCase):
         self.assertEqual(hashlib.sha256(without_uuid_probes(raw.decode()).encode()).hexdigest(),
                          'dbf750d20ac7db3dba1df2e67d2e2cfc54c361c991d132d616bbe2d956a6ca12')
         self.assertEqual((f.suite.CLIENT_VALUES_MESSAGE_COUNT,
-                          f.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT), (534, 973))
+                          f.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT), (534, 976))
 
     def test_live_adapter_preserves_complete_input_and_rejects_every_old_source(self):
         import test_native_1c_full_stage as f

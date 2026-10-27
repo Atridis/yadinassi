@@ -2001,9 +2001,9 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_COLLECTIONS_SOURCE_SHA256 = 'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada'
+CLIENT_COLLECTIONS_SOURCE_SHA256 = '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_COLLECTIONS_MESSAGE_COUNT = 973
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 976
 
 
 def empty_collections_report() -> dict:
@@ -2363,7 +2363,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
     capture = 'КоллекцииКлиентЗахват'
     reserved = (capture, 'КоллекцииКлиентСообщения',
                 'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
-    if (len(lines) != 4501
+    if (len(lines) != 4504
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())
@@ -2392,7 +2392,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         ('// Begin bounded ValueTree UnloadColumn helpers (measurement only; no native answers).\n', '// End bounded ValueTree UnloadColumn helpers.\n\n',
          '816ce1f9f4d175662f374966dc9901acd8f85090fe2672334fd39f3a8b8e88cc'),
         ('// Begin bounded ValueTree UnloadColumn observations (measurement only; no native answers).\n', '// End bounded ValueTree UnloadColumn observations.\n',
-         '78455dd605e824782c8cbffee7dd97c8124201a62bab53149f704798a5b41d69'),
+         '61814cf35c1d16af5d512db9383e79beea68ddbc0ea83c7fb8fd7075683f917d'),
         ('// Begin bounded ValueTree Find helpers (measurement only; no native answers).\n', '// End bounded ValueTree Find helpers.\n\n',
          'a43a652d9327fe026a3b61f7063c35eac014ee0fe385f37605396198354ba679'),
         ('// Begin bounded ValueTree Find observations (measurement only; no native answers).\n', '// End bounded ValueTree Find observations.\n',

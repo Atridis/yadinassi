@@ -14,10 +14,10 @@ from yadinassi.values import BSLArray, HostFunction
 from test_native_tree_findrows_measurement import PRESENT
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SHA = 'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada'
+SOURCE_SHA = '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4'
 BASE_SHA = '9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3'
 HELPER_SHA = '816ce1f9f4d175662f374966dc9901acd8f85090fe2672334fd39f3a8b8e88cc'
-CALLS_SHA = '78455dd605e824782c8cbffee7dd97c8124201a62bab53149f704798a5b41d69'
+CALLS_SHA = '61814cf35c1d16af5d512db9383e79beea68ddbc0ea83c7fb8fd7075683f917d'
 HELPER_START = '// Begin bounded ValueTree UnloadColumn helpers (measurement only; no native answers).\n'
 HELPER_END = '// End bounded ValueTree UnloadColumn helpers.\n\n'
 CALLS_START = '// Begin bounded ValueTree UnloadColumn observations (measurement only; no native answers).\n'
@@ -75,20 +75,21 @@ class UnloadInstrumentationTests(unittest.TestCase):
             self.assertTrue(line.startswith('Показать("tree.unload.'))
             fields=tuple(x.replace('""','"') for x in re.findall(r'"((?:[^"]|"")*)"',line))
             parsed.append((fields[0].removeprefix('tree.unload.'),*fields[1:]))
-        self.assertEqual(tuple(parsed),INPUTS);self.assertEqual(len({x[0] for x in INPUTS}),27)
+        self.assertEqual(tuple(parsed),INPUTS);self.assertEqual(len({x[0] for x in INPUTS}),30)
         self.assertEqual(helper.count('Result = Вычислить(Expression);'),1)
         for forbidden in ('ОписаниеОшибки','Выполнить(','ЗначениеВСтрокуВнутр','_all_rows','Записать','Прочитать','Пока '): self.assertNotIn(forbidden,helper+calls)
         seen=[]
         def capture(receiver,alias,args):
             seen.append((receiver,alias,args));return array([D(1),D(2)])
         with self.witness(capture): self.vm.execute(calls)
-        self.assertEqual(len(seen),27);self.assertEqual(len({id(x[0]) for x in seen}),27)
+        self.assertEqual(len(seen),30);self.assertEqual(len({id(x[0]) for x in seen}),30)
         self.assertEqual([x[2] for x in seen[:2]],[('Id',),('Id',)])
+        self.assertEqual([x[2] for x in seen[27:]], [(D('1.5'),), (D('1.9'),), (D('-0.5'),)])
         self.assertEqual(seen[2][0].parent.get_member('Id'),D(1));self.assertEqual(seen[3][0].parent.get_member('Id'),D(6))
         self.assertEqual([x[2] for x in seen[7:12]],[(D(0),),(D(1),),(D('0.5'),),(D(-1),),(D(4),)])
         self.assertIs(seen[12][2][0].table,seen[12][0].tree);self.assertIsNot(seen[13][2][0].table,seen[13][0].tree)
         self.assertEqual([x[2] for x in seen[16:20]],[(None,),(True,),(),('Id',True)])
-        self.assertIs(type(seen[20][0]),BSLValueTree);self.assertEqual(len(self.output),27)
+        self.assertIs(type(seen[20][0]),BSLValueTree);self.assertEqual(len(self.output),30)
         self.assertTrue(all(x.isascii() and len(x)<2048 for x in self.output))
         self.assertFalse(any('setup-error' in x or 'action-error' in x or 'observer-error' in x for x in self.output))
 
@@ -145,12 +146,25 @@ class UnloadInstrumentationTests(unittest.TestCase):
 class UnloadSourceContractTests(unittest.TestCase):
     def test_exact_new_blocks_preserve_every_previous_byte(self):
         source=raw_source();helper,calls=fragments()
-        self.assertEqual(hashlib.sha256(source).hexdigest(),SOURCE_SHA);self.assertEqual(len(source.splitlines()),4501)
+        self.assertEqual(hashlib.sha256(source).hexdigest(),SOURCE_SHA);self.assertEqual(len(source.splitlines()),4504)
         self.assertEqual(hashlib.sha256(helper.encode()).hexdigest(),HELPER_SHA);self.assertEqual(hashlib.sha256(calls.encode()).hexdigest(),CALLS_SHA)
         text=source.decode('utf-8-sig');self.assertTrue(text.endswith('\n'+calls))
         restored=text.replace(helper,'',1)[:-len('\n'+calls)].encode('utf-8-sig')
         self.assertEqual(hashlib.sha256(restored).hexdigest(),BASE_SHA);self.assertEqual(len(restored.splitlines()),4360)
 
+
+    def test_supplement_restores_exact_original27_source(self):
+        from scripts.native_historical_replay import without_tree_unload_supplement, TREE_UNLOAD_SUPPLEMENT
+        source = raw_source().decode('utf-8-sig')
+        restored = without_tree_unload_supplement(source)
+        self.assertEqual(hashlib.sha256(restored.encode('utf-8-sig')).hexdigest(),
+                         'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada')
+        self.assertEqual(len(restored.splitlines()), 4501)
+        self.assertEqual(source.replace(TREE_UNLOAD_SUPPLEMENT, '', 1), restored)
+        self.assertEqual(len(TREE_UNLOAD_SUPPLEMENT.splitlines()), 3)
+        for changed in (source+'\n', source.replace('UnloadColumn(1.9)', 'UnloadColumn(1.8)'),
+                        source.replace('\n', '\r\n'), restored):
+            with self.assertRaises(ValueError): without_tree_unload_supplement(changed)
 
     def test_live_adapter_and_inverse_reject_probe_drift(self):
         import test_native_1c_full_stage as fixtures
@@ -159,8 +173,8 @@ class UnloadSourceContractTests(unittest.TestCase):
         template = (ROOT / fixtures.suite.CLIENT_SOURCE).read_bytes()
         if os.name == 'nt': template = template.replace(b'\r\n', b'\n')
         module = fixtures.suite.client_collections_module(source, template)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 973)
-        self.assertEqual(hashlib.sha256(module).hexdigest(), '66b2e8263c9a1a68c21996e02dd153bb3390cb3fb2481456b54d0c5990e39188')
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 976)
+        self.assertEqual(hashlib.sha256(module).hexdigest(), 'a7bfc4e3361bdb1bfde5794b211f3fd1c0594f5c81b4f5e3dafecac4c3049786')
         restored = without_tree_unload_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
         self.assertEqual(hashlib.sha256(restored).hexdigest(), BASE_SHA)
         for changed in (restored, source+b'\n', source[3:], source.replace(b'\n', b'\r\n')):
@@ -187,4 +201,5 @@ class UnloadSourceContractTests(unittest.TestCase):
             self.assertEqual(f.contract.compare_collections(encoded,changed,SOURCE_SHA)['status'],'rejected')
 
 INPUTS = (('alias.ru', 'S.Tree.Строки.ВыгрузитьКолонку("Id")'), ('alias.en', 'S.Tree.Rows.UnloadColumn("Id")'), ('child', 'S.A.Rows.UnloadColumn("Id")'), ('leaf', 'S.A11.Rows.UnloadColumn("Id")'), ('empty', 'S.Tree.Rows.UnloadColumn("Id")', 'empty'), ('no-columns', 'S.Tree.Rows.UnloadColumn("Id")', 'no-columns'), ('selector.case', 'S.Tree.Rows.UnloadColumn("iD")'), ('selector.index-zero', 'S.Tree.Rows.UnloadColumn(0)'), ('selector.index-one', 'S.Tree.Rows.UnloadColumn(1)'), ('selector.fraction', 'S.Tree.Rows.UnloadColumn(0.5)'), ('selector.negative', 'S.Tree.Rows.UnloadColumn(-1)'), ('selector.out-of-range', 'S.Tree.Rows.UnloadColumn(4)'), ('selector.own-column', 'S.Tree.Rows.UnloadColumn(S.Tree.Columns.Get(1))'), ('selector.foreign-column', 'S.Tree.Rows.UnloadColumn(Foreign.Columns.Get(0))'), ('selector.unknown', 'S.Tree.Rows.UnloadColumn("Missing")'), ('selector.unknown-empty', 'S.A11.Rows.UnloadColumn("Missing")'), ('selector.undefined', 'S.Tree.Rows.UnloadColumn(Undefined)'), ('selector.boolean', 'S.Tree.Rows.UnloadColumn(True)'), ('missing-argument', 'S.Tree.Rows.UnloadColumn()'), ('extra-argument', 'S.Tree.Rows.UnloadColumn("Id", True)'), ('wrong-tree', 'S.Tree.UnloadColumn("Id")'), ('values.scalars', 'S.Tree.Rows.UnloadColumn("Key")', 'scalars'), ('values.nullish', 'S.Tree.Rows.UnloadColumn("Key")', 'nullish'), ('array-delete', 'S.Tree.Rows.UnloadColumn("Id")', 'base', 'array-delete'), ('source-add', 'S.Tree.Rows.UnloadColumn("Id")', 'base', 'source-add'), ('mutable.result-to-source', 'S.Tree.Rows.UnloadColumn("Key")', 'mutable', 'result-to-source'), ('mutable.source-to-result', 'S.Tree.Rows.UnloadColumn("Key")', 'mutable', 'source-to-result'))
+INPUTS += (('selector.fraction-one-half', 'S.Tree.Rows.UnloadColumn(1.5)'), ('selector.fraction-one-nine', 'S.Tree.Rows.UnloadColumn(1.9)'), ('selector.fraction-negative-half', 'S.Tree.Rows.UnloadColumn(-0.5)'))
 if __name__=='__main__':unittest.main()
