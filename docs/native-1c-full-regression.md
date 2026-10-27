@@ -271,3 +271,35 @@ Map-entry permutations, not 758 byte-identical records. Native raw files remain
 unchanged in the approved artifact; both raw output hashes/sizes and mismatch
 positions/counts remain in the report/provenance. No interpreter output, textual
 diff, raw service log or additional artifact file is published by this mode.
+
+
+## Bounded host-child cleanup
+
+The host comparator keeps its existing output and execution limits. Cleanup of
+its owned POSIX process group now has a separate five-second direct-child reap
+bound; it does not use `Popen.__exit__`, whose fallback wait is unbounded.
+Both read-only pipe descriptors are closed even when cleanup fails.
+
+A successful group `SIGKILL` retains the prior termination contract. It is not
+new evidence that every descendant has disappeared. If the group signal is
+denied, cleanup is accepted only after the direct child has been reaped within
+the bound **and** a signal-zero group probe reports `ESRCH` (group absent).
+A reaped leader alone is insufficient: a live group, another permission denial,
+an unreadable group or an uncompleted reap remains `interpreter_unavailable`.
+No permission error is ignored and no extra permission is requested.
+
+Only proven recovery of that denied-signal case preserves an already pending
+`interpreter_output_limit` or `interpreter_timeout`. A cleanup timeout is not
+misreported as an interpreter execution timeout. Unresolved cleanup is a failed
+operation, not a successful comparison; no lifecycle, output or report cap is
+relaxed. There is no claim that this repairs every possible POSIX process race.
+
+The motivating macOS CI trace showed output-limit failure masked by `killpg`
+`EPERM`. A zombie-only group is a plausible mechanism, not a proven cause of
+that run. Deterministic tests cover the recovery predicate and its failure
+boundaries without relying on the original race or treating a green retry as
+proof of the cause. Existing genuine subprocess overflow/timeout tests remain.
+
+Historical harness fixtures use a new exact, test-only inverse to restore the
+pre-cleanup host source before their existing inverses. Old source hashes remain
+unchanged; this inverse is never a production execution or admission fallback.

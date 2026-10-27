@@ -40,6 +40,7 @@ MAP_MODE = "typed-map-order-v1"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
 COLLECTIONS_SOURCE_SHA256 = "9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3"
 CASE_SECONDS = 10
+CHILD_CLEANUP_SECONDS = 5
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
 FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
             "invalid_result", "invalid_dump_result", "artifact_missing", "output_mismatch",
@@ -1215,40 +1216,76 @@ def child_environment() -> dict[str, str]:
             "YADINASSI_TIMEZONE": "Etc/UTC", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 
+def _finish_child(process):
+    """Bounded direct-child reap; never infer EPERM means an empty group.
+
+    A successful SIGKILL keeps the existing descendant-termination contract;
+    it is not proof that every descendant has disappeared.
+    Some POSIX kernels can deny a signal to a group containing only a zombie.
+    That case is safe to accept only after reaping our child and independently
+    observing that the process group no longer exists. A live or unreadable
+    group still fails closed, even if the original operation already failed.
+    """
+    denied = None
+    deadline = time.monotonic() + CHILD_CLEANUP_SECONDS
+    try:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except PermissionError as error:
+            denied = error
+        process.wait(timeout=max(0.001, deadline - time.monotonic()))
+        if denied is not None:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return
+            # A successful existence probe is not proof of cleanup; neither
+            # is a permission error from that probe (handled below).
+            raise denied
+    except (OSError, subprocess.TimeoutExpired):
+        raise FullError("interpreter_unavailable") from None
+
+
 def bounded_child(args: list[str], cwd: Path, *, seconds=CASE_SECONDS,
                   stdout_limit=MAX_FILE, stderr_limit=MAX_STDERR):
     buffers = {"stdout": bytearray(), "stderr": bytearray()}
     deadline = time.monotonic() + seconds
     try:
-        with subprocess.Popen(args, cwd=cwd, env=child_environment(), stdin=subprocess.DEVNULL,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as process:
+        # Do not use Popen's context manager: its __exit__ performs an unbounded
+        # wait even when explicit cleanup failed. All waits below are bounded.
+        process = subprocess.Popen(args, cwd=cwd, env=child_environment(), stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            with selectors.DefaultSelector() as selector:
+                for stream, name in ((process.stdout, "stdout"), (process.stderr, "stderr")):
+                    selector.register(stream, selectors.EVENT_READ, name)
+                while selector.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise FullError("interpreter_timeout")
+                    for key, _ in selector.select(min(remaining, 0.1)):
+                        chunk = os.read(key.fileobj.fileno(), 4096)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        buffers[key.data].extend(chunk)
+                        limit = stdout_limit if key.data == "stdout" else stderr_limit
+                        if len(buffers[key.data]) > limit:
+                            raise FullError("interpreter_output_limit")
+                code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+            return code, bytes(buffers["stdout"]), bytes(buffers["stderr"])
+        finally:
             try:
-                with selectors.DefaultSelector() as selector:
-                    for stream, name in ((process.stdout, "stdout"), (process.stderr, "stderr")):
-                        selector.register(stream, selectors.EVENT_READ, name)
-                    while selector.get_map():
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            raise FullError("interpreter_timeout")
-                        for key, _ in selector.select(min(remaining, 0.1)):
-                            chunk = os.read(key.fileobj.fileno(), 4096)
-                            if not chunk:
-                                selector.unregister(key.fileobj)
-                                continue
-                            buffers[key.data].extend(chunk)
-                            limit = stdout_limit if key.data == "stdout" else stderr_limit
-                            if len(buffers[key.data]) > limit:
-                                raise FullError("interpreter_output_limit")
-                    code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
-                return code, bytes(buffers["stdout"]), bytes(buffers["stderr"])
+                _finish_child(process)
             finally:
-                # Reap the direct child and kill any descendants, including one
-                # that outlives a successful process after closing its pipes.
+                # Closing read-only pipes does not wait for the child. Do this
+                # even when termination/reaping could not be proven complete.
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
+                    process.stdout.close()
+                finally:
+                    process.stderr.close()
     except subprocess.TimeoutExpired:
         raise FullError("interpreter_timeout") from None
     except OSError:

@@ -112,10 +112,12 @@ def child_failure_diagnostic(error):
                 frame_terminal = "limit"
                 break
             visited += 1
-            if frame.tb_frame.f_code is full.bounded_child.__code__:
+            functions = {full.bounded_child.__code__: "bounded_child",
+                         full._finish_child.__code__: "_finish_child"}
+            if frame.tb_frame.f_code in functions:
                 line = frame.tb_lineno
                 if type(line) is int and 1 <= line <= 1_000_000:
-                    frames.append({"function": "bounded_child", "line": line})
+                    frames.append({"function": functions[frame.tb_frame.f_code], "line": line})
             frame = frame.tb_next
         nodes.append({"class": classes.get(kind, "other"), "errno": number,
                       "frames": frames, "frame_terminal": frame_terminal})
