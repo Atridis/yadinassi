@@ -161,7 +161,7 @@ class ValueTreeRuntimeTests(unittest.TestCase):
 
     def test_host_access_and_unsupported_features_fail_closed(self):
         for expr in ('t._all_rows','r.cells','r.tree','c.table','t.Rows.items',
-                     't.Copy()', 't.Rows.Find(1)', 't.ChooseRow()',
+                     't.Copy()', 't.Find(1)', 't.ChooseRow()',
                      'ValueToStringInternal(t)', 'ValueToStringInternal(Type("ValueTree"))',
                      'XMLString(t)', 't[0]', 't.Rows[0]=r;'):
             with self.subTest(expr=expr), self.assertRaises(BSLError):

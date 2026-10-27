@@ -330,6 +330,99 @@ class BSLValueTreeRowCollection(BSLObject):
             raise TypeError("Ожидается строка дерева")
         return Decimal(next((i for i, item in enumerate(self.items) if item is row), -1))
 
+    def find(self, value, columns="", recursive=False):
+        """First scalar match in row-major, optionally depth-first hierarchy order."""
+        self._live()
+        budget = _SearchBudget()
+        query_units = _search_scalar(value, budget)
+        # Only the two measured scalar forms extend the Boolean domain here.
+        # Keep FindRows' separately documented converter policy unchanged.
+        if type(recursive) is not bool:
+            kind = type(recursive)
+            if kind is not Decimal and kind is not str:
+                raise TypeError("ДеревоЗначений: неподдерживаемый флаг поиска")
+            _search_scalar(recursive, budget)  # Before equality, including sNaN.
+            if not ((kind is Decimal and recursive == Decimal(1))
+                    or (kind is str and recursive == "True")):
+                raise ValueError("ДеревоЗначений: неизмеренный флаг поиска")
+            recursive = True
+        if columns is None:
+            columns = ""
+        if type(columns) is not str:
+            raise TypeError("ДеревоЗначений: ожидается список имен колонок")
+        _search_scalar(columns, budget)  # Bound before splitting or stripping.
+        if type(self.tree.columns.items) is not list or type(self.items) is not list:
+            raise ValueError("Неверная коллекция поиска дерева")
+        if len(self.tree.columns.items) > _MAX_COLUMNS or columns.count(',') >= _MAX_COLUMNS:
+            raise ValueError("ДеревоЗначений: превышен предел колонок поиска Yadinassi")
+        schema = {}
+        for column in self.tree.columns.items:
+            if type(column) is not BSLValueTreeColumn or column.table is not self.tree or column._deleted:
+                raise ValueError("Колонка не принадлежит дереву поиска")
+            schema[_search_name(column.name, budget)] = column
+        if columns == "":
+            selected = list(self.tree.columns.items)
+        else:
+            names = []
+            for part in columns.split(','):
+                name = part.strip()
+                if name:
+                    names.append(name)
+            if not names:
+                raise ValueError("ДеревоЗначений: пустой список имен пока не поддерживается")
+            selected = []
+            seen = set()
+            for name in names:
+                column = schema.get(_search_name(name, budget))
+                if column is None:
+                    raise ValueError("Колонка поиска дерева не найдена")
+                # Duplicate names do not repeat work or alter row selection.
+                if id(column) not in seen:
+                    seen.add(id(column))
+                    selected.append(column)
+        if not selected:
+            return None
+        pending = [(self, iter(self.items))]
+        visited = cells = 0
+        while pending:
+            collection, iterator = pending[-1]
+            try:
+                row = next(iterator)
+            except StopIteration:
+                pending.pop()
+                continue
+            visited += 1
+            cells += len(selected)
+            if visited > _MAX_ROWS or cells > _MAX_CELLS:
+                raise ValueError("ДеревоЗначений: превышен предел ресурсов поиска Yadinassi")
+            budget.charge(1)
+            if type(row) is not BSLValueTreeRow or row.tree is not self.tree or row.collection is not collection:
+                raise ValueError("Строка не принадлежит коллекции поиска дерева")
+            row._live()
+            if type(row.cells) is not dict:
+                raise ValueError("Неверные ячейки строки поиска дерева")
+            if type(row.depth) is not int or not 0 <= row.depth <= _MAX_DEPTH:
+                raise ValueError("ДеревоЗначений: превышена глубина поиска Yadinassi")
+            values = []
+            for column in selected:
+                cell = row.cells[column]
+                _search_scalar(cell, budget)
+                budget.charge(query_units)
+                values.append(cell)
+            if any(equal(cell, value) for cell in values):
+                return row
+            if recursive:
+                children = row.rows
+                if (type(children) is not BSLValueTreeRowCollection
+                        or children.tree is not self.tree or children.parent is not row
+                        or type(children.items) is not list):
+                    raise ValueError("Неверная дочерняя коллекция поиска дерева")
+                if children.items:
+                    if len(pending) >= _MAX_DEPTH + 1:
+                        raise ValueError("ДеревоЗначений: превышена глубина поиска Yadinassi")
+                    pending.append((children, iter(children.items)))
+        return None
+
     def find_rows(self, filters, recursive=False):
         """Native-backed scalar search; membership snapshot, shared live rows."""
         self._live()
@@ -426,6 +519,7 @@ class BSLValueTreeRowCollection(BSLObject):
     def get_method(self, name):
         return _method(name, {"count": self.count, "количество": self.count,
             "get": self.get, "получить": self.get, "indexof": self.index_of, "индекс": self.index_of,
+            "find": self.find, "найти": self.find,
             "findrows": self.find_rows, "найтистроки": self.find_rows,
             "add": self.add, "добавить": self.add, "insert": self.insert, "вставить": self.insert,
             "delete": self.delete, "удалить": self.delete, "clear": self.clear, "очистить": self.clear})

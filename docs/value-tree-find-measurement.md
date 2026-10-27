@@ -1,7 +1,9 @@
 # ValueTree Rows.Find: bounded measurement inputs
 
-This is a **measurement-only** addition of 44 fixed observations, not a Find
-implementation or a native expected-output fixture. `ValueTreeRowCollection`
+This document describes the **measurement-only input layer** of 44 fixed
+observations, not a native expected-output fixture. The subsequent bounded
+implementation and its separate acceptance gates are documented in
+[value-tree-find-runtime.md](value-tree-find-runtime.md). `ValueTreeRowCollection`
 is the receiver, through root or child `Rows`; `Columns.Find` is a different API.
 Existing FindRows behavior and package source/data files remain unchanged by this
 measurement. The candidate incorporates main ca76e247 (PR #129), including its
@@ -96,7 +98,7 @@ the three-digit message count.
 Obtain genuine native server/client output for this exact source, authenticate
 run/head/tree/input provenance and all output bytes, and inspect every new record.
 An expected comparison failure while Find is absent is still a failed workflow,
-not measurement acceptance or runtime parity. A subsequent bounded implementation
+not measurement acceptance or runtime parity. The subsequent bounded implementation
 must pass fresh native and four-platform checks. No Copy/Sort, schema broadening,
 indexes, detached-row lifetime, codecs, transport or workflow changes belong here.
 
