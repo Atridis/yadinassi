@@ -13,7 +13,7 @@ from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.values import BSLArray, BSLFixedArray, HostFunction
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeRow, BSLValueTreeRowCollection
-from scripts.native_historical_replay import without_tree_findrows_probes, without_value_tree_probes
+from scripts.native_historical_replay import without_tree_find_probes, without_tree_findrows_probes, without_value_tree_probes
 import test_native_1c_full_stage as fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +32,8 @@ PRESENT = 'Procedure Показать(Label, Value) Message(Label + ": [" + Valu
 
 def raw_source():
     raw = (ROOT / 'integrational_tests/tests/collections.bsl').read_bytes()
-    return raw.replace(b'\r\n', b'\n') if os.name == 'nt' else raw
+    raw = raw.replace(b'\r\n', b'\n') if os.name == 'nt' else raw
+    return without_tree_find_probes(raw.decode('utf-8-sig')).encode('utf-8-sig')
 
 
 def fragments():
@@ -219,10 +220,13 @@ class TreeSearchSourceContract(unittest.TestCase):
         baseline = without_tree_findrows_probes(self.source.decode('utf-8-sig')).encode('utf-8-sig')
         self.assertEqual((len(baseline.splitlines()), len(baseline)), (4000,312961))
         self.assertEqual(hashlib.sha256(baseline).hexdigest(), BASE_SHA)
-        module = fixtures.suite.client_collections_module(self.source,self.template)
+        from test_native_async_fixture import historical_tree_find_collections_module
+        current=(ROOT / 'integrational_tests/tests/collections.bsl').read_bytes()
+        if os.name=='nt': current=current.replace(b'\r\n',b'\n')
+        module = historical_tree_find_collections_module(current,self.template)
         self.assertIn(helpers.replace('Функция ', '&НаКлиенте\nФункция ').encode(), module)
         self.assertIn(calls.encode(), module)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,902)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,946)
         self.assertEqual(hashlib.sha256(module).hexdigest(), '6828717dcc15fbf02e9b4032952b85286dda4b1d6d597e41ffd4a7306f17be31')
         from test_native_async_fixture import historical_tree_findrows_collections_module, historical_tree_collections_module
         self.assertEqual(hashlib.sha256(historical_tree_findrows_collections_module(self.source,self.template)).hexdigest(),
@@ -237,8 +241,10 @@ class TreeSearchSourceContract(unittest.TestCase):
     def test_block_tamper_cannot_rebase_outer_hash_and_historical_harness_is_exact(self):
         for before,after in ((b'Count > 7',b'Count > 8'), (b'"from-result"',b'"changed"'),
                              (b'B1 = B.',b'B1 = A.'), (b'S.Tree.Rows.FindRows(Filter, True)',b'S.Tree.Rows.FindRows(Filter, False)')):
-            changed=self.source.replace(before,after,1)
-            self.assertNotEqual(changed,self.source)
+            raw=(ROOT / 'integrational_tests/tests/collections.bsl').read_bytes()
+            current=raw.replace(b'\r\n',b'\n') if os.name=='nt' else raw
+            changed=current.replace(before,after,1)
+            self.assertNotEqual(changed,current)
             with mock.patch.object(fixtures.suite,'CLIENT_COLLECTIONS_SOURCE_SHA256',hashlib.sha256(changed).hexdigest()):
                 with self.assertRaises(fixtures.suite.FullError): fixtures.suite.client_collections_module(changed,self.template)
         from test_native_async_fixture import without_tree_findrows_measurement
@@ -270,7 +276,7 @@ class TreeSearchSourceContract(unittest.TestCase):
         for ordinal,label in enumerate(LABELS,867):
             rows[ordinal-1]=('tree.findrows.'+label,b'ok|array:2:1,2,')
         encoded=f.encode(rows)
-        self.assertEqual(contract.compare_collections(encoded,encoded,SOURCE_SHA)['status'],'equivalent')
+        self.assertEqual(contract.compare_collections(encoded,encoded,contract.SOURCE_SHA256)['status'],'equivalent')
         expected={283:'internal.map.typed-keys.payload',286:'internal.map.typed-keys.roundtrip.payload',
                   287:'internal.map.typed-keys-again.payload',290:'internal.map.typed-keys-again.roundtrip.payload',
                   291:'internal.map.reverse-insertion.payload',294:'internal.map.reverse-insertion.roundtrip.payload',
@@ -279,9 +285,9 @@ class TreeSearchSourceContract(unittest.TestCase):
         for ordinal,label in enumerate(LABELS,867):
             self.assertNotIn('tree.findrows.'+label,contract.ELIGIBLE_LABELS)
             changed=f.encode(f.change(rows,ordinal,payload=b'ok|array:2:2,1,'))
-            self.assertEqual(contract.compare_collections(encoded,changed,SOURCE_SHA)['reason'],'ineligible_difference')
+            self.assertEqual(contract.compare_collections(encoded,changed,contract.SOURCE_SHA256)['reason'],'ineligible_difference')
         for changed in (f.encode(rows[:-1]), f.encode(rows[:866]), encoded[:-1], f.encode(rows+[('extra',b'ok')])):
-            self.assertEqual(contract.compare_collections(encoded,changed,SOURCE_SHA)['status'],'rejected')
+            self.assertEqual(contract.compare_collections(encoded,changed,contract.SOURCE_SHA256)['status'],'rejected')
         self.assertEqual(contract.compare_collections(encoded,encoded,BASE_SHA)['reason'],'source_mismatch')
 
 

@@ -3024,6 +3024,79 @@
 
 // End bounded ValueTree FindRows helpers.
 
+// Begin bounded ValueTree Find helpers (measurement only; no native answers).
+Функция TreeFindResult(Знач Result, Знач S)
+    Если ТипЗнч(Result) = Тип("СтрокаДереваЗначений") Тогда
+        Id = Result.Id;
+        Если ТипЗнч(Id) <> Тип("Число") Или Id < 1 Или Id > 6 Или Цел(Id) <> Id Тогда
+            ВызватьИсключение "tree-find-result-id";
+        КонецЕсли;
+        Parent = Result.Parent;
+        ParentId = "undefined";
+        Если ТипЗнч(Parent) <> Тип("Неопределено") Тогда
+            ParentId = TreeSearchCell(Parent.Id);
+        КонецЕсли;
+        SameTree = Result.Owner() = S.Tree;
+        Возврат "row:" + Строка(Id) + ":parent=" + ParentId
+            + ":level=" + TreeSearchCell(Result.Level())
+            + ":owner=" + TreeSearchCell(SameTree)
+            + ":mark=" + TreeSearchMark(Result.Mark);
+    КонецЕсли;
+    Возврат TreeSearchResult(Result);
+КонецФункции
+
+Функция TreeFindProbe(Знач Expression, Знач Kind = "base", Знач Change = "none")
+    Попытка
+        S = TreeSearchFresh(Kind);
+        Если Kind = "cross-columns" Тогда
+            S.A.Key = "miss"; S.A.Group = "hit";
+            S.B.Key = "hit"; S.B.Group = "miss";
+        ИначеЕсли Kind = "empty" Тогда
+            S.Tree.Rows.Clear();
+        ИначеЕсли Kind = "no-columns" Тогда
+            S.Tree.Rows.Clear();
+            S.Tree.Columns.Clear();
+        КонецЕсли;
+    Исключение
+        Возврат "setup-error";
+    КонецПопытки;
+    Status = "ok";
+    Попытка
+        Result = Вычислить(Expression);
+    Исключение
+        Status = "action-error";
+    КонецПопытки;
+    ChangeStatus = "none";
+    Если Status = "ok" И Change <> "none" Тогда
+        ChangeStatus = "ok";
+        Попытка
+            Если Change = "result-to-source" Тогда
+                Result.Mark = "from-result";
+            ИначеЕсли Change = "source-to-result" Тогда
+                S.A1.Mark = "from-source";
+            КонецЕсли;
+        Исключение
+            ChangeStatus = "change-error";
+        КонецПопытки;
+    КонецЕсли;
+    Попытка
+        Если Kind = "empty" Или Kind = "no-columns" Тогда
+            State = "empty:rows=" + TreeSearchCell(S.Tree.Rows.Count())
+                + ":columns=" + TreeSearchCell(S.Tree.Columns.Count());
+        Иначе
+            State = TreeSearchState(S);
+        КонецЕсли;
+        Если Status = "action-error" Тогда
+            Возврат Status + "|state=" + State;
+        КонецЕсли;
+        Возврат "ok|change=" + ChangeStatus + "|result=" + TreeFindResult(Result, S) + "|state=" + State;
+    Исключение
+        Возврат Status + "|change=" + ChangeStatus + "|observer-error";
+    КонецПопытки;
+КонецФункции
+
+// End bounded ValueTree Find helpers.
+
 #Область МассивыИСтруктуры
 // Типичный конвейер: массив записей, расчет суммы и сбор кодов для выгрузки.
 Позиции = Новый Массив;
@@ -4239,3 +4312,49 @@ VTResult = "error";
 Показать("tree.findrows.wrong-tree", TreeSearchProbe("S.Tree.FindRows(Filter, True)"));
 Показать("tree.findrows.wrong-row", TreeSearchProbe("S.A.FindRows(Filter, True)"));
 // End bounded ValueTree FindRows observations.
+// Begin bounded ValueTree Find observations (measurement only; no native answers).
+Показать("tree.find.alias.ru", TreeFindProbe("S.Tree.Строки.Найти(""hit"", ""Key"", Истина)"));
+Показать("tree.find.alias.en", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", True)"));
+Показать("tree.find.root.false", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", False)"));
+Показать("tree.find.root.omitted", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"")"));
+Показать("tree.find.child.true", TreeFindProbe("S.A.Rows.Find(""hit"", ""Key"", True)"));
+Показать("tree.find.child.false", TreeFindProbe("S.A.Rows.Find(""hit"", ""Key"", False)"));
+Показать("tree.find.child.omitted", TreeFindProbe("S.A.Rows.Find(""hit"", ""Key"")"));
+Показать("tree.find.leaf", TreeFindProbe("S.A11.Rows.Find(""hit"", ""Key"", True)"));
+Показать("tree.find.no-match", TreeFindProbe("S.Tree.Rows.Find(""absent"", ""Key"", True)"));
+Показать("tree.find.descendants.true", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", True)", "descendants"));
+Показать("tree.find.descendants.false", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", False)", "descendants"));
+Показать("tree.find.descendants.omitted", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"")", "descendants"));
+Показать("tree.find.child-descendants", TreeFindProbe("S.A.Rows.Find(""hit"", ""Key"", True)", "descendants"));
+Показать("tree.find.columns.omitted", TreeFindProbe("S.Tree.Rows.Find(""x"")"));
+Показать("tree.find.columns.empty", TreeFindProbe("S.Tree.Rows.Find(""x"", """", True)"));
+Показать("tree.find.columns.undefined", TreeFindProbe("S.Tree.Rows.Find(""x"", Undefined, True)"));
+Показать("tree.find.columns.case", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""kEy"", True)"));
+Показать("tree.find.columns.order", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key,Group"", True)", "cross-columns"));
+Показать("tree.find.columns.reversed", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Group,Key"", True)", "cross-columns"));
+Показать("tree.find.columns.spaces", TreeFindProbe("S.Tree.Rows.Find(""hit"", "" Key , Group "", True)", "cross-columns"));
+Показать("tree.find.columns.duplicate", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key,Key"", True)"));
+Показать("tree.find.columns.unknown", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Missing"", True)"));
+Показать("tree.find.columns.unknown-empty", TreeFindProbe("S.A11.Rows.Find(""hit"", ""Missing"", True)"));
+Показать("tree.find.columns.known-unknown", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key,Missing"", True)"));
+Показать("tree.find.columns.number", TreeFindProbe("S.Tree.Rows.Find(""hit"", 1, True)"));
+Показать("tree.find.value.number", TreeFindProbe("S.Tree.Rows.Find(1, ""Key"", True)", "scalars"));
+Показать("tree.find.value.boolean", TreeFindProbe("S.Tree.Rows.Find(True, ""Key"", True)", "scalars"));
+Показать("tree.find.value.string-case", TreeFindProbe("S.Tree.Rows.Find(""X"", ""Key"", True)", "strings"));
+Показать("tree.find.value.string-space", TreeFindProbe("S.Tree.Rows.Find(""x "", ""Key"", True)", "strings"));
+Показать("tree.find.value.undefined", TreeFindProbe("S.Tree.Rows.Find(Undefined, ""Key"", True)", "nullish"));
+Показать("tree.find.value.null", TreeFindProbe("S.Tree.Rows.Find(Null, ""Key"", True)", "nullish"));
+Показать("tree.find.result-to-source", TreeFindProbe("S.Tree.Rows.Find(4, ""Id"", True)", "base", "result-to-source"));
+Показать("tree.find.source-to-result", TreeFindProbe("S.Tree.Rows.Find(4, ""Id"", True)", "base", "source-to-result"));
+Показать("tree.find.missing-value", TreeFindProbe("S.Tree.Rows.Find()"));
+Показать("tree.find.flag.undefined", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", Undefined)"));
+Показать("tree.find.flag.number", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", 1)"));
+Показать("tree.find.flag.string", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", ""True"")"));
+Показать("tree.find.wrong-tree", TreeFindProbe("S.Tree.Find(""hit"", ""Key"", True)"));
+Показать("tree.find.wrong-row", TreeFindProbe("S.A.Find(""hit"", ""Key"", True)"));
+Показать("tree.find.empty-tree", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", True)", "empty"));
+Показать("tree.find.no-columns", TreeFindProbe("S.Tree.Rows.Find(""hit"")", "no-columns"));
+Показать("tree.find.empty-token", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key,,Group"", True)"));
+Показать("tree.find.flag.number-descendants", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", 1)", "descendants"));
+Показать("tree.find.flag.string-descendants", TreeFindProbe("S.Tree.Rows.Find(""hit"", ""Key"", ""True"")", "descendants"));
+// End bounded ValueTree Find observations.

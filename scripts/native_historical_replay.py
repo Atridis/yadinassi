@@ -40,6 +40,32 @@ FILL_EXCLUDE_ORDER_PROBE_BLOCKS = (
 )
 
 
+TREE_FIND_HELPERS_START = '// Begin bounded ValueTree Find helpers (measurement only; no native answers).\n'
+TREE_FIND_HELPERS_END = '// End bounded ValueTree Find helpers.\n\n'
+TREE_FIND_CALLS_START = '// Begin bounded ValueTree Find observations (measurement only; no native answers).\n'
+TREE_FIND_CALLS_END = '// End bounded ValueTree Find observations.\n'
+
+
+def without_tree_find_probes(text):
+    """Exact source-only collections946 -> 902 inverse; never edit native output."""
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != '9de2d85c0b8409b83ccf62e4824ef7a8186518d0bdffc92b53bd98b1f98da0b3':
+        raise ValueError('tree Find source binding changed')
+    if not text.endswith(TREE_FIND_CALLS_END):
+        raise ValueError('tree Find tail changed')
+    for begin, end in ((TREE_FIND_HELPERS_START, TREE_FIND_HELPERS_END),
+                       (TREE_FIND_CALLS_START, TREE_FIND_CALLS_END)):
+        if text.count(begin) != 1 or text.count(end) != 1:
+            raise ValueError('tree Find boundaries changed')
+        before, rest = text.split(begin, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() != '5468d16850a9774251d4ef80ae5e938afdfabef69fe496cb3a6cb579d0564782':
+        raise ValueError('tree Find baseline binding changed')
+    return text
+
+
 TREE_FINDROWS_HELPERS_START = '// Begin bounded ValueTree FindRows helpers (measurement only; no native answers).\n'
 TREE_FINDROWS_HELPERS_END = '// End bounded ValueTree FindRows helpers.\n\n'
 TREE_FINDROWS_CALLS_START = '// Begin bounded ValueTree FindRows observations (measurement only; no native answers).\n'
@@ -48,6 +74,8 @@ TREE_FINDROWS_CALLS_END = '// End bounded ValueTree FindRows observations.\n'
 
 def without_tree_findrows_probes(text):
     """Exact source-only collections902 -> 866 inverse; never edit native output."""
+    if TREE_FIND_HELPERS_START in text or TREE_FIND_CALLS_START in text:
+        text = without_tree_find_probes(text)
     raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
     if hashlib.sha256(raw).hexdigest() != '5468d16850a9774251d4ef80ae5e938afdfabef69fe496cb3a6cb579d0564782':
         raise ValueError('tree FindRows source binding changed')

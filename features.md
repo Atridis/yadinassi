@@ -5593,6 +5593,14 @@ Date/Null helpers, append и определение компактного write
 
 ### ДеревоЗначений: standalone core (bounded native observations)
 
+Добавлен ограниченный Rows.Find / Строки.Найти: первая исходная строка с
+совпадением хотя бы в одной выбранной колонке, либо Неопределено. По умолчанию
+поиск локальный; Истина, измеренные Число 1 и Строка "True" включают preorder DFS.
+Основа — 44 независимо проверенных наблюдения run40469971658; этот прогон
+измерял поведение и не является приёмкой реализации. Свежие native/CI-гейты
+обязательны. [Точные скалярные границы и локальная политика](docs/value-tree-find-runtime.md),
+[границы измерения](docs/value-tree-find-measurement.md).
+
 `New ValueTree()` / `Новый ДеревоЗначений()` now provides a shared `Columns`
 schema and root `Rows`; each row has child `Rows`, read-only `Parent`, and
 `Owner()` / `Level()`. Row collections support Add/Insert/Delete/Clear/Count/
