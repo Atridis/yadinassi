@@ -313,5 +313,5 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
                     self.assertEqual(exported[0]['functions.out'], native_payload())
                     if mode == full.MAP_MODE:
                         semantic = probe['comparison']['cases'][0]['semantic']
-                        self.assertEqual((semantic['status'], semantic['records']), ('equivalent', 902))
+                        self.assertEqual((semantic['status'], semantic['records']), ('equivalent', 944))
                         self.assertIsNone(probe['comparison']['cases'][2]['semantic'])

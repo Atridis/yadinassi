@@ -289,8 +289,33 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_tree_find_measurement(source, *, host=False):
+    """Exact test-only collections944 harness -> 902 inverse, never admission."""
+    inventory = json.loads((REPOSITORY / 'tests/tree_find_source_inverse.json').read_text(encoding='utf-8'))
+    path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
+def historical_tree_find_collections_module(source, template):
+    """Restore complete collections902 source and adapter, not an output prefix."""
+    from scripts.native_historical_replay import without_tree_find_probes
+    restored = without_tree_find_measurement(SNIPPET.read_text(encoding='utf-8'))
+    namespace = {'__name__': 'historical_tree_find_suite'}
+    exec(compile(restored, str(SNIPPET), 'exec'), namespace)
+    original = without_tree_find_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
+    assert namespace['CLIENT_COLLECTIONS_MESSAGE_COUNT'] == 902
+    return namespace['client_collections_module'](original, template)
+
+
 def without_tree_findrows_measurement(source, *, host=False):
     """Exact test-only current harness -> collections866 inverse, never admission."""
+    source = without_tree_find_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/tree_findrows_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]

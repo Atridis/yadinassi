@@ -38,7 +38,7 @@ LINUX_TARGET = "linux-8.3.27.1508"
 BYTE_EXACT = "byte_exact"
 MAP_MODE = "typed-map-order-v1"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
-COLLECTIONS_SOURCE_SHA256 = "5468d16850a9774251d4ef80ae5e938afdfabef69fe496cb3a6cb579d0564782"
+COLLECTIONS_SOURCE_SHA256 = "d94101cf391fa84668b7f94bb9295655d62d3ff6baa084de17a48b62966a0901"
 CASE_SECONDS = 10
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
 FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
@@ -767,7 +767,7 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
         if (server_case["status"] != "ok"
                 or not is_digest(data["output_sha256"])
                 or not is_int(data["output_size"], MAX_FILE)
-                or type(data["message_count"]) is not int or data["message_count"] != 902
+                or type(data["message_count"]) is not int or data["message_count"] != 944
                 or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
             raise ValueError("client collections output identity")
     elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):
@@ -784,23 +784,23 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
                 or data["process_diagnostics"]["stage"] != "after_exit"
                 or data["process_diagnostics"]["reason"] != "none"
                 or server_case["status"] != "ok" or server_case["source_sha256"] != source_hash
-                or type(server_case["message_count"]) is not int or server_case["message_count"] != 902):
+                or type(server_case["message_count"]) is not int or server_case["message_count"] != 944):
             raise ValueError("client collections mismatch context")
         keys = {"count", "first", "ordinals", "client_sha256", "server_sha256", "client_size", "server_size"}
         if (type(mismatch) is not dict or set(mismatch) != keys
-                or not is_int(mismatch["count"], 902) or mismatch["count"] < 1
-                or not is_int(mismatch["first"], 902) or mismatch["first"] < 1
-                or mismatch["count"] > 903 - mismatch["first"]
+                or not is_int(mismatch["count"], 944) or mismatch["count"] < 1
+                or not is_int(mismatch["first"], 944) or mismatch["first"] < 1
+                or mismatch["count"] > 945 - mismatch["first"]
                 or not is_digest(mismatch["client_sha256"]) or not is_digest(mismatch["server_sha256"])
                 or mismatch["client_sha256"] == mismatch["server_sha256"]
                 or any(not is_int(mismatch[key], MAX_FILE) or mismatch[key] < 1
                        for key in ("client_size", "server_size"))
                 or type(mismatch["ordinals"]) is not list
                 or len(mismatch["ordinals"]) != min(mismatch["count"], 16)
-                or any(not is_int(value, 902) or value < 1 for value in mismatch["ordinals"])
+                or any(not is_int(value, 944) or value < 1 for value in mismatch["ordinals"])
                 or mismatch["ordinals"] != sorted(set(mismatch["ordinals"]))
                 or mismatch["ordinals"][0] != mismatch["first"]
-                or mismatch["count"] - len(mismatch["ordinals"]) > 902 - mismatch["ordinals"][-1]):
+                or mismatch["count"] - len(mismatch["ordinals"]) > 944 - mismatch["ordinals"][-1]):
             raise ValueError("client collections mismatch schema")
     return data
 
@@ -1397,15 +1397,15 @@ def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
     if (type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}
             or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != MAP_MODE
             or type(result["reason"]) is not str or result["reason"] not in contract.REASONS
-            or not is_int(result["records"], 902) or not is_int(result["byte_equal_records"], result["records"])
+            or not is_int(result["records"], 944) or not is_int(result["byte_equal_records"], result["records"])
             or type(result["accepted_labels"]) is not list
             or any(type(label) is not str or label not in contract.ELIGIBLE_LABELS for label in result["accepted_labels"])
             or len(set(result["accepted_labels"])) != len(result["accepted_labels"])):
         raise FullError("semantic_result_invalid")
     if result["status"] == "equivalent":
-        if (result["reason"] != "none" or result["records"] != 902
-                or result["byte_equal_records"] + len(result["accepted_labels"]) != 902
-                or raw_matched != (result["byte_equal_records"] == 902)):
+        if (result["reason"] != "none" or result["records"] != 944
+                or result["byte_equal_records"] + len(result["accepted_labels"]) != 944
+                or raw_matched != (result["byte_equal_records"] == 944)):
             raise FullError("semantic_result_invalid")
     elif (result["reason"] == "none" or result["records"] != 0
             or result["byte_equal_records"] != 0 or result["accepted_labels"]):

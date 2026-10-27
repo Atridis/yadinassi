@@ -5578,6 +5578,11 @@ Date/Null helpers, append и определение компактного write
 
 ### ДеревоЗначений: standalone core (bounded native observations)
 
+Подготовлены 42 фиксированные измерительные пробы Rows.Find / Строки.Найти:
+область и порядок поиска, выбор колонок, скалярные значения, ошибки аргументов
+и живые ссылки. Это пока не реализация метода и не native-приёмка;
+см. [границы измерения](docs/value-tree-find-measurement.md).
+
 `New ValueTree()` / `Новый ДеревоЗначений()` now provides a shared `Columns`
 schema and root `Rows`; each row has child `Rows`, read-only `Parent`, and
 `Owner()` / `Level()`. Row collections support Add/Insert/Delete/Clear/Count/
