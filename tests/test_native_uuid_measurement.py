@@ -39,7 +39,7 @@ class UUIDMeasurementContract(unittest.TestCase):
         self.assertEqual(len(self.calls), 30)
         self.assertEqual(len(self.codes), 30)
         self.assertEqual(fixtures.suite.CLIENT_VALUES_MESSAGE_COUNT, 534)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 946)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 973)
         self.assertEqual(self.text.count(HELPERS), 1)
         self.assertEqual(self.text.count(START), 1)
 

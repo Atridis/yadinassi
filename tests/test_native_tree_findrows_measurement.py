@@ -226,7 +226,7 @@ class TreeSearchSourceContract(unittest.TestCase):
         module = historical_tree_find_collections_module(current,self.template)
         self.assertIn(helpers.replace('Функция ', '&НаКлиенте\nФункция ').encode(), module)
         self.assertIn(calls.encode(), module)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,946)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,973)
         self.assertEqual(hashlib.sha256(module).hexdigest(), '6828717dcc15fbf02e9b4032952b85286dda4b1d6d597e41ffd4a7306f17be31')
         from test_native_async_fixture import historical_tree_findrows_collections_module, historical_tree_collections_module
         self.assertEqual(hashlib.sha256(historical_tree_findrows_collections_module(self.source,self.template)).hexdigest(),

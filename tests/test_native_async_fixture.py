@@ -289,8 +289,34 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_tree_unload_measurement(source, *, host=False):
+    """Exact test-only collections973 harness -> 946 inverse, never admission."""
+    inventory = json.loads((REPOSITORY / 'tests/tree_unload_source_inverse.json').read_text(encoding='utf-8'))
+    path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
+def historical_tree_unload_collections_module(source, template):
+    """Restore complete collections946 source/adapter, never truncate output."""
+    from scripts.native_historical_replay import without_tree_unload_probes
+    restored = without_tree_unload_measurement(SNIPPET.read_text(encoding='utf-8'))
+    namespace = {'__name__': 'historical_tree_unload_suite'}
+    exec(compile(restored, str(SNIPPET), 'exec'), namespace)
+    original = without_tree_unload_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
+    assert namespace['CLIENT_COLLECTIONS_MESSAGE_COUNT'] == 946
+    return namespace['client_collections_module'](original, template)
+
+
 def without_child_cleanup(source):
     """Exact test-only cleanup inverse; never a runtime or admission fallback."""
+    if 'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada' in source:
+        source = without_tree_unload_measurement(source, host=True)
     contract = json.loads((REPOSITORY / 'tests/child_cleanup_source_inverse.json').read_text(encoding='utf-8'))
     assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
     for edit in reversed(contract['edits']):
@@ -304,6 +330,8 @@ def without_tree_find_measurement(source, *, host=False):
     """Exact test-only collections946 harness -> 902 inverse, never admission."""
     if host:
         source = without_child_cleanup(source)
+    else:
+        source = without_tree_unload_measurement(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_find_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
