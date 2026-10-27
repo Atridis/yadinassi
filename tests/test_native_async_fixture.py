@@ -289,8 +289,21 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_child_cleanup(source):
+    """Exact test-only cleanup inverse; never a runtime or admission fallback."""
+    contract = json.loads((REPOSITORY / 'tests/child_cleanup_source_inverse.json').read_text(encoding='utf-8'))
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
 def without_tree_find_measurement(source, *, host=False):
     """Exact test-only collections946 harness -> 902 inverse, never admission."""
+    if host:
+        source = without_child_cleanup(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_find_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
