@@ -38,9 +38,9 @@ def checkout_source_sha256(raw):
 class StandardActivationTests(unittest.TestCase):
     def test_workflow_changes_exactly_one_selector_and_nothing_else(self):
         raw = (ROOT/WORKFLOW).read_bytes()
-        self.assertEqual(raw.count(b'--config-catalog-identity-binding'), 1)
+        self.assertEqual(raw.count(b'--config-catalog-field-matrix'), 1)
         self.assertNotIn(b'--config-catalog-name-binding', raw)
-        original = raw.replace(b'--config-catalog-identity-binding', b'--config-catalog-name-binding')
+        original = raw.replace(b'--config-catalog-field-matrix', b'--config-catalog-name-binding')
         self.assertEqual(checkout_source_sha256(original), WORKFLOW_LF_SHA256)
 
     def test_reviewed_policy_parser_and_reader_source_pins(self):
@@ -52,7 +52,7 @@ class StandardActivationTests(unittest.TestCase):
         for path, expected in SOURCE_PINS.items():
             yield path, (ROOT/path).read_bytes(), expected
         original = (ROOT/WORKFLOW).read_bytes().replace(
-            b'--config-catalog-identity-binding', b'--config-catalog-name-binding')
+            b'--config-catalog-field-matrix', b'--config-catalog-name-binding')
         yield WORKFLOW, original, WORKFLOW_LF_SHA256
 
     def test_real_pinned_sources_accept_lf_and_crlf_checkouts(self):
