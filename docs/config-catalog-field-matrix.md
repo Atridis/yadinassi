@@ -1,11 +1,12 @@
-# Owned Catalog standard-field matrix (native acceptance pending)
+# Owned Catalog standard-field matrix — accepted narrow native evidence
 
 This experiment extends only the native **measurement fixture**, not the BSL
 Catalog manager, application metadata APIs or general CRUD support. It reuses
 the bounded identity-prefix reader described in
 [config-catalog-identity-prefix.md](config-catalog-identity-prefix.md).
-No native evidence for the new matrix is claimed before its separately reviewed,
-source-bound run and independent report verification.
+The dedicated source-bound run below has accepted native evidence for exactly
+these three owned metadata profiles. It does not establish general field ranges
+or additional Catalog data operations.
 
 ## Three fixed profiles
 
@@ -16,9 +17,9 @@ source-bound run and independent report verification.
 | `NativeOracleNumberDescription` | Number | 2 | 16 | None |
 
 The second row isolates a nonzero description length; the third changes only
-CodeType relative to the second. Whether the pinned native producer accepts
-Number with length 2 is a measurement question, not an assumption or a claim
-of complete platform validity. No general length ranges are inferred.
+CodeType relative to the second. The pinned native producer accepted the empty
+Number/length-2/description-16 profile in the run below. No general length
+ranges, arbitrary configurations or Number-code data operations are inferred.
 
 The existing Catalog, Payload/Amount attributes, physical record decoder and
 logical K1 checks are unchanged. The two extra Catalogs have empty ChildObjects
@@ -45,9 +46,8 @@ source identity and scope. The matrix must not relabel that earlier run.
 
 Existing lifecycle, source admission, report budgets and cleanup are retained.
 Extra physical tables may change bounded aggregate counts; they do not expand
-the NativeOracleItems-only record projection. Native acceptance must confirm
-that the fixed matrix fits the existing limits; limits are not raised to make
-a failing measurement pass.
+the NativeOracleItems-only record projection. The accepted run below completed
+inside the existing limits; no limits were raised.
 
 ## Closed lane and local envelope checks
 
@@ -63,3 +63,33 @@ Synthetic encoded majorants are 2015/2048 bytes for the projection,
 sources. All 13 stages, 11 snapshots, 5 comparisons and 4 cleanup steps remain
 required. These local checks establish bounded protocol construction only,
 not platform behavior or successful native execution.
+
+
+## Accepted owned native evidence (original source identity)
+
+Dedicated [run 40759955663, attempt 1](https://github.com/Atridis/yadinassi/actions/runs/40759955663)
+was accepted for original source commit
+`f4ed7c9e49e735a5056c3758185299e3dbe55c64`, tree
+`aee83d2f36fd8eb0c97f48523a2170e871dd237d`. Cold production FINAL validation
+passed first, followed by the unchanged independently prefrozen checker and
+source/Git-graph/run/job/artifact checks. The bound inventory contains 664 source
+files and 27 staged files.
+
+Exactly three Catalog declarations, resolutions, positive entries and names
+matched, with finite verdict `owned_matrix_uuid_fields_matched`: internal UUID,
+external declaration and canonical owned XML UUID, Name, CodeLength, CodeType
+and DescriptionLength agree for each fixed profile. All 16 selected entries
+completed, with 13 stages, 11 snapshots, 5 comparisons, 3 artifacts and all four
+cleanup checks successful. The existing K1 CRUD fixture was preserved; the two
+additional Catalogs remained metadata-only fixtures without extra CRUD grants.
+
+The 18807-byte report has SHA-256
+`dc559f351050f0008e4ebfda4600051ae2f5665cd36f70337b37e7e12d197fbc`.
+Actual public projection/capture sizes were 1939/2981 bytes. No raw UUID, Name,
+XML or CONFIG content is exported by this evidence.
+
+This accepts only the fixed owned matrix through the pinned producer. It does
+not establish arbitrary Catalog grammar, hierarchy, applied CONFIG identity,
+BSL Catalog APIs or data operations on the two additional Catalogs. Earlier
+one-Catalog evidence keeps its original scope. This prose-only follow-up does
+not relabel the dedicated run as executing against a later documentation commit.
