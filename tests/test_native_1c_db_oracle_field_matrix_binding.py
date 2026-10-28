@@ -1,8 +1,9 @@
 """Synthetic fixed matrix proof only; never native compatibility evidence."""
 import copy
 import dataclasses
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import sys
+import os
 import unittest
 from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
@@ -131,13 +132,18 @@ class MatrixXMLManifestTests(unittest.TestCase):
         import tempfile
         import inject_metadata
         self.metadata=inject_metadata
+        if os.name == "nt":
+            # Manifest keys are POSIX strings; filesystem roots remain native.
+            patch = mock.patch.object(inject_metadata, "Path", PurePosixPath)
+            patch.start()
+            self.addCleanup(patch.stop)
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name).resolve();source=self.root/'native';source.mkdir()
         shutil.copyfile(ROOT/'tests/fixtures/native_bootstrap/Configuration.xml',source/'Configuration.xml')
         (source/'ConfigDumpInfo.xml').write_text('synthetic bookkeeping',encoding='utf-8')
         self.expected=self.root/'expected';self.actual=self.root/'actual'
         inject_metadata.inject(source,self.expected,nonce=NONCE,
-            evidence=Path('/tmp/onec-db-oracle/evidence'),catalog_field_matrix=True)
+            evidence=PurePosixPath('/tmp/onec-db-oracle/evidence'),catalog_field_matrix=True)
         shutil.copytree(self.expected,self.actual)
 
     def build(self):return policy.build_identity_manifest(self.expected,self.actual,nonce=NONCE,version=1)
@@ -186,3 +192,31 @@ class MatrixXMLManifestTests(unittest.TestCase):
             return result
         with mock.patch.object(self.metadata,'read_xml',side_effect=changed):
             with self.assertRaises(policy.ObservationFailure):self.build()
+
+
+class MatrixWindowsLexicalPathsTests(unittest.TestCase):
+    def test_all_xml_cases_keep_posix_wire_paths_with_windows_lexical_host(self):
+        # Linux can exercise lexical Windows behavior without pretending to run
+        # on Windows or replacing the real filesystem's native Path objects.
+        import io
+        import types
+        from pathlib import PureWindowsPath
+        import inject_metadata
+        module = sys.modules[__name__]
+        native_path = Path
+
+        def host_path(*args, **kwargs):
+            if args and str(args[0]).startswith('/tmp/onec-db-oracle/evidence'):
+                return PureWindowsPath(*args)
+            return native_path(*args, **kwargs)
+
+        self.assertNotEqual(str(PureWindowsPath('/tmp/onec-db-oracle/evidence')),
+                            '/tmp/onec-db-oracle/evidence')
+        stream = io.StringIO()
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(MatrixXMLManifestTests)
+        with mock.patch.object(module, 'os', types.SimpleNamespace(name='nt')), \
+             mock.patch.object(module, 'Path', host_path), \
+             mock.patch.object(inject_metadata, 'Path', PureWindowsPath):
+            result = unittest.TextTestRunner(stream=stream).run(suite)
+        self.assertEqual(result.testsRun, 5)
+        self.assertTrue(result.wasSuccessful(), stream.getvalue())
