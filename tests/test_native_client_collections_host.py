@@ -27,7 +27,7 @@ class ClientCollectionsHostTests(unittest.TestCase):
         self.server = stage["cases"][full.SCENARIOS.index("collections")]
         self.inputs[full.COLLECTIONS_SOURCE] = full.COLLECTIONS_SOURCE_SHA256
         self.server["source_sha256"] = full.COLLECTIONS_SOURCE_SHA256
-        self.server["message_count"] = 1021  # Messages need not equal physical lines.
+        self.server["message_count"] = 1022  # Messages need not equal physical lines.
         self.client = {"status": "ok", "failure_kind": "none", "source_sha256": "c" * 64,
                        "module_sha256": "d" * 64, "roundtrip_sha256": "d" * 64,
                        "process_diagnostics": process_diagnostics(),
@@ -73,7 +73,7 @@ class ClientCollectionsHostTests(unittest.TestCase):
         report, outputs = self.validate()
         self.assertEqual(outputs["collections"], self.payload)
         self.assertEqual(list(outputs), list(full.SCENARIOS))
-        self.assertEqual(report["stage3"]["client_collections"]["message_count"], 1021)
+        self.assertEqual(report["stage3"]["client_collections"]["message_count"], 1022)
         self.assertEqual(len(self.inputs), 24)
         self.assertEqual(len(full.ARTIFACT_FILES), 7)
         self.assertNotIn("fresh collections", json.dumps(report))
@@ -132,7 +132,7 @@ class ClientCollectionsHostTests(unittest.TestCase):
         # Another successful case's bytes are not a substitute for collections.
         alternate = b"different server case\n"
         other = self.envelope["report"]["stage3"]["cases"][-1]
-        other.update(output_sha256=full.digest(alternate), output_size=len(alternate), message_count=1021)
+        other.update(output_sha256=full.digest(alternate), output_size=len(alternate), message_count=1022)
         self.envelope["outputs"][-1].update(sha256=full.digest(alternate), size=len(alternate),
                                           data_b64=base64.b64encode(alternate).decode())
         self.validate()
@@ -141,7 +141,7 @@ class ClientCollectionsHostTests(unittest.TestCase):
             self.validate()
 
     def test_matching_but_wrong_server_and_client_message_counts_are_rejected(self):
-        for count in (0, 841, 852, 1020, 1022, 32768, True, "1021"):
+        for count in (0, 841, 852, 1021, 1023, 32768, True, "1022"):
             envelope = copy.deepcopy(self.envelope)
             envelope["report"]["stage3"]["cases"][full.SCENARIOS.index("collections")]["message_count"] = count
             envelope["report"]["stage3"]["client_collections"]["message_count"] = count
@@ -257,8 +257,8 @@ class ClientCollectionsHostTests(unittest.TestCase):
 
     def test_duplicate_trailing_json_nonfinite_and_stale_stage_nonce_fail_closed(self):
         raw = host_fixture.encode(self.envelope)
-        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":1021', b'"message_count":1021,"message_count":1021'),
-                     raw.replace(b'"message_count":1021', b'"message_count":NaN')]
+        malformed = [raw + b" PRIVATE", raw.replace(b'"message_count":1022', b'"message_count":1022,"message_count":1022'),
+                     raw.replace(b'"message_count":1022', b'"message_count":NaN')]
         for value in malformed:
             with self.subTest(value=value[:30]), self.assertRaises(full.FullError):
                 full.validate_envelope(value, host_fixture.NONCE, self.inputs, self.modules,
@@ -291,8 +291,8 @@ class ClientCollectionsHostTests(unittest.TestCase):
             case.update(output_size=209715, message_count=32768)
         self.envelope["report"]["stage3"]["cases"][1]["message_count"] = 185
         dates.update(output_size=209715, message_count=185)
-        self.server.update(output_size=1048576, message_count=1021)
-        self.collections.update(output_size=1048576, message_count=1021)
+        self.server.update(output_size=1048576, message_count=1022)
+        self.collections.update(output_size=1048576, message_count=1022)
         self.envelope["report"].update(python_version="99.99.999")
         self.envelope["report"]["configuration_format"].update(
             schema_version="99.999.999.999", element_count=4096, known_elements=sorted(smoke.KNOWN_ELEMENTS))
@@ -416,7 +416,7 @@ class ClientCollectionsHostTests(unittest.TestCase):
                                      "python": 26, "other": 26, "unreadable": 26}, zombie_count=256))
         for case in stage["cases"]:
             case.update(output_size=209715, message_count=32768)
-        for name, count in (("dates", 185), ("values", 534), ("collections", 1021)):
+        for name, count in (("dates", 185), ("values", 534), ("collections", 1022)):
             case = stage["cases"][full.SCENARIOS.index(name)]
             case.update(message_count=count)
             stage["client_" + name].update(message_count=count, output_size=209715)

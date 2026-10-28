@@ -35,7 +35,7 @@ class ValueTreeMeasurementContract(unittest.TestCase):
         self.assertEqual(block.count('Новый ДеревоЗначений'.encode()), 1)
         for forbidden in ('Сообщить(', 'Выполнить(', 'Пока ', 'Для ', 'ЗначениеВСтрокуВнутр(', 'Записать', 'Прочитать'):
             self.assertNotIn(forbidden.encode(), block)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 1021)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 1022)
 
     def test_full_client_adapter_preserves_probe_expressions(self):
         source = self.source
@@ -58,7 +58,7 @@ class ValueTreeMeasurementContract(unittest.TestCase):
         import test_native_1c_map_contract as map_fixtures
         from scripts import native_1c_map_contract as contract
         rows = map_fixtures.records()
-        self.assertEqual(len(rows), 1021)
+        self.assertEqual(len(rows), 1022)
         fresh = map_fixtures.encode(rows)
         old = map_fixtures.encode(rows[:854])
         current_sha = fixtures.suite.CLIENT_COLLECTIONS_SOURCE_SHA256

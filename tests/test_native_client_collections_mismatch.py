@@ -72,19 +72,19 @@ class CollectionsMismatchHostTests(unittest.TestCase):
             for value in (None, True, 1, "A" * 64, "a" * 63, "PRIVATE"):
                 edits.append((key, value))
         for value in (None, True, (), "PRIVATE", [], [3], [3, 7, 9], [7, 3], [3, 3],
-                      [3, 1022], [0, 7], [True, 7], [3, 7.0], [3, "7"], [4, 7]):
+                      [3, 1023], [0, 7], [True, 7], [3, 7.0], [3, "7"], [4, 7]):
             edits.append(("ordinals", value))
         for key, value in edits:
             metadata = dict(self.metadata(), **{key: value})
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 self.validate(dict(self.record, mismatch=metadata))
         for edits in ({"client_sha256": "2" * 64}, {"count": 1020},
-                      {"count": 17, "ordinals": list(range(3, 18)) + [1021]}):
+                      {"count": 17, "ordinals": list(range(3, 18)) + [1022]}):
             with self.subTest(edits=edits), self.assertRaises(ValueError):
                 self.validate(dict(self.record, mismatch=dict(self.metadata(), **edits)))
 
     def test_exact_first_sixteen_ordinal_prefix_is_bounded(self):
-        for count, first in ((1, 1021), (16, 1006), (17, 1005), (1021, 1)):
+        for count, first in ((1, 1022), (16, 1006), (17, 1005), (1022, 1)):
             metadata = dict(self.metadata(), count=count, first=first,
                             ordinals=list(range(first, first + min(count, 16))))
             self.validate(dict(self.record, mismatch=metadata))
@@ -150,7 +150,7 @@ class CollectionsMismatchHostTests(unittest.TestCase):
         # present, not dropped to make room for the finite diagnostic.
         for case in stage["cases"]:
             case.update(output_size=209715, message_count=32768)
-        for name, count in (("dates", 185), ("values", 534), ("collections", 1021)):
+        for name, count in (("dates", 185), ("values", 534), ("collections", 1022)):
             case = stage["cases"][full.SCENARIOS.index(name)]
             case["message_count"] = count
             if name != "collections":

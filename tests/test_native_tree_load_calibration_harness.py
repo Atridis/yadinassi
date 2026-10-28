@@ -21,7 +21,7 @@ CODES = '0123456789ABCDEFGHIJKLMNOPQR'
 def diagnostic_output(code):
     prefix = b''.join(f'old{i}: [ok]\n'.encode('ascii') for i in range(976))
     payload = ('1?C0' + code + '-!' + '.' * 58).encode('ascii')
-    return prefix + b''.join(f'TL{i:02d}: ['.encode('ascii') + payload + b']\n' for i in range(1, 46))
+    return prefix + b''.join(f'TL{i:02d}: ['.encode('ascii') + payload + b']\n' for i in range(1, 46)) + __import__('test_native_tree_move_contract').synthetic_record()[1]
 
 
 class CalibrationHarnessTests(host_tests.SyntheticFilesystemCase):
@@ -87,7 +87,7 @@ class CalibrationHarnessTests(host_tests.SyntheticFilesystemCase):
                 report['stage3']['input_sha256'][key] = full.COLLECTIONS_SOURCE_SHA256
                 report['trusted_input_sha256'][key] = full.COLLECTIONS_SOURCE_SHA256
                 report['stage3']['cases'][0].update(source_sha256=full.COLLECTIONS_SOURCE_SHA256,
-                    output_sha256=full.digest(payload), output_size=len(payload), message_count=1021)
+                    output_sha256=full.digest(payload), output_size=len(payload), message_count=1022)
                 report['comparison']['cases'][0].update(native_sha256=full.digest(payload), native_size=len(payload),
                     interpreter_sha256=full.digest(payload), interpreter_size=len(payload))
                 payloads = dict.fromkeys(full.ARTIFACT_FILES[:-1], artifact.PAYLOAD)

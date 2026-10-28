@@ -1,7 +1,8 @@
 # ValueTree Rows.LoadColumn measurement checkpoint
 
 Status: the 45 native observations are authenticated and a bounded Rows.LoadColumn
-implementation is now included. Fresh runtime acceptance is still pending. The
+implementation is included and accepted on main a20afe9548ebe5f0352ff8c39809fb6573110879
+(native run 40703277332; four-OS run 40703277222). The
 chronology below preserves earlier measurement-only and fail-only revisions;
 synthetic callbacks test observer branches, not additional native behavior.
 

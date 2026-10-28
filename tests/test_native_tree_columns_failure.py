@@ -13,14 +13,14 @@ VECTORS = tuple(''.join(parts) for parts in itertools.product('TFE', repeat=4))
 def output(vector):
     prefix = b''.join(f'old{i}: [ok]\n'.encode('ascii') for i in range(976))
     payload = b'1?K0' + vector.encode('ascii') + b'!' + b'.'*56
-    return prefix + b''.join(f'TL{i:02d}: ['.encode('ascii') + payload + b']\n' for i in range(1,46))
+    return prefix + b''.join(f'TL{i:02d}: ['.encode('ascii') + payload + b']\n' for i in range(1,46)) + __import__('test_native_tree_move_contract').synthetic_record()[1]
 
 
 class ColumnsFailureTests(artifact.SyntheticFilesystemCase):
     invoke = artifact.OrchestrationTests.invoke
 
     def native(self, **updates):
-        value = dict(source_sha256=full.COLLECTIONS_SOURCE_SHA256, message_count=1021)
+        value = dict(source_sha256=full.COLLECTIONS_SOURCE_SHA256, message_count=1022)
         value.update(updates); return value
 
     def test_exact_81_vocabulary_packets_and_strict_decoder_rejection(self):
@@ -30,7 +30,7 @@ class ColumnsFailureTests(artifact.SyntheticFilesystemCase):
             self.assertEqual(full.tree_columns_diagnostic_failure(data,self.native()),'tree_cols_'+vector)
             with self.assertRaisesRegex(full.FullError,'^tree_load_observation_invalid$'):
                 full.validate_tree_load_observations(data)
-            self.assertEqual(len(data)-len(data[:data.index(b'TL01:')])-45,3285)
+            self.assertEqual(len(data[:data.index(b'TM:')])-len(data[:data.index(b'TL01:')])-45,3285)
 
     def test_malformed_mixed_unknown_or_unbound_is_generic(self):
         original = output('TFTT')
@@ -43,7 +43,7 @@ class ColumnsFailureTests(artifact.SyntheticFilesystemCase):
         for changed in variants:
             self.assertIsNone(full.tree_columns_diagnostic_failure(changed,self.native()))
         for metadata in (self.native(source_sha256='0'*64),self.native(message_count=1020),
-                         self.native(message_count='1021'),self.native(message_count=True)):
+                         self.native(message_count='1022'),self.native(message_count=True)):
             self.assertIsNone(full.tree_columns_diagnostic_failure(original,metadata))
 
     def test_all_81_through_both_main_contexts_keep_export_failure(self):

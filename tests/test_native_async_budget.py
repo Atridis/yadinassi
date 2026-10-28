@@ -236,7 +236,7 @@ def comparison(stage3):
                           interpreter_line_count=1048577))
         if native['name'] == 'collections':
             item.update(acceptance_status='accepted', semantic=dict(status='equivalent',
-                profile=full.MAP_MODE, records=1021, byte_equal_records=1013,
+                profile=full.MAP_MODE, records=1022, byte_equal_records=1014,
                 accepted_labels=list(contract.ELIGIBLE_LABELS), reason='none'))
         result['cases'].append(item)
     full.validate_comparison(result, stage3, full.LINUX_TARGET, full.MAP_MODE)
@@ -285,7 +285,7 @@ def accepted_comparison(stage3):
         case.update(status='matched', acceptance_status='accepted', mismatch=None,
                     interpreter_size=native['output_size'], interpreter_sha256=native['output_sha256'])
         if case['name'] == 'collections':
-            case['semantic'].update(byte_equal_records=1021, accepted_labels=[])
+            case['semantic'].update(byte_equal_records=1022, accepted_labels=[])
     full.validate_comparison(result, stage3, full.LINUX_TARGET, full.MAP_MODE)
     return result
 
@@ -378,9 +378,9 @@ def render_stage(value):
 def render_provenance(record, *, async_result=None, accepted=False):
     result = probe(record)
     payloads = {case['name']+'.out': b'x' * case['output_size'] for case in result['stage3']['cases']}
-    from test_native_tree_load_contract import synthetic_output
+    from test_native_tree_move_contract import synthetic_output
     payloads['collections.out'] = synthetic_output(result['stage3']['cases'][0]['output_size'])
-    result['stage3']['cases'][0]['message_count'] = 1021
+    result['stage3']['cases'][0]['message_count'] = 1022
     for case in result['stage3']['cases']:
         case['output_sha256'] = full.digest(payloads[case['name']+'.out'])
     result['comparison'] = accepted_comparison(result['stage3']) if accepted else comparison(result['stage3'])

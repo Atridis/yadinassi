@@ -3285,6 +3285,144 @@
 КонецФункции
 // End isolated Columns view diagnostic.
 
+// Begin bounded ValueTree Move helpers (measurement only; no native answers).
+Функция TreeMoveFresh(Знач Mode)
+    S = Новый Структура("Tree,Nodes,Columns,Names,Views,ColumnCollection");
+    S.Tree = Новый ДеревоЗначений; S.Nodes = Новый Массив; S.Columns = Новый Массив;
+    S.Names = Новый Массив; S.Names.Add("Id"); S.Views = Новый Массив; S.ColumnCollection = S.Tree.Columns;
+    C = S.Tree.Columns.Add("Id"); C.Title = "Id"; C.Width = 0; S.Columns.Add(C);
+    Если Mode <> 0 Тогда
+        S.Nodes.Add(S.Tree.Rows.Add());
+        Если Mode = 5 Тогда
+            S.Nodes.Add(S.Tree.Rows.Add()); S.Nodes.Add(S.Tree.Rows.Add());
+            S.Nodes.Add(S.Nodes[0].Rows.Add()); S.Nodes.Add(S.Nodes[0].Rows.Add());
+        КонецЕсли;
+    КонецЕсли;
+    S.Views.Add(S.Tree.Rows);
+    Для P = 0 По S.Nodes.Count() - 1 Цикл
+        S.Nodes[P].Id = P + 1; S.Views.Add(S.Nodes[P].Rows);
+    КонецЦикла;
+    Возврат S;
+КонецФункции
+
+Функция TreeMoveOrder(Знач Rows, Знач S, Знач First, Знач Count, Знач Parent)
+    Если ТипЗнч(Rows) <> Тип("КоллекцияСтрокДереваЗначений") Тогда ВызватьИсключение "tree-move-view-type"; КонецЕсли;
+    TreeLoadCount(Rows, Count);
+    Если Rows.Parent <> Parent Тогда ВызватьИсключение "tree-move-parent"; КонецЕсли;
+    Text = "";
+    Для P = 0 По Count - 1 Цикл
+        R = Rows.Get(P); Found = -1;
+        Для Q = First По First + Count - 1 Цикл
+            Если R = S.Nodes[Q] Тогда
+                Если Found <> -1 Тогда ВызватьИсключение "tree-move-identity"; КонецЕсли;
+                Found = Q;
+            КонецЕсли;
+        КонецЦикла;
+        Если Found = -1 Тогда ВызватьИсключение "tree-move-foreign-row"; КонецЕсли;
+        Code = Сред("ABCDE", Found + 1, 1);
+        Если СтрНайти(Text, Code) <> 0 Тогда ВызватьИсключение "tree-move-duplicate"; КонецЕсли;
+        Text = Text + Code;
+    КонецЦикла;
+    Возврат Text;
+КонецФункции
+
+Функция TreeMoveState(Знач S)
+    Если S.Tree.Columns <> S.ColumnCollection Тогда ВызватьИсключение "tree-move-columns"; КонецЕсли;
+    TreeLoadSchema(S.Tree, S.Columns, S.Names, Ложь);
+    Count = S.Nodes.Count(); RootCount = Count; Если Count = 5 Тогда RootCount = 3; КонецЕсли;
+    Root = TreeMoveOrder(S.Tree.Rows, S, 0, RootCount, Неопределено);
+    Saved = TreeMoveOrder(S.Views[0], S, 0, RootCount, Неопределено);
+    Если Не TreeLoadExact(Root, Saved) Тогда ВызватьИсключение "tree-move-root-view"; КонецЕсли;
+    Child = "";
+    Для P = 0 По Count - 1 Цикл
+        R = S.Nodes[P]; Parent = Неопределено; N = 0; First = 0;
+        Если P >= 3 Тогда Parent = S.Nodes[0]; КонецЕсли;
+        Если Count = 5 И P = 0 Тогда N = 2; First = 3; КонецЕсли;
+        Если R.Owner() <> S.Tree Или R.Parent <> Parent
+            Или ТипЗнч(R.Id) <> Тип("Число") Или R.Id <> P + 1 Тогда
+            ВызватьИсключение "tree-move-row";
+        КонецЕсли;
+        Current = TreeMoveOrder(R.Rows, S, First, N, R);
+        Saved = TreeMoveOrder(S.Views[P + 1], S, First, N, R);
+        Если Не TreeLoadExact(Current, Saved) Тогда ВызватьИсключение "tree-move-child-view"; КонецЕсли;
+        Если N = 2 Тогда Child = Current; КонецЕсли;
+    КонецЦикла;
+    Если Count = 0 Тогда Возврат "-----"; КонецЕсли;
+    Если Count = 1 Тогда Возврат Root + "----"; КонецЕсли;
+    Возврат Root + Child;
+КонецФункции
+
+Функция TreeMoveProbe(Знач Case)
+    Попытка
+        Mode = 5; Baseline = "ABCDE";
+        Если Case = 25 Тогда Mode = 0; Baseline = "-----";
+        ИначеЕсли Case = 26 Тогда Mode = 1; Baseline = "A----"; КонецЕсли;
+        S = TreeMoveFresh(Mode); Foreign = TreeMoveFresh(1);
+        Если Не TreeLoadExact(TreeMoveState(S), Baseline)
+            Или Не TreeLoadExact(TreeMoveState(Foreign), "A----") Тогда Возврат "!"; КонецЕсли;
+        Rows = S.Views[0]; Selector = 0; Offset = 1;
+        Если Mode = 5 Тогда Selector = S.Nodes[1]; КонецЕсли;
+        Если Case = 2 Тогда Selector = 1; Offset = -1;
+        ИначеЕсли Case = 3 Тогда Offset = 0;
+        ИначеЕсли Case = 4 Тогда Selector = 0; Offset = 2;
+        ИначеЕсли Case = 5 Тогда Selector = 2; Offset = -2;
+        ИначеЕсли Case = 6 Тогда Selector = 0; Offset = -1;
+        ИначеЕсли Case = 7 Тогда Selector = 2;
+        ИначеЕсли Case = 8 Тогда Offset = 10;
+        ИначеЕсли Case = 9 Тогда Offset = -10;
+        ИначеЕсли Case = 10 Тогда Selector = 0.5;
+        ИначеЕсли Case = 11 Тогда Selector = 1.9; Offset = -1;
+        ИначеЕсли Case = 12 Тогда Selector = -0.5;
+        ИначеЕсли Case = 13 Тогда Selector = -1;
+        ИначеЕсли Case = 14 Тогда Selector = 3; Offset = -1;
+        ИначеЕсли Case = 15 Тогда Offset = 0.5;
+        ИначеЕсли Case = 16 Тогда Offset = 1.9;
+        ИначеЕсли Case = 17 Тогда Offset = -0.5;
+        ИначеЕсли Case = 18 Тогда Offset = -1.9;
+        ИначеЕсли Case = 19 Тогда Selector = Неопределено;
+        ИначеЕсли Case = 20 Тогда Selector = Истина;
+        ИначеЕсли Case = 21 Тогда Selector = "1";
+        ИначеЕсли Case = 22 Тогда Offset = Неопределено;
+        ИначеЕсли Case = 23 Тогда Offset = Истина;
+        ИначеЕсли Case = 24 Тогда Offset = "1";
+        ИначеЕсли Case = 27 Тогда Rows = S.Views[1]; Selector = S.Nodes[3];
+        ИначеЕсли Case = 28 Тогда Rows = S.Views[1]; Selector = 1; Offset = -1;
+        ИначеЕсли Case = 29 Тогда Rows = S.Views[1];
+        ИначеЕсли Case = 30 Тогда Selector = Foreign.Nodes[0]; КонецЕсли;
+    Исключение
+        Возврат "!";
+    КонецПопытки;
+    Outcome = "1";
+    Попытка
+        Если Case = 1 Тогда Rows.Сдвинуть(Selector, Offset);
+        ИначеЕсли Case = 2 Тогда Rows.mOvE(Selector, Offset);
+        ИначеЕсли Case = 31 Тогда Rows.Move(Selector);
+        ИначеЕсли Case = 32 Тогда
+            Result = Вычислить("Rows.Move(Selector, Offset)");
+            Если ТипЗнч(Result) = Тип("Неопределено") Тогда Outcome = "2"; Иначе Outcome = "!"; КонецЕсли;
+        Иначе Rows.Move(Selector, Offset); КонецЕсли;
+    Исключение
+        Outcome = "0";
+    КонецПопытки;
+    Попытка
+        Если Не TreeLoadExact(TreeMoveState(Foreign), "A----") Тогда Возврат "!"; КонецЕсли;
+        Возврат Outcome + TreeMoveState(S);
+    Исключение
+        Возврат "!";
+    КонецПопытки;
+КонецФункции
+
+Функция TreeMoveObservations()
+    Text = "1";
+    Для Case = 1 По 32 Цикл
+        Part = TreeMoveProbe(Case);
+        Если СтрДлина(Part) <> 6 Тогда Возврат "!"; КонецЕсли;
+        Text = Text + Part;
+    КонецЦикла;
+    Возврат Text;
+КонецФункции
+// End bounded ValueTree Move helpers.
+
 // Begin bounded ValueTree LoadColumn helpers (measurement only; no native answers).
 Функция TreeLoadExact(Знач Left, Знач Right)
     Если ТипЗнч(Left) <> Тип("Строка") Или ТипЗнч(Right) <> Тип("Строка") Тогда Возврат Ложь; КонецЕсли;
@@ -4971,3 +5109,7 @@ VTResult = "error";
 Показать("TL44", TreeLoadProbe(44));
 Показать("TL45", TreeLoadProbe(45));
 // End bounded ValueTree LoadColumn observations.
+
+// Begin bounded ValueTree Move observations (measurement only; no native answers).
+Показать("TM", TreeMoveObservations());
+// End bounded ValueTree Move observations.

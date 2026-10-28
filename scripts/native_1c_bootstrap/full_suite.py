@@ -2001,9 +2001,9 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_COLLECTIONS_SOURCE_SHA256 = 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e'
+CLIENT_COLLECTIONS_SOURCE_SHA256 = 'a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_COLLECTIONS_MESSAGE_COUNT = 1021
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 1022
 
 
 def empty_collections_report() -> dict:
@@ -2042,7 +2042,7 @@ def collections_mismatch(client: list[str], server: list[str], server_output: by
 def client_collections_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned collections source in the pinned managed-client form.
 
-    All 144 source helpers remain in their original order with client directives.
+    All 149 source helpers remain in their original order with client directives.
     Only the 16 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Four explicit helper-local declarations
     preserve source-local bindings against the managed form's Object/Items names.
@@ -2193,17 +2193,22 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         3211: 'Функция TreeColumnsDiagnosticPart(Знач Part)\n',
         3263: 'Функция TreeColumnsDiagnosticExperiment()\n',
         3273: 'Функция TreeColumnsDiagnosticProbe(Знач Case, Знач Diagnostic)\n',
-        3288: 'Функция TreeLoadExact(Знач Left, Знач Right)\n',
-        3297: 'Функция TreeLoadPair(Знач First, Знач Second)\n',
-        3301: 'Процедура TreeLoadCount(Знач Collection, Знач Expected)\n',
-        3306: 'Функция TreeLoadCell(Знач Value, Знач Refs)\n',
-        3342: 'Функция TreeLoadCalibrate()\n',
-        3406: 'Процедура TreeLoadSchema(Знач Tree, Знач Columns, Знач Names, Знач Typed)\n',
-        3428: 'Процедура TreeLoadRows(Знач Rows, Знач Expected, Знач Parent)\n',
-        3437: 'Функция TreeLoadSnapshot(Знач S, Знач Source, Знач Original, Знач Refs)\n',
-        3494: 'Функция TreeLoadFresh(Знач Case)\n',
-        3521: 'Функция TreeLoadBaseline(Знач Case)\n',
-        3553: 'Функция TreeLoadProbe(Знач Case)\n',
+        3288: 'Функция TreeMoveFresh(Знач Mode)\n',
+        3307: 'Функция TreeMoveOrder(Знач Rows, Знач S, Знач First, Знач Count, Знач Parent)\n',
+        3328: 'Функция TreeMoveState(Знач S)\n',
+        3354: 'Функция TreeMoveProbe(Знач Case)\n',
+        3414: 'Функция TreeMoveObservations()\n',
+        3426: 'Функция TreeLoadExact(Знач Left, Знач Right)\n',
+        3435: 'Функция TreeLoadPair(Знач First, Знач Second)\n',
+        3439: 'Процедура TreeLoadCount(Знач Collection, Знач Expected)\n',
+        3444: 'Функция TreeLoadCell(Знач Value, Знач Refs)\n',
+        3480: 'Функция TreeLoadCalibrate()\n',
+        3544: 'Процедура TreeLoadSchema(Знач Tree, Знач Columns, Знач Names, Знач Typed)\n',
+        3566: 'Процедура TreeLoadRows(Знач Rows, Знач Expected, Знач Parent)\n',
+        3575: 'Функция TreeLoadSnapshot(Знач S, Знач Source, Знач Original, Знач Refs)\n',
+        3632: 'Функция TreeLoadFresh(Знач Case)\n',
+        3659: 'Функция TreeLoadBaseline(Знач Case)\n',
+        3691: 'Функция TreeLoadProbe(Знач Case)\n',
     }
     endings = {
         31: 'КонецПроцедуры\n',
@@ -2339,17 +2344,22 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         3261: 'КонецФункции\n',
         3271: 'КонецФункции\n',
         3284: 'КонецФункции\n',
-        3295: 'КонецФункции\n',
-        3299: 'КонецФункции\n',
-        3304: 'КонецПроцедуры\n',
-        3340: 'КонецФункции\n',
-        3404: 'КонецФункции\n',
-        3426: 'КонецПроцедуры\n',
-        3435: 'КонецПроцедуры\n',
-        3492: 'КонецФункции\n',
-        3519: 'КонецФункции\n',
-        3551: 'КонецФункции\n',
-        3629: 'КонецФункции\n',
+        3305: 'КонецФункции\n',
+        3326: 'КонецФункции\n',
+        3352: 'КонецФункции\n',
+        3412: 'КонецФункции\n',
+        3422: 'КонецФункции\n',
+        3433: 'КонецФункции\n',
+        3437: 'КонецФункции\n',
+        3442: 'КонецПроцедуры\n',
+        3478: 'КонецФункции\n',
+        3542: 'КонецФункции\n',
+        3564: 'КонецПроцедуры\n',
+        3573: 'КонецПроцедуры\n',
+        3630: 'КонецФункции\n',
+        3657: 'КонецФункции\n',
+        3689: 'КонецФункции\n',
+        3767: 'КонецФункции\n',
     }
     sites = {
         164: '    Сообщить(Метка + ": [" + Строка(Значение) + "]");\n',
@@ -2357,41 +2367,41 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         613: '            Сообщить(СтрСоединить(СтрокиВывода, Символ(10)));\n',
         615: '            Сообщить("table." + Метка + ": [" + КомпактноеЗначениеТаблицы(Результат) + "]");\n',
         618: '        Сообщить("table." + Метка + ": [serialize-error]");\n',
-        4457: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
-        4495: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
-        4545: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
-        4575: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
-        4588: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
-        4599: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
-        4607: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
-        4612: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
-        4635: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
-        4637: 'Сообщить("table.checkpoint.complete: [ok]");\n',
-        4669: 'Сообщить("table.descriptor-key.checkpoint.complete: [ok]");\n',
+        4595: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
+        4633: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
+        4683: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
+        4713: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
+        4726: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
+        4737: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
+        4745: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
+        4750: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
+        4773: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
+        4775: 'Сообщить("table.checkpoint.complete: [ok]");\n',
+        4807: 'Сообщить("table.descriptor-key.checkpoint.complete: [ok]");\n',
     }
     regions = {
         3: '#Область ВспомогательныеПроцедуры\n',
         247: '#Region FixedCollectionProbes\n',
         333: '#EndRegion\n',
         334: '#КонецОбласти\n',
-        3632: '#Область МассивыИСтруктуры\n',
-        3791: '#КонецОбласти\n',
-        3793: '#Область СоответствиеИТипы\n',
-        3852: '#КонецОбласти\n',
-        3854: '#Область СнимкиИОбратныеКопии\n',
-        3927: '#КонецОбласти\n',
-        3929: '#Область ВложенныеМассивы\n',
-        3978: '#КонецОбласти\n',
-        3980: '#Область РавенствоИсточникиИКлючи\n',
-        4040: '#КонецОбласти\n',
-        4043: '#Область ВнутренняяСериализация\n',
-        4141: '#КонецОбласти\n',
+        3770: '#Область МассивыИСтруктуры\n',
+        3929: '#КонецОбласти\n',
+        3931: '#Область СоответствиеИТипы\n',
+        3990: '#КонецОбласти\n',
+        3992: '#Область СнимкиИОбратныеКопии\n',
+        4065: '#КонецОбласти\n',
+        4067: '#Область ВложенныеМассивы\n',
+        4116: '#КонецОбласти\n',
+        4118: '#Область РавенствоИсточникиИКлючи\n',
+        4178: '#КонецОбласти\n',
+        4181: '#Область ВнутренняяСериализация\n',
+        4279: '#КонецОбласти\n',
     }
-    body_start = 3632
+    body_start = 3770
     capture = 'КоллекцииКлиентЗахват'
     reserved = (capture, 'КоллекцииКлиентСообщения',
                 'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
-    if (len(lines) != 4973
+    if (len(lines) != 5115
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())
@@ -2417,6 +2427,10 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         raise FullError('invalid_input')
     # Preserve exact new observer/setup text under a top-level-hash rebase too.
     exclude_blocks = (
+        ('// Begin bounded ValueTree Move helpers (measurement only; no native answers).\n', '// End bounded ValueTree Move helpers.\n\n',
+         '397a4bb56e4883ce9f87331a43697c993301783ce459fac413bce636d515506f'),
+        ('// Begin bounded ValueTree Move observations (measurement only; no native answers).\n', '// End bounded ValueTree Move observations.\n',
+         '75bcc147d5b4f6abc805a22d36a2c76e5f1c60a31ebd6b1d16c630b7abe19bf2'),
         ('// Begin isolated Columns view diagnostic (fail-only; no LoadColumn calls).\n', '// End isolated Columns view diagnostic.\n\n',
          'b1d7f595337db061b7bc5f9b754a55e27c09e420523574f7eebd8cd6b04465be'),
         ('// Begin bounded ValueTree LoadColumn helpers (measurement only; no native answers).\n', '// End bounded ValueTree LoadColumn helpers.\n\n',

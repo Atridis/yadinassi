@@ -178,7 +178,7 @@ class UnloadSourceContractTests(unittest.TestCase):
         current = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
         if os.name == 'nt': current = current.replace(b'\r\n', b'\n')
         module = historical_tree_load_collections_module(current, template)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 1021)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 1022)
         self.assertEqual(hashlib.sha256(module).hexdigest(), 'a7bfc4e3361bdb1bfde5794b211f3fd1c0594f5c81b4f5e3dafecac4c3049786')
         restored = without_tree_unload_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
         self.assertEqual(hashlib.sha256(restored).hexdigest(), BASE_SHA)

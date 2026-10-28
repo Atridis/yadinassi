@@ -24,6 +24,8 @@ OBSERVATIONS = ('TL01: [1000--BB6_b_c_e_7_b_d_e_3_b_c_e_4_b_c_e_5_b_d_e_6_b_d_e_
 def source():
     # Canonical source fixture only: production capture bytes are never normalized.
     raw = (ROOT / 'integrational_tests/tests/collections.bsl').read_bytes().replace(b'\r\n', b'\n')
+    from scripts.native_historical_replay import without_tree_move_probes
+    raw = without_tree_move_probes(raw.decode('utf-8-sig')).encode('utf-8-sig')
     if hashlib.sha256(raw).hexdigest() != SOURCE_SHA256:
         raise AssertionError('Native measurement source changed')
     return raw.decode('utf-8-sig')

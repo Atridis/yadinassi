@@ -87,12 +87,12 @@ class TreeLoadContractTests(unittest.TestCase):
         self.reject(good[:6] + b'!' + b'.'*58)
         from scripts import native_1c_full_host as host
         records = synthetic_records()
-        whole = b''.join(record[1] for record in records)
+        whole = b''.join(record[1] for record in records) + __import__('test_native_tree_move_contract').synthetic_record()[1]
         self.assertEqual(host.validate_tree_load_observations(whole)['records'], 45)
         label, _, payload = records[-1]
         payload = payload[:6] + b'!' + b'.'*58
         records[-1] = (label, label.encode()+b': ['+payload+b']\n', payload)
-        malformed = b''.join(record[1] for record in records)
+        malformed = b''.join(record[1] for record in records) + __import__('test_native_tree_move_contract').synthetic_record()[1]
         for identical_side in (malformed, malformed):
             with self.assertRaisesRegex(host.FullError, '^tree_load_observation_invalid$'):
                 host.validate_tree_load_observations(identical_side)
