@@ -5,10 +5,12 @@ import tempfile
 import unittest
 from unittest import mock
 from scripts import native_historical_replay as history
-from scripts import native_1c_full_host as host
 import test_native_async_fixture as fixture_history
 import test_native_1c_full_stage as stage
 import test_native_1c_full_host as host_fixtures
+
+# Use the very module instance patched by the Windows synthetic-file fixture.
+host = host_fixtures.full
 from test_native_tree_total_contract import synthetic_output, synthetic_records
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,3 +102,20 @@ class TotalHostBoundaryTests(host_fixtures.SyntheticFilesystemCase):
             else:
                 with self.assertRaisesRegex(host.FullError,'^native_artifact_evidence_invalid$'):
                     host.output_artifact_files(payloads,report,artifacts.smoke.IMAGE)
+
+
+class TotalWindowsFixtureWiringTests(unittest.TestCase):
+    def test_host_module_identity_and_windows_reader_coverage(self):
+        self.assertIs(host, host_fixtures.full)
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(host_fixtures, '_USE_SYNTHETIC_FILE_READER', True), \
+                mock.patch.object(host_fixtures, 'read_synthetic_file', wraps=host_fixtures.read_synthetic_file) as reader:
+            path = Path(directory).resolve()/'fixture.bin'
+            path.write_bytes(b'bounded synthetic fixture')
+            case = host_fixtures.SyntheticFilesystemCase()
+            case.setUp()
+            try:
+                self.assertEqual(host.read_regular(path, 64, nonempty=True), b'bounded synthetic fixture')
+                reader.assert_called_once_with(path, 64, nonempty=True)
+            finally:
+                case.doCleanups()

@@ -21,9 +21,15 @@ def vm():
 
 
 class TotalObserverTests(unittest.TestCase):
-    def test_all_fixtures_valid_and_runtime_total_still_absent(self):
+    def test_all_fixtures_valid_when_action_is_unavailable(self):
+        original = Rows.get_method
+        def without_total(rows, name):
+            if name.casefold() in ('total', 'итог'):
+                raise ValueError('synthetic unavailable action')
+            return original(rows, name)
         value = vm()
-        value.execute('Result=TreeTotalObservations();')
+        with mock.patch.object(Rows, 'get_method', without_total):
+            value.execute('Result=TreeTotalObservations();')
         self.assertEqual(value.variables['result'], '1'+'E'*32)
         contract.validate_payload(value.variables['result'].encode())
 

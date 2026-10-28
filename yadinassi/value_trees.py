@@ -5,11 +5,11 @@ Limits apply to the whole tree, not independently to each child collection.
 """
 from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, ROUND_DOWN, Rounded, localcontext
 
-from .values import BSLArray, BSLObject, HostFunction, NULL, equal, number
+from .values import BSLArray, BSLObject, BSLType, HostFunction, NULL, equal, number
 from .structures import BSLStructure
 from .type_descriptions import BSLTypeDescription, _boolean_value, _number_value, _MAX_NUMBER_DIGITS
 from .value_tables import (BSLValueTableColumn, BSLValueTableColumnCollection,
-                           _default, _adjust, _method, _text)
+                           _default, _adjust, _method, _text, _MAX_TOTAL_PRECISION)
 
 _MAX_ROWS = 100_000
 _MAX_COLUMNS = 4096
@@ -595,6 +595,143 @@ class BSLValueTreeRowCollection(BSLObject):
             # Do not inspect excess source entries or descend into child rows.
             row.cells[selected] = _adjust(selected.value_type, source.items[position])
 
+    def total(self, column, recursive=False):
+        """Native32-backed totals; limits and corrupt-graph rejection are local policy."""
+        if (type(self.tree) is not BSLValueTree
+                or (self.parent is not None and type(self.parent) is not BSLValueTreeRow)):
+            raise ValueError("ДеревоЗначений: неверный получатель итога")
+        self._live()
+        if self.parent is None:
+            if self.tree.rows is not self:
+                raise ValueError("ДеревоЗначений: посторонний корневой получатель итога")
+        elif (self.parent.tree is not self.tree or self.parent.rows is not self
+              or type(self.parent.depth) is not int or not 0 <= self.parent.depth <= _MAX_DEPTH):
+            raise ValueError("ДеревоЗначений: посторонний дочерний получатель итога")
+        budget = _SearchBudget()
+        if type(recursive) is not bool:
+            kind = type(recursive)
+            if kind is not Decimal and kind is not str:
+                raise TypeError("ДеревоЗначений: неподдерживаемый флаг итога")
+            _search_scalar(recursive, budget)
+            if not ((kind is Decimal and recursive == Decimal(1))
+                    or (kind is str and recursive == "True")):
+                raise ValueError("ДеревоЗначений: неизмеренный флаг итога")
+            recursive = True
+        columns = self.tree.columns.items
+        if (type(columns) is not list or type(self.items) is not list
+                or len(columns) > _MAX_COLUMNS or len(self.items) > _MAX_ROWS):
+            raise ValueError("ДеревоЗначений: неверная коллекция итога")
+        kind = type(column)
+        if kind is str:
+            key = _search_name(column, budget)
+        elif kind is Decimal:
+            _search_scalar(column, budget)
+            # Total witnesses0,.5,-.5 select0. Unlike Move, range-check after
+            # truncation toward zero; other methods keep their own contracts.
+            integral = column.to_integral_value(rounding=ROUND_DOWN)
+            if not 0 <= integral < len(columns):
+                raise IndexError("Индекс колонки итога вне границ")
+            index = int(integral)
+        elif kind is not BSLValueTreeColumn:
+            raise TypeError("ДеревоЗначений: неподдерживаемый селектор итога")
+        selected = None
+        for position, candidate in enumerate(columns):
+            if (type(candidate) is not BSLValueTreeColumn
+                    or candidate.table is not self.tree or candidate._deleted):
+                raise ValueError("ДеревоЗначений: чужая колонка итога")
+            matches = (_search_name(candidate.name, budget) == key if kind is str
+                       else position == index if kind is Decimal else candidate is column)
+            if matches:
+                if selected is not None:
+                    raise ValueError("ДеревоЗначений: неоднозначная колонка итога")
+                selected = candidate
+        if selected is None:
+            raise ValueError("Колонка итога не найдена")
+        description = selected.value_type
+        if type(description) is not BSLTypeDescription:
+            raise TypeError("ДеревоЗначений: неверное описание типа итога")
+        types = description.types
+        if type(types) is not tuple or len(types) > 2 or any(type(t) is not BSLType for t in types):
+            raise TypeError("ДеревоЗначений: неподдерживаемое описание типа итога")
+        kinds = frozenset(types)
+        if kinds not in (frozenset(), frozenset((BSLType.NUMBER,)),
+                         frozenset((BSLType.STRING,)), frozenset((BSLType.BOOLEAN,)),
+                         frozenset((BSLType.NUMBER, BSLType.STRING)),
+                         frozenset((BSLType.STRING, BSLType.BOOLEAN))):
+            raise ValueError("ДеревоЗначений: итог этого описания типов пока не измерен")
+        undefined = kinds == frozenset((BSLType.STRING, BSLType.BOOLEAN))
+        numbers = []
+        pending = [(self, iter(self.items))]
+        seen = set()
+        while pending:
+            collection, iterator = pending[-1]
+            try:
+                row = next(iterator)
+            except StopIteration:
+                pending.pop()
+                continue
+            budget.charge(1)
+            if len(seen) >= min(_MAX_ROWS, _MAX_CELLS) or id(row) in seen:
+                raise ValueError("ДеревоЗначений: цикл или предел строк итога")
+            if (type(row) is not BSLValueTreeRow or row.tree is not self.tree
+                    or row.collection is not collection or row.parent is not collection.parent):
+                raise ValueError("ДеревоЗначений: чужая строка итога")
+            row._live()
+            parent = collection.parent
+            if parent is not None and (type(parent.depth) is not int or not 0 <= parent.depth < _MAX_DEPTH):
+                raise ValueError("ДеревоЗначений: неверная глубина родителя итога")
+            expected_depth = 0 if parent is None else parent.depth + 1
+            if (type(row.depth) is not int or row.depth != expected_depth or row.depth > _MAX_DEPTH
+                    or type(row.cells) is not dict or selected not in row.cells):
+                raise ValueError("ДеревоЗначений: неверная строка итога")
+            seen.add(id(row))
+            cell = row.cells[selected]
+            if not undefined:
+                if kinds == frozenset((BSLType.STRING,)):
+                    if type(cell) is not str:
+                        raise TypeError("ДеревоЗначений: нестроковая ячейка итога")
+                    _search_scalar(cell, budget)
+                    value = _number_value(cell)
+                elif kinds == frozenset((BSLType.BOOLEAN,)):
+                    if type(cell) is not bool:
+                        raise TypeError("ДеревоЗначений: небулева ячейка итога")
+                    value = Decimal(int(cell))
+                elif type(cell) is Decimal:
+                    value = cell
+                elif kinds == frozenset((BSLType.NUMBER,)):
+                    raise TypeError("ДеревоЗначений: нечисловая ячейка итога")
+                else:
+                    value = None  # Numeric-only untyped/composite policy; no object hooks.
+                if value is not None:
+                    _search_scalar(value, budget)  # Bound coefficient before as_tuple().
+                    if abs(value.adjusted()) > 4096:
+                        raise ValueError("ДеревоЗначений: предел числа итога Yadinassi")
+                    numbers.append(value)
+            if recursive:
+                children = row.rows
+                if (type(children) is not BSLValueTreeRowCollection or children.tree is not self.tree
+                        or children.parent is not row or type(children.items) is not list
+                        or len(children.items) > _MAX_ROWS):
+                    raise ValueError("ДеревоЗначений: неверная дочерняя коллекция итога")
+                if children.items:
+                    if len(pending) >= _MAX_DEPTH + 1:
+                        raise ValueError("ДеревоЗначений: предел глубины итога Yadinassi")
+                    pending.append((children, iter(children.items)))
+        if undefined:
+            return None
+        if not numbers:
+            return Decimal(0)
+        precision = (max(v.adjusted() for v in numbers) - min(v.as_tuple().exponent for v in numbers)
+                     + 1 + len(str(len(numbers))))
+        if precision > _MAX_TOTAL_PRECISION:
+            raise ValueError("ДеревоЗначений: предел точности итога Yadinassi")
+        budget.charge(len(numbers) * max(1, precision))
+        # Reuse only existing exact arithmetic, never Table/GroupBy type policy.
+        # A fresh Context isolates every ambient flag/trap/rounding/exponent limit.
+        from .value_table_group import _sum
+        with localcontext(Context(prec=max(1, precision), Emax=999999, Emin=-999999)):
+            return _sum(numbers)
+
     def unload_column(self, column):
         """Local-row value snapshot; cells are shared, array membership is not."""
         self._live()
@@ -685,6 +822,7 @@ class BSLValueTreeRowCollection(BSLObject):
             "find": self.find, "найти": self.find,
             "findrows": self.find_rows, "найтистроки": self.find_rows,
             "unloadcolumn": self.unload_column, "выгрузитьколонку": self.unload_column,
+            "total": self.total, "итог": self.total,
             "add": self.add, "добавить": self.add, "insert": self.insert, "вставить": self.insert,
             "delete": self.delete, "удалить": self.delete, "clear": self.clear, "очистить": self.clear})
 

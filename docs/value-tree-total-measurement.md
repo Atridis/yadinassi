@@ -1,7 +1,9 @@
 # ValueTree Rows.Total / Итог: bounded measurement, not implementation
 
-This change adds a native measurement only. `ValueTreeRows.Total` remains absent
-from the interpreter until authenticated native results establish its contract.
+The original PR141 change added native measurement only, with `ValueTreeRows.Total`
+absent. Authenticated run40768375140 now supplies32 observations; the separate
+[runtime alignment](value-tree-total-runtime.md) implements that bounded slice.
+The failed measurement run is not acceptance of the new runtime.
 The existing `ValueTable.Total` implementation is **not** evidence for trees.
 No database, UI or recursive host traversal feature is added.
 
