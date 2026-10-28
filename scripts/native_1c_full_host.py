@@ -38,7 +38,7 @@ LINUX_TARGET = "linux-8.3.27.1508"
 BYTE_EXACT = "byte_exact"
 MAP_MODE = "typed-map-order-v1"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
-COLLECTIONS_SOURCE_SHA256 = "5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4"
+COLLECTIONS_SOURCE_SHA256 = "ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e"
 CASE_SECONDS = 10
 CHILD_CLEANUP_SECONDS = 5
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
@@ -768,7 +768,7 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
         if (server_case["status"] != "ok"
                 or not is_digest(data["output_sha256"])
                 or not is_int(data["output_size"], MAX_FILE)
-                or type(data["message_count"]) is not int or data["message_count"] != 976
+                or type(data["message_count"]) is not int or data["message_count"] != 1021
                 or any(data[key] != server_case[key] for key in CLIENT_OUTPUT_KEYS)):
             raise ValueError("client collections output identity")
     elif any(data[key] is not None for key in CLIENT_OUTPUT_KEYS):
@@ -785,23 +785,23 @@ def validate_client_collections(data, source_hash, module_hash, server_case):
                 or data["process_diagnostics"]["stage"] != "after_exit"
                 or data["process_diagnostics"]["reason"] != "none"
                 or server_case["status"] != "ok" or server_case["source_sha256"] != source_hash
-                or type(server_case["message_count"]) is not int or server_case["message_count"] != 976):
+                or type(server_case["message_count"]) is not int or server_case["message_count"] != 1021):
             raise ValueError("client collections mismatch context")
         keys = {"count", "first", "ordinals", "client_sha256", "server_sha256", "client_size", "server_size"}
         if (type(mismatch) is not dict or set(mismatch) != keys
-                or not is_int(mismatch["count"], 976) or mismatch["count"] < 1
-                or not is_int(mismatch["first"], 976) or mismatch["first"] < 1
-                or mismatch["count"] > 977 - mismatch["first"]
+                or not is_int(mismatch["count"], 1021) or mismatch["count"] < 1
+                or not is_int(mismatch["first"], 1021) or mismatch["first"] < 1
+                or mismatch["count"] > 1022 - mismatch["first"]
                 or not is_digest(mismatch["client_sha256"]) or not is_digest(mismatch["server_sha256"])
                 or mismatch["client_sha256"] == mismatch["server_sha256"]
                 or any(not is_int(mismatch[key], MAX_FILE) or mismatch[key] < 1
                        for key in ("client_size", "server_size"))
                 or type(mismatch["ordinals"]) is not list
                 or len(mismatch["ordinals"]) != min(mismatch["count"], 16)
-                or any(not is_int(value, 976) or value < 1 for value in mismatch["ordinals"])
+                or any(not is_int(value, 1021) or value < 1 for value in mismatch["ordinals"])
                 or mismatch["ordinals"] != sorted(set(mismatch["ordinals"]))
                 or mismatch["ordinals"][0] != mismatch["first"]
-                or mismatch["count"] - len(mismatch["ordinals"]) > 976 - mismatch["ordinals"][-1]):
+                or mismatch["count"] - len(mismatch["ordinals"]) > 1021 - mismatch["ordinals"][-1]):
             raise ValueError("client collections mismatch schema")
     return data
 
@@ -1333,6 +1333,113 @@ def validate_semantic_context(report: dict, image: str) -> None:
         raise FullError("semantic_context_invalid") from None
 
 
+def tree_load_contract():
+    # Checked source, never untracked/stale repository bytecode.
+    path = Path(__file__).with_name("native_1c_tree_load_contract.py")
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_1c_tree_load_contract", path))
+    exec(compile(read_regular(path, 4 * MAX_FILE, nonempty=True), str(path), "exec"), module.__dict__)
+    return module
+
+
+TREE_LOAD_CALIBRATION_CODES = "0123456789ABCDEFGHIJKLMNOPQR"
+TREE_LOAD_CALIBRATION_FAILURES = frozenset(
+    "tree_load_calibration_" + code for code in TREE_LOAD_CALIBRATION_CODES)
+
+
+def tree_load_calibration_failure(data, native):
+    """Finite rejected-native diagnostic only; never accepts observations.
+
+    A homogeneous 45-record suffix identifies the calibration statement that
+    failed. The original 976 records are framed, not accepted as native parity.
+    Unknown/mixed/malformed output preserves the generic failure.
+    """
+    if (native.get("source_sha256") != COLLECTIONS_SOURCE_SHA256
+            or type(native.get("message_count")) is not int
+            or native["message_count"] != 1021):
+        return None
+    try:
+        records = map_contract()._records(data)
+        if len(records) != 1021:
+            return None
+        stage = records[976][2][4:5]
+        if stage not in tuple(code.encode("ascii") for code in TREE_LOAD_CALIBRATION_CODES):
+            return None
+        payload = b"1?C0" + stage + b"-!" + b"." * 58
+        for number, (label, framed, actual) in enumerate(records[976:], 1):
+            expected_label = f"TL{number:02d}"
+            if (label != expected_label or actual != payload
+                    or framed != expected_label.encode("ascii") + b": [" + payload + b"]\n"):
+                return None
+        return "tree_load_calibration_" + stage.decode("ascii")
+    except Exception:
+        return None
+
+
+TREE_ROWS_DIAGNOSTIC_FAILURES = frozenset(
+    "tree_rows_" + a + b + c + d
+    for a in "TFE" for b in "TFE" for c in "TFE" for d in "TFE")
+
+
+def tree_rows_diagnostic_failure(data, native):
+    """Four explicit observables, repeated framing; never native acceptance."""
+    if (native.get("source_sha256") != COLLECTIONS_SOURCE_SHA256
+            or type(native.get("message_count")) is not int
+            or native["message_count"] != 1021):
+        return None
+    try:
+        records = map_contract()._records(data)
+        if len(records) != 1021:
+            return None
+        trits = records[976][2][4:8]
+        if len(trits) != 4 or any(value not in b"TFE" for value in trits):
+            return None
+        payload = b"1?D0" + trits + b"!" + b"." * 56
+        for number, (label, framed, actual) in enumerate(records[976:], 1):
+            expected_label = f"TL{number:02d}"
+            if (label != expected_label or actual != payload
+                    or framed != expected_label.encode("ascii") + b": [" + payload + b"]\n"):
+                return None
+        return "tree_rows_" + trits.decode("ascii")
+    except Exception:
+        return None
+
+
+TREE_COLUMNS_DIAGNOSTIC_FAILURES = frozenset(
+    "tree_cols_" + a + b + c + d
+    for a in "TFE" for b in "TFE" for c in "TFE" for d in "TFE")
+
+
+def tree_columns_diagnostic_failure(data, native):
+    """Four explicit observables, repeated framing; never native acceptance."""
+    if (native.get("source_sha256") != COLLECTIONS_SOURCE_SHA256
+            or type(native.get("message_count")) is not int
+            or native["message_count"] != 1021):
+        return None
+    try:
+        records = map_contract()._records(data)
+        if len(records) != 1021:
+            return None
+        trits = records[976][2][4:8]
+        if len(trits) != 4 or any(value not in b"TFE" for value in trits):
+            return None
+        payload = b"1?K0" + trits + b"!" + b"." * 56
+        for number, (label, framed, actual) in enumerate(records[976:], 1):
+            expected_label = f"TL{number:02d}"
+            if (label != expected_label or actual != payload
+                    or framed != expected_label.encode("ascii") + b": [" + payload + b"]\n"):
+                return None
+        return "tree_cols_" + trits.decode("ascii")
+    except Exception:
+        return None
+
+
+def validate_tree_load_observations(data):
+    try:
+        return tree_load_contract().validate_records(map_contract()._records(data))
+    except Exception:
+        raise FullError("tree_load_observation_invalid") from None
+
+
 def map_contract():
     # Compile the checked helper source directly, ignoring any repository bytecode.
     path = Path(__file__).with_name("native_1c_map_contract.py")
@@ -1434,15 +1541,15 @@ def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
     if (type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}
             or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != MAP_MODE
             or type(result["reason"]) is not str or result["reason"] not in contract.REASONS
-            or not is_int(result["records"], 976) or not is_int(result["byte_equal_records"], result["records"])
+            or not is_int(result["records"], 1021) or not is_int(result["byte_equal_records"], result["records"])
             or type(result["accepted_labels"]) is not list
             or any(type(label) is not str or label not in contract.ELIGIBLE_LABELS for label in result["accepted_labels"])
             or len(set(result["accepted_labels"])) != len(result["accepted_labels"])):
         raise FullError("semantic_result_invalid")
     if result["status"] == "equivalent":
-        if (result["reason"] != "none" or result["records"] != 976
-                or result["byte_equal_records"] + len(result["accepted_labels"]) != 976
-                or raw_matched != (result["byte_equal_records"] == 976)):
+        if (result["reason"] != "none" or result["records"] != 1021
+                or result["byte_equal_records"] + len(result["accepted_labels"]) != 1021
+                or raw_matched != (result["byte_equal_records"] == 1021)):
             raise FullError("semantic_result_invalid")
     elif (result["reason"] == "none" or result["records"] != 0
             or result["byte_equal_records"] != 0 or result["accepted_labels"]):
@@ -1481,7 +1588,12 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
                         or case["interpreter_sha256"] is not None
                         or case["failure_kind"] not in {"source_changed", "native_capture_changed", "invalid_private_file",
                             "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed",
-                            POST_CREATE_FAILURE}
+                            "tree_load_observation_invalid",
+                            POST_CREATE_FAILURE} | TREE_LOAD_CALIBRATION_FAILURES | TREE_ROWS_DIAGNOSTIC_FAILURES | TREE_COLUMNS_DIAGNOSTIC_FAILURES
+                        or (case["failure_kind"] in (TREE_LOAD_CALIBRATION_FAILURES | TREE_ROWS_DIAGNOSTIC_FAILURES | TREE_COLUMNS_DIAGNOSTIC_FAILURES) and
+                            (name != "collections" or native["source_sha256"] != COLLECTIONS_SOURCE_SHA256
+                             or stage3["input_sha256"]["integrational_tests/tests/collections.bsl"] != COLLECTIONS_SOURCE_SHA256
+                             or type(native.get("message_count")) is not int or native["message_count"] != 1021))
                         or (case["status"] == "timeout") != (case["failure_kind"] == "interpreter_timeout")):
                     raise ValueError("failure")
                 continue
@@ -1555,6 +1667,20 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
                 if interpreter_post_create_failed(source_bytes, code, actual, stderr):
                     raise FullError(POST_CREATE_FAILURE)
                 raise FullError("interpreter_failed")
+            if name == "collections" and case["source_sha256"] == COLLECTIONS_SOURCE_SHA256:
+                # Identical observer/calibration failures are not behavioral parity.
+                try:
+                    validate_tree_load_observations(expected)
+                except FullError:
+                    # Only authenticated native bytes may identify a native stage.
+                    # Host-only failures retain the generic observation error.
+                    reason = ((tree_columns_diagnostic_failure(expected, case)
+                               or tree_rows_diagnostic_failure(expected, case)
+                               or tree_load_calibration_failure(expected, case))
+                              if input_hashes[f"integrational_tests/tests/{name}.bsl"] == COLLECTIONS_SOURCE_SHA256
+                              else None)
+                    raise FullError(reason or "tree_load_observation_invalid") from None
+                validate_tree_load_observations(actual)
             record.update(interpreter_size=len(actual), interpreter_sha256=digest(actual))
             record["status"] = "matched" if actual == expected else "mismatched"
             if actual != expected:
@@ -1599,10 +1725,10 @@ def repository_provenance(root: Path) -> dict:
     if (not re.fullmatch(r"[0-9a-f]{40}", commit) or not re.fullmatch(r"[0-9a-f]{40}", tree)
             or git("status", "--porcelain", "--untracked-files=all")):
         raise FullError("repository_identity_unverified")
-    tracked = set(git("ls-files", "--", "yadinassi", "scripts/native_infobase_fixture.py").splitlines())
+    tracked = set(git("ls-files", "--", "yadinassi", "scripts/native_infobase_fixture.py", "scripts/native_1c_tree_load_contract.py").splitlines())
     actual = {path.relative_to(root).as_posix() for path in (root / "yadinassi").rglob("*")
               if not path.is_dir() and "__pycache__" not in path.parts}
-    actual.add("scripts/native_infobase_fixture.py")
+    actual.update(("scripts/native_infobase_fixture.py", "scripts/native_1c_tree_load_contract.py"))
     if not tracked or actual != tracked:
         raise FullError("repository_sources_unverified")
     expected = os.environ.get("GITHUB_SHA")
@@ -1624,7 +1750,8 @@ def interpreter_provenance(root: Path) -> dict:
     if any(path.suffix not in {".py", ".txt"} for path in files):
         raise FullError("unexpected_interpreter_source")
     files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
-              root / "scripts/native_1c_map_contract.py", root / "scripts/native_async_comparison.py",
+              root / "scripts/native_1c_map_contract.py", root / "scripts/native_1c_tree_load_contract.py",
+              root / "scripts/native_async_comparison.py",
               root / "scripts/native_infobase_fixture.py"]
     if not files or len(files) > 512:
         raise FullError("interpreter_provenance_invalid")
@@ -1726,6 +1853,11 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
                     or compared["native_sha256"] != native["output_sha256"]
                     or compared["native_size"] != native["output_size"]):
                 raise ValueError("case")
+            if name == "collections" and native["source_sha256"] == COLLECTIONS_SOURCE_SHA256:
+                # Native observation validity is independent of host parity.
+                validate_tree_load_observations(payload)
+                if native["message_count"] != 1021:
+                    raise ValueError("tree load record count")
             if post_create_failure:
                 # Comparison validation requires rejected acceptance and null host
                 # hashes/size/mismatch/semantic. Native framing is checked anew.

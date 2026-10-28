@@ -30,7 +30,7 @@ SIZE_TOKEN = full.INFOBASE_CONTEXT_EXPECTED_TOKEN
 OPTION_NAMES = ('client_dates', 'client_values', 'client_collections',
                 'client_numbers', 'watchdog_check')
 RECORD_NAMES = OPTION_NAMES[:-1] + ('client_watchdog',)
-COUNTS = {'dates': 185, 'values': 534, 'collections': 976, 'numbers': 421}
+COUNTS = {'dates': 185, 'values': 534, 'collections': 1021, 'numbers': 421}
 CLI_FLAGS = ('--client-dates-parity', '--client-values-parity',
              '--client-collections-parity', '--client-numbers-parity',
              '--client-watchdog-check')
@@ -103,7 +103,7 @@ def failed_frontier(stage, index, *, marker=False, mismatch=False):
     if mismatch:
         failure.update(**dict.fromkeys(('entered', 'completed', 'process_exited', 'quiet'), True),
             process_diagnostics=collections.process_diagnostics(),
-            mismatch=dict(count=698, first=100, ordinals=list(range(100, 116)),
+            mismatch=dict(count=22, first=1000, ordinals=list(range(1000, 1016)),
                 client_sha256='a' * 64, server_sha256='b' * 64,
                 client_size=1048576, server_size=1048576))
     for name in order[index + 1:]:
@@ -116,7 +116,7 @@ def failed_frontier(stage, index, *, marker=False, mismatch=False):
         name = 'client_' + scenario
         if name not in result or result[name]['status'] != 'ok':
             result['cases'][full.SCENARIOS.index(scenario)]['message_count'] = (
-                976 if mismatch and scenario == 'collections' else 32768)
+                1021 if mismatch and scenario == 'collections' else 32768)
     return result
 
 

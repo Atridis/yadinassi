@@ -3208,6 +3208,428 @@
 
 // End bounded ValueTree UnloadColumn helpers.
 
+// Begin isolated Columns view diagnostic (fail-only; no LoadColumn calls).
+Функция TreeColumnsDiagnosticPart(Знач Part)
+    Попытка
+        Если Part = 1 Или Part = 2 Тогда
+            // Preserve original calibration A-F ordering, including retention before Add.
+            T = Новый ДеревоЗначений; Other = Новый ДеревоЗначений;
+            RootRows = T.Rows; Saved = T.Columns;
+            R = T.Rows.Add(); OtherRow = T.Rows.Add(); ChildRows = R.Rows;
+            Alias = Saved;
+        ИначеЕсли Part = 3 Или Part = 4 Тогда
+            T = Новый ДеревоЗначений; Saved = T.Columns;
+            Если Saved.Count() <> 0 Или T.Columns.Count() <> 0 Тогда Возврат "?"; КонецЕсли;
+        Иначе
+            Возврат "?";
+        КонецЕсли;
+    Исключение
+        Возврат "?";
+    КонецПопытки;
+    Попытка
+        Если Part = 1 Тогда
+            Result = T.Columns <> Saved;
+        ИначеЕсли Part = 2 Тогда
+            Result = Alias <> Saved;
+        ИначеЕсли Part = 3 Тогда
+            Added = Saved.Add("Marker"); Added.Width = 17; View = T.Columns;
+            Result = View.Count() = 1;
+            Если Result Тогда Name = View.Get(0).Name; Result = ТипЗнч(Name) = Тип("Строка"); КонецЕсли;
+            Если Result Тогда Result = СтрДлина(Name) = 6; КонецЕсли;
+            Если Result Тогда
+                Result = КодСимвола(Name, 1) = 77 И КодСимвола(Name, 2) = 97 И КодСимвола(Name, 3) = 114
+                    И КодСимвола(Name, 4) = 107 И КодСимвола(Name, 5) = 101 И КодСимвола(Name, 6) = 114;
+            КонецЕсли;
+            Если Result Тогда Result = ТипЗнч(View.Get(0).Width) = Тип("Число"); КонецЕсли;
+            Если Result Тогда Result = View.Get(0).Width = 17; КонецЕсли;
+        Иначе
+            Added = T.Columns.Add("Marker"); Added.Width = 17; View = Saved;
+            Result = View.Count() = 1;
+            Если Result Тогда Name = View.Get(0).Name; Result = ТипЗнч(Name) = Тип("Строка"); КонецЕсли;
+            Если Result Тогда Result = СтрДлина(Name) = 6; КонецЕсли;
+            Если Result Тогда
+                Result = КодСимвола(Name, 1) = 77 И КодСимвола(Name, 2) = 97 И КодСимвола(Name, 3) = 114
+                    И КодСимвола(Name, 4) = 107 И КодСимвола(Name, 5) = 101 И КодСимвола(Name, 6) = 114;
+            КонецЕсли;
+            Если Result Тогда Result = ТипЗнч(View.Get(0).Width) = Тип("Число"); КонецЕсли;
+            Если Result Тогда Result = View.Get(0).Width = 17; КонецЕсли;
+        КонецЕсли;
+        Если Result Тогда Возврат "T"; КонецЕсли;
+        Возврат "F";
+    Исключение
+        Возврат "E";
+    КонецПопытки;
+КонецФункции
+
+Функция TreeColumnsDiagnosticExperiment()
+    Result = "";
+    Для Part = 1 По 4 Цикл
+        Trit = TreeColumnsDiagnosticPart(Part);
+        Если Trit = "?" Тогда Возврат "?"; КонецЕсли;
+        Result = Result + Trit;
+    КонецЦикла;
+    Возврат Result;
+КонецФункции
+
+Функция TreeColumnsDiagnosticProbe(Знач Case, Знач Diagnostic)
+    Failed = "1?O0--!..........................................................";
+    Если ТипЗнч(Case) <> Тип("Число") Тогда Возврат Failed; КонецЕсли;
+    Если Case < 1 Или Case > 45 Или Цел(Case) <> Case Тогда Возврат Failed; КонецЕсли;
+    Если ТипЗнч(Diagnostic) <> Тип("Строка") Тогда Возврат Failed; КонецЕсли;
+    Если СтрДлина(Diagnostic) <> 4 Тогда Возврат Failed; КонецЕсли;
+    Для P = 1 По 4 Цикл
+        Code = КодСимвола(Diagnostic, P);
+        Если Code <> 84 И Code <> 70 И Code <> 69 Тогда Возврат Failed; КонецЕсли;
+    КонецЦикла;
+    Возврат "1?K0" + Diagnostic + "!........................................................";
+КонецФункции
+// End isolated Columns view diagnostic.
+
+// Begin bounded ValueTree LoadColumn helpers (measurement only; no native answers).
+Функция TreeLoadExact(Знач Left, Знач Right)
+    Если ТипЗнч(Left) <> Тип("Строка") Или ТипЗнч(Right) <> Тип("Строка") Тогда Возврат Ложь; КонецЕсли;
+    Если СтрДлина(Left) <> СтрДлина(Right) Тогда Возврат Ложь; КонецЕсли;
+    Для P = 1 По СтрДлина(Left) Цикл
+        Если КодСимвола(Left, P) <> КодСимвола(Right, P) Тогда Возврат Ложь; КонецЕсли;
+    КонецЦикла;
+    Возврат Истина;
+КонецФункции
+
+Функция TreeLoadPair(Знач First, Знач Second)
+    Values = Новый Массив; Values.Add(First); Values.Add(Second); Возврат Values;
+КонецФункции
+
+Процедура TreeLoadCount(Знач Collection, Знач Expected)
+    N = Collection.Count();
+    Если ТипЗнч(N) <> Тип("Число") Или N <> Expected Тогда ВызватьИсключение "tree-load-count"; КонецЕсли;
+КонецПроцедуры
+
+Функция TreeLoadCell(Знач Value, Знач Refs)
+    Kind = ТипЗнч(Value);
+    Если Kind = Тип("Неопределено") Тогда Возврат "U_"; КонецЕсли;
+    Если Kind = Тип("Null") Тогда Возврат "L_"; КонецЕсли;
+    Если Kind = Тип("Булево") Тогда Если Value Тогда Возврат "T_"; Иначе Возврат "F_"; КонецЕсли; КонецЕсли;
+    Если Kind = Тип("Число") Тогда
+        Если Value < 0 Или Value > 7 Или Цел(Value) <> Value Тогда ВызватьИсключение "tree-load-number"; КонецЕсли;
+        Возврат Сред("01234567", Value + 1, 1) + "_";
+    КонецЕсли;
+    Если Kind = Тип("Строка") Тогда
+        Words = СтрРазделить("|hit|x|y|base|from-source|from-result|bad|new|1", "|", Истина);
+        Для P = 0 По Words.Count() - 1 Цикл
+            Если TreeLoadExact(Value, Words[P]) Тогда Возврат Сред("abcdefghij", P + 1, 1) + "_"; КонецЕсли;
+        КонецЦикла;
+        ВызватьИсключение "tree-load-string";
+    КонецЕсли;
+    Если Kind <> Тип("Структура") Тогда ВызватьИсключение "tree-load-type"; КонецЕсли;
+    TreeLoadCount(Value, 1);
+    Для Каждого Entry Из Value Цикл
+        Если Не TreeLoadExact(Entry.Key, "Mark") Тогда ВызватьИсключение "tree-load-property"; КонецЕсли;
+    КонецЦикла;
+    Если TreeLoadExact(Value.Mark, "base") Тогда Prefix = "P";
+    ИначеЕсли TreeLoadExact(Value.Mark, "from-source") Тогда Prefix = "Q";
+    ИначеЕсли TreeLoadExact(Value.Mark, "from-result") Тогда Prefix = "R";
+    Иначе ВызватьИсключение "tree-load-mark"; КонецЕсли;
+    Index = -1;
+    Для P = 0 По Refs.Count() - 1 Цикл
+        Если Value = Refs[P] Тогда Index = P; Прервать; КонецЕсли;
+    КонецЦикла;
+    Если Index = -1 Тогда
+        Если Refs.Count() >= 60 Тогда ВызватьИсключение "tree-load-registry"; КонецЕсли;
+        Index = Refs.Count(); Refs.Add(Value);
+    КонецЕсли;
+    Возврат Prefix + Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx", Index + 1, 1);
+КонецФункции
+
+Функция TreeLoadCalibrate()
+    Stage = "0";
+    Попытка
+        Stage = "1";
+        X = Новый Структура("Mark", "base"); Y = Новый Структура("Mark", "base"); Alias = X;
+        Stage = "2";
+        Если X <> Alias Тогда ВызватьИсключение "tree-load-structure-alias"; КонецЕсли;
+        Stage = "3";
+        Если X = Y Тогда ВызватьИсключение "tree-load-structure-distinct"; КонецЕсли;
+        Stage = "4";
+        A = TreeLoadPair(1, Истина); B = TreeLoadPair(1, Истина); Alias = A;
+        Stage = "5";
+        Если A <> Alias Тогда ВызватьИсключение "tree-load-array-alias"; КонецЕсли;
+        Stage = "6";
+        Если A = B Тогда ВызватьИсключение "tree-load-array-distinct"; КонецЕсли;
+        Stage = "7";
+        F = Новый ФиксированныйМассив(A); G = Новый ФиксированныйМассив(A); Alias = F;
+        Stage = "8";
+        Если F <> Alias Тогда ВызватьИсключение "tree-load-fixed-alias"; КонецЕсли;
+        Stage = "9";
+        Если F = G Тогда ВызватьИсключение "tree-load-fixed-distinct"; КонецЕсли;
+        Stage = "A";
+        T = Новый ДеревоЗначений; Other = Новый ДеревоЗначений;
+        Stage = "B";
+        RootRows = T.Rows;
+        Stage = "C";
+        Cols = T.Columns;
+        Stage = "D";
+        R = T.Rows.Add();
+        Stage = "E";
+        OtherRow = T.Rows.Add();
+        Stage = "F";
+        ChildRows = R.Rows;
+        Stage = "G";
+        Expected = TreeLoadPair(R, OtherRow); Empty = Новый Массив;
+        TreeLoadRows(RootRows, Expected, Неопределено); TreeLoadRows(T.Rows, Expected, Неопределено);
+        Stage = "H";
+        Если T.Columns <> Cols Тогда ВызватьИсключение "tree-load-columns-alias"; КонецЕсли;
+        Stage = "I";
+        TreeLoadRows(ChildRows, Empty, R); TreeLoadRows(R.Rows, Empty, R);
+        Stage = "J";
+        TreeLoadRows(RootRows, Expected, Неопределено); TreeLoadRows(Other.Rows, Empty, Неопределено);
+        Stage = "K";
+        Если Cols = Other.Columns Тогда ВызватьИсключение "tree-load-columns-distinct"; КонецЕсли;
+        Stage = "L";
+        TreeLoadRows(ChildRows, Empty, R); TreeLoadRows(OtherRow.Rows, Empty, OtherRow);
+        Stage = "M";
+        Если R <> T.Rows.Get(0) Тогда ВызватьИсключение "tree-load-row-alias"; КонецЕсли;
+        Stage = "N";
+        Если R = OtherRow Тогда ВызватьИсключение "tree-load-row-distinct"; КонецЕсли;
+        Stage = "O";
+        Refs = Новый Массив;
+        Stage = "P";
+        Если Не TreeLoadExact(TreeLoadCell(1, Refs), "1_") Тогда ВызватьИсключение "tree-load-number-calibration"; КонецЕсли;
+        Stage = "Q";
+        Если Не TreeLoadExact(TreeLoadCell(Истина, Refs), "T_") Тогда ВызватьИсключение "tree-load-bool-calibration"; КонецЕсли;
+        Stage = "R";
+        Если Не TreeLoadExact(TreeLoadCell("1", Refs), "j_") Тогда ВызватьИсключение "tree-load-string-calibration"; КонецЕсли;
+    Исключение
+        Возврат Stage;
+    КонецПопытки;
+    Возврат "-";
+КонецФункции
+
+Процедура TreeLoadSchema(Знач Tree, Знач Columns, Знач Names, Знач Typed)
+    TreeLoadCount(Tree.Columns, Names.Count()); TreeLoadCount(Columns, Names.Count());
+    Для P = 0 По Names.Count() - 1 Цикл
+        C = Tree.Columns.Get(P);
+        Если C <> Columns[P] Или Не TreeLoadExact(C.Name, Names[P]) Или Не TreeLoadExact(C.Title, Names[P])
+            Или ТипЗнч(C.Width) <> Тип("Число") Или C.Width <> 0 Тогда ВызватьИсключение "tree-load-schema"; КонецЕсли;
+        D = C.ValueType; Types = D.Types();
+        Если Typed И P = 1 Тогда
+            TreeLoadCount(Types, 1); Если Types[0] <> Тип("Число") Тогда ВызватьИсключение "tree-load-schema-type"; КонецЕсли;
+        Иначе TreeLoadCount(Types, 0); КонецЕсли;
+        N = D.NumberQualifiers; Q = D.StringQualifiers; B = D.BinaryDataQualifiers;
+        Если ТипЗнч(N.Digits) <> Тип("Число") Или N.Digits <> 0
+            Или ТипЗнч(N.FractionDigits) <> Тип("Число") Или N.FractionDigits <> 0
+            Или N.AllowedSign <> AllowedSign.Any
+            Или ТипЗнч(Q.Length) <> Тип("Число") Или Q.Length <> 0 Или Q.AllowedLength <> AllowedLength.Variable
+            Или D.DateQualifiers.DateFractions <> DateFractions.DateTime
+            Или ТипЗнч(B.Length) <> Тип("Число") Или B.Length <> 0 Или B.AllowedLength <> AllowedLength.Variable Тогда
+            ВызватьИсключение "tree-load-qualifiers";
+        КонецЕсли;
+    КонецЦикла;
+КонецПроцедуры
+
+Процедура TreeLoadRows(Знач Rows, Знач Expected, Знач Parent)
+    Если ТипЗнч(Rows) <> Тип("КоллекцияСтрокДереваЗначений") Тогда ВызватьИсключение "tree-load-rows-type"; КонецЕсли;
+    TreeLoadCount(Rows, Expected.Count());
+    Если Rows.Parent <> Parent Тогда ВызватьИсключение "tree-load-collection-parent"; КонецЕсли;
+    Для P = 0 По Expected.Count() - 1 Цикл
+        Если Rows.Get(P) <> Expected[P] Тогда ВызватьИсключение "tree-load-row-order"; КонецЕсли;
+    КонецЦикла;
+КонецПроцедуры
+
+Функция TreeLoadSnapshot(Знач S, Знач Source, Знач Original, Знач Refs)
+    Если S.Tree.Columns <> S.ColumnCollection
+        Или S.Foreign.Columns <> S.ForeignColumnCollection Тогда
+        ВызватьИсключение "tree-load-retained-collection";
+    КонецЕсли;
+    TreeLoadCount(S.RowCollections, S.Nodes.Count() + 1);
+    TreeLoadSchema(S.Tree, S.Columns, S.Names, S.Typed);
+    TreeLoadSchema(S.Foreign, S.ForeignColumns, S.ForeignNames, Ложь);
+    Empty = Новый Массив; TreeLoadRows(S.Foreign.Rows, Empty, Неопределено);
+    TreeLoadRows(S.ForeignRowCollection, Empty, Неопределено);
+    Если S.Nodes.Count() = 0 Тогда
+        TreeLoadRows(S.Tree.Rows, Empty, Неопределено);
+        TreeLoadRows(S.RowCollections[0], Empty, Неопределено);
+        Text = S.Mode + S.Mode + "................................................";
+    Иначе
+        TreeLoadCount(S.Nodes, 6); TreeLoadRows(S.Tree.Rows, TreeLoadPair(S.Nodes[0], S.Nodes[1]), Неопределено);
+        TreeLoadRows(S.RowCollections[0], TreeLoadPair(S.Nodes[0], S.Nodes[1]), Неопределено);
+        Text = "BB";
+        Для P = 0 По 5 Цикл
+            R = S.Nodes[P];
+            Parent = Неопределено; Children = Новый Массив;
+            Если P = 0 Тогда Children = TreeLoadPair(S.Nodes[3], S.Nodes[4]);
+            ИначеЕсли P = 1 Тогда Children.Add(S.Nodes[2]);
+            ИначеЕсли P = 2 Тогда Parent = S.Nodes[1];
+            ИначеЕсли P = 3 Тогда Parent = S.Nodes[0]; Children.Add(S.Nodes[5]);
+            ИначеЕсли P = 4 Тогда Parent = S.Nodes[0];
+            ИначеЕсли P = 5 Тогда Parent = S.Nodes[3]; КонецЕсли;
+            Если R.Owner() <> S.Tree Или R.Parent <> Parent Тогда ВызватьИсключение "tree-load-row-links"; КонецЕсли;
+            TreeLoadRows(R.Rows, Children, R);
+            TreeLoadRows(S.RowCollections[P + 1], Children, R);
+            Для C = 0 По 3 Цикл Text = Text + TreeLoadCell(R.Get(C), Refs); КонецЦикла;
+        КонецЦикла;
+    КонецЕсли;
+    Kind = ТипЗнч(Source); Container = Ложь;
+    Если Kind = Тип("Массив") Тогда Tag = "A"; Container = Истина;
+    ИначеЕсли Kind = Тип("ФиксированныйМассив") Тогда Tag = "F"; Container = Истина;
+    ИначеЕсли Kind = Тип("Строка") Тогда Tag = "S";
+    ИначеЕсли Kind = Тип("Число") Тогда Tag = "N";
+    ИначеЕсли Kind = Тип("Неопределено") Тогда Tag = "U";
+    ИначеЕсли Kind = Тип("Null") Тогда Tag = "L";
+    ИначеЕсли Kind = Тип("Структура") Тогда Tag = "R";
+    Иначе ВызватьИсключение "tree-load-source-type"; КонецЕсли;
+    Identity = "0"; Values = Новый Массив;
+    Если Container Тогда
+        Count = Source.Count();
+        Если ТипЗнч(Count) <> Тип("Число") Или Count < 0 Или Count > 3 Или Цел(Count) <> Count Тогда ВызватьИсключение "tree-load-source-count"; КонецЕсли;
+        Если ТипЗнч(Original) = Kind И Source = Original Тогда Identity = "1"; Иначе Identity = "2"; КонецЕсли;
+        Для P = 0 По Count - 1 Цикл Values.Add(Source[P]); КонецЦикла;
+    Иначе Count = 1; Values.Add(Source); КонецЕсли;
+    Text = Text + Tag + Identity + Сред("0123", Count + 1, 1);
+    Для P = 0 По 2 Цикл
+        Если P < Count Тогда Text = Text + TreeLoadCell(Values[P], Refs); Иначе Text = Text + ".."; КонецЕсли;
+    КонецЦикла;
+    Если СтрДлина(Text) <> 59 Тогда ВызватьИсключение "tree-load-width"; КонецЕсли;
+    Возврат Text;
+КонецФункции
+
+Функция TreeLoadFresh(Знач Case)
+    S = Новый Структура("Tree,Nodes,Columns,Names,Typed,Mode,Foreign,ForeignColumns,ForeignNames,ColumnCollection,RowCollections,ForeignColumnCollection,ForeignRowCollection");
+    S.Tree = Новый ДеревоЗначений; S.Nodes = Новый Массив; S.Columns = Новый Массив;
+    S.Names = СтрРазделить("Id|Key|Group|Mark", "|"); S.Typed = Case >= 41 И Case <= 44; S.Mode = "B";
+    Если Case = 6 Тогда S.Names = Новый Массив; S.Mode = "N";
+    ИначеЕсли Case = 5 Или Case = 19 Тогда S.Mode = "E"; КонецЕсли;
+    Для P = 0 По S.Names.Count() - 1 Цикл
+        Если S.Typed И P = 1 Тогда C = S.Tree.Columns.Add(S.Names[P], Новый ОписаниеТипов("Число"));
+        Иначе C = S.Tree.Columns.Add(S.Names[P]); КонецЕсли;
+        C.Title = S.Names[P]; C.Width = 0; S.Columns.Add(C);
+    КонецЦикла;
+    Если S.Mode = "B" Тогда
+        A = S.Tree.Rows.Add(); B = S.Tree.Rows.Add(); B1 = B.Rows.Add(); A1 = A.Rows.Add(); A2 = A.Rows.Add(); A11 = A1.Rows.Add();
+        S.Nodes.Add(A); S.Nodes.Add(B); S.Nodes.Add(B1); S.Nodes.Add(A1); S.Nodes.Add(A2); S.Nodes.Add(A11);
+        Для P = 0 По 5 Цикл
+            R = S.Nodes[P]; R.Id = P + 1; Если S.Typed Тогда R.Key = 0; Иначе R.Key = "hit"; КонецЕсли;
+            Если P = 0 Или P = 2 Или P = 3 Тогда R.Group = "x"; Иначе R.Group = "y"; КонецЕсли; R.Mark = "base";
+        КонецЦикла;
+    КонецЕсли;
+    S.Foreign = Новый ДеревоЗначений; C = S.Foreign.Columns.Add("Id"); C.Title = "Id"; C.Width = 0;
+    S.ForeignColumns = Новый Массив; S.ForeignColumns.Add(C); S.ForeignNames = Новый Массив; S.ForeignNames.Add("Id");
+    S.ColumnCollection = S.Tree.Columns; S.RowCollections = Новый Массив; S.RowCollections.Add(S.Tree.Rows);
+    Для Каждого R Из S.Nodes Цикл S.RowCollections.Add(R.Rows); КонецЦикла;
+    S.ForeignColumnCollection = S.Foreign.Columns; S.ForeignRowCollection = S.Foreign.Rows;
+    Возврат S;
+КонецФункции
+
+Функция TreeLoadBaseline(Знач Case)
+    Если Case = 6 Тогда Text = "NN................................................";
+    ИначеЕсли Case = 5 Или Case = 19 Тогда Text = "EE................................................";
+    Иначе
+        Text = "BB";
+        Для P = 0 По 5 Цикл
+            Text = Text + Сред("123456", P + 1, 1) + "_";
+            Если Case >= 41 И Case <= 44 Тогда Text = Text + "0_"; Иначе Text = Text + "b_"; КонецЕсли;
+            Если P = 0 Или P = 2 Или P = 3 Тогда Text = Text + "c_"; Иначе Text = Text + "d_"; КонецЕсли;
+            Text = Text + "e_";
+        КонецЦикла;
+    КонецЕсли;
+    Tail = "A126_7_..";
+    Если Case = 7 Или Case = 20 Тогда Tail = "A10......";
+    ИначеЕсли Case = 8 Тогда Tail = "A116_....";
+    ИначеЕсли Case = 9 Тогда Tail = "A136_7_5_";
+    ИначеЕсли Case = 10 Тогда Tail = "F126_7_..";
+    ИначеЕсли Case = 26 Тогда Tail = "S01h_....";
+    ИначеЕсли Case = 27 Тогда Tail = "N017_....";
+    ИначеЕсли Case = 28 Тогда Tail = "U01U_....";
+    ИначеЕсли Case = 29 Тогда Tail = "L01L_....";
+    ИначеЕсли Case = 30 Тогда Tail = "R01P0....";
+    ИначеЕсли Case = 35 Тогда Tail = "A121_T_..";
+    ИначеЕсли Case = 36 Тогда Tail = "A12U_L_..";
+    ИначеЕсли Case = 37 Или Case = 38 Тогда Tail = "A12P07_..";
+    ИначеЕсли Case = 41 Тогда Tail = "A127_h_..";
+    ИначеЕсли Case = 42 Тогда Tail = "A12h_7_..";
+    ИначеЕсли Case = 43 Тогда Tail = "A127_U_..";
+    ИначеЕсли Case = 44 Тогда Tail = "A136_7_h_"; КонецЕсли;
+    Возврат Text + Tail;
+КонецФункции
+
+Функция TreeLoadProbe(Знач Case)
+    Failed = "!..........................................................";
+    Calibration = TreeLoadCalibrate();
+    Если Calibration <> "-" Тогда Возврат "1?C0" + Calibration + "-" + Failed; КонецЕсли;
+    Попытка
+        Если ТипЗнч(Case) <> Тип("Число") Или Case < 1 Или Case > 45 Или Цел(Case) <> Case Тогда ВызватьИсключение "tree-load-case"; КонецЕсли;
+        S = TreeLoadFresh(Case); Refs = Новый Массив; Source = TreeLoadPair(6, 7); Selector = "Id"; Rows = S.Tree.Rows;
+        Если Case = 2 Тогда Selector = "iD";
+        ИначеЕсли Case = 3 Тогда Rows = S.Nodes[0].Rows;
+        ИначеЕсли Case = 4 Тогда Rows = S.Nodes[5].Rows;
+        ИначеЕсли Case = 6 Или Case = 11 Тогда Selector = 0;
+        ИначеЕсли Case = 12 Тогда Selector = 1;
+        ИначеЕсли Case = 13 Тогда Selector = 0.5;
+        ИначеЕсли Case = 14 Тогда Selector = 1.5;
+        ИначеЕсли Case = 15 Тогда Selector = 1.9;
+        ИначеЕсли Case = 16 Тогда Selector = -0.5;
+        ИначеЕсли Case = 17 Тогда Selector = S.Columns[1];
+        ИначеЕсли Case = 18 Или Case = 19 Или Case = 20 Тогда Selector = "Missing";
+        ИначеЕсли Case = 21 Тогда Selector = S.ForeignColumns[0];
+        ИначеЕсли Case = 22 Тогда Selector = -1;
+        ИначеЕсли Case = 23 Тогда Selector = 4;
+        ИначеЕсли Case = 24 Тогда Selector = Неопределено;
+        ИначеЕсли Case = 25 Тогда Selector = Истина;
+        ИначеЕсли Case >= 35 И Case <= 44 Тогда Selector = "Key"; КонецЕсли;
+        Если Case = 7 Или Case = 20 Тогда Source = Новый Массив;
+        ИначеЕсли Case = 8 Тогда Source = Новый Массив; Source.Add(6);
+        ИначеЕсли Case = 9 Тогда Source.Add(5);
+        ИначеЕсли Case = 10 Тогда Source = Новый ФиксированныйМассив(Source);
+        ИначеЕсли Case = 26 Тогда Source = "bad";
+        ИначеЕсли Case = 27 Тогда Source = 7;
+        ИначеЕсли Case = 28 Тогда Source = Неопределено;
+        ИначеЕсли Case = 29 Тогда Source = Null;
+        ИначеЕсли Case = 30 Тогда Source = Новый Структура("Mark", "base");
+        ИначеЕсли Case = 35 Тогда Source = TreeLoadPair(1, Истина);
+        ИначеЕсли Case = 36 Тогда Source = TreeLoadPair(Неопределено, Null);
+        ИначеЕсли Case = 37 Или Case = 38 Тогда Source = TreeLoadPair(Новый Структура("Mark", "base"), 7);
+        ИначеЕсли Case = 41 Тогда Source = TreeLoadPair(7, "bad");
+        ИначеЕсли Case = 42 Тогда Source = TreeLoadPair("bad", 7);
+        ИначеЕсли Case = 43 Тогда Source = TreeLoadPair(7, Неопределено);
+        ИначеЕсли Case = 44 Тогда Source.Add("bad"); КонецЕсли;
+        Если Case = 30 Тогда Seed = TreeLoadCell(Source, Refs);
+        ИначеЕсли Case = 37 Или Case = 38 Тогда Seed = TreeLoadCell(Source[0], Refs); КонецЕсли;
+        Original = Source;
+        Before = TreeLoadSnapshot(S, Source, Original, Refs);
+        Если Не TreeLoadExact(Before, TreeLoadBaseline(Case)) Тогда ВызватьИсключение "tree-load-before"; КонецЕсли;
+        Baseline = Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", Case, 1);
+    Исключение Возврат "1?S0--" + Failed; КонецПопытки;
+    Action = "0"; Change = "0"; ResultCode = "--";
+    Попытка
+        Если Case = 1 Тогда Выполнить("Rows.ЗагрузитьКолонку(Source, Selector)");
+        ИначеЕсли Case = 2 Тогда Выполнить("Rows.lOaDcOlUmN(Source, Selector)");
+        ИначеЕсли Case = 31 Тогда Выполнить("Rows.LoadColumn()");
+        ИначеЕсли Case = 32 Тогда Выполнить("Rows.LoadColumn(Source, Selector, True)");
+        ИначеЕсли Case = 33 Тогда Выполнить("S.Tree.LoadColumn(Source, Selector)");
+        ИначеЕсли Case = 34 Тогда Result = Вычислить("Rows.LoadColumn(Source, Selector)");
+        ИначеЕсли Case = 45 Тогда Выполнить("Rows.LoadColumn(Source)");
+        Иначе Выполнить("Rows.LoadColumn(Source, Selector)"); КонецЕсли;
+    Исключение Action = "1"; КонецПопытки;
+    Попытка First = TreeLoadSnapshot(S, Source, Original, Refs);
+        Если Case = 34 И Action = "0" Тогда ResultCode = TreeLoadCell(Result, Refs); КонецЕсли;
+    Исключение First = Failed; КонецПопытки;
+    Если Case >= 37 И Case <= 40 Тогда
+        Change = "3";
+        Если Action = "0" Тогда
+            Change = "1";
+            Попытка
+                Если Case = 37 Тогда Source[0].Mark = "from-source";
+                ИначеЕсли Case = 38 Тогда S.Nodes[0].Key.Mark = "from-result";
+                ИначеЕсли Case = 39 Тогда Source.Delete(0);
+                Иначе Source[0] = 5; КонецЕсли;
+            Исключение Change = "2"; КонецПопытки;
+        КонецЕсли;
+        Попытка Last = TreeLoadSnapshot(S, Source, Original, Refs); Исключение Last = Failed; КонецПопытки;
+        First = First + "|" + Last;
+    КонецЕсли;
+    Возврат "1" + Baseline + Action + Change + ResultCode + First;
+КонецФункции
+// End bounded ValueTree LoadColumn helpers.
+
 #Область МассивыИСтруктуры
 // Типичный конвейер: массив записей, расчет суммы и сбор кодов для выгрузки.
 Позиции = Новый Массив;
@@ -4502,3 +4924,50 @@ VTResult = "error";
 Показать("tree.unload.selector.fraction-one-nine", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(1.9)"));
 Показать("tree.unload.selector.fraction-negative-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(-0.5)"));
 // End bounded ValueTree UnloadColumn observations.
+// Begin bounded ValueTree LoadColumn observations (measurement only; no native answers).
+Показать("TL01", TreeLoadProbe(1));
+Показать("TL02", TreeLoadProbe(2));
+Показать("TL03", TreeLoadProbe(3));
+Показать("TL04", TreeLoadProbe(4));
+Показать("TL05", TreeLoadProbe(5));
+Показать("TL06", TreeLoadProbe(6));
+Показать("TL07", TreeLoadProbe(7));
+Показать("TL08", TreeLoadProbe(8));
+Показать("TL09", TreeLoadProbe(9));
+Показать("TL10", TreeLoadProbe(10));
+Показать("TL11", TreeLoadProbe(11));
+Показать("TL12", TreeLoadProbe(12));
+Показать("TL13", TreeLoadProbe(13));
+Показать("TL14", TreeLoadProbe(14));
+Показать("TL15", TreeLoadProbe(15));
+Показать("TL16", TreeLoadProbe(16));
+Показать("TL17", TreeLoadProbe(17));
+Показать("TL18", TreeLoadProbe(18));
+Показать("TL19", TreeLoadProbe(19));
+Показать("TL20", TreeLoadProbe(20));
+Показать("TL21", TreeLoadProbe(21));
+Показать("TL22", TreeLoadProbe(22));
+Показать("TL23", TreeLoadProbe(23));
+Показать("TL24", TreeLoadProbe(24));
+Показать("TL25", TreeLoadProbe(25));
+Показать("TL26", TreeLoadProbe(26));
+Показать("TL27", TreeLoadProbe(27));
+Показать("TL28", TreeLoadProbe(28));
+Показать("TL29", TreeLoadProbe(29));
+Показать("TL30", TreeLoadProbe(30));
+Показать("TL31", TreeLoadProbe(31));
+Показать("TL32", TreeLoadProbe(32));
+Показать("TL33", TreeLoadProbe(33));
+Показать("TL34", TreeLoadProbe(34));
+Показать("TL35", TreeLoadProbe(35));
+Показать("TL36", TreeLoadProbe(36));
+Показать("TL37", TreeLoadProbe(37));
+Показать("TL38", TreeLoadProbe(38));
+Показать("TL39", TreeLoadProbe(39));
+Показать("TL40", TreeLoadProbe(40));
+Показать("TL41", TreeLoadProbe(41));
+Показать("TL42", TreeLoadProbe(42));
+Показать("TL43", TreeLoadProbe(43));
+Показать("TL44", TreeLoadProbe(44));
+Показать("TL45", TreeLoadProbe(45));
+// End bounded ValueTree LoadColumn observations.

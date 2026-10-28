@@ -2001,9 +2001,9 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # This is a deliberately source-specific adapter, not a general BSL rewriter.
-CLIENT_COLLECTIONS_SOURCE_SHA256 = '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4'
+CLIENT_COLLECTIONS_SOURCE_SHA256 = 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_COLLECTIONS_MESSAGE_COUNT = 976
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 1021
 
 
 def empty_collections_report() -> dict:
@@ -2042,7 +2042,7 @@ def collections_mismatch(client: list[str], server: list[str], server_output: by
 def client_collections_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned collections source in the pinned managed-client form.
 
-    All 130 source helpers remain in their original order with client directives.
+    All 144 source helpers remain in their original order with client directives.
     Only the 16 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Four explicit helper-local declarations
     preserve source-local bindings against the managed form's Object/Items names.
@@ -2190,6 +2190,20 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         3110: 'Функция TreeUnloadResult(Знач Result)\n',
         3129: 'Функция TreeUnloadState(Знач S)\n',
         3152: 'Функция TreeUnloadProbe(Знач Expression, Знач Kind = "base", Знач Change = "none")\n',
+        3211: 'Функция TreeColumnsDiagnosticPart(Знач Part)\n',
+        3263: 'Функция TreeColumnsDiagnosticExperiment()\n',
+        3273: 'Функция TreeColumnsDiagnosticProbe(Знач Case, Знач Diagnostic)\n',
+        3288: 'Функция TreeLoadExact(Знач Left, Знач Right)\n',
+        3297: 'Функция TreeLoadPair(Знач First, Знач Second)\n',
+        3301: 'Процедура TreeLoadCount(Знач Collection, Знач Expected)\n',
+        3306: 'Функция TreeLoadCell(Знач Value, Знач Refs)\n',
+        3342: 'Функция TreeLoadCalibrate()\n',
+        3406: 'Процедура TreeLoadSchema(Знач Tree, Знач Columns, Знач Names, Знач Typed)\n',
+        3428: 'Процедура TreeLoadRows(Знач Rows, Знач Expected, Знач Parent)\n',
+        3437: 'Функция TreeLoadSnapshot(Знач S, Знач Source, Знач Original, Знач Refs)\n',
+        3494: 'Функция TreeLoadFresh(Знач Case)\n',
+        3521: 'Функция TreeLoadBaseline(Знач Case)\n',
+        3553: 'Функция TreeLoadProbe(Знач Case)\n',
     }
     endings = {
         31: 'КонецПроцедуры\n',
@@ -2322,6 +2336,20 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         3127: 'КонецФункции\n',
         3150: 'КонецФункции\n',
         3206: 'КонецФункции\n',
+        3261: 'КонецФункции\n',
+        3271: 'КонецФункции\n',
+        3284: 'КонецФункции\n',
+        3295: 'КонецФункции\n',
+        3299: 'КонецФункции\n',
+        3304: 'КонецПроцедуры\n',
+        3340: 'КонецФункции\n',
+        3404: 'КонецФункции\n',
+        3426: 'КонецПроцедуры\n',
+        3435: 'КонецПроцедуры\n',
+        3492: 'КонецФункции\n',
+        3519: 'КонецФункции\n',
+        3551: 'КонецФункции\n',
+        3629: 'КонецФункции\n',
     }
     sites = {
         164: '    Сообщить(Метка + ": [" + Строка(Значение) + "]");\n',
@@ -2329,41 +2357,41 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         613: '            Сообщить(СтрСоединить(СтрокиВывода, Символ(10)));\n',
         615: '            Сообщить("table." + Метка + ": [" + КомпактноеЗначениеТаблицы(Результат) + "]");\n',
         618: '        Сообщить("table." + Метка + ": [serialize-error]");\n',
-        4035: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
-        4073: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
-        4123: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
-        4153: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
-        4166: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
-        4177: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
-        4185: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
-        4190: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
-        4213: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
-        4215: 'Сообщить("table.checkpoint.complete: [ok]");\n',
-        4247: 'Сообщить("table.descriptor-key.checkpoint.complete: [ok]");\n',
+        4457: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
+        4495: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
+        4545: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
+        4575: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
+        4588: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
+        4599: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
+        4607: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
+        4612: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
+        4635: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
+        4637: 'Сообщить("table.checkpoint.complete: [ok]");\n',
+        4669: 'Сообщить("table.descriptor-key.checkpoint.complete: [ok]");\n',
     }
     regions = {
         3: '#Область ВспомогательныеПроцедуры\n',
         247: '#Region FixedCollectionProbes\n',
         333: '#EndRegion\n',
         334: '#КонецОбласти\n',
-        3210: '#Область МассивыИСтруктуры\n',
-        3369: '#КонецОбласти\n',
-        3371: '#Область СоответствиеИТипы\n',
-        3430: '#КонецОбласти\n',
-        3432: '#Область СнимкиИОбратныеКопии\n',
-        3505: '#КонецОбласти\n',
-        3507: '#Область ВложенныеМассивы\n',
-        3556: '#КонецОбласти\n',
-        3558: '#Область РавенствоИсточникиИКлючи\n',
-        3618: '#КонецОбласти\n',
-        3621: '#Область ВнутренняяСериализация\n',
-        3719: '#КонецОбласти\n',
+        3632: '#Область МассивыИСтруктуры\n',
+        3791: '#КонецОбласти\n',
+        3793: '#Область СоответствиеИТипы\n',
+        3852: '#КонецОбласти\n',
+        3854: '#Область СнимкиИОбратныеКопии\n',
+        3927: '#КонецОбласти\n',
+        3929: '#Область ВложенныеМассивы\n',
+        3978: '#КонецОбласти\n',
+        3980: '#Область РавенствоИсточникиИКлючи\n',
+        4040: '#КонецОбласти\n',
+        4043: '#Область ВнутренняяСериализация\n',
+        4141: '#КонецОбласти\n',
     }
-    body_start = 3210
+    body_start = 3632
     capture = 'КоллекцииКлиентЗахват'
     reserved = (capture, 'КоллекцииКлиентСообщения',
                 'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
-    if (len(lines) != 4504
+    if (len(lines) != 4973
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())
@@ -2375,7 +2403,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
                      if re.match(r'^\s*Сообщить\(', line)) != tuple(sites)
             or lines[body_start] != '#Область МассивыИСтруктуры\n'
             or lines[body_start - 1] != '\n'
-            or lines[body_start - 2] != '// End bounded ValueTree UnloadColumn helpers.\n'
+            or lines[body_start - 2] != '// End bounded ValueTree LoadColumn helpers.\n'
             or lines[1] != 'Перем Выход;\n'
             or lines[9] != '    Перем Приемник, Источник, Статус, ЗначениеMissing, ЕстьMissing;\n'
             or tuple(i for i, line in enumerate(lines)
@@ -2389,6 +2417,12 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         raise FullError('invalid_input')
     # Preserve exact new observer/setup text under a top-level-hash rebase too.
     exclude_blocks = (
+        ('// Begin isolated Columns view diagnostic (fail-only; no LoadColumn calls).\n', '// End isolated Columns view diagnostic.\n\n',
+         'b1d7f595337db061b7bc5f9b754a55e27c09e420523574f7eebd8cd6b04465be'),
+        ('// Begin bounded ValueTree LoadColumn helpers (measurement only; no native answers).\n', '// End bounded ValueTree LoadColumn helpers.\n\n',
+         '083a46f5a001828b888b56fd6c1afdf2b53f021cd5a2e9c455d93ba4c34e3b39'),
+        ('// Begin bounded ValueTree LoadColumn observations (measurement only; no native answers).\n', '// End bounded ValueTree LoadColumn observations.\n',
+         '922e52e8fd4e64a39ba5dc40e51058103977c2ed71fc54c20fcdbb4a3023a0d5'),
         ('// Begin bounded ValueTree UnloadColumn helpers (measurement only; no native answers).\n', '// End bounded ValueTree UnloadColumn helpers.\n\n',
          '816ce1f9f4d175662f374966dc9901acd8f85090fe2672334fd39f3a8b8e88cc'),
         ('// Begin bounded ValueTree UnloadColumn observations (measurement only; no native answers).\n', '// End bounded ValueTree UnloadColumn observations.\n',
