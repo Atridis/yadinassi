@@ -1,9 +1,10 @@
 # Experimental partial Catalog identity projection
 
 This opt-in private parser adds the embedded Catalog metadata UUID to the
-existing Name and three standard-property prefix projection. Synthetic tests
-alone do not establish native compatibility. No accepted native evidence for
-this new identity contract is asserted here.
+existing Name and three standard-property prefix projection. The dedicated
+owned native run below has accepted source-bound evidence for the narrow
+internal UUID/declaration/XML binding. Synthetic tests alone do not establish
+native compatibility; this is not complete Catalog or applied-state support.
 
 `yadinassi.storage.config_catalog_name.project_catalog_identity_prefix(data, *,
 budget, limits=None)` returns a frozen private `CatalogIdentityPrefix`:
@@ -145,7 +146,32 @@ The ordinary runtime lane and older standard-binding run cannot substitute
 for this run. Activation changes only the dedicated workflow's selector from
 `--config-catalog-standard-binding` to `--config-catalog-identity-binding`, with
 an exact-delta assertion. The image, permissions, admission checks and cleanup
-remain unchanged. This does not itself advance the reviewed runner branch or
-establish native readiness: final source binding, independent frozen readiness
-checks, local full gates and a dedicated native run remain required. Credentials
-and access are unchanged.
+remain unchanged. Changing the selector alone does not establish native
+readiness: source binding, independent frozen checks, local full gates and the
+dedicated native evidence remain separate requirements. Credentials and access
+are unchanged.
+
+
+## Accepted owned native evidence (original source identity)
+
+Dedicated [run 40729128176](https://github.com/Atridis/yadinassi/actions/runs/40729128176)
+was accepted for original source commit
+`99bb1355a225a6b4700f2696a01f9ca90e8edf1a`, tree
+`d175a76799f25678e96391f8f906ed5a98423366`. Its cold production FINAL validator
+passed before the unchanged independently prefrozen checker. The bound source
+inventory contains 647 files and 26 staged files. The 18712-byte report has
+SHA-256 `8f82a99ef1b69137977f4e50305bf1aa56bda3ef5b123c6b99bd6643b549da12`.
+
+The finite owned verdict confirms that the one fixture's parsed internal
+Catalog UUID equals its external declaration key and independently verified
+canonical XML UUID, with matching Name and the three standard fields. All
+14 selected entries completed, with the required 13 stages, 11 snapshots,
+5 comparisons and 4 cleanup steps. No raw UUID, Name, XML or CONFIG content is
+published by this evidence.
+
+This accepts only that owned fixture through the pinned producer. It does not
+establish full Catalog grammar, arbitrary UUID representations, general field
+ranges, reference-type identities, applied CONFIG state, BSL metadata/object
+APIs or CRUD. Older standard-lane evidence is not relabeled. Later prose-only
+commits do not become the original source of this native run; the commit and
+tree above remain its evidence identity.
