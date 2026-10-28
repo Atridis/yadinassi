@@ -69,9 +69,17 @@ class LoadObserverTests(unittest.TestCase):
     def snapshot(self):
         return self.vm.execute('TreeLoadSnapshot(S, Source, Original, Refs)')
 
-    def test_real_host_calibration_and_all45_baselines_without_runtime_method(self):
+    def test_real_host_calibration_and_all45_baselines_with_missing_method(self):
         self.assertEqual(self.vm.execute('TreeLoadCalibrate()'), '-')
-        results = [self.probe(i) for i in range(1,46)]
+        # Preserve the original action-error observation test after runtime implementation.
+        # Only this synthetic test suppresses dispatch; native parity is separate.
+        original = BSLValueTreeRowCollection.get_method
+        def missing(receiver, name):
+            if name.casefold() in ('loadcolumn', 'загрузитьколонку'):
+                raise ValueError('Synthetic missing method')
+            return original(receiver, name)
+        with mock.patch.object(BSLValueTreeRowCollection, 'get_method', missing):
+            results = [self.probe(i) for i in range(1,46)]
         self.assertTrue(all(r[2] == '1' and '?' not in r and '!' not in r for r in results))
         self.assertEqual([len(r) for r in results], [125 if 37 <= i <= 40 else 65 for i in range(1,46)])
         self.assertEqual(sum(len(f'TL{i:02d}: [{r}]') for i,r in enumerate(results,1)),3525)

@@ -1,8 +1,9 @@
 # ValueTree Rows.LoadColumn measurement checkpoint
 
-Status: inputs and fail-closed observation only. Native results are not yet accepted;
-Rows.LoadColumn is not implemented by this change. Synthetic method callbacks in
-unit tests exercise observation branches, not expected 1C behavior.
+Status: the 45 native observations are authenticated and a bounded Rows.LoadColumn
+implementation is now included. Fresh runtime acceptance is still pending. The
+chronology below preserves earlier measurement-only and fail-only revisions;
+synthetic callbacks test observer branches, not additional native behavior.
 
 ## Scope
 
@@ -285,9 +286,9 @@ H/K, column identities and all metadata/qualifier checks remain fail-closed.
 The active suffix now calls `TreeLoadProbe(1)` through `TreeLoadProbe(45)` directly.
 Neither diagnostic experiment is actively dispatched. The inactive Columns
 definitions remain in the source; both experiment revisions are preserved by
-exact source/history fixtures for replay. No LoadColumn runtime
-implementation is added. Restored native action observations are still pending;
-local synthetic callbacks are not accepted native semantics or merge readiness.
+exact source/history fixtures for replay. That restoration revision added no runtime implementation. Its native observations
+were subsequently authenticated as described below; local synthetic callbacks
+are not additional native semantics or merge readiness.
 
 Rows calibration G/I/J/L no longer treats collection-wrapper equality as identity
 evidence. Every retained root/child/foreign Rows view and every fresh view is checked
@@ -305,3 +306,42 @@ Changed members/order/parents, replacement row objects, unknown values and wrong
 duck-compatible containers remain rejected; allowed cell changes remain visible in
 the complete encoded state. The 45 complete messages retain the 3525-unit bound
 within the unchanged 3800-unit allowance and all prior export/acceptance guards.
+
+
+### Runtime implementation from authenticated 45-case evidence
+
+Native run `40689638260` on `d5c795e70d2d5afe5b97a9855b06983223ed01a0`
+exported all 45 strict-valid observations (3525 message units): 25 action successes
+and 20 action exceptions. Collections SHA256 was
+`30f5f24d1c807814c3ba5fe19ed0396f04630b1f42ff6715ed6018bb006fcefd`.
+That run failed host comparison because the method was absent. It is measurement
+evidence, not successful runtime acceptance, PP/IBC success or a whole-138 gate.
+
+A method-local runtime implementation now follows that finite ledger. Array-only
+input, case-insensitive names, own-column objects and measured truncation toward
+zero are supported without changing other tree index helpers. Resolution occurs
+before empty shortcuts. Only the overlapping immediate rows are written through
+the existing typed-cell converter; no descendant traversal or excess-value
+conversion occurs. Structure values retain reference sharing, while later source
+membership changes do not replace already loaded cell values. No concurrency or
+future container-aliasing guarantee is inferred.
+
+The method is a procedure: expression use rejects before any write (TL34).
+TL41–43 are successful Number conversions of `"bad"` and Undefined to zero, with
+subsequent valid values still loaded. TL44 ignores the third value beyond the two
+local rows. These are not evidence for exceptional-conversion atomicity or general
+coercion rules. Defensive resource/integrity behavior is local policy, not a new
+native observation. Invalid selectors/source types, missing/extra arguments and
+calls on the tree rather than its Rows collection remain errors.
+
+The BSL capture source, all historical source pins and the strict observation
+protocol stay unchanged. New tests retain the exact authenticated finite payloads;
+no private native logs, database captures or credentials are included. Fresh full
+unit/launcher, executable smoke, whole integration and native/platform CI on the
+new runtime are still required before merge readiness.
+
+Local resource policy rejects a source Array exceeding `_MAX_ROWS` even when the
+receiver is empty or its excess suffix would be ignored. This is a bounded-runtime
+restriction, not an observed native length limit. Sequential prefix writes if an
+unmeasured converter failure occurs are likewise local policy, not a native
+atomicity or partial-failure guarantee.
