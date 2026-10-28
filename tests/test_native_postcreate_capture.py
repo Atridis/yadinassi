@@ -290,7 +290,7 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
             # no mocked verdict or invented native observation is used.
             collections = None
             if mode == full.MAP_MODE:
-                from test_native_tree_load_contract import synthetic_records
+                from test_native_tree_move_contract import synthetic_records
                 rows = map_fixtures.records()
                 # Preserve every old typed Map witness. The new suffix must
                 # satisfy the independent observer gate, not use generic "ok".
@@ -323,5 +323,5 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
                     self.assertEqual(exported[0]['functions.out'], native_payload())
                     if mode == full.MAP_MODE:
                         semantic = probe['comparison']['cases'][0]['semantic']
-                        self.assertEqual((semantic['status'], semantic['records']), ('equivalent', 1021))
+                        self.assertEqual((semantic['status'], semantic['records']), ('equivalent', 1022))
                         self.assertIsNone(probe['comparison']['cases'][2]['semantic'])

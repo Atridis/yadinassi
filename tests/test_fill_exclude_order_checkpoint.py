@@ -19,7 +19,7 @@ from yadinassi.native_targets import (
 ROOT = Path(__file__).resolve().parents[1]
 BASE_SHA = 'e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232'
 CHECKPOINT_SHA = 'fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9'
-SOURCE_SHA = 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e'
+SOURCE_SHA = 'a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574'
 POSITIONS = ('first', 'between')
 LABELS = tuple('fill.exclude-source-order.source-only.' + value for value in POSITIONS)
 LAST_LABEL = 'fill.exclude-missing.source-only.missing'
@@ -179,7 +179,7 @@ class FillExcludeOrderCheckpointTests(unittest.TestCase):
         for target in (WINDOWS_8_3_27_2342, LINUX_8_3_27_1508):
             with self.subTest(target=target):
                 outputs = []
-                for text, count in ((self.base, 841), (self.checkpoint, 852), (self.source, 1021)):
+                for text, count in ((self.base, 841), (self.checkpoint, 852), (self.source, 1022)):
                     rows = []
                     Interpreter(rows.append, native_target=target).execute(text)
                     self.assertEqual(len(rows), count)

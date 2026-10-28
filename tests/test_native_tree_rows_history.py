@@ -110,7 +110,7 @@ class RowsHistoryTests(unittest.TestCase):
         inventory = json.loads((ROOT / 'tests/tree_load_restored_source_inverse.json').read_text(encoding='utf-8'))
         for path in PATHS:
             source = (ROOT / path).read_text(encoding='utf-8')
-            for changed in (source + '\n', source.replace(replay.TREE_LOAD_RESTORED_SOURCE_SHA256, '0'*64, 1), source.replace('\n', '\r\n')):
+            for changed in (source + '\n', source.replace(replay.TREE_MOVE_SOURCE_SHA256, '0'*64, 1), source.replace('\n', '\r\n')):
                 self.assertNotEqual(source, changed)
                 with self.assertRaises(AssertionError):
                     history.without_tree_load_restoration_measurement(changed, host=path.endswith('full_host.py'))

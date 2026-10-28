@@ -37,13 +37,13 @@ class LoadHarnessHistoryTests(unittest.TestCase):
         with self.assertRaises(fixtures.suite.FullError): fixtures.suite.client_collections_module(prior,template)
         current=fixtures.suite.client_collections_module(source,template)
         self.assertIn(b'TreeLoadProbe',current)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,1021)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,1022)
 
     def test_source_and_harness_drift_rejected_even_with_rebased_outer_hash(self):
         inventory=json.loads((ROOT/'tests/tree_load_source_inverse.json').read_text(encoding='utf-8'))
         for path in PATHS:
             source=(ROOT/path).read_text(encoding='utf-8')
-            for altered in (source+'\n',source.replace('\n','\r\n'),source.replace('1021','1022',1)):
+            for altered in (source+'\n',source.replace('\n','\r\n'),source.replace('1022','1023',1)):
                 self.assertNotEqual(altered,source)
                 with self.assertRaises(AssertionError): history.without_tree_load_measurement(altered,host=path.endswith('full_host.py'))
                 forged=copy.deepcopy(inventory)

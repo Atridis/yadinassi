@@ -437,7 +437,8 @@ class ComparisonTests(SyntheticFilesystemCase):
 
     def compare(self, runner):
         # Generic subprocess/byte-comparison fixture, not a TL observation.
-        with mock.patch.object(full, "validate_tree_load_observations", return_value=None):
+        with mock.patch.object(full, "validate_tree_load_observations", return_value=None), \
+                mock.patch.object(full, "validate_tree_move_observations", return_value=None):
             return full.compare_outputs(self.root, self.capture, self.stage3, self.inputs, runner=runner)
 
     def test_fresh_real_source_path_complete_bytes_and_no_normalization(self):
@@ -603,7 +604,8 @@ class OrchestrationTests(SyntheticFilesystemCase):
                 mock.patch.object(full, "repository_provenance", return_value={"commit":"c"*40,"tree":"d"*40}), \
                 mock.patch.object(full, "interpreter_provenance", return_value={"source_sha256":"e"*64}), \
                 mock.patch.object(full, "compare_outputs", side_effect=compare), \
-                mock.patch.object(full, "validate_tree_load_observations", return_value=None):
+                mock.patch.object(full, "validate_tree_load_observations", return_value=None), \
+                mock.patch.object(full, "validate_tree_move_observations", return_value=None):
             try:
                 report = smoke.run_smoke(Path(temporary).resolve(), full_suite=True)
             except smoke.SmokeError as error:
@@ -686,6 +688,7 @@ class ProvenanceTests(SyntheticFilesystemCase):
             (root / "scripts").mkdir()
             (root / "scripts/native_infobase_fixture.py").write_text("# owned helper", encoding="utf-8")
             (root / "scripts/native_1c_tree_load_contract.py").write_text("# observer helper", encoding="utf-8")
+            (root / "scripts/native_1c_tree_move_contract.py").write_text("# move helper", encoding="utf-8")
             state = {"dirty": b"", "helper_tracked": True}
             def git(args, cwd, **kwargs):
                 command = args[3:]
@@ -695,7 +698,7 @@ class ProvenanceTests(SyntheticFilesystemCase):
                 if command[0] == "ls-files":
                     files = b"yadinassi/__init__.py\n"
                     if state["helper_tracked"]:
-                        files += b"scripts/native_infobase_fixture.py\nscripts/native_1c_tree_load_contract.py\n"
+                        files += b"scripts/native_infobase_fixture.py\nscripts/native_1c_tree_load_contract.py\nscripts/native_1c_tree_move_contract.py\n"
                     return 0, files, b""
                 raise AssertionError(command)
             with mock.patch.object(full, "bounded_child", side_effect=git), mock.patch.dict(os.environ, {}, clear=True):
@@ -747,8 +750,8 @@ class SemanticComparisonTests(ComparisonTests):
         self.contract = full.map_contract()
 
     def verdict(self, *, equal=False):
-        return {"profile":full.MAP_MODE, "status":"equivalent", "records":1021,
-                "byte_equal_records":1021 if equal else 1020,
+        return {"profile":full.MAP_MODE, "status":"equivalent", "records":1022,
+                "byte_equal_records":1022 if equal else 1021,
                 "accepted_labels":[] if equal else [self.contract.ELIGIBLE_LABELS[0]], "reason":"none"}
 
     def semantic_compare(self, *, verdict=None, equal=False, other_diff=False, context=None):
@@ -763,25 +766,42 @@ class SemanticComparisonTests(ComparisonTests):
         # These isolate host verdict gates; the strict observer is tested with
         # production framing and adversarial records in test_native_tree_load_contract.
         with mock.patch.object(full, "map_contract", return_value=self.contract), \
-                mock.patch.object(full, "validate_tree_load_observations", return_value=None):
+                mock.patch.object(full, "validate_tree_load_observations", return_value=None), \
+                mock.patch.object(full, "validate_tree_move_observations", return_value=None):
             result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
                 runner=runner, native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                 runtime_evidence=self.context if context is None else context)
         return result, verifier, calls
 
     def test_native_and_host_observer_gates_are_independently_required(self):
-        from test_native_tree_load_contract import synthetic_output
+        from test_native_tree_move_contract import synthetic_output
         valid = synthetic_output()
         invalid = valid.replace(b'TL45: [', b'TL45: [!', 1)
         for native, actual in ((valid, invalid), (invalid, valid)):
             path = self.capture / 'collections.out'
             path.chmod(0o600); path.write_bytes(native)
-            self.stage3['cases'][0].update(output_size=len(native), output_sha256=full.digest(native), message_count=1021)
+            self.stage3['cases'][0].update(output_size=len(native), output_sha256=full.digest(native), message_count=1022)
             result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
                 runner=lambda args,cwd: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
                 native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                 runtime_evidence=self.context)
             self.assertEqual(result['cases'][0]['failure_kind'],'tree_load_observation_invalid')
+            self.assertEqual(result['cases'][0]['status'],'error')
+            self.assertEqual(result['acceptance_status'],'rejected')
+
+    def test_move_native_and_host_invalid_including_equal_never_accept(self):
+        from test_native_tree_move_contract import synthetic_output
+        valid = synthetic_output()
+        invalid = valid.replace(b'TM: [', b'TM: [!', 1)
+        for native, actual in ((valid, invalid), (invalid, valid), (invalid, invalid)):
+            path = self.capture / 'collections.out'
+            path.chmod(0o600); path.write_bytes(native)
+            self.stage3['cases'][0].update(output_size=len(native), output_sha256=full.digest(native), message_count=1022)
+            result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
+                runner=lambda args,cwd: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
+                native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
+                runtime_evidence=self.context)
+            self.assertEqual(result['cases'][0]['failure_kind'],'tree_move_observation_invalid')
             self.assertEqual(result['cases'][0]['status'],'error')
             self.assertEqual(result['acceptance_status'],'rejected')
 
@@ -858,7 +878,7 @@ class SemanticComparisonTests(ComparisonTests):
         edits = [lambda v:v.update(extra="PRIVATE"), lambda v:v.pop("profile"),
             lambda v:v.update(profile="typed-map-order-v2"), lambda v:v.update(status=[]),
             lambda v:v.update(records=True), lambda v:v.update(records=853),
-            lambda v:v.update(byte_equal_records=1021), lambda v:v.update(accepted_labels=[]),
+            lambda v:v.update(byte_equal_records=1022), lambda v:v.update(accepted_labels=[]),
             lambda v:v.update(accepted_labels=["PRIVATE"]), lambda v:v.update(reason="PRIVATE"),
             lambda v:v.update(reason=[]), lambda v:v.update(status="rejected", reason="typed_difference")]
         for edit in edits:

@@ -47,7 +47,7 @@ def artifact_files(report=None):
     report = report or accepted_report()
     payloads = dict.fromkeys(full.ARTIFACT_FILES[:-1], PAYLOAD)
     if report['stage3']['cases'][0]['source_sha256'] == full.COLLECTIONS_SOURCE_SHA256:
-        from test_native_tree_load_contract import synthetic_output
+        from test_native_tree_move_contract import synthetic_output
         payloads['collections.out'] = synthetic_output()
     return full.output_artifact_files(payloads, report, smoke.IMAGE)
 
@@ -74,7 +74,7 @@ class ManifestTests(SyntheticFilesystemCase):
             self.assertEqual(case["source_sha256"], report["stage3"]["input_sha256"][f'integrational_tests/tests/{case["name"]}.bsl'])
 
     def test_native_observer_gate_is_required_before_artifact_export(self):
-        from test_native_tree_load_contract import synthetic_output
+        from test_native_tree_move_contract import synthetic_output
         valid = synthetic_output()
         invalid = valid.replace(b'TL45: [', b'TL45: [!', 1)
         for payload, accepted in ((valid, True), (invalid, False)):
@@ -83,7 +83,28 @@ class ManifestTests(SyntheticFilesystemCase):
             report['stage3']['input_sha256'][source_key] = full.COLLECTIONS_SOURCE_SHA256
             report['trusted_input_sha256'][source_key] = full.COLLECTIONS_SOURCE_SHA256
             report['stage3']['cases'][0].update(source_sha256=full.COLLECTIONS_SOURCE_SHA256,
-                output_sha256=full.digest(payload),output_size=len(payload),message_count=1021)
+                output_sha256=full.digest(payload),output_size=len(payload),message_count=1022)
+            report['comparison']['cases'][0].update(native_sha256=full.digest(payload),native_size=len(payload),
+                interpreter_sha256=full.digest(payload),interpreter_size=len(payload))
+            payloads = dict.fromkeys(full.ARTIFACT_FILES[:-1], PAYLOAD)
+            payloads['collections.out'] = payload
+            if accepted:
+                self.assertEqual(full.output_artifact_files(payloads,report,smoke.IMAGE)['collections.out'],payload)
+                report['stage3']['cases'][0]['message_count'] = 1020
+            with self.assertRaisesRegex(full.FullError,'^native_artifact_evidence_invalid$'):
+                full.output_artifact_files(payloads,report,smoke.IMAGE)
+
+    def test_move_invalid_observer_cannot_export_even_matching(self):
+        from test_native_tree_move_contract import synthetic_output
+        valid = synthetic_output()
+        invalid = valid.replace(b'TM: [', b'TM: [!', 1)
+        for payload, accepted in ((valid, True), (invalid, False)):
+            report = accepted_report()
+            source_key = 'integrational_tests/tests/collections.bsl'
+            report['stage3']['input_sha256'][source_key] = full.COLLECTIONS_SOURCE_SHA256
+            report['trusted_input_sha256'][source_key] = full.COLLECTIONS_SOURCE_SHA256
+            report['stage3']['cases'][0].update(source_sha256=full.COLLECTIONS_SOURCE_SHA256,
+                output_sha256=full.digest(payload),output_size=len(payload),message_count=1022)
             report['comparison']['cases'][0].update(native_sha256=full.digest(payload),native_size=len(payload),
                 interpreter_sha256=full.digest(payload),interpreter_size=len(payload))
             payloads = dict.fromkeys(full.ARTIFACT_FILES[:-1], PAYLOAD)
@@ -250,7 +271,7 @@ class OrchestrationTests(SyntheticFilesystemCase):
         operations=[]; exported=[]; retained=[]; original_retain=full.retain_output_bytes
         original_temporary=tempfile.TemporaryDirectory; good=accepted_report(mismatch=mismatch)
         if collections_payload is None:
-            from test_native_tree_load_contract import synthetic_output
+            from test_native_tree_move_contract import synthetic_output
             collections_payload = synthetic_output()
         good['comparison']['cases'][0].update(native_size=len(collections_payload),
             native_sha256=full.digest(collections_payload),interpreter_size=len(collections_payload),
@@ -416,9 +437,9 @@ def semantic_report(*, equal=False):
     report["stage3"]["input_sha256"][source_key] = full.COLLECTIONS_SOURCE_SHA256
     report["stage3"]["cases"][0]["source_sha256"] = full.COLLECTIONS_SOURCE_SHA256
     report["trusted_input_sha256"] = dict(report["stage3"]["input_sha256"])
-    from test_native_tree_load_contract import synthetic_output
+    from test_native_tree_move_contract import synthetic_output
     payload = synthetic_output()
-    report['stage3']['cases'][0].update(output_size=len(payload), output_sha256=full.digest(payload), message_count=1021)
+    report['stage3']['cases'][0].update(output_size=len(payload), output_sha256=full.digest(payload), message_count=1022)
     comparison = report["comparison"]
     comparison['cases'][0].update(native_size=len(payload), native_sha256=full.digest(payload),
         interpreter_size=len(payload), interpreter_sha256=full.digest(payload) if equal else '0'*64,
@@ -426,8 +447,8 @@ def semantic_report(*, equal=False):
     comparison.update(native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                       acceptance_status="accepted")
     comparison["cases"][0].update(acceptance_status="accepted", semantic={
-        "status":"equivalent", "profile":full.MAP_MODE, "records":1021,
-        "byte_equal_records":1021 if equal else 1020,
+        "status":"equivalent", "profile":full.MAP_MODE, "records":1022,
+        "byte_equal_records":1022 if equal else 1021,
         "accepted_labels":[] if equal else [full.map_contract().ELIGIBLE_LABELS[0]], "reason":"none"})
     return report
 
@@ -446,7 +467,7 @@ class SemanticManifestTests(SyntheticFilesystemCase):
         self.assertEqual(manifest["cases"][0]["comparison_status"],"mismatched")
         self.assertEqual(manifest["cases"][0]["mismatch"],report["comparison"]["cases"][0]["mismatch"])
         self.assertEqual(manifest["interpreter"]["map_contract_sha256"],report["interpreter"]["map_contract_sha256"])
-        from test_native_tree_load_contract import synthetic_output
+        from test_native_tree_move_contract import synthetic_output
         self.assertEqual(files["collections.out"],synthetic_output())
         self.assertTrue(all(case["semantic"] is None for case in manifest["cases"][1:]))
 

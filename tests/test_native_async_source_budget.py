@@ -36,6 +36,10 @@ class AsyncSourceInputBudgetTests(unittest.TestCase):
         self.assertEqual(adapter.MAX_SOURCE_BYTES, CAP)
         self.assertEqual(CAP, 288 * 1024)
         expected = adapter.read_pinned_sources(SOURCE)
+        # Model a physical Windows checkout even when this test runs on Linux.
+        crlf = SOURCE.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        self.assertLessEqual(len(crlf), CAP)
+        self.assertEqual(adapter.read_pinned_sources(crlf), expected)
         self.assertEqual(adapter.read_pinned_sources(at_cap()), expected)
         with self.assertRaises(adapter.InvalidComparisonInput):
             adapter.read_pinned_sources(at_cap() + b' ')
