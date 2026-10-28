@@ -1,4 +1,7 @@
-"""Offline selector/source/recipe pins; never dispatch or run native commands."""
+"""Maintained standard-lane compatibility pins; never run native commands.
+
+Shared source pins track this reviewed candidate, not the original native run.
+The original source/run attribution remains in the standard-prefix documentation."""
 import hashlib
 import json
 from pathlib import Path
@@ -12,9 +15,9 @@ SOURCE_PINS = {
     'scripts/native_1c_db_oracle/config_catalog_standard_binding.py':
         '9a144719343eb5acc4577b8b78b39a1a7e354365b9147533669fde96ee77e777',
     'scripts/native_1c_db_oracle/config_framing_reader.py':
-        '885bf6241ac71ce165ebd6d8712e24f83a4e319c0ff0bc8df55d3f854547f803',
+        'f13d345a315719988fc992a45e81ae6eb0f84d93de87fd6f44f1b93acae95a95',
     'yadinassi/storage/config_catalog_name.py':
-        '1b8052be83d5de69b89089885c600640d431fb73157e7b3c9a0c913c01575a1d',
+        '1d77c88a2d9baabf38c1b0dba65b71316f94f292be8a3b7741a8d792c56338aa',
 }
 
 
@@ -35,9 +38,9 @@ def checkout_source_sha256(raw):
 class StandardActivationTests(unittest.TestCase):
     def test_workflow_changes_exactly_one_selector_and_nothing_else(self):
         raw = (ROOT/WORKFLOW).read_bytes()
-        self.assertEqual(raw.count(b'--config-catalog-standard-binding'), 1)
+        self.assertEqual(raw.count(b'--config-catalog-identity-binding'), 1)
         self.assertNotIn(b'--config-catalog-name-binding', raw)
-        original = raw.replace(b'--config-catalog-standard-binding', b'--config-catalog-name-binding')
+        original = raw.replace(b'--config-catalog-identity-binding', b'--config-catalog-name-binding')
         self.assertEqual(checkout_source_sha256(original), WORKFLOW_LF_SHA256)
 
     def test_reviewed_policy_parser_and_reader_source_pins(self):
@@ -49,7 +52,7 @@ class StandardActivationTests(unittest.TestCase):
         for path, expected in SOURCE_PINS.items():
             yield path, (ROOT/path).read_bytes(), expected
         original = (ROOT/WORKFLOW).read_bytes().replace(
-            b'--config-catalog-standard-binding', b'--config-catalog-name-binding')
+            b'--config-catalog-identity-binding', b'--config-catalog-name-binding')
         yield WORKFLOW, original, WORKFLOW_LF_SHA256
 
     def test_real_pinned_sources_accept_lf_and_crlf_checkouts(self):

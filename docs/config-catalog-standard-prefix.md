@@ -6,6 +6,10 @@ CodeTypeString and DescriptionLength0. See the original run/source identity belo
 This remains a partial-prefix parser, not Interpreter or ordinary BSL CLI
 database-object support.
 
+The separate [identity-prefix experiment](config-catalog-identity-prefix.md)
+adds opt-in embedded UUID parsing and its own owned binding lane. It does not
+change this standard lane's contract or extend the native evidence recorded here.
+
 `yadinassi.storage.config_catalog_name.project_catalog_standard_prefix(data, *,
 budget, limits=None)` returns an immutable private `CatalogStandardPrefix` with:
 
