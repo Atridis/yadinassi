@@ -212,3 +212,146 @@ def project_catalog_name_prefix(data, *, budget, limits=None):
     budget.charge('bytes_processed', 4 * len(data))
     budget.charge('output_bytes', OUTPUT_RESERVATION)
     return _Cursor(data, budget, limits).run()
+
+
+STANDARD_PROFILE_IDENTIFIER = 'config_catalog_standard_prefix_v1'
+STANDARD_PATHS = (NAME_PATH, (1, 17), (1, 18), (1, 19))
+STANDARD_OUTPUT_RESERVATION = 131072
+
+
+class CatalogStandardError(CatalogNameError):
+    codes = CatalogNameError.codes | frozenset((
+        'missing_field', 'integer_syntax', 'integer_bound', 'code_type'))
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogStandardLimits(CatalogNameLimits):
+    # Admission bound, not a claim about the platform's valid field lengths.
+    max_length: int = 2147483647
+
+    def __post_init__(self):
+        try:
+            CatalogNameLimits.__post_init__(self)
+        except CatalogNameError as error:
+            raise CatalogStandardError(error.code) from None
+        if type(self.max_length) is not int or not 0 <= self.max_length <= 2147483647:
+            raise CatalogStandardError('limit')
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogStandardPrefix:
+    """Private partial metadata; code_type is 0 (Number) or 1 (String)."""
+    name: str
+    code_length: int
+    code_type: int
+    description_length: int
+
+
+class _StandardCursor(_Cursor):
+    def integer(self, *, code_type):
+        self.event()
+        value = digits = 0
+        first = self.peek()
+        while self.peek() not in (44, 125):
+            byte = self.peek()
+            # Selected integers deliberately admit only canonical bare ASCII.
+            if byte is None or not 48 <= byte <= 57 or digits and first == 48:
+                raise CatalogStandardError('integer_syntax')
+            if digits >= 10:
+                raise CatalogStandardError('integer_bound')
+            value = value * 10 + byte - 48
+            digits += 1
+            self.character()
+            if value > self.limits.max_length and not code_type:
+                raise CatalogStandardError('integer_bound')
+            if value > 2147483647:
+                raise CatalogStandardError('integer_bound')
+        if not digits:
+            raise CatalogStandardError('integer_syntax')
+        if code_type and value not in (0, 1):
+            raise CatalogStandardError('code_type')
+        return value
+
+    def run(self):
+        if self.data.startswith(b'\xef\xbb\xbf'):
+            self.position = 3
+        self.spaces()
+        if self.peek() != 123:
+            raise CatalogStandardError('syntax')
+        self.event()
+        self.character()
+        # Fixed target routes only: retain no paths inside opaque subtrees.
+        # Frames: child index, shared route prefix or None, after-value.
+        stack = [[0, (), False]]
+        values = []
+        while stack:
+            frame = stack[-1]
+            self.spaces()
+            if frame[2]:
+                if self.peek() == 44:
+                    self.character()
+                    frame[0] += 1
+                    frame[2] = False
+                elif self.peek() == 125:
+                    self.event()
+                    self.character()
+                    route = frame[1]
+                    if route is not None and any(
+                            path[:len(route)] == route for path in STANDARD_PATHS[len(values):]):
+                        raise CatalogStandardError('missing_field')
+                    stack.pop()
+                else:
+                    raise CatalogStandardError('syntax')
+                continue
+            route = None if frame[1] is None else frame[1] + (frame[0],)
+            target = STANDARD_PATHS[len(values)]
+            wanted = route == target
+            on_path = route is not None and any(
+                path[:len(route)] == route for path in STANDARD_PATHS[len(values):])
+            if self.peek() == 123:
+                if wanted:
+                    raise CatalogStandardError('expected_scalar')
+                if len(stack) >= self.depth:
+                    raise CatalogStandardError('depth')
+                self.event()
+                self.character()
+                frame[2] = True
+                stack.append([0, route if on_path else None, False])
+            else:
+                if on_path and not wanted:
+                    raise CatalogStandardError('expected_object')
+                if wanted:
+                    value = (self.scalar(True) if not values else
+                             self.integer(code_type=len(values) == 2))
+                    values.append(value)
+                    if len(values) == len(STANDARD_PATHS):
+                        # Last scalar established a delimiter; leave suffix alone.
+                        return CatalogStandardPrefix(*values)
+                else:
+                    self.scalar(False)
+                frame[2] = True
+        raise CatalogStandardError('missing_field')
+
+
+def project_catalog_standard_prefix(data, *, budget, limits=None):
+    """Read Name and three standard scalars, without expected values or I/O.
+
+    Only the visited prefix is checked. Numeric limits describe this admission
+    subset, not the platform's complete semantic range. Charges are retained on
+    failure; there is one traversal and no call to the Name-only entrypoint.
+    """
+    if type(data) is not bytes:
+        raise CatalogStandardError('input_type')
+    if limits is None:
+        limits = CatalogStandardLimits()
+    if type(limits) is not CatalogStandardLimits:
+        raise CatalogStandardError('limits_type')
+    limits.__post_init__()
+    if len(data) > limits.max_input_bytes:
+        raise CatalogStandardError('input_bytes')
+    budget.charge('bytes_processed', 4 * len(data))
+    budget.charge('output_bytes', STANDARD_OUTPUT_RESERVATION)
+    try:
+        return _StandardCursor(data, budget, limits).run()
+    except CatalogNameError as error:
+        raise CatalogStandardError(error.code) from None

@@ -1796,16 +1796,53 @@ class ConfigCatalogNameObservation(ConfigCatalogReferenceObservation):
     capability: str = field(default='experimental_config_catalog_names', init=False)
 
 
+@dataclass(frozen=True)
+class ConfigCatalogStandardProfile(ConfigCatalogNameProfile):
+    identifier: str = field(default='config_catalog_standard_8380_8192_v1', init=False)
+
+    def recipe(self):
+        result = super().recipe()
+        result.update(catalog_standard_projection='positional_name_code_description_prefix_v1',
+            catalog_standard_limits=(4194304, 131072, 64, 1024, 256, 2147483647),
+            catalog_standard_reservation=(4, 131072, 262144),
+            catalog_standard_binding='external_key_name_code_description_verified_xml_v1',
+            catalog_standard_suffix='not_performed')
+        # The standard parser includes Name in one pass, not a second Name parse.
+        del result['catalog_name_reservation']
+        return result
+
+
+@dataclass(frozen=True)
+class ConfigCatalogStandardObservation(ConfigCatalogReferenceObservation):
+    private_fields: tuple
+    capability: str = field(default='experimental_config_catalog_standard', init=False)
+
+
 def observe_config_catalog_names(read_at, file_size, *, profile,
                                limits=None, chain_limits=None, content_limits=None, catalog_limits=None, reference_limits=None, name_limits=None):
+    return _observe_catalog_prefix(read_at, file_size, profile=profile, limits=limits,
+        chain_limits=chain_limits, content_limits=content_limits, catalog_limits=catalog_limits,
+        reference_limits=reference_limits, name_limits=name_limits, standard=False)
+
+
+def observe_config_catalog_standard(read_at, file_size, *, profile,
+                               limits=None, chain_limits=None, content_limits=None, catalog_limits=None, reference_limits=None, standard_limits=None):
+    return _observe_catalog_prefix(read_at, file_size, profile=profile, limits=limits,
+        chain_limits=chain_limits, content_limits=content_limits, catalog_limits=catalog_limits,
+        reference_limits=reference_limits, name_limits=standard_limits, standard=True)
+
+
+def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
+                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard):
     """Resolve partial Catalog declarations on one private CONFIG resource graph.
 
     Every selected entry is validated and decoded exactly once before return.
     No complete root grammar, suffix validity, embedded identity or applied state
     is established. Private key/name pairs are for an independent comparator only.
     """
-    if type(profile) is not ConfigCatalogNameProfile:
-        raise ValueError('profile must be ConfigCatalogNameProfile')
+    expected_profile = ConfigCatalogStandardProfile if standard else ConfigCatalogNameProfile
+    if type(profile) is not expected_profile:
+        raise ValueError('profile must be ' + expected_profile.__name__)
     if limits is not None and type(limits) is not ConfigFramingLimits:
         raise ValueError('limits must be ConfigFramingLimits')
     if chain_limits is not None and type(chain_limits) is not ConfigBlobChainLimits:
@@ -1996,8 +2033,8 @@ def observe_config_catalog_names(read_at, file_size, *, profile,
                 raise UnsupportedLayout('config_catalog_self_reference')
             if key not in references:
                 raise UnsupportedLayout('config_catalog_reference_missing')
-        # Fixed cumulative reservation for at most256 private key/name pairs.
-        reader._budget.charge('output_bytes', 131072)
+        # Fixed reservation for at most256 private pairs or standard records.
+        reader._budget.charge('output_bytes', 262144 if standard else 131072)
         private_names = []
         catalog_resolved = catalog_positive = 0
         for key, reference in references.items():
@@ -2008,13 +2045,14 @@ def observe_config_catalog_names(read_at, file_size, *, profile,
                         raise UnsupportedLayout('config_catalog_content_empty')
                     import config_catalog_name as name_projector
                     try:
-                        named = name_projector.project_catalog_name_prefix(
-                            content, budget=reader._budget, limits=name_limits)
+                        project = (name_projector.project_catalog_standard_prefix if standard else
+                                   name_projector.project_catalog_name_prefix)
+                        named = project(content, budget=reader._budget, limits=name_limits)
                     except name_projector.CatalogNameError as error:
                         if error.code in ('input_bytes', 'tokens', 'depth', 'name_bytes', 'name_chars'):
-                            raise ResourceLimit('config_catalog_name_limits') from None
-                        raise InvalidStructure('config_catalog_name_prefix') from None
-                    private_names.append((key, named.name))
+                            raise ResourceLimit('config_catalog_standard_limits' if standard else 'config_catalog_name_limits') from None
+                        raise InvalidStructure('config_catalog_standard_prefix' if standard else 'config_catalog_name_prefix') from None
+                    private_names.append((key, named) if standard else (key, named.name))
                     del named
                     catalog_resolved += 1
                     catalog_positive += 1
@@ -2033,7 +2071,8 @@ def observe_config_catalog_names(read_at, file_size, *, profile,
         if not positive_count:
             raise UnsupportedLayout('config_content_no_positive_witness')
         reader._budget.charge('output_bytes', 4096)
-        return ConfigCatalogNameObservation(profile.identifier, profile.recipe_sha256,
+        observation = ConfigCatalogStandardObservation if standard else ConfigCatalogNameObservation
+        return observation(profile.identifier, profile.recipe_sha256,
             data.info.logical_length, blob.info.logical_length, slots, 'one',
             zero, one, other, zero, empty, zero - empty, maximum,
             selected_count, reference_excluded, name_excluded, part_zero, part_nonzero,
