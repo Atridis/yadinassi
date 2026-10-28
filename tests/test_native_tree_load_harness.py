@@ -51,7 +51,7 @@ class LoadHarnessHistoryTests(unittest.TestCase):
                 with mock.patch.object(history.json,'loads',return_value=forged),self.assertRaises(AssertionError):
                     history.without_tree_load_measurement(altered,host=path.endswith('full_host.py'))
         source=(ROOT/'integrational_tests/tests/collections.bsl').read_bytes().replace(b'\r\n',b'\n').decode('utf-8-sig')
-        for altered in (source+'\n',source.replace('TreeColumnsDiagnosticProbe(45, TreeColumnsDiagnostic)','TreeColumnsDiagnosticProbe(44, TreeColumnsDiagnostic)'),source.replace('\n','\r\n')):
+        for altered in (source+'\n',source.replace('TreeLoadProbe(45)','TreeLoadProbe(44)'),source.replace('\n','\r\n')):
             self.assertNotEqual(altered,source)
             with self.assertRaises(ValueError): without_tree_load_probes(altered)
 

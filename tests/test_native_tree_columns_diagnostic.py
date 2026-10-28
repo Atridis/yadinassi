@@ -4,6 +4,7 @@ import itertools
 import unittest
 from unittest import mock
 
+from scripts import native_historical_replay as replay
 from yadinassi import Interpreter
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeColumnCollection
 from yadinassi import runtime
@@ -14,7 +15,8 @@ END = '// End isolated Columns view diagnostic.\n\n'
 
 
 def source():
-    return (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+    # Explicit public Columns experiment; the current source routes real Load probes.
+    return replay.without_tree_load_restoration((ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig'))
 
 
 def helpers():

@@ -3374,17 +3374,18 @@
         Stage = "F";
         ChildRows = R.Rows;
         Stage = "G";
-        Если T.Rows <> RootRows Тогда ВызватьИсключение "tree-load-root-alias"; КонецЕсли;
+        Expected = TreeLoadPair(R, OtherRow); Empty = Новый Массив;
+        TreeLoadRows(RootRows, Expected, Неопределено); TreeLoadRows(T.Rows, Expected, Неопределено);
         Stage = "H";
         Если T.Columns <> Cols Тогда ВызватьИсключение "tree-load-columns-alias"; КонецЕсли;
         Stage = "I";
-        Если R.Rows <> ChildRows Тогда ВызватьИсключение "tree-load-child-alias"; КонецЕсли;
+        TreeLoadRows(ChildRows, Empty, R); TreeLoadRows(R.Rows, Empty, R);
         Stage = "J";
-        Если RootRows = Other.Rows Тогда ВызватьИсключение "tree-load-root-distinct"; КонецЕсли;
+        TreeLoadRows(RootRows, Expected, Неопределено); TreeLoadRows(Other.Rows, Empty, Неопределено);
         Stage = "K";
         Если Cols = Other.Columns Тогда ВызватьИсключение "tree-load-columns-distinct"; КонецЕсли;
         Stage = "L";
-        Если ChildRows = OtherRow.Rows Тогда ВызватьИсключение "tree-load-child-distinct"; КонецЕсли;
+        TreeLoadRows(ChildRows, Empty, R); TreeLoadRows(OtherRow.Rows, Empty, OtherRow);
         Stage = "M";
         Если R <> T.Rows.Get(0) Тогда ВызватьИсключение "tree-load-row-alias"; КонецЕсли;
         Stage = "N";
@@ -3426,6 +3427,7 @@
 КонецПроцедуры
 
 Процедура TreeLoadRows(Знач Rows, Знач Expected, Знач Parent)
+    Если ТипЗнч(Rows) <> Тип("КоллекцияСтрокДереваЗначений") Тогда ВызватьИсключение "tree-load-rows-type"; КонецЕсли;
     TreeLoadCount(Rows, Expected.Count());
     Если Rows.Parent <> Parent Тогда ВызватьИсключение "tree-load-collection-parent"; КонецЕсли;
     Для P = 0 По Expected.Count() - 1 Цикл
@@ -3434,23 +3436,25 @@
 КонецПроцедуры
 
 Функция TreeLoadSnapshot(Знач S, Знач Source, Знач Original, Знач Refs)
-    Если S.Tree.Columns <> S.ColumnCollection Или S.Tree.Rows <> S.RowCollections[0]
-        Или S.Foreign.Columns <> S.ForeignColumnCollection Или S.Foreign.Rows <> S.ForeignRowCollection Тогда
+    Если S.Tree.Columns <> S.ColumnCollection
+        Или S.Foreign.Columns <> S.ForeignColumnCollection Тогда
         ВызватьИсключение "tree-load-retained-collection";
     КонецЕсли;
     TreeLoadCount(S.RowCollections, S.Nodes.Count() + 1);
     TreeLoadSchema(S.Tree, S.Columns, S.Names, S.Typed);
     TreeLoadSchema(S.Foreign, S.ForeignColumns, S.ForeignNames, Ложь);
     Empty = Новый Массив; TreeLoadRows(S.Foreign.Rows, Empty, Неопределено);
+    TreeLoadRows(S.ForeignRowCollection, Empty, Неопределено);
     Если S.Nodes.Count() = 0 Тогда
         TreeLoadRows(S.Tree.Rows, Empty, Неопределено);
+        TreeLoadRows(S.RowCollections[0], Empty, Неопределено);
         Text = S.Mode + S.Mode + "................................................";
     Иначе
         TreeLoadCount(S.Nodes, 6); TreeLoadRows(S.Tree.Rows, TreeLoadPair(S.Nodes[0], S.Nodes[1]), Неопределено);
+        TreeLoadRows(S.RowCollections[0], TreeLoadPair(S.Nodes[0], S.Nodes[1]), Неопределено);
         Text = "BB";
         Для P = 0 По 5 Цикл
             R = S.Nodes[P];
-            Если R.Rows <> S.RowCollections[P + 1] Тогда ВызватьИсключение "tree-load-retained-child"; КонецЕсли;
             Parent = Неопределено; Children = Новый Массив;
             Если P = 0 Тогда Children = TreeLoadPair(S.Nodes[3], S.Nodes[4]);
             ИначеЕсли P = 1 Тогда Children.Add(S.Nodes[2]);
@@ -3460,6 +3464,7 @@
             ИначеЕсли P = 5 Тогда Parent = S.Nodes[3]; КонецЕсли;
             Если R.Owner() <> S.Tree Или R.Parent <> Parent Тогда ВызватьИсключение "tree-load-row-links"; КонецЕсли;
             TreeLoadRows(R.Rows, Children, R);
+            TreeLoadRows(S.RowCollections[P + 1], Children, R);
             Для C = 0 По 3 Цикл Text = Text + TreeLoadCell(R.Get(C), Refs); КонецЦикла;
         КонецЦикла;
     КонецЕсли;
@@ -4920,50 +4925,49 @@ VTResult = "error";
 Показать("tree.unload.selector.fraction-negative-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(-0.5)"));
 // End bounded ValueTree UnloadColumn observations.
 // Begin bounded ValueTree LoadColumn observations (measurement only; no native answers).
-TreeColumnsDiagnostic = TreeColumnsDiagnosticExperiment();
-Показать("TL01", TreeColumnsDiagnosticProbe(1, TreeColumnsDiagnostic));
-Показать("TL02", TreeColumnsDiagnosticProbe(2, TreeColumnsDiagnostic));
-Показать("TL03", TreeColumnsDiagnosticProbe(3, TreeColumnsDiagnostic));
-Показать("TL04", TreeColumnsDiagnosticProbe(4, TreeColumnsDiagnostic));
-Показать("TL05", TreeColumnsDiagnosticProbe(5, TreeColumnsDiagnostic));
-Показать("TL06", TreeColumnsDiagnosticProbe(6, TreeColumnsDiagnostic));
-Показать("TL07", TreeColumnsDiagnosticProbe(7, TreeColumnsDiagnostic));
-Показать("TL08", TreeColumnsDiagnosticProbe(8, TreeColumnsDiagnostic));
-Показать("TL09", TreeColumnsDiagnosticProbe(9, TreeColumnsDiagnostic));
-Показать("TL10", TreeColumnsDiagnosticProbe(10, TreeColumnsDiagnostic));
-Показать("TL11", TreeColumnsDiagnosticProbe(11, TreeColumnsDiagnostic));
-Показать("TL12", TreeColumnsDiagnosticProbe(12, TreeColumnsDiagnostic));
-Показать("TL13", TreeColumnsDiagnosticProbe(13, TreeColumnsDiagnostic));
-Показать("TL14", TreeColumnsDiagnosticProbe(14, TreeColumnsDiagnostic));
-Показать("TL15", TreeColumnsDiagnosticProbe(15, TreeColumnsDiagnostic));
-Показать("TL16", TreeColumnsDiagnosticProbe(16, TreeColumnsDiagnostic));
-Показать("TL17", TreeColumnsDiagnosticProbe(17, TreeColumnsDiagnostic));
-Показать("TL18", TreeColumnsDiagnosticProbe(18, TreeColumnsDiagnostic));
-Показать("TL19", TreeColumnsDiagnosticProbe(19, TreeColumnsDiagnostic));
-Показать("TL20", TreeColumnsDiagnosticProbe(20, TreeColumnsDiagnostic));
-Показать("TL21", TreeColumnsDiagnosticProbe(21, TreeColumnsDiagnostic));
-Показать("TL22", TreeColumnsDiagnosticProbe(22, TreeColumnsDiagnostic));
-Показать("TL23", TreeColumnsDiagnosticProbe(23, TreeColumnsDiagnostic));
-Показать("TL24", TreeColumnsDiagnosticProbe(24, TreeColumnsDiagnostic));
-Показать("TL25", TreeColumnsDiagnosticProbe(25, TreeColumnsDiagnostic));
-Показать("TL26", TreeColumnsDiagnosticProbe(26, TreeColumnsDiagnostic));
-Показать("TL27", TreeColumnsDiagnosticProbe(27, TreeColumnsDiagnostic));
-Показать("TL28", TreeColumnsDiagnosticProbe(28, TreeColumnsDiagnostic));
-Показать("TL29", TreeColumnsDiagnosticProbe(29, TreeColumnsDiagnostic));
-Показать("TL30", TreeColumnsDiagnosticProbe(30, TreeColumnsDiagnostic));
-Показать("TL31", TreeColumnsDiagnosticProbe(31, TreeColumnsDiagnostic));
-Показать("TL32", TreeColumnsDiagnosticProbe(32, TreeColumnsDiagnostic));
-Показать("TL33", TreeColumnsDiagnosticProbe(33, TreeColumnsDiagnostic));
-Показать("TL34", TreeColumnsDiagnosticProbe(34, TreeColumnsDiagnostic));
-Показать("TL35", TreeColumnsDiagnosticProbe(35, TreeColumnsDiagnostic));
-Показать("TL36", TreeColumnsDiagnosticProbe(36, TreeColumnsDiagnostic));
-Показать("TL37", TreeColumnsDiagnosticProbe(37, TreeColumnsDiagnostic));
-Показать("TL38", TreeColumnsDiagnosticProbe(38, TreeColumnsDiagnostic));
-Показать("TL39", TreeColumnsDiagnosticProbe(39, TreeColumnsDiagnostic));
-Показать("TL40", TreeColumnsDiagnosticProbe(40, TreeColumnsDiagnostic));
-Показать("TL41", TreeColumnsDiagnosticProbe(41, TreeColumnsDiagnostic));
-Показать("TL42", TreeColumnsDiagnosticProbe(42, TreeColumnsDiagnostic));
-Показать("TL43", TreeColumnsDiagnosticProbe(43, TreeColumnsDiagnostic));
-Показать("TL44", TreeColumnsDiagnosticProbe(44, TreeColumnsDiagnostic));
-Показать("TL45", TreeColumnsDiagnosticProbe(45, TreeColumnsDiagnostic));
+Показать("TL01", TreeLoadProbe(1));
+Показать("TL02", TreeLoadProbe(2));
+Показать("TL03", TreeLoadProbe(3));
+Показать("TL04", TreeLoadProbe(4));
+Показать("TL05", TreeLoadProbe(5));
+Показать("TL06", TreeLoadProbe(6));
+Показать("TL07", TreeLoadProbe(7));
+Показать("TL08", TreeLoadProbe(8));
+Показать("TL09", TreeLoadProbe(9));
+Показать("TL10", TreeLoadProbe(10));
+Показать("TL11", TreeLoadProbe(11));
+Показать("TL12", TreeLoadProbe(12));
+Показать("TL13", TreeLoadProbe(13));
+Показать("TL14", TreeLoadProbe(14));
+Показать("TL15", TreeLoadProbe(15));
+Показать("TL16", TreeLoadProbe(16));
+Показать("TL17", TreeLoadProbe(17));
+Показать("TL18", TreeLoadProbe(18));
+Показать("TL19", TreeLoadProbe(19));
+Показать("TL20", TreeLoadProbe(20));
+Показать("TL21", TreeLoadProbe(21));
+Показать("TL22", TreeLoadProbe(22));
+Показать("TL23", TreeLoadProbe(23));
+Показать("TL24", TreeLoadProbe(24));
+Показать("TL25", TreeLoadProbe(25));
+Показать("TL26", TreeLoadProbe(26));
+Показать("TL27", TreeLoadProbe(27));
+Показать("TL28", TreeLoadProbe(28));
+Показать("TL29", TreeLoadProbe(29));
+Показать("TL30", TreeLoadProbe(30));
+Показать("TL31", TreeLoadProbe(31));
+Показать("TL32", TreeLoadProbe(32));
+Показать("TL33", TreeLoadProbe(33));
+Показать("TL34", TreeLoadProbe(34));
+Показать("TL35", TreeLoadProbe(35));
+Показать("TL36", TreeLoadProbe(36));
+Показать("TL37", TreeLoadProbe(37));
+Показать("TL38", TreeLoadProbe(38));
+Показать("TL39", TreeLoadProbe(39));
+Показать("TL40", TreeLoadProbe(40));
+Показать("TL41", TreeLoadProbe(41));
+Показать("TL42", TreeLoadProbe(42));
+Показать("TL43", TreeLoadProbe(43));
+Показать("TL44", TreeLoadProbe(44));
+Показать("TL45", TreeLoadProbe(45));
 // End bounded ValueTree LoadColumn observations.

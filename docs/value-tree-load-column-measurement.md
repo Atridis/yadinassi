@@ -14,9 +14,11 @@ also preserve the immediate post-action state before an independent mutation.
 Normal fixtures have four columns and six retained rows. The typed fixture changes
 Key to Number without adding a fifth column. Empty/no-column trees are constructed
 empty, not cleared trees with retained deleted rows. Actual column/row collection
-objects and their element references are retained, including the separate foreign
-selector tree. Unexpected collection replacement, schema/topology mutation or
-unlisted value fails observation.
+views and their element references are retained, including the separate foreign
+selector tree. Rows views are checked independently for type, count, order, Parent
+and exact retained row references; equal-content replacement views are permitted.
+Columns collection identity checks remain in place. Unexpected schema/topology
+mutation or an unlisted value fails observation.
 
 Column Name, Title, Width, type set, and all scalar type-qualifier fields are checked
 against explicit immutable fixture values, before and after the action. The known
@@ -26,7 +28,8 @@ The new exact tree fixture must still pass its own native validation. Comparing 
 mutable descriptor object to itself is not sufficient.
 
 Identity calibration checks aliases versus distinct equal-valued Structure, Array,
-FixedArray, and tree collections/rows. These checks must pass in the native run;
+FixedArray, Columns collections and rows. Rows wrapper equality is not required;
+retained and fresh Rows views instead satisfy the same read-only state predicates. These checks must pass in the native run;
 passing host tests is not evidence of native LoadColumn behavior. Bidirectional
 mutation witnesses are retained independently of the identity comparisons.
 
@@ -114,7 +117,7 @@ schema change, not normalization or an increased cap.
 
 This revision identifies a failing calibration operation; it does not implement
 LoadColumn or supply accepted native behavior. Calibration returns `-` only after
-all original checks succeed. Otherwise it returns one finite stage below, without
+all current checks succeed (the reduced Rows predicates are specified below). Otherwise it returns one finite stage below, without
 exception text or arbitrary object values. The rejected payload is
 `1?C0<stage>-!` followed by 58 dots (65 characters). All 45 such complete messages
 use 3285 UTF-16 units. Successful observations retain the 3525-unit bound, below
@@ -148,12 +151,12 @@ inconclusive; matching a stage is not LoadColumn behavior acceptance.
 | `D` | Add first row |
 | `E` | Add second row |
 | `F` | Retain child Rows |
-| `G` | Root Rows repeated getter identity |
+| `G` | Retained and fresh root Rows state consistency |
 | `H` | Columns repeated getter identity |
-| `I` | Child Rows repeated getter identity |
-| `J` | Distinct root Rows identity |
+| `I` | Retained and fresh child Rows state consistency |
+| `J` | Known populated root and separate empty root state |
 | `K` | Distinct Columns identity |
-| `L` | Distinct child Rows identity |
+| `L` | Both known empty child views with their expected Parents |
 | `M` | Row repeated getter identity |
 | `N` | Distinct row identity |
 | `O` | Construct scalar registry |
@@ -239,11 +242,11 @@ reported `tree_rows_TFTT`: the repeated Rows getter comparison reported differen
 the variable-alias comparison did not, and both specific count/type/marker
 visibility checks succeeded. This is one four-part experiment; it does not prove
 general identity, ownership or LoadColumn semantics. The existing evidence is
-preserved. A read-only Rows observer consistency adjustment is being prepared
-separately and is **not integrated in this revision**.
+preserved. The read-only Rows observer consistency adjustment described below is now
+integrated; the diagnostic experiment remains available only as historical code.
 
-Columns wrappers have not been measured by that Rows experiment. The current
-route therefore runs a similarly isolated **Columns-only** experiment, retaining
+Columns wrappers were not measured by that Rows experiment. A separate revision
+therefore ran a similarly isolated **Columns-only** experiment, retaining
 Columns before the two row additions and child-Rows access, as in the original
 calibration's setup preceding H. Its independent parts are:
 
@@ -261,10 +264,44 @@ fixtures create six trees because the original unused Other-tree construction
 is retained in the two comparison setups. The experiment is computed once;
 45 labels repeat its framing, not independent measurements.
 
-The current packet is `1?K0` + four T/F/E characters + `!` + 56 dots: still 65
+That historical packet is `1?K0` + four T/F/E characters + `!` + 56 dots: still 65
 ASCII characters and 3285 total message units. Only the pinned source with all
 1021 frames and 45 correctly labelled homogeneous packets can expose the finite
 `tree_cols_XXXX` reason. It remains rejected/nonexportable; the ordinary
-LoadColumn action helper and calibration bodies are unchanged and uncalled by
-this route. Columns-element/row reference equality, schema metadata, qualifiers,
+LoadColumn action helper and calibration bodies were unchanged and uncalled by
+that diagnostic route. That route is no longer active in the restored revision. Columns-element/row reference equality, schema metadata, qualifiers,
 and owner/parent invariants are not inferred from these four observations.
+
+
+### Restored action observations: reduced Rows claim
+
+Authenticated native run `40685252053` on
+`621afaf369fd4ee3c22a147219602912ec76d40b` reported `tree_cols_FFTT`:
+repeated-getter and variable-alias inequality both returned false, and both
+specific Add/Width-17 visibility predicates passed. This does not establish
+column-element identity or general future aliasing. Original Columns calibration
+H/K, column identities and all metadata/qualifier checks remain fail-closed.
+
+The active suffix now calls `TreeLoadProbe(1)` through `TreeLoadProbe(45)` directly.
+Neither diagnostic experiment is actively dispatched. The inactive Columns
+definitions remain in the source; both experiment revisions are preserved by
+exact source/history fixtures for replay. No LoadColumn runtime
+implementation is added. Restored native action observations are still pending;
+local synthetic callbacks are not accepted native semantics or merge readiness.
+
+Rows calibration G/I/J/L no longer treats collection-wrapper equality as identity
+evidence. Every retained root/child/foreign Rows view and every fresh view is checked
+independently for the actual Rows type, count, order, Parent and the same immutable
+row references. Row Owner/Parent/reference checks, cells, source state, schema and
+column guards remain intact. Observations never mutate fixtures to test aliasing.
+Partial action mutations are observed even when the action raises.
+
+This deliberately proves only current observable consistency. Same-content copied
+Rows collections may pass. In particular an empty root or foreign-root collection
+from another tree can satisfy the same type/count-zero/Parent-Undefined predicates;
+there is no observable backing-owner or future-aliasing guarantee. This limitation
+is explicit and tested, not inferred away from the two native visibility checks.
+Changed members/order/parents, replacement row objects, unknown values and wrong-type
+duck-compatible containers remain rejected; allowed cell changes remain visible in
+the complete encoded state. The 45 complete messages retain the 3525-unit bound
+within the unchanged 3800-unit allowance and all prior export/acceptance guards.
