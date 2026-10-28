@@ -1341,6 +1341,40 @@ def tree_load_contract():
     return module
 
 
+TREE_LOAD_CALIBRATION_CODES = "0123456789ABCDEFGHIJKLMNOPQR"
+TREE_LOAD_CALIBRATION_FAILURES = frozenset(
+    "tree_load_calibration_" + code for code in TREE_LOAD_CALIBRATION_CODES)
+
+
+def tree_load_calibration_failure(data, native):
+    """Finite rejected-native diagnostic only; never accepts observations.
+
+    A homogeneous 45-record suffix identifies the calibration statement that
+    failed. The original 976 records are framed, not accepted as native parity.
+    Unknown/mixed/malformed output preserves the generic failure.
+    """
+    if (native.get("source_sha256") != COLLECTIONS_SOURCE_SHA256
+            or type(native.get("message_count")) is not int
+            or native["message_count"] != 1021):
+        return None
+    try:
+        records = map_contract()._records(data)
+        if len(records) != 1021:
+            return None
+        stage = records[976][2][4:5]
+        if stage not in tuple(code.encode("ascii") for code in TREE_LOAD_CALIBRATION_CODES):
+            return None
+        payload = b"1?C0" + stage + b"-!" + b"." * 58
+        for number, (label, framed, actual) in enumerate(records[976:], 1):
+            expected_label = f"TL{number:02d}"
+            if (label != expected_label or actual != payload
+                    or framed != expected_label.encode("ascii") + b": [" + payload + b"]\n"):
+                return None
+        return "tree_load_calibration_" + stage.decode("ascii")
+    except Exception:
+        return None
+
+
 def validate_tree_load_observations(data):
     try:
         return tree_load_contract().validate_records(map_contract()._records(data))
@@ -1497,7 +1531,11 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
                         or case["failure_kind"] not in {"source_changed", "native_capture_changed", "invalid_private_file",
                             "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed",
                             "tree_load_observation_invalid",
-                            POST_CREATE_FAILURE}
+                            POST_CREATE_FAILURE} | TREE_LOAD_CALIBRATION_FAILURES
+                        or (case["failure_kind"] in TREE_LOAD_CALIBRATION_FAILURES and
+                            (name != "collections" or native["source_sha256"] != COLLECTIONS_SOURCE_SHA256
+                             or stage3["input_sha256"]["integrational_tests/tests/collections.bsl"] != COLLECTIONS_SOURCE_SHA256
+                             or type(native.get("message_count")) is not int or native["message_count"] != 1021))
                         or (case["status"] == "timeout") != (case["failure_kind"] == "interpreter_timeout")):
                     raise ValueError("failure")
                 continue
@@ -1573,7 +1611,15 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
                 raise FullError("interpreter_failed")
             if name == "collections" and case["source_sha256"] == COLLECTIONS_SOURCE_SHA256:
                 # Identical observer/calibration failures are not behavioral parity.
-                validate_tree_load_observations(expected)
+                try:
+                    validate_tree_load_observations(expected)
+                except FullError:
+                    # Only authenticated native bytes may identify a native stage.
+                    # Host-only failures retain the generic observation error.
+                    reason = (tree_load_calibration_failure(expected, case)
+                              if input_hashes[f"integrational_tests/tests/{name}.bsl"] == COLLECTIONS_SOURCE_SHA256
+                              else None)
+                    raise FullError(reason or "tree_load_observation_invalid") from None
                 validate_tree_load_observations(actual)
             record.update(interpreter_size=len(actual), interpreter_sha256=digest(actual))
             record["status"] = "matched" if actual == expected else "mismatched"

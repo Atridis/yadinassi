@@ -160,3 +160,25 @@ inconclusive; matching a stage is not LoadColumn behavior acceptance.
 | `P` | Encode Number 1 |
 | `Q` | Encode Boolean True |
 | `R` | Encode String 1 |
+
+### Rejected calibration reason in the finite report
+
+The original diagnostic revision kept the stage only inside rejected output;
+therefore its artifact gate correctly withheld the stage along with all raw
+outputs. A failed run does not establish which calibration statement failed.
+
+For the exact pinned collections source, the comparison now exposes a finite
+`failure_kind` of `tree_load_calibration_0` through `tree_load_calibration_R`
+only when the authenticated native capture has 1021 framed records and all 45
+ordered `TL01`–`TL45` records are identical exact rejected-calibration packets
+for that stage. Mixed stages, unknown codes, malformed framing, wrong counts or
+source bindings retain `tree_load_observation_invalid`. The 976 preceding
+records are framed, not newly accepted as native parity. Host-only failures
+never produce a native calibration-stage reason.
+
+This reuses the existing failure field, adds no report key and no runtime file,
+and uses 23-character values shorter than the existing 29-character generic
+failure. Status remains `error`, acceptance remains `rejected`, host comparison
+fields remain null, and the six-output artifact is still withheld. The strict
+observation decoder and native artifact acceptance rules are unchanged. These
+reasons diagnose calibration only; they are not accepted LoadColumn behavior.

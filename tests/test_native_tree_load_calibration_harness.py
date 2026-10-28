@@ -61,12 +61,14 @@ class CalibrationHarnessTests(host_tests.SyntheticFilesystemCase):
                 with self.assertRaisesRegex(full.FullError, '^tree_load_observation_invalid$'):
                     full.validate_tree_load_observations(payload)
                 with tempfile.TemporaryDirectory() as directory:
-                    root = Path(directory); capture = root / 'capture'; capture.mkdir()
+                    root = Path(directory).resolve(); capture = root / 'capture'; capture.mkdir()
                     sources = root / 'integrational_tests/tests'; sources.mkdir(parents=True)
                     cases = []; inputs = {}
                     for name in full.SCENARIOS:
                         key = f'integrational_tests/tests/{name}.bsl'
-                        source_bytes = (ROOT / key).read_bytes() if name == 'collections' else b'synthetic source'
+                        source_bytes = (ROOT / key).read_bytes().replace(b'\r\n', b'\n') if name == 'collections' else b'synthetic source'
+                        if name == 'collections':
+                            self.assertEqual(full.digest(source_bytes), full.COLLECTIONS_SOURCE_SHA256)
                         (root / key).write_bytes(source_bytes)
                         inputs[key] = full.digest(source_bytes)
                         output = payload if name == 'collections' else b'ok\n'

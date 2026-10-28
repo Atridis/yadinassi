@@ -289,8 +289,22 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_tree_load_finite_reason_measurement(source):
+    """Exact finite-reason host -> public calibration host; test-only."""
+    inventory = json.loads((REPOSITORY / 'tests/tree_load_finite_reason_source_inverse.json').read_text(encoding='utf-8'))
+    contract = inventory['scripts/native_1c_full_host.py']
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
 def without_tree_load_calibration_measurement(source, *, host=False):
     """Exact diagnostic harness -> original public measurement; test-only."""
+    if host and "def tree_load_calibration_failure(" in source:
+        source = without_tree_load_finite_reason_measurement(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_load_calibration_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
