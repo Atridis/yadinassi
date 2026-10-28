@@ -13,14 +13,14 @@ VECTORS = tuple(''.join(parts) for parts in itertools.product('TFE', repeat=4))
 def output(vector):
     prefix = b''.join(f'old{i}: [ok]\n'.encode('ascii') for i in range(976))
     payload = b'1?D0' + vector.encode('ascii') + b'!' + b'.'*56
-    return prefix + b''.join(f'TL{i:02d}: ['.encode('ascii') + payload + b']\n' for i in range(1,46)) + __import__('test_native_tree_move_contract').synthetic_record()[1]
+    return prefix + b''.join(f'TL{i:02d}: ['.encode('ascii') + payload + b']\n' for i in range(1,46)) + __import__('test_native_tree_move_contract').synthetic_record()[1] + __import__('test_native_tree_total_contract').synthetic_record()[1]
 
 
 class RowsFailureTests(artifact.SyntheticFilesystemCase):
     invoke = artifact.OrchestrationTests.invoke
 
     def native(self, **updates):
-        value = dict(source_sha256=full.COLLECTIONS_SOURCE_SHA256, message_count=1022)
+        value = dict(source_sha256=full.COLLECTIONS_SOURCE_SHA256, message_count=1023)
         value.update(updates); return value
 
     def test_exact_81_vocabulary_packets_and_strict_decoder_rejection(self):
@@ -43,7 +43,7 @@ class RowsFailureTests(artifact.SyntheticFilesystemCase):
         for changed in variants:
             self.assertIsNone(full.tree_rows_diagnostic_failure(changed,self.native()))
         for metadata in (self.native(source_sha256='0'*64),self.native(message_count=1020),
-                         self.native(message_count='1022'),self.native(message_count=True)):
+                         self.native(message_count='1023'),self.native(message_count=True)):
             self.assertIsNone(full.tree_rows_diagnostic_failure(original,metadata))
 
     def test_all_81_through_both_main_contexts_keep_export_failure(self):

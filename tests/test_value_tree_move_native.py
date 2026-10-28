@@ -25,6 +25,8 @@ NATIVE_RECORD_SHA256 = '2c70541dc506b5ff148fec364ebd813c94502f14a846a15557522af2
 def source():
     # CanonicalLF synthetic fixture only; production native bytes stay untouched.
     raw = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes().replace(b'\r\n',b'\n')
+    from scripts.native_historical_replay import without_tree_total_probes
+    raw = without_tree_total_probes(raw.decode('utf-8-sig')).encode('utf-8-sig')
     if hashlib.sha256(raw).hexdigest() != SOURCE_SHA256:
         raise AssertionError('native Move source changed')
     return raw.decode('utf-8-sig')

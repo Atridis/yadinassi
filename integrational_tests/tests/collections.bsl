@@ -3285,6 +3285,158 @@
 КонецФункции
 // End isolated Columns view diagnostic.
 
+// Begin bounded ValueTree Total helpers (measurement only; no native answers).
+Функция TreeTotalFresh(Знач Case)
+    S = Новый Структура("Tree,Column,Types,Nodes,Parents,Values,Views,Foreign,ForeignColumn,ColumnsView,ForeignColumnsView,ForeignRowsView");
+    S.Tree = Новый ДеревоЗначений; S.Types = Новый Массив; S.Nodes = Новый Массив;
+    S.Parents = Новый Массив; S.Values = Новый Массив; S.Views = Новый Массив;
+    Names = "";
+    Если Case = 8 Или Case = 9 Тогда Names = "Число";
+    ИначеЕсли Case = 10 Или Case = 11 Тогда Names = "Строка";
+    ИначеЕсли Case = 12 Тогда Names = "Булево";
+    ИначеЕсли Case = 13 Тогда Names = "Число,Строка";
+    ИначеЕсли Case = 14 Тогда Names = "Строка,Булево"; КонецЕсли;
+    Если Names = "" Тогда S.Column = S.Tree.Columns.Add("N");
+    Иначе
+        S.Column = S.Tree.Columns.Add("N", Новый ОписаниеТипов(Names));
+        Для Каждого Name Из СтрРазделить(Names, ",") Цикл S.Types.Add(Тип(Name)); КонецЦикла;
+    КонецЕсли;
+    S.Column.Title = "N"; S.Column.Width = 0;
+    Если Case <> 7 И Case <> 8 Тогда
+        Если Case >= 9 И Case <= 15 Или Case >= 29 И Case <= 31 Тогда
+            Если Case = 9 Тогда S.Values.Add(1.25); S.Values.Add(2.5);
+            ИначеЕсли Case = 10 Тогда S.Values.Add("2"); S.Values.Add("3");
+            ИначеЕсли Case = 11 Тогда S.Values.Add("2"); S.Values.Add("x");
+            ИначеЕсли Case = 12 Тогда S.Values.Add(Истина); S.Values.Add(Ложь); S.Values.Add(Истина);
+            ИначеЕсли Case = 13 Тогда S.Values.Add(2); S.Values.Add("3");
+            ИначеЕсли Case = 14 Тогда S.Values.Add("2"); S.Values.Add(Истина);
+            ИначеЕсли Case = 15 Тогда
+                S.Values.Add(2); S.Values.Add("3"); S.Values.Add(Истина); S.Values.Add(Неопределено); S.Values.Add(Null);
+            ИначеЕсли Case = 29 Тогда S.Values.Add(10000000000000000000000000000); S.Values.Add(1);
+            ИначеЕсли Case = 30 Тогда
+                S.Values.Add(10000000000000000000000000000); S.Values.Add(1); S.Values.Add(-10000000000000000000000000000);
+            ИначеЕсли Case = 31 Тогда S.Values.Add(0.1); S.Values.Add(0.2); КонецЕсли;
+            Для Каждого Value Из S.Values Цикл S.Nodes.Add(S.Tree.Rows.Add()); S.Parents.Add(-1); КонецЦикла;
+        Иначе
+            S.Nodes.Add(S.Tree.Rows.Add()); S.Parents.Add(-1); S.Values.Add(2);
+            S.Nodes.Add(S.Tree.Rows.Add()); S.Parents.Add(-1); S.Values.Add(3);
+            S.Nodes.Add(S.Nodes[0].Rows.Add()); S.Parents.Add(0); S.Values.Add(5);
+            S.Nodes.Add(S.Nodes[0].Rows.Add()); S.Parents.Add(0); S.Values.Add(11);
+            S.Nodes.Add(S.Nodes[2].Rows.Add()); S.Parents.Add(2); S.Values.Add(7);
+        КонецЕсли;
+    КонецЕсли;
+    S.Views.Add(S.Tree.Rows);
+    Для P = 0 По S.Nodes.Count() - 1 Цикл
+        S.Nodes[P].N = S.Values[P]; S.Views.Add(S.Nodes[P].Rows);
+    КонецЦикла;
+    S.Foreign = Новый ДеревоЗначений; S.ForeignColumn = S.Foreign.Columns.Add("N");
+    S.ForeignColumn.Title = "N"; S.ForeignColumn.Width = 0;
+    S.ColumnsView = S.Tree.Columns; S.ForeignColumnsView = S.Foreign.Columns; S.ForeignRowsView = S.Foreign.Rows;
+    Возврат S;
+КонецФункции
+
+Функция TreeTotalCellEqual(Знач Left, Знач Right)
+    Если ТипЗнч(Left) <> ТипЗнч(Right) Тогда Возврат Ложь; КонецЕсли;
+    Если ТипЗнч(Left) = Тип("Строка") Тогда Возврат TreeLoadExact(Left, Right); КонецЕсли;
+    Если ТипЗнч(Left) = Тип("Null") Или ТипЗнч(Left) = Тип("Неопределено") Тогда Возврат Истина; КонецЕсли;
+    Если ТипЗнч(Left) <> Тип("Число") И ТипЗнч(Left) <> Тип("Булево") Тогда Возврат Ложь; КонецЕсли;
+    Возврат Left = Right;
+КонецФункции
+
+Функция TreeTotalState(Знач S)
+    Если S.Tree.Columns <> S.ColumnsView Или S.Foreign.Columns <> S.ForeignColumnsView Тогда Возврат Ложь; КонецЕсли;
+    Если ТипЗнч(S.ForeignRowsView) <> Тип("КоллекцияСтрокДереваЗначений") Или S.ForeignRowsView.Parent <> Неопределено
+        Или S.ForeignRowsView.Count() <> 0 Или S.Foreign.Rows.Parent <> Неопределено Тогда Возврат Ложь; КонецЕсли;
+    Если S.Tree.Columns.Count() <> 1 Или S.Foreign.Columns.Count() <> 1 Или S.Foreign.Rows.Count() <> 0 Тогда Возврат Ложь; КонецЕсли;
+    Если S.Tree.Columns.Get(0) <> S.Column Или S.Foreign.Columns.Get(0) <> S.ForeignColumn Тогда Возврат Ложь; КонецЕсли;
+    Для Pass = 0 По 1 Цикл
+        C = S.Column; Expected = S.Types;
+        Если Pass = 1 Тогда C = S.ForeignColumn; Expected = Новый Массив; КонецЕсли;
+        Если Не TreeLoadExact(C.Name, "N") Или Не TreeLoadExact(C.Title, "N") Или Не TreeTotalCellEqual(C.Width, 0) Тогда Возврат Ложь; КонецЕсли;
+        D = C.ValueType; Types = D.Types(); Если Types.Count() <> Expected.Count() Тогда Возврат Ложь; КонецЕсли;
+        Для Каждого T Из Expected Цикл
+            Found = 0; Для Каждого Actual Из Types Цикл Если Actual = T Тогда Found = Found + 1; КонецЕсли; КонецЦикла;
+            Если Found <> 1 Тогда Возврат Ложь; КонецЕсли;
+        КонецЦикла;
+        N = D.NumberQualifiers; Q = D.StringQualifiers; B = D.BinaryDataQualifiers;
+        Если Не TreeTotalCellEqual(N.Digits, 0) Или Не TreeTotalCellEqual(N.FractionDigits, 0) Или N.AllowedSign <> AllowedSign.Any
+            Или Не TreeTotalCellEqual(Q.Length, 0) Или Q.AllowedLength <> AllowedLength.Variable
+            Или D.DateQualifiers.DateFractions <> DateFractions.DateTime
+            Или Не TreeTotalCellEqual(B.Length, 0) Или B.AllowedLength <> AllowedLength.Variable Тогда Возврат Ложь; КонецЕсли;
+    КонецЦикла;
+    Для P = -1 По S.Nodes.Count() - 1 Цикл
+        Parent = Неопределено; Rows = S.Tree.Rows;
+        Если P >= 0 Тогда
+            R = S.Nodes[P]; Parent = R; Rows = R.Rows; RP = Неопределено;
+            Если S.Parents[P] >= 0 Тогда RP = S.Nodes[S.Parents[P]]; КонецЕсли;
+            Если ТипЗнч(R) <> Тип("СтрокаДереваЗначений") Или R.Owner() <> S.Tree Или R.Parent <> RP
+                Или Не TreeTotalCellEqual(R.N, S.Values[P]) Тогда Возврат Ложь; КонецЕсли;
+        КонецЕсли;
+        Expected = Новый Массив;
+        Для Q = 0 По S.Nodes.Count() - 1 Цикл Если S.Parents[Q] = P Тогда Expected.Add(S.Nodes[Q]); КонецЕсли; КонецЦикла;
+        Views = Новый Массив; Views.Add(Rows); Views.Add(S.Views[P + 1]);
+        Для Каждого View Из Views Цикл
+            Если ТипЗнч(View) <> Тип("КоллекцияСтрокДереваЗначений") Или View.Parent <> Parent Или View.Count() <> Expected.Count() Тогда Возврат Ложь; КонецЕсли;
+            Для Q = 0 По Expected.Count() - 1 Цикл Если View.Get(Q) <> Expected[Q] Тогда Возврат Ложь; КонецЕсли; КонецЦикла;
+        КонецЦикла;
+    КонецЦикла;
+    Возврат Истина;
+КонецФункции
+
+Функция TreeTotalCode(Знач Value, Знач Case)
+    Если ТипЗнч(Value) = Тип("Неопределено") Тогда Возврат "U"; КонецЕсли;
+    Если ТипЗнч(Value) = Тип("Null") Тогда Возврат "L"; КонецЕсли;
+    Если ТипЗнч(Value) <> Тип("Число") Тогда Возврат "!"; КонецЕсли;
+    Values = Новый Массив;
+    Если Case = 29 Тогда Values.Add(10000000000000000000000000000); Values.Add(10000000000000000000000000001); Values.Add(1); Values.Add(0);
+    ИначеЕсли Case = 30 Тогда Values.Add(0); Values.Add(1); Values.Add(10000000000000000000000000001);
+    ИначеЕсли Case = 31 Тогда Values.Add(0); Values.Add(0.1); Values.Add(0.2); Values.Add(0.3);
+    ИначеЕсли Case = 9 Тогда Values.Add(0); Values.Add(1.25); Values.Add(2.5); Values.Add(3.75);
+    Иначе
+        Values.Add(0); Values.Add(1); Values.Add(2); Values.Add(3); Values.Add(5); Values.Add(6);
+        Values.Add(7); Values.Add(11); Values.Add(12); Values.Add(16); Values.Add(18); Values.Add(23); Values.Add(28);
+    КонецЕсли;
+    Для P = 0 По Values.Count() - 1 Цикл Если Value = Values[P] Тогда Возврат Сред("0123456789ABC", P + 1, 1); КонецЕсли; КонецЦикла;
+    Возврат "!";
+КонецФункции
+
+Функция TreeTotalProbe(Знач Case)
+    Попытка S = TreeTotalFresh(Case); Если Не TreeTotalState(S) Тогда Возврат "Q"; КонецЕсли; Исключение Возврат "P"; КонецПопытки;
+    Rows = S.Tree.Rows; Selector = "N";
+    Если Case >= 4 И Case <= 6 Тогда Rows = S.Nodes[0].Rows; КонецЕсли;
+    Если Case = 16 Тогда Selector = 0;
+    ИначеЕсли Case = 17 Тогда Selector = 0.5;
+    ИначеЕсли Case = 18 Тогда Selector = -0.5;
+    ИначеЕсли Case = 19 Тогда Selector = Истина;
+    ИначеЕсли Case = 20 Тогда Selector = Неопределено;
+    ИначеЕсли Case = 21 Тогда Selector = S.Column;
+    ИначеЕсли Case = 22 Тогда Selector = S.ForeignColumn;
+    ИначеЕсли Case = 23 Тогда Selector = "Missing";
+    ИначеЕсли Case = 24 Тогда Selector = ""; КонецЕсли;
+    Code = "E"; Success = Ложь;
+    Попытка
+        Если Case = 2 Или Case = 5 Тогда Value = Rows.Total(Selector, Ложь);
+        ИначеЕсли Case = 3 Или Case = 6 Тогда Value = Rows.Total(Selector, Истина);
+        ИначеЕсли Case = 25 Тогда Value = Rows.Total();
+        ИначеЕсли Case = 26 Тогда Value = Rows.Total(Selector, Неопределено);
+        ИначеЕсли Case = 27 Тогда Value = Rows.Total(Selector, 1);
+        ИначеЕсли Case = 28 Тогда Value = Rows.Total(Selector, "True");
+        ИначеЕсли Case = 32 Тогда Value = Rows.иТоГ("n");
+        Иначе Value = Rows.Total(Selector); КонецЕсли;
+        Success = Истина;
+    Исключение Code = "E"; КонецПопытки;
+    Если Success Тогда Попытка Code = TreeTotalCode(Value, Case); Исключение Code = "!"; КонецПопытки; КонецЕсли;
+    Попытка Если Не TreeTotalState(S) Тогда Возврат "T"; КонецЕсли; Исключение Возврат "R"; КонецПопытки;
+    Возврат Code;
+КонецФункции
+
+Функция TreeTotalObservations()
+    Text = "1";
+    Для Case = 1 По 32 Цикл Text = Text + TreeTotalProbe(Case); КонецЦикла;
+    Возврат Text;
+КонецФункции
+// End bounded ValueTree Total helpers.
+
 // Begin bounded ValueTree Move helpers (measurement only; no native answers).
 Функция TreeMoveFresh(Знач Mode)
     S = Новый Структура("Tree,Nodes,Columns,Names,Views,ColumnCollection");
@@ -5113,3 +5265,7 @@ VTResult = "error";
 // Begin bounded ValueTree Move observations (measurement only; no native answers).
 Показать("TM", TreeMoveObservations());
 // End bounded ValueTree Move observations.
+
+// Begin bounded ValueTree Total observations (measurement only; no native answers).
+Показать("TT", TreeTotalObservations());
+// End bounded ValueTree Total observations.

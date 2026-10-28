@@ -17,7 +17,7 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
     invoke = artifact.OrchestrationTests.invoke
 
     def native(self, **updates):
-        result = dict(source_sha256=full.COLLECTIONS_SOURCE_SHA256, message_count=1022)
+        result = dict(source_sha256=full.COLLECTIONS_SOURCE_SHA256, message_count=1023)
         result.update(updates)
         return result
 
@@ -42,7 +42,7 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
             with self.subTest(changed=changed[:70]):
                 self.assertIsNone(full.tree_load_calibration_failure(changed, self.native()))
         for metadata in (self.native(source_sha256='0'*64), self.native(message_count=1020),
-                         self.native(message_count='1022'), self.native(message_count=True)):
+                         self.native(message_count='1023'), self.native(message_count=True)):
             self.assertIsNone(full.tree_load_calibration_failure(data, metadata))
 
     def test_all_stages_propagate_through_real_main_summary_without_export(self):
@@ -143,7 +143,7 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
                 self.invoke(through_main=True)
 
     def test_host_only_failure_remains_generic(self):
-        from test_native_tree_move_contract import synthetic_output
+        from test_native_tree_total_contract import synthetic_output
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve(); capture = root / 'capture'; capture.mkdir()
             source_dir = root / 'integrational_tests/tests'; source_dir.mkdir(parents=True)
@@ -158,7 +158,7 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
                 (capture / f'{name}.out').write_bytes(payload)
                 cases.append(dict(name=name, status='ok', source_sha256=inputs[key],
                     output_size=len(payload), output_sha256=full.digest(payload),
-                    message_count=1022 if name == 'collections' else 1))
+                    message_count=1023 if name == 'collections' else 1))
             def runner(args, cwd):
                 return 0, calibration.diagnostic_output('A') if Path(args[-2]).stem == 'collections' else b'ok\n', b''
             compared = full.compare_outputs(root, capture, dict(status='ok', cases=cases, input_sha256=inputs),

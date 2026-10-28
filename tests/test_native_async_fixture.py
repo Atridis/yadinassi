@@ -289,8 +289,23 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_tree_total_measurement(source, *, host=False):
+    """Exact Total harness inverse to accepted Move harness; test-only."""
+    inventory = json.loads((REPOSITORY / 'tests/tree_total_source_inverse.json').read_text(encoding='utf-8'))
+    path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
 def without_tree_move_measurement(source, *, host=False):
     """Exact Move harness inverse to accepted Load harness; test-only."""
+    if '55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c' in source:
+        source = without_tree_total_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/tree_move_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
@@ -304,7 +319,7 @@ def without_tree_move_measurement(source, *, host=False):
 
 def without_tree_load_restoration_measurement(source, *, host=False):
     """Exact fail-only Restored observation harness -> public Columns harness; test-only."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/tree_load_restored_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
@@ -319,7 +334,7 @@ def without_tree_load_restoration_measurement(source, *, host=False):
 
 def without_tree_columns_diagnostic_measurement(source, *, host=False):
     """Exact fail-only Columns harness -> public Rows harness; test-only."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
@@ -336,7 +351,7 @@ def without_tree_columns_diagnostic_measurement(source, *, host=False):
 
 def without_tree_rows_diagnostic_measurement(source, *, host=False):
     """Exact fail-only Rows harness -> public finite-reason harness; test-only."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
@@ -355,7 +370,7 @@ def without_tree_rows_diagnostic_measurement(source, *, host=False):
 
 def without_tree_load_finite_reason_measurement(source):
     """Exact finite-reason host -> public calibration host; test-only."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=True)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=True)
@@ -375,7 +390,7 @@ def without_tree_load_finite_reason_measurement(source):
 
 def without_tree_load_calibration_measurement(source, *, host=False):
     """Exact diagnostic harness -> original public measurement; test-only."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
@@ -398,7 +413,7 @@ def without_tree_load_calibration_measurement(source, *, host=False):
 
 def without_tree_load_measurement(source, *, host=False):
     """Exact test-only collections1021 -> 976 harness, never admission."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
@@ -430,7 +445,7 @@ def historical_tree_load_collections_module(source, template):
 
 def without_tree_unload_supplement_measurement(source, *, host=False):
     """Exact test-only collections976 harness -> 973 inverse, never admission."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
@@ -449,7 +464,7 @@ def without_tree_unload_supplement_measurement(source, *, host=False):
 
 def without_tree_unload_measurement(source, *, host=False):
     """Exact test-only collections973 harness -> 946 inverse, never admission."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
@@ -483,7 +498,7 @@ def historical_tree_unload_collections_module(source, template):
 
 def without_child_cleanup(source):
     """Exact test-only cleanup inverse; never a runtime or admission fallback."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=True)
     if '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b' in source or '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source or '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6' in source or '092338cab2793224ced334ee721f243136113c2dbd2cf9d569aea67a66b533e0' in source or 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_measurement(source, host=True)
@@ -500,7 +515,7 @@ def without_child_cleanup(source):
 
 def without_tree_find_measurement(source, *, host=False):
     """Exact test-only collections946 harness -> 902 inverse, never admission."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
@@ -532,7 +547,7 @@ def historical_tree_find_collections_module(source, template):
 
 def without_tree_findrows_measurement(source, *, host=False):
     """Exact test-only current harness -> collections866 inverse, never admission."""
-    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source:
+    if "a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574" in source or "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c" in source:
         source = without_tree_move_measurement(source, host=host)
     if 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e' in source:
         source = without_tree_load_restoration_measurement(source, host=host)
