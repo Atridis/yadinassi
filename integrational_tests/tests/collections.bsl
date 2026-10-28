@@ -3263,24 +3263,68 @@
     Возврат Prefix + Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx", Index + 1, 1);
 КонецФункции
 
-Процедура TreeLoadCalibrate()
-    X = Новый Структура("Mark", "base"); Y = Новый Структура("Mark", "base"); Alias = X;
-    Если X <> Alias Или X = Y Тогда ВызватьИсключение "tree-load-structure-identity"; КонецЕсли;
-    A = TreeLoadPair(1, Истина); B = TreeLoadPair(1, Истина); Alias = A;
-    Если A <> Alias Или A = B Тогда ВызватьИсключение "tree-load-array-identity"; КонецЕсли;
-    F = Новый ФиксированныйМассив(A); G = Новый ФиксированныйМассив(A); Alias = F;
-    Если F <> Alias Или F = G Тогда ВызватьИсключение "tree-load-fixed-identity"; КонецЕсли;
-    T = Новый ДеревоЗначений; Other = Новый ДеревоЗначений;
-    RootRows = T.Rows; Cols = T.Columns; R = T.Rows.Add(); OtherRow = T.Rows.Add(); ChildRows = R.Rows;
-    Если T.Rows <> RootRows Или T.Columns <> Cols Или R.Rows <> ChildRows
-        Или RootRows = Other.Rows Или Cols = Other.Columns Или ChildRows = OtherRow.Rows Тогда
-        ВызватьИсключение "tree-load-container-identity";
-    КонецЕсли;
-    Если R <> T.Rows.Get(0) Или R = OtherRow Тогда ВызватьИсключение "tree-load-row-identity"; КонецЕсли;
-    Refs = Новый Массив;
-    Если Не TreeLoadExact(TreeLoadCell(1, Refs), "1_") Или Не TreeLoadExact(TreeLoadCell(Истина, Refs), "T_")
-        Или Не TreeLoadExact(TreeLoadCell("1", Refs), "j_") Тогда ВызватьИсключение "tree-load-scalar-calibration"; КонецЕсли;
-КонецПроцедуры
+Функция TreeLoadCalibrate()
+    Stage = "0";
+    Попытка
+        Stage = "1";
+        X = Новый Структура("Mark", "base"); Y = Новый Структура("Mark", "base"); Alias = X;
+        Stage = "2";
+        Если X <> Alias Тогда ВызватьИсключение "tree-load-structure-alias"; КонецЕсли;
+        Stage = "3";
+        Если X = Y Тогда ВызватьИсключение "tree-load-structure-distinct"; КонецЕсли;
+        Stage = "4";
+        A = TreeLoadPair(1, Истина); B = TreeLoadPair(1, Истина); Alias = A;
+        Stage = "5";
+        Если A <> Alias Тогда ВызватьИсключение "tree-load-array-alias"; КонецЕсли;
+        Stage = "6";
+        Если A = B Тогда ВызватьИсключение "tree-load-array-distinct"; КонецЕсли;
+        Stage = "7";
+        F = Новый ФиксированныйМассив(A); G = Новый ФиксированныйМассив(A); Alias = F;
+        Stage = "8";
+        Если F <> Alias Тогда ВызватьИсключение "tree-load-fixed-alias"; КонецЕсли;
+        Stage = "9";
+        Если F = G Тогда ВызватьИсключение "tree-load-fixed-distinct"; КонецЕсли;
+        Stage = "A";
+        T = Новый ДеревоЗначений; Other = Новый ДеревоЗначений;
+        Stage = "B";
+        RootRows = T.Rows;
+        Stage = "C";
+        Cols = T.Columns;
+        Stage = "D";
+        R = T.Rows.Add();
+        Stage = "E";
+        OtherRow = T.Rows.Add();
+        Stage = "F";
+        ChildRows = R.Rows;
+        Stage = "G";
+        Если T.Rows <> RootRows Тогда ВызватьИсключение "tree-load-root-alias"; КонецЕсли;
+        Stage = "H";
+        Если T.Columns <> Cols Тогда ВызватьИсключение "tree-load-columns-alias"; КонецЕсли;
+        Stage = "I";
+        Если R.Rows <> ChildRows Тогда ВызватьИсключение "tree-load-child-alias"; КонецЕсли;
+        Stage = "J";
+        Если RootRows = Other.Rows Тогда ВызватьИсключение "tree-load-root-distinct"; КонецЕсли;
+        Stage = "K";
+        Если Cols = Other.Columns Тогда ВызватьИсключение "tree-load-columns-distinct"; КонецЕсли;
+        Stage = "L";
+        Если ChildRows = OtherRow.Rows Тогда ВызватьИсключение "tree-load-child-distinct"; КонецЕсли;
+        Stage = "M";
+        Если R <> T.Rows.Get(0) Тогда ВызватьИсключение "tree-load-row-alias"; КонецЕсли;
+        Stage = "N";
+        Если R = OtherRow Тогда ВызватьИсключение "tree-load-row-distinct"; КонецЕсли;
+        Stage = "O";
+        Refs = Новый Массив;
+        Stage = "P";
+        Если Не TreeLoadExact(TreeLoadCell(1, Refs), "1_") Тогда ВызватьИсключение "tree-load-number-calibration"; КонецЕсли;
+        Stage = "Q";
+        Если Не TreeLoadExact(TreeLoadCell(Истина, Refs), "T_") Тогда ВызватьИсключение "tree-load-bool-calibration"; КонецЕсли;
+        Stage = "R";
+        Если Не TreeLoadExact(TreeLoadCell("1", Refs), "j_") Тогда ВызватьИсключение "tree-load-string-calibration"; КонецЕсли;
+    Исключение
+        Возврат Stage;
+    КонецПопытки;
+    Возврат "-";
+КонецФункции
 
 Процедура TreeLoadSchema(Знач Tree, Знач Columns, Знач Names, Знач Typed)
     TreeLoadCount(Tree.Columns, Names.Count()); TreeLoadCount(Columns, Names.Count());
@@ -3427,7 +3471,8 @@
 
 Функция TreeLoadProbe(Знач Case)
     Failed = "!..........................................................";
-    Попытка TreeLoadCalibrate(); Исключение Возврат "1?C0--" + Failed; КонецПопытки;
+    Calibration = TreeLoadCalibrate();
+    Если Calibration <> "-" Тогда Возврат "1?C0" + Calibration + "-" + Failed; КонецЕсли;
     Попытка
         Если ТипЗнч(Case) <> Тип("Число") Или Case < 1 Или Case > 45 Или Цел(Case) <> Case Тогда ВызватьИсключение "tree-load-case"; КонецЕсли;
         S = TreeLoadFresh(Case); Refs = Новый Массив; Source = TreeLoadPair(6, 7); Selector = "Id"; Rows = S.Tree.Rows;

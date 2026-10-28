@@ -17,11 +17,11 @@ BASE_MODULE='a7bfc4e3361bdb1bfde5794b211f3fd1c0594f5c81b4f5e3dafecac4c3049786'
 
 class LoadHarnessHistoryTests(unittest.TestCase):
     def test_exact976_harness_precedes_existing_history(self):
-        inventory=json.loads((ROOT/'tests/tree_load_source_inverse.json').read_text())
-        prior=json.loads((ROOT/'tests/tree_unload_supplement_source_inverse.json').read_text())
+        inventory=json.loads((ROOT/'tests/tree_load_source_inverse.json').read_text(encoding='utf-8'))
+        prior=json.loads((ROOT/'tests/tree_unload_supplement_source_inverse.json').read_text(encoding='utf-8'))
         self.assertEqual(set(inventory),set(PATHS))
         for path in PATHS:
-            source=(ROOT/path).read_text()
+            source=(ROOT/path).read_text(encoding='utf-8')
             restored=history.without_tree_load_measurement(source,host=path.endswith('full_host.py'))
             self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),prior[path]['candidate_sha256'])
             self.assertEqual(inventory[path]['base_sha256'],prior[path]['candidate_sha256'])
@@ -40,9 +40,9 @@ class LoadHarnessHistoryTests(unittest.TestCase):
         self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,1021)
 
     def test_source_and_harness_drift_rejected_even_with_rebased_outer_hash(self):
-        inventory=json.loads((ROOT/'tests/tree_load_source_inverse.json').read_text())
+        inventory=json.loads((ROOT/'tests/tree_load_source_inverse.json').read_text(encoding='utf-8'))
         for path in PATHS:
-            source=(ROOT/path).read_text()
+            source=(ROOT/path).read_text(encoding='utf-8')
             for altered in (source+'\n',source.replace('\n','\r\n'),source.replace('1021','1022',1)):
                 self.assertNotEqual(altered,source)
                 with self.assertRaises(AssertionError): history.without_tree_load_measurement(altered,host=path.endswith('full_host.py'))

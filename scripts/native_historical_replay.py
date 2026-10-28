@@ -46,9 +46,32 @@ TREE_LOAD_CALLS_START = '// Begin bounded ValueTree LoadColumn observations (mea
 TREE_LOAD_CALLS_END = '// End bounded ValueTree LoadColumn observations.\n'
 
 
+TREE_LOAD_CALIBRATION_SOURCE_SHA256 = '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b'
+TREE_LOAD_ORIGINAL_SOURCE_SHA256 = '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b'
+TREE_LOAD_CALIBRATION_EDITS = (('Процедура TreeLoadCalibrate()\n    X = Новый Структура("Mark", "base"); Y = Новый Структура("Mark", "base"); Alias = X;\n    Если X <> Alias Или X = Y Тогда ВызватьИсключение "tree-load-structure-identity"; КонецЕсли;\n    A = TreeLoadPair(1, Истина); B = TreeLoadPair(1, Истина); Alias = A;\n    Если A <> Alias Или A = B Тогда ВызватьИсключение "tree-load-array-identity"; КонецЕсли;\n    F = Новый ФиксированныйМассив(A); G = Новый ФиксированныйМассив(A); Alias = F;\n    Если F <> Alias Или F = G Тогда ВызватьИсключение "tree-load-fixed-identity"; КонецЕсли;\n    T = Новый ДеревоЗначений; Other = Новый ДеревоЗначений;\n    RootRows = T.Rows; Cols = T.Columns; R = T.Rows.Add(); OtherRow = T.Rows.Add(); ChildRows = R.Rows;\n    Если T.Rows <> RootRows Или T.Columns <> Cols Или R.Rows <> ChildRows\n        Или RootRows = Other.Rows Или Cols = Other.Columns Или ChildRows = OtherRow.Rows Тогда\n        ВызватьИсключение "tree-load-container-identity";\n    КонецЕсли;\n    Если R <> T.Rows.Get(0) Или R = OtherRow Тогда ВызватьИсключение "tree-load-row-identity"; КонецЕсли;\n    Refs = Новый Массив;\n    Если Не TreeLoadExact(TreeLoadCell(1, Refs), "1_") Или Не TreeLoadExact(TreeLoadCell(Истина, Refs), "T_")\n        Или Не TreeLoadExact(TreeLoadCell("1", Refs), "j_") Тогда ВызватьИсключение "tree-load-scalar-calibration"; КонецЕсли;\nКонецПроцедуры', 'Функция TreeLoadCalibrate()\n    Stage = "0";\n    Попытка\n        Stage = "1";\n        X = Новый Структура("Mark", "base"); Y = Новый Структура("Mark", "base"); Alias = X;\n        Stage = "2";\n        Если X <> Alias Тогда ВызватьИсключение "tree-load-structure-alias"; КонецЕсли;\n        Stage = "3";\n        Если X = Y Тогда ВызватьИсключение "tree-load-structure-distinct"; КонецЕсли;\n        Stage = "4";\n        A = TreeLoadPair(1, Истина); B = TreeLoadPair(1, Истина); Alias = A;\n        Stage = "5";\n        Если A <> Alias Тогда ВызватьИсключение "tree-load-array-alias"; КонецЕсли;\n        Stage = "6";\n        Если A = B Тогда ВызватьИсключение "tree-load-array-distinct"; КонецЕсли;\n        Stage = "7";\n        F = Новый ФиксированныйМассив(A); G = Новый ФиксированныйМассив(A); Alias = F;\n        Stage = "8";\n        Если F <> Alias Тогда ВызватьИсключение "tree-load-fixed-alias"; КонецЕсли;\n        Stage = "9";\n        Если F = G Тогда ВызватьИсключение "tree-load-fixed-distinct"; КонецЕсли;\n        Stage = "A";\n        T = Новый ДеревоЗначений; Other = Новый ДеревоЗначений;\n        Stage = "B";\n        RootRows = T.Rows;\n        Stage = "C";\n        Cols = T.Columns;\n        Stage = "D";\n        R = T.Rows.Add();\n        Stage = "E";\n        OtherRow = T.Rows.Add();\n        Stage = "F";\n        ChildRows = R.Rows;\n        Stage = "G";\n        Если T.Rows <> RootRows Тогда ВызватьИсключение "tree-load-root-alias"; КонецЕсли;\n        Stage = "H";\n        Если T.Columns <> Cols Тогда ВызватьИсключение "tree-load-columns-alias"; КонецЕсли;\n        Stage = "I";\n        Если R.Rows <> ChildRows Тогда ВызватьИсключение "tree-load-child-alias"; КонецЕсли;\n        Stage = "J";\n        Если RootRows = Other.Rows Тогда ВызватьИсключение "tree-load-root-distinct"; КонецЕсли;\n        Stage = "K";\n        Если Cols = Other.Columns Тогда ВызватьИсключение "tree-load-columns-distinct"; КонецЕсли;\n        Stage = "L";\n        Если ChildRows = OtherRow.Rows Тогда ВызватьИсключение "tree-load-child-distinct"; КонецЕсли;\n        Stage = "M";\n        Если R <> T.Rows.Get(0) Тогда ВызватьИсключение "tree-load-row-alias"; КонецЕсли;\n        Stage = "N";\n        Если R = OtherRow Тогда ВызватьИсключение "tree-load-row-distinct"; КонецЕсли;\n        Stage = "O";\n        Refs = Новый Массив;\n        Stage = "P";\n        Если Не TreeLoadExact(TreeLoadCell(1, Refs), "1_") Тогда ВызватьИсключение "tree-load-number-calibration"; КонецЕсли;\n        Stage = "Q";\n        Если Не TreeLoadExact(TreeLoadCell(Истина, Refs), "T_") Тогда ВызватьИсключение "tree-load-bool-calibration"; КонецЕсли;\n        Stage = "R";\n        Если Не TreeLoadExact(TreeLoadCell("1", Refs), "j_") Тогда ВызватьИсключение "tree-load-string-calibration"; КонецЕсли;\n    Исключение\n        Возврат Stage;\n    КонецПопытки;\n    Возврат "-";\nКонецФункции'), ('    Попытка TreeLoadCalibrate(); Исключение Возврат "1?C0--" + Failed; КонецПопытки;', '    Calibration = TreeLoadCalibrate();\n    Если Calibration <> "-" Тогда Возврат "1?C0" + Calibration + "-" + Failed; КонецЕсли;'))
+
+
+def without_tree_load_calibration(text):
+    """Exact diagnostic source -> original public measurement; never edit output."""
+    raw = text.encode("utf-8") if text.startswith("\ufeff") else text.encode("utf-8-sig")
+    if hashlib.sha256(raw).hexdigest() != TREE_LOAD_CALIBRATION_SOURCE_SHA256:
+        raise ValueError("tree LoadColumn calibration source binding changed")
+    for before, after in reversed(TREE_LOAD_CALIBRATION_EDITS):
+        if text.count(after) != 1:
+            raise ValueError("tree LoadColumn calibration inverse changed")
+        text = text.replace(after, before, 1)
+    raw = text.encode("utf-8") if text.startswith("\ufeff") else text.encode("utf-8-sig")
+    if hashlib.sha256(raw).hexdigest() != TREE_LOAD_ORIGINAL_SOURCE_SHA256:
+        raise ValueError("tree LoadColumn calibration baseline changed")
+    return text
+
+
 def without_tree_load_probes(text):
     """Exact current source -> collections976; never edit captured outputs."""
     raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
+    if hashlib.sha256(raw).hexdigest() == TREE_LOAD_CALIBRATION_SOURCE_SHA256:
+        text = without_tree_load_calibration(text)
+        raw = text.encode("utf-8") if text.startswith("\ufeff") else text.encode("utf-8-sig")
     if hashlib.sha256(raw).hexdigest() != '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b':
         raise ValueError('tree LoadColumn source binding changed')
     if not text.endswith(TREE_LOAD_CALLS_END):

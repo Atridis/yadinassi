@@ -109,3 +109,54 @@ schema change, not normalization or an increased cap.
 - TL43: typed; root; selector Key; Array[7,Undefined]; undefined conversion.
 - TL44: typed; root; selector Key; Array[6,7,bad]; long typed source/extra-element validation.
 - TL45: base; root; selector omitted; Array[6,7]; LoadColumn(Source) missing selector.
+
+## Finite rejected calibration diagnostic
+
+This revision identifies a failing calibration operation; it does not implement
+LoadColumn or supply accepted native behavior. Calibration returns `-` only after
+all original checks succeed. Otherwise it returns one finite stage below, without
+exception text or arbitrary object values. The rejected payload is
+`1?C0<stage>-!` followed by 58 dots (65 characters). All 45 such complete messages
+use 3285 UTF-16 units. Successful observations retain the 3525-unit bound, below
+the unchanged 3800-unit allowance.
+
+The strict decoder and artifact export gates still reject every diagnostic
+failure, even when both sides match. A stage identifies the operation, not whether
+the native cause was unsupported comparison, unequal identity, or another error.
+Identity/schema checks must not be removed merely to obtain an accepted output.
+
+A future auditor may reconstruct the finite all-45 stage candidates using an
+authenticated unchanged 976-record prefix, but must require an exact native size
+and SHA-256 match with server/client agreement. No match or ambiguous match is
+inconclusive; matching a stage is not LoadColumn behavior acceptance.
+
+| Stage | Operation |
+| --- | --- |
+| `0` | Reserved entry fallback |
+| `1` | Construct Structure objects and alias |
+| `2` | Structure alias identity |
+| `3` | Distinct Structure identity |
+| `4` | Construct Array objects and alias |
+| `5` | Array alias identity |
+| `6` | Distinct Array identity |
+| `7` | Construct FixedArray objects and alias |
+| `8` | FixedArray alias identity |
+| `9` | Distinct FixedArray identity |
+| `A` | Construct two trees |
+| `B` | Retain root Rows |
+| `C` | Retain Columns |
+| `D` | Add first row |
+| `E` | Add second row |
+| `F` | Retain child Rows |
+| `G` | Root Rows repeated getter identity |
+| `H` | Columns repeated getter identity |
+| `I` | Child Rows repeated getter identity |
+| `J` | Distinct root Rows identity |
+| `K` | Distinct Columns identity |
+| `L` | Distinct child Rows identity |
+| `M` | Row repeated getter identity |
+| `N` | Distinct row identity |
+| `O` | Construct scalar registry |
+| `P` | Encode Number 1 |
+| `Q` | Encode Boolean True |
+| `R` | Encode String 1 |

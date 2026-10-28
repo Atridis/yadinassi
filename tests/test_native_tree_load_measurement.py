@@ -66,7 +66,7 @@ class LoadObserverTests(unittest.TestCase):
         return self.vm.execute('TreeLoadSnapshot(S, Source, Original, Refs)')
 
     def test_real_host_calibration_and_all45_baselines_without_runtime_method(self):
-        self.vm.execute('TreeLoadCalibrate()')
+        self.assertEqual(self.vm.execute('TreeLoadCalibrate()'), '-')
         results = [self.probe(i) for i in range(1,46)]
         self.assertTrue(all(r[2] == '1' and '?' not in r and '!' not in r for r in results))
         self.assertEqual([len(r) for r in results], [125 if 37 <= i <= 40 else 65 for i in range(1,46)])
@@ -157,8 +157,34 @@ class LoadObserverTests(unittest.TestCase):
         self.assertTrue(result.startswith('1?S0--!'));self.assertEqual(len(result),65)
         with mock.patch.object(BSLStructure,'__eq__',lambda *args:True,create=True):
             result=self.probe(1)
-        self.assertTrue(result.startswith('1?C0--!'));self.assertEqual(len(result),65)
+        self.assertTrue(result.startswith('1?C03-!'));self.assertEqual(len(result),65)
         self.assertNotIn('PRIVATE',result)
+
+    def test_every_calibration_stage_is_finite_rejected_and_precedes_actions(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('diagnostic_contract', ROOT / 'scripts/native_1c_tree_load_contract.py')
+        contract = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(contract)
+        helper, _ = fragments()
+        for code in '0123456789ABCDEFGHIJKLMNOPQR':
+            with self.subTest(stage=code):
+                marker = ('    Stage = "0";\n    Попытка\n' if code == '0'
+                          else f'        Stage = "{code}";\n')
+                self.assertEqual(helper.count(marker), 1)
+                changed = helper.replace(marker, marker + '        ВызватьИсключение "PRIVATE-SYNTHETIC";\n')
+                vm = Interpreter()
+                vm.execute(changed)
+                with self.witness(lambda *args: self.fail('LoadColumn must not run after calibration failure')):
+                    results = [vm.execute(f'TreeLoadProbe({case})') for case in range(1, 46)]
+                self.assertEqual(results, ['1?C0' + code + '-!' + '.' * 58] * 45)
+                units = sum(len(f'TL{i:02d}: [{value}]'.encode('utf-16-le')) // 2
+                            for i, value in enumerate(results, 1))
+                self.assertEqual(units, 3285)
+                self.assertLessEqual(units, 3525)
+                self.assertLess(3525, 3800)
+                for case, result in enumerate(results, 1):
+                    with self.assertRaises(contract.ObservationError):
+                        contract.validate_payload(result.encode('ascii'), case)
 
     def test_unknown_cells_strings_shapes_and_result_types_fail_closed(self):
         self.vm.execute('Refs=New Array;')
