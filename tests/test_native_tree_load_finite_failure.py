@@ -119,14 +119,17 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
                     'test_all_stages_reject_identical_host_native_and_artifact'))
                 import test_native_tree_rows_failure as rows
                 suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(rows.RowsFailureTests))
+                import test_native_tree_columns_failure as columns
+                suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(columns.ColumnsFailureTests))
                 result = unittest.TestResult()
                 with mock.patch.object(artifact.smoke, 'main', wraps=artifact.smoke.main) as actual_main:
                     suite.run(result)
                 self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
                 self.assertEqual(result.skipped, [])
                 self.assertEqual(result.testsRun, len(names) + len(
-                    unittest.defaultTestLoader.getTestCaseNames(rows.RowsFailureTests)))
-                self.assertEqual(actual_main.call_count, 28 * 2 + 2 + 81 * 2)
+                    unittest.defaultTestLoader.getTestCaseNames(rows.RowsFailureTests)) + len(
+                    unittest.defaultTestLoader.getTestCaseNames(columns.ColumnsFailureTests)))
+                self.assertEqual(actual_main.call_count, 28 * 2 + 2 + 81 * 2 + 81 * 2)
 
     def test_orchestration_fixture_rejects_unreviewed_checkout_bytes(self):
         source = artifact.smoke.ROOT / 'integrational_tests/tests/collections.bsl'

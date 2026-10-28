@@ -7,6 +7,7 @@ from unittest import mock
 from yadinassi import Interpreter
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection
 from yadinassi import runtime
+from scripts import native_historical_replay as replay
 
 ROOT = Path(__file__).resolve().parents[1]
 START = '// Begin isolated Rows view diagnostic (fail-only; no LoadColumn calls).\n'
@@ -14,7 +15,9 @@ END = '// End isolated Rows view diagnostic.\n\n'
 
 
 def source():
-    return (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+    text = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+    # These are exact historical Rows experiment tests, not current Columns measurements.
+    return replay.without_tree_columns_diagnostic(text)
 
 
 def helpers():

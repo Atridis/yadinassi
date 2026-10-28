@@ -231,3 +231,40 @@ visibility, if obtained, would establish only these concrete shared-data
 observables—not general wrapper identity, row ownership, or a replacement for
 all schema/topology/retained-row invariants. Further observer changes require
 separate review against the actual native result.
+
+### Independent Columns experiment after the Rows result
+
+Authenticated native run `40680283658` on `d87ccf2f9dc09c5608d439c7e0f6a46b86807ef9`
+reported `tree_rows_TFTT`: the repeated Rows getter comparison reported different,
+the variable-alias comparison did not, and both specific count/type/marker
+visibility checks succeeded. This is one four-part experiment; it does not prove
+general identity, ownership or LoadColumn semantics. The existing evidence is
+preserved. A read-only Rows observer consistency adjustment is being prepared
+separately and is **not integrated in this revision**.
+
+Columns wrappers have not been measured by that Rows experiment. The current
+route therefore runs a similarly isolated **Columns-only** experiment, retaining
+Columns before the two row additions and child-Rows access, as in the original
+calibration's setup preceding H. Its independent parts are:
+
+1. `T.Columns <> Saved` after that setup.
+2. `Alias <> Saved` on a separate identical setup.
+3. From initial count zero on both handles, add column `Marker` and write Width
+   17 through Saved; through fresh Columns verify count 1, exact name code points,
+   and numeric Width 17.
+4. Independently add/write through fresh Columns and verify through Saved.
+
+Again T/F are raw inequality results for parts 1–2 and explicit visibility
+predicates for parts 3–4; E preserves operation exceptions, while setup errors
+remain hard failures. A fresh fixture is used per part; four independent
+fixtures create six trees because the original unused Other-tree construction
+is retained in the two comparison setups. The experiment is computed once;
+45 labels repeat its framing, not independent measurements.
+
+The current packet is `1?K0` + four T/F/E characters + `!` + 56 dots: still 65
+ASCII characters and 3285 total message units. Only the pinned source with all
+1021 frames and 45 correctly labelled homogeneous packets can expose the finite
+`tree_cols_XXXX` reason. It remains rejected/nonexportable; the ordinary
+LoadColumn action helper and calibration bodies are unchanged and uncalled by
+this route. Columns-element/row reference equality, schema metadata, qualifiers,
+and owner/parent invariants are not inferred from these four observations.

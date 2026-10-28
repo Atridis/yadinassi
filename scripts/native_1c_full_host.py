@@ -38,7 +38,7 @@ LINUX_TARGET = "linux-8.3.27.1508"
 BYTE_EXACT = "byte_exact"
 MAP_MODE = "typed-map-order-v1"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
-COLLECTIONS_SOURCE_SHA256 = "6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6"
+COLLECTIONS_SOURCE_SHA256 = "092338cab2793224ced334ee721f243136113c2dbd2cf9d569aea67a66b533e0"
 CASE_SECONDS = 10
 CHILD_CLEANUP_SECONDS = 5
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
@@ -1404,6 +1404,35 @@ def tree_rows_diagnostic_failure(data, native):
         return None
 
 
+TREE_COLUMNS_DIAGNOSTIC_FAILURES = frozenset(
+    "tree_cols_" + a + b + c + d
+    for a in "TFE" for b in "TFE" for c in "TFE" for d in "TFE")
+
+
+def tree_columns_diagnostic_failure(data, native):
+    """Four explicit observables, repeated framing; never native acceptance."""
+    if (native.get("source_sha256") != COLLECTIONS_SOURCE_SHA256
+            or type(native.get("message_count")) is not int
+            or native["message_count"] != 1021):
+        return None
+    try:
+        records = map_contract()._records(data)
+        if len(records) != 1021:
+            return None
+        trits = records[976][2][4:8]
+        if len(trits) != 4 or any(value not in b"TFE" for value in trits):
+            return None
+        payload = b"1?K0" + trits + b"!" + b"." * 56
+        for number, (label, framed, actual) in enumerate(records[976:], 1):
+            expected_label = f"TL{number:02d}"
+            if (label != expected_label or actual != payload
+                    or framed != expected_label.encode("ascii") + b": [" + payload + b"]\n"):
+                return None
+        return "tree_cols_" + trits.decode("ascii")
+    except Exception:
+        return None
+
+
 def validate_tree_load_observations(data):
     try:
         return tree_load_contract().validate_records(map_contract()._records(data))
@@ -1560,8 +1589,8 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
                         or case["failure_kind"] not in {"source_changed", "native_capture_changed", "invalid_private_file",
                             "interpreter_timeout", "interpreter_output_limit", "interpreter_unavailable", "interpreter_failed",
                             "tree_load_observation_invalid",
-                            POST_CREATE_FAILURE} | TREE_LOAD_CALIBRATION_FAILURES | TREE_ROWS_DIAGNOSTIC_FAILURES
-                        or (case["failure_kind"] in (TREE_LOAD_CALIBRATION_FAILURES | TREE_ROWS_DIAGNOSTIC_FAILURES) and
+                            POST_CREATE_FAILURE} | TREE_LOAD_CALIBRATION_FAILURES | TREE_ROWS_DIAGNOSTIC_FAILURES | TREE_COLUMNS_DIAGNOSTIC_FAILURES
+                        or (case["failure_kind"] in (TREE_LOAD_CALIBRATION_FAILURES | TREE_ROWS_DIAGNOSTIC_FAILURES | TREE_COLUMNS_DIAGNOSTIC_FAILURES) and
                             (name != "collections" or native["source_sha256"] != COLLECTIONS_SOURCE_SHA256
                              or stage3["input_sha256"]["integrational_tests/tests/collections.bsl"] != COLLECTIONS_SOURCE_SHA256
                              or type(native.get("message_count")) is not int or native["message_count"] != 1021))
@@ -1645,7 +1674,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
                 except FullError:
                     # Only authenticated native bytes may identify a native stage.
                     # Host-only failures retain the generic observation error.
-                    reason = ((tree_rows_diagnostic_failure(expected, case)
+                    reason = ((tree_columns_diagnostic_failure(expected, case)
+                               or tree_rows_diagnostic_failure(expected, case)
                                or tree_load_calibration_failure(expected, case))
                               if input_hashes[f"integrational_tests/tests/{name}.bsl"] == COLLECTIONS_SOURCE_SHA256
                               else None)

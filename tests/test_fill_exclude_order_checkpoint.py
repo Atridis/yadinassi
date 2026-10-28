@@ -19,7 +19,7 @@ from yadinassi.native_targets import (
 ROOT = Path(__file__).resolve().parents[1]
 BASE_SHA = 'e877033fbe8cd8d113aec6b77892f1bb737db9b465b13ad1c4f5786ae4e50232'
 CHECKPOINT_SHA = 'fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9'
-SOURCE_SHA = '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6'
+SOURCE_SHA = '092338cab2793224ced334ee721f243136113c2dbd2cf9d569aea67a66b533e0'
 POSITIONS = ('first', 'between')
 LABELS = tuple('fill.exclude-source-order.source-only.' + value for value in POSITIONS)
 LAST_LABEL = 'fill.exclude-missing.source-only.missing'
