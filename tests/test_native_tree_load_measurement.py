@@ -12,6 +12,7 @@ from yadinassi.syntax.parser import parse
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection, BSLValueTreeColumnCollection
 from yadinassi.values import BSLArray, BSLFixedArray, HostFunction, NULL
 from yadinassi.structures import BSLStructure
+from scripts import native_historical_replay as replay
 from yadinassi.type_descriptions import BSLTypeDescription
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +25,10 @@ BASE_SHA = '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4'
 
 def source():
     data = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
-    return data.replace(b'\r\n', b'\n') if os.name == 'nt' else data
+    data = data.replace(b'\r\n', b'\n') if os.name == 'nt' else data
+    # These remain explicit historical action-helper tests, not the current
+    # fail-only Rows diagnostic route. The inverse is exact/source-bound.
+    return replay.without_tree_rows_diagnostic(data.decode('utf-8-sig')).encode('utf-8-sig')
 
 
 def fragments():

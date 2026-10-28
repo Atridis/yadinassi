@@ -289,8 +289,23 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_tree_rows_diagnostic_measurement(source, *, host=False):
+    """Exact fail-only Rows harness -> public finite-reason harness; test-only."""
+    inventory = json.loads((REPOSITORY / 'tests/tree_rows_diagnostic_source_inverse.json').read_text(encoding='utf-8'))
+    path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
+    contract = inventory[path]
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    for edit in reversed(contract['edits']):
+        assert source.count(edit['new']) == 1
+        source = source.replace(edit['new'], edit['old'], 1)
+    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    return source
+
+
 def without_tree_load_finite_reason_measurement(source):
     """Exact finite-reason host -> public calibration host; test-only."""
+    if '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6' in source:
+        source = without_tree_rows_diagnostic_measurement(source, host=True)
     inventory = json.loads((REPOSITORY / 'tests/tree_load_finite_reason_source_inverse.json').read_text(encoding='utf-8'))
     contract = inventory['scripts/native_1c_full_host.py']
     assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
@@ -303,6 +318,8 @@ def without_tree_load_finite_reason_measurement(source):
 
 def without_tree_load_calibration_measurement(source, *, host=False):
     """Exact diagnostic harness -> original public measurement; test-only."""
+    if '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6' in source:
+        source = without_tree_rows_diagnostic_measurement(source, host=host)
     if host and "def tree_load_calibration_failure(" in source:
         source = without_tree_load_finite_reason_measurement(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_load_calibration_source_inverse.json').read_text(encoding='utf-8'))
@@ -318,7 +335,7 @@ def without_tree_load_calibration_measurement(source, *, host=False):
 
 def without_tree_load_measurement(source, *, host=False):
     """Exact test-only collections1021 -> 976 harness, never admission."""
-    if '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source:
+    if '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source or '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6' in source:
         source = without_tree_load_calibration_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/tree_load_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
@@ -344,7 +361,7 @@ def historical_tree_load_collections_module(source, template):
 
 def without_tree_unload_supplement_measurement(source, *, host=False):
     """Exact test-only collections976 harness -> 973 inverse, never admission."""
-    if '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b' in source or '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source:
+    if '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b' in source or '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source or '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6' in source:
         source = without_tree_load_measurement(source, host=host)
     inventory = json.loads((REPOSITORY / 'tests/tree_unload_supplement_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
@@ -359,7 +376,7 @@ def without_tree_unload_supplement_measurement(source, *, host=False):
 
 def without_tree_unload_measurement(source, *, host=False):
     """Exact test-only collections973 harness -> 946 inverse, never admission."""
-    if '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b' in source or '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source:
+    if '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b' in source or '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source or '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6' in source:
         source = without_tree_load_measurement(source, host=host)
     if '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4' in source:
         source = without_tree_unload_supplement_measurement(source, host=host)
@@ -387,7 +404,7 @@ def historical_tree_unload_collections_module(source, template):
 
 def without_child_cleanup(source):
     """Exact test-only cleanup inverse; never a runtime or admission fallback."""
-    if '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b' in source or '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source:
+    if '0f36f76a44f63f9623a3c204c5cace3dd4d4328b4465f3bb002f660fc96e684b' in source or '73ffd118fa061e7ecbdfafc8701de03c887e24020fc2fec7d30a04030a2cf03b' in source or '6f42aab85ab386915e708b07bcb56cb2bbad58469dd1b08b0364f9541c7e83f6' in source:
         source = without_tree_load_measurement(source, host=True)
     if 'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada' in source or '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4' in source:
         source = without_tree_unload_measurement(source, host=True)

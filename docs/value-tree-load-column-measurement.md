@@ -182,3 +182,52 @@ failure. Status remains `error`, acceptance remains `rejected`, host comparison
 fields remain null, and the six-output artifact is still withheld. The strict
 observation decoder and native artifact acceptance rules are unchanged. These
 reasons diagnose calibration only; they are not accepted LoadColumn behavior.
+
+### Temporary fail-only Rows view experiment
+
+Authenticated run `40674573926` on `e9fe3e53328da2336b179ea29f738c2ccbf1bbcc`
+reported `tree_load_calibration_G`. This proves failure at the statement
+`T.Rows <> RootRows`; it does **not** distinguish a true inequality result from
+an exception while evaluating that statement, and proves no LoadColumn behavior.
+
+The next temporary measurement therefore does not run LoadColumn at all. The
+original calibration and action helper bodies remain byte-identical. A separate
+experiment runs once and supplies a four-character result to a dedicated
+fail-only wrapper for the existing 45 labels. Those 45 repetitions are framing,
+**not 45 independent measurements**. The first 976 scenario messages are unchanged.
+
+Each part has a fresh, independent disposable fixture:
+
+1. Retain `Saved = T.Rows`, access Columns, add two rows through `T.Rows`, access
+   the first row's Rows, then evaluate exactly `T.Rows <> Saved`. Setup ordering
+   follows the original calibration A–F (including a separate unused Other tree).
+2. Independently repeat that setup, assign `Alias = Saved`, then evaluate
+   `Alias <> Saved`.
+3. On a new tree with a Marker column and both counts initially zero,
+   add through Saved and write marker 17. Through a fresh `T.Rows` getter check
+   count 1 and read the numeric marker 17.
+4. Independently start empty, add/write through fresh `T.Rows`, then check count
+   and read marker through Saved.
+
+For parts 1–2, T/F are the raw **inequality** result: T means the comparison
+reported different, F means it did not. E means the measured comparison/read
+raised. For parts 3–4, T/F describe the complete count/type/marker visibility
+predicate; E means that measured add/write/read operation raised. Setup failure
+is a separate hard-failure sentinel, never E or an omitted argument. Four
+independent fixtures create six disposable trees in total because parts 1–2
+retain the original unused Other-tree construction. No actual LoadColumn
+fixture or previously emitted record is mutated.
+
+Only one of the 81 four-trit vectors is returned. The exact packet is 65 ASCII
+characters: `1?D0` + four T/F/E characters + `!` + 56 dots. The entire 45-message
+suffix occupies 3285 UTF-16 units, below the unchanged 3525/3800 bounds. Unknown
+values or setup failure produce a generic rejected packet, with no fall-through
+to the original action helper. The report may expose `tree_rows_XXXX` (14 ASCII
+characters) only for the pinned source, 1021 complete frames and 45 homogeneous,
+correctly labelled packets. Malformed/mixed/unbound output remains generic.
+
+All these reports remain error/rejected and nonexportable. Observed mutation
+visibility, if obtained, would establish only these concrete shared-data
+observables—not general wrapper identity, row ownership, or a replacement for
+all schema/topology/retained-row invariants. Further observer changes require
+separate review against the actual native result.

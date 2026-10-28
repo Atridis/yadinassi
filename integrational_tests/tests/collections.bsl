@@ -3208,6 +3208,71 @@
 
 // End bounded ValueTree UnloadColumn helpers.
 
+// Begin isolated Rows view diagnostic (fail-only; no LoadColumn calls).
+Функция TreeRowsDiagnosticPart(Знач Part)
+    Попытка
+        Если Part = 1 Или Part = 2 Тогда
+            // Preserve original calibration A-F ordering, including retention before Add.
+            T = Новый ДеревоЗначений; Other = Новый ДеревоЗначений;
+            Saved = T.Rows; Cols = T.Columns;
+            R = T.Rows.Add(); OtherRow = T.Rows.Add(); ChildRows = R.Rows;
+            Alias = Saved;
+        ИначеЕсли Part = 3 Или Part = 4 Тогда
+            T = Новый ДеревоЗначений; T.Columns.Add("Marker"); Saved = T.Rows;
+            Если Saved.Count() <> 0 Или T.Rows.Count() <> 0 Тогда Возврат "?"; КонецЕсли;
+        Иначе
+            Возврат "?";
+        КонецЕсли;
+    Исключение
+        Возврат "?";
+    КонецПопытки;
+    Попытка
+        Если Part = 1 Тогда
+            Result = T.Rows <> Saved;
+        ИначеЕсли Part = 2 Тогда
+            Result = Alias <> Saved;
+        ИначеЕсли Part = 3 Тогда
+            Added = Saved.Add(); Added.Marker = 17; View = T.Rows;
+            Result = View.Count() = 1;
+            Если Result Тогда Result = ТипЗнч(View.Get(0).Marker) = Тип("Число"); КонецЕсли;
+            Если Result Тогда Result = View.Get(0).Marker = 17; КонецЕсли;
+        Иначе
+            Added = T.Rows.Add(); Added.Marker = 17; View = Saved;
+            Result = View.Count() = 1;
+            Если Result Тогда Result = ТипЗнч(View.Get(0).Marker) = Тип("Число"); КонецЕсли;
+            Если Result Тогда Result = View.Get(0).Marker = 17; КонецЕсли;
+        КонецЕсли;
+        Если Result Тогда Возврат "T"; КонецЕсли;
+        Возврат "F";
+    Исключение
+        Возврат "E";
+    КонецПопытки;
+КонецФункции
+
+Функция TreeRowsDiagnosticExperiment()
+    Result = "";
+    Для Part = 1 По 4 Цикл
+        Trit = TreeRowsDiagnosticPart(Part);
+        Если Trit = "?" Тогда Возврат "?"; КонецЕсли;
+        Result = Result + Trit;
+    КонецЦикла;
+    Возврат Result;
+КонецФункции
+
+Функция TreeRowsDiagnosticProbe(Знач Case, Знач Diagnostic)
+    Failed = "1?O0--!..........................................................";
+    Если ТипЗнч(Case) <> Тип("Число") Тогда Возврат Failed; КонецЕсли;
+    Если Case < 1 Или Case > 45 Или Цел(Case) <> Case Тогда Возврат Failed; КонецЕсли;
+    Если ТипЗнч(Diagnostic) <> Тип("Строка") Тогда Возврат Failed; КонецЕсли;
+    Если СтрДлина(Diagnostic) <> 4 Тогда Возврат Failed; КонецЕсли;
+    Для P = 1 По 4 Цикл
+        Code = КодСимвола(Diagnostic, P);
+        Если Code <> 84 И Code <> 70 И Code <> 69 Тогда Возврат Failed; КонецЕсли;
+    КонецЦикла;
+    Возврат "1?D0" + Diagnostic + "!........................................................";
+КонецФункции
+// End isolated Rows view diagnostic.
+
 // Begin bounded ValueTree LoadColumn helpers (measurement only; no native answers).
 Функция TreeLoadExact(Знач Left, Знач Right)
     Если ТипЗнч(Left) <> Тип("Строка") Или ТипЗнч(Right) <> Тип("Строка") Тогда Возврат Ложь; КонецЕсли;
@@ -4843,49 +4908,50 @@ VTResult = "error";
 Показать("tree.unload.selector.fraction-negative-half", TreeUnloadProbe("S.Tree.Rows.UnloadColumn(-0.5)"));
 // End bounded ValueTree UnloadColumn observations.
 // Begin bounded ValueTree LoadColumn observations (measurement only; no native answers).
-Показать("TL01", TreeLoadProbe(1));
-Показать("TL02", TreeLoadProbe(2));
-Показать("TL03", TreeLoadProbe(3));
-Показать("TL04", TreeLoadProbe(4));
-Показать("TL05", TreeLoadProbe(5));
-Показать("TL06", TreeLoadProbe(6));
-Показать("TL07", TreeLoadProbe(7));
-Показать("TL08", TreeLoadProbe(8));
-Показать("TL09", TreeLoadProbe(9));
-Показать("TL10", TreeLoadProbe(10));
-Показать("TL11", TreeLoadProbe(11));
-Показать("TL12", TreeLoadProbe(12));
-Показать("TL13", TreeLoadProbe(13));
-Показать("TL14", TreeLoadProbe(14));
-Показать("TL15", TreeLoadProbe(15));
-Показать("TL16", TreeLoadProbe(16));
-Показать("TL17", TreeLoadProbe(17));
-Показать("TL18", TreeLoadProbe(18));
-Показать("TL19", TreeLoadProbe(19));
-Показать("TL20", TreeLoadProbe(20));
-Показать("TL21", TreeLoadProbe(21));
-Показать("TL22", TreeLoadProbe(22));
-Показать("TL23", TreeLoadProbe(23));
-Показать("TL24", TreeLoadProbe(24));
-Показать("TL25", TreeLoadProbe(25));
-Показать("TL26", TreeLoadProbe(26));
-Показать("TL27", TreeLoadProbe(27));
-Показать("TL28", TreeLoadProbe(28));
-Показать("TL29", TreeLoadProbe(29));
-Показать("TL30", TreeLoadProbe(30));
-Показать("TL31", TreeLoadProbe(31));
-Показать("TL32", TreeLoadProbe(32));
-Показать("TL33", TreeLoadProbe(33));
-Показать("TL34", TreeLoadProbe(34));
-Показать("TL35", TreeLoadProbe(35));
-Показать("TL36", TreeLoadProbe(36));
-Показать("TL37", TreeLoadProbe(37));
-Показать("TL38", TreeLoadProbe(38));
-Показать("TL39", TreeLoadProbe(39));
-Показать("TL40", TreeLoadProbe(40));
-Показать("TL41", TreeLoadProbe(41));
-Показать("TL42", TreeLoadProbe(42));
-Показать("TL43", TreeLoadProbe(43));
-Показать("TL44", TreeLoadProbe(44));
-Показать("TL45", TreeLoadProbe(45));
+TreeRowsDiagnostic = TreeRowsDiagnosticExperiment();
+Показать("TL01", TreeRowsDiagnosticProbe(1, TreeRowsDiagnostic));
+Показать("TL02", TreeRowsDiagnosticProbe(2, TreeRowsDiagnostic));
+Показать("TL03", TreeRowsDiagnosticProbe(3, TreeRowsDiagnostic));
+Показать("TL04", TreeRowsDiagnosticProbe(4, TreeRowsDiagnostic));
+Показать("TL05", TreeRowsDiagnosticProbe(5, TreeRowsDiagnostic));
+Показать("TL06", TreeRowsDiagnosticProbe(6, TreeRowsDiagnostic));
+Показать("TL07", TreeRowsDiagnosticProbe(7, TreeRowsDiagnostic));
+Показать("TL08", TreeRowsDiagnosticProbe(8, TreeRowsDiagnostic));
+Показать("TL09", TreeRowsDiagnosticProbe(9, TreeRowsDiagnostic));
+Показать("TL10", TreeRowsDiagnosticProbe(10, TreeRowsDiagnostic));
+Показать("TL11", TreeRowsDiagnosticProbe(11, TreeRowsDiagnostic));
+Показать("TL12", TreeRowsDiagnosticProbe(12, TreeRowsDiagnostic));
+Показать("TL13", TreeRowsDiagnosticProbe(13, TreeRowsDiagnostic));
+Показать("TL14", TreeRowsDiagnosticProbe(14, TreeRowsDiagnostic));
+Показать("TL15", TreeRowsDiagnosticProbe(15, TreeRowsDiagnostic));
+Показать("TL16", TreeRowsDiagnosticProbe(16, TreeRowsDiagnostic));
+Показать("TL17", TreeRowsDiagnosticProbe(17, TreeRowsDiagnostic));
+Показать("TL18", TreeRowsDiagnosticProbe(18, TreeRowsDiagnostic));
+Показать("TL19", TreeRowsDiagnosticProbe(19, TreeRowsDiagnostic));
+Показать("TL20", TreeRowsDiagnosticProbe(20, TreeRowsDiagnostic));
+Показать("TL21", TreeRowsDiagnosticProbe(21, TreeRowsDiagnostic));
+Показать("TL22", TreeRowsDiagnosticProbe(22, TreeRowsDiagnostic));
+Показать("TL23", TreeRowsDiagnosticProbe(23, TreeRowsDiagnostic));
+Показать("TL24", TreeRowsDiagnosticProbe(24, TreeRowsDiagnostic));
+Показать("TL25", TreeRowsDiagnosticProbe(25, TreeRowsDiagnostic));
+Показать("TL26", TreeRowsDiagnosticProbe(26, TreeRowsDiagnostic));
+Показать("TL27", TreeRowsDiagnosticProbe(27, TreeRowsDiagnostic));
+Показать("TL28", TreeRowsDiagnosticProbe(28, TreeRowsDiagnostic));
+Показать("TL29", TreeRowsDiagnosticProbe(29, TreeRowsDiagnostic));
+Показать("TL30", TreeRowsDiagnosticProbe(30, TreeRowsDiagnostic));
+Показать("TL31", TreeRowsDiagnosticProbe(31, TreeRowsDiagnostic));
+Показать("TL32", TreeRowsDiagnosticProbe(32, TreeRowsDiagnostic));
+Показать("TL33", TreeRowsDiagnosticProbe(33, TreeRowsDiagnostic));
+Показать("TL34", TreeRowsDiagnosticProbe(34, TreeRowsDiagnostic));
+Показать("TL35", TreeRowsDiagnosticProbe(35, TreeRowsDiagnostic));
+Показать("TL36", TreeRowsDiagnosticProbe(36, TreeRowsDiagnostic));
+Показать("TL37", TreeRowsDiagnosticProbe(37, TreeRowsDiagnostic));
+Показать("TL38", TreeRowsDiagnosticProbe(38, TreeRowsDiagnostic));
+Показать("TL39", TreeRowsDiagnosticProbe(39, TreeRowsDiagnostic));
+Показать("TL40", TreeRowsDiagnosticProbe(40, TreeRowsDiagnostic));
+Показать("TL41", TreeRowsDiagnosticProbe(41, TreeRowsDiagnostic));
+Показать("TL42", TreeRowsDiagnosticProbe(42, TreeRowsDiagnostic));
+Показать("TL43", TreeRowsDiagnosticProbe(43, TreeRowsDiagnostic));
+Показать("TL44", TreeRowsDiagnosticProbe(44, TreeRowsDiagnostic));
+Показать("TL45", TreeRowsDiagnosticProbe(45, TreeRowsDiagnostic));
 // End bounded ValueTree LoadColumn observations.

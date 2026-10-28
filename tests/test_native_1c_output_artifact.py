@@ -304,10 +304,21 @@ class OrchestrationTests(SyntheticFilesystemCase):
             def __init__(self,**kwargs): self.context=original_temporary(**kwargs)
             def __enter__(self): return self.context.__enter__()
             def __exit__(self,*args): self.context.__exit__(*args); raise OSError("PRIVATE CLEANUP")
-        with original_temporary() as temporary,original_temporary() as artifacts:
+        with original_temporary() as temporary,original_temporary() as artifacts,original_temporary() as checkout:
             temp_path=Path(temporary).resolve()
             artifact_root=Path(artifacts).resolve()
-            with mock.patch.dict(os.environ,{"GHCR_USER":"Atridis","GHCR_TOKEN":"PRIVATE TOKEN"}), \
+            fixture_root=Path(checkout).resolve()
+            # Synthetic orchestration must use the reviewed LF fixture on every
+            # checkout platform. Never normalize production staging/comparison:
+            # raw CRLF input remains a different, unreviewed production source.
+            for source_name in smoke.FULL_STAGED_FILES:
+                source_bytes=(smoke.ROOT/source_name).read_bytes().replace(b"\r\n",b"\n")
+                target=fixture_root/source_name; target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes(source_bytes)
+            self.assertEqual(full.digest((fixture_root/"integrational_tests/tests/collections.bsl").read_bytes()),
+                             full.COLLECTIONS_SOURCE_SHA256)
+            with mock.patch.object(smoke,"ROOT",fixture_root), \
+                    mock.patch.dict(os.environ,{"GHCR_USER":"Atridis","GHCR_TOKEN":"PRIVATE TOKEN"}), \
                     mock.patch.object(smoke,"run_silent",side_effect=silent),mock.patch.object(smoke,"bounded_run",side_effect=bounded), \
                     mock.patch.object(full,"repository_provenance",return_value=good["repository"]), \
                     mock.patch.object(full,"interpreter_provenance",return_value=good["interpreter"]), \

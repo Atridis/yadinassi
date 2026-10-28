@@ -101,20 +101,43 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
         # checkout preparation canonicalizes LF; production guards stay strict.
         with tempfile.TemporaryDirectory() as directory:
             checkout = Path(directory).resolve()
-            for name in full.SCENARIOS:
-                rel = f'integrational_tests/tests/{name}.bsl'
+            # Cover the complete source set consumed by actual smoke.main
+            # staging, not only the direct compare_outputs six-scenario fixture.
+            for rel in artifact.smoke.FULL_STAGED_FILES:
                 target = checkout / rel; target.parent.mkdir(parents=True, exist_ok=True)
-                raw = (calibration.ROOT / rel).read_bytes().replace(b'\r\n', b'\n')
+                raw = (artifact.smoke.ROOT / rel).read_bytes().replace(b'\r\n', b'\n')
                 target.write_bytes(raw.replace(b'\n', b'\r\n'))
             raw = (checkout / 'integrational_tests/tests/collections.bsl').read_bytes()
             self.assertIn(b'\r\n', raw)
             self.assertNotEqual(full.digest(raw), full.COLLECTIONS_SOURCE_SHA256)
-            with mock.patch.object(calibration, 'ROOT', checkout):
-                case = calibration.CalibrationHarnessTests(
-                    'test_all_stages_reject_identical_host_native_and_artifact')
-                result = unittest.TestResult(); case.run(result)
+            with mock.patch.object(calibration, 'ROOT', checkout), \
+                    mock.patch.object(artifact.smoke, 'ROOT', checkout):
+                names = unittest.defaultTestLoader.getTestCaseNames(type(self))
+                suite = unittest.TestSuite(type(self)(name) for name in names
+                    if name != 'test_real_crlf_checkout_fixtures_keep_source_binding')
+                suite.addTest(calibration.CalibrationHarnessTests(
+                    'test_all_stages_reject_identical_host_native_and_artifact'))
+                import test_native_tree_rows_failure as rows
+                suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(rows.RowsFailureTests))
+                result = unittest.TestResult()
+                with mock.patch.object(artifact.smoke, 'main', wraps=artifact.smoke.main) as actual_main:
+                    suite.run(result)
                 self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
-                self.test_host_only_failure_remains_generic()
+                self.assertEqual(result.skipped, [])
+                self.assertEqual(result.testsRun, len(names) + len(
+                    unittest.defaultTestLoader.getTestCaseNames(rows.RowsFailureTests)))
+                self.assertEqual(actual_main.call_count, 28 * 2 + 2 + 81 * 2)
+
+    def test_orchestration_fixture_rejects_unreviewed_checkout_bytes(self):
+        source = artifact.smoke.ROOT / 'integrational_tests/tests/collections.bsl'
+        read_bytes = Path.read_bytes
+        reviewed = read_bytes(source).replace(b'\r\n', b'\n')
+        self.assertTrue(reviewed.startswith(b'\xef\xbb\xbf'))
+        for changed in (reviewed[3:], reviewed.replace(b'\n', b'\r'), reviewed + b'// changed\n'):
+            def read_checkout(path):
+                return changed if path == source else read_bytes(path)
+            with mock.patch.object(Path, 'read_bytes', read_checkout), self.assertRaises(AssertionError):
+                self.invoke(through_main=True)
 
     def test_host_only_failure_remains_generic(self):
         from test_native_tree_load_contract import synthetic_output

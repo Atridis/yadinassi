@@ -41,6 +41,7 @@ class CalibrationHarnessTests(host_tests.SyntheticFilesystemCase):
         inventory = json.loads((ROOT / 'tests/tree_load_calibration_source_inverse.json').read_text(encoding='utf-8'))
         for path in PATHS:
             source = (ROOT / path).read_text(encoding='utf-8')
+            source = history.without_tree_rows_diagnostic_measurement(source, host=path.endswith('full_host.py'))
             for altered in (source + '\n', source.replace('73ffd118', '73ffd119', 1)):
                 with self.assertRaises(AssertionError):
                     history.without_tree_load_calibration_measurement(altered, host=path.endswith('full_host.py'))
