@@ -6,10 +6,10 @@ from scripts import native_historical_replay as history
 from scripts import native_1c_full_host as host
 import test_native_async_fixture as fixtures
 import test_native_1c_full_stage as stage
-from test_native_tree_move_contract import synthetic_output
+from test_native_tree_total_contract import synthetic_output
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SHA = 'a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574'
+SOURCE_SHA = '55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c'
 BASE_SHA = 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e'
 
 
@@ -23,7 +23,7 @@ class MoveHarnessTests(unittest.TestCase):
         source = self.source()
         previous = history.without_tree_move_probes(source.decode('utf-8-sig')).encode('utf-8-sig')
         self.assertEqual(hashlib.sha256(previous).hexdigest(), BASE_SHA)
-        self.assertEqual(stage.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 1022)
+        self.assertEqual(stage.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT, 1023)
         self.assertEqual(host.COLLECTIONS_SOURCE_SHA256, SOURCE_SHA)
         for path in ('scripts/native_1c_full_host.py', 'scripts/native_1c_bootstrap/full_suite.py'):
             raw = (ROOT/path).read_text(encoding='utf-8')

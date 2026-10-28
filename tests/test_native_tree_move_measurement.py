@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def helpers():
     # Universal newlines only for these synthetic observer tests, never capture validation.
     text = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
-    if hashlib.sha256(text.encode('utf-8-sig')).hexdigest() != 'a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574':
+    if hashlib.sha256(text.encode('utf-8-sig')).hexdigest() != '55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c':
         raise AssertionError('synthetic Move observer source binding changed')
     result = []
     for kind in ('LoadColumn', 'Move'):

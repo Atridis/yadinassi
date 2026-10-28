@@ -56,16 +56,13 @@ class FullError(Exception):
         super().__init__(self.kind)
 
 
-# BEGIN bounded preprocessor profile observation binding
 PREPROCESSOR_SOURCE_SHA256 = '0dc26abc7a2bb786c7875d934fd2821c7e5f9e31175a0cf694c9b1170801f285'
 PREPROCESSOR_MODULE_SHA256 = '6e64719f7a086388730e5ce9d8a8944b67db58a4919866b6562cde6a1369285e'
 PREPROCESSOR_BASE_SHA256 = 'baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d'
 PREPROCESSOR_CORE_SHA256 = '5cda3cc687bc4b89a223fce03d06602c381a0ef84b57687c4d190897318b1ee7'
 PREPROCESSOR_DEFAULT_TOKEN = 'pp.v1:005005010010002002001001002002'
-# Audited native run40208015242; independent of runtime execution context.
 PREPROCESSOR_RUNTIME_TOKEN = 'pp.v1:135135139139131131131131131131'
 PREPROCESSOR_COMPILATION_PROFILE = 'managed-thick-file'
-# No native expected token exists until a separately audited capture.
 PREPROCESSOR_CORE = b'// BEGIN bounded preprocessor profile observation\n// Direct literal compilation at each site; never infer flags from execution side.\n&AtClient\nFunction PPClient()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtServer\nFunction PPServer()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtServerNoContext\nFunction PPServerNoContext()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction PPDual()\n    Var EnglishMask, RussianMask;\n    EnglishMask = 0;\n    RussianMask = 0;\n#If Client Then\n    EnglishMask = EnglishMask + 1;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 1;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If Server Then\n    EnglishMask = EnglishMask + 2;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 2;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtClient Then\n    EnglishMask = EnglishMask + 4;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 4;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If AtServer Then\n    EnglishMask = EnglishMask + 8;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x9d\xd0\xb0\xd0\xa1\xd0\xb5\xd1\x80\xd0\xb2\xd0\xb5\xd1\x80\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 8;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThinClient Then\n    EnglishMask = EnglishMask + 16;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbd\xd0\xba\xd0\xb8\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 16;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If WebClient Then\n    EnglishMask = EnglishMask + 32;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xb5\xd0\xb1\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 32;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientOrdinaryApplication Then\n    EnglishMask = EnglishMask + 64;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\x9e\xd0\xb1\xd1\x8b\xd1\x87\xd0\xbd\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 64;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ThickClientManagedApplication Then\n    EnglishMask = EnglishMask + 128;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\xa2\xd0\xbe\xd0\xbb\xd1\x81\xd1\x82\xd1\x8b\xd0\xb9\xd0\x9a\xd0\xbb\xd0\xb8\xd0\xb5\xd0\xbd\xd1\x82\xd0\xa3\xd0\xbf\xd1\x80\xd0\xb0\xd0\xb2\xd0\xbb\xd1\x8f\xd0\xb5\xd0\xbc\xd0\xbe\xd0\xb5\xd0\x9f\xd1\x80\xd0\xb8\xd0\xbb\xd0\xbe\xd0\xb6\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 128;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n#If ExternalConnection Then\n    EnglishMask = EnglishMask + 256;\n#EndIf\n#\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8 \xd0\x92\xd0\xbd\xd0\xb5\xd1\x88\xd0\xbd\xd0\xb5\xd0\xb5\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5 \xd0\xa2\xd0\xbe\xd0\xb3\xd0\xb4\xd0\xb0\n    RussianMask = RussianMask + 256;\n#\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\x95\xd1\x81\xd0\xbb\xd0\xb8\n    Return PPEncode(EnglishMask) + PPEncode(RussianMask);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction PPEncode(Val Mask)\n    Var Digits, Hundreds, Tens, Units;\n    If TypeOf(Mask) <> Type("Number") Then Raise "pp-invalid-type"; EndIf;\n    If Mask < 0 Or Mask > 511 Or Int(Mask) <> Mask Then Raise "pp-invalid-mask"; EndIf;\n    Digits = "0123456789";\n    Hundreds = Int(Mask / 100);\n    Tens = Int(Mask / 10) - Hundreds * 10;\n    Units = Mask - Int(Mask / 10) * 10;\n    Return Mid(Digits, Hundreds + 1, 1) + Mid(Digits, Tens + 1, 1)\n        + Mid(Digits, Units + 1, 1);\nEndFunction\n\n&AtServer\nFunction PPServerDual()\n    Return PPDual();\nEndFunction\n\n&AtClient\nProcedure PPAppend(RecordsOut)\n    Var Encoded;\n    Encoded = "pp.v1:" + PPClient() + PPServer() + PPServerNoContext()\n        + PPDual() + PPServerDual();\n    If StrLen(Encoded) <> 36 Then Raise "pp-invalid-token"; EndIf;\n    RecordsOut.Add(Encoded);\nEndProcedure\n// END bounded preprocessor profile observation\n'
 PREPROCESSOR_CALL = b'    PPAppend(\xd0\x97\xd0\xbd\xd0\xb0\xd1\x87\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f);\n'
 
@@ -87,14 +84,11 @@ def validate_preprocessor_profile(value):
             or re.fullmatch(r'pp\.v1:(?:(?:[0-4][0-9]{2}|50[0-9]|51[01])){10}', value) is None):
         raise ValueError('preprocessor profile token')
     return value
-# END bounded preprocessor profile observation binding
 
 
-# BEGIN bounded infobase-context measurement binding
 INFOBASE_CONTEXT_SOURCE_SHA256 = 'baa71011295cb3f4e5d030d88ebc56218a9d218e17f8226570ba73dd3fce3f6d'
 INFOBASE_CONTEXT_MODULE_SHA256 = '8f0e26621fed3a26f3073764f51dbf1c2164e4ebcc9a50b24f052487ba2b3be9'
 INFOBASE_CONTEXT_BASE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
-# Independently audited capture: run 40137786320, not a synthetic prediction.
 INFOBASE_CONTEXT_EXPECTED_TOKEN = 'ibc.v1:121122221122021122021122021122'
 INFOBASE_CONTEXT_CORE = b'// BEGIN bounded infobase context measurement\n// Only ordinary /tmp/onec-smoke/db, verified by the native host.\n// Zero-argument calls are direct; arity rejection is dynamic, not static.\n&AtClient\nFunction IBCClient()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServer\nFunction IBCServer()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServerNoContext\nFunction IBCNoContext()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCDual()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCObserve(Val Profile, Val EnglishValue, Val RussianValue)\n    Var Shape, Aliases, EnglishArity, RussianArity, IBCArityTemporary;\n    If TypeOf(EnglishValue) <> Type("String") Or TypeOf(RussianValue) <> Type("String") Then\n        Return IBCEncode(Profile, 3, 0, 0, 0, 0);\n    EndIf;\n    Shape = 0;\n    If EnglishValue = "File=""/tmp/onec-smoke/db"";" Then Shape = 1; EndIf;\n    If EnglishValue = "File=""/tmp/onec-smoke/db""" Then Shape = 2; EndIf;\n    Aliases = 0;\n    If EnglishValue = RussianValue Then Aliases = 1; EndIf;\n    // Arity runs in this dual no-context observer, on the same side.\n    // It does not measure the originating routine\'s arity profile.\n    EnglishArity = 1;\n    Try\n        Execute("IBCArityTemporary = InfoBaseConnectionString(1);");\n    Except\n        EnglishArity = 2;\n    EndTry;\n    RussianArity = 1;\n    Try\n        Execute("IBCArityTemporary = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b(1);");\n    Except\n        RussianArity = 2;\n    EndTry;\n    Return IBCEncode(Profile, 2, Shape, Aliases, EnglishArity, RussianArity);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCEncode(Val Profile, Val Status, Val Shape, Val Aliases, Val EnglishArity, Val RussianArity)\n    Return Mid("0123", Profile + 1, 1) + Mid("0123", Status + 1, 1)\n        + Mid("012", Shape + 1, 1) + Mid("01", Aliases + 1, 1)\n        + Mid("012", EnglishArity + 1, 1) + Mid("012", RussianArity + 1, 1);\nEndFunction\n\n&AtServer\nFunction IBCServerDual()\n    Return IBCDual();\nEndFunction\n\n&AtClient\nProcedure IBCAppend(RecordsOut)\n    Var Encoded;\n    Encoded = "ibc.v1:" + IBCClient() + IBCServer() + IBCNoContext()\n        + IBCDual() + IBCServerDual();\n    If StrLen(Encoded) <> 37 Then Raise "ibc-invalid-token"; EndIf;\n    RecordsOut.Add(Encoded);\nEndProcedure\n// END bounded infobase context measurement\n'
 INFOBASE_CONTEXT_CALL = '    IBCAppend(Значения);\n'.encode('utf-8')
@@ -134,7 +128,6 @@ def discard_infobase_capture(report):
         stage['client_probe'].pop('preprocessor_profile', None)
         if stage.get('schema') in (5, 9):
             stage['preprocessor_status'] = 'not_started' if stage.get('status') == 'not_started' else 'failed'
-# END bounded infobase-context measurement binding
 
 
 def valid_nonce(nonce: object) -> bool:
@@ -191,8 +184,6 @@ def _open_no_follow(path: Path) -> int:
                            dir_fd=directory)
         finally:
             os.close(directory)
-    # Only offline Windows tests use this branch; real execution is Linux only.
-    # A final descriptor/path identity check below also rejects replaced files.
     if any(parent.is_symlink() for parent in path.parents) or path.is_symlink():
         raise FullError('artifact_missing')
     return os.open(path, os.O_RDONLY | getattr(os, 'O_BINARY', 0))
@@ -220,7 +211,6 @@ def secure_bytes(path: Path, limit: int, *, allow_empty: bool = False) -> bytes:
                                       value.st_mtime_ns, value.st_ctime_ns)
             if identity(before) != identity(after):
                 raise FullError('artifact_missing')
-            # Detect an unlinked/replaced path even if the open descriptor survived.
             current = path.lstat()
             if identity(after) != identity(current):
                 raise FullError('artifact_missing')
@@ -289,7 +279,6 @@ def parse_native_result(data: bytes) -> tuple[list[str], str]:
     try:
         if sum(len(item.encode('utf-8')) for item in value['messages']) > MAX_OUTPUT:
             raise FullError('output_limit')
-        # Includes LF-per-message, including empty messages; no prefix acceptance.
         serialize_messages(value['messages'])
     except UnicodeError:
         raise FullError('invalid_result') from None
@@ -331,7 +320,6 @@ def _stop_group(child: subprocess.Popen) -> None:
     except ProcessLookupError:
         pass
     child.wait()
-    # --init adopts/reaps descendants. Do not proceed while a process group lives.
     deadline = time.monotonic() + 5
     while True:
         try:
@@ -363,7 +351,6 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float,
                 _stop_group(child)
                 raise
             if require_clean_tree:
-                # A zero-exit leader is not completion while descendants remain.
                 deadline = time.monotonic() + 5
                 while True:
                     try:
@@ -420,7 +407,6 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
             if client_probe and report['input_sha256'].get(CLIENT_SOURCE) not in (
                     INFOBASE_CONTEXT_SOURCE_SHA256, CLIENT_DIRECTIVE_TEMPLATE_SHA256):
                 raise FullError('invalid_input')
-            # Historical source fixtures retain their closed legacy lane only.
             report['schema'] = 1
             report.pop('compilation_profile', None)
             report.pop('preprocessor_status', None)
@@ -428,7 +414,6 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
         root.mkdir(mode=0o700)
         if platform.timeout != 120 or platform.user != 'NativeSmoke' or platform.password is not None:
             raise FullError('invalid_input')
-        # The unchanged launcher must not parse unbounded/permissive JSON first.
         launcher.read_result = read_native_result
         def case_process(command, case_directory, log, timeout):
             if len(command) > 1 and command[1] == 'ENTERPRISE':
@@ -438,8 +423,6 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
             run_process(command, case_directory, log, timeout)
         launcher.run_process = case_process
         def build_epf(platform_argument, source_xml, destination):
-            # Verify the exact generated source at the compile boundary, not only
-            # after execution. This wraps, but never edits, the reviewed launcher.
             module = secure_bytes(source_xml.parent / 'TestModule/Ext/ObjectModule.bsl', MAX_OUTPUT + 3)
             if module != expected_module:
                 raise FullError('module_mismatch')
@@ -461,7 +444,6 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
             directory, output = root / (name + '-case'), root / (name + '.out')
             absent(directory, output, root / (name + '.err'), output.with_suffix('.out.tmp'))
             launcher.run_case(platform, source, launcher_epf, directory, output)
-            # Every artifact is fresh because its exclusive parent was absent.
             require_zero_result(directory / 'TestModule.build-result.txt', 0)
             require_epf(directory / 'TestModule.epf')
             module = secure_bytes(directory / 'src/TestModule/Ext/ObjectModule.bsl', MAX_OUTPUT + 3)
@@ -547,8 +529,6 @@ def run_suite(launcher, platform, launcher_epf: Path, root: Path,
     return report
 
 
-# Schemas 2/3 are stage-wire encodings only. Named evidence remains the internal
-# representation, including all failure and process proof fields.
 CLIENT_WIRE_RECORDS = ('client_probe', 'client_dates', 'client_values',
                        'client_collections', 'client_watchdog')
 CLIENT_WIRE_V3_RECORDS = CLIENT_WIRE_RECORDS + ('client_numbers',)
@@ -680,7 +660,6 @@ def encode_stage_wire(report: dict) -> dict:
         return result
     if type(report) is not dict or type(report.get('schema')) is not int or report['schema'] != 1:
         raise FullError('invalid_result')
-    # The previous opt-in combinations retain their exact existing wire format.
     if 'client_collections' not in report and 'client_numbers' not in report:
         return decode_stage_wire(report)
     schema = 3 if 'client_numbers' in report else 2
@@ -729,13 +708,10 @@ def native_processes_quiet(executable: Path) -> bool:
             try:
                 target = (directory / 'exe').readlink()
             except FileNotFoundError:
-                # A disappeared PID is harmless; an existing uninspectable PID
-                # (including an unreaped zombie) is not evidence of quiescence.
                 if directory.exists():
                     return False
                 continue
             except PermissionError:
-                # Kernel/root processes are outside this non-root container user.
                 if directory.stat().st_uid == os.geteuid():
                     return False
                 continue
@@ -808,24 +784,16 @@ CLIENT_VALUES = [
     'directive.return.undefined: {"U"}',
     'directive.call.recovery: {"N",42}',
 ]
-# Audited native scalar-copyback capture, not host-generated.
 CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
 
-# Audited native object capture with named/expression timing.
 CLIENT_VALUES += ['object.transfer.v1'] + [True, False, 1, 1, 1, False, 2, 21, 23, 23, 2, False, 3, 3, 3, False, 41, 42, 4, False, 5, 51, 51, 51, 51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73, 73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74, 11, 73, 74, 72, 1]
 
-# Native run39974330047: exact side-local module context observations.
 CLIENT_VALUES += ['module.context.v1'] + [10, 100, 111, True, 100, True, 100, True, 11]
-# Audited mask19 context projection; new source needs native validation.
 CLIENT_VALUES += ['nocontext.core.v3'] + [12, 22, 0, 12, 2, True, 16, True, 6, 14, 14, True, 7, 18]
 
-# Dense witness from audited nine-slot native capture.
 CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
 
-# Audited native checkpoint40078699477; exact eight Date/Null observations.
 CLIENT_VALUES += ['dn.v1:22222277']
-# Historical 136 values remain unchanged for legacy adapters and their proofs.
-# Current source-bound admission executes and requires all 137 values.
 CLIENT_RUNTIME_VALUES = CLIENT_VALUES + ['ibc.v1:121122221122021122021122021122']
 
 
@@ -978,7 +946,6 @@ def client_marker_diagnostics(path: Path, nonce: str, *, infobase_required=False
             result['phase'] = 'error'
         return result
     result['phase'] = 'completed'
-    # The four old client observations precede the fixed local error sentinel.
     if (len(values) == 6 and values[:4] == CLIENT_VALUES[:4]
             and all(type(a) is type(b) for a, b in zip(values[:4], CLIENT_VALUES[:4]))
             and values[4] == 'directive.runtime-error' and type(values[5]) is int
@@ -1018,7 +985,6 @@ def client_wiring(root: Path) -> None:
                 or len(events) != 1 or events[0].attrib != {'name': 'OnOpen'}
                 or events[0].text != 'ПриОткрытии'):
             raise FullError('module_mismatch')
-        # No object-body fallback can perform the calculations.
         body = secure_bytes(root / 'Launcher/Ext/ObjectModule.bsl', MAX_OUTPUT,
                             allow_empty=True).decode('utf-8-sig')
         if any(line.strip() and not line.lstrip().startswith('//') for line in body.splitlines()):
@@ -1042,9 +1008,6 @@ def client_process_snapshot() -> set[tuple[int, str]]:
             if not directory.name.isdecimal():
                 continue
             try:
-                # Do not use proc-directory ownership: non-dumpable children can
-                # appear root-owned despite retaining their original UID.
-                # comm may contain spaces/parentheses; field 22 is starttime.
                 raw = (directory / 'stat').read_text()
                 fields = raw[raw.rindex(')') + 2:].split()
                 result.add((int(directory.name), fields[19]))
@@ -1093,8 +1056,6 @@ def prepare_session_bus(root: Path, nonce: str, pid: int, parent: int) -> None:
     directory, owner, address = session_bus_paths(root, nonce)
     absent(owner)
     deadline = time.monotonic() + 5
-    # Pin identity before exec; executable readiness may lag fork scheduling.
-    # This never admits the pre-exec process to the baseline or owner record.
     identity = session_bus_process(pid, parent, require_executable=False)
     while True:
         session_bus_process(pid, parent, identity[1], require_executable=False)
@@ -1302,7 +1263,6 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         preprocessor_runtime = (digest(source) == PREPROCESSOR_SOURCE_SHA256
                                 and parity_output is None and not stall and not preprocessor_measurement)
         if infobase_measurement:
-            # Candidate literals describe only this known ordinary directory.
             if platform.database != Path('/tmp/onec-smoke/db'):
                 raise FullError('invalid_input')
             selected_reader = (preprocessor_runtime_marker if preprocessor_runtime else
@@ -1338,7 +1298,6 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             module = generated_module(source)
         src = root / 'src'
         src.mkdir()
-        # Only the verified launcher metadata is copied; no TestModule/server code.
         for relative in ('Launcher.xml', 'Launcher/Ext/ObjectModule.bsl',
                          'Launcher/Forms/Main.xml', 'Launcher/Forms/Main/Ext/Form.xml'):
             origin = inputs / 'launcher/launcher_1c' / relative
@@ -1394,7 +1353,6 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                 record['quiet'] = native_processes_quiet(platform.executable)
                 if record['quiet']:
                     record['process_diagnostics'].update(reason='none')
-            # Diagnostic phase only. A timeout/nonzero exit never becomes success.
             for path, phase in ((entered, 'entered'), (completed, 'completed')):
                 try:
                     marker_reader(path, nonce, phase)
@@ -1421,9 +1379,6 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             server_output = secure_bytes(parity_output, MAX_OUTPUT, allow_empty=True)
             if client_output != server_output:
                 if collections_output is not None:
-                    # Export finite metadata only. The
-                    # server messages must reproduce this output
-                    # before trusting ordinals. Diagnostics never
                     # relax byte parity or enable payload export.
                     try:
                         server_messages, _ = read_native_result(
@@ -2001,9 +1956,9 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
 
 
 # Exact source adapter, not a general rewriter.
-CLIENT_COLLECTIONS_SOURCE_SHA256 = 'a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574'
+CLIENT_COLLECTIONS_SOURCE_SHA256 = '55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
-CLIENT_COLLECTIONS_MESSAGE_COUNT = 1022
+CLIENT_COLLECTIONS_MESSAGE_COUNT = 1023
 
 
 def empty_collections_report() -> dict:
@@ -2042,7 +1997,7 @@ def collections_mismatch(client: list[str], server: list[str], server_output: by
 def client_collections_module(source: bytes, template: bytes) -> bytes:
     """Wrap the complete pinned collections source in the pinned managed-client form.
 
-    All 149 source helpers remain in their original order with client directives.
+    All 155 source helpers remain in their original order with client directives.
     Only the 16 verified message-call identifiers change, and the complete module
     body moves into a client procedure. Four explicit helper-local declarations
     preserve source-local bindings against the managed form's Object/Items names.
@@ -2193,22 +2148,28 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         3211: 'Функция TreeColumnsDiagnosticPart(Знач Part)\n',
         3263: 'Функция TreeColumnsDiagnosticExperiment()\n',
         3273: 'Функция TreeColumnsDiagnosticProbe(Знач Case, Знач Diagnostic)\n',
-        3288: 'Функция TreeMoveFresh(Знач Mode)\n',
-        3307: 'Функция TreeMoveOrder(Знач Rows, Знач S, Знач First, Знач Count, Знач Parent)\n',
-        3328: 'Функция TreeMoveState(Знач S)\n',
-        3354: 'Функция TreeMoveProbe(Знач Case)\n',
-        3414: 'Функция TreeMoveObservations()\n',
-        3426: 'Функция TreeLoadExact(Знач Left, Знач Right)\n',
-        3435: 'Функция TreeLoadPair(Знач First, Знач Second)\n',
-        3439: 'Процедура TreeLoadCount(Знач Collection, Знач Expected)\n',
-        3444: 'Функция TreeLoadCell(Знач Value, Знач Refs)\n',
-        3480: 'Функция TreeLoadCalibrate()\n',
-        3544: 'Процедура TreeLoadSchema(Знач Tree, Знач Columns, Знач Names, Знач Typed)\n',
-        3566: 'Процедура TreeLoadRows(Знач Rows, Знач Expected, Знач Parent)\n',
-        3575: 'Функция TreeLoadSnapshot(Знач S, Знач Source, Знач Original, Знач Refs)\n',
-        3632: 'Функция TreeLoadFresh(Знач Case)\n',
-        3659: 'Функция TreeLoadBaseline(Знач Case)\n',
-        3691: 'Функция TreeLoadProbe(Знач Case)\n',
+        3288: 'Функция TreeTotalFresh(Знач Case)\n',
+        3337: 'Функция TreeTotalCellEqual(Знач Left, Знач Right)\n',
+        3345: 'Функция TreeTotalState(Знач S)\n',
+        3385: 'Функция TreeTotalCode(Знач Value, Знач Case)\n',
+        3402: 'Функция TreeTotalProbe(Знач Case)\n',
+        3432: 'Функция TreeTotalObservations()\n',
+        3440: 'Функция TreeMoveFresh(Знач Mode)\n',
+        3459: 'Функция TreeMoveOrder(Знач Rows, Знач S, Знач First, Знач Count, Знач Parent)\n',
+        3480: 'Функция TreeMoveState(Знач S)\n',
+        3506: 'Функция TreeMoveProbe(Знач Case)\n',
+        3566: 'Функция TreeMoveObservations()\n',
+        3578: 'Функция TreeLoadExact(Знач Left, Знач Right)\n',
+        3587: 'Функция TreeLoadPair(Знач First, Знач Second)\n',
+        3591: 'Процедура TreeLoadCount(Знач Collection, Знач Expected)\n',
+        3596: 'Функция TreeLoadCell(Знач Value, Знач Refs)\n',
+        3632: 'Функция TreeLoadCalibrate()\n',
+        3696: 'Процедура TreeLoadSchema(Знач Tree, Знач Columns, Знач Names, Знач Typed)\n',
+        3718: 'Процедура TreeLoadRows(Знач Rows, Знач Expected, Знач Parent)\n',
+        3727: 'Функция TreeLoadSnapshot(Знач S, Знач Source, Знач Original, Знач Refs)\n',
+        3784: 'Функция TreeLoadFresh(Знач Case)\n',
+        3811: 'Функция TreeLoadBaseline(Знач Case)\n',
+        3843: 'Функция TreeLoadProbe(Знач Case)\n',
     }
     endings = {
         31: 'КонецПроцедуры\n',
@@ -2344,22 +2305,28 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         3261: 'КонецФункции\n',
         3271: 'КонецФункции\n',
         3284: 'КонецФункции\n',
-        3305: 'КонецФункции\n',
-        3326: 'КонецФункции\n',
-        3352: 'КонецФункции\n',
-        3412: 'КонецФункции\n',
-        3422: 'КонецФункции\n',
-        3433: 'КонецФункции\n',
-        3437: 'КонецФункции\n',
-        3442: 'КонецПроцедуры\n',
+        3335: 'КонецФункции\n',
+        3343: 'КонецФункции\n',
+        3383: 'КонецФункции\n',
+        3400: 'КонецФункции\n',
+        3430: 'КонецФункции\n',
+        3436: 'КонецФункции\n',
+        3457: 'КонецФункции\n',
         3478: 'КонецФункции\n',
-        3542: 'КонецФункции\n',
-        3564: 'КонецПроцедуры\n',
-        3573: 'КонецПроцедуры\n',
+        3504: 'КонецФункции\n',
+        3564: 'КонецФункции\n',
+        3574: 'КонецФункции\n',
+        3585: 'КонецФункции\n',
+        3589: 'КонецФункции\n',
+        3594: 'КонецПроцедуры\n',
         3630: 'КонецФункции\n',
-        3657: 'КонецФункции\n',
-        3689: 'КонецФункции\n',
-        3767: 'КонецФункции\n',
+        3694: 'КонецФункции\n',
+        3716: 'КонецПроцедуры\n',
+        3725: 'КонецПроцедуры\n',
+        3782: 'КонецФункции\n',
+        3809: 'КонецФункции\n',
+        3841: 'КонецФункции\n',
+        3919: 'КонецФункции\n',
     }
     sites = {
         164: '    Сообщить(Метка + ": [" + Строка(Значение) + "]");\n',
@@ -2367,41 +2334,41 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         613: '            Сообщить(СтрСоединить(СтрокиВывода, Символ(10)));\n',
         615: '            Сообщить("table." + Метка + ": [" + КомпактноеЗначениеТаблицы(Результат) + "]");\n',
         618: '        Сообщить("table." + Метка + ": [serialize-error]");\n',
-        4595: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
-        4633: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
-        4683: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
-        4713: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
-        4726: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
-        4737: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
-        4745: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
-        4750: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
-        4773: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
-        4775: 'Сообщить("table.checkpoint.complete: [ok]");\n',
-        4807: 'Сообщить("table.descriptor-key.checkpoint.complete: [ok]");\n',
+        4747: 'Сообщить("table.ops.checkpoint.complete: [ok]");\n',
+        4785: 'Сообщить("table.indexes.checkpoint.complete: [ok]");\n',
+        4835: 'Сообщить("table.list.checkpoint.complete: [ok]");\n',
+        4865: 'Сообщить("table.list.sort.checkpoint.complete: [ok]");\n',
+        4878: 'Сообщить("table.list.copy.checkpoint.complete: [ok]");\n',
+        4889: 'Сообщить("table.list.string.checkpoint.complete: [ok]");\n',
+        4897: 'Сообщить("table.list.string-cache.checkpoint.complete: [ok]");\n',
+        4902: 'Сообщить("table.list.string-cache.final.complete: [ok]");\n',
+        4925: 'Сообщить("table.list.reference.checkpoint.complete: [ok]");\n',
+        4927: 'Сообщить("table.checkpoint.complete: [ok]");\n',
+        4959: 'Сообщить("table.descriptor-key.checkpoint.complete: [ok]");\n',
     }
     regions = {
         3: '#Область ВспомогательныеПроцедуры\n',
         247: '#Region FixedCollectionProbes\n',
         333: '#EndRegion\n',
         334: '#КонецОбласти\n',
-        3770: '#Область МассивыИСтруктуры\n',
-        3929: '#КонецОбласти\n',
-        3931: '#Область СоответствиеИТипы\n',
-        3990: '#КонецОбласти\n',
-        3992: '#Область СнимкиИОбратныеКопии\n',
-        4065: '#КонецОбласти\n',
-        4067: '#Область ВложенныеМассивы\n',
-        4116: '#КонецОбласти\n',
-        4118: '#Область РавенствоИсточникиИКлючи\n',
-        4178: '#КонецОбласти\n',
-        4181: '#Область ВнутренняяСериализация\n',
-        4279: '#КонецОбласти\n',
+        3922: '#Область МассивыИСтруктуры\n',
+        4081: '#КонецОбласти\n',
+        4083: '#Область СоответствиеИТипы\n',
+        4142: '#КонецОбласти\n',
+        4144: '#Область СнимкиИОбратныеКопии\n',
+        4217: '#КонецОбласти\n',
+        4219: '#Область ВложенныеМассивы\n',
+        4268: '#КонецОбласти\n',
+        4270: '#Область РавенствоИсточникиИКлючи\n',
+        4330: '#КонецОбласти\n',
+        4333: '#Область ВнутренняяСериализация\n',
+        4431: '#КонецОбласти\n',
     }
-    body_start = 3770
+    body_start = 3922
     capture = 'КоллекцииКлиентЗахват'
     reserved = (capture, 'КоллекцииКлиентСообщения',
                 'КоллекцииКлиентСимволы', 'КоллекцииКлиентВыполнить')
-    if (len(lines) != 5115
+    if (len(lines) != 5271
             or any(lines[i] != text for i, text in declarations.items())
             or any(lines[i] != text for i, text in endings.items())
             or any(lines[i] != text for i, text in sites.items())
@@ -2427,6 +2394,10 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         raise FullError('invalid_input')
     # Preserve exact new observer/setup text under a top-level-hash rebase too.
     exclude_blocks = (
+        ('// Begin bounded ValueTree Total helpers (measurement only; no native answers).\n', '// End bounded ValueTree Total helpers.\n\n',
+         'ab53a08415155921fbf462e8b4b805e4d5edc53387b851b6f608fa8bfbbac05e'),
+        ('// Begin bounded ValueTree Total observations (measurement only; no native answers).\n', '// End bounded ValueTree Total observations.\n',
+         '46b45906ec4df38b0566108a3147f413fc65cd36dff85496e0a968a20621aebb'),
         ('// Begin bounded ValueTree Move helpers (measurement only; no native answers).\n', '// End bounded ValueTree Move helpers.\n\n',
          '397a4bb56e4883ce9f87331a43697c993301783ce459fac413bce636d515506f'),
         ('// Begin bounded ValueTree Move observations (measurement only; no native answers).\n', '// End bounded ValueTree Move observations.\n',

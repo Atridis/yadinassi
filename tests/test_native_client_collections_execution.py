@@ -13,9 +13,9 @@ NONCE = probe.NONCE
 
 class CollectionsMismatchMetadataTests(unittest.TestCase):
     def test_all_messages_differ_caps_ordinals_without_message_text(self):
-        server, client = ['server'] * 1022, ['PRIVATE'] * 1022
+        server, client = ['server'] * 1023, ['PRIVATE'] * 1023
         data = suite.collections_mismatch(client, server, suite.serialize_messages(server))
-        self.assertEqual(data['count'], 1022)
+        self.assertEqual(data['count'], 1023)
         self.assertEqual(data['first'], 1)
         self.assertEqual(data['ordinals'], list(range(1, 17)))
         self.assertEqual(set(data), {'count', 'first', 'ordinals', 'client_sha256',
@@ -23,7 +23,7 @@ class CollectionsMismatchMetadataTests(unittest.TestCase):
         self.assertNotIn('PRIVATE', json.dumps(data))
 
     def test_multiline_and_unicode_use_serialized_message_not_line_positions(self):
-        server = [''] * 1022
+        server = [''] * 1023
         server[400] = 'абв\r\nг\rд'
         client = server.copy()
         client[400] += '😀'
@@ -33,25 +33,25 @@ class CollectionsMismatchMetadataTests(unittest.TestCase):
         self.assertEqual(data['server_sha256'], suite.digest('абв\nг\nд\n'.encode()))
 
     def test_existing_newline_serialization_does_not_create_false_differences(self):
-        server = ['same'] * 1022
+        server = ['same'] * 1023
         server[0] = 'a\r\nb'
         client = server.copy()
         client[0] = 'a\nb'
-        client[1021] = 'different'
+        client[1022] = 'different'
         data = suite.collections_mismatch(client, server, suite.serialize_messages(server))
-        self.assertEqual(data['ordinals'], [1022])
+        self.assertEqual(data['ordinals'], [1023])
         self.assertEqual(data['count'], 1)
 
     def test_unbound_or_equal_outputs_reject_localization(self):
-        server, client = ['same'] * 1022, ['different'] * 1022
+        server, client = ['same'] * 1023, ['different'] * 1023
         for left, right, output in (
                 (server, server, suite.serialize_messages(server)),
                 (client, server, b'not this server output'),
                 (client[:-1], server, suite.serialize_messages(server)),
                 (client, server[:-1], suite.serialize_messages(server[:-1])),
                 (client, server, 'not bytes'),
-                ([1] * 1022, server, suite.serialize_messages(server)),
-                (client, [True] * 1022, b'')):
+                ([1] * 1023, server, suite.serialize_messages(server)),
+                (client, [True] * 1023, b'')):
             with self.subTest(left=type(left), right=type(right)), self.assertRaises(suite.FullError):
                 suite.collections_mismatch(left, right, output)
 
@@ -68,7 +68,7 @@ class CollectionsExecutionTests(unittest.TestCase):
                 path = self.inputs / name
                 path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n'))
             self.hashes = suite.input_hashes(self.inputs, client_probe=True)
-        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(1022)]
+        self.messages = [f'case-{i}: [value\\nline]\n' for i in range(1023)]
         self.messages[4] = 'multiline: [a\nb\r\nc]\n'
         self.output = self.root / 'collections.out'
         self.output.write_bytes(suite.serialize_messages(self.messages))
@@ -102,7 +102,7 @@ class CollectionsExecutionTests(unittest.TestCase):
     def test_full_exact_output_and_multiline_preserved(self):
         result = self.run_collections()
         self.assertEqual(result['status'], 'ok', result)
-        self.assertEqual(result['message_count'], 1022)
+        self.assertEqual(result['message_count'], 1023)
         self.assertEqual(result['output_sha256'], suite.digest(self.output.read_bytes()))
         self.assertEqual(result['output_size'], len(self.output.read_bytes()))
         self.assertEqual(result['source_sha256'], self.hashes['integrational_tests/tests/collections.bsl'])
@@ -129,7 +129,7 @@ class CollectionsExecutionTests(unittest.TestCase):
     def test_exact_mismatch_has_only_bounded_ordinals_hashes_and_sizes(self):
         def mutate(marker):
             marker['values'][4] += 'DIFFERENT-PRIVATE-TEXT'
-            marker['values'][1021] += 'DIFFERENT-PRIVATE-TEXT'
+            marker['values'][1022] += 'DIFFERENT-PRIVATE-TEXT'
         self.transform = mutate
         result = self.run_collections()
         self.assertEqual(result['failure_kind'], 'output_mismatch')
@@ -138,7 +138,7 @@ class CollectionsExecutionTests(unittest.TestCase):
         mismatch = result['mismatch']
         self.assertEqual(mismatch['count'], 2)
         self.assertEqual(mismatch['first'], 5)
-        self.assertEqual(mismatch['ordinals'], [5, 1022])
+        self.assertEqual(mismatch['ordinals'], [5, 1023])
         expected = suite.serialize_messages([self.messages[4]])
         self.assertEqual(mismatch['server_sha256'], suite.digest(expected))
         self.assertEqual(mismatch['server_size'], len(expected))

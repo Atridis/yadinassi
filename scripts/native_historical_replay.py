@@ -66,8 +66,32 @@ TREE_MOVE_CALLS_START = '\n// Begin bounded ValueTree Move observations (measure
 TREE_MOVE_CALLS_END = '// End bounded ValueTree Move observations.\n'
 
 
+TREE_TOTAL_SOURCE_SHA256 = '55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c'
+TREE_TOTAL_HELPERS_START = '// Begin bounded ValueTree Total helpers (measurement only; no native answers).\n'
+TREE_TOTAL_HELPERS_END = '// End bounded ValueTree Total helpers.\n\n'
+TREE_TOTAL_CALLS_START = '\n// Begin bounded ValueTree Total observations (measurement only; no native answers).\n'
+TREE_TOTAL_CALLS_END = '// End bounded ValueTree Total observations.\n'
+
+
+def without_tree_total_probes(text):
+    """Exact source-only1023 ->1022 inverse; captured output is never altered."""
+    if hashlib.sha256(text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')).hexdigest() != TREE_TOTAL_SOURCE_SHA256:
+        raise ValueError('Total source binding changed')
+    for begin, end in ((TREE_TOTAL_HELPERS_START, TREE_TOTAL_HELPERS_END), (TREE_TOTAL_CALLS_START, TREE_TOTAL_CALLS_END)):
+        if text.count(begin) != 1 or text.count(end) != 1:
+            raise ValueError('Total probe boundaries changed')
+        before, rest = text.split(begin, 1)
+        _, after = rest.split(end, 1)
+        text = before + after
+    if hashlib.sha256(text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')).hexdigest() != TREE_MOVE_SOURCE_SHA256:
+        raise ValueError('Total inverse changed Move source')
+    return text
+
+
 def without_tree_move_probes(text):
     """Exact source-only1022 ->1021 inverse; never alter captured output."""
+    if TREE_TOTAL_HELPERS_START in text or TREE_TOTAL_CALLS_START in text:
+        text = without_tree_total_probes(text)
     raw = text.encode('utf-8') if text.startswith('\ufeff') else text.encode('utf-8-sig')
     if hashlib.sha256(raw).hexdigest() != TREE_MOVE_SOURCE_SHA256:
         raise ValueError('tree Move source binding changed')

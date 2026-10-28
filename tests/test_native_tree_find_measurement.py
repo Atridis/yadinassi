@@ -176,7 +176,7 @@ class FindSourceContractTests(unittest.TestCase):
         current=(ROOT/'integrational_tests/tests/collections.bsl').read_bytes()
         if os.name=='nt': current=current.replace(b'\r\n',b'\n')
         module=historical_tree_unload_collections_module(current,template)
-        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,1022)
+        self.assertEqual(fixtures.suite.CLIENT_COLLECTIONS_MESSAGE_COUNT,1023)
         self.assertIn(calls.encode(),module)
         for changed in (old,source+b'\n',source[3:],source.replace(b'\n',b'\r\n')):
             with self.assertRaises(fixtures.suite.FullError):fixtures.suite.client_collections_module(changed,template)
