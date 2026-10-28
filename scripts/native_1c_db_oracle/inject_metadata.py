@@ -47,6 +47,16 @@ SETUP_RIGHTS = frozenset({"Administration", "DataAdministration", "ThickClient",
 CRUD_RIGHTS = frozenset({"Read", "Insert", "Update", "Delete"})
 
 
+
+def _matrix(enabled):
+    if type(enabled) is not bool:
+        raise DraftError("Invalid fixed Catalog matrix selector")
+    if enabled:
+        import catalog_field_matrix
+        return catalog_field_matrix
+    return None
+
+
 def _inventory(root: Path) -> dict[str, str]:
     if any(path.is_symlink() for path in (root, *root.parents)) or not root.is_dir():
         raise DraftError("Metadata tree must be a real directory")
@@ -105,7 +115,8 @@ def _module(name: str, nonce: str, evidence: str) -> bytes:
     return re.sub(r"@@([A-Z_]+)@@", replace, raw).encode("utf-8-sig")
 
 
-def _add_references(raw: bytes) -> bytes:
+def _add_references(raw: bytes, *, catalog_field_matrix=False) -> bytes:
+    matrix = _matrix(catalog_field_matrix)
     parser, stack, spans = expat.ParserCreate(), [], []
     def start(name, attrs):
         stack.append(name.split(":")[-1])
@@ -123,6 +134,8 @@ def _add_references(raw: bytes) -> bytes:
     start, end, name = spans[0]
     prefix = name.rsplit(":", 1)[0] + ":" if ":" in name else ""
     refs = [("Role", SETUP_ROLE), ("Role", CRUD_ROLE), ("CommonModule", SERVER), ("Catalog", CATALOG)]
+    if matrix:
+        refs.extend(("Catalog", name) for name, _ in matrix.VARIANTS)
     text = "".join(f"<{prefix}{kind}>{value}</{prefix}{kind}>" for kind, value in refs).encode()
     if raw[start:end].rstrip().endswith(b"/>"):
         return raw[:end-2] + b">" + text + f"</{name}>".encode() + raw[end:]
@@ -153,10 +166,11 @@ def _uuid(value: str) -> str:
     raise DraftError("Invalid metadata UUID")
 
 
-def inspect(root: Path, version: int) -> dict:
+def inspect(root: Path, version: int, *, catalog_field_matrix=False) -> dict:
     """Exact original fixture/security scope. Unknown defaults or grants fail closed."""
     if type(version) is not int or version not in (1, 2):
         raise DraftError("Unsupported oracle metadata version")
+    matrix = _matrix(catalog_field_matrix)
     inventory = _inventory(root)
     _, xml = read_xml(root / "Configuration.xml")
     ns = "{" + NS + "}"
@@ -178,13 +192,17 @@ def inspect(root: Path, version: int) -> dict:
         raise DraftError("Unexpected child references")
     expected = {(ns+"Role", SETUP_ROLE), (ns+"Role", CRUD_ROLE), (ns+"Catalog", CATALOG), (ns+"CommonModule", SERVER)}
     languages = [value for tag, value in refs if tag == ns+"Language"]
+    if matrix:
+        expected.update((ns+"Catalog", name) for name, _ in matrix.VARIANTS)
     if len(refs) != len(set(refs)) or set(refs) != expected | {(ns+"Language", value) for value in languages}:
         raise DraftError("Unexpected metadata object")
     if any(not value or not re.fullmatch(r"[^\W\d]\w*", value) for value in languages):
         raise DraftError("Invalid language reference")
     allowed = INJECTED_FILES | {"Configuration.xml", "ConfigDumpInfo.xml"} | {f"Languages/{value}.xml" for value in languages}
+    if matrix:
+        allowed |= matrix.FILES
     files = {path for path, kind in inventory.items() if kind == "file"}
-    if files - allowed or not INJECTED_FILES <= files:
+    if files - allowed or not (INJECTED_FILES | (matrix.FILES if matrix else set())) <= files:
         raise DraftError("Unexpected or missing metadata file")
     expected_dirs = {str(parent) for path in files for parent in Path(path).parents if str(parent) != "."}
     if {path for path, kind in inventory.items() if kind == "directory"} != expected_dirs:
@@ -224,6 +242,24 @@ def inspect(root: Path, version: int) -> dict:
         for field, suffix in (("TypeId", "TYPE"), ("ValueId", "VALUE")):
             values[f"{category}_{suffix}_UUID"] = _uuid(single(node, field).text)
             ids.append(values[f"{category}_{suffix}_UUID"])
+    if matrix:
+        for extra_name, kind in matrix.VARIANTS:
+            _, extra = read_xml(root / f"Catalogs/{extra_name}.xml")
+            item = single(extra, "Catalog")
+            extra_values = dict(values)
+            extra_values["CATALOG_UUID"] = _uuid(item.attrib.get("uuid"))
+            ids.append(extra_values["CATALOG_UUID"])
+            generated_extra = list(single(item, "InternalInfo"))
+            if len(generated_extra) != 5:
+                raise DraftError("Unexpected fixed Catalog generated types")
+            for node, category in zip(generated_extra, ("OBJECT", "REF", "SELECTION", "LIST", "MANAGER")):
+                for field, suffix in (("TypeId", "TYPE"), ("ValueId", "VALUE")):
+                    key = f"{category}_{suffix}_UUID"
+                    extra_values[key] = _uuid(single(node, field).text)
+                    ids.append(extra_values[key])
+            expected_extra = matrix.catalog(_template("Catalog.xml", extra_values), extra_name, kind, DraftError)
+            if xml_signature(extra) != xml_signature(ET.fromstring(expected_extra)):
+                raise DraftError("Unexpected fixed Catalog schema")
     if len(ids) != len(set(ids)):
         raise DraftError("Metadata UUID collision")
     if xml_signature(catalog) != xml_signature(ET.fromstring(_template("Catalog.xml", values))):
@@ -234,7 +270,8 @@ def inspect(root: Path, version: int) -> dict:
             "nonprivileged_module": True}
 
 
-def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path) -> dict:
+def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False) -> dict:
+    matrix = _matrix(catalog_field_matrix)
     if type(nonce) is not str or not re.fullmatch(r"[0-9a-f]{32}", nonce):
         raise DraftError("Invalid oracle nonce")
     ep = str(evidence)
@@ -267,14 +304,23 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path) -> di
         added[f"Roles/{role}.xml"] = _template("Role.xml", values)
         added[f"Roles/{role}/Ext/Rights.xml"] = _template(template, values)
     added.update({path: _module(name, nonce, ep) for name, path in MODULE_FILES.items()})
-    configuration = _add_references((native_dump / "Configuration.xml").read_bytes())
+    if matrix:
+        for extra_name, kind in matrix.VARIANTS:
+            extra_values = dict(values)
+            extra_values.update({key: str(uuid.uuid4()) for key in matrix.UUID_KEYS})
+            added[f"Catalogs/{extra_name}.xml"] = matrix.catalog(
+                _template("Catalog.xml", extra_values), extra_name, kind, DraftError)
+        server = MODULE_FILES["NativeOracleServer.bsl"]
+        added[server] = matrix.server_module(added[server], DraftError)
+    configuration = _add_references((native_dump / "Configuration.xml").read_bytes(),
+                                    catalog_field_matrix=catalog_field_matrix)
     shutil.copytree(native_dump, target)
     (target / "Configuration.xml").write_bytes(configuration)
     for path, data in added.items():
         out = target / path
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(data)
-    inspect(target, 1)
+    inspect(target, 1, catalog_field_matrix=catalog_field_matrix)
     written = _hashes(target)
     if original != _hashes(native_dump) or any(written.get(path) != digest for path, digest in original.items() if path != "Configuration.xml"):
         raise DraftError("Native source changed during injection")
@@ -284,9 +330,10 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path) -> di
             "native_runtime_tested": False}
 
 
-def promote_v2(v1: Path, v2: Path) -> None:
+def promote_v2(v1: Path, v2: Path, *, catalog_field_matrix=False) -> None:
+    _matrix(catalog_field_matrix)
     v1, v2 = _separate(v1, v2)
-    inspect(v1, 1)
+    inspect(v1, 1, catalog_field_matrix=catalog_field_matrix)
     before = _hashes(v1)
     path = "Catalogs/NativeOracleItems.xml"
     raw = (v1 / path).read_bytes()
@@ -295,15 +342,15 @@ def promote_v2(v1: Path, v2: Path) -> None:
         raise DraftError("Ambiguous v1 payload qualifier")
     shutil.copytree(v1, v2)
     (v2 / path).write_bytes(raw.replace(token, b"<v8:Length>64</v8:Length>", 1))
-    inspect(v2, 2)
+    inspect(v2, 2, catalog_field_matrix=catalog_field_matrix)
     after = _hashes(v2)
     if before != _hashes(v1) or {key for key in before if before[key] != after[key]} != {path}:
         raise DraftError("Unexpected v2 source change")
 
 
-def verify_redump(expected: Path, actual: Path, version: int) -> None:
-    inspect(expected, version)
-    inspect(actual, version)
+def verify_redump(expected: Path, actual: Path, version: int, *, catalog_field_matrix=False) -> None:
+    inspect(expected, version, catalog_field_matrix=catalog_field_matrix)
+    inspect(actual, version, catalog_field_matrix=catalog_field_matrix)
     left, right = _inventory(expected), _inventory(actual)
     if left != right:
         raise DraftError("Reimport changed metadata file inventory")

@@ -16,9 +16,9 @@ SOURCE_PINS = {'scripts/native_1c_db_oracle/config_catalog_identity_binding.py':
 class IdentityActivationTests(unittest.TestCase):
     def test_only_one_workflow_selector_changes(self):
         raw = (ROOT / WORKFLOW).read_bytes()
-        self.assertEqual(raw.count(b'--config-catalog-identity-binding'), 1)
+        self.assertEqual(raw.count(b'--config-catalog-field-matrix'), 1)
         self.assertNotIn(b'--config-catalog-standard-binding', raw)
-        original = raw.replace(b'--config-catalog-identity-binding', b'--config-catalog-standard-binding')
+        original = raw.replace(b'--config-catalog-field-matrix', b'--config-catalog-standard-binding')
         self.assertEqual(checkout_source_sha256(original), STANDARD_WORKFLOW_SHA256)
 
     def test_exact_current_source_pins(self):
