@@ -53,7 +53,9 @@ class MoveObserverTests(unittest.TestCase):
             yield
 
     def test_missing_method_is_valid_measurement_not_semantic_answer(self):
-        payload = self.vm.execute('TreeMoveObservations()').encode()
+        # Preserve the original missing-method control after runtime support.
+        with self.witness(lambda receiver, args: (_ for _ in ()).throw(ValueError('synthetic missing method'))):
+            payload = self.vm.execute('TreeMoveObservations()').encode()
         decoded = contract.validate_payload(payload)
         self.assertEqual(len(payload), 193)
         self.assertTrue(all(outcome == b'0' for _, outcome, _ in decoded))

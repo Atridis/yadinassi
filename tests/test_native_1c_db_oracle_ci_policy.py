@@ -500,11 +500,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(binding, native.index("GHCR_TOKEN:"))
         self.assertEqual(re.findall(r"^        run: (.+)$", native, re.M), [
             "python3 -I -B scripts/native_1c_db_oracle_ci_policy.py bind",
-            "python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --config-catalog-standard-binding --output native-db-oracle/report.json",
+            "python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --config-catalog-identity-binding --output native-db-oracle/report.json",
             'test "${NATIVE_REPORT_READY}" = "true"',
         ])
-        self.assertEqual(native.count('--config-catalog-standard-binding'), 1)
-        for selector in ('--config-catalog-name-binding', '--config-catalog-reference-observation', '--config-root-reference-projection-observation', '--config-content-decode-observation', '--config-blob-chain-observation', '--config-entry-reference-observation', '--config-zero-marker-filename-observation', '--config-slot-marker-observation', '--config-framing-observation', '--config-transport-observation', '--dbnames-identity-validation', '--params-dbnames-extraction',
+        self.assertEqual(native.count('--config-catalog-identity-binding'), 1)
+        for selector in ('--config-catalog-standard-binding', '--config-catalog-name-binding', '--config-catalog-reference-observation', '--config-root-reference-projection-observation', '--config-content-decode-observation', '--config-blob-chain-observation', '--config-entry-reference-observation', '--config-zero-marker-filename-observation', '--config-slot-marker-observation', '--config-framing-observation', '--config-transport-observation', '--dbnames-identity-validation', '--params-dbnames-extraction',
                          '--params-transport-observation', '--record-reader-validation',
                          '--record-metadata-observation'):
             self.assertNotIn(selector, native)

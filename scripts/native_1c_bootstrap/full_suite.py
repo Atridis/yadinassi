@@ -808,18 +808,18 @@ CLIENT_VALUES = [
     'directive.return.undefined: {"U"}',
     'directive.call.recovery: {"N",42}',
 ]
-# Audited pinned native scalar-copyback capture, not interpreter-generated data.
+# Audited native scalar-copyback capture, not host-generated.
 CLIENT_VALUES += ['copyback.core.v1', '{"B",1}', '{"B",0}', '{"N",43}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",97}', '{"N",43}', '{"B",0}', '{"B",1}', '{"N",47}', '{"B",1}', '{"B",1}', '{"N",1}', '{"N",2}', '{"N",3}', '{"B",0}', '{"N",1}', '{"N",1}', '{"B",0}', '{"N",52}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",1}', '{"B",0}', '{"N",192}', '{"N",9}', '{"N",2}', '{"B",0}', '{"N",43}', '{"B",1}']
 
-# Audited pinned object capture, including named/expression timing; not local expected generation.
+# Audited native object capture with named/expression timing.
 CLIENT_VALUES += ['object.transfer.v1'] + [True, False, 1, 1, 1, False, 2, 21, 23, 23, 2, False, 3, 3, 3, False, 41, 42, 4, False, 5, 51, 51, 51, 51, 52, 51, 5, True, True, False, 6, 6, 6, False, 7, 8, False, 73, 73, 73, 72, 1, False, True, 82, 10, True, False, 73, 72, 72, 74, 11, 73, 74, 72, 1]
 
 # Native run39974330047: exact side-local module context observations.
 CLIENT_VALUES += ['module.context.v1'] + [10, 100, 111, True, 100, True, 100, True, 11]
-# Logical-context projection of audited profile mask19; new exact source needs native validation.
+# Audited mask19 context projection; new source needs native validation.
 CLIENT_VALUES += ['nocontext.core.v3'] + [12, 22, 0, 12, 2, True, 16, True, 6, 14, 14, True, 7, 18]
 
-# One exact dense witness, projected from the audited nine-slot native capture.
+# Dense witness from audited nine-slot native capture.
 CLIENT_VALUES += ['dual.v1:000032017000017041000032017']
 
 # Audited native checkpoint40078699477; exact eight Date/Null observations.
@@ -1421,10 +1421,10 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             server_output = secure_bytes(parity_output, MAX_OUTPUT, allow_empty=True)
             if client_output != server_output:
                 if collections_output is not None:
-                    # Only finite metadata leaves the private comparison. The
-                    # unchanged server messages must reproduce this exact output
-                    # before ordinal diagnostics can be trusted. Diagnostics never
-                    # relax the strict byte comparison or enable payload export.
+                    # Export finite metadata only. The
+                    # server messages must reproduce this output
+                    # before trusting ordinals. Diagnostics never
+                    # relax byte parity or enable payload export.
                     try:
                         server_messages, _ = read_native_result(
                             collections_output.parent / 'collections-case/result.json')
@@ -1614,7 +1614,7 @@ def client_parity_template(template: bytes) -> bytes:
     return restored
 
 
-# This is a deliberately source-specific adapter, not a general BSL rewriter.
+# Exact source adapter, not a general rewriter.
 CLIENT_DATES_SOURCE_SHA256 = '392761c5ce8f599d569400672b07590184f147c9e4d5cd3f07decee1cffb029e'
 CLIENT_DATES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
 CLIENT_DATES_MESSAGE_COUNT = 185
@@ -1729,7 +1729,7 @@ def client_dates_marker(path: Path, nonce: str, phase: str) -> dict:
     except UnicodeError:
         raise FullError('invalid_result') from None
     return value
-# This is a deliberately source-specific adapter, not a general BSL rewriter.
+# Exact source adapter, not a general rewriter.
 CLIENT_VALUES_SOURCE_SHA256 = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'
 CLIENT_VALUES_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
 CLIENT_VALUES_MESSAGE_COUNT = 534
@@ -1756,8 +1756,8 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
     original = generated_module(source).decode('utf-8-sig')
     harness = generated_module(template).decode('utf-8-sig')
     lines = original.splitlines(keepends=True)
-    # Check exact declarations, helper endings, body boundary and call sites.
-    # Raw hashes above also pin all expression strings and protected branches.
+    # Check declarations, helpers, boundaries and call sites.
+    # Raw hashes also pin expressions and protected branches.
     declarations = {
         3: 'Процедура НаблюдатьNull(Знач Метка, Знач Выражение)\n',
         19: 'Функция ВложенныйNull(Знач Значение)\n',
@@ -1925,7 +1925,7 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
         adapted[i] = adapted[i].replace('Сообщить(', capture + '(', 1)
     for i in declarations:
         adapted[i] = '&НаКлиенте\n' + adapted[i]
-    # Inverse reconstruction is a runtime check, not disabled by Python -O.
+    # Runtime inverse check also holds under -O.
     restored = adapted.copy()
     for i in declarations:
         restored[i] = restored[i].removeprefix('&НаКлиенте\n')
@@ -1937,9 +1937,9 @@ def client_values_module(source: bytes, template: bytes) -> bytes:
                       harness, flags=re.DOTALL)
     if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
         raise FullError('invalid_input')
-    # Client-only, non-exported form variables. Four UTF-8 bytes per character
-    # plus one LF per message conservatively bounds capture; the verifier also
-    # enforces the exact serialized UTF-8 byte and private JSON-envelope caps.
+    # Non-exported form variables; bound 4 UTF-8 bytes/character
+    # plus LF/message. The verifier enforces
+    # exact UTF-8 byte and private JSON-envelope caps.
     budget = (MAX_OUTPUT - CLIENT_VALUES_MESSAGE_COUNT) // 4
     variables = ('&НаКлиенте\nПерем ЗначенияКлиентСообщения;\n'
                  '&НаКлиенте\nПерем ЗначенияКлиентСимволы;\n\n')
@@ -2000,7 +2000,7 @@ def client_values_marker(path: Path, nonce: str, phase: str) -> dict:
     return value
 
 
-# This is a deliberately source-specific adapter, not a general BSL rewriter.
+# Exact source adapter, not a general rewriter.
 CLIENT_COLLECTIONS_SOURCE_SHA256 = 'a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574'
 CLIENT_COLLECTIONS_TEMPLATE_SHA256 = '4940e607de64f2ceae1ddd82f22b2b37e2156249451ce68de82b4bd49d37f328'
 CLIENT_COLLECTIONS_MESSAGE_COUNT = 1022
@@ -2057,8 +2057,8 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
     original = generated_module(source).decode('utf-8-sig')
     harness = generated_module(template).decode('utf-8-sig')
     lines = original.splitlines(keepends=True)
-    # Check exact declarations, helper endings, body boundary and call sites.
-    # Raw hashes above also pin all expression strings and protected branches.
+    # Check declarations, helpers, boundaries and call sites.
+    # Raw hashes also pin expressions and protected branches.
     declarations = {
         8: 'Процедура ПроверитьПозициюИсключения(Знач Позиция)\n',
         36: 'Процедура ПроверитьСписокИсключения(Знач Метка, Знач Наличие, Знач Список)\n',
@@ -2484,7 +2484,7 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
         adapted[i] = '&НаКлиенте\n' + adapted[i]
     for i, declaration in local_declarations.items():
         adapted[i] += declaration
-    # Inverse reconstruction is a runtime check, not disabled by Python -O.
+    # Runtime inverse check also holds under -O.
     restored = adapted.copy()
     restored[1] = lines[1]
     for i, declaration in local_declarations.items():
@@ -2499,9 +2499,9 @@ def client_collections_module(source: bytes, template: bytes) -> bytes:
                       harness, flags=re.DOTALL)
     if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
         raise FullError('invalid_input')
-    # Client-only, non-exported form variables. Four UTF-8 bytes per character
-    # plus one LF per message conservatively bounds capture; the verifier also
-    # enforces the exact serialized UTF-8 byte and private JSON-envelope caps.
+    # Non-exported form variables; bound 4 UTF-8 bytes/character
+    # plus LF/message. The verifier enforces
+    # exact UTF-8 byte and private JSON-envelope caps.
     budget = (MAX_OUTPUT - CLIENT_COLLECTIONS_MESSAGE_COUNT) // 4
     variables = ('&НаКлиенте\nПерем Выход;\n'
                  '&НаКлиенте\nПерем КоллекцииКлиентСообщения;\n'
@@ -2614,8 +2614,8 @@ def client_numbers_module(source: bytes, template: bytes) -> bytes:
     original = generated_module(source).decode('utf-8-sig')
     harness = generated_module(template).decode('utf-8-sig')
     lines = original.splitlines(keepends=True)
-    # Check exact declarations, helper endings, body boundary and call sites.
-    # Raw hashes above also pin all expression strings and protected branches.
+    # Check declarations, helpers, boundaries and call sites.
+    # Raw hashes also pin expressions and protected branches.
     declarations = {
         2: 'Процедура ПроверитьДвоичноеЧисло(Знач Метка, Знач Текст)\n',
         11: 'Процедура ПроверитьШестнадцатеричноеЧисло(Знач Метка, Знач Текст)\n',
@@ -2690,7 +2690,7 @@ def client_numbers_module(source: bytes, template: bytes) -> bytes:
             ('ЧислаКлиентЧисло' if i == 306 else capture) + '(', 1)
     for i in declarations:
         adapted[i] = '&НаКлиенте\n' + adapted[i]
-    # Inverse reconstruction is a runtime check, not disabled by Python -O.
+    # Runtime inverse check also holds under -O.
     restored = adapted.copy()
     for i in declarations:
         restored[i] = restored[i].removeprefix('&НаКлиенте\n')
@@ -2703,9 +2703,9 @@ def client_numbers_module(source: bytes, template: bytes) -> bytes:
                       harness, flags=re.DOTALL)
     if fixed is None or harness.count('Функция ВычислитьПробу()') != 1:
         raise FullError('invalid_input')
-    # Client-only, non-exported form variables. Four UTF-8 bytes per character
-    # plus one LF per message conservatively bounds capture; the verifier also
-    # enforces the exact serialized UTF-8 byte and private JSON-envelope caps.
+    # Non-exported form variables; bound 4 UTF-8 bytes/character
+    # plus LF/message. The verifier enforces
+    # exact UTF-8 byte and private JSON-envelope caps.
     budget = (MAX_OUTPUT - CLIENT_NUMBERS_MESSAGE_COUNT) // 4
     variables = ('&НаКлиенте\nПерем ЧислаКлиентСообщения;\n'
                  '&НаКлиенте\nПерем ЧислаКлиентСимволы;\n\n')

@@ -1,7 +1,9 @@
 # ValueTree Rows.Move: compact measurement input
 
-Status: measurement only. No native Move results or runtime implementation are
-included. ValueTable.Move is not evidence for the separate tree API.
+Status: all 32 native observations from run 40734394630 are authenticated; a bounded
+implementation is now included, with fresh runtime acceptance still pending.
+See [runtime scope and limits](value-tree-move-runtime.md). ValueTable.Move alone
+is not evidence for the separate tree API.
 
 ## Scope and record budget
 
@@ -81,7 +83,6 @@ Map-order exceptions remain unchanged; Move never gains a semantic exception.
 
 Synthetic tests establish grammar and observer behavior only, including action
 errors after partial mutation, corruption rejection, foreign mutations and
-unexpected expression results. A native measurement may validly mismatch the
-currently unimplemented host Move. Inspect authenticated native observations
-before implementing any behavior; publication of this measurement is not a
-claim of runtime acceptance.
+unexpected expression results. The authenticated measurement mismatched the then-unimplemented host Move.
+Its 17 action successes and 15 errors now inform the bounded implementation;
+measurement validity still does not establish fresh runtime acceptance.

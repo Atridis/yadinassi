@@ -1818,6 +1818,39 @@ class ConfigCatalogStandardObservation(ConfigCatalogReferenceObservation):
     capability: str = field(default='experimental_config_catalog_standard', init=False)
 
 
+
+@dataclass(frozen=True)
+class ConfigCatalogIdentityProfile(ConfigCatalogStandardProfile):
+    identifier: str = field(default='config_catalog_identity_8380_8192_v1', init=False)
+
+    def recipe(self):
+        result = super().recipe()
+        result.update(catalog_embedded_uuid='private_bound_to_declared_key_and_owned_xml_v1',
+            catalog_identity_projection='positional_uuid_name_code_description_prefix_v1',
+            catalog_identity_limits=(4194304, 131072, 64, 1024, 256, 2147483647),
+            catalog_identity_reservation=(4, 131072, 262144),
+            catalog_identity_binding='internal_uuid_external_key_name_code_description_verified_xml_v1',
+            catalog_identity_suffix='not_performed',
+            catalog_uuid_policy='bare_ascii_36_hex_hyphen_nonzero_lowercase_v1')
+        for key in ('catalog_standard_projection', 'catalog_standard_limits', 'catalog_standard_reservation',
+                    'catalog_standard_binding', 'catalog_standard_suffix'):
+            del result[key]
+        return result
+
+
+@dataclass(frozen=True)
+class ConfigCatalogIdentityObservation(ConfigCatalogReferenceObservation):
+    private_fields: tuple
+    capability: str = field(default='experimental_config_catalog_identity', init=False)
+
+
+def observe_config_catalog_identity(read_at, file_size, *, profile,
+                               limits=None, chain_limits=None, content_limits=None, catalog_limits=None, reference_limits=None, identity_limits=None):
+    return _observe_catalog_prefix(read_at, file_size, profile=profile, limits=limits,
+        chain_limits=chain_limits, content_limits=content_limits, catalog_limits=catalog_limits,
+        reference_limits=reference_limits, name_limits=identity_limits, standard=True, identity=True)
+
+
 def observe_config_catalog_names(read_at, file_size, *, profile,
                                limits=None, chain_limits=None, content_limits=None, catalog_limits=None, reference_limits=None, name_limits=None):
     return _observe_catalog_prefix(read_at, file_size, profile=profile, limits=limits,
@@ -1833,14 +1866,16 @@ def observe_config_catalog_standard(read_at, file_size, *, profile,
 
 
 def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
-                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard):
+                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False):
     """Resolve partial Catalog declarations on one private CONFIG resource graph.
 
     Every selected entry is validated and decoded exactly once before return.
-    No complete root grammar, suffix validity, embedded identity or applied state
-    is established. Private key/name pairs are for an independent comparator only.
+    No complete root grammar, suffix validity or applied state is established.
+    Identity mode additionally projects an unverified internal UUID; all private
+    results require the separate independent comparator.
     """
-    expected_profile = ConfigCatalogStandardProfile if standard else ConfigCatalogNameProfile
+    expected_profile = (ConfigCatalogIdentityProfile if identity else
+                        ConfigCatalogStandardProfile if standard else ConfigCatalogNameProfile)
     if type(profile) is not expected_profile:
         raise ValueError('profile must be ' + expected_profile.__name__)
     if limits is not None and type(limits) is not ConfigFramingLimits:
@@ -2045,13 +2080,14 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
                         raise UnsupportedLayout('config_catalog_content_empty')
                     import config_catalog_name as name_projector
                     try:
-                        project = (name_projector.project_catalog_standard_prefix if standard else
+                        project = (name_projector.project_catalog_identity_prefix if identity else
+                                   name_projector.project_catalog_standard_prefix if standard else
                                    name_projector.project_catalog_name_prefix)
                         named = project(content, budget=reader._budget, limits=name_limits)
                     except name_projector.CatalogNameError as error:
                         if error.code in ('input_bytes', 'tokens', 'depth', 'name_bytes', 'name_chars'):
-                            raise ResourceLimit('config_catalog_standard_limits' if standard else 'config_catalog_name_limits') from None
-                        raise InvalidStructure('config_catalog_standard_prefix' if standard else 'config_catalog_name_prefix') from None
+                            raise ResourceLimit('config_catalog_identity_limits' if identity else 'config_catalog_standard_limits' if standard else 'config_catalog_name_limits') from None
+                        raise InvalidStructure('config_catalog_identity_prefix' if identity else 'config_catalog_standard_prefix' if standard else 'config_catalog_name_prefix') from None
                     private_names.append((key, named) if standard else (key, named.name))
                     del named
                     catalog_resolved += 1
@@ -2071,7 +2107,8 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
         if not positive_count:
             raise UnsupportedLayout('config_content_no_positive_witness')
         reader._budget.charge('output_bytes', 4096)
-        observation = ConfigCatalogStandardObservation if standard else ConfigCatalogNameObservation
+        observation = (ConfigCatalogIdentityObservation if identity else
+                       ConfigCatalogStandardObservation if standard else ConfigCatalogNameObservation)
         return observation(profile.identifier, profile.recipe_sha256,
             data.info.logical_length, blob.info.logical_length, slots, 'one',
             zero, one, other, zero, empty, zero - empty, maximum,

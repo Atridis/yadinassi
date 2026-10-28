@@ -3,9 +3,9 @@
 No recursive host traversal, UI, codecs, transport, or database integration.
 Limits apply to the whole tree, not independently to each child collection.
 """
-from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, ROUND_DOWN, Rounded
+from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, ROUND_DOWN, Rounded, localcontext
 
-from .values import BSLArray, BSLObject, HostFunction, NULL, equal
+from .values import BSLArray, BSLObject, HostFunction, NULL, equal, number
 from .structures import BSLStructure
 from .type_descriptions import BSLTypeDescription, _boolean_value, _number_value, _MAX_NUMBER_DIGITS
 from .value_tables import (BSLValueTableColumn, BSLValueTableColumnCollection,
@@ -99,6 +99,25 @@ def _position(value, count, inserting=False):
     if not 0 <= value < count + int(inserting):
         raise IndexError("Индекс дерева вне границ")
     return int(value)
+
+
+def _move_number(value):
+    """Method-local bounded Number conversion, not TypeDescription defaulting."""
+    kind = type(value)
+    if kind is not Decimal and kind is not bool and kind is not str:
+        raise TypeError("ДеревоЗначений: ожидается число сдвига")
+    if kind is str and len(value) > _MAX_NUMBER_DIGITS:
+        raise ValueError("ДеревоЗначений: превышен предел текста сдвига Yadinassi")
+    if kind is Decimal:
+        _search_scalar(value, _SearchBudget())  # Guard coefficient before conversion.
+        return value
+    try:
+        with localcontext():
+            result = number(value)
+    except (DecimalException, ValueError):
+        raise ValueError("ДеревоЗначений: неверное число сдвига") from None
+    _search_scalar(result, _SearchBudget())
+    return result
 
 
 class BSLValueTreeColumn(BSLObject):
@@ -323,6 +342,40 @@ class BSLValueTreeRowCollection(BSLObject):
         self.items.insert(position, row)
         self.tree._all_rows[row] = None
         return row
+
+    def move(self, row, offset):
+        """Reorder this receiver only; validate everything before the single move."""
+        self._live()
+        if type(self.items) is not list or len(self.items) > _MAX_ROWS:
+            raise ValueError("ДеревоЗначений: неверная коллекция сдвига")
+        count = len(self.items)
+        if type(row) is BSLValueTreeRow:
+            row._live()
+            if row.collection is not self:
+                raise ValueError("Строка не принадлежит коллекции дерева")
+            position = next((i for i, candidate in enumerate(self.items) if candidate is row), None)
+            if position is None:
+                raise ValueError("Строка отсутствует в коллекции дерева")
+        else:
+            index = _move_number(row)
+            # Native -0.5 rejects, unlike the independently measured offset -0.5.
+            if not 0 <= index < count:
+                raise IndexError("Индекс строки дерева вне границ")
+            position = int(index.to_integral_value(rounding=ROUND_DOWN))
+            row = self.items[position]
+        if (type(row) is not BSLValueTreeRow or row.collection is not self
+                or row.tree is not self.tree or row.parent is not self.parent or row._deleted):
+            raise ValueError("Строка не принадлежит коллекции дерева")
+        distance = _move_number(offset)
+        # No valid destination can require this magnitude. Bound before int so
+        # huge finite exponents cannot allocate huge Python integers.
+        if distance.copy_abs() >= count:
+            raise IndexError("Сдвиг строки дерева вне границ")
+        destination = position + int(distance.to_integral_value(rounding=ROUND_DOWN))
+        if not 0 <= destination < count:
+            raise IndexError("Сдвиг строки дерева вне границ")
+        if destination != position:
+            self.items.insert(destination, self.items.pop(position))
 
     def index_of(self, row):
         self._live()
@@ -623,6 +676,8 @@ class BSLValueTreeRowCollection(BSLObject):
         return super().get_member(name)
 
     def get_method(self, name):
+        if name.casefold() in ("move", "сдвинуть"):
+            return HostFunction(name, self.move, returns_value=False)
         if name.casefold() in ("loadcolumn", "загрузитьколонку"):
             return HostFunction(name, self.load_column, returns_value=False)
         return _method(name, {"count": self.count, "количество": self.count,
