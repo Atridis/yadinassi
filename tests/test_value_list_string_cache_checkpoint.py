@@ -7,9 +7,11 @@ from scripts.native_historical_replay import without_value_tree_probes, FILL_EXC
 from collections import Counter
 from contextlib import ExitStack
 from decimal import Decimal
+from dataclasses import fields, is_dataclass
 import gc
 import hashlib
 from pathlib import Path
+import re
 import unittest
 from unittest.mock import patch
 import weakref
@@ -44,6 +46,57 @@ def source():
 
 def section(markers):
     return source().split(markers[0], 1)[1].split(markers[1], 1)[0]
+
+
+# Read unchanged routine text from the real integration source on every setup.
+# No shared interpreter, AST or mutable-output cache: fault injection and GC
+# observations must retain their original per-case isolation.
+CACHE_ROUTINES = frozenset((
+    'ПоляКэшаСписка', 'ПолеИнициализацииКэша', 'ИнициализацияКэшаСписка',
+    'НачалоКэшаСписка', 'ПоменятьПервыйКэшСписка', 'ДействиеКэшаСписка',
+    'ИзмененияКэшаСписка', 'ПустойКэшСписка', 'КопияКэшаСписка',
+    'НаблюдатьТаблицы', 'ДобавитьПоляВыводаТаблицы',
+    'КомпактноеЗначениеТаблицы', 'ПоляЭлементаСписка', 'РезультатТекстаСписка',
+    # The final-empty subclass uses the same fresh instrumentation.
+    'ПустойРезультатКэшаСписка', 'ПустыеРезультатыКэшаСписка',
+    'КороткаяСортировкаКэшаСписка', 'КороткиеСортировкиКэшаСписка',
+))
+ROUTINE_TEXT = re.compile(
+    r'^(?:Функция|Процедура) ([^\W\d]\w*)\([^\n]*\n'
+    r'.*?^Конец(?:Функции|Процедуры)[ \t]*;?[ \t]*(?:\n|$)',
+    re.MULTILINE | re.DOTALL)
+
+
+def helper_source():
+    prefix = source().split('#Область МассивыИСтруктуры', 1)[0]
+    selected = [match for match in ROUTINE_TEXT.finditer(prefix)
+                if match.group(1) in CACHE_ROUTINES]
+    names = [match.group(1) for match in selected]
+    if len(names) != len(CACHE_ROUTINES) or set(names) != CACHE_ROUTINES:
+        raise AssertionError('cache helper declarations changed: ' + repr(names))
+    return '\n'.join(match.group(0) for match in selected)
+
+
+def walk(value):
+    if isinstance(value, ast.Node):
+        yield value
+        for field in fields(value):
+            if field.name != 'token':
+                yield from walk(getattr(value, field.name))
+    elif isinstance(value, (tuple, list)):
+        for item in value:
+            yield from walk(item)
+
+
+def semantic_tree(value):
+    # Locations change when actual routine text is extracted; syntax must not.
+    if is_dataclass(value):
+        return (type(value).__name__, tuple(
+            (field.name, semantic_tree(getattr(value, field.name)))
+            for field in fields(value) if field.name != 'token'))
+    if isinstance(value, (tuple, list)):
+        return tuple(map(semantic_tree, value))
+    return value
 
 
 def blob(data):
@@ -90,7 +143,7 @@ class Instrumentation:
         self.vm = Interpreter(self.outputs.append)
         self.vm.register_function('Строка', self.stringify, 'String')
         self.vm.register_function('ЗначениеВСтрокуВнутр', self.write, 'ValueToStringInternal')
-        helpers = source().split('#Область МассивыИСтруктуры', 1)[0]
+        helpers = helper_source()
         if helper_mutation:
             helpers = helpers.replace(
                 'Функция ПоляКэшаСписка(Знач Список)\n',
@@ -188,6 +241,67 @@ class Instrumentation:
 
 
 class ValueListStringCacheCheckpointTests(unittest.TestCase):
+    def test_minimal_helpers_are_exact_and_close_static_and_dynamic_dependencies(self):
+        prefix = source().split('#Область МассивыИСтруктуры', 1)[0]
+        full = parse(prefix)
+        routines = {node.name: node for node in full if isinstance(node, ast.Routine)}
+        minimal = parse(helper_source())
+        self.assertEqual({node.name for node in minimal}, CACHE_ROUTINES)
+        self.assertEqual(len(minimal), len(CACHE_ROUTINES))
+        for node in minimal:
+            self.assertEqual(semantic_tree(node), semantic_tree(routines[node.name]), node.name)
+        # Omitting module setup is safe only while it is this unused declaration.
+        globals_ = [node for node in full if not isinstance(node, ast.Routine)]
+        self.assertEqual(len(globals_), 1)
+        self.assertIsInstance(globals_[0], ast.Var)
+        self.assertEqual(globals_[0].names, ['Выход'])
+        self.assertFalse(any(isinstance(node, ast.Name) and node.name.casefold() == 'выход'
+                             for node in walk(minimal)))
+        builtins = {'Вычислить', 'ЗначениеВСтрокуВнутр', 'Символ', 'Сообщить',
+                    'СтрЗаменить', 'СтрРазделить', 'СтрСоединить', 'Строка', 'Тип', 'ТипЗнч'}
+        calls = [node for node in walk(minimal) if isinstance(node, ast.Call)
+                 and isinstance(node.callee, ast.Name)]
+        called = {node.callee.name for node in calls}
+        self.assertEqual(called - CACHE_ROUTINES, builtins)
+        self.assertLessEqual(called & routines.keys(), CACHE_ROUTINES)
+        # The sole indirect evaluation must remain the observer's expression.
+        dynamic = [node for node in calls if node.callee.name == 'Вычислить']
+        self.assertEqual(len(dynamic), 1)
+        self.assertEqual([getattr(arg, 'name', None) for arg in dynamic[0].arguments], ['Выражение'])
+        self.assertFalse(any(isinstance(node, ast.Execute) for node in walk(minimal)))
+        empty_body = ('// Начало заключительных наблюдений пустой строки кэша списка.\n',
+                      '// Конец заключительных наблюдений пустой строки кэша списка.\n')
+        roots = set()
+        for markers in (BODY, empty_body):
+            for statement in parse(section(markers)):
+                if (isinstance(statement, ast.ExpressionStatement)
+                        and isinstance(statement.expression, ast.Call)
+                        and isinstance(statement.expression.callee, ast.Name)
+                        and statement.expression.callee.name == 'НаблюдатьТаблицы'):
+                    expression = statement.expression.arguments[1]
+                    self.assertIsInstance(expression, ast.Literal)
+                    for node in walk(parse('Result = ' + expression.value)):
+                        if isinstance(node, ast.Call) and isinstance(node.callee, ast.Name):
+                            roots.add(node.callee.name)
+        self.assertEqual(roots, {'НачалоКэшаСписка', 'ИзмененияКэшаСписка',
+                               'ПустойКэшСписка', 'КопияКэшаСписка',
+                               'ПустыеРезультатыКэшаСписка', 'КороткиеСортировкиКэшаСписка'})
+        self.assertLessEqual(roots, CACHE_ROUTINES)
+
+    def test_dependency_guard_rejects_missing_routine_global_setup_and_dynamic_drift(self):
+        original = source()
+        mutants = (
+            original.replace('Функция ПоляКэшаСписка(Знач Список)\n',
+                             'Функция ПоляКэшаСписка(Знач Список)\n    Показать("new", "dependency");\n', 1),
+            original.replace('Перем Выход;', 'Перем Выход;\nВыход = 1;', 1),
+            original.replace('"ПустыеРезультатыКэшаСписка()"', '"НовыйПустойКэш()"', 1),
+        )
+        for mutant in mutants:
+            with self.subTest(mutation=mutants.index(mutant)):
+                with patch(__name__ + '.source', return_value=mutant):
+                    with self.assertRaises(AssertionError):
+                        self.test_minimal_helpers_are_exact_and_close_static_and_dynamic_dependencies()
+
     def test_new_blocks_restore_old_source_and_preserve_current_native_evidence(self):
         text = without_value_tree_probes(source())
         for start, end in (
