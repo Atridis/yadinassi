@@ -16,12 +16,16 @@ concurrency:
 jobs:
   eligibility:
     name: File-DB oracle eligibility
+    outputs:
+      route: ${{ steps.admission.outputs.route }}
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Validate owner, repository, reviewed push and revision without checkout
+        id: admission
         env:
+          NATIVE_DB_ROUTE: catalog-reference-codec-v1
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         shell: bash
         run: |
@@ -137,13 +141,29 @@ jobs:
               print("Native DB oracle CI admission accepted.")
               return 0
           # END NATIVE DB ORACLE CI ADMISSION
-          raise SystemExit(admission_main())
+          # BEGIN NATIVE DB ORACLE ROUTE ADMISSION
+          def admitted_route(value):
+              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1"):
+                  raise PolicyError("route_not_approved")
+              return value
+          # END NATIVE DB ORACLE ROUTE ADMISSION
+          result = admission_main()
+          if result == 0:
+              try:
+                  route = admitted_route(os.environ.get("NATIVE_DB_ROUTE"))
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="ascii") as output:
+                      output.write("route=" + route + "\n")
+              except (PolicyError, KeyError, OSError):
+                  print("Native DB oracle CI blocked: route_not_approved", file=sys.stderr)
+                  result = 1
+          raise SystemExit(result)
           PYTHON
 
   native_reference_a:
     name: Native 1C reference identity case A
     needs: eligibility
     if: >-
+      needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&
       needs.eligibility.result == 'success' &&
       github.repository == 'Atridis/yadinassi' &&
       github.repository_id == '359770628' &&
@@ -213,6 +233,7 @@ jobs:
     name: Native 1C reference identity case B
     needs: [eligibility, native_reference_a]
     if: >-
+      needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&
       needs.eligibility.result == 'success' && needs.native_reference_a.result == 'success' &&
       github.repository == 'Atridis/yadinassi' &&
       github.repository_id == '359770628' &&
@@ -299,10 +320,171 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  native_codec_a:
+    name: Native 1C reference codec case A
+    needs: eligibility
+    if: >-
+      needs.eligibility.outputs.route == 'catalog-reference-codec-v1' &&
+      needs.eligibility.result == 'success' &&
+      github.repository == 'Atridis/yadinassi' &&
+      github.repository_id == '359770628' &&
+      github.repository_owner == 'Atridis' &&
+      github.repository_owner_id == '30860798' &&
+      github.actor == 'Atridis' &&
+      github.actor_id == '30860798' &&
+      github.triggering_actor == 'Atridis' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.ref_type == 'branch' &&
+      github.base_ref == '' && github.head_ref == '' &&
+      github.event.ref == github.ref &&
+      github.event.deleted == false && github.event.forced == false &&
+      github.event.after == github.sha && github.event.head_commit.id == github.sha &&
+      github.workflow_ref == 'Atridis/yadinassi/.github/workflows/native-1c-file-db-oracle.yml@refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.workflow_sha == github.sha
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    # The host has one 2400-second execution deadline plus bounded cleanup.
+    # This outer budget also includes checkout, authentication and report upload.
+    timeout-minutes: 50
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      reference_sha256: ${{ steps.native.outputs.reference_sha256 }}
+      run_id: ${{ github.run_id }}
+      run_attempt: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Verify immutable reviewed checkout before exposing the package token
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 -I -B scripts/native_1c_db_oracle_ci_policy.py bind
+      - name: Run approved digest with no network, ports or container credentials
+        id: native
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-reference-codec distinct_a --output native-db-oracle/codec_distinct_a.json
+      - name: Require validated report readiness on native success
+        if: always() && steps.native.outcome == 'success'
+        env:
+          NATIVE_REPORT_READY: ${{ steps.native.outputs.report_ready }}
+        shell: bash
+        run: test "${NATIVE_REPORT_READY}" = "true"
+      # The host emits report_ready only after strict finite-schema validation
+      # and the 32 KiB cap, including sanitized failures. Never upload raw files.
+      - name: Upload only the validated finite case A report
+        id: upload
+        if: always() && steps.native.outputs.report_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-codec-a-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/codec_distinct_a.json
+          if-no-files-found: error
+          retention-days: 7
+
+  native_codec_b:
+    name: Native 1C reference codec case B
+    needs: [eligibility, native_codec_a]
+    if: >-
+      needs.eligibility.outputs.route == 'catalog-reference-codec-v1' &&
+      needs.eligibility.result == 'success' && needs.native_codec_a.result == 'success' &&
+      github.repository == 'Atridis/yadinassi' &&
+      github.repository_id == '359770628' &&
+      github.repository_owner == 'Atridis' &&
+      github.repository_owner_id == '30860798' &&
+      github.actor == 'Atridis' &&
+      github.actor_id == '30860798' &&
+      github.triggering_actor == 'Atridis' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.ref_type == 'branch' &&
+      github.base_ref == '' && github.head_ref == '' &&
+      github.event.ref == github.ref &&
+      github.event.deleted == false && github.event.forced == false &&
+      github.event.after == github.sha && github.event.head_commit.id == github.sha &&
+      github.workflow_ref == 'Atridis/yadinassi/.github/workflows/native-1c-file-db-oracle.yml@refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.workflow_sha == github.sha
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    # The host has one 2400-second execution deadline plus bounded cleanup.
+    # This outer budget also includes checkout, authentication and report upload.
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Verify immutable reviewed checkout before exposing the package token
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 -I -B scripts/native_1c_db_oracle_ci_policy.py bind
+      - name: Require exact case A artifact identifier before download
+        env:
+          REFERENCE_A_ARTIFACT_ID: ${{ needs.native_codec_a.outputs.artifact_id }}
+        run: python3 -I -B -c 'import os,re; raise SystemExit(0 if re.fullmatch(r"[1-9][0-9]{0,19}",os.environ.get("REFERENCE_A_ARTIFACT_ID","")) else 1)'
+      - name: Download only case A from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.native_codec_a.outputs.artifact_id }}
+          path: native-db-oracle
+          digest-mismatch: error
+      - name: Authenticate exact case A handoff before exposing package credentials
+        env:
+          REFERENCE_A_SHA256: ${{ needs.native_codec_a.outputs.reference_sha256 }}
+          REFERENCE_A_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
+          REFERENCE_A_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
+        run: python3 scripts/native_1c_db_oracle.py --validate-codec-a
+      - name: Run approved digest with no network, ports or container credentials
+        id: native
+        env:
+          REFERENCE_A_SHA256: ${{ needs.native_codec_a.outputs.reference_sha256 }}
+          REFERENCE_A_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
+          REFERENCE_A_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-reference-codec distinct_b --output native-db-oracle/codec_distinct_b.json
+      - name: Require validated report readiness on native success
+        if: always() && steps.native.outcome == 'success'
+        env:
+          NATIVE_REPORT_READY: ${{ steps.native.outputs.report_ready }}
+        shell: bash
+        run: test "${NATIVE_REPORT_READY}" = "true"
+      # The host emits report_ready only after strict finite-schema validation
+      # and the 32 KiB cap, including sanitized failures. Never upload raw files.
+      - name: Upload only the validated finite DB-oracle report
+        if: always() && steps.native.outputs.report_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-codec-b-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/codec_distinct_b.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload only the finite hash-bound two-case aggregate
+        if: always() && steps.native.outputs.aggregate_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-codec-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/codec-aggregate.json
+          if-no-files-found: error
+          retention-days: 7
+
   verdict:
     name: Native 1C file-DB oracle verdict
     if: always()
-    needs: [eligibility, native_oracle]
+    needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -310,7 +492,11 @@ jobs:
       - name: Require admission and genuine native success
         env:
           ELIGIBILITY_RESULT: ${{ needs.eligibility.result }}
+          NATIVE_ROUTE: ${{ needs.eligibility.outputs.route }}
+          REFERENCE_A_RESULT: ${{ needs.native_reference_a.result }}
           NATIVE_RESULT: ${{ needs.native_oracle.result }}
+          CODEC_A_RESULT: ${{ needs.native_codec_a.result }}
+          CODEC_RESULT: ${{ needs.native_codec_b.result }}
         shell: bash
         run: |
           python3 -I -B - <<'PYTHON'
@@ -320,7 +506,20 @@ jobs:
               # Skipped, cancelled, unavailable and failed native runs are never green.
               return 0 if eligibility_result == "success" and native_result == "success" else 1
           # END NATIVE DB ORACLE CI VERDICT
-          result = final_verdict(os.environ.get("ELIGIBILITY_RESULT"), os.environ.get("NATIVE_RESULT"))
+          # BEGIN NATIVE DB ORACLE ROUTE VERDICT
+          def selected_native_result(route, reference_a, reference_b, codec_a, codec_b):
+              if route == "catalog-reference-identity-v1":
+                  passed = reference_a == reference_b == "success" and codec_a == codec_b == "skipped"
+              elif route == "catalog-reference-codec-v1":
+                  passed = codec_a == codec_b == "success" and reference_a == reference_b == "skipped"
+              else:
+                  passed = False
+              return "success" if passed else "failure"
+          # END NATIVE DB ORACLE ROUTE VERDICT
+          native = selected_native_result(os.environ.get("NATIVE_ROUTE"),
+              os.environ.get("REFERENCE_A_RESULT"), os.environ.get("NATIVE_RESULT"),
+              os.environ.get("CODEC_A_RESULT"), os.environ.get("CODEC_RESULT"))
+          result = final_verdict(os.environ.get("ELIGIBILITY_RESULT"), native)
           print("Native DB oracle CI passed." if result == 0 else "Native DB oracle CI failed or unavailable.")
           raise SystemExit(result)
           PYTHON

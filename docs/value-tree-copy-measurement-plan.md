@@ -2,8 +2,9 @@
 
 Status: the closed profile is published as a Draft; native runs have diagnosed
 an observer Rows-access equality assumption, not completed Copy semantics. See
-[the current versioned profile contract](value-tree-copy-profile.md). Runtime Copy
-is not implemented. The design below records the historical preparation sequence;
+[the current versioned profile contract](value-tree-copy-profile.md). The original preparation did not implement Runtime Copy. The design below records the historical preparation sequence;
+The subsequent [runtime follow-up](value-tree-copy-runtime.md) now has genuine
+nine-case evidence; its fresh runtime gates remain required. This plan and
 its standalone bounds are historical, while the current TC-C2 contract uses
 structural Rows-owner labels and a separate authenticated access probe.
 

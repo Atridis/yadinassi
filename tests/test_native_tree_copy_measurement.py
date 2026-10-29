@@ -37,6 +37,17 @@ def emit(source=SOURCE):
     return raw
 
 
+def emit_missing_capture():
+    """Explicit absent-method stub retains the observer's negative regression."""
+    original = BSLValueTree.get_method
+    def absent(tree, name):
+        if name.casefold() in ('copy', 'скопировать'):
+            raise ValueError('Метод не найден: ' + name)
+        return original(tree, name)
+    with patch.object(BSLValueTree, 'get_method', absent):
+        return emit_capture()
+
+
 def maximum_capture():
     return capture(maximum_output())
 
@@ -98,8 +109,9 @@ def maximum_output():
 
 
 class CopyObserverTests(unittest.TestCase):
-    def test_unimplemented_copy_is_honest_and_calibration_passes(self):
-        raw = emit()
+    def test_missing_copy_stub_is_honest_and_calibration_passes(self):
+        from scripts.native_1c_tree_access_probe import split_capture
+        raw = split_capture(emit_missing_capture())[1]
         result = wire.validate_output(raw)
         self.assertEqual([r['status'] for r in result], ['M'] * 9)
         self.assertEqual(len(raw), 2003)

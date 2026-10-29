@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 from yadinassi import Interpreter
 import test_native_tree_profile_budget as budget
-from test_native_tree_copy_measurement import emit_capture as emit, maximum_capture as maximum_output, synthetic_method
+from test_native_tree_copy_measurement import emit_capture as emit, maximum_capture as maximum_output, synthetic_method, emit_missing_capture
 from yadinassi.value_trees import BSLValueTree
 from test_native_1c_smoke import bootstrap_report
 from scripts import native_1c_tree_copy_diagnostics as diagnostics
@@ -68,7 +68,7 @@ class CopyProfileTests(unittest.TestCase):
                          'bootstrap/native_1c_tree_copy_diagnostics.py')
         self.assertEqual(full.SCENARIOS, ('collections','dates','functions','numbers','strings','values'))
 
-    def test_client_adapter_preserves_honest_absence_and_byte_identity(self):
+    def test_client_adapter_preserves_runtime_output_and_byte_identity(self):
         template = (ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode()
         source = (ROOT/SPEC.source).read_text(encoding='utf-8').encode()
         module = tree.client_module(source, template, profile=PROFILE)
@@ -79,8 +79,8 @@ class CopyProfileTests(unittest.TestCase):
         self.assertIn('ПараметрыЗаписиJSON(ПереносСтрокJSON.Нет, " ", Истина)'.encode(),module)
         self.assertIn(b'Code = 47',module)
         self.assertIn('TreeLaneCharacters + СтрДлина(Text) > 8181'.encode(),module)
-        self.assertEqual(len(actual), 2035)
-        self.assertEqual([v['status'] for v in tree.validate_observations(actual, profile=PROFILE)], ['M']*9)
+        self.assertEqual(len(actual), 6269)
+        self.assertEqual([v['status'] for v in tree.validate_observations(actual, profile=PROFILE)], ['S']*8+['A'])
         default = tree.client_module((ROOT/tree.SOURCE).read_text(encoding='utf-8').encode(), template)
         self.assertEqual(full.digest(default), 'e43224c91c76a1c92dc6c2bf4e6c90a07fe23fbf4aa42d1c6a17630de70a937a')
         for wrong_source, wrong_profile in ((source, 'tree-v1'), ((ROOT/tree.SOURCE).read_text(encoding='utf-8').encode(), PROFILE)):
@@ -270,7 +270,7 @@ class CopyStructuralBudgetTests(unittest.TestCase):
 
 class CopyAvailabilityTests(unittest.TestCase):
     def test_all_missing_methods_are_exportable_but_never_accepted_as_copy(self):
-        missing=emit(); value,hashes,modules=success_envelope(missing)
+        missing=emit_missing_capture(); value,hashes,modules=success_envelope(missing)
         self.assertEqual(host.validate_envelope(budget.wire(value),NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)[1],missing)
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve(strict=True);source=root/SPEC.source;source.parent.mkdir(parents=True)
@@ -286,7 +286,7 @@ class CopyAvailabilityTests(unittest.TestCase):
         # Synthetic success is only used to exercise acceptance plumbing, not as native semantics.
         with mock.patch.object(BSLValueTree,'get_method',synthetic_method('deep')):
             successful=emit()
-        missing=emit().splitlines(keepends=True); lines=successful.splitlines(keepends=True)
+        missing=emit_missing_capture().splitlines(keepends=True); lines=successful.splitlines(keepends=True)
         for failed_case in range(1,10):
             candidate=lines.copy();candidate[failed_case+1]=missing[failed_case+1];raw=b''.join(candidate)
             hashes={SPEC.source:SPEC.source_sha256}

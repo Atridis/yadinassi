@@ -175,6 +175,12 @@ def discard_capture(report, failure=None, *, final=False):
 
 
 def validate_report(raw, *, nonce, provenance, final=False):
+    from inputs import CATALOG_REFERENCE_SOURCE_FILES
+    return _validate_report(raw, nonce=nonce, provenance=provenance, final=final,
+                            source_files=CATALOG_REFERENCE_SOURCE_FILES)
+
+
+def _validate_report(raw, *, nonce, provenance, final, source_files):
     report = decode(raw)
     require(type(report) is dict and type(report.get('schema')) is int and report['schema'] == SCHEMA
             and report.get('lane') == LANE and EXTRA_KEYS <= set(report)
@@ -182,9 +188,8 @@ def validate_report(raw, *, nonce, provenance, final=False):
             and report['projection_mode'] == metadata.PROJECTION_MODE
             and report['comparison_policy'] == metadata.COMPARISON_POLICY
             and report['native_compatibility'] == 'not_claimed')
-    from inputs import CATALOG_REFERENCE_SOURCE_FILES
-    require(set(provenance['sources']) == set(CATALOG_REFERENCE_SOURCE_FILES)
-            and MODULE_SOURCE in CATALOG_REFERENCE_SOURCE_FILES and READER_SOURCE in CATALOG_REFERENCE_SOURCE_FILES, 'provenance_mismatch')
+    require(set(provenance['sources']) == set(source_files)
+            and MODULE_SOURCE in source_files and READER_SOURCE in source_files, 'provenance_mismatch')
     require(provenance['image'] == lifecycle.IMAGE and provenance['platform'] == 'linux/amd64'
             and provenance['locale'] == 'ru_RU.UTF-8' and provenance['timezone'] == 'Etc/UTC', 'provenance_mismatch')
     success_values = {'metadata_validation': metadata.METADATA_VERDICT, 'reader_validation': metadata.VERDICT,

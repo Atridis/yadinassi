@@ -2,7 +2,10 @@
 
 This is a measurement-only follow-up to the existing `tree-v1` negative
 FillValues API regression. It does **not** implement `ValueTree.Copy` or claim
-native semantics from synthetic copies. The observer and decoder are described
+native semantics from synthetic copies. A subsequent authenticated run now supports
+[the bounded runtime Copy implementation](value-tree-copy-runtime.md); the acquisition
+checkpoints below remain historical evidence, not relabelled runtime passes.
+The observer and decoder are described
 in [the measurement plan](value-tree-copy-measurement-plan.md).
 
 ## Closed route and evidence
