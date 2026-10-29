@@ -735,7 +735,7 @@ class Native:
                           **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}))
             manifest_policy = (self.record_policy if getattr(self, 'catalog_binding', False)
                                else getattr(self, 'params_policy', None))
-            if (manifest_policy is not None and manifest_policy.SCHEMA in (9, 27, 29, 31, 33, 35, 37)
+            if (manifest_policy is not None and manifest_policy.SCHEMA in (9, 27, 29, 31, 33, 35, 37, 39)
                     and version == 1 and self.stage in ('seed_v1', 'baseline')):
                 manifest = manifest_policy.build_identity_manifest(
                     expected, target, nonce=self.nonce, version=version)

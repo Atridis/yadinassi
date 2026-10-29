@@ -12,6 +12,9 @@ import inputs
 import protocol
 
 host=old.host
+# This real filesystem test is the same POSIX-only boundary as HostSecurityTests.
+DESCRIPTOR_HANDOFF = (hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_DIRECTORY')
+                      and os.open in os.supports_dir_fd)
 
 class ReferenceRouteTests(unittest.TestCase):
     def setUp(self):
@@ -41,6 +44,7 @@ class ReferenceRouteTests(unittest.TestCase):
         info=self.root.stat()
         return report,raw,(info.st_dev,info.st_ino)
 
+    @unittest.skipUnless(DESCRIPTOR_HANDOFF, 'Native handoff requires POSIX no-follow dirfd support')
     def test_handoff_exact_digest_run_source_case_and_inventory(self):
         report,raw,identity=self.artifact()
         env={'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'2','REFERENCE_A_RUN_ID':'123',

@@ -84,7 +84,8 @@ class NativeReferenceTests(unittest.TestCase):
     def test_template_is_pinned_and_legacy_unchanged(self):
         path = ROOT / "scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl"
         original = path.read_bytes()
-        source = original.decode("utf-8-sig")
+        # Canonical test text only: never rewrite the checkout or hash staged inputs this way.
+        source = original.decode("utf-8-sig").replace("\r\n", "\n")
         for case in native.CASES:
             result = native.render_template(source, case)
             self.assertIn(native.CASES[case], result)
@@ -95,7 +96,7 @@ class NativeReferenceTests(unittest.TestCase):
             self.assertIn('NativeReferenceFinish(Корень, ТокенЗапуска, Операция, НаблюдениеДо);', result)
             self.assertEqual(native.render_template(source.replace("\n", "\r\n"), case), result)
         self.assertEqual(path.read_bytes(), original)
-        self.assertEqual(hashlib.sha256(original).hexdigest(), native._TEMPLATE_SHA256)
+        self.assertEqual(hashlib.sha256(source.encode("utf-8")).hexdigest(), native._TEMPLATE_SHA256)
         for altered in (source + "\n", source.replace('"K1"', '"K2"'), source.replace("Количество() <> 1", "Количество() <> 3")):
             with self.assertRaisesRegex(ValueError, "^reference_template_invalid$"):
                 native.render_template(altered, "distinct_a")
@@ -104,7 +105,7 @@ class NativeReferenceTests(unittest.TestCase):
                 native.render_template(source, case)
 
     def test_probe_template_has_no_dynamic_evaluation_or_expected_constants(self):
-        source = (ROOT / "scripts/native_1c_db_oracle/modules/CatalogReferenceObservation.bsl").read_text()
+        source = (ROOT / "scripts/native_1c_db_oracle/modules/CatalogReferenceObservation.bsl").read_text(encoding="utf-8-sig")
         self.assertNotIn("Вычислить(", source)
         self.assertEqual(source.count('Коды = Коды + "E";'), 12)
         self.assertEqual(source.count("Коды = Коды + NativeReferenceCode("), 12)
