@@ -495,6 +495,10 @@ class WorkflowTests(unittest.TestCase):
                 "    if: >-\n      needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&\n", 1)
         headers['native_codec_a'] = headers['native_reference_a'].replace('reference identity case', 'reference codec case').replace('catalog-reference-identity-v1', 'catalog-reference-codec-v1')
         headers['native_codec_b'] = headers['native_oracle'].replace('reference identity case', 'reference codec case').replace('catalog-reference-identity-v1', 'catalog-reference-codec-v1').replace('native_reference_a', 'native_codec_a')
+        for name in ('native_codec_a', 'native_codec_b'):
+            headers[name] = headers[name].replace(
+                "needs.eligibility.outputs.route == 'catalog-reference-codec-v1' &&",
+                "(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1') &&")
         for job, expected in headers.items():
             with self.subTest(job=job):
                 self.assertEqual(workflow_job(job).split("    steps:\n", 1)[0], expected)

@@ -112,11 +112,18 @@ def discard_capture(report, failure=None, *, final=False):
 
 
 def validate_report(raw, *, nonce, provenance, final=False):
-    from inputs import CATALOG_CODEC_SOURCE_FILES
+    return _validate_report(raw, nonce=nonce, provenance=provenance, final=final)
+
+
+def _validate_report(raw, *, nonce, provenance, final=False, rows_profile=False):
+    # Closed internal selector only: the public codec API cannot choose sources.
+    from inputs import CATALOG_CODEC_SOURCE_FILES, CATALOG_ROWS_SOURCE_FILES
+    require(type(rows_profile) is bool)
+    source_files = CATALOG_ROWS_SOURCE_FILES if rows_profile else CATALOG_CODEC_SOURCE_FILES
     report = decode(raw)
     require(type(report) is dict and type(report.get('schema')) is int
             and report['schema'] == SCHEMA and report.get('lane') == LANE)
-    require(set(provenance['sources']) == set(CATALOG_CODEC_SOURCE_FILES)
+    require(set(provenance['sources']) == set(source_files)
             and CODEC_SOURCE in provenance['sources'] and MODULE_SOURCE in provenance['sources'],
             'provenance_mismatch')
     require(report.get('record_validation') in ('not_run', 'failed', 'discarded', VERDICT))
@@ -142,7 +149,7 @@ def validate_report(raw, *, nonce, provenance, final=False):
                             and reference.get('hypothesis_match') is True)
     view = _measurement_view(report)
     measurement._validate_report(encode(view), nonce=nonce, provenance=provenance,
-                                 final=final, source_files=CATALOG_CODEC_SOURCE_FILES)
+                                 final=final, source_files=source_files)
     return report
 
 
