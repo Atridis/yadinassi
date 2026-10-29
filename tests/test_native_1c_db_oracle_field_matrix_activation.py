@@ -11,9 +11,9 @@ IDENTITY_WORKFLOW_SHA256 = 'ed8bc1fdc4bcf73a12d7f74a31745a051a01740c951ddb776051
 class FieldMatrixActivationTests(unittest.TestCase):
     def test_only_selector_changes_from_accepted_identity_workflow(self):
         raw = (ROOT / WORKFLOW).read_bytes()
-        self.assertEqual(raw.count(b'--config-catalog-attribute-binding'), 1)
+        self.assertEqual(raw.count(b'--catalog-readonly-binding'), 1)
         self.assertNotIn(b'--config-catalog-identity-binding', raw)
-        previous = raw.replace(b'--config-catalog-attribute-binding', b'--config-catalog-identity-binding')
+        previous = raw.replace(b'--catalog-readonly-binding', b'--config-catalog-identity-binding')
         self.assertEqual(checkout_source_sha256(previous), IDENTITY_WORKFLOW_SHA256)
         self.assertNotEqual(checkout_source_sha256(previous + b'# drift\n'), IDENTITY_WORKFLOW_SHA256)
 
