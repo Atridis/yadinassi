@@ -1,0 +1,12 @@
+{
+  "scripts/native_1c_bootstrap/full_suite.py": {
+    "base_sha256": "e203d1469d191d48ab3db74d03877010b833689b46263f4585723bc29a0f928a",
+    "candidate_sha256": "f2992733fcb01cdb2a03195dd80c879f44cc487dc5a84e9fff530aa5a5a6e4d1",
+    "edits": [
+      {
+        "old": "            if client_output != server_output:\n",
+        "new": "            parity_matches = client_output == server_output\n            if tree_output is not None and tree_profile == 'tree-copy-v1':\n                import native_1c_tree_access_probe as access_probe\n                record['copy_access_probe'] = access_probe.witness(client_output, 'client', nonce, tree_spec.source_sha256, digest(module))\n                _, client_main = access_probe.split_capture(client_output)\n                _, server_main = access_probe.split_capture(server_output)\n                parity_matches = client_main == server_main\n            if not parity_matches:\n"
+      }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "native-valuetree-copy-owner-v2",
+  "run_id": "40926194836",
+  "attempt": "1",
+  "head": "08982c9751e03d496fa3d4b2e4d45e0900a15cfc",
+  "repository": {
+    "commit": "b15a1dfe0092c0e3d1bef221ed3f6b8622eb87c2",
+    "github_run_attempt": "1",
+    "github_run_id": "40926194836",
+    "tree": "1c33be1f1f990d67463761b8d870add9ddd0a1dc"
+  },
+  "image": "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728",
+  "platform": "linux/amd64",
+  "source": "integrational_tests/measurements/tree_copy.bsl",
+  "source_sha256": "aadb8667848308bc4e14b82764dd693bc30fdd6a184598caf479e5a0cdc32572",
+  "server_module_sha256": "26c290f62608040b8d7f5ea29d439c25e93db5acc031097ff6314ab7ccb91abd",
+  "client_module_sha256": "aa530ee549b1a1c86781ded0312a0762d25f1bb46c40d17418e2c9e017687cee",
+  "full_sha256": "dae222dc6fe669bedadc51cb6e8ffde4e2707559c8d44f9fb7ed8aaab533112c",
+  "full_size": 6269,
+  "main_sha256": "2350822aa712702e7f3ac31020a71307421dddcb6b4d5d9ed49c0eabd07c2238",
+  "main_size": 6237,
+  "statuses": [
+    "S",
+    "S",
+    "S",
+    "S",
+    "S",
+    "S",
+    "S",
+    "S",
+    "A"
+  ],
+  "native_measurement_accepted": true,
+  "source_run_runtime_parity_accepted": false,
+  "independent_audit_sha256": "b20f4698d64d19f2ff5f6dcb14eb93c3322e452cab92014e34f823e1e428a6d6"
+}

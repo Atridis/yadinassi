@@ -26,7 +26,9 @@ implementation; see [scope and acceptance gates](value-tree-unload-column-runtim
 Rows.LoadColumn has 45 authenticated observations and accepted runtime gates; see
 [LoadColumn scope and evidence](value-tree-load-column-measurement.md).
 Rows.Move now has 32 authenticated observations and a bounded implementation; see
-[runtime scope and pending fresh acceptance](value-tree-move-runtime.md). Copy remains deferred. Local-only tests are not native evidence.
+[runtime scope and pending fresh acceptance](value-tree-move-runtime.md). Copy now has authenticated nine-case server/client evidence and a bounded structural
+clone with shared cell references; see [Copy scope and pending runtime gates](value-tree-copy-runtime.md).
+Local-only tests are not native evidence.
 Rows.Total has32 authenticated observations and a bounded implementation; see
 [Total scope and pending fresh acceptance](value-tree-total-runtime.md).
 
@@ -88,7 +90,7 @@ Rows/Parent or Russian equivalents are rejected, including rename. Deleting the
 last column of a populated tree or clearing its columns is rejected before any
 mutation. Deleted object lifetime/presentation is not claimed as compatible.
 
-No Copy, Sort, UI,
+No Sort, UI,
 XML/internal serialization or transport. Internal serialization also explicitly
 rejects Type("ValueTree") and the four dependent type identities, rather than
 inventing native UUIDs. Object string presentations and conversion edge cases remain unverified; the

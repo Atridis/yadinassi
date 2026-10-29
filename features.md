@@ -5804,3 +5804,20 @@ working table/tree operations, both language aliases, missing methods and missin
 arguments without exporting raw exception text. These new controls still require
 their own source-bound native run. No runtime method is added.
 [Evidence, scope and source attribution](docs/value-tree-fill-measurement.md).
+
+
+## Копирование ДереваЗначений без параметров
+
+`Дерево.Скопировать()` / `Tree.Copy()` создаёт независимую структуру дерева:
+новые колонки и строки с сохранёнными схемой, порядком, родителями и владельцем.
+Значения ячеек не копируются рекурсивно: внешние и вложенные массивы остаются
+общими с исходным деревом, включая существующие alias-группы. Присваивания ячейкам,
+добавление/удаление строк и изменения схемы независимы. Лишний аргумент отклоняется.
+
+Основа — аутентифицированный серверный и клиентский прогон
+[40926194836](https://github.com/Atridis/yadinassi/actions/runs/40926194836):
+восемь успешных случаев и один отказ по аргументу. Текущая реализация воспроизводит
+точные 6237 байт основного capture; прежний native run имел ожидаемое несовпадение
+с тогда ещё отсутствовавшим runtime Copy. Ресурсные лимиты, отсутствие вызовов
+пользовательских hooks, границы типов ячеек и обязательные свежие gates описаны в
+[docs/value-tree-copy-runtime.md](docs/value-tree-copy-runtime.md).

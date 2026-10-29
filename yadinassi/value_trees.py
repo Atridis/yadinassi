@@ -18,6 +18,7 @@ _MAX_DEPTH = 256
 _MAX_DEFAULT_TEXT = 1_000_000
 _MAX_SEARCH_WORK = 8_000_000
 _MAX_SEARCH_TEXT = 1_000_000
+_MAX_COPY_TEXT = 1_000_000
 
 
 class _SearchBudget:
@@ -847,3 +848,107 @@ class BSLValueTree(BSLObject):
         if name.casefold() in ("rows", "строки"):
             return self.rows
         return super().get_member(name)
+
+
+    def copy(self, *args):
+        """Native-backed structural copy; cell values stay shared references.
+
+        Resource limits and corrupt-host-graph rejection are local policy.
+        Preflight is iterative and never invokes a cell's equality/conversion/
+        cloning hooks. No source object is modified, including on failure.
+        """
+        if args:
+            raise TypeError("Слишком много параметров (Скопировать)")
+        if (type(self) is not BSLValueTree
+                or type(self.columns) is not BSLValueTreeColumnCollection
+                or self.columns.table is not self or type(self.columns.items) is not list
+                or type(self._all_rows) is not dict
+                or type(self.rows) is not BSLValueTreeRowCollection
+                or self.rows.tree is not self or self.rows.parent is not None
+                or type(self.rows.items) is not list):
+            raise ValueError("ДеревоЗначений: неверный источник копирования")
+        columns = self.columns.items
+        BSLValueTree._budget(len(self._all_rows), len(columns))
+        column_ids, names = set(), set()
+        text_size = default_size = 0
+        width_budget = _SearchBudget()
+        for column in columns:
+            if (type(column) is not BSLValueTreeColumn or column.table is not self
+                    or column._deleted is not False or id(column) in column_ids
+                    or type(column.name) is not str or type(column.title) is not str
+                    or type(column.value_type) is not BSLTypeDescription
+                    or type(column.width) is not Decimal):
+                raise ValueError("ДеревоЗначений: неверная колонка копирования")
+            # Bound coefficient work before comparisons/integral conversion,
+            # including an in-range value with excessive trailing zero digits.
+            _search_scalar(column.width, width_budget)
+            if not 0 <= column.width <= 2 ** 32 - 1 or column.width != column.width.to_integral_value():
+                raise ValueError("ДеревоЗначений: неверная ширина колонки копирования")
+            text_size += len(column.name) + len(column.title)
+            default_size += len(column.default) if type(column.default) is str else 0
+            if text_size > _MAX_COPY_TEXT or default_size > _MAX_DEFAULT_TEXT:
+                raise ValueError("ДеревоЗначений: превышен предел текста копирования Yadinassi")
+            key = column.name.casefold()
+            text_size += len(key)
+            if text_size > _MAX_COPY_TEXT or (key and key in names):
+                raise ValueError("ДеревоЗначений: неверные имена колонок копирования")
+            names.add(key); column_ids.add(id(column))
+        if len(self.rows.items) > _MAX_ROWS:
+            raise ValueError("ДеревоЗначений: превышен предел строк копирования Yadinassi")
+        ordered, seen = [], set()
+        pending = [(self.rows, iter(self.rows.items), 0)]
+        while pending:
+            collection, iterator, depth = pending[-1]
+            try:
+                row = next(iterator)
+            except StopIteration:
+                pending.pop()
+                continue
+            if (type(row) is not BSLValueTreeRow or id(row) in seen
+                    or row.tree is not self or row.collection is not collection
+                    or row.parent is not collection.parent or row._deleted is not False
+                    or type(row.depth) is not int or row.depth != depth or depth > _MAX_DEPTH
+                    or type(row.cells) is not dict or len(row.cells) != len(columns)
+                    or type(row.rows) is not BSLValueTreeRowCollection
+                    or row.rows.tree is not self or row.rows.parent is not row
+                    or type(row.rows.items) is not list or len(row.rows.items) > _MAX_ROWS):
+                raise ValueError("ДеревоЗначений: неверная структура копирования")
+            # Inspect key types/identity before any cell dictionary lookup: a
+            # hostile foreign key must never get an equality callback.
+            if any(type(key) is not BSLValueTreeColumn or id(key) not in column_ids for key in row.cells):
+                raise ValueError("ДеревоЗначений: неверные ячейки копирования")
+            BSLValueTree._budget(len(ordered) + 1, len(columns))
+            seen.add(id(row)); ordered.append(row)
+            if row.rows.items:
+                if depth >= _MAX_DEPTH:
+                    raise ValueError("ДеревоЗначений: превышена глубина копирования Yadinassi")
+                pending.append((row.rows, iter(row.rows.items), depth + 1))
+        if (len(ordered) != len(self._all_rows)
+                or any(type(row) is not BSLValueTreeRow or id(row) not in seen or value is not None
+                       for row, value in self._all_rows.items())):
+            raise ValueError("ДеревоЗначений: неверный реестр строк копирования")
+        result = BSLValueTree()
+        new_columns = []
+        for column in columns:
+            cloned = BSLValueTreeColumn(result, column.name, column.value_type, column.title, column.width)
+            cloned.default = column.default
+            new_columns.append(cloned)
+        result.columns.items = new_columns
+        rows = {}
+        for row in ordered:
+            parent = None if row.parent is None else rows[row.parent]
+            collection = result.rows if parent is None else parent.rows
+            # Copy already validated cell slots directly; running ordinary Add
+            # would manufacture defaults/coerce values before replacing them.
+            cloned = object.__new__(BSLValueTreeRow)
+            cloned.collection, cloned.tree, cloned.parent = collection, result, parent
+            cloned.depth, cloned._deleted = row.depth, False
+            cloned.cells = {new: row.cells[old] for old, new in zip(columns, new_columns)}
+            cloned.rows = BSLValueTreeRowCollection(result, cloned)
+            collection.items.append(cloned)
+            result._all_rows[cloned] = None
+            rows[row] = cloned
+        return result
+
+    def get_method(self, name):
+        return _method(name, {"copy": self.copy, "скопировать": self.copy})

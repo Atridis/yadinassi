@@ -1222,10 +1222,13 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                      hashes: dict, *, stall: bool = False, dates_output: Path | None = None,
                      values_output: Path | None = None, collections_output: Path | None = None,
                      numbers_output: Path | None = None, preprocessor_measurement: bool = False,
-                     tree_output: Path | None = None) -> dict:
+                     tree_output: Path | None = None, tree_profile: str = 'tree-v1') -> dict:
     """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
     if tree_output is not None:
         import tree_suite
+        tree_spec = tree_suite.profiles.select(tree_profile)
+    elif tree_profile != 'tree-v1':
+        raise FullError('invalid_input')
     parity_output = (tree_output if tree_output is not None else
                      numbers_output if numbers_output is not None else
                      collections_output if collections_output is not None else
@@ -1235,7 +1238,7 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
               empty_collections_report() if collections_output is not None else
               empty_values_report() if values_output is not None else
               empty_dates_report() if dates_output is not None else empty_client_report())
-    marker_reader = (tree_suite.client_marker if tree_output is not None else
+    marker_reader = ((lambda path, nonce, phase: tree_suite.client_marker(path, nonce, phase, profile=tree_profile)) if tree_output is not None else
                      client_numbers_marker if numbers_output is not None else
                      client_collections_marker if collections_output is not None else
                      client_values_marker if values_output is not None else
@@ -1276,13 +1279,13 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
             marker_reader = lambda path, nonce, phase: selected_reader(
                 path, nonce, phase, source_hash=hashes[CLIENT_SOURCE])
         if tree_output is not None:
-            if tree_output != root.parent / (tree_suite.CASE + '.out'):
+            if tree_output != root.parent / (tree_spec.case + '.out'):
                 raise FullError('invalid_input')
-            tree_source = secure_bytes(inputs / tree_suite.TARGET, MAX_OUTPUT)
-            if digest(tree_source) != hashes[tree_suite.SOURCE]:
+            tree_source = secure_bytes(inputs / tree_spec.target, MAX_OUTPUT)
+            if digest(tree_source) != hashes[tree_spec.source]:
                 raise FullError('invalid_input')
             record['source_sha256'] = digest(tree_source)
-            module = tree_suite.client_module(tree_source, source)
+            module = tree_suite.client_module(tree_source, source, profile=tree_profile)
         elif numbers_output is not None:
             numbers_source = secure_bytes(inputs / 'scenarios/numbers.bsl', MAX_OUTPUT)
             if digest(numbers_source) != hashes['integrational_tests/tests/numbers.bsl']:
@@ -1391,7 +1394,14 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         if parity_output is not None:
             client_output = serialize_messages(completion['values'])
             server_output = secure_bytes(parity_output, MAX_OUTPUT, allow_empty=True)
-            if client_output != server_output:
+            parity_matches = client_output == server_output
+            if tree_output is not None and tree_profile == 'tree-copy-v1':
+                import native_1c_tree_access_probe as access_probe
+                record['copy_access_probe'] = access_probe.witness(client_output, 'client', nonce, tree_spec.source_sha256, digest(module))
+                _, client_main = access_probe.split_capture(client_output)
+                _, server_main = access_probe.split_capture(server_output)
+                parity_matches = client_main == server_main
+            if not parity_matches:
                 if collections_output is not None:
                     # relax byte parity or enable payload export.
                     try:
