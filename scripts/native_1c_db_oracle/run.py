@@ -324,13 +324,18 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
                 and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool and type(config_catalog_observation) is bool and type(config_catalog_name_binding) is bool and type(config_catalog_standard_binding) is bool and type(config_catalog_identity_binding) is bool and type(config_catalog_field_matrix) is bool and type(config_catalog_attribute_binding) is bool and type(catalog_readonly_binding) is bool
-                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation, config_catalog_name_binding, config_catalog_standard_binding, config_catalog_identity_binding, config_catalog_field_matrix, config_catalog_attribute_binding, catalog_readonly_binding)) <= 1, 'invalid_input')
+                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation, config_catalog_name_binding, config_catalog_standard_binding, config_catalog_identity_binding, config_catalog_field_matrix, config_catalog_attribute_binding, catalog_readonly_binding, reference_case is not None)) <= 1, 'invalid_input')
+        require(reference_case is None or type(reference_case) is str and reference_case in ('distinct_a','distinct_b'), 'invalid_input')
+        self.reference_case = reference_case
+        self.reference_witness = None
+        self.reference_installation = None
+        self.reference_module_sha256 = None
         self.observation = None
-        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection or config_catalog_observation or config_catalog_name_binding or config_catalog_standard_binding or config_catalog_identity_binding or config_catalog_field_matrix or config_catalog_attribute_binding or catalog_readonly_binding:
+        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection or config_catalog_observation or config_catalog_name_binding or config_catalog_standard_binding or config_catalog_identity_binding or config_catalog_field_matrix or config_catalog_attribute_binding or catalog_readonly_binding or reference_case is not None:
             import record_observation
             self.observation = record_observation
         self.params_policy = None
@@ -385,12 +390,17 @@ class Native:
         elif params_transport:
             import params_observation
             self.params_policy = params_observation
-        self.catalog_binding = catalog_readonly_binding
-        self.catalog_field_matrix = config_catalog_field_matrix or config_catalog_attribute_binding or catalog_readonly_binding
+        self.catalog_binding = catalog_readonly_binding or reference_case is not None
+        self.catalog_field_matrix = config_catalog_field_matrix or config_catalog_attribute_binding or catalog_readonly_binding or reference_case is not None
         self.identity_manifest = None; self.identity_baseline_verified = False
         self.record_policy = None; self.record_module = None
         self.record_pending = None; self.record_names = None; self.record_profile = None
-        if catalog_readonly_binding:
+        if reference_case is not None:
+            import catalog_reference_identity as binding_policy
+            import catalog_binding_reader
+            self.record_policy = binding_policy
+            self.record_module = catalog_binding_reader
+        elif catalog_readonly_binding:
             import catalog_readonly_binding as binding_policy
             import catalog_binding_reader
             self.record_policy = binding_policy
@@ -633,6 +643,12 @@ class Native:
         require(type(token) is str and re.fullmatch('[0-9a-f]{32}',token) is not None,'invalid_input')
         control=self.evidence/'control.json'; result=self.evidence/'result.json'
         completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
+        reference_path = self.evidence / 'reference-observation.json'
+        reference_mode = getattr(self, 'reference_case', None) is not None
+        if reference_mode:
+            absent(reference_path)
+            self.reference_witness = None
+        reference_observation = None
         absent(control,result,completion,pending)
         control.write_text(json.dumps({'schema':1,'nonce':self.nonce,'token':token,'operation':operation}),encoding='utf-8')
         user=None if operation=='bootstrap' else (SETUP_USER if operation in ('audit','audit_contract','audit_record_metadata') else CRUD_USER)
@@ -646,6 +662,20 @@ class Native:
                 absent(pending)
             finish = self.observation.completion_marker if observed else completion_marker
             finished=finish(regular_bytes(completion,4096),nonce=self.nonce,token=token,operation=operation)
+            if reference_mode and operation in ('create','update','delete','observe'):
+                from catalog_reference_native import validate_witness, WITNESS_LIMIT
+                if finished['status'] != 'error' or reference_path.exists():
+                    raw_reference = regular_bytes(reference_path, WITNESS_LIMIT)
+                    try:
+                        witness = validate_witness(raw_reference, nonce=self.nonce, token=token,
+                            case=self.reference_case, operation=operation)
+                    except ValueError:
+                        raise OracleError('invalid_marker') from None
+                    if finished['status'] != 'error':
+                        require(witness.status == 'ok', 'invalid_marker')
+                        reference_observation = (witness, hashlib.sha256(raw_reference).hexdigest(), token)
+            elif reference_mode:
+                absent(reference_path)
             if finished['status']=='error':
                 kind = ('artifact_limit' if ((operation == 'audit_contract' and finished['phase'] == 'contract_limit')
                     or (observed and finished['phase'] == 'record_limit')) else 'process_failed')
@@ -658,10 +688,16 @@ class Native:
                 data=marker(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation,
                             contract_version=comparison.SCHEMA)
             self.provenance['actual_version']=data['actual_version']
+            if reference_observation is not None:
+                self.reference_witness = reference_observation
+                if operation == 'create':
+                    require(witness.after_present and not witness.before_present, 'invalid_marker')
+                    self.reference_installation = reference_observation
             return data
         finally:
             control.unlink(missing_ok=True); result.unlink(missing_ok=True)
             completion.unlink(missing_ok=True); pending.unlink(missing_ok=True)
+            if reference_mode: reference_path.unlink(missing_ok=True)
 
     def seed(self):
         with self.seed_command('create'):
@@ -671,7 +707,11 @@ class Native:
             self.batch(database,['/DumpConfigToFiles',str(native),'-Format','Hierarchical'],'dump-empty',None)
         try:
             inject(native,self.v1,nonce=self.nonce,evidence=self.evidence,
+                   **({'reference_case': self.reference_case} if getattr(self, 'reference_case', None) is not None else {}),
                    **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}))
+            if getattr(self, 'reference_case', None) is not None:
+                server = self.v1 / 'CommonModules/NativeOracleServer/Ext/Module.bsl'
+                self.reference_module_sha256 = self.record_policy.canonical_module_sha256(regular_bytes(server,1048576))
             promote_v2(self.v1,self.v2,
                        **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}))
         except (ValueError,OSError):
@@ -795,6 +835,10 @@ class Native:
                     self.budgets()
                 evidence = {'snapshot': identifier, 'token': token, 'origin': origin,
                     'postimage': {key: summary[key] for key in ('bytes', 'sha256')}, 'logical': logical}
+                if getattr(self, 'reference_case', None) is not None:
+                    require(self.reference_witness is not None and self.reference_witness[2] == token, 'invalid_marker')
+                    evidence['reference'] = self.reference_witness
+                    self.reference_witness = None
             # The writable observer has been removed before this pending evidence.
             # Baseline waits only until its already scheduled metadata auditor runs.
             self.record_pending = (identifier, frozen, evidence)
@@ -805,6 +849,9 @@ class Native:
             raise
 
     def prepare_record_profile(self, evidence, report):
+        if getattr(self, 'reference_case', None) is not None:
+            expected = self.record_policy.rendered_module_sha256(self.nonce, self.reference_case)
+            require(self.reference_module_sha256 == expected, 'provenance_mismatch')
         capture, self.record_names, self.record_profile = self.record_policy.begin_capture(
             evidence, report, self.record_module)
         return capture
@@ -821,6 +868,7 @@ class Native:
             require(evidence['origin'] == {key: expected['physical'][key] for key in ('bytes','sha256')},
                     'snapshot_changed')
             framings = []
+            permutations = []
             for path, summary in ((self.artifacts / identifier, evidence['origin']),
                                   (frozen, evidence['postimage'])):
                 def read_selected(read_at, size, *, limits):
@@ -837,9 +885,34 @@ class Native:
                     raise policy.reader_failure(error) from None
                 require(measured == summary, 'snapshot_changed')
                 framings.append(policy.compare_values(rows, identifier, self.record_names, self.record_module))
+                if getattr(self, 'reference_case', None) is not None:
+                    witness, witness_digest, witness_token = evidence['reference']
+                    require(witness_token == evidence['token'], 'invalid_marker')
+                    permutations.append(policy.measure_reference(rows, identifier, self.record_names, witness.actual_uuid or None))
                 # Do not retain either private catalog/row object beyond its own comparison.
                 del rows
-            result = policy.bind_state(identifier, evidence, report, *framings)
+            clean_evidence = {key:value for key,value in evidence.items() if key != 'reference'}
+            result = policy.bind_state(identifier, clean_evidence, report, *framings)
+            if getattr(self, 'reference_case', None) is not None:
+                if len(permutations) != 2 or permutations[0] != permutations[1]:
+                    policy.fail('reference_permutation')
+                permutation = permutations[0]
+                result['reference'] = {'witness_sha256': witness_digest,
+                    'before': witness.before, 'after': witness.after,
+                    'before_present': witness.before_present, 'after_present': witness.after_present,
+                    'permutation': permutation,
+                    'hypothesis_match': None if permutation is None else permutation == policy.TOOL1CD}
+                policy._validate_reference(result['reference'], identifier)
+                if identifier == 'created':
+                    require(self.reference_installation is not None, 'invalid_marker')
+                    installed, installed_digest, installed_token = self.reference_installation
+                    require(installed.actual_uuid == witness.actual_uuid and installed_token != witness_token, 'invalid_marker')
+                    report['record_readback']['installation'] = {'status':'succeeded',
+                        'token':installed_token, 'witness_sha256':installed_digest}
+                    self.reference_installation = None
+                earlier = report['record_readback']['states']
+                if identifier == 'updated' and earlier[1]['reference']['permutation'] != permutation:
+                    policy.fail('reference_permutation')
         except BaseException:
             try: self.remove(frozen)
             except BaseException: pass
@@ -1121,13 +1194,16 @@ class Controller:
         elif report.get('schema') == 7:
             import params_observation
             self.params_policy = params_observation
-        if report.get('schema') == 37:
+        if report.get('schema') == 39:
+            import catalog_reference_identity
+            self.record_policy = catalog_reference_identity
+        elif report.get('schema') == 37:
             import catalog_readonly_binding
             self.record_policy = catalog_readonly_binding
         elif report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 23, 25, 27, 29, 31, 33, 35, 37):
+        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 23, 25, 27, 29, 31, 33, 35, 37, 39):
             import record_observation
             self.observation = record_observation
 
@@ -1349,7 +1425,7 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix', '--catalog-readonly-binding','--config-catalog-attribute-binding'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix', '--catalog-readonly-binding','--catalog-reference-distinct-a','--catalog-reference-distinct-b','--config-catalog-attribute-binding'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
     config_transport = flag == '--config-transport-observation'
@@ -1359,6 +1435,7 @@ def main():
     config_entry_reference = flag == '--config-entry-reference-observation'
     config_blob_chain = flag == '--config-blob-chain-observation'
     config_content_decode = flag == '--config-content-decode-observation'
+    reference_case = {'--catalog-reference-distinct-a':'distinct_a','--catalog-reference-distinct-b':'distinct_b'}.get(flag)
     catalog_readonly_binding = flag == '--catalog-readonly-binding'
     config_catalog_attribute_binding = flag == '--config-catalog-attribute-binding'
     config_catalog_field_matrix = flag == '--config-catalog-field-matrix'
@@ -1373,10 +1450,13 @@ def main():
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'catalog_readonly_binding':True} if catalog_readonly_binding else {'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'reference_case':reference_case} if reference_case is not None else {'catalog_readonly_binding':True} if catalog_readonly_binding else {'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if catalog_readonly_binding:
+        if reference_case is not None:
+            import catalog_reference_identity as selected
+            report=selected.empty_report(nonce,provenance,reference_case=reference_case)
+        elif catalog_readonly_binding:
             import catalog_readonly_binding as selected
             report=selected.empty_report(nonce,provenance)
         elif config_catalog_attribute_binding:

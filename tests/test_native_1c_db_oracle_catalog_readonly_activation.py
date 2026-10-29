@@ -21,8 +21,9 @@ SOURCE_PINS = {
 
 
 class CatalogReadonlyActivationTests(unittest.TestCase):
-    def test_exactly_one_selector_changes_no_workflow_permissions_or_steps(self):
-        raw=(ROOT/WORKFLOW).read_bytes()
+    def test_archived_activation_changed_only_one_reviewed_selector(self):
+        # Historical evidence remains pinned; the active workflow now measures references.
+        raw=(ROOT/'tests/fixtures/native_catalog_readonly_workflow.yml').read_bytes()
         self.assertEqual(raw.count(b'--catalog-readonly-binding'),1)
         self.assertNotIn(b'--config-catalog-attribute-binding',raw)
         previous=raw.replace(b'--catalog-readonly-binding',b'--config-catalog-attribute-binding')

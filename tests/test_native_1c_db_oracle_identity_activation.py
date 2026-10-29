@@ -15,7 +15,7 @@ SOURCE_PINS = {'scripts/native_1c_db_oracle/config_catalog_identity_binding.py':
 
 class IdentityActivationTests(unittest.TestCase):
     def test_only_one_workflow_selector_changes(self):
-        raw = (ROOT / WORKFLOW).read_bytes()
+        raw = (ROOT / 'tests/fixtures/native_catalog_readonly_workflow.yml').read_bytes()
         self.assertEqual(raw.count(b'--catalog-readonly-binding'), 1)
         self.assertNotIn(b'--config-catalog-standard-binding', raw)
         original = raw.replace(b'--catalog-readonly-binding', b'--config-catalog-standard-binding')

@@ -37,7 +37,7 @@ def checkout_source_sha256(raw):
 
 class StandardActivationTests(unittest.TestCase):
     def test_workflow_changes_exactly_one_selector_and_nothing_else(self):
-        raw = (ROOT/WORKFLOW).read_bytes()
+        raw = (ROOT/'tests/fixtures/native_catalog_readonly_workflow.yml').read_bytes()
         self.assertEqual(raw.count(b'--catalog-readonly-binding'), 1)
         self.assertNotIn(b'--config-catalog-name-binding', raw)
         original = raw.replace(b'--catalog-readonly-binding', b'--config-catalog-name-binding')
@@ -51,7 +51,7 @@ class StandardActivationTests(unittest.TestCase):
     def pinned_checkout_inputs(self):
         for path, expected in SOURCE_PINS.items():
             yield path, (ROOT/path).read_bytes(), expected
-        original = (ROOT/WORKFLOW).read_bytes().replace(
+        original = (ROOT/'tests/fixtures/native_catalog_readonly_workflow.yml').read_bytes().replace(
             b'--catalog-readonly-binding', b'--config-catalog-name-binding')
         yield WORKFLOW, original, WORKFLOW_LF_SHA256
 
