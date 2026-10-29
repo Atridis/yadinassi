@@ -74,3 +74,10 @@ acceptance. A synthetic action replaces all 18 rows with new objects containing
 the same cells: the BSL observer and strict decoder retain new IDs 23–40 instead
 of normalizing them to prior rows. This demonstrates observation flexibility,
 not real-platform identity behavior.
+
+## Subsequent numeric runtime candidate
+
+Fresh authenticated Linux acquisition and its bounded implementation are
+described in [the runtime scope](value-tree-sort-runtime.md). The preceding
+sections retain the integration-preparation history; they are not a statement
+that native acquisition is still pending. Fresh runtime acceptance is pending.

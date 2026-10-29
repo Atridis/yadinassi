@@ -11,7 +11,7 @@ from yadinassi.values import HostFunction
 from scripts import native_1c_tree_sort_contract as wire
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / 'integrational_tests/measurements/tree_sort.bsl').read_text()
+SOURCE = (ROOT / 'integrational_tests/measurements/tree_sort.bsl').read_text(encoding='utf-8')
 HELPERS = SOURCE[:SOURCE.index('Сообщить("TS-C1:')]
 
 
@@ -80,6 +80,17 @@ class SortObserverTests(unittest.TestCase):
     def probe(self, case):
         vm = Interpreter(); vm.execute(HELPERS)
         return wire.validate_payload(vm.execute(f'TSProbe({case})').encode(), case)
+
+    def test_source_read_is_independent_of_windows_default_codepage(self):
+        import runpy
+        original = Path.read_text
+        def windows_read(path, *args, **kwargs):
+            if not args and kwargs.get('encoding') is None:
+                kwargs['encoding'] = 'cp1252'
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'read_text', windows_read):
+            namespace = runpy.run_path(str(Path(__file__).resolve()))
+        self.assertEqual(namespace['SOURCE'], SOURCE)
 
     def test_calibration_and_missing_method_do_not_claim_availability(self):
         with model('missing'):
