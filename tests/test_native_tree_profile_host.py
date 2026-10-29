@@ -22,7 +22,7 @@ class TreeHostTests(unittest.TestCase):
 
     def test_source_is_fixed(self):
         self.assertEqual(HOST.FULL.digest((ROOT / HOST.SOURCE).read_text(encoding='utf-8').encode('utf-8')), HOST.SOURCE_SHA256)
-        self.assertEqual(HOST.MESSAGE_COUNT, 33)
+        self.assertEqual(HOST.MESSAGE_COUNT, 34)
 
     def test_mapping_excludes_six_scenarios(self):
         smoke = HOST.sibling('native_1c_smoke')
@@ -275,6 +275,7 @@ class TreeHostTests(unittest.TestCase):
             before=HOST.CONTRACT.baseline(case)
             shared=before[:50]+'R01Q0....' if case==31 else before
             lines.append(f'TF-{case}: [E{before}{before}{shared}]')
+        lines.append('TF-A: [1SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123]')
         payload=('\n'.join(lines)+'\n').encode()
         inputs=dict.fromkeys(tree.INPUT_FILES,'a'*64);inputs[HOST.SOURCE]=HOST.SOURCE_SHA256
         modules={HOST.CASE:'b'*64,'client_tree':'c'*64};nonce='1'*32
@@ -297,7 +298,7 @@ class TreeHostTests(unittest.TestCase):
                         case.update(status='failed',source_sha256=HOST.SOURCE_SHA256)
                     if state in ('client','success'):
                         case.update(status='ok',source_sha256=HOST.SOURCE_SHA256,module_sha256=modules[HOST.CASE],
-                                    output_sha256=HOST.FULL.digest(payload),output_size=len(payload),message_count=33)
+                                    output_sha256=HOST.FULL.digest(payload),output_size=len(payload),message_count=34)
                         client=stage['client_tree']
                         client.update(status='ok',failure_kind='none',source_sha256=HOST.SOURCE_SHA256,
                             module_sha256=modules['client_tree'],roundtrip_sha256=modules['client_tree'],
@@ -347,15 +348,16 @@ class TreeHostTests(unittest.TestCase):
             before = contract.baseline(case)
             shared = before[:50] + 'R01Q0....' if case == 31 else before
             lines.append(f'TF-{case}: [E{before}{before}{shared}]')
+        lines.append('TF-A: [1SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123]')
         payload = ('\n'.join(lines) + '\n').encode()
         contract.validate_output(payload)
         digest = HOST.FULL.digest(payload)
         case = {'name': HOST.CASE, 'status': 'ok', 'source_sha256': HOST.SOURCE_SHA256,
-                'module_sha256': 'a' * 64, 'output_sha256': digest, 'output_size': len(payload), 'message_count': 33}
+                'module_sha256': 'a' * 64, 'output_sha256': digest, 'output_size': len(payload), 'message_count': 34}
         client = dict.fromkeys(HOST.FULL.CLIENT_FLAGS, True)
         client.update(status='ok', failure_kind='none', source_sha256=HOST.SOURCE_SHA256,
                       module_sha256='b' * 64, roundtrip_sha256='b' * 64,
-                      output_sha256=digest, output_size=len(payload), message_count=33,
+                      output_sha256=digest, output_size=len(payload), message_count=34,
                       process_diagnostics={'stage': 'after_exit', 'reason': 'none', 'unexpected_count': 0,
                                            'zombie_count': 0, 'classes': dict.fromkeys(
                                                ('native', 'display', 'session_bus', 'shell', 'python', 'other', 'unreadable'), 0)})

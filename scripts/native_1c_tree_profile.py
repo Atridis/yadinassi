@@ -23,10 +23,10 @@ SCHEMA = 'native-1c-tree-v1'
 STAGE_SCHEMA = 'native-1c-tree-stage-v1'
 CASE = 'tree_fill_values'
 SOURCE = 'integrational_tests/measurements/tree_fill_values.bsl'
-SOURCE_SHA256 = '47ee0383ac5a9db0bf9d4132b78f0ca40eb46712b4152654feec776ce38e22df'
+SOURCE_SHA256 = '43b06200bb0830ca47fb6ab38353e41dae71a10488a34d83cb5d8eb8ce53863b'
 MAX_OUTPUT = 8192
 MAX_TRANSPORT = 65536
-MESSAGE_COUNT = 33
+MESSAGE_COUNT = 34
 
 
 def sibling(name):
@@ -56,7 +56,7 @@ def validate_diagnostic(value):
     require(type(value) is dict and set(value) == {'site', 'case', 'category', 'calibration'})
     require(value['site'] in ('server', 'client'))
     require(value['case'] is None or type(value['case']) is int and 0 <= value['case'] <= 32)
-    require(value['category'] in ('invalid_type', 'output_limit', 'encoding', 'record_count', 'calibration',
+    require(value['category'] in ('invalid_type', 'output_limit', 'encoding', 'record_count', 'calibration', 'api_controls',
                                  'record_shape', 'probe_b', 'probe_p', 'probe_q', 'probe_r', 'payload_contract'))
     require(value['calibration'] is None or type(value['calibration']) is str and len(value['calibration']) == 1
             and value['calibration'] in '0123456789ABCDEFGHIJKLMNOPQR')
@@ -64,7 +64,7 @@ def validate_diagnostic(value):
     require(not (category == 'calibration' and value['case'] != 0))
     require(not (category in ('record_shape', 'probe_b', 'probe_p', 'probe_q', 'probe_r', 'payload_contract')
                  and (type(value['case']) is not int or not 1 <= value['case'] <= 32)))
-    require(not (category in ('invalid_type', 'output_limit', 'encoding', 'record_count') and value['case'] is not None))
+    require(not (category in ('invalid_type', 'output_limit', 'encoding', 'record_count', 'api_controls') and value['case'] is not None))
     require(not (category != 'calibration' and value['calibration'] is not None))
 
 

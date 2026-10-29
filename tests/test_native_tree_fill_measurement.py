@@ -1,4 +1,5 @@
 """Synthetic observer validity, never native FillValues semantic evidence."""
+import hashlib
 from decimal import Decimal
 from pathlib import Path
 import unittest
@@ -35,7 +36,7 @@ class FillObserverTests(unittest.TestCase):
         self.assertEqual(len(observations), 32)
         self.assertTrue(all(item['outcome'] == 'exception' for item in observations))
         self.assertLessEqual(len(raw), contract.MAX_OUTPUT_BYTES)
-        self.assertEqual(len(raw), 6017)
+        self.assertEqual(len(raw), 6107)
 
     def run_action(self, action, case=2):
         original = Rows.get_method
@@ -142,7 +143,7 @@ class FillContractTests(unittest.TestCase):
         for case in range(1, 33):
             value.execute(f'Result=TreeFillProbe({case});')
             payloads.append(f'TF-{case}: ['.encode() + value.variables['result'].encode() + b']\n')
-        good = b'TF-C: [-]\n' + b''.join(payloads)
+        good = b'TF-C: [-]\n' + b''.join(payloads) + b'TF-A: [1SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123SU123]\n'
         contract.validate_output(good)
         bad = [good.replace(b'TF-C: [-]', b'TF-C: [G]'), good.replace(b'\n', b'\r\n'),
                good[:-1], good + payloads[-1], b'TF-C: [-]\n' + b''.join(reversed(payloads)),
@@ -151,3 +152,51 @@ class FillContractTests(unittest.TestCase):
             with self.subTest(size=len(raw)):
                 with self.assertRaises(contract.ObservationError):
                     contract.validate_output(raw)
+
+
+class APIControls(unittest.TestCase):
+    def test_original32_source_and_output_prefix_preserved(self):
+        start=SOURCE.index('// API controls added after the original negative32 measurement.')
+        end=SOURCE.index('Calibration = TreeFillCalibrate();')
+        restored=SOURCE[:start]+SOURCE[end:]
+        tail='Сообщить("TF-A: [" + TreeFillAPIControls() + "]");\n'
+        self.assertTrue(restored.endswith(tail))
+        restored=restored[:-len(tail)]
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         '47ee0383ac5a9db0bf9d4132b78f0ca40eb46712b4152654feec776ce38e22df')
+        outputs=[]
+        for source in (restored,SOURCE):
+            output=[];Interpreter(output.append).execute(source);outputs.append(output)
+        self.assertEqual(outputs[0],outputs[1][:33])
+        self.assertEqual(hashlib.sha256(('\n'.join(outputs[0])+'\n').encode()).hexdigest(),
+                         'e968638370962bbd51993f3757756e58cf6edb00fbe61fb37e4420b90c368f63')
+        self.assertEqual(len(outputs[1]),34)
+        contract.validate_output(('\n'.join(outputs[1])+'\n').encode())
+
+    def test_host_positive_negative_and_wrong_argument_controls(self):
+        vm=Interpreter();vm.execute(HELPERS+'Result=TreeFillAPIControls();')
+        payload=vm.variables['result'].encode()
+        decoded=contract.validate_api_payload(payload)
+        self.assertEqual(tuple(v for _,v in decoded),(
+            'S1123','S1123','SR123','SU124','SU124','MU123','MU123','MU123',
+            'MU123','MU123','MU123','MU123','AU123','AU123','SU423','SU423'))
+
+    def test_only_finite_error_categories_escape(self):
+        messages={'Метод объекта не обнаружен (FillValues)':'M',
+                  'Метод не найден: FillValues':'M',
+                  'Метод или свойство не найдено: FillValues':'M',
+                  'Недостаточно фактических параметров (FillValues)':'A',
+                  "missing 1 required positional argument: 'value'":'A',
+                  'private-path or arbitrary diagnostic':'O'}
+        for text,expected in messages.items():
+            with mock.patch.object(Interpreter,'_error_description',lambda self:text):
+                vm=Interpreter();vm.execute(HELPERS+'Result=TreeFillErrorClass();')
+                self.assertEqual(vm.variables['result'],expected)
+        self.assertNotIn('Сообщить(Text)',SOURCE)
+
+    def test_malformed_control_records_rejected(self):
+        good=b'1'+b'SU123'*16
+        contract.validate_api_payload(good)
+        for bad in (good[:-1],good+b'x',b'2'+good[1:],b'1EU123'+good[6:],
+                    b'1MR123'+good[6:],b'1SU129'+good[6:]):
+            with self.assertRaises(contract.ObservationError):contract.validate_api_payload(bad)

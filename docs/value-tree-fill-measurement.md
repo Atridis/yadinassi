@@ -1,7 +1,8 @@
-# ValueTree Rows.FillValues / ЗаполнитьЗначения: standalone measurement
+# ValueTree FillValues: absent-method regression and API controls
 
-This is a measurement candidate, not an implementation or a claim of native
-parity. The existing six ordinary integration sources and their outputs,
+The initial measurement tested a mistaken API assumption. FillValues belongs to
+ValueTable, not ValueTree or ValueTreeRowCollection. No corresponding tree runtime
+method is implemented or planned. The added native controls remain pending. The existing six ordinary integration sources and their outputs,
 including all 1023 collections records, remain unchanged. The separate bounded
 tree profile carries this source so later tree operations do not have to discard
 observer detail to fit the almost-full ordinary collections capture.
@@ -37,7 +38,7 @@ value. No default recursion behavior is assumed.
 
 ## Independent observation contract
 
-The standalone ASCII output has exactly 33 lines and 6017 bytes: one calibration
+The original standalone ASCII output has exactly 33 lines and 6017 bytes: one calibration
 line followed by TF-1 through TF-32 in exact order. Each case has a 178-character
 payload: action status S or E and three 59-character snapshots (before action,
 after action, after explicit source mutation for case31). For other cases the
@@ -75,5 +76,63 @@ failures. They are not native semantic evidence.
 The separate profile must bind this exact source, contract, runtime and adapter,
 run real managed 1C, and validate this closed contract before comparing with the
 interpreter. A native measurement/interpreter mismatch is a measurement result,
-not runtime acceptance. Runtime alignment and its native parity gate follow only
-after reviewing those observations.
+not runtime acceptance. Any runtime alignment requires an actual documented API and reviewed native
+observations; this absent-method regression does not authorize adding a method.
+
+## Negative32 result and API-membership controls
+
+Native run40874212976 on PR145 source head3441005 produced valid6017-byte output
+SHA256 `e968638370962bbd51993f3757756e58cf6edb00fbe61fb37e4420b90c368f63`:
+all32 attempted Rows.FillValues actions threw, without changing tree cells.
+The profile transport and observer passed; this is **not implementation of
+FillValues**. Those observations alone do not distinguish an unavailable method
+from inappropriate invocation. They remain attributed to the original source
+SHA256 `47ee0383ac5a9db0bf9d4132b78f0ca40eb46712b4152654feec776ce38e22df`.
+
+An additive API-control extension preserves the exact original source when its
+new helper block and final message are removed. Its first33 output records remain
+byte-identical. One additional TF-A record produces34 lines and6107 bytes total,
+within the unchanged8192-byte profile cap. The source/module hashes and counts
+change together; this is a new native measurement, not a relabeling of run40874212976.
+
+The16 controls use a fresh tree with one root and one child, plus a separate
+one-row ValueTable:
+
+1. Rows.Count, Rows.Количество and Rows.Get establish working tree receivers.
+2. ValueTable.FillValues and ValueTable.ЗаполнитьЗначения are positive fill controls.
+3. ValueTree and its Rows each receive direct FillValues and ЗаполнитьЗначения calls.
+4. Each of those three receiver types receives a deliberately nonexistent method.
+5. ValueTable.FillValues and Rows.Get are invoked without required arguments.
+6. Rows.LoadColumn and Rows.ЗагрузитьКолонку establish working mutating tree methods.
+
+Each control reports five finite characters: S(success), M(missing-method message
+category), A(missing-argument message category), or O(other exception); a bounded
+return-value code; and root/child/table cell values. Structural identity, shape,
+parent and owner relationships, column names and input-array preservation are
+checked independently after the action, including on exceptions. Observer failures
+are invalid records, not action exceptions.
+
+Exception descriptions are examined only inside the fixture and reduced to fixed
+M/A/O categories. Raw exception text, paths, arbitrary messages and stack traces
+are never exported. These categories recognize specified Russian/host phrases;
+an unrecognized wording is O, not a guessed diagnosis. The deliberately missing
+method and wrong-argument controls calibrate those categories on the real platform.
+A membership conclusion requires their results and the positive controls, not
+merely a passing transport job. Host synthetic expectations are not native results.
+No new runtime method is added by this extension.
+
+## Primary API evidence
+
+The official [EDT2026.2 syntax-help bundle](https://edt.1c.ru/downloads/releases/ruby/2026.2/plugins/com._1c.g5.v8.dt.platform.doc_3.0.1.v202610261959.jar),
+SHA256 `a8cf9c3cd5d7828958dcf69d8864cf6664180260e4d50cbff338921304c7e642`,
+contains complete RU/EN method inventories in
+`nl/{ru,en}/html/SyntaxHelperContext/objects/catalog234/catalog264/ValueTree.html`,
+`ValueTreeRowCollection.html` and `ValueTreeRow.html`. Neither the tree nor its
+rows exposes FillValues. ValueTree.Copy and ValueTreeRowCollection.Sort are the
+actual remaining tree operations of interest. The FillValues entry is under
+`catalog234/catalog236/ValueTable/methods/FillValues600.html`.
+The official [8.3.27 overlay](https://edt.1c.ru/downloads/releases/ruby/2026.2/plugins/com._1c.g5.v8.dt.platform.doc_v8_3_27_1.0.400.v202609220822.jar),
+SHA256 `c140925e80ad3a64b528b70a362ff6709f43e65b3e39e9736bad0d5e482d79f6`,
+has no replacement for these entries. No bundled vendor documentation is
+republished here. The additional native controls verify exception categories and
+working receiver/alias controls on the pinned executable, independently of the docs.

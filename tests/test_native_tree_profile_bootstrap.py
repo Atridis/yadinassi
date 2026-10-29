@@ -23,6 +23,7 @@ def payload():
         before=contract.baseline(case)
         shared=before if case!=31 else before[:50]+'R01Q0....'
         lines.append(f'TF-{case}: [E{before}{before}{shared}]')
+    lines.append('TF-A: [1S1123S1123SR123SU124SU124MU123MU123MU123MU123MU123MU123MU123AU123AU123SU423SU423]')
     return ('\n'.join(lines)+'\n').encode('ascii')
 
 
@@ -139,7 +140,7 @@ class TreeProfileTests(unittest.TestCase):
                     result=tree.run_suite(launcher,platform,Path(tmp)/'launcher.epf',Path(tmp)/'result',inputs,NONCE)
                 self.assertEqual((launcher.read_result,launcher.run_process,launcher.build_epf),original)
                 self.assertEqual(result['status'],'ok' if failure is None else 'failed')
-                if failure is None: self.assertEqual(result['cases'][0]['message_count'],33)
+                if failure is None: self.assertEqual(result['cases'][0]['message_count'],34)
 
     def test_finite_diagnostics_do_not_include_raw_payloads(self):
         cases=[(payload().replace(b'TF-C: [-]',b'TF-C: [G]'), 'calibration',0,'G'),
@@ -202,3 +203,34 @@ class HistoricalProfileInverseTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+
+
+class APIControlDiagnosticParityTests(unittest.TestCase):
+    def test_api_controls_category_matches_host_and_producer(self):
+        from scripts import native_1c_tree_profile as host
+        good = {'site': 'server', 'category': 'api_controls', 'case': None, 'calibration': None}
+        for site in ('server', 'client'):
+            tree.validate_diagnostic({**good, 'site': site})
+            host.validate_diagnostic({**good, 'site': site})
+        invalid = [{**good, 'case': value} for value in (0, 1, 32, True)]
+        invalid += [{**good, 'calibration': 'G'}, {**good, 'description': 'private diagnostic'}]
+        for diagnostic in invalid:
+            with self.subTest(diagnostic=diagnostic):
+                with self.assertRaises(full.FullError): tree.validate_diagnostic(diagnostic)
+                with self.assertRaises(host.TreeError): host.validate_diagnostic(diagnostic)
+
+    def test_malformed_api_aggregate_has_no_case_or_private_text(self):
+        from scripts import native_1c_tree_profile as host
+        original = payload().splitlines(keepends=True)
+        for line in (b'TF-A: [private]\n', b'TF-X: [1]\n', b'TF-A: [1' + b'SU129' * 16 + b']\n'):
+            raw = b''.join(original[:-1]) + line
+            for site in ('server', 'client'):
+                expected = {'site': site, 'category': 'api_controls', 'case': None, 'calibration': None}
+                self.assertEqual(tree.observation_diagnostic(raw, site), expected)
+                tree.validate_diagnostic(expected)
+                host.validate_diagnostic(expected)
+                with self.assertRaises(tree.ObservationFailure) as caught:
+                    tree.validate_observations(raw, site)
+                self.assertEqual(caught.exception.diagnostic, expected)
+                self.assertNotIn('private', str(caught.exception))
+                self.assertEqual(set(caught.exception.diagnostic), {'site', 'category', 'case', 'calibration'})

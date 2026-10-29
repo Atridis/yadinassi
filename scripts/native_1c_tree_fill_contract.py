@@ -104,16 +104,38 @@ def validate_payload(payload, case):
             'before': decoded[0], 'after': decoded[1], 'shared': decoded[2]}
 
 
+API_CASE_COUNT = 16
+API_PAYLOAD_SIZE = 1 + API_CASE_COUNT * 5
+
+
+def validate_api_payload(payload):
+    if type(payload) is not bytes or len(payload) != API_PAYLOAD_SIZE or payload[:1] != b'1':
+        reject()
+    observations = []
+    for case in range(1, API_CASE_COUNT + 1):
+        value = payload[1 + (case - 1) * 5:1 + case * 5]
+        if value[0] not in b'SMAO' or value[1] not in b'U01234R' or any(c not in b'01234' for c in value[2:]):
+            reject()
+        if value[0] != ord('S') and value[1] != ord('U'):
+            reject()
+        observations.append((case, value.decode('ascii')))
+    return tuple(observations)
+
+
 def validate_output(raw):
     if type(raw) is not bytes or len(raw) > MAX_OUTPUT_BYTES or b'\r' in raw:
         reject()
     lines = raw.splitlines(keepends=True)
-    if len(lines) != CASE_COUNT + 1 or lines[0] != b'TF-C: [-]\n':
+    if len(lines) != CASE_COUNT + 2 or lines[0] != b'TF-C: [-]\n':
         reject()
     answers = []
-    for case, line in enumerate(lines[1:], 1):
+    for case, line in enumerate(lines[1:CASE_COUNT + 1], 1):
         prefix = f'TF-{case}: ['.encode('ascii')
         if not line.startswith(prefix) or not line.endswith(b']\n'):
             reject()
         answers.append(validate_payload(line[len(prefix):-2], case))
+    line = lines[-1]
+    if not line.startswith(b'TF-A: [') or not line.endswith(b']\n'):
+        reject()
+    validate_api_payload(line[7:-2])
     return tuple(answers)

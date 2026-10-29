@@ -11,6 +11,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import re
 from pathlib import Path
 import sys
@@ -37,6 +38,19 @@ CLIENT_KEYS = {'status', 'failure_kind', 'process_diagnostics', 'source_sha256',
                'module_sha256', 'roundtrip_sha256', 'entered', 'completed',
                'process_exited', 'quiet', 'witness_verified', 'output_sha256',
                'output_size', 'message_count'}
+
+
+@contextlib.contextmanager
+def synthetic_inventory_reader():
+    # This module loads its own host.FULL; patch that exact instance, not the
+    # separately loaded alias in test_native_1c_full_host. Windows static-fixture
+    # evidence is synthetic; production descriptor/no-follow guards are unchanged.
+    from test_native_1c_full_host import read_synthetic_file
+    if os.name == 'nt':
+        with mock.patch.object(full, 'read_regular', side_effect=read_synthetic_file):
+            yield
+    else:
+        yield
 
 
 def wire(value):
@@ -301,21 +315,41 @@ class TreeBudgetTests(unittest.TestCase):
             'Или Code = 58 Или Code = 91 Или Code = 93 Или Code = 95')
         self.assertIn('Если Не Allowed Тогда ВызватьИсключение',generated)
         self.assertIn('ПараметрыЗаписиJSON(ПереносСтрокJSON.Нет, \" \", Истина)',generated)
-        self.assertIn('TreeLaneCharacters + СтрДлина(Text) > 8159',generated)
+        self.assertIn('TreeLaneCharacters + СтрДлина(Text) > 8158',generated)
         marker=dict(schema=tree.PROFILE,nonce=NONCE,phase='completed',witness='client',
-                    values=['x'*(8192-33)]+['']*32)
+                    values=['x'*(8192-34)]+['']*33)
         # Charge three BOM bytes and one optional space after EVERY JSON comma
         # and colon, even though the configured no-line-break writer is compact.
         encoded=wire(marker)
         upper=len(encoded)+encoded.count(b',')+encoded.count(b':')+3
         self.assertLessEqual(upper,16384)
-        self.assertEqual(len(encoded),8371)
+        self.assertEqual(len(encoded),8373)
+
+    def test_synthetic_inventory_reader_binds_exact_host_module(self):
+        import types
+        import test_native_1c_full_host as other
+        original = full.read_regular
+        other_original = other.full.read_regular
+        self.assertIs(full, host.FULL)
+        self.assertIsNot(full, other.full)
+        # Replace only this test module's OS alias; do not change pathlib or
+        # the real platform while exercising both conditional branches.
+        for platform in ('nt', 'posix'):
+            with mock.patch.dict(globals(), os=types.SimpleNamespace(name=platform)):
+                with synthetic_inventory_reader():
+                    self.assertIs(other.full.read_regular, other_original)
+                    if platform == 'nt':
+                        self.assertIs(full.read_regular.side_effect, other.read_synthetic_file)
+                    else:
+                        self.assertIs(full.read_regular, original)
+                self.assertIs(full.read_regular, original)
 
     def test_source_physical_crlf_budget_and_runtime_inventory(self):
         raw=(ROOT/'scripts/native_1c_bootstrap/full_suite.py').read_bytes()
         canonical=raw.replace(b'\r\n',b'\n')
         self.assertLessEqual(len(canonical.replace(b'\n',b'\r\n')),294912)
-        with mock.patch.object(full.importlib.metadata,'version',side_effect=full.DEPENDENCIES.__getitem__):
+        with synthetic_inventory_reader(), mock.patch.object(
+                full.importlib.metadata,'version',side_effect=full.DEPENDENCIES.__getitem__):
             actual=full.interpreter_provenance(ROOT)
         self.assertLessEqual(len(wire(actual)),len(wire(host_majorant()['interpreter'])))
         self.assertLessEqual(actual['source_file_count'],512)

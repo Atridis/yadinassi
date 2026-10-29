@@ -310,8 +310,82 @@
     Возврат Outcome + Before + After + Shared;
 КонецФункции
 
+// API controls added after the original negative32 measurement.
+Функция TreeFillErrorClass()
+    Перем Text;
+    Text = ОписаниеОшибки();
+    Если СтрНайти(Text, "Метод объекта не обнаружен") > 0
+        Или СтрНайти(Text, "Метод не найден:") > 0
+        Или СтрНайти(Text, "Метод или свойство не найдено:") > 0 Тогда Возврат "M"; КонецЕсли;
+    Если СтрНайти(Text, "Недостаточно фактических параметров") > 0
+        Или СтрНайти(Text, "Недостаточно параметров") > 0
+        Или СтрНайти(Text, "missing 1 required positional argument") > 0 Тогда Возврат "A"; КонецЕсли;
+    Возврат "O";
+КонецФункции
+
+Функция TreeFillControlNumber(Знач Value)
+    Если ТипЗнч(Value) <> Тип("Число") Тогда ВызватьИсключение "tree-fill-control-type"; КонецЕсли;
+    Если Value < 0 Или Value > 4 Или Цел(Value) <> Value Тогда ВызватьИсключение "tree-fill-control-number"; КонецЕсли;
+    Возврат Сред("01234", Value + 1, 1);
+КонецФункции
+
+Функция TreeFillAPIControl(Знач Case)
+    Перем T, C, R, Child, Rows, V, VC, VR, Input, Result, Status, Code;
+    Попытка
+        T = Новый ДеревоЗначений; C = T.Columns.Add("Key");
+        R = T.Rows.Add(); R.Key = 1; Child = R.Rows.Add(); Child.Key = 2; Rows = T.Rows;
+        V = Новый ТаблицаЗначений; VC = V.Columns.Add("Key"); VR = V.Add(); VR.Key = 3;
+        Input = Новый Массив; Input.Add(4); Result = Неопределено;
+        Если T.Rows.Count() <> 1 Или R.Rows.Count() <> 1 Или V.Count() <> 1
+            Или R.Key <> 1 Или Child.Key <> 2 Или VR.Key <> 3 Тогда Возврат "B"; КонецЕсли;
+    Исключение Возврат "P"; КонецПопытки;
+    Status = "S";
+    Попытка
+        Если Case = 1 Тогда Result = T.Rows.Count();
+        ИначеЕсли Case = 2 Тогда Result = T.Строки.Количество();
+        ИначеЕсли Case = 3 Тогда Result = T.Rows.Get(0);
+        ИначеЕсли Case = 4 Тогда V.FillValues(4, "Key");
+        ИначеЕсли Case = 5 Тогда V.ЗаполнитьЗначения(4, "Key");
+        ИначеЕсли Case = 6 Тогда T.FillValues(4, "Key");
+        ИначеЕсли Case = 7 Тогда T.ЗаполнитьЗначения(4, "Key");
+        ИначеЕсли Case = 8 Тогда T.Rows.FillValues(4, "Key");
+        ИначеЕсли Case = 9 Тогда T.Строки.ЗаполнитьЗначения(4, "Key");
+        ИначеЕсли Case = 10 Тогда T.Rows.NoSuchTreeFillProbe(4, "Key");
+        ИначеЕсли Case = 11 Тогда T.NoSuchTreeFillProbe(4, "Key");
+        ИначеЕсли Case = 12 Тогда V.NoSuchTreeFillProbe(4, "Key");
+        ИначеЕсли Case = 13 Тогда V.FillValues();
+        ИначеЕсли Case = 14 Тогда T.Rows.Get();
+        ИначеЕсли Case = 15 Тогда T.Rows.LoadColumn(Input, "Key");
+        ИначеЕсли Case = 16 Тогда T.Строки.ЗагрузитьКолонку(Input, "Key");
+        Иначе ВызватьИсключение "tree-fill-control-case"; КонецЕсли;
+    Исключение
+        Попытка Status = TreeFillErrorClass(); Исключение Возврат "X"; КонецПопытки;
+    КонецПопытки;
+    Попытка
+        Если T.Columns.Count() <> 1 Или T.Columns.Get(0) <> C Или Не TreeFillExact(C.Name, "Key")
+            Или T.Rows.Count() <> 1 Или T.Rows.Get(0) <> R Или Rows.Count() <> 1 Или Rows.Get(0) <> R
+            Или R.Rows.Count() <> 1 Или R.Rows.Get(0) <> Child Или Child.Rows.Count() <> 0
+            Или R.Owner() <> T Или Child.Owner() <> T Или R.Parent <> Неопределено Или Child.Parent <> R
+            Или V.Columns.Count() <> 1 Или V.Columns.Get(0) <> VC Или Не TreeFillExact(VC.Name, "Key")
+            Или V.Count() <> 1 Или V.Get(0) <> VR Или Input.Count() <> 1 Или Input[0] <> 4 Тогда Возврат "Q"; КонецЕсли;
+        Code = "U";
+        Если ТипЗнч(Result) = Тип("Число") Тогда Code = TreeFillControlNumber(Result);
+        ИначеЕсли ТипЗнч(Result) = Тип("СтрокаДереваЗначений") И Result = R Тогда Code = "R";
+        ИначеЕсли ТипЗнч(Result) <> Тип("Неопределено") Тогда Возврат "Q"; КонецЕсли;
+        Возврат Status + Code + TreeFillControlNumber(R.Key) + TreeFillControlNumber(Child.Key) + TreeFillControlNumber(VR.Key);
+    Исключение Возврат "Q"; КонецПопытки;
+КонецФункции
+
+Функция TreeFillAPIControls()
+    Перем Case, Text;
+    Text = "1";
+    Для Case = 1 По 16 Цикл Text = Text + TreeFillAPIControl(Case); КонецЦикла;
+    Возврат Text;
+КонецФункции
+
 Calibration = TreeFillCalibrate();
 Сообщить("TF-C: [" + Calibration + "]");
 Для Case = 1 По 32 Цикл
     Сообщить("TF-" + Строка(Case) + ": [" + TreeFillProbe(Case) + "]");
 КонецЦикла;
+Сообщить("TF-A: [" + TreeFillAPIControls() + "]");

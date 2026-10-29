@@ -9,8 +9,8 @@ STAGE_SCHEMA = 'native-1c-tree-stage-v1'
 SOURCE = 'integrational_tests/measurements/tree_fill_values.bsl'
 TARGET = 'scenarios/tree_fill_values.bsl'
 CASE = 'tree_fill_values'
-SOURCE_SHA256 = '47ee0383ac5a9db0bf9d4132b78f0ca40eb46712b4152654feec776ce38e22df'
-COUNT = 33
+SOURCE_SHA256 = '43b06200bb0830ca47fb6ab38353e41dae71a10488a34d83cb5d8eb8ce53863b'
+COUNT = 34
 MAX_OUTPUT = 8192
 MAX_TRANSPORT = 65536
 INPUT_FILES = {
@@ -37,7 +37,7 @@ def input_hashes(inputs):
 
 
 DIAGNOSTIC_CATEGORIES = frozenset(('invalid_type','output_limit','encoding','record_count',
-    'calibration','record_shape','probe_b','probe_p','probe_q','probe_r','payload_contract'))
+    'calibration','api_controls','record_shape','probe_b','probe_p','probe_q','probe_r','payload_contract'))
 CALIBRATION_CODES = '0123456789ABCDEFGHIJKLMNOPQR'
 
 
@@ -48,7 +48,7 @@ class ObservationFailure(full.FullError):
 
 
 def observation_diagnostic(raw, site):
-    from native_1c_tree_fill_contract import validate_payload, ObservationError
+    from native_1c_tree_fill_contract import validate_payload, validate_api_payload, ObservationError
     if site not in ('server','client'): raise full.FullError('invalid_input')
     def result(category, case=None, calibration=None):
         return {'site':site,'case':case,'category':category,'calibration':calibration}
@@ -60,7 +60,7 @@ def observation_diagnostic(raw, site):
     if lines[0]!=b'TF-C: [-]\n':
         match=re.fullmatch(rb'TF-C: \[([0-9A-R])\]\n',lines[0])
         return result('calibration',0,match[1].decode() if match else None)
-    for case,line in enumerate(lines[1:],1):
+    for case,line in enumerate(lines[1:33],1):
         prefix=f'TF-{case}: ['.encode()
         if not line.startswith(prefix) or not line.endswith(b']\n'):
             return result('record_shape',case)
@@ -68,6 +68,10 @@ def observation_diagnostic(raw, site):
         if value in (b'B',b'P',b'Q',b'R'): return result('probe_'+value.decode().lower(),case)
         try: validate_payload(value,case)
         except ObservationError: return result('payload_contract',case)
+    if not lines[-1].startswith(b'TF-A: [') or not lines[-1].endswith(b']\n'):
+        return result('api_controls')
+    try: validate_api_payload(lines[-1][7:-2])
+    except ObservationError: return result('api_controls')
     return None
 
 
@@ -84,7 +88,7 @@ def validate_diagnostic(value):
     if ((category=='calibration' and value['case']!=0)
             or (category in ('record_shape','probe_b','probe_p','probe_q','probe_r','payload_contract')
                 and (type(value['case']) is not int or not 1<=value['case']<=32))
-            or (category in ('invalid_type','output_limit','encoding','record_count') and value['case'] is not None)
+            or (category in ('invalid_type','output_limit','encoding','record_count','api_controls') and value['case'] is not None)
             or (category!='calibration' and value['calibration'] is not None)):
         raise full.FullError('invalid_result')
 
@@ -106,7 +110,7 @@ def client_module(source, template):
     original = source.decode('utf-8')
     marker = '\nCalibration = TreeFillCalibrate();\n'
     if ('\r' in original or 'TreeLane' in original or original.count(marker)!=1
-            or original.count('Сообщить(')!=2): raise full.FullError('invalid_input')
+            or original.count('Сообщить(')!=3): raise full.FullError('invalid_input')
     split=original.index(marker)+1
     declarations=re.sub(r'(?m)^(Функция |Процедура )',r'&НаКлиенте\n\1',original[:split])
     body=original[split:].replace('Сообщить(', 'TreeLaneCapture(')
