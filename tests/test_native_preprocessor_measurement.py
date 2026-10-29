@@ -8,6 +8,7 @@ import copy
 from dataclasses import replace
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -247,7 +248,12 @@ class ProfileObservationTransportTests(SyntheticFilesystemCase):
         self.assertEqual(len(commands),2)
         self.assertTrue(all('--client-preprocessor-measurement' not in line for line in commands))
         self.assertEqual(source.count('--client-preprocessor-measurement'),0)
-        self.assertEqual(source.count('packages: read'),1);self.assertNotIn(': write',source)
+        self.assertEqual(source.count('packages: read'),2)
+        self.assertEqual(source.count('contents: read'),2)
+        for job in ('smoke', 'tree_smoke'):
+            block = re.search(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(0)
+            self.assertEqual(block.count("    permissions:\n      contents: read\n      packages: read\n"), 1)
+        self.assertNotIn(': write',source)
         script=smoke.PROBE.read_text().split("<<'PY'\n",1)[1].split('\nPY\n',1)[0]
         compile(script,'embedded-report-emitter','exec')
         self.assertIn('preprocessor_mode = emitter_args.pop() if len(emitter_args) == 18 else "false"',script)

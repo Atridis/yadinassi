@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import stat
 from pathlib import Path
 import subprocess
@@ -168,10 +169,16 @@ class IsolationTests(unittest.TestCase):
         for forbidden in ("workflow_call:", "pull_request_target:",
                           "workflow_run:", "paths:", "paths-ignore:", "tags:", "write"):
             self.assertNotIn(forbidden, text)
-        self.assertEqual(text.count("contents: read"), 1)
-        self.assertEqual(text.count("packages: read"), 1)
+        self.assertEqual(text.count("contents: read"), 2)
+        self.assertEqual(text.count("packages: read"), 2)
+        for job in ("smoke", "tree_smoke"):
+            block = re.search(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", text)
+            self.assertIsNotNone(block)
+            self.assertEqual(block.group(1).count("    permissions:\n      contents: read\n      packages: read\n"), 1)
+            self.assertEqual(block.group(1).count("contents: read"), 1)
+            self.assertEqual(block.group(1).count("packages: read"), 1)
         self.assertIn("needs.eligibility.result == 'success'", text)
-        self.assertIn("needs: [eligibility, smoke]", text)
+        self.assertIn("needs: [eligibility, smoke, tree_smoke]", text)
         self.assertIn("persist-credentials: false", text)
         self.assertIn("ref: ${{ github.sha }}", text)
         self.assertIn("fetch-depth: 2", text)

@@ -364,16 +364,29 @@ class ManualWorkflowTests(unittest.TestCase):
 
     def test_manual_admission_and_binding_precede_same_scoped_auth_and_artifacts(self):
         source = WORKFLOW.read_text()
-        self.assertEqual(source.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 2)
-        self.assertLess(source.index("scripts/native_1c_ci_policy.py bind"), source.index("GHCR_TOKEN:"))
-        self.assertEqual(source.count("contents: read"), 1)
-        self.assertEqual(source.count("packages: read"), 1)
-        self.assertEqual(source.count("GHCR_TOKEN: ${{ github.token }}"), 2)
+        tree = re.search(r"(?ms)^  tree_smoke:\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(0)
+        legacy = source.replace(tree, '', 1)
+        self.assertEqual(legacy.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 2)
+        self.assertEqual(legacy.count("GHCR_TOKEN: ${{ github.token }}"), 2)
+        upload = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+        self.assertEqual(legacy.count(upload), 2)
+        self.assertEqual(tree.count(upload), 2)
+        self.assertEqual(tree.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 1)
+        self.assertEqual(tree.count("GHCR_TOKEN: ${{ github.token }}"), 1)
+        for job in ('smoke', 'tree_smoke'):
+            block = re.search(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(0)
+            self.assertEqual(block.count("    permissions:\n      contents: read\n      packages: read\n"), 1)
+            self.assertLess(block.index("scripts/native_1c_ci_policy.py bind"), block.index("GHCR_TOKEN:"))
+            self.assertIn("ref: ${{ github.sha }}", block)
+            self.assertIn("persist-credentials: false", block)
+        self.assertEqual(source.count("contents: read"), 2)
+        self.assertEqual(source.count("packages: read"), 2)
         self.assertNotIn(": write", source)
-        self.assertIn("ref: ${{ github.sha }}", source)
-        self.assertIn("persist-credentials: false", source)
-        self.assertIn("if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')", source)
-        self.assertEqual(source.count("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"), 2)
+        self.assertIn("github.event_name != 'workflow_dispatch' &&", tree)
+        self.assertIn("github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", tree)
+        self.assertIn("if: always() && steps.tree.outputs.tree_outputs_ready == 'true'", tree)
+        self.assertIn("needs: [eligibility, smoke, tree_smoke]", source)
+        self.assertIn("if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')", legacy)
 
 
 if __name__ == "__main__":
