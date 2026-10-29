@@ -7,3 +7,8 @@ integrational_tests/directive_probes/preprocessor_profiles_measurement.json -tex
 
 # Preserve the authenticated ValueTree.Copy capture exactly on every checkout.
 tests/fixtures/value_tree_copy_linux_8_3_27_1508.out -text
+
+# Description experiment pins exact canonical template bytes on every OS.
+scripts/native_1c_db_oracle/metadata/Catalog.xml text eol=lf
+scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl text eol=lf
+scripts/native_1c_db_oracle/modules/CatalogDescriptionObservation.bsl text eol=lf

@@ -22,3 +22,5 @@ integrational_tests/.work/
 
 # Only the authenticated typed-row case A handoff may precede case B.
 /native-db-oracle/rows_distinct_a.json
+
+/native-db-oracle/description8.json

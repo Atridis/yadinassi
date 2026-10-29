@@ -57,6 +57,13 @@ def _matrix(enabled):
     return None
 
 
+def _description_mode(case, matrix, reference=None):
+    if case is not None:
+        from catalog_description_measurement import CASES
+        if type(case) is not str or case not in CASES or matrix or reference is not None:
+            raise DraftError("Invalid closed Description case")
+
+
 def _inventory(root: Path) -> dict[str, str]:
     if any(path.is_symlink() for path in (root, *root.parents)) or not root.is_dir():
         raise DraftError("Metadata tree must be a real directory")
@@ -92,8 +99,13 @@ def _separate(source: Path, target: Path) -> tuple[Path, Path]:
     return source, target
 
 
-def _template(name: str, values: dict[str, str]) -> bytes:
-    raw = (ROOT / "metadata" / name).read_text(encoding="utf-8-sig")
+def _template(name: str, values: dict[str, str], *, description_case=None) -> bytes:
+    if description_case is None:
+        raw = (ROOT / "metadata" / name).read_text(encoding="utf-8-sig")
+    else:
+        from catalog_description_measurement import transform
+        source = (ROOT / "metadata" / name).read_bytes()
+        raw = transform(source, name="metadata/" + name, case=description_case).decode("utf-8-sig")
     def replace(match):
         if match[1] not in values:
             raise DraftError("Unknown metadata template literal")
@@ -104,10 +116,17 @@ def _template(name: str, values: dict[str, str]) -> bytes:
     return re.sub(r"@@([A-Z_]+)@@", replace, raw).encode("utf-8-sig")
 
 
-def _module(name: str, nonce: str, evidence: str, *, reference_case=None) -> bytes:
+def _module(name: str, nonce: str, evidence: str, *, reference_case=None, description_case=None) -> bytes:
     values = {"NONCE": nonce, "EVIDENCE": evidence, "SETUP_USER": SETUP_USER,
               "CRUD_USER": CRUD_USER, "SETUP_ROLE": SETUP_ROLE, "CRUD_ROLE": CRUD_ROLE}
-    raw = (ROOT / "modules" / name).read_text(encoding="utf-8-sig")
+    if description_case is not None and name == "NativeOracleServer.bsl":
+        if reference_case is not None:
+            raise DraftError("Incompatible closed Catalog cases")
+        from catalog_description_measurement import transform
+        source = (ROOT / "modules" / name).read_bytes()
+        raw = transform(source, name="modules/" + name, case=description_case).decode("utf-8-sig")
+    else:
+        raw = (ROOT / "modules" / name).read_text(encoding="utf-8-sig")
     if reference_case is not None:
         from catalog_reference_native import render_template
         if name == "NativeOracleServer.bsl":
@@ -170,11 +189,12 @@ def _uuid(value: str) -> str:
     raise DraftError("Invalid metadata UUID")
 
 
-def inspect(root: Path, version: int, *, catalog_field_matrix=False) -> dict:
+def inspect(root: Path, version: int, *, catalog_field_matrix=False, description_case=None) -> dict:
     """Exact original fixture/security scope. Unknown defaults or grants fail closed."""
     if type(version) is not int or version not in (1, 2):
         raise DraftError("Unsupported oracle metadata version")
     matrix = _matrix(catalog_field_matrix)
+    _description_mode(description_case, catalog_field_matrix)
     inventory = _inventory(root)
     _, xml = read_xml(root / "Configuration.xml")
     ns = "{" + NS + "}"
@@ -266,7 +286,7 @@ def inspect(root: Path, version: int, *, catalog_field_matrix=False) -> dict:
                 raise DraftError("Unexpected fixed Catalog schema")
     if len(ids) != len(set(ids)):
         raise DraftError("Metadata UUID collision")
-    if xml_signature(catalog) != xml_signature(ET.fromstring(_template("Catalog.xml", values))):
+    if xml_signature(catalog) != xml_signature(ET.fromstring(_template("Catalog.xml", values, description_case=description_case))):
         raise DraftError("Unexpected catalog schema or qualifier")
     xml_signature(xml)
     return {"version": version, "payload_length": int(values["PAYLOAD_LENGTH"]),
@@ -274,8 +294,9 @@ def inspect(root: Path, version: int, *, catalog_field_matrix=False) -> dict:
             "nonprivileged_module": True}
 
 
-def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False, reference_case=None) -> dict:
+def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False, reference_case=None, description_case=None) -> dict:
     matrix = _matrix(catalog_field_matrix)
+    _description_mode(description_case, catalog_field_matrix, reference_case)
     if type(nonce) is not str or not re.fullmatch(r"[0-9a-f]{32}", nonce):
         raise DraftError("Invalid oracle nonce")
     ep = str(evidence)
@@ -301,13 +322,13 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catal
     keys = {"CATALOG_UUID", "PAYLOAD_UUID", "AMOUNT_UUID", "MODULE_UUID"} | {
         f"{category}_{suffix}_UUID" for category in ("OBJECT", "REF", "SELECTION", "LIST", "MANAGER") for suffix in ("TYPE", "VALUE")}
     values.update({key: str(uuid.uuid4()) for key in keys})
-    added = {"Catalogs/NativeOracleItems.xml": _template("Catalog.xml", values),
+    added = {"Catalogs/NativeOracleItems.xml": _template("Catalog.xml", values, description_case=description_case),
              "CommonModules/NativeOracleServer.xml": _template("CommonModule.xml", values)}
     for role, template in ((SETUP_ROLE, "SetupRights.xml"), (CRUD_ROLE, "CRUDRights.xml")):
         values.update(ROLE_NAME=role, ROLE_UUID=str(uuid.uuid4()))
         added[f"Roles/{role}.xml"] = _template("Role.xml", values)
         added[f"Roles/{role}/Ext/Rights.xml"] = _template(template, values)
-    added.update({path: _module(name, nonce, ep, reference_case=reference_case) for name, path in MODULE_FILES.items()})
+    added.update({path: _module(name, nonce, ep, reference_case=reference_case, description_case=description_case) for name, path in MODULE_FILES.items()})
     if matrix:
         for extra_name, kind in matrix.VARIANTS:
             extra_values = dict(values)
@@ -324,7 +345,7 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catal
         out = target / path
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(data)
-    inspect(target, 1, catalog_field_matrix=catalog_field_matrix)
+    inspect(target, 1, catalog_field_matrix=catalog_field_matrix, description_case=description_case)
     written = _hashes(target)
     if original != _hashes(native_dump) or any(written.get(path) != digest for path, digest in original.items() if path != "Configuration.xml"):
         raise DraftError("Native source changed during injection")
@@ -334,10 +355,11 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catal
             "native_runtime_tested": False}
 
 
-def promote_v2(v1: Path, v2: Path, *, catalog_field_matrix=False) -> None:
+def promote_v2(v1: Path, v2: Path, *, catalog_field_matrix=False, description_case=None) -> None:
     _matrix(catalog_field_matrix)
+    _description_mode(description_case, catalog_field_matrix)
     v1, v2 = _separate(v1, v2)
-    inspect(v1, 1, catalog_field_matrix=catalog_field_matrix)
+    inspect(v1, 1, catalog_field_matrix=catalog_field_matrix, description_case=description_case)
     before = _hashes(v1)
     path = "Catalogs/NativeOracleItems.xml"
     raw = (v1 / path).read_bytes()
@@ -346,15 +368,15 @@ def promote_v2(v1: Path, v2: Path, *, catalog_field_matrix=False) -> None:
         raise DraftError("Ambiguous v1 payload qualifier")
     shutil.copytree(v1, v2)
     (v2 / path).write_bytes(raw.replace(token, b"<v8:Length>64</v8:Length>", 1))
-    inspect(v2, 2, catalog_field_matrix=catalog_field_matrix)
+    inspect(v2, 2, catalog_field_matrix=catalog_field_matrix, description_case=description_case)
     after = _hashes(v2)
     if before != _hashes(v1) or {key for key in before if before[key] != after[key]} != {path}:
         raise DraftError("Unexpected v2 source change")
 
 
-def verify_redump(expected: Path, actual: Path, version: int, *, catalog_field_matrix=False) -> None:
-    inspect(expected, version, catalog_field_matrix=catalog_field_matrix)
-    inspect(actual, version, catalog_field_matrix=catalog_field_matrix)
+def verify_redump(expected: Path, actual: Path, version: int, *, catalog_field_matrix=False, description_case=None) -> None:
+    inspect(expected, version, catalog_field_matrix=catalog_field_matrix, description_case=description_case)
+    inspect(actual, version, catalog_field_matrix=catalog_field_matrix, description_case=description_case)
     left, right = _inventory(expected), _inventory(actual)
     if left != right:
         raise DraftError("Reimport changed metadata file inventory")
