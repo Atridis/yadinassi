@@ -17,3 +17,5 @@ integrational_tests/.work/
 
 # Fixed case A handoff; descriptor, digest and report validation remain mandatory.
 /native-db-oracle/distinct_a.json
+
+/native-db-oracle/codec_distinct_a.json
