@@ -277,10 +277,74 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  tree_smoke:
+    name: Native 1C tree profile
+    needs: eligibility
+    if: >-
+      needs.eligibility.result == 'success' &&
+      github.event_name != 'workflow_dispatch' &&
+      github.ref != 'refs/heads/codex/native-client-async-reviewed' &&
+      github.repository == 'Atridis/yadinassi' &&
+      github.repository_id == '359770628' &&
+      github.repository_owner_id == '30860798' &&
+      github.actor == 'Atridis' &&
+      github.actor_id == '30860798' &&
+      github.triggering_actor == 'Atridis' &&
+      ((github.event_name == 'pull_request' && github.base_ref == 'main') ||
+       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/native-client-async-reviewed')) ||
+       (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/') && inputs.client_async_measurement == true))
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 2
+          submodules: false
+          lfs: false
+      - name: Verify immutable checkout and ordered merge parents
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}
+        run: python3 -I -B scripts/native_1c_ci_policy.py bind
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12.10"
+      - name: Install exact host interpreter dependencies
+        run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
+      - name: Measure tree profile with isolated native client and server
+        id: tree
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_tree_profile.py --execute-approved-image --export-native-outputs
+      - name: Upload finite tree profile report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-tree-summary
+          path: native-smoke/tree-report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload validated fixed tree observations
+        if: always() && steps.tree.outputs.tree_outputs_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-tree-outputs
+          path: |
+            native-smoke/tree-outputs/tree_fill_values.out
+            native-smoke/tree-outputs/provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
   verdict:
     name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}
     if: always()
-    needs: [eligibility, smoke]
+    needs: [eligibility, smoke, tree_smoke]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -289,6 +353,8 @@ jobs:
         env:
           ELIGIBILITY_RESULT: ${{ needs.eligibility.result }}
           NATIVE_RESULT: ${{ needs.smoke.result }}
+          TREE_RESULT: ${{ needs.tree_smoke.result }}
+          TREE_REQUIRED: ${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/codex/native-client-async-reviewed' }}
         shell: bash
         run: |
           python3 -I -B - <<'PYTHON'
@@ -299,6 +365,8 @@ jobs:
               return 0 if eligibility_result == "success" and native_result == "success" else 1
           # END NATIVE CI VERDICT
           result = final_verdict(os.environ.get("ELIGIBILITY_RESULT"), os.environ.get("NATIVE_RESULT"))
+          if os.environ.get("TREE_REQUIRED") == "true" and os.environ.get("TREE_RESULT") != "success":
+              result = 1
           print("Native CI passed." if result == 0 else "Native CI failed or unavailable.")
           raise SystemExit(result)
           PYTHON

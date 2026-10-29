@@ -370,9 +370,9 @@ class WorkflowTests(unittest.TestCase):
         source = WORKFLOW_PATH.read_text()
         self.assertIn("\npermissions: {}\n", source)
         self.assertEqual(re.findall(r"^  ([a-z_]+):$", source.split("\njobs:\n")[1], re.M),
-                         ["eligibility", "smoke", "verdict"])
-        self.assertEqual(source.count("contents: read"), 1)
-        self.assertEqual(source.count("packages: read"), 1)
+                         ["eligibility", "smoke", "tree_smoke", "verdict"])
+        self.assertEqual(source.count("contents: read"), 2)
+        self.assertEqual(source.count("packages: read"), 2)
         self.assertNotIn(": write", source)
         for job in ("eligibility", "verdict"):
             block = workflow_job(job)
@@ -394,7 +394,7 @@ class WorkflowTests(unittest.TestCase):
         verdict = workflow_job("verdict")
         self.assertIn("    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}", verdict)
         self.assertIn("    if: always()", verdict)
-        self.assertIn("    needs: [eligibility, smoke]", verdict)
+        self.assertIn("    needs: [eligibility, smoke, tree_smoke]", verdict)
 
     def test_exact_job_headers_do_not_allow_extra_bypass_conditions(self):
         expected_headers = {
@@ -424,12 +424,16 @@ class WorkflowTests(unittest.TestCase):
 """,
             "verdict": """    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}
     if: always()
-    needs: [eligibility, smoke]
+    needs: [eligibility, smoke, tree_smoke]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 """,
         }
+        expected_headers["tree_smoke"] = expected_headers["smoke"].replace(
+            expected_headers["smoke"].splitlines()[0], "    name: Native 1C tree profile", 1).replace(
+            "needs.eligibility.result == 'success' &&",
+            "needs.eligibility.result == 'success' &&\n      github.event_name != 'workflow_dispatch' &&\n      github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", 1)
         for job, expected in expected_headers.items():
             with self.subTest(job=job):
                 self.assertEqual(workflow_job(job).split("    steps:\n", 1)[0], expected)

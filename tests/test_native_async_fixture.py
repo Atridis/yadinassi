@@ -289,8 +289,32 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_tree_profile_measurement(source):
+    """Hash-bound tree profile inverse; historical test fixtures only."""
+    inventory = json.loads((REPOSITORY / 'tests/tree_profile_source_inverse.json').read_text(encoding='utf-8'))
+    contract = inventory['scripts/native_1c_bootstrap/full_suite.py']
+    base = '0cf75e36ca12243cc95db40ec20d83e0779e3771519de2cb066e4f67cb6c501d'
+    candidate = '02fbe29f8b30213e79ea63709bcf84f5f5788ae8b33a5122ab1a567e2b07c6e1'
+    if contract['base_sha256'] != base or contract['candidate_sha256'] != candidate:
+        raise AssertionError('tree profile inverse identity')
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('tree profile outer source identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('tree profile inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('tree profile inner source identity')
+    return source
+
+
 def without_tree_total_measurement(source, *, host=False):
     """Exact Total harness inverse to accepted Move harness; test-only."""
+    if not host:
+        source = without_tree_profile_measurement(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_total_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
