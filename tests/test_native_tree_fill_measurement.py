@@ -190,7 +190,7 @@ class APIControls(unittest.TestCase):
                   'private-path or arbitrary diagnostic':'O'}
         for text,expected in messages.items():
             with mock.patch.object(Interpreter,'_error_description',lambda self:text):
-                vm=Interpreter();vm.execute(HELPERS+'Result=TreeFillErrorClass();')
+                vm=Interpreter();vm.execute(HELPERS+'Result=TreeFillErrorClass(ОписаниеОшибки());')
                 self.assertEqual(vm.variables['result'],expected)
         self.assertNotIn('Сообщить(Text)',SOURCE)
 
@@ -200,3 +200,25 @@ class APIControls(unittest.TestCase):
         for bad in (good[:-1],good+b'x',b'2'+good[1:],b'1EU123'+good[6:],
                     b'1MR123'+good[6:],b'1SU129'+good[6:]):
             with self.assertRaises(contract.ObservationError):contract.validate_api_payload(bad)
+
+
+class ErrorDescriptionCaptureOrderTests(unittest.TestCase):
+    def test_capture_occurs_before_new_try_or_helper_call(self):
+        required = ('    Исключение\n'
+                    '        ErrorText = ОписаниеОшибки();\n'
+                    '        Попытка Status = TreeFillErrorClass(ErrorText); Исключение Возврат "X"; КонецПопытки;')
+        self.assertEqual(SOURCE.count(required), 1)
+        self.assertEqual(SOURCE.count('ОписаниеОшибки()'), 1)
+        helper = SOURCE[SOURCE.index('Функция TreeFillErrorClass('):SOURCE.index('Функция TreeFillControlNumber(')]
+        self.assertNotIn('ОписаниеОшибки', helper)
+        self.assertIn('Знач Text', helper)
+
+    def test_classifier_uses_captured_argument_not_current_handler(self):
+        def forbidden(self):
+            raise AssertionError('classifier must not reread exception context')
+        with mock.patch.object(Interpreter, '_error_description', forbidden):
+            value = Interpreter()
+            value.execute(HELPERS + 'Result=TreeFillErrorClass("Метод объекта не обнаружен (FillValues)");')
+            self.assertEqual(value.variables['result'], 'M')
+            value.execute('Result=TreeFillErrorClass("Недостаточно фактических параметров (Get)");')
+            self.assertEqual(value.variables['result'], 'A')

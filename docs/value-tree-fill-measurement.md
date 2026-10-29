@@ -136,3 +136,26 @@ SHA256 `c140925e80ad3a64b528b70a362ff6709f43e65b3e39e9736bad0d5e482d79f6`,
 has no replacement for these entries. No bundled vendor documentation is
 republished here. The additional native controls verify exception categories and
 working receiver/alias controls on the pinned executable, independently of the docs.
+
+## API-control observer context correction
+
+Run40880375728 on head `de298f0b9dafb88bb57d8530585d5b5298e06a9e`, source
+`43b06200bb0830ca47fb6ab38353e41dae71a10488a34d83cb5d8eb8ce53863b`,
+produced a valid6107-byte native capture, SHA256
+`bc92ed9b13a2e01ac8150a90cffc52bc0496723cf4ca71480df82e386e6cd3c9`.
+The original6017-byte prefix was unchanged. Positive controls1–5 and15–16
+succeeded; exception controls6–14 yielded category O, while the interpreter
+classified them M/A. Thus the measurement was valid but parity was not accepted.
+
+That source retrieved ErrorDescription inside a classifier after entering a new
+nested Try in the action's exception handler. The corrected observer captures the
+private String immediately in the original exception handler, before any nested
+Try or classifier call, and passes that value to the classifier. Category rules,
+output grammar, structural guards and raw-error nondisclosure are unchanged.
+A direct source-order regression and a classifier test that forbids rereading
+ErrorDescription protect this boundary.
+
+This is an observer-context correction awaiting its own source-bound native run.
+It is not a verified fix or general compatibility claim about the interpreter's
+nested error scope. A possible ErrorDescription scope discrepancy remains a
+separate investigation; the historical O observations are not rewritten as M/A.

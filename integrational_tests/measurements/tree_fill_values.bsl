@@ -311,9 +311,7 @@
 КонецФункции
 
 // API controls added after the original negative32 measurement.
-Функция TreeFillErrorClass()
-    Перем Text;
-    Text = ОписаниеОшибки();
+Функция TreeFillErrorClass(Знач Text)
     Если СтрНайти(Text, "Метод объекта не обнаружен") > 0
         Или СтрНайти(Text, "Метод не найден:") > 0
         Или СтрНайти(Text, "Метод или свойство не найдено:") > 0 Тогда Возврат "M"; КонецЕсли;
@@ -330,7 +328,7 @@
 КонецФункции
 
 Функция TreeFillAPIControl(Знач Case)
-    Перем T, C, R, Child, Rows, V, VC, VR, Input, Result, Status, Code;
+    Перем T, C, R, Child, Rows, V, VC, VR, Input, Result, Status, Code, ErrorText;
     Попытка
         T = Новый ДеревоЗначений; C = T.Columns.Add("Key");
         R = T.Rows.Add(); R.Key = 1; Child = R.Rows.Add(); Child.Key = 2; Rows = T.Rows;
@@ -359,7 +357,8 @@
         ИначеЕсли Case = 16 Тогда T.Строки.ЗагрузитьКолонку(Input, "Key");
         Иначе ВызватьИсключение "tree-fill-control-case"; КонецЕсли;
     Исключение
-        Попытка Status = TreeFillErrorClass(); Исключение Возврат "X"; КонецПопытки;
+        ErrorText = ОписаниеОшибки();
+        Попытка Status = TreeFillErrorClass(ErrorText); Исключение Возврат "X"; КонецПопытки;
     КонецПопытки;
     Попытка
         Если T.Columns.Count() <> 1 Или T.Columns.Get(0) <> C Или Не TreeFillExact(C.Name, "Key")
