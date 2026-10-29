@@ -370,6 +370,8 @@ class WorkflowTests(unittest.TestCase):
             path = root / "event.json"
             event, context = fixtures()
             context["GITHUB_EVENT_PATH"] = str(path)
+            context["NATIVE_DB_ROUTE"] = "catalog-reference-codec-v1"
+            context["GITHUB_OUTPUT"] = str(root / "output")
             for route, expected in (("push", 0), ("workflow_dispatch", 1), ("pull_request", 1), ("pull_request_target", 1)):
                 context["GITHUB_EVENT_NAME"] = route
                 path.write_text(json.dumps(event))
@@ -395,7 +397,9 @@ class WorkflowTests(unittest.TestCase):
                                     ("success", "skipped"), ("success", "failure"), ("success", "cancelled"),
                                     ("success", ""), ("success", "success\necho SECRET")):
             result = subprocess.run([sys.executable, "-I", "-B", "-c", source],
-                                    env=subprocess_environment({"ELIGIBILITY_RESULT": eligibility, "NATIVE_RESULT": native}),
+                                    env=subprocess_environment({"ELIGIBILITY_RESULT": eligibility, "NATIVE_RESULT": native,
+                                        "NATIVE_ROUTE":"catalog-reference-identity-v1", "REFERENCE_A_RESULT":"success",
+                                        "CODEC_A_RESULT":"skipped", "CODEC_RESULT":"skipped"}),
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.assertEqual(result.returncode, policy.final_verdict(eligibility, native))
             self.assertNotIn(b"SECRET", result.stdout + result.stderr)
@@ -414,9 +418,9 @@ class WorkflowTests(unittest.TestCase):
         source = WORKFLOW_PATH.read_text()
         self.assertIn("\npermissions: {}\n", source)
         self.assertEqual(re.findall(r"^  ([a-z_]+):$", source.split("\njobs:\n")[1], re.M),
-                         ["eligibility", "native_reference_a", "native_oracle", "verdict"])
-        self.assertEqual(source.count("contents: read"), 2)
-        self.assertEqual(source.count("packages: read"), 2)
+                         ["eligibility", "native_reference_a", "native_oracle", "native_codec_a", "native_codec_b", "verdict"])
+        self.assertEqual(source.count("contents: read"), 4)
+        self.assertEqual(source.count("packages: read"), 4)
         self.assertNotIn(": write", source)
         for job in ("eligibility", "verdict"):
             block = workflow_job(job)
@@ -436,6 +440,8 @@ class WorkflowTests(unittest.TestCase):
     def test_job_headers_are_exact_and_cannot_silently_add_bypass_conditions(self):
         headers = {
             "eligibility": """    name: File-DB oracle eligibility
+    outputs:
+      route: ${{ steps.admission.outputs.route }}
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -470,7 +476,7 @@ class WorkflowTests(unittest.TestCase):
 """,
             "verdict": """    name: Native 1C file-DB oracle verdict
     if: always()
-    needs: [eligibility, native_oracle]
+    needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -484,6 +490,11 @@ class WorkflowTests(unittest.TestCase):
       run_attempt: ${{ github.run_attempt }}
 """
         headers['native_oracle']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C reference identity case B').replace('needs: eligibility', 'needs: [eligibility, native_reference_a]').replace("needs.eligibility.result == 'success' &&", "needs.eligibility.result == 'success' && needs.native_reference_a.result == 'success' &&")
+        for name in ('native_reference_a', 'native_oracle'):
+            headers[name] = headers[name].replace('    if: >-\n',
+                "    if: >-\n      needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&\n", 1)
+        headers['native_codec_a'] = headers['native_reference_a'].replace('reference identity case', 'reference codec case').replace('catalog-reference-identity-v1', 'catalog-reference-codec-v1')
+        headers['native_codec_b'] = headers['native_oracle'].replace('reference identity case', 'reference codec case').replace('catalog-reference-identity-v1', 'catalog-reference-codec-v1').replace('native_reference_a', 'native_codec_a')
         for job, expected in headers.items():
             with self.subTest(job=job):
                 self.assertEqual(workflow_job(job).split("    steps:\n", 1)[0], expected)

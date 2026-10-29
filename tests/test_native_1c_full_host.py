@@ -525,7 +525,7 @@ class ChildTests(unittest.TestCase):
             template = 'class Interpreter:\n def __init__(self, output, **options): self.output = output\n def execute(self, *args): self.output("%s")\n'
             module.write_text(template % "POISON")
             before = module.stat()
-            py_compile.compile(str(module), doraise=True)
+            py_compile.compile(str(module), doraise=True, optimize=0)
             module.write_text(template % "SOURCE")
             os.utime(module, ns=(before.st_atime_ns, before.st_mtime_ns))
             (root / "integrational_tests/tests").mkdir(parents=True)
