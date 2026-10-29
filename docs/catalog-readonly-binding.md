@@ -67,10 +67,11 @@ handle is identity-bound, single-use and revoked on stage exit. Mapping, parsing
 comparison, budget or late stage failures poison the lifetime; no retry/partial
 success is returned by the intended coordinator.
 
-CONFIG transport orchestration is still a **harness-only private seam**. The pure
-runtime compiler and bound-record reader do not import scripts. This implementation
-therefore does not claim a standalone public offline Catalog API. Public legacy
-`read_records` and its fixed-profile admission remain unchanged.
+The accepted original implementation below used a harness-only CONFIG transport
+coordinator. The runtime extraction described next moves the live binding route
+into storage modules without importing scripts. This remains an experimental,
+caller-owned offline reader, not a BSL Catalog API. Public legacy `read_records`
+and its fixed-profile admission remain unchanged.
 
 `read_bound_catalog_records` validates its exact graph/reader/catalog identity and
 independently reconstructs the entire binding layout before opening data. Frozen
@@ -141,3 +142,81 @@ all seven other optional-context allowances remain128. Future enum growth change
 the executable bound. No cap was increased. These are local mathematical/report
 construction checks, not native execution evidence. The separate source-bound
 native acceptance above stays limited to the measured owned layout.
+
+
+## Runtime coordinator extraction — accepted owned profile
+
+`yadinassi.storage.catalog_reader.read_catalog_binding(read_at, file_size,
+catalog_name=..., limits=None)` now coordinates the same three-stage lifetime
+using only runtime storage imports. `read_at` is a bounded random-read callback;
+the caller must supply a consistent, already-frozen offline image. The API does
+not open a database path, acquire native locks, authenticate, or establish that a
+live source is consistent. Its immutable result contains the private configuration
+projection, selected identity/attributes, independently compiled binding, decoded
+rows and cumulative usage.
+
+`config_catalog_transport` contains the mechanically extracted live CONFIG
+traversal, chain/inflate primitives and profile/observation dependency closure.
+Its relative imports and direct attribute-projector import replace the harness's
+flat staged imports; the parser logic, charges and admission are unchanged. The
+historical source-pinned observer remains separate so old protocols and evidence
+are not silently reinterpreted. The current binding adapter loads exact verified
+runtime siblings and delegates; it contains no second live coordinator. Neither
+XML/native capture nor expected values enter the runtime path.
+
+The current restriction to String Code, no Description, two attributes and at most
+one active record is intentionally unchanged. Code and attribute lengths and
+numeric precision/scale still come from CONFIG. No arbitrary layout, multiple-row
+selection, BSL manager/reference, applied-state resolution or CRUD is added by this
+extraction. Those are subsequent independently measured tasks.
+
+Synthetic tests compare every CONFIG result field, source callback and resource
+counter against the historical implementation, including malformed bytes and each
+lowered catalog budget. Separate tests exercise graph poisoning, late failures,
+exact sibling loading and a cold storage-only read with no harness on the import
+path. These synthetic checks remain separate from the dedicated native proof below.
+
+The selected lane retains invocation23/report37/capture38 because its wire fields
+and semantics are unchanged. Its exact inventory now contains37 sources, including
+the two runtime modules; earlier35-source evidence is not acceptance of this source.
+The complete report majorant is32137/32768, with the full12288-byte capture ceiling,
+all lifecycle collections and final newline retained. All seven failure-context
+fields now use the exact closed production-validated enum domains (including raw
+metadata operation/phase values before mapping and allowed nulls), rather than an
+unnecessarily loose128-character allowance. Tests cover each domain, JSON wire
+length, rejection of out-of-domain/wrong-type values and growth of an enum. No
+production report, capture or storage resource cap was increased.
+
+
+### Source-bound runtime-extraction acceptance
+
+The fresh dedicated [run40855667250](https://github.com/Atridis/yadinassi/actions/runs/40855667250)
+passed on its first attempt at original source
+`1a224d9369e6cad526bfe69a1d14a4d40c6d25e4`, tree
+`a5ebb35a4ed893636118683f6552b68fc21473ad` (699 source files, 37 staged files).
+Its exact-source production FINAL validator ran cold before the unchanged,
+independently prefrozen checker; both accepted the report. Six baseline/create/update
+origin and observer readbacks matched the independently derived bindings and values.
+Three Catalogs and two attributes were checked, with 13 stages, 11 snapshots,
+five comparisons, three artifacts and all four cleanup verdicts accepted.
+
+Artifact12889186996 ZIP SHA256 (5167 bytes):
+`6301c44cdcaffc7e29a0e8f76d2389d2d80a0e27be6563d6fa1c794142a3ae5e`.
+The 19396-byte report SHA256 is
+`f590c528ed507be224713e78dc34264e6054196144a9a158f6d3f45c31be1b2f`;
+its public capture is 2434 bytes. This accepts the runtime extraction only for the
+same bounded owned String Code/Description0/String+Number attribute layout. It
+adds no BSL, CRUD or arbitrary database acceptance. The evidence belongs to the
+original source above, not to later documentation commits; the earlier PR143
+native evidence and its original-source identities remain separate.
+
+Local validation of the extraction passed 104 focused tests, 17 launcher checks,
+a fresh Linux build with the full production binary smoke, and a new genuine
+whole138 runtime76 gate. The full unit process reached its 1800-second supervisor
+limit after 5963 successful tests and one skip, without an observed test failure;
+**that run did not pass the full suite**. The entire interrupted test module and
+all remaining modules passed separately (131 supplemental tests), which is useful
+coverage but not a replacement for a single full-suite pass. All recorded gates
+retained unchanged source hashes, an empty owned process group and no leftover
+fixture. Ordinary native CI and four-OS CI remain separate, pending audit
+obligations before merge; this dedicated acceptance does not assert their success.

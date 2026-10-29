@@ -1,5 +1,6 @@
 """Independent complete finite37/38 envelopes, not a native writer guarantee."""
 import unittest
+from unittest import mock
 import test_native_1c_db_oracle_readback_budget as previous
 import test_native_1c_db_oracle_record_budget as metadata_budget
 import catalog_readonly_binding as policy
@@ -39,14 +40,32 @@ def finite_diagnostic_domain():
     return domain
 
 
+def context_domains():
+    # validate_report delegates through metadata._mapped_failure_context to
+    # protocol.validate_failure_context. Include raw metadata operation/phase
+    # values before that validated mapping, plus null where it is admitted.
+    return {
+        'operation': set(protocol.COMMAND_STAGES) | {'enterprise_' + policy.metadata.OPERATION},
+        'site': set(protocol.CONTEXT_SITES),
+        'bsl_phase': set(protocol.BSL_PHASES) | set(policy.metadata.PHASES) | {None},
+        'region': set(protocol.INVENTORY_REGIONS) | {None},
+        'reason': set(protocol.INVENTORY_REASONS) | {None},
+        'entry_class': set(snapshots.ENTRY_CLASSES),
+        'entry_shape': set(snapshots.ENTRY_SHAPES),
+    }
+
+
 def report_envelope():
     report=previous.report_envelope()
     report.update(schema=policy.SCHEMA,lane=policy.LANE)
-    # Only these two fields have exhaustive closed production domains. Keep
-    # every optional context at its previous128-character allowance unchanged.
-    # Include null stage and both failure kinds; future enum growth changes this.
+    # Every diagnostic uses an exhaustive production-validated finite domain.
+    # Exact wire lengths include JSON quoting/escaping and nullable members.
+    # Independent maxima may coexist even if cross-field rules reject that mix.
+    # Future enum growth changes this proof, never the production size caps.
     report['failed_stage']=metadata_budget.longest((*protocol.STAGES,None))
     report['failure_kind']=metadata_budget.longest((*protocol.FAILURES,policy.FAILURE_KIND,policy.metadata.FAILURE_KIND))
+    report['failure_context'] = {key:metadata_budget.longest(values)
+                                 for key,values in context_domains().items()}
     report['provenance']['sources']={name:'c'*64 for name in inputs.CATALOG_BINDING_SOURCE_FILES}
     for name,verdict in (('mapping_validation',policy.MAPPING_VERDICT),
                          ('layout_validation',policy.LAYOUT_VERDICT),('record_validation',policy.VERDICT)):
@@ -68,8 +87,8 @@ class CatalogReadonlyBudgetTests(unittest.TestCase):
     def test_complete_cap_majorants(self):
         facts=proof_results()
         self.assertEqual((policy.SCHEMA,policy.CAPTURE_SCHEMA),(37,38))
-        self.assertEqual(facts,{'sources':35,'success_capture':2443,'failure_capture':118,
-            'capture_cap':12288,'report_with_full_capture_cap_and_newline':32688,
+        self.assertEqual(facts,{'sources':37,'success_capture':2443,'failure_capture':118,
+            'capture_cap':12288,'report_with_full_capture_cap_and_newline':32137,
             'report_cap':32768,'private_marker':8931,'finite_diagnostic_token_bytes':64})
         self.assertLessEqual(facts['success_capture'],12288)
         self.assertLessEqual(facts['failure_capture'],12288)
@@ -102,3 +121,37 @@ class CatalogReadonlyBudgetTests(unittest.TestCase):
             self.assertEqual(state['binding_verdict'],policy.MAPPING_VERDICT)
             self.assertEqual(state['verdict'],policy.STATE_VERDICT)
         self.assertEqual((capture['catalog_count'],capture['attribute_count']),(3,2))
+
+
+class ClosedDiagnosticEnvelopeTests(unittest.TestCase):
+    def test_all_context_domains_wire_lengths_and_future_growth(self):
+        domains = context_domains()
+        self.assertEqual({key:max(len(wire(value)) for value in values)
+                          for key,values in domains.items()},
+                         {'operation':34,'site':11,'bsl_phase':19,'region':12,
+                          'reason':19,'entry_class':19,'entry_shape':25})
+        self.assertEqual(set(report_envelope()['failure_context']),set(domains))
+        for values in domains.values():
+            self.assertTrue(all(value is None or (type(value) is str and value.isascii())
+                                for value in values))
+        before = len(wire(report_envelope()))
+        with mock.patch.object(protocol, 'CONTEXT_SITES', set(protocol.CONTEXT_SITES)|{'x'*200}):
+            self.assertEqual(len(wire(report_envelope()))-before,191)
+
+    def test_context_validator_rejects_each_outside_domain_and_wrong_type(self):
+        # Exercise the exact mapping/validator called by the binding report.
+        operation = 'enterprise_' + policy.metadata.OPERATION
+        base = {'operation':operation,'site':'result','bsl_phase':None,
+                'region':None,'reason':None}
+        entry = {'operation':'snapshot_freeze','site':'operation','bsl_phase':None,
+                 'region':None,'reason':None,'entry_class':next(iter(snapshots.ENTRY_CLASSES)),
+                 'entry_shape':next(iter(snapshots.ENTRY_SHAPES))}
+        policy.metadata._mapped_failure_context(base,'baseline')
+        policy.metadata._mapped_failure_context(entry,'baseline')
+        for key in context_domains():
+            for invalid in ('x'*128,0,True,[],{}):
+                value = dict(entry if key.startswith('entry_') else base)
+                value[key] = invalid
+                with self.subTest(key=key,value=invalid):
+                    with self.assertRaises(protocol.OracleError):
+                        policy.metadata._mapped_failure_context(value,'baseline')

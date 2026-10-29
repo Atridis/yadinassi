@@ -68,7 +68,7 @@ class CatalogBindingReaderTests(unittest.TestCase):
             self.assertFalse(any(offset == 30*fixture.P for offset, _ in value.calls))
 
     def test_ambiguous_selector_and_all_catalog_uuid_consistency(self):
-        original = entry.core._observe_catalog_attributes_from_graph
+        original = entry._load_storage()['config_catalog_transport']._observe_catalog_attributes_from_graph
         for mode, expected in (('ambiguous', 'binding_catalog_ambiguous'), ('identity', 'binding_catalog_identity')):
             def changed(*args, **kwargs):
                 value = original(*args, **kwargs)
@@ -79,14 +79,14 @@ class CatalogBindingReaderTests(unittest.TestCase):
                 fields[-1] = (key, identity, attributes)
                 return replace(value, private_fields=tuple(fields))
             readers, graphs, roles, patches = self.captured()
-            with patches[0], patches[1], patches[2], mock.patch.object(entry.core, '_observe_catalog_attributes_from_graph', changed):
+            with patches[0], patches[1], patches[2], mock.patch.object(entry._load_storage()['config_catalog_transport'], '_observe_catalog_attributes_from_graph', changed):
                 with self.assertRaises(entry.catalog_module.CatalogError) as caught: self.read()
             self.assertEqual(caught.exception.code, expected)
             self.assertTrue(graphs[0].failed)
             self.assertEqual(roles, ['config'])
 
     def test_late_config_failure_poison_no_params(self):
-        original = entry.core._ConfigContentDecoder.decode
+        original = entry._load_storage()['config_catalog_transport']._ConfigContentDecoder.decode
         calls = []
         def decode(obj, *args, **kwargs):
             calls.append(1)
@@ -94,7 +94,7 @@ class CatalogBindingReaderTests(unittest.TestCase):
             if len(calls) == 4: raise RuntimeError('invented late decode failure')
             return result
         readers, graphs, roles, patches = self.captured()
-        with patches[0], patches[1], patches[2], mock.patch.object(entry.core._ConfigContentDecoder, 'decode', decode):
+        with patches[0], patches[1], patches[2], mock.patch.object(entry._load_storage()['config_catalog_transport']._ConfigContentDecoder, 'decode', decode):
             with self.assertRaises(RuntimeError): self.read()
         self.assertEqual(len(calls), 4)
         self.assertTrue(graphs[0].failed)

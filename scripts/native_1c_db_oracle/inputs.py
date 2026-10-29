@@ -119,7 +119,8 @@ CONFIG_CATALOG_ATTRIBUTE_LANE = 'owned_config_catalog_attribute_binding_v1'
 CATALOG_BINDING_SOURCE_FILES = {**CONFIG_CATALOG_ATTRIBUTE_SOURCE_FILES,
     **{f'yadinassi/storage/{name}.py': f'{name}.py' for name in (
         'filedb_named_file', 'filedb_dbnames', 'filedb_records',
-        'config_catalog_binding', 'config_catalog_records')},
+        'config_catalog_binding', 'config_catalog_records',
+        'config_catalog_transport', 'catalog_reader')},
     'scripts/native_1c_db_oracle/catalog_binding_reader.py': 'catalog_binding_reader.py',
     'scripts/native_1c_db_oracle/catalog_readonly_binding.py': 'catalog_readonly_binding.py'}
 CATALOG_BINDING_LANE = 'owned_catalog_readonly_binding_v1'
