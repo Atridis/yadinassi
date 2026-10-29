@@ -3,7 +3,7 @@ import hashlib
 import os
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import tempfile
 import unittest
 from unittest import mock
@@ -30,7 +30,7 @@ class DescriptionHostTests(unittest.TestCase):
             self.assertEqual(command[-1],'--catalog-description-'+case.removeprefix('description'))
             with self.assertRaises(Exception):inputs.verify_inputs(stage,facts.NONCE,reference_case='distinct_a',reference_rows=True)
             program="""import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 root=Path(sys.argv[1]).resolve();sys.path.insert(0,str(root))
 import catalog_description_policy, catalog_description_measurement, catalog_description_physical
 modules=catalog_description_physical.loader._load_storage()
@@ -69,9 +69,27 @@ transform((root/'modules/NativeOracleServer.bsl').read_bytes(),name='modules/Nat
             with mock.patch.object(host,'ROOT',self.root),mock.patch.object(host,'run_oracle',return_value=report) as run,\
                  mock.patch.object(host,'export_report') as export,mock.patch.object(host,'validate_description8',return_value=prior),\
                  mock.patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'2'},clear=True):
-                self.assertEqual(host.main(['--execute-approved-image','--file-db-oracle','--catalog-description',case,'--output','native-db-oracle/'+case+'.json']),0)
+                self.assertEqual(host.main(['--execute-approved-image','--file-db-oracle','--catalog-description',case,'--output',str(host.DESCRIPTION_OUTPUTS[case])]),0)
                 self.assertEqual(run.call_args.kwargs,{'description_case':case})
                 self.assertEqual(export.call_args_list[0].kwargs['output'],host.DESCRIPTION_OUTPUTS[case])
                 self.assertEqual(export.call_count,1 if case=='description8' else 2)
+
+    def test_windows_output_spelling_keeps_strict_guard(self):
+        outputs={case:PureWindowsPath('native-db-oracle')/(case+'.json') for case in ('description8','description17')}
+        for case in outputs:
+            report=facts.fixture(case,nonce='b'*32 if case=='description17' else facts.NONCE)
+            prior=protocol.encode(facts.fixture())+b'\n'
+            with mock.patch.object(host,'ROOT',self.root),mock.patch.object(host,'DESCRIPTION_OUTPUTS',outputs),\
+                 mock.patch.object(host,'run_oracle',return_value=report) as run,\
+                 mock.patch.object(host,'export_report') as export,mock.patch.object(host,'validate_description8',return_value=prior),\
+                 mock.patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'2'},clear=True):
+                prefix=['--execute-approved-image','--file-db-oracle','--catalog-description',case,'--output']
+                for wrong in ('native-db-oracle/'+case+'.json',str(outputs[case].with_name('other.json'))):
+                    with self.assertRaises(SystemExit) as caught:host.main(prefix+[wrong])
+                    self.assertEqual(caught.exception.code,2)
+                    run.assert_not_called();export.assert_not_called()
+                self.assertEqual(host.main(prefix+[str(outputs[case])]),0)
+                self.assertEqual(run.call_args.kwargs,{'description_case':case})
+                self.assertEqual(export.call_args_list[0].kwargs['output'],outputs[case])
 
 if __name__=='__main__':unittest.main()
