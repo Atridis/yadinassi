@@ -1707,3 +1707,27 @@ Runtime tests compare all thirteen states byte-for-byte and require the full854
 replay to pass the unchanged eight-label typed-Map comparator. Old fixtures,
 native BSL, generated-module pins, strict135 witness, harness, caps, protocol and
 workflows remain unchanged. The binary must be rebuilt for this runtime change.
+
+
+### Historical replay test timeout
+
+The saved-output test runner keeps a finite 10-second child-process timeout for
+ordinary and synthetic scenarios. Only the repository's exact authenticated
+historical `collections.bsl` replay receives 30 seconds. Reconstruction verifies
+both the source and saved native output first; the timeout selector additionally
+checks the historical replay blob identity. Other paths, names, or replay bytes
+do not acquire the larger budget.
+
+This 270,330-byte scenario was observed near the previous 10-second boundary on
+macOS Intel: the successful checkpoint test took approximately 10.05 seconds
+including reconstruction and process startup, while separate runs exceeded the
+child timeout. Corresponding Windows, Linux, and macOS ARM checkpoint tests took
+approximately 4.16, 3.15, and 3.33 seconds. Unchanged main and PR runtime sources
+replayed locally in approximately 2.4–2.9 seconds with identical output. These
+measurements support increasing timeout headroom, not proven runner CPU load
+or a performance guarantee. The finite 30-second budget provides roughly three
+times the observed Intel wall time; the CI job deadline remains an outer bound.
+There are no automatic retries. `subprocess.run` still kills and waits for the
+child on timeout, and return code, empty stderr, and exact output assertions are
+unchanged. This is test-only policy: production execution/report limits,
+including the 8192/32768 caps, are unchanged.

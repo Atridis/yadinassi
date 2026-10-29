@@ -43,6 +43,18 @@ from scripts.native_historical_replay import (
 )
 
 
+DEFAULT_SCRIPT_TIMEOUT_SECONDS = 10
+HISTORICAL_COLLECTIONS_TIMEOUT_SECONDS = 30
+
+
+def script_timeout_seconds(script: Path, replay: bytes | None = None) -> int:
+    """Bound the authenticated large replay, not arbitrary similarly named scripts."""
+    if (script == ROOT / "tests/collections.bsl" and replay is not None
+            and git_blob(replay) == HISTORICAL_COLLECTIONS_BLOB):
+        return HISTORICAL_COLLECTIONS_TIMEOUT_SECONDS
+    return DEFAULT_SCRIPT_TIMEOUT_SECONDS
+
+
 class NativeOutputTests(unittest.TestCase):
     native_root = ROOT
     fixture_root = ROOT.parent / "tests/fixtures/native_windows"
@@ -77,14 +89,17 @@ class NativeOutputTests(unittest.TestCase):
         # Only execution context changes; every native output byte is compared.
         # See docs/native-testing.md; never inherit a CI host timezone.
         environment["YADINASSI_TIMEZONE"] = "Europe/Warsaw"
+        timeout = DEFAULT_SCRIPT_TIMEOUT_SECONDS
         try:
             with tempfile.TemporaryDirectory(prefix="native-historical-") as temporary:
                 arguments = [sys.executable, "-c", EXECUTE_SCRIPT, str(script)]
                 if self.native_root == ROOT and script.name in ("collections.bsl", "dates.bsl", "numbers.bsl", "functions.bsl"):
                     reconstruct = {"functions.bsl": historical_functions_source, "dates.bsl": historical_dates_source, "numbers.bsl": historical_numbers_source, "collections.bsl": historical_collections_source}[script.name]
                     replay = Path(temporary) / script.name
-                    replay.write_bytes(reconstruct(
-                        script.read_bytes(), expected_path.read_bytes()))
+                    replay_source = reconstruct(script.read_bytes(), expected_path.read_bytes())
+                    replay.write_bytes(replay_source)
+                    # Reconstruction authenticates the source and native output first.
+                    timeout = script_timeout_seconds(script, replay_source)
                     arguments.append(str(replay))
                 if self.native_root == ROOT and script.name == "values.bsl":
                     replay = Path(temporary) / script.name
@@ -93,10 +108,10 @@ class NativeOutputTests(unittest.TestCase):
                     arguments.append(str(replay))
                 result = subprocess.run(
                     arguments, cwd=ROOT.parent, env=environment,
-                    capture_output=True, timeout=10,
+                    capture_output=True, timeout=timeout,
                 )
         except subprocess.TimeoutExpired:
-            self.fail(f"Yadinassi не выполнил {script}: истек таймаут 10 с.")
+            self.fail(f"Yadinassi не выполнил {script}: истек таймаут {timeout} с.")
         except (OSError, ValueError) as error:
             self.fail(f"Не удалось запустить Yadinassi для {script}: {error}")
         self.assertEqual(result.returncode, 0,
@@ -254,6 +269,38 @@ class NativeOutputRunnerTests(unittest.TestCase):
             self.assert_comparison_fails("sample.bsl", "истек таймаут 10 с")
         with patch.object(subprocess, "run", side_effect=OSError("test start failure")):
             self.assert_comparison_fails("sample.bsl", "Не удалось запустить Yadinassi")
+
+    def test_timeout_policy_is_bound_to_exact_repository_historical_collections(self):
+        script = ROOT / "tests/collections.bsl"
+        replay = historical_collections_source(
+            script.read_bytes(), (ROOT.parent / "tests/fixtures/native_windows/collections.out").read_bytes())
+        self.assertEqual(script_timeout_seconds(script, replay), 30)
+        for other_script, other_replay in (
+            (script, None), (script, replay + b"// mutation"),
+            (ROOT / "tests/dates.bsl", replay),
+            (self.root / "tests/collections.bsl", replay),
+        ):
+            with self.subTest(script=other_script, replay_present=other_replay is not None):
+                self.assertEqual(script_timeout_seconds(other_script, other_replay), 10)
+
+    def test_authenticated_historical_timeout_is_passed_and_reported(self):
+        case = NativeOutputTests()
+        script = ROOT / "tests/collections.bsl"
+        expected = (case.fixture_root / "collections.out").read_bytes()
+        completed = subprocess.CompletedProcess([], 0, normalize_newlines(expected.decode()).encode(), b"")
+        with patch.object(subprocess, "run", return_value=completed) as run:
+            case.compare_script(script)
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+        with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("test", 30)):
+            with self.assertRaisesRegex(AssertionError, "истек таймаут 30 с"):
+                case.compare_script(script)
+
+    def test_synthetic_collections_keeps_default_subprocess_timeout(self):
+        self.add_case(name="collections.bsl")
+        completed = subprocess.CompletedProcess([], 0, "Привет\n".encode(), b"")
+        with patch.object(subprocess, "run", return_value=completed) as run:
+            self.assert_comparison_passes()
+        self.assertEqual(run.call_args.kwargs["timeout"], 10)
 
     def test_comparison_never_changes_input_or_native_results(self):
         self.add_case()

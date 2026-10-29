@@ -324,17 +324,20 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
-                and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool and type(config_catalog_observation) is bool and type(config_catalog_name_binding) is bool and type(config_catalog_standard_binding) is bool and type(config_catalog_identity_binding) is bool and type(config_catalog_field_matrix) is bool
-                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation, config_catalog_name_binding, config_catalog_standard_binding, config_catalog_identity_binding, config_catalog_field_matrix)) <= 1, 'invalid_input')
+                and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool and type(config_catalog_observation) is bool and type(config_catalog_name_binding) is bool and type(config_catalog_standard_binding) is bool and type(config_catalog_identity_binding) is bool and type(config_catalog_field_matrix) is bool and type(config_catalog_attribute_binding) is bool
+                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation, config_catalog_name_binding, config_catalog_standard_binding, config_catalog_identity_binding, config_catalog_field_matrix, config_catalog_attribute_binding)) <= 1, 'invalid_input')
         self.observation = None
-        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection or config_catalog_observation or config_catalog_name_binding or config_catalog_standard_binding or config_catalog_identity_binding or config_catalog_field_matrix:
+        if record_metadata or record_reader or params_transport or params_extraction or dbnames_identity or config_transport or config_framing or config_marker_census or config_zero_marker_filename or config_entry_reference or config_blob_chain or config_content_decode or config_root_reference_projection or config_catalog_observation or config_catalog_name_binding or config_catalog_standard_binding or config_catalog_identity_binding or config_catalog_field_matrix or config_catalog_attribute_binding:
             import record_observation
             self.observation = record_observation
         self.params_policy = None
-        if config_catalog_field_matrix:
+        if config_catalog_attribute_binding:
+            import config_catalog_attribute_binding as selected
+            self.params_policy = selected
+        elif config_catalog_field_matrix:
             import config_catalog_field_matrix as selected
             self.params_policy = selected
         elif config_catalog_identity_binding:
@@ -382,7 +385,7 @@ class Native:
         elif params_transport:
             import params_observation
             self.params_policy = params_observation
-        self.catalog_field_matrix = config_catalog_field_matrix
+        self.catalog_field_matrix = config_catalog_field_matrix or config_catalog_attribute_binding
         self.identity_manifest = None; self.identity_baseline_verified = False
         self.record_policy = None; self.record_module = None
         self.record_pending = None; self.record_names = None; self.record_profile = None
@@ -684,7 +687,7 @@ class Native:
             expected = self.v1 if version == 1 else self.v2
             verify_redump(expected,target,version=version,
                           **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}))
-            if (getattr(self, 'params_policy', None) is not None and self.params_policy.SCHEMA in (9, 27, 29, 31, 33)
+            if (getattr(self, 'params_policy', None) is not None and self.params_policy.SCHEMA in (9, 27, 29, 31, 33, 35)
                     and version == 1 and self.stage in ('seed_v1', 'baseline')):
                 manifest = self.params_policy.build_identity_manifest(
                     expected, target, nonce=self.nonce, version=version)
@@ -910,7 +913,7 @@ class Native:
         params_policy = getattr(self, 'params_policy', None)
         policy = params_policy or self.observation
         require(policy is not None and self.stage == 'baseline' and identifier == 'baseline', 'invalid_input')
-        if params_policy is not None and params_policy.SCHEMA in (9, 27, 29, 31, 33):
+        if params_policy is not None and params_policy.SCHEMA in (9, 27, 29, 31, 33, 35):
             require(self.identity_baseline_verified and self.identity_manifest is not None,
                     'metadata_rejected')
         with self.temporary_clone(identifier, 'auditor') as database:
@@ -934,7 +937,7 @@ class Native:
                     from snapshots import inspect_frozen_catalog
                     self.reader_attempted = True
                     summary, catalog = inspect_frozen_catalog(frozen, quiescent=self.quiescent,
-                        read_catalog=(policy.read_owned_projection if params_policy is not None and params_policy.SCHEMA in (25, 27, 29, 31, 33)
+                        read_catalog=(policy.read_owned_projection if params_policy is not None and params_policy.SCHEMA in (25, 27, 29, 31, 33, 35)
                             else policy.read_projection if params_policy is not None else filedb_catalog.read_catalog),
                         limits=filedb_catalog.CatalogLimits(),
                         before_read=self.remaining)
@@ -954,7 +957,7 @@ class Native:
                 else:
                     _, projected = policy.project_catalog(catalog, data['record_metadata'])
                 evidence = {'marker': data, 'origin': origin, 'postimage': summary, 'reader': projected}
-                if params_policy is not None and params_policy.SCHEMA in (9, 27, 29, 31, 33):
+                if params_policy is not None and params_policy.SCHEMA in (9, 27, 29, 31, 33, 35):
                     require(self.identity_baseline_verified and self.identity_manifest is not None,
                             'metadata_rejected')
                     evidence['identity_manifest'] = self.identity_manifest
@@ -1052,7 +1055,10 @@ class Controller:
         self.observation = None
         self.record_policy = None
         self.params_policy = None
-        if report.get('schema') == 33:
+        if report.get('schema') == 35:
+            import config_catalog_attribute_binding
+            self.params_policy = config_catalog_attribute_binding
+        elif report.get('schema') == 33:
             import config_catalog_field_matrix
             self.params_policy = config_catalog_field_matrix
         elif report.get('schema') == 31:
@@ -1103,7 +1109,7 @@ class Controller:
         if report.get('schema') == 6:
             import record_validation
             self.record_policy = record_validation
-        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 23, 25, 27, 29, 31, 33):
+        if report.get('schema') in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 23, 25, 27, 29, 31, 33, 35):
             import record_observation
             self.observation = record_observation
 
@@ -1183,13 +1189,13 @@ class Controller:
                     self.snapshot(database,'baseline')
                     if self.params_policy is not None:
                         data = self.baseline_step('audit', self.backend.observe_record_metadata, 'baseline')
-                        capture_key = ('config_catalog_field_matrix' if self.report['schema'] == 33 else 'config_catalog_identity_binding' if self.report['schema'] == 31 else 'config_catalog_standard_binding' if self.report['schema'] == 29 else 'config_catalog_name_binding' if self.report['schema'] == 27 else 'config_catalog_observation' if self.report['schema'] == 25 else 'config_root_reference_projection' if self.report['schema'] == 23 else 'config_content_decode' if self.report['schema'] == 17 else 'config_blob_chain' if self.report['schema'] == 15 else 'config_entry_reference' if self.report['schema'] == 14 else 'config_zero_marker_filename' if self.report['schema'] == 13 else 'config_marker_census' if self.report['schema'] == 12 else 'config_framing' if self.report['schema'] == 11 else 'config_observation' if self.report['schema'] == 10 else 'dbnames_identity' if self.report['schema'] == 9 else
+                        capture_key = ('config_catalog_attribute_binding' if self.report['schema'] == 35 else 'config_catalog_field_matrix' if self.report['schema'] == 33 else 'config_catalog_identity_binding' if self.report['schema'] == 31 else 'config_catalog_standard_binding' if self.report['schema'] == 29 else 'config_catalog_name_binding' if self.report['schema'] == 27 else 'config_catalog_observation' if self.report['schema'] == 25 else 'config_root_reference_projection' if self.report['schema'] == 23 else 'config_content_decode' if self.report['schema'] == 17 else 'config_blob_chain' if self.report['schema'] == 15 else 'config_entry_reference' if self.report['schema'] == 14 else 'config_zero_marker_filename' if self.report['schema'] == 13 else 'config_marker_census' if self.report['schema'] == 12 else 'config_framing' if self.report['schema'] == 11 else 'config_observation' if self.report['schema'] == 10 else 'dbnames_identity' if self.report['schema'] == 9 else
                             'params_extraction' if self.report['schema'] == 8 else 'params_observation')
                         validation_key = ('mapping_validation' if self.report['schema'] == 9 else
                             'extraction_validation' if self.report['schema'] == 8 else 'observation_validation')
                         self.report[capture_key] = self.params_policy.bind_capture(data, self.report)
                         self.report['reader_validation'] = self.report[validation_key] = self.params_policy.VERDICT
-                        if self.report['schema'] in (17, 23, 25, 27, 29, 31, 33):
+                        if self.report['schema'] in (17, 23, 25, 27, 29, 31, 33, 35):
                             self.report['decompression_validation'] = self.params_policy.DECOMPRESSION_VERDICT
                         if self.report['schema'] == 9:
                             self.report['extraction_validation'] = 'extraction_observed'
@@ -1325,7 +1331,7 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix'): return 2
+    if flag not in (None, '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix', '--config-catalog-attribute-binding'): return 2
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
     config_transport = flag == '--config-transport-observation'
@@ -1335,6 +1341,7 @@ def main():
     config_entry_reference = flag == '--config-entry-reference-observation'
     config_blob_chain = flag == '--config-blob-chain-observation'
     config_content_decode = flag == '--config-content-decode-observation'
+    config_catalog_attribute_binding = flag == '--config-catalog-attribute-binding'
     config_catalog_field_matrix = flag == '--config-catalog-field-matrix'
     config_catalog_identity_binding = flag == '--config-catalog-identity-binding'
     config_catalog_standard_binding = flag == '--config-catalog-standard-binding'
@@ -1347,10 +1354,13 @@ def main():
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if config_catalog_field_matrix:
+        if config_catalog_attribute_binding:
+            import config_catalog_attribute_binding as selected
+            report=selected.empty_report(nonce,provenance)
+        elif config_catalog_field_matrix:
             import config_catalog_field_matrix as selected
             report=selected.empty_report(nonce,provenance)
         elif config_catalog_identity_binding:

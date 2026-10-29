@@ -1844,6 +1844,62 @@ class ConfigCatalogIdentityObservation(ConfigCatalogReferenceObservation):
     capability: str = field(default='experimental_config_catalog_identity', init=False)
 
 
+@dataclass(frozen=True)
+class ConfigCatalogAttributeProfile(ConfigCatalogIdentityProfile):
+    identifier: str = field(default='config_catalog_attribute_reader_v1', init=False)
+
+    def recipe(self):
+        result = super().recipe()
+        result.update(catalog_attribute_projection='config_catalog_attributes_single_primitive_v1',
+            catalog_attribute_limits=(4194304, 131072, 64, 1024, 256, 64, 2147483647),
+            catalog_attribute_reservation=(8, 262144),
+            catalog_attribute_traversal='same_decoded_bytes_two_parsers_shared_budget_v1',
+            catalog_attribute_binding='complete_collections_uuid_name_type_verified_xml_v1')
+        return result
+
+
+@dataclass(frozen=True)
+class ConfigCatalogAttributeObservation(ConfigCatalogReferenceObservation):
+    private_fields: tuple
+    capability: str = field(default='experimental_config_catalog_attributes', init=False)
+
+
+def load_catalog_attribute_projector():
+    """Load the source-pinned sibling with no installed runtime imports."""
+    import importlib.util
+    import sys
+    import types
+    from pathlib import Path
+    import config_catalog_name
+    name = '_owned_catalog_attribute_storage'
+    fullname = name + '.config_catalog_attributes'
+    if fullname in sys.modules:
+        return sys.modules[fullname]
+    package = types.ModuleType(name)
+    package.__path__ = []
+    sys.modules[name] = package
+    sys.modules[name + '.config_catalog_name'] = config_catalog_name
+    path = Path(config_catalog_name.__file__).with_name('config_catalog_attributes.py')
+    spec = importlib.util.spec_from_file_location(fullname, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        del sys.modules[fullname]
+        raise
+    return module
+
+
+def observe_config_catalog_attributes(read_at, file_size, *, profile,
+        limits=None, chain_limits=None, content_limits=None, catalog_limits=None,
+        reference_limits=None, identity_limits=None):
+    return _observe_catalog_prefix(read_at, file_size, profile=profile, limits=limits,
+        chain_limits=chain_limits, content_limits=content_limits, catalog_limits=catalog_limits,
+        reference_limits=reference_limits, name_limits=identity_limits,
+        standard=True, identity=True, attributes=True)
+
+
 def observe_config_catalog_identity(read_at, file_size, *, profile,
                                limits=None, chain_limits=None, content_limits=None, catalog_limits=None, reference_limits=None, identity_limits=None):
     return _observe_catalog_prefix(read_at, file_size, profile=profile, limits=limits,
@@ -1866,7 +1922,7 @@ def observe_config_catalog_standard(read_at, file_size, *, profile,
 
 
 def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
-                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False):
+                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False):
     """Resolve partial Catalog declarations on one private CONFIG resource graph.
 
     Every selected entry is validated and decoded exactly once before return.
@@ -1874,7 +1930,7 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
     Identity mode additionally projects an unverified internal UUID; all private
     results require the separate independent comparator.
     """
-    expected_profile = (ConfigCatalogIdentityProfile if identity else
+    expected_profile = (ConfigCatalogAttributeProfile if attributes else ConfigCatalogIdentityProfile if identity else
                         ConfigCatalogStandardProfile if standard else ConfigCatalogNameProfile)
     if type(profile) is not expected_profile:
         raise ValueError('profile must be ' + expected_profile.__name__)
@@ -2088,7 +2144,20 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
                         if error.code in ('input_bytes', 'tokens', 'depth', 'name_bytes', 'name_chars'):
                             raise ResourceLimit('config_catalog_identity_limits' if identity else 'config_catalog_standard_limits' if standard else 'config_catalog_name_limits') from None
                         raise InvalidStructure('config_catalog_identity_prefix' if identity else 'config_catalog_standard_prefix' if standard else 'config_catalog_name_prefix') from None
-                    private_names.append((key, named) if standard else (key, named.name))
+                    if attributes:
+                        attribute_projector = load_catalog_attribute_projector()
+                        try:
+                            projected_attributes = attribute_projector.project_catalog_attributes(
+                                content, budget=reader._budget)
+                        except attribute_projector.CatalogAttributeError as error:
+                            if error.code in ('input_bytes', 'tokens', 'depth', 'name_bytes',
+                                              'name_chars', 'attribute_limit', 'integer_bound'):
+                                raise ResourceLimit('config_catalog_attribute_limits') from None
+                            raise InvalidStructure('config_catalog_attribute_prefix') from None
+                        private_names.append((key, named, projected_attributes))
+                        del projected_attributes
+                    else:
+                        private_names.append((key, named) if standard else (key, named.name))
                     del named
                     catalog_resolved += 1
                     catalog_positive += 1
@@ -2107,7 +2176,7 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
         if not positive_count:
             raise UnsupportedLayout('config_content_no_positive_witness')
         reader._budget.charge('output_bytes', 4096)
-        observation = (ConfigCatalogIdentityObservation if identity else
+        observation = (ConfigCatalogAttributeObservation if attributes else ConfigCatalogIdentityObservation if identity else
                        ConfigCatalogStandardObservation if standard else ConfigCatalogNameObservation)
         return observation(profile.identifier, profile.recipe_sha256,
             data.info.logical_length, blob.info.logical_length, slots, 'one',

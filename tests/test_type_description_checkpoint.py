@@ -313,7 +313,7 @@ class StrictNativeGateTests(unittest.TestCase):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
         # Reviewed migration preserves every captured output byte and binds the
         # complete historical source; live Docker compares all current cases.
-        self.assertEqual(hashlib.sha256(actual).hexdigest(), '459be92e9484d1673a71ddb86fef7662c8eccae2d500383bdfca0fbdae433b62')
+        self.assertEqual(hashlib.sha256(actual).hexdigest(), 'afd75cddf3c99934352772d99b3f13602cd657270ee890fa607ca39d927bb607')
 
     def test_frozen_full_native_comparator_has_reviewed_historical_replay(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')
