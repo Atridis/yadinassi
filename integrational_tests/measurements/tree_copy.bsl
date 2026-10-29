@@ -4,9 +4,20 @@
     Возврат Сред("0123456789", V + 1, 1);
 КонецФункции
 Функция TCId(Знач V, Знач Registry)
-    Если V = Неопределено Тогда Возврат "_"; КонецЕсли;
+    Попытка Missing = (V = Неопределено);
+    Исключение
+        PrivateIdentityDescription = ОписаниеОшибки();
+        ВызватьИсключение "copy-identity-compare";
+    КонецПопытки;
+    Если Missing Тогда Возврат "_"; КонецЕсли;
     Для I = 0 По Registry.Count() - 1 Цикл
-        Если V = Registry[I] Тогда Возврат Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", I + 1, 1); КонецЕсли;
+        Candidate = Registry[I];
+        Попытка Same = (V = Candidate);
+        Исключение
+            PrivateIdentityDescription = ОписаниеОшибки();
+            ВызватьИсключение "copy-identity-compare";
+        КонецПопытки;
+        Если Same Тогда Возврат Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", I + 1, 1); КонецЕсли;
     КонецЦикла;
     Если Registry.Count() >= 62 Тогда ВызватьИсключение "copy-identities"; КонецЕсли;
     Registry.Add(V); Возврат Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", Registry.Count(), 1);
@@ -121,14 +132,24 @@
             T.Rows.Get(0).Rows.Get(0).N = 6;
             Out = Out + "/" + TCSnapshot(T, Registry) + "/" + TCSnapshot(Result, Registry);
         ИначеЕсли Case = 5 Тогда
-            R = Result.Rows.Get(0).Rows.Add(); R.Payload = 5; R.N = 5; R.Text = "e";
-            Out = Out + "/" + TCSnapshot(T, Registry) + "/" + TCSnapshot(Result, Registry);
-            Result.Rows.Delete(Result.Rows.Get(1));
-            Out = Out + "/" + TCSnapshot(T, Registry) + "/" + TCSnapshot(Result, Registry);
-            R = T.Rows.Add(); R.Payload = 6; R.N = 6; R.Text = "f";
-            Out = Out + "/" + TCSnapshot(T, Registry) + "/" + TCSnapshot(Result, Registry);
-            T.Rows.Get(0).Rows.Delete(T.Rows.Get(0).Rows.Get(0));
-            Out = Out + "/" + TCSnapshot(T, Registry) + "/" + TCSnapshot(Result, Registry);
+            Stage = "M01"; R = Result.Rows.Get(0).Rows.Add();
+            Stage = "M02"; R.Payload = 5;
+            Stage = "M03"; R.N = 5;
+            Stage = "M04"; R.Text = "e";
+            Stage = "M05"; Out = Out + "/" + TCSnapshot(T, Registry);
+            Stage = "M06"; Out = Out + "/" + TCSnapshot(Result, Registry);
+            Stage = "M07"; Result.Rows.Delete(Result.Rows.Get(1));
+            Stage = "M08"; Out = Out + "/" + TCSnapshot(T, Registry);
+            Stage = "M09"; Out = Out + "/" + TCSnapshot(Result, Registry);
+            Stage = "M10"; R = T.Rows.Add();
+            Stage = "M11"; R.Payload = 6;
+            Stage = "M12"; R.N = 6;
+            Stage = "M13"; R.Text = "f";
+            Stage = "M14"; Out = Out + "/" + TCSnapshot(T, Registry);
+            Stage = "M15"; Out = Out + "/" + TCSnapshot(Result, Registry);
+            Stage = "M16"; T.Rows.Get(0).Rows.Delete(T.Rows.Get(0).Rows.Get(0));
+            Stage = "M17"; Out = Out + "/" + TCSnapshot(T, Registry);
+            Stage = "M18"; Out = Out + "/" + TCSnapshot(Result, Registry);
         ИначеЕсли Case = 6 Тогда
             C = Result.Columns.Get(0); C.Name = "X"; C.Title = "Q"; C.Width = 6;
             Out = Out + "/" + TCSnapshot(T, Registry) + "/" + TCSnapshot(Result, Registry);
@@ -153,7 +174,11 @@
             Out = Out + "/" + TCSnapshot(T, Registry) + "/" + TCSnapshot(Result, Registry);
         КонецЕсли;
         Возврат Status + "/" + Out;
-    Исключение Возврат "X" + Stage; КонецПопытки;
+    Исключение
+        PrivateProbeDescription = ОписаниеОшибки();
+        Если СтрНайти(PrivateProbeDescription, "copy-identity-compare") > 0 Тогда Возврат "X" + Stage + "I"; КонецЕсли;
+        Возврат "X" + Stage;
+    КонецПопытки;
 КонецФункции
 Функция TCCalibrate()
     Попытка

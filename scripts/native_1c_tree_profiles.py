@@ -27,7 +27,7 @@ FILL = Profile('tree-v1', 'native-1c-tree-v1', 'native-1c-tree-stage-v1',
     'tree_fill_values', '58d466f3a9a181891fd97e205d115f0ce32b620f8fa8df3d56f4516405a65c90',
     34, 'native_1c_tree_fill_contract', '\nCalibration = TreeFillCalibrate();\n', 3, 'tree')
 COPY = Profile('tree-copy-v1', 'native-1c-tree-copy-v1', 'native-1c-tree-copy-stage-v1',
-    'tree_copy', 'c4ae4e0a725b6e807dc65b2e221cf65a555927b7c04adbed956dbb3cc9b45316',
+    'tree_copy', '483e02b29b06410a42c4be1b4104fbad7da9ab39556443d018aab003b5607ce9',
     10, 'native_1c_tree_copy_contract', '\nСообщить("TC-C: [" + TCCalibrate() + "]");\n', 2, 'tree-copy')
 
 

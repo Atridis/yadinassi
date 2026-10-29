@@ -14,7 +14,7 @@ routes. The original default remains `tree-v1`. Both use the same hardened,
 digest-pinned native image and unchanged isolation/cleanup rules.
 
 The Copy shard has exactly one source, `integrational_tests/measurements/tree_copy.bsl`,
-SHA256 `c4ae4e0a725b6e807dc65b2e221cf65a555927b7c04adbed956dbb3cc9b45316`.
+SHA256 `483e02b29b06410a42c4be1b4104fbad7da9ab39556443d018aab003b5607ce9`.
 It emits calibration plus nine cases. The staged inventory has 23 fixed inputs,
 including the registry, Copy decoder and finite diagnostic helper. The default
 Fill shard has 22 inputs (its original 21 plus the registry). Every staged byte
@@ -58,3 +58,46 @@ The default Fill generated client module remains SHA256
 `e43224c91c76a1c92dc6c2bf4e6c90a07fe23fbf4aa42d1c6a17630de70a937a`.
 A hash-bound, test-only inverse removes the Copy selector before applying the
 unchanged historical inverse chain; production source admission is not relaxed.
+
+
+## First acquisition: observer failure, not Copy semantics
+
+Native run40910090323 attempt1, Draft147 head
+`a4e087e189be43785663c5afa19287e97ea62cd9`, did not yield accepted
+Copy observations: native server case5 failed the observer during its mutation
+phase (`observer_m`). No Copy output artifact was exported. This is not evidence
+for a copying/aliasing policy and is not an interpreter mismatch. The original
+source SHA was `c4ae4e0a725b6e807dc65b2e221cf65a555927b7c04adbed956dbb3cc9b45316`.
+The failed run remains attributable to that source; a new source-bound native
+run is required for this diagnostic revision.
+
+The observer now distinguishes case5 steps M01–M18:
+
+| Steps | Operation |
+| --- | --- |
+| 01 | Add a child to the copied first root row |
+| 02–04 | Assign that child's Payload, N, Text |
+| 05–06 | Snapshot source, then copy |
+| 07 | Delete the copied second root row |
+| 08–09 | Snapshot source, then copy |
+| 10 | Add a source root row |
+| 11–13 | Assign its Payload, N, Text |
+| 14–15 | Snapshot source, then copy |
+| 16 | Delete the source first child subtree |
+| 17–18 | Snapshot source, then copy |
+
+Both TCId comparisons (against Undefined and against a registry entry) capture
+an exception description immediately in their original handler and rethrow a
+fixed observer tag. Registry indexing remains outside that comparison handler.
+The outer observer also captures immediately and emits only the fixed stage plus
+an optional identity suffix I. It does not turn invalid-handle comparisons into
+false, skip identities, or change successful IDs. Whether deleted handles cause
+the actual failure is still a hypothesis until the next native run.
+
+`XM01`–`XM18` map only for case5 to `case5_step01`–`case5_step18`;
+`XM01I`–`XM18I` map to the corresponding `_identity` categories. `XBI`, `XII`,
+`XOI`, `XMI` map to generic `identity_b/i/o/m` for cases1–9. All remain rejected
+observer outcomes, never accepted observations or raw error text. The four-field
+diagnostic schema, successful Copy grammar, positive controls and parity gate
+are unchanged. The longest finite category is 21 characters; existing byte caps
+are unchanged and rechecked.

@@ -7,13 +7,16 @@ MAX_OUTPUT = 8192
 CASE_COUNT = 9
 CALIBRATION_CODES = 'IARMDE'
 OBSERVER_STAGES = 'BIOM'
+CASE5_STEPS = tuple(f'{i:02}' for i in range(1, 19))
+IDENTITY_CATEGORIES = tuple('identity_' + stage.lower() for stage in OBSERVER_STAGES)
+CASE5_CATEGORIES = tuple('case5_step' + step + suffix for step in CASE5_STEPS for suffix in ('', '_identity'))
 DIAGNOSTIC_CATEGORIES = (
     'invalid_type', 'output_limit', 'encoding', 'record_count', 'calibration',
     'record_shape', 'observer_b', 'observer_i', 'observer_o', 'observer_m',
     'payload_contract',
-)
+) + IDENTITY_CATEGORIES + CASE5_CATEGORIES
 CASE_CATEGORIES = ('record_shape', 'observer_b', 'observer_i', 'observer_o',
-                   'observer_m', 'payload_contract')
+                   'observer_m', 'payload_contract') + IDENTITY_CATEGORIES + CASE5_CATEGORIES
 GLOBAL_CATEGORIES = ('invalid_type', 'output_limit', 'encoding', 'record_count')
 # Client message characters; LF is framing, not inside a captured message.
 MESSAGE_CHARACTERS = frozenset('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz -.:[]_/')
@@ -39,6 +42,7 @@ def validate_diagnostic(value):
     if ((category in GLOBAL_CATEGORIES and case is not None)
             or (category == 'calibration' and case != 0)
             or (category in CASE_CATEGORIES and (type(case) is not int or not 1 <= case <= CASE_COUNT))
+            or (category in CASE5_CATEGORIES and case != 5)
             or (category != 'calibration' and calibration is not None)):
         raise DiagnosticError('tree_copy_diagnostic_invalid')
 
@@ -78,6 +82,10 @@ def observation_diagnostic(raw, site, validate_payload, observation_error):
         if not line.startswith(prefix) or not line.endswith(b']\n'):
             return result('record_shape', case)
         payload = line[len(prefix):-2]
+        if case == 5 and payload in {('XM' + step + suffix).encode() for step in CASE5_STEPS for suffix in ('', 'I')}:
+            return result('case5_step' + payload[2:4].decode() + ('_identity' if payload.endswith(b'I') else ''), case)
+        if len(payload) == 3 and payload[:1] == b'X' and payload[-1:] == b'I' and chr(payload[1]) in OBSERVER_STAGES:
+            return result('identity_' + chr(payload[1]).lower(), case)
         if len(payload) == 2 and payload[:1] == b'X' and chr(payload[1]) in OBSERVER_STAGES:
             return result('observer_' + chr(payload[1]).lower(), case)
         try:
