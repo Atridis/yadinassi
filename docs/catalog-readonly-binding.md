@@ -220,3 +220,80 @@ coverage but not a replacement for a single full-suite pass. All recorded gates
 retained unchanged source hashes, an empty owned process group and no leftover
 fixture. Ordinary native CI and four-OS CI remain separate, pending audit
 obligations before merge; this dedicated acceptance does not assert their success.
+
+## Opt-in typed row UUID projection — native verification pending
+
+`yadinassi.storage.catalog_reader.read_catalog_rows(read_at, file_size,
+catalog_name=..., limits=None)` shares the existing private coordinator. Its
+frozen `CatalogRowsReadResult` retains configuration observation, selected Catalog
+metadata identity, attributes, binding, unchanged `PhysicalRecords`, typed `rows`
+and cumulative usage. Each frozen `CatalogRow` contains `physical_record` (the
+identical physical record, not a copy) and stdlib `UUID` `reference_uuid`.
+Metadata identity belongs to the result; a UUID alone is not a Catalog identity
+or a BSL reference. These private results must not be serialized into reports.
+
+The new API admits the complete CONFIG → DBNames → compiled layout → physical
+rows lifetime before projection. It decodes only the validated `_IDRREF` role;
+`_VERSION`, `_PREDEFINEDID`, other binary fields and generic B16 decoding remain
+opaque. No UUID is invented for empty baseline images. There is one reader, no
+second source traversal, and no native expected UUID argument. Projection reserves
+`512 + 512 * row_count` output units and `256 + 256 * row_count` processing units
+on the same lifetime budget before validation/construction. These are conservative
+accounting units, not exact Python allocator sizes. Any failure returns no result
+and poisons the graph. `records.usage` still describes the unchanged physical-read
+completion; the enclosing result's `usage` includes projection work.
+
+The raw `read_catalog_binding` API does not import/call the UUID codec, acquire
+projection charges, or change `PhysicalRecords`. The current one-active-row,
+String Code, Description0 and two-primitive-attribute profile remains. Code width,
+String width, numeric precision and scale are derived from CONFIG, not this API.
+Nonzero Description is still rejected, rather than assigned a constant width.
+No BSL manager, selection cursor, reference equality, database writes, live
+snapshot admission, or broader schema support is introduced.
+
+The standalone codec's accepted paired native run40918829096 (8 decode and
+8 encode observations) resolves the earlier unknown UUID permutation, but does
+**not** prove this new coordinator wiring. Native verification remains pending;
+this development status is recorded here, not in typed result values.
+Fresh paired native verification of this exact API/source is required before any
+native-wiring claim, including independent runtime/native UUID comparison and
+empty baseline/create/update origin/observer coverage. The present complete-image
+synthetic tests are local wiring and rejection evidence only.
+
+### Dedicated typed-row native verification profile — prepared, not yet accepted
+
+The closed `catalog-reference-rows-v1` route has invocation26, report45,
+capture46 and aggregate47. Its exact43-source inventory adds
+`catalog_reference_rows.py` to the42-source codec inventory. The historical
+identity and codec public validators retain their own exact inventories/schemas;
+only the private fixed selector permits the new policy's structural codec view.
+The workflow reuses the existing guarded codec A→B job pair and same-run,
+same-attempt, digest/source-bound case-A handoff. It does not add native jobs,
+rights, BSL modules or external database inputs. Its profile-distinct artifacts
+are `rows_distinct_a.json`, `rows_distinct_b.json`, and `rows-aggregate.json`.
+Only the exact rooted case-A artifact is ignored for source-cleanliness checks.
+
+The staged adapter explicitly loads the codec into its otherwise pathless
+exact-sibling package only for the typed route; raw binding reads remain unchanged.
+Each frozen image invokes `read_catalog_rows` once, with no native expected UUID
+argument and no raw reread. After image digest verification, the policy requires
+the exact typed runtime result, exact UUID type, matching typed/physical counts,
+and identical physical-record objects in order. It makes an internal raw view
+sharing identity/binding/records for existing mapping/value/reference/codec checks.
+Only then does it compare the typed UUID with the independently committed native
+witness. Baseline requires both collections empty. No case-requested UUID is
+substituted for the actual witness.
+
+Each state records `projection` as `NN` for baseline or `TT` for live rows,
+in origin/observer order, alongside existing `codec` `NNNN`/`TTTT` fields.
+Both distinct-case reports are required: eight projected UUID comparisons plus
+16 standalone codec direction comparisons. The aggregate retains only finite
+verdicts/source/report hashes and fixed counts, not UUIDs or physical bytes.
+All malformed/missing coverage, source changes, detached/reordered records,
+wrong typed UUIDs, budget failures and unsuccessful cleanup fail closed.
+
+The executable full-envelope bound is28788/32768 bytes, including the entire
+8192-byte capture allowance and final newline; capture structure is bounded by
+3545/8192 bytes. No report/capture cap was increased. Synthetic complete-image
+lifecycle, actual staged cold import, seed/redump and real-Git handoff tests are
+not native acceptance. A fresh exact-source paired native run remains required.

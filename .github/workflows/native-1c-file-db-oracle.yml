@@ -25,7 +25,7 @@ jobs:
       - name: Validate owner, repository, reviewed push and revision without checkout
         id: admission
         env:
-          NATIVE_DB_ROUTE: catalog-reference-codec-v1
+          NATIVE_DB_ROUTE: catalog-reference-rows-v1
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         shell: bash
         run: |
@@ -143,7 +143,7 @@ jobs:
           # END NATIVE DB ORACLE CI ADMISSION
           # BEGIN NATIVE DB ORACLE ROUTE ADMISSION
           def admitted_route(value):
-              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1"):
+              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1", "catalog-reference-rows-v1"):
                   raise PolicyError("route_not_approved")
               return value
           # END NATIVE DB ORACLE ROUTE ADMISSION
@@ -324,7 +324,7 @@ jobs:
     name: Native 1C reference codec case A
     needs: eligibility
     if: >-
-      needs.eligibility.outputs.route == 'catalog-reference-codec-v1' &&
+      (needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1') &&
       needs.eligibility.result == 'success' &&
       github.repository == 'Atridis/yadinassi' &&
       github.repository_id == '359770628' &&
@@ -371,7 +371,7 @@ jobs:
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-reference-codec distinct_a --output native-db-oracle/codec_distinct_a.json
+        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-reference-${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }} distinct_a --output native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}_distinct_a.json
       - name: Require validated report readiness on native success
         if: always() && steps.native.outcome == 'success'
         env:
@@ -385,8 +385,8 @@ jobs:
         if: always() && steps.native.outputs.report_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-codec-a-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native-db-oracle/codec_distinct_a.json
+          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-a-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}_distinct_a.json
           if-no-files-found: error
           retention-days: 7
 
@@ -394,7 +394,7 @@ jobs:
     name: Native 1C reference codec case B
     needs: [eligibility, native_codec_a]
     if: >-
-      needs.eligibility.outputs.route == 'catalog-reference-codec-v1' &&
+      (needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1') &&
       needs.eligibility.result == 'success' && needs.native_codec_a.result == 'success' &&
       github.repository == 'Atridis/yadinassi' &&
       github.repository_id == '359770628' &&
@@ -446,7 +446,7 @@ jobs:
           REFERENCE_A_SHA256: ${{ needs.native_codec_a.outputs.reference_sha256 }}
           REFERENCE_A_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           REFERENCE_A_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
-        run: python3 scripts/native_1c_db_oracle.py --validate-codec-a
+        run: python3 scripts/native_1c_db_oracle.py --validate-${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-a
       - name: Run approved digest with no network, ports or container credentials
         id: native
         env:
@@ -455,7 +455,7 @@ jobs:
           REFERENCE_A_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-reference-codec distinct_b --output native-db-oracle/codec_distinct_b.json
+        run: python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-reference-${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }} distinct_b --output native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}_distinct_b.json
       - name: Require validated report readiness on native success
         if: always() && steps.native.outcome == 'success'
         env:
@@ -468,16 +468,16 @@ jobs:
         if: always() && steps.native.outputs.report_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-codec-b-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native-db-oracle/codec_distinct_b.json
+          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-b-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}_distinct_b.json
           if-no-files-found: error
           retention-days: 7
       - name: Upload only the finite hash-bound two-case aggregate
         if: always() && steps.native.outputs.aggregate_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-codec-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native-db-oracle/codec-aggregate.json
+          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-aggregate.json
           if-no-files-found: error
           retention-days: 7
 
@@ -510,7 +510,7 @@ jobs:
           def selected_native_result(route, reference_a, reference_b, codec_a, codec_b):
               if route == "catalog-reference-identity-v1":
                   passed = reference_a == reference_b == "success" and codec_a == codec_b == "skipped"
-              elif route == "catalog-reference-codec-v1":
+              elif route in ("catalog-reference-codec-v1", "catalog-reference-rows-v1"):
                   passed = codec_a == codec_b == "success" and reference_a == reference_b == "skipped"
               else:
                   passed = False

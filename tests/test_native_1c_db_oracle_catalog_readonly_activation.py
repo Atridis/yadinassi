@@ -11,11 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = '.github/workflows/native-1c-file-db-oracle.yml'
 PREVIOUS_WORKFLOW = '1d104a9155553f3e7b6f2dbcc3fd6fb782056bb615b7b2c4931c6713aa1dd47c'
 SOURCE_PINS = {
-    'yadinassi/storage/catalog_reader.py': '594bafa89871d20d5933605ae559bd99a7c8999f3748c4eb7e51435dc3191cb1',
+    'yadinassi/storage/catalog_reader.py': 'd5d57bd1c2ea66ab3774a08e0f396a7874701654be433d218217e5492a94d2f8',
     'yadinassi/storage/config_catalog_transport.py': 'b526877c583900b263779c00f8db5c74cb40ff423b1df0e16f866cc4abca01ff',
     'yadinassi/storage/config_catalog_binding.py': 'f7e3239cdf8597e4377eff6ca01c8bbbec8f2d071bd6931dbc3f9e19fd3dab98',
     'yadinassi/storage/config_catalog_records.py': '29346abc74341186a6ddd54d111c6ec5e2fe651dfc9bf8e8e57446dfeba3ffb4',
-    'scripts/native_1c_db_oracle/catalog_binding_reader.py': '4164cc1b55e7efd50ab234007407bc5f6dfc964b14e3de3732526645c929b3b5',
+    'scripts/native_1c_db_oracle/catalog_binding_reader.py': '18d3729d2dc6bd8b198ade1188eb79cd8c48ad75001399e79975b7eb6c8f81b9',
     'scripts/native_1c_db_oracle/catalog_readonly_binding.py': '47b661c13fcdd515fdfdde76130ab4b3f2bb9f781965cbd505b429cb5bd6bedb',
 }
 

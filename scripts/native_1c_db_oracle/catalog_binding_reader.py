@@ -21,8 +21,10 @@ def _same_file(module, path):
             and Path(module.__file__).resolve() == path.resolve())
 
 
-def _load_storage():
+def _load_storage(*, project_rows=False):
     """Explicit exact-sibling loader; never import an installed yadinassi tree."""
+    if type(project_rows) is not bool:
+        raise ValueError('catalog binding profile mismatch')
     directory = Path(name_parser.__file__).resolve().parent
     if not _same_file(catalog_module, directory / 'filedb_catalog.py'):
         raise ValueError('catalog binding sibling mismatch')
@@ -56,7 +58,7 @@ def _load_storage():
     for name in ('filedb_named_file', 'filedb_dbnames', 'filedb_records',
                  'config_catalog_binding', 'config_catalog_records',
                  'config_root_projection', 'config_catalog_references',
-                 'config_catalog_transport', 'catalog_reader'):
+                 'config_catalog_transport', 'catalog_reader') + (('catalog_reference_uuid',) if project_rows else ()):
         fullname = _PACKAGE + '.' + name
         path = directory / (name + '.py')
         module = sys.modules.get(fullname)
@@ -97,3 +99,30 @@ def read_catalog_binding(read_at, file_size, *, catalog_name, limits=None):
         raise catalog_module.InvalidStructure('binding_reader_sources') from None
     return runtime.read_catalog_binding(read_at, file_size,
         catalog_name=catalog_name, limits=limits)
+
+
+def read_catalog_rows(read_at, file_size, *, catalog_name, limits=None):
+    """Source-pinned opt-in runtime projection; never accepts native values."""
+    try:
+        runtime = _load_storage(project_rows=True)['catalog_reader']
+    except (ValueError, OSError, ImportError):
+        raise catalog_module.InvalidStructure('binding_reader_sources') from None
+    return runtime.read_catalog_rows(read_at, file_size,
+        catalog_name=catalog_name, limits=limits)
+
+
+def _raw_rows_view(result):
+    """Exact runtime result view; used only after the image digest is checked."""
+    from uuid import UUID
+    modules = _load_storage(project_rows=True)
+    runtime, physical = modules['catalog_reader'], modules['filedb_records']
+    if (type(result) is not runtime.CatalogRowsReadResult
+            or type(result.records) is not physical.PhysicalRecords
+            or type(result.rows) is not tuple or type(result.records.rows) is not tuple
+            or len(result.rows) != len(result.records.rows) or len(result.rows) > 1
+            or any(type(row) is not runtime.CatalogRow or type(row.reference_uuid) is not UUID
+                   or row.physical_record is not record
+                   for row, record in zip(result.rows, result.records.rows))):
+        raise catalog_module.InvalidStructure('binding_typed_rows')
+    return runtime.CatalogBindingReadResult(result.config_observation, result.identity,
+        result.attributes, result.binding, result.records, result.usage)
