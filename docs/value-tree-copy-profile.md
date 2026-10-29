@@ -14,10 +14,10 @@ routes. The original default remains `tree-v1`. Both use the same hardened,
 digest-pinned native image and unchanged isolation/cleanup rules.
 
 The Copy shard has exactly one source, `integrational_tests/measurements/tree_copy.bsl`,
-SHA256 `0ad3c1172fea4eff72630c3cb1713660d93db1fba1a09a0cd64e2510c8e557eb`.
+SHA256 `aadb8667848308bc4e14b82764dd693bc30fdd6a184598caf479e5a0cdc32572`.
 It emits one separate access probe, calibration and nine cases (exactly 11 records).
 The staged inventory has 24 fixed inputs,
-including the registry, unchanged nine-case Copy decoder, finite diagnostic helper
+including the registry, versioned nine-case Copy decoder, finite diagnostic helper
 and strict access-probe capture/witness helper. The default
 Fill shard has 22 inputs (its original 21 plus the registry). Every staged byte
 is hashed before and after execution; source, generated server/client modules,
@@ -44,9 +44,9 @@ the other semantic cases or the extra-argument case9.
 
 The existing caps remain: observation 8192 bytes, client marker 16384, native
 stage report 8192, host report 32768, transport 65536. Synthetic structural maxima
-are not native results: the main Copy wire maximum is 6745 bytes; with the
-separate access probe full capture is 6777 bytes and compact Python JSON marker
-is 6917 bytes. Tests also charge optional JSON slash escaping. The actual
+are not native results: the main Copy wire maximum is 6746 bytes; with the
+separate access probe full capture is 6778 bytes and compact Python JSON marker
+is 6918 bytes. Tests also charge optional JSON slash escaping. The actual
 native serializer still must be exercised by the native job.
 
 Public staged directories are explicitly 0755 and files 0644 even under umask077.
@@ -150,7 +150,7 @@ Unknown non-guard snapshot faults use these exact operation points:
 | S01 | `result_type_read` |
 | S02 | `columns_count_guard` |
 | S03 | `tree_identity` |
-| S04 | `root_rows_identity` |
+| S04 | `root_rows_owner_label` |
 | S05 | `columns_identity` |
 | S06 | `columns_count_encode` |
 | S07 | `columns_iteration` |
@@ -176,7 +176,7 @@ Unknown non-guard snapshot faults use these exact operation points:
 | S27 | `row_parent` |
 | S28 | `row_owner` |
 | S29 | `row_level` |
-| S30 | `row_children_identity` |
+| S30 | `row_children_owner_label` |
 | S31 | `row_children_count` |
 | S32 | `row_collection_parent` |
 | S33 | `cell_loop_column_count` |
@@ -187,15 +187,14 @@ Flatten F01 covers iteration/count, F02 appending the node, and F03 child access
 recursive traversal. A deeper known code is propagated rather than overwritten.
 `I` remains the specific identity-comparison code. Public categories preserve
 case5 step and reason (`case5_step15_registry_62`, for example); other cases retain
-B/I/O/M phase via `detail_b/i/o/m_<reason>`. The resulting closed set has1217
+B/I/O/M phase via `detail_b/i/o/m_<reason>`. The resulting closed set has1218
 categories, maximum30characters, with the same four diagnostic fields. All X
 records still fail observation admission; no partial or fabricated semantic output
 is accepted. Explicit byte-majorants remain below the unchanged caps.
 
-Fresh Rows accessor identity is only a hypothesis for registry growth. A tiny
-independent repeated-access probe is being prepared separately; this revision
-adds no executable route, control record, or parity exception. Native acquisition
-must first determine whether the cap or another exact guard/accessor is failing.
+The initial registry-growth hypothesis was subsequently tested by the separate
+source-bound probe below. That historical sentinel revision established the exact
+62-entry guard; it did not itself establish accessor or Copy semantics.
 
 
 ## Separate repeated-access diagnosis
@@ -214,13 +213,13 @@ exception. `B` alone reports setup failure. Original error descriptions are
 captured privately and never exported. Only truthful `TFTF` scalar controls
 allow probe acceptance; no wrapper outcome is prescribed.
 
-The strict full capture has exactly `TC-P`, `TC-C`, then `TC-1` through `TC-9`.
+The strict full capture has exactly `TC-P`, `TC-C2`, then `TC-1` through `TC-9`.
 There is no old ten-record fallback, reordering, duplicate or extra-record
-admission. The original Copy decoder still receives only `TC-C` plus nine cases.
-The full synthetic bound is 6777 bytes (main capture 6745 plus probe 32); compact
-marker 6917, or 7009 including slash escaping, optional delimiter spaces and BOM.
+admission. The versioned Copy decoder receives only `TC-C2` plus nine cases.
+The full synthetic bound is 6778 bytes (main capture 6746 plus probe 32); compact
+marker 6918, or 7010 including slash escaping, optional delimiter spaces and BOM.
 With both probe witnesses and failure metadata, conservative report bounds are
-stage 5522, native 10648, host 16465, provenance 16270 and transport 21825 bytes.
+stage 5522, native 10648, host 16466, provenance 16271 and transport 21825 bytes.
 No caps have increased. These are synthetic bounds, not native serializer results.
 
 `copy_access_probes.server/client` are separate nullable witnesses, bound to
@@ -228,7 +227,7 @@ nonce, exact source/generated module, full-capture hash/size/count and the
 main-capture hash/size. `record` contains only the fixed probe record. The
 comparison's existing `native_sha256`/`interpreter_sha256` and sizes continue to
 identify full captures; explicitly named `native_main_sha256` and
-`interpreter_main_sha256` identify the `TC-C-and-nine-cases` parity projection.
+`interpreter_main_sha256` identify the `TC-C2-and-nine-cases` parity projection.
 Server/client Copy parity likewise compares only the main projection, not probe
 wrapper equality. Scalar control failure is never accepted as valid measurement.
 
@@ -241,3 +240,45 @@ client witness is false, never implied success. Such a summary still has
 nine-case output, no output artifact and no `tree_outputs_ready` signal. Every
 transport, source or cleanup failure still rejects evidence. Copy remains a red
 Draft until its own validated native semantics and runtime parity are complete.
+
+
+## Version 2: structural Rows-owner labels
+
+Native run 40923398103, head `4703abea64eaf90070262823859e7f0e93a3cc05`,
+authenticated server record `TC-P: [TFTFTFTFTTFTFFTFFTTFTTF]`. Scalar controls
+were `TFTF`; saved aliases compared equal, but repeated root Rows and child Rows
+access compared unequal. Repeated row, Columns and column access compared equal.
+This disproves the old observer's stable Rows-access equality assumption. It does
+not prove allocation behavior, deep/shallow Copy, or native identity semantics
+outside this bounded probe. The client probe was absent; main Copy observation
+still failed at `case5_step15_registry_62`.
+
+The corrected main grammar requires exactly `TC-C2: [-]` as its successful
+calibration header, followed by the existing nine `TC-N` records. `TC-C` is
+rejected, not normalized. The positive calibration operations and failure codes
+are unchanged; only the versioned header identifies the changed label meaning.
+
+Snapshot header fields are `tree identity`, `rows_owner`, `Columns identity`,
+column count, schema and row count. `rows_owner` repeats the already measured
+tree ID as a structural label. Each row's `children_owner` similarly repeats its
+already measured row ID. These labels allocate no registry entries and never
+claim equality/inequality of native Rows wrapper objects. The strict decoder
+requires the exact existing owner ID, rejecting forward, cross-kind and mismatched
+labels. Row records expose `RowObservation.children_owner`; snapshot dictionaries
+use `rows_owner`, not the former `rows` identity field. Labels follow owner identity,
+not sibling positions, so insertion/deletion does not relabel surviving containers.
+
+True tree, row, column, Columns collection and outer/nested Array identities remain
+observed. Actual row Owner, Parent, Level, collection Parent checks, child counts,
+column metadata, cells and every mutation snapshot remain unchanged. Structural
+root labels from two trees **must not** be read as evidence that their native
+collections are independent: shared-collection behavior is still observed through
+add/delete/scalar/column/Array mutations. Actual row Owner is not forced to equal
+the snapshot's tree, preserving possible sharing observations. S04/S30 now label
+structural owners; all other finite sentinel meanings remain unchanged.
+
+The registry cap remains 62. A synthetic fresh-access wrapper model reproduces
+the old case5-step15 overflow; the revised observer completes all nine synthetic
+Copy cases without growing the registry with wrappers. That regression validates
+the measuring instrument, not native Copy semantics. A new exact-source native
+run is mandatory before runtime Copy implementation or merge.

@@ -308,7 +308,7 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
             'status': 'matched' if matched else 'mismatched' if valid else 'invalid_interpreter_output',
             'acceptance_status': 'accepted' if matched and available else 'rejected',
             **({'native_copy_available': available,
-                'parity_projection':'TC-C-and-nine-cases',
+                'parity_projection':'TC-C2-and-nine-cases',
                 'native_main_sha256':FULL.digest(native_main), 'native_main_size':len(native_main),
                 'interpreter_main_sha256':FULL.digest(actual_main) if valid else None,
                 'interpreter_main_size':len(actual_main) if valid else None} if profile == 'tree-copy-v1' else {}),

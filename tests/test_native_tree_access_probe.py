@@ -94,7 +94,7 @@ class AccessProbeTests(unittest.TestCase):
         self.assertEqual(result['status'],'matched')
         self.assertNotEqual(result['native_sha256'],result['interpreter_sha256'])
         self.assertEqual(result['native_main_sha256'],result['interpreter_main_sha256'])
-        self.assertEqual(result['parity_projection'],'TC-C-and-nine-cases')
+        self.assertEqual(result['parity_projection'],'TC-C2-and-nine-cases')
 
     def test_client_failure_still_binds_successful_server_probe(self):
         value,hashes,modules=success_envelope(capture(maximum_output()))

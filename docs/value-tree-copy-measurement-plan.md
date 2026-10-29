@@ -1,9 +1,11 @@
 # ValueTree.Copy: proposed native measurement (not native evidence)
 
-Status: observer and closed profile are locally integrated; see
-[the current profile contract](value-tree-copy-profile.md). No published branch,
-native result or runtime Copy implementation is claimed here. The design below
-records the preparation sequence; synthetic checks are not native evidence.
+Status: the closed profile is published as a Draft; native runs have diagnosed
+an observer Rows-access equality assumption, not completed Copy semantics. See
+[the current versioned profile contract](value-tree-copy-profile.md). Runtime Copy
+is not implemented. The design below records the historical preparation sequence;
+its standalone bounds are historical, while the current TC-C2 contract uses
+structural Rows-owner labels and a separate authenticated access probe.
 
 ## Source and supported question
 
@@ -35,7 +37,7 @@ All calls use zero arguments except the explicit arity probe.
 
 | Case | Input and action after Copy | Required observations |
 | --- | --- | --- |
-| 1 | Empty tree, English alias | Result type, distinct tree/Rows/Columns, empty shape |
+| 1 | Empty tree, English alias | Result type, tree/Columns identity, structural Rows-owner label, empty shape |
 | 2 | Schema-only tree | Ordered names, titles, widths, type sets and qualifiers; distinct column objects |
 | 3 | Standard hierarchy, no mutation | Preorder/order, values, Owner, Parent, Level, collection parents, pairwise row identity |
 | 4 | Standard hierarchy; change copied then source scalar cells | Both trees after each write; retain original node handles |

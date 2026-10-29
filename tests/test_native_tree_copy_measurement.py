@@ -78,19 +78,19 @@ def synthetic_method(mode):
 
 def maximum_snapshot(case):
     cols, nodes, _ = wire.LIMITS[case-1]
-    next_id = 3
+    next_id = 2
     schema = ''
     for _ in range(cols):
         schema += wire.IDS[next_id] + 'aa9U99090290'; next_id += 1
     rows = ''
     for _ in range(nodes):
-        node, children = wire.IDS[next_id:next_id+2]; next_id += 2
+        node = wire.IDS[next_id]; children = node; next_id += 1
         rows += node + '_04' + children + '5' + 'N9____' * cols
-    return '012' + str(cols) + schema + str(nodes) + rows
+    return '001' + str(cols) + schema + str(nodes) + rows
 
 
 def maximum_output():
-    lines = ['TC-C: [-]']
+    lines = ['TC-C2: [-]']
     for case in range(1, 10):
         count = wire.LIMITS[case-1][2]
         lines.append(f'TC-{case}: [S/' + '/'.join([maximum_snapshot(case)] * count) + ']')
@@ -102,7 +102,7 @@ class CopyObserverTests(unittest.TestCase):
         raw = emit()
         result = wire.validate_output(raw)
         self.assertEqual([r['status'] for r in result], ['M'] * 9)
-        self.assertEqual(len(raw), 2002)
+        self.assertEqual(len(raw), 2003)
         for r in result:
             self.assertEqual(r['snapshots'][0], r['snapshots'][1])
             self.assertIsNone(r['snapshots'][2])
@@ -150,7 +150,7 @@ class CopyObserverTests(unittest.TestCase):
         raw = maximum_output()
         wire.validate_output(raw)
         self.assertEqual(len(raw), wire.MAX_ENCODED_BYTES)
-        self.assertEqual(len(raw), 6745)
+        self.assertEqual(len(raw), 6746)
         self.assertLessEqual(len(raw), 8192)
         for case, line in enumerate(raw.splitlines(keepends=True)[1:], 1):
             self.assertEqual(len(line), wire.maximum_record_size(case))
@@ -183,9 +183,9 @@ class CopyObserverTests(unittest.TestCase):
     def test_wire_rejects_malformed_records(self):
         raw = maximum_output()
         mutations = [raw[:-1], raw+b'\n', raw.replace(b'\n',b'\r\n'),
-                     raw.replace(b'TC-2:',b'TC-1:'), raw.replace(b'TC-C: [-]',b'TC-C: [E]'),
-                     raw.replace(b'[S/',b'[X/',1), raw.replace(b'[S/012',b'[S/z12',1),
-                     raw.replace(b'/012', b'/01_', 1), raw+b'x'*8192,
+                     raw.replace(b'TC-2:',b'TC-1:'), raw.replace(b'TC-C2: [-]',b'TC-C2: [E]'),
+                     raw.replace(b'[S/',b'[X/',1), raw.replace(b'[S/001',b'[S/z01',1),
+                     raw.replace(b'/001', b'/00_', 1), raw+b'x'*8192,
                      raw.replace(b'TC-9:', 'ТС-9:'.encode()),
                      raw.replace(b'N9____',b'N9___]',1)]
         for bad in mutations:

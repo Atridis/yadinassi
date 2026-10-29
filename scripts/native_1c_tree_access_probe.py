@@ -52,7 +52,7 @@ def split_capture(raw):
         raise ProbeError('tree_access_probe_invalid')
     parse_record(lines[0])
     for i, line in enumerate(lines[1:]):
-        prefix = b'TC-C: [' if i == 0 else f'TC-{i}: ['.encode('ascii')
+        prefix = b'TC-C2: [' if i == 0 else f'TC-{i}: ['.encode('ascii')
         if not line.startswith(prefix) or not line.endswith(b']\n'):
             raise ProbeError('tree_access_probe_invalid')
     return lines[0], b''.join(lines[1:])

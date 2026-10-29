@@ -489,7 +489,7 @@
         Если ТипЗнч(T) <> Тип("ДеревоЗначений") Тогда ВызватьИсключение "copy-result-type"; КонецЕсли;
         Point = "02"; Если T.Columns.Count() > 4 Тогда ВызватьИсключение "copy-columns"; КонецЕсли;
         Point = "03"; Out = TCId(T, Registry);
-        Point = "04"; Out = Out + TCId(T.Rows, Registry);
+        Point = "04"; Out = Out + TCId(T, Registry); // Structural root Rows owner label, not wrapper identity.
         Point = "05"; Out = Out + TCId(T.Columns, Registry);
         Point = "06"; Out = Out + TCNum(T.Columns.Count());
         Point = "07";
@@ -528,7 +528,7 @@
             Point = "27"; Out = Out + TCId(R.Parent, Registry);
             Point = "28"; Out = Out + TCId(R.Owner(), Registry);
             Point = "29"; Out = Out + TCNum(R.Level());
-            Point = "30"; Out = Out + TCId(R.Rows, Registry);
+            Point = "30"; Out = Out + TCId(R, Registry); // Structural child Rows owner label, not wrapper identity.
             Point = "31"; Out = Out + TCNum(R.Rows.Count());
             Point = "32"; Если R.Rows.Parent <> R Тогда ВызватьИсключение "copy-collection-parent"; КонецЕсли;
             Point = "33";
@@ -661,5 +661,5 @@
     Возврат "-";
 КонецФункции
 Сообщить("TC-P: [" + TCRepeatedAccessProbe() + "]");
-Сообщить("TC-C: [" + TCCalibrate() + "]");
+Сообщить("TC-C2: [" + TCCalibrate() + "]");
 Для Case = 1 По 9 Цикл Сообщить("TC-" + Строка(Case) + ": [" + TCProbe(Case) + "]"); КонецЦикла;

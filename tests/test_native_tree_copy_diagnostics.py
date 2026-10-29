@@ -20,7 +20,7 @@ class Diagnostics(unittest.TestCase):
     def test_all_calibration_codes_and_invalid_codes(self):
         raw = maximum_output()
         for code in d.CALIBRATION_CODES + 'Z':
-            value = diagnose(raw.replace(b'TC-C: [-]', f'TC-C: [{code}]'.encode()))
+            value = diagnose(raw.replace(b'TC-C2: [-]', f'TC-C2: [{code}]'.encode()))
             self.assertEqual(value, {'site':'server', 'case':0, 'category':'calibration',
                                      'calibration':code if code != 'Z' else None})
 

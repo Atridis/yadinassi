@@ -73,12 +73,12 @@ def observation_diagnostic(raw, site, validate_payload, observation_error):
     lines = raw.splitlines(keepends=True)
     if len(lines) != CASE_COUNT + 1:
         return result('record_count')
-    if lines[0] != b'TC-C: [-]\n':
+    if lines[0] != b'TC-C2: [-]\n':
         code = None
-        if (len(lines[0]) == 10 and lines[0].startswith(b'TC-C: [')
+        if (len(lines[0]) == 11 and lines[0].startswith(b'TC-C2: [')
                 and lines[0].endswith(b']\n')
-                and chr(lines[0][7]) in CALIBRATION_CODES):
-            code = chr(lines[0][7])
+                and chr(lines[0][8]) in CALIBRATION_CODES):
+            code = chr(lines[0][8])
         return result('calibration', 0, code)
     for case, line in enumerate(lines[1:], 1):
         prefix = f'TC-{case}: ['.encode('ascii')

@@ -79,7 +79,7 @@ class CopyProfileTests(unittest.TestCase):
         self.assertIn('ПараметрыЗаписиJSON(ПереносСтрокJSON.Нет, " ", Истина)'.encode(),module)
         self.assertIn(b'Code = 47',module)
         self.assertIn('TreeLaneCharacters + СтрДлина(Text) > 8181'.encode(),module)
-        self.assertEqual(len(actual), 2034)
+        self.assertEqual(len(actual), 2035)
         self.assertEqual([v['status'] for v in tree.validate_observations(actual, profile=PROFILE)], ['M']*9)
         default = tree.client_module((ROOT/tree.SOURCE).read_text(encoding='utf-8').encode(), template)
         self.assertEqual(full.digest(default), 'e43224c91c76a1c92dc6c2bf4e6c90a07fe23fbf4aa42d1c6a17630de70a937a')
@@ -242,7 +242,7 @@ class CopyStructuralBudgetTests(unittest.TestCase):
         report=budget.host_majorant()
         report.update(profile=PROFILE,trusted_input_sha256=stage['input_sha256'],native_report=native)
         report['comparison']['profile']=PROFILE
-        report['comparison'].update(native_copy_available=False,parity_projection='TC-C-and-nine-cases',
+        report['comparison'].update(native_copy_available=False,parity_projection='TC-C2-and-nine-cases',
             native_main_sha256=budget.H,native_main_size=8192,interpreter_main_sha256=budget.H,interpreter_main_size=8192)
         report['probe_measurement_accepted']={'server':False,'client':False}
         report['observation_diagnostic']=stage['observation_diagnostic']
@@ -262,7 +262,7 @@ class CopyStructuralBudgetTests(unittest.TestCase):
             'scripts/native_1c_tree_copy_contract.py','scripts/native_1c_tree_copy_diagnostics.py','scripts/native_1c_tree_access_probe.py',
             'scripts/native_1c_tree_profiles.py','scripts/native_1c_smoke.py','scripts/native_1c_full_host.py'})
         raw=maximum_output()
-        self.assertEqual(len(raw),6777)
+        self.assertEqual(len(raw),6778)
         marker=dict(schema=PROFILE,nonce=NONCE,phase='completed',witness='client',values=raw.decode().splitlines())
         encoded=budget.wire(marker).replace(b'/',b'\\/')
         self.assertLessEqual(len(encoded)+encoded.count(b',')+encoded.count(b':')+3,16384)
