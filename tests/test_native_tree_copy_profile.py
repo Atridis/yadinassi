@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 from yadinassi import Interpreter
 import test_native_tree_profile_budget as budget
-from test_native_tree_copy_measurement import emit, maximum_output, synthetic_method
+from test_native_tree_copy_measurement import emit_capture as emit, maximum_capture as maximum_output, synthetic_method
 from yadinassi.value_trees import BSLValueTree
 from test_native_1c_smoke import bootstrap_report
 from scripts import native_1c_tree_copy_diagnostics as diagnostics
@@ -32,13 +32,15 @@ def success_envelope(raw):
     case = stage['cases'][0]
     case.update(status='ok', source_sha256=SPEC.source_sha256,
         module_sha256=modules[SPEC.case], output_sha256=full.digest(raw),
-        output_size=len(raw), message_count=10)
+        output_size=len(raw), message_count=11)
     client = stage['client_tree']
     client.update(status='ok', failure_kind='none', source_sha256=SPEC.source_sha256,
         module_sha256=modules['client_tree'], roundtrip_sha256=modules['client_tree'],
         **dict.fromkeys(host.FULL.CLIENT_FLAGS, True),
         **{k:case[k] for k in host.FULL.CLIENT_OUTPUT_KEYS})
     client['process_diagnostics'].update(stage='after_exit', reason='none')
+    stage['copy_access_probes'] = {site: host.ACCESS_PROBE.witness(raw,site,NONCE,SPEC.source_sha256,
+        modules[SPEC.case if site == 'server' else 'client_tree']) for site in ('server','client')}
     report = bootstrap_report()
     with tempfile.TemporaryDirectory() as tmp:
         parent = Path(tmp).resolve(strict=True); root = parent/'capture'; root.mkdir()
@@ -57,7 +59,7 @@ class CopyProfileTests(unittest.TestCase):
                 tree.profiles.select(bad)
         with self.assertRaises(AttributeError): SPEC.case = 'injected'
         old = tree.input_files(); new = tree.input_files(profile=PROFILE)
-        self.assertEqual((len(old), len(new)), (22, 23))
+        self.assertEqual((len(old), len(new)), (22, 24))
         self.assertEqual(new, host.staged_files(smoke, profile=PROFILE))
         self.assertNotIn(tree.SOURCE, new)
         self.assertNotIn(SPEC.source, old)
@@ -76,8 +78,8 @@ class CopyProfileTests(unittest.TestCase):
         self.assertEqual(actual, emit())
         self.assertIn('ПараметрыЗаписиJSON(ПереносСтрокJSON.Нет, " ", Истина)'.encode(),module)
         self.assertIn(b'Code = 47',module)
-        self.assertIn('TreeLaneCharacters + СтрДлина(Text) > 8182'.encode(),module)
-        self.assertEqual(len(actual), 2002)
+        self.assertIn('TreeLaneCharacters + СтрДлина(Text) > 8181'.encode(),module)
+        self.assertEqual(len(actual), 2034)
         self.assertEqual([v['status'] for v in tree.validate_observations(actual, profile=PROFILE)], ['M']*9)
         default = tree.client_module((ROOT/tree.SOURCE).read_text(encoding='utf-8').encode(), template)
         self.assertEqual(full.digest(default), 'e43224c91c76a1c92dc6c2bf4e6c90a07fe23fbf4aa42d1c6a17630de70a937a')
@@ -97,7 +99,7 @@ class CopyProfileTests(unittest.TestCase):
         for site in ('server', 'client'):
             for case in range(1,10):
                 for phase in diagnostics.OBSERVER_STAGES:
-                    changed = lines.copy(); changed[case] = f'TC-{case}: [X{phase}]\n'.encode()
+                    changed = lines.copy(); changed[case+1] = f'TC-{case}: [X{phase}]\n'.encode()
                     with self.assertRaises(tree.ObservationFailure) as caught:
                         tree.validate_observations(b''.join(changed), site, profile=PROFILE)
                     value = caught.exception.diagnostic
@@ -233,11 +235,18 @@ class CopyStructuralBudgetTests(unittest.TestCase):
                      input_sha256=dict.fromkeys(tree.input_files(profile=PROFILE),budget.H))
         stage['cases'][0]['name']=SPEC.case
         stage['observation_diagnostic']['category']=budget.longest(diagnostics.DIAGNOSTIC_CATEGORIES)
+        raw=maximum_output()
+        stage['copy_access_probes']={site: host.ACCESS_PROBE.witness(raw,site,NONCE,SPEC.source_sha256,budget.H)
+            for site in ('server','client')}
         native=budget.native_majorant();native['stage3']=stage
         report=budget.host_majorant()
         report.update(profile=PROFILE,trusted_input_sha256=stage['input_sha256'],native_report=native)
         report['comparison']['profile']=PROFILE
-        report['comparison']['native_copy_available']=False
+        report['comparison'].update(native_copy_available=False,parity_projection='TC-C-and-nine-cases',
+            native_main_sha256=budget.H,native_main_size=8192,interpreter_main_sha256=budget.H,interpreter_main_size=8192)
+        report['probe_measurement_accepted']={'server':False,'client':False}
+        report['observation_diagnostic']=stage['observation_diagnostic']
+        report['status']='failed'
         provenance=budget.wire(report)+b'\n'
         report['native_artifact_sha256']=dict.fromkeys((SPEC.case+'.out','provenance.json'),budget.H)
         envelope=dict(schema=SPEC.schema,profile=PROFILE,nonce=NONCE,report=native,
@@ -250,10 +259,10 @@ class CopyStructuralBudgetTests(unittest.TestCase):
         # The exact host's eagerly loaded helpers must all be charged, not only the selected contract.
         identities=set(report['host_source_sha256'])
         self.assertEqual(identities,{'scripts/native_1c_tree_profile.py','scripts/native_1c_tree_fill_contract.py',
-            'scripts/native_1c_tree_copy_contract.py','scripts/native_1c_tree_copy_diagnostics.py',
+            'scripts/native_1c_tree_copy_contract.py','scripts/native_1c_tree_copy_diagnostics.py','scripts/native_1c_tree_access_probe.py',
             'scripts/native_1c_tree_profiles.py','scripts/native_1c_smoke.py','scripts/native_1c_full_host.py'})
         raw=maximum_output()
-        self.assertEqual(len(raw),6745)
+        self.assertEqual(len(raw),6777)
         marker=dict(schema=PROFILE,nonce=NONCE,phase='completed',witness='client',values=raw.decode().splitlines())
         encoded=budget.wire(marker).replace(b'/',b'\\/')
         self.assertLessEqual(len(encoded)+encoded.count(b',')+encoded.count(b':')+3,16384)
@@ -279,7 +288,7 @@ class CopyAvailabilityTests(unittest.TestCase):
             successful=emit()
         missing=emit().splitlines(keepends=True); lines=successful.splitlines(keepends=True)
         for failed_case in range(1,10):
-            candidate=lines.copy();candidate[failed_case]=missing[failed_case];raw=b''.join(candidate)
+            candidate=lines.copy();candidate[failed_case+1]=missing[failed_case+1];raw=b''.join(candidate)
             hashes={SPEC.source:SPEC.source_sha256}
             with tempfile.TemporaryDirectory() as tmp, budget.synthetic_inventory_reader():
                 root=Path(tmp).resolve(strict=True);source=root/SPEC.source;source.parent.mkdir(parents=True)

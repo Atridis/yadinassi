@@ -14,9 +14,11 @@ routes. The original default remains `tree-v1`. Both use the same hardened,
 digest-pinned native image and unchanged isolation/cleanup rules.
 
 The Copy shard has exactly one source, `integrational_tests/measurements/tree_copy.bsl`,
-SHA256 `e097e2e51bbe4865297083e4a522f2ad6a5b683288255a0395428d6134fbaf05`.
-It emits calibration plus nine cases. The staged inventory has 23 fixed inputs,
-including the registry, Copy decoder and finite diagnostic helper. The default
+SHA256 `0ad3c1172fea4eff72630c3cb1713660d93db1fba1a09a0cd64e2510c8e557eb`.
+It emits one separate access probe, calibration and nine cases (exactly 11 records).
+The staged inventory has 24 fixed inputs,
+including the registry, unchanged nine-case Copy decoder, finite diagnostic helper
+and strict access-probe capture/witness helper. The default
 Fill shard has 22 inputs (its original 21 plus the registry). Every staged byte
 is hashed before and after execution; source, generated server/client modules,
 nonce, producer state, output identity and cleanup remain admission requirements.
@@ -42,8 +44,9 @@ the other semantic cases or the extra-argument case9.
 
 The existing caps remain: observation 8192 bytes, client marker 16384, native
 stage report 8192, host report 32768, transport 65536. Synthetic structural maxima
-are not native results: the Copy wire maximum is 6745 bytes; compact Python JSON
-marker is 6883 bytes. Tests also charge optional JSON slash escaping. The actual
+are not native results: the main Copy wire maximum is 6745 bytes; with the
+separate access probe full capture is 6777 bytes and compact Python JSON marker
+is 6917 bytes. Tests also charge optional JSON slash escaping. The actual
 native serializer still must be exercised by the native job.
 
 Public staged directories are explicitly 0755 and files 0644 even under umask077.
@@ -56,7 +59,8 @@ text in the original exception handler before nested catches/helpers.
 The six ordinary sources and four ordinary client adapters remain unchanged.
 The default Fill generated client module remains SHA256
 `e43224c91c76a1c92dc6c2bf4e6c90a07fe23fbf4aa42d1c6a17630de70a937a`.
-A hash-bound, test-only inverse removes the Copy selector before applying the
+A new hash-bound, test-only inverse first removes the probe projection; the
+unchanged historical inverse then removes the Copy selector before applying the
 unchanged historical inverse chain; production source admission is not relaxed.
 
 
@@ -192,3 +196,48 @@ Fresh Rows accessor identity is only a hypothesis for registry growth. A tiny
 independent repeated-access probe is being prepared separately; this revision
 adds no executable route, control record, or parity exception. Native acquisition
 must first determine whether the cap or another exact guard/accessor is failing.
+
+
+## Separate repeated-access diagnosis
+
+Native run 40918709582 (head `a043638db653982d4008361551a4cd799fe3a19b`)
+confirmed `case5_step15_registry_62`: the observer exhausted its existing identity
+registry. This does not establish which accessor caused growth or any Copy
+semantics. The registry cap remains 62; no wrapper identity is normalized away.
+
+A fixed first record `TC-P` now runs on a separate fresh fixture, before the
+unchanged nine Copy cases. Its 23 positions are number equal/unequal, string
+equal/unequal, tree alias/distinct, Array alias/distinct, and alias/repeated
+retrieval/distinct for row, root Rows, child Rows, Columns and column. `T`/`F`
+are actual equality outcomes; `E` is a comparison exception; `A` is an accessor
+exception. `B` alone reports setup failure. Original error descriptions are
+captured privately and never exported. Only truthful `TFTF` scalar controls
+allow probe acceptance; no wrapper outcome is prescribed.
+
+The strict full capture has exactly `TC-P`, `TC-C`, then `TC-1` through `TC-9`.
+There is no old ten-record fallback, reordering, duplicate or extra-record
+admission. The original Copy decoder still receives only `TC-C` plus nine cases.
+The full synthetic bound is 6777 bytes (main capture 6745 plus probe 32); compact
+marker 6917, or 7009 including slash escaping, optional delimiter spaces and BOM.
+With both probe witnesses and failure metadata, conservative report bounds are
+stage 5522, native 10648, host 16465, provenance 16270 and transport 21825 bytes.
+No caps have increased. These are synthetic bounds, not native serializer results.
+
+`copy_access_probes.server/client` are separate nullable witnesses, bound to
+nonce, exact source/generated module, full-capture hash/size/count and the
+main-capture hash/size. `record` contains only the fixed probe record. The
+comparison's existing `native_sha256`/`interpreter_sha256` and sizes continue to
+identify full captures; explicitly named `native_main_sha256` and
+`interpreter_main_sha256` identify the `TC-C-and-nine-cases` parity projection.
+Server/client Copy parity likewise compares only the main projection, not probe
+wrapper equality. Scalar control failure is never accepted as valid measurement.
+
+An authenticated expected observer failure may retain its bounded native report
+and valid probe in the summary only after container removal, final input/source,
+repository/interpreter provenance and private-directory cleanup checks all pass.
+`probe_measurement_accepted` reports server and client separately; a missing
+client witness is false, never implied success. Such a summary still has
+`native_measurement_accepted=false`, `runtime_parity_accepted=false`, no raw failed
+nine-case output, no output artifact and no `tree_outputs_ready` signal. Every
+transport, source or cleanup failure still rejects evidence. Copy remains a red
+Draft until its own validated native semantics and runtime parity are complete.

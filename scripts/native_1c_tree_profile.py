@@ -42,6 +42,7 @@ CONTRACT = sibling('native_1c_tree_fill_contract')
 COPY_CONTRACT = sibling('native_1c_tree_copy_contract')
 PROFILES = sibling('native_1c_tree_profiles')
 COPY_DIAGNOSTICS = sibling('native_1c_tree_copy_diagnostics')
+ACCESS_PROBE = sibling('native_1c_tree_access_probe')
 
 
 class TreeError(ValueError):
@@ -95,14 +96,23 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator,
         stage = report['stage3']
         require(type(stage) is dict and set(stage) == {
             'schema', 'profile', 'nonce', 'status', 'failure_kind', 'failed_case',
-            'input_sha256', 'cases', 'client_tree', 'observation_diagnostic'})
+            'input_sha256', 'cases', 'client_tree', 'observation_diagnostic'} | ({'copy_access_probes'} if profile == 'tree-copy-v1' else set()))
         require((stage['schema'], stage['profile'], stage['nonce']) == (spec.stage_schema, spec.name, nonce))
         require(type(input_hashes) is dict and input_hashes.get(spec.source) == spec.source_sha256)
+        probes = None
+        if profile == 'tree-copy-v1':
+            probes = stage['copy_access_probes']
+            require(type(probes) is dict and set(probes) == {'server','client'})
+            for site in ('server','client'):
+                if probes[site] is not None:
+                    ACCESS_PROBE.validate_witness(probes[site], site, nonce, spec.source_sha256,
+                                                  module_hashes[spec.case if site == 'server' else 'client_tree'])
         phase = 'prerequisite_failure'
         if stage['input_sha256'] == {} and type(report.get('stage2')) is dict and report['stage2'].get('status') == 'failed':
             require(report['status'] == 'stage3_failed' and report['native_tests_completed'] is False and data['outputs'] == [])
             require(stage['status'] in ('not_started', 'failed') and stage['failure_kind'] in ('prerequisites_failed', 'export_failed'))
             require(stage['failed_case'] is None and stage['observation_diagnostic'] is None)
+            require(probes is None or probes == {'server':None,'client':None})
             require(type(stage['cases']) is list and len(stage['cases']) == 1)
             unstarted = stage['cases'][0]
             require(type(unstarted) is dict and set(unstarted) == FULL.CASE_KEYS and unstarted['name'] == spec.case
@@ -140,6 +150,10 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator,
             else:
                 require(stage['failed_case'] is None and witness['status'] == 'ok')
                 require(witness['module_sha256'] == module_hashes[spec.case])
+                if probes is not None:
+                    require(probes['server'] is not None and probes['server']['controls_valid'])
+                    for left,right in (('capture_sha256','output_sha256'),('capture_size','output_size'),('message_count','message_count')):
+                        require(probes['server'][left] == witness[right] and type(probes['server'][left]) is type(witness[right]))
                 require(type(witness['message_count']) is int and witness['message_count'] == spec.count)
                 require(type(witness['output_size']) is int and 0 < witness['output_size'] <= MAX_OUTPUT)
                 require(FULL.is_digest(witness['output_sha256']))
@@ -156,6 +170,17 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator,
                         and client_failure['process_diagnostics']['reason'] == 'none')
             failure = TreeError('tree_observation_rejected')
             failure.observation_diagnostic = diagnostic.copy()
+            if probes is not None:
+                # No client capture is retained when its marker/observation
+                # validation fails before completed/output witnesses exist.
+                require(probes['client'] is None)
+                if probes['server'] is not None:
+                    if diagnostic['site'] == 'server':
+                        require(probes['server']['controls_valid'] == (diagnostic['category'] != 'access_probe'))
+                    # Retain only the already validated bounded report, never raw
+                    # failed case output. run() must still finish all provenance
+                    # and cleanup checks before publishing this measurement.
+                    failure.copy_probe_report = report
             raise failure
         phase = 'native_failure'
         if stage['status'] == 'failed' and diagnostic is None:
@@ -219,7 +244,15 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator,
         FULL.validate_client_probe({k: v for k, v in client.items() if k not in FULL.CLIENT_OUTPUT_KEYS},
                                    spec.source_sha256, module_hashes['client_tree'])
         require(client['status'] == 'ok')
-        require(all(client[k] == case[k] and type(client[k]) is type(case[k]) for k in FULL.CLIENT_OUTPUT_KEYS))
+        if probes is None:
+            require(all(client[k] == case[k] and type(client[k]) is type(case[k]) for k in FULL.CLIENT_OUTPUT_KEYS))
+        else:
+            require(all(probes[site] is not None and probes[site]['controls_valid'] for site in ('server','client')))
+            for site, capture in (('server',case),('client',client)):
+                for left, right in (('capture_sha256','output_sha256'),('capture_size','output_size'),('message_count','message_count')):
+                    require(probes[site][left] == capture[right] and type(probes[site][left]) is type(capture[right]))
+            require(probes['server']['main_sha256'] == probes['client']['main_sha256']
+                    and probes['server']['main_size'] == probes['client']['main_size'])
         phase = 'output_transport'
         outputs = data['outputs']
         require(type(outputs) is list and len(outputs) == 1)
@@ -232,7 +265,12 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator,
         require(base64.b64encode(payload).decode('ascii') == output['data_b64'])
         require(len(payload) == case['output_size'] and FULL.digest(payload) == case['output_sha256'])
         phase = 'observation_contract'
-        contract.validate_output(payload)
+        if probes is not None:
+            require(ACCESS_PROBE.witness(payload,'server',nonce,spec.source_sha256,module_hashes[spec.case]) == probes['server'])
+            _, main = ACCESS_PROBE.split_capture(payload)
+            contract.validate_output(main)
+        else:
+            contract.validate_output(payload)
         return report, payload
     except TreeError as error:
         error.envelope_phase = phase
@@ -247,7 +285,9 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
     """A valid measurement is distinct from exact interpreter compatibility."""
     spec = PROFILES.select(profile)
     contract = CONTRACT if profile == 'tree-v1' else COPY_CONTRACT
-    observations = contract.validate_output(native)
+    native_main = ACCESS_PROBE.split_capture(native)[1] if profile == 'tree-copy-v1' else native
+    if profile == 'tree-copy-v1': require(ACCESS_PROBE.scalar_controls_valid(ACCESS_PROBE.split_capture(native)[0]), 'tree_probe_controls_invalid')
+    observations = contract.validate_output(native_main)
     available = profile != 'tree-copy-v1' or (observations[0]['status'] == 'S' and observations[7]['status'] == 'S')
     source = root / spec.source
     raw = FULL.read_regular(source, FULL.MAX_FILE, nonempty=True)
@@ -258,15 +298,20 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
     valid = False
     if code == 0 and not stderr:
         try:
-            contract.validate_output(actual)
-            valid = True
+            actual_main = ACCESS_PROBE.split_capture(actual)[1] if profile == 'tree-copy-v1' else actual
+            contract.validate_output(actual_main)
+            valid = profile != 'tree-copy-v1' or ACCESS_PROBE.scalar_controls_valid(ACCESS_PROBE.split_capture(actual)[0])
         except ValueError:
             pass
-    matched = valid and actual == native
+    matched = valid and actual_main == native_main
     return {'schema': 'native-1c-tree-comparison-v1', 'profile': spec.name,
             'status': 'matched' if matched else 'mismatched' if valid else 'invalid_interpreter_output',
             'acceptance_status': 'accepted' if matched and available else 'rejected',
-            **({'native_copy_available': available} if profile == 'tree-copy-v1' else {}),
+            **({'native_copy_available': available,
+                'parity_projection':'TC-C-and-nine-cases',
+                'native_main_sha256':FULL.digest(native_main), 'native_main_size':len(native_main),
+                'interpreter_main_sha256':FULL.digest(actual_main) if valid else None,
+                'interpreter_main_size':len(actual_main) if valid else None} if profile == 'tree-copy-v1' else {}),
             'native_sha256': FULL.digest(native), 'native_size': len(native),
             'interpreter_sha256': FULL.digest(actual), 'interpreter_size': len(actual)}
 
@@ -279,7 +324,7 @@ def staged_files(smoke, *, profile='tree-v1'):
             'scripts/native_1c_bootstrap/client_probe.bsl': 'bootstrap/client_probe.bsl',
             'scripts/' + spec.contract + '.py': 'bootstrap/' + spec.contract + '.py',
             'scripts/native_1c_tree_profiles.py': 'bootstrap/native_1c_tree_profiles.py',
-            **({'scripts/native_1c_tree_copy_diagnostics.py': 'bootstrap/native_1c_tree_copy_diagnostics.py'} if profile == 'tree-copy-v1' else {}),
+            **({'scripts/native_1c_tree_copy_diagnostics.py': 'bootstrap/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py': 'bootstrap/native_1c_tree_access_probe.py'} if profile == 'tree-copy-v1' else {}),
             spec.source: 'scenarios/' + spec.case + '.bsl'}
 
 
@@ -406,7 +451,7 @@ def run(root, temp_root, *, export_native_outputs=False, failure_state=None, pro
     failure_state['stage'] = 'provenance'
     provenance = FULL.repository_provenance(root)
     interpreter = FULL.interpreter_provenance(root)
-    host_identity = {p: FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) for p in ('scripts/native_1c_tree_profile.py', 'scripts/native_1c_tree_fill_contract.py', 'scripts/native_1c_tree_copy_contract.py', 'scripts/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_profiles.py', 'scripts/native_1c_smoke.py', 'scripts/native_1c_full_host.py')}
+    host_identity = {p: FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) for p in ('scripts/native_1c_tree_profile.py', 'scripts/native_1c_tree_fill_contract.py', 'scripts/native_1c_tree_copy_contract.py', 'scripts/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py', 'scripts/native_1c_tree_profiles.py', 'scripts/native_1c_smoke.py', 'scripts/native_1c_full_host.py')}
     goldens = FULL.windows_fingerprints(root)
     result = None
     with private_work(temp_root, failure_state) as directory:
@@ -440,8 +485,16 @@ def run(root, temp_root, *, export_native_outputs=False, failure_state=None, pro
             failure_state['stage'] = 'container_run'
             code, raw = smoke.bounded_run(container_command(staged, hashes, name, nonce, smoke, profile=profile), env, smoke.FULL_MAX_RUNTIME, MAX_TRANSPORT)
             failure_state['stage'] = 'envelope'
-            report, native = validate_envelope(raw, nonce, hashes, modules, smoke.validate_report, profile=profile)
-            require(code == 0, 'tree_container_failed')
+            probe_failure = None
+            try:
+                report, native = validate_envelope(raw, nonce, hashes, modules, smoke.validate_report, profile=profile)
+                require(code == 0, 'tree_container_failed')
+            except TreeError as error:
+                if (profile != 'tree-copy-v1' or not hasattr(error,'copy_probe_report')
+                        or not hasattr(error,'observation_diagnostic') or code != 1):
+                    raise
+                report, native, probe_failure = error.copy_probe_report, None, error
+
             del raw
         finally:
             primary_stage = failure_state['stage']
@@ -452,7 +505,7 @@ def run(root, temp_root, *, export_native_outputs=False, failure_state=None, pro
             failure_state['stage'] = primary_stage
         require(all(FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) == h for p, h in host_identity.items()), 'tree_host_changed')
         failure_state['stage'] = 'comparison'
-        comparison = compare_output(root, work, native, hashes, profile=profile)
+        comparison = compare_output(root, work, native, hashes, profile=profile) if probe_failure is None else None
         failure_state['stage'] = 'final_provenance'
         validate_inputs(staged, hashes, smoke, profile=profile)
         require(all(FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) == h for p, h in host_identity.items()), 'tree_host_changed')
@@ -463,14 +516,20 @@ def run(root, temp_root, *, export_native_outputs=False, failure_state=None, pro
                   'image': smoke.IMAGE, 'platform': 'linux/amd64', 'configured_timezone': 'Etc/UTC',
                   'repository': provenance, 'interpreter': interpreter, 'host_source_sha256': host_identity, 'trusted_input_sha256': hashes,
                   'native_report': report, 'comparison': comparison, 'container_cleanup_verified': True,
-                  'native_measurement_accepted': True, 'runtime_parity_accepted': comparison['acceptance_status'] == 'accepted'}
+                  'native_measurement_accepted': probe_failure is None,
+                  'runtime_parity_accepted': probe_failure is None and comparison['acceptance_status'] == 'accepted'}
+        if profile == 'tree-copy-v1':
+            result['probe_measurement_accepted'] = {site: (value is not None and value['controls_valid'])
+                for site,value in report['stage3']['copy_access_probes'].items()}
+        if probe_failure is not None:
+            result.update(status='failed',observation_diagnostic=probe_failure.observation_diagnostic)
         retained = native if export_native_outputs else None
         del native
     failure_state['stage'] = 'private_cleanup'
     require(not Path(directory).exists(), 'private_cleanup_unverified')
     result['private_payloads_removed'] = True
     require(len(json.dumps(result, separators=(',', ':')).encode()) <= FULL.MAX_REPORT, 'tree_host_report_limit')
-    if export_native_outputs:
+    if export_native_outputs and result['native_measurement_accepted']:
         artifacts = {spec.case + '.out': retained,
                      'provenance.json': (json.dumps(result, sort_keys=True, separators=(',', ':')) + '\n').encode()}
         result['native_artifact_sha256'] = {name: FULL.digest(data) for name, data in artifacts.items()}

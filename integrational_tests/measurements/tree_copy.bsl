@@ -1,3 +1,411 @@
+Функция TCRepeatedAccessProbe()
+    Попытка
+        Tree = Новый ДеревоЗначений; Other = Новый ДеревоЗначений; TreeAlias = Tree;
+        Columns = Tree.Columns; ColumnsAlias = Columns; OtherColumns = Other.Columns;
+        Column = Columns.Add("A"); ColumnAlias = Column; OtherColumn = Columns.Add("B");
+        RootRows = Tree.Rows; RootRowsAlias = RootRows; OtherRootRows = Other.Rows;
+        Row = RootRows.Add(); RowAlias = Row; OtherRow = RootRows.Add();
+        ChildRows = Row.Rows; ChildRowsAlias = ChildRows; OtherChildRows = OtherRow.Rows;
+        ArrayValue = Новый Массив; ArrayValue.Add(1); ArrayAlias = ArrayValue;
+        OtherArray = Новый Массив; OtherArray.Add(1);
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Возврат "B";
+    КонецПопытки;
+    Result = "";
+    // 1: number_equal
+    Outcome = "";
+    Попытка
+        LeftValue = 1; RightValue = 1;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 2: number_unequal
+    Outcome = "";
+    Попытка
+        LeftValue = 1; RightValue = 2;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 3: string_equal
+    Outcome = "";
+    Попытка
+        LeftValue = "a"; RightValue = "a";
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 4: string_unequal
+    Outcome = "";
+    Попытка
+        LeftValue = "a"; RightValue = "b";
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 5: tree_alias
+    Outcome = "";
+    Попытка
+        LeftValue = Tree; RightValue = TreeAlias;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 6: tree_distinct
+    Outcome = "";
+    Попытка
+        LeftValue = Tree; RightValue = Other;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 7: array_alias
+    Outcome = "";
+    Попытка
+        LeftValue = ArrayValue; RightValue = ArrayAlias;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 8: array_distinct
+    Outcome = "";
+    Попытка
+        LeftValue = ArrayValue; RightValue = OtherArray;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 9: row_alias
+    Outcome = "";
+    Попытка
+        LeftValue = Row; RightValue = RowAlias;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 10: row_repeated
+    Outcome = "";
+    Попытка
+        LeftValue = Row; RightValue = Tree.Rows.Get(0);
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 11: row_distinct
+    Outcome = "";
+    Попытка
+        LeftValue = Row; RightValue = OtherRow;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 12: root_rows_alias
+    Outcome = "";
+    Попытка
+        LeftValue = RootRows; RightValue = RootRowsAlias;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 13: root_rows_repeated
+    Outcome = "";
+    Попытка
+        LeftValue = RootRows; RightValue = Tree.Rows;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 14: root_rows_distinct
+    Outcome = "";
+    Попытка
+        LeftValue = RootRows; RightValue = OtherRootRows;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 15: child_rows_alias
+    Outcome = "";
+    Попытка
+        LeftValue = ChildRows; RightValue = ChildRowsAlias;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 16: child_rows_repeated
+    Outcome = "";
+    Попытка
+        LeftValue = ChildRows; RightValue = Row.Rows;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 17: child_rows_distinct
+    Outcome = "";
+    Попытка
+        LeftValue = ChildRows; RightValue = OtherChildRows;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 18: columns_alias
+    Outcome = "";
+    Попытка
+        LeftValue = Columns; RightValue = ColumnsAlias;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 19: columns_repeated
+    Outcome = "";
+    Попытка
+        LeftValue = Columns; RightValue = Tree.Columns;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 20: columns_distinct
+    Outcome = "";
+    Попытка
+        LeftValue = Columns; RightValue = OtherColumns;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 21: column_alias
+    Outcome = "";
+    Попытка
+        LeftValue = Column; RightValue = ColumnAlias;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 22: column_repeated
+    Outcome = "";
+    Попытка
+        LeftValue = Column; RightValue = Tree.Columns.Get(0);
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    // 23: column_distinct
+    Outcome = "";
+    Попытка
+        LeftValue = Column; RightValue = OtherColumn;
+    Исключение
+        PrivateDescription = ОписаниеОшибки();
+        Outcome = "A";
+    КонецПопытки;
+    Если Outcome = "" Тогда
+        Попытка
+            Если LeftValue = RightValue Тогда Outcome = "T"; Иначе Outcome = "F"; КонецЕсли;
+        Исключение
+            PrivateDescription = ОписаниеОшибки();
+            Outcome = "E";
+        КонецПопытки;
+    КонецЕсли;
+    Result = Result + Outcome;
+    Возврат Result;
+КонецФункции
 // Standalone bounded Copy observer. No native expectations or runtime implementation.
 Функция TCFailureCode(Знач PrivateText)
     Tags = СтрРазделить("I:copy-identity-compare|G01:copy-identities-count62|G02:copy-identities-over62|G03:copy-number|G04:copy-word|G05:copy-cell|G06:copy-inner|G07:copy-rows|G08:copy-result-type|G09:copy-columns|G10:copy-column-type|G11:copy-types|G12:copy-date|G13:copy-collection-parent|G14:copy-root-parent|G15:copy-exception-result|S01:copy-snapshot-01|S02:copy-snapshot-02|S03:copy-snapshot-03|S04:copy-snapshot-04|S05:copy-snapshot-05|S06:copy-snapshot-06|S07:copy-snapshot-07|S08:copy-snapshot-08|S09:copy-snapshot-09|S10:copy-snapshot-10|S11:copy-snapshot-11|S12:copy-snapshot-12|S13:copy-snapshot-13|S14:copy-snapshot-14|S15:copy-snapshot-15|S16:copy-snapshot-16|S17:copy-snapshot-17|S18:copy-snapshot-18|S19:copy-snapshot-19|S20:copy-snapshot-20|S21:copy-snapshot-21|S22:copy-snapshot-22|S23:copy-snapshot-23|S24:copy-snapshot-24|S25:copy-snapshot-25|S26:copy-snapshot-26|S27:copy-snapshot-27|S28:copy-snapshot-28|S29:copy-snapshot-29|S30:copy-snapshot-30|S31:copy-snapshot-31|S32:copy-snapshot-32|S33:copy-snapshot-33|S34:copy-snapshot-34|S35:copy-snapshot-35|F01:copy-flatten-01|F02:copy-flatten-02|F03:copy-flatten-03", "|", Истина);
@@ -252,5 +660,6 @@
     Исключение Возврат "E"; КонецПопытки;
     Возврат "-";
 КонецФункции
+Сообщить("TC-P: [" + TCRepeatedAccessProbe() + "]");
 Сообщить("TC-C: [" + TCCalibrate() + "]");
 Для Case = 1 По 9 Цикл Сообщить("TC-" + Строка(Case) + ": [" + TCProbe(Case) + "]"); КонецЦикла;

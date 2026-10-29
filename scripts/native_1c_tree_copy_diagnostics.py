@@ -14,13 +14,13 @@ DETAIL_REASONS = {'G01': 'registry_62', 'G02': 'registry_over62', 'G03': 'number
 DETAIL_CATEGORIES = tuple('detail_' + stage.lower() + '_' + reason for stage in OBSERVER_STAGES for reason in DETAIL_REASONS.values())
 CASE5_CATEGORIES += tuple('case5_step' + step + '_' + reason for step in CASE5_STEPS for reason in DETAIL_REASONS.values())
 DIAGNOSTIC_CATEGORIES = (
-    'invalid_type', 'output_limit', 'encoding', 'record_count', 'calibration',
+    'access_probe', 'invalid_type', 'output_limit', 'encoding', 'record_count', 'calibration',
     'record_shape', 'observer_b', 'observer_i', 'observer_o', 'observer_m',
     'payload_contract',
 ) + IDENTITY_CATEGORIES + CASE5_CATEGORIES + DETAIL_CATEGORIES
 CASE_CATEGORIES = ('record_shape', 'observer_b', 'observer_i', 'observer_o',
                    'observer_m', 'payload_contract') + IDENTITY_CATEGORIES + CASE5_CATEGORIES + DETAIL_CATEGORIES
-GLOBAL_CATEGORIES = ('invalid_type', 'output_limit', 'encoding', 'record_count')
+GLOBAL_CATEGORIES = ('access_probe', 'invalid_type', 'output_limit', 'encoding', 'record_count')
 # Client message characters; LF is framing, not inside a captured message.
 MESSAGE_CHARACTERS = frozenset('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz -.:[]_/')
 

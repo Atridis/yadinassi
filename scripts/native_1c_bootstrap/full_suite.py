@@ -1394,7 +1394,14 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         if parity_output is not None:
             client_output = serialize_messages(completion['values'])
             server_output = secure_bytes(parity_output, MAX_OUTPUT, allow_empty=True)
-            if client_output != server_output:
+            parity_matches = client_output == server_output
+            if tree_output is not None and tree_profile == 'tree-copy-v1':
+                import native_1c_tree_access_probe as access_probe
+                record['copy_access_probe'] = access_probe.witness(client_output, 'client', nonce, tree_spec.source_sha256, digest(module))
+                _, client_main = access_probe.split_capture(client_output)
+                _, server_main = access_probe.split_capture(server_output)
+                parity_matches = client_main == server_main
+            if not parity_matches:
                 if collections_output is not None:
                     # relax byte parity or enable payload export.
                     try:

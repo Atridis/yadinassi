@@ -21,7 +21,7 @@ def input_files(*, profile='tree-v1'):
         full.CLIENT_SOURCE: full.CLIENT_TARGET,
         'scripts/native_1c_bootstrap/tree_suite.py': 'bootstrap/tree_suite.py',
         'scripts/native_1c_tree_profiles.py': 'bootstrap/native_1c_tree_profiles.py',
-        **({'scripts/native_1c_tree_copy_diagnostics.py': 'bootstrap/native_1c_tree_copy_diagnostics.py'} if profile == 'tree-copy-v1' else {}),
+        **({'scripts/native_1c_tree_copy_diagnostics.py': 'bootstrap/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py': 'bootstrap/native_1c_tree_access_probe.py'} if profile == 'tree-copy-v1' else {}),
         'scripts/' + spec.contract + '.py': 'bootstrap/' + spec.contract + '.py',
         spec.source: spec.target,
     }
@@ -36,6 +36,7 @@ def empty_report(nonce, *, profile='tree-v1'):
     return {'schema':spec.stage_schema,'profile':spec.name,'nonce':nonce,'status':'not_started',
         'failure_kind':'prerequisites_failed','failed_case':None,'input_sha256':{},
         'observation_diagnostic':None,
+        **({'copy_access_probes':{'server':None,'client':None}} if profile == 'tree-copy-v1' else {}),
         'cases':[{'name':spec.case,'status':'not_started','source_sha256':None,'module_sha256':None,
                   'output_sha256':None,'output_size':None,'message_count':None}],
         'client_tree':full.empty_dates_report()}
@@ -62,7 +63,13 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
     if profile == 'tree-copy-v1':
         import native_1c_tree_copy_contract as contract
         import native_1c_tree_copy_diagnostics as diagnostic
-        return diagnostic.observation_diagnostic(raw, site, contract.validate_payload, contract.ObservationError)
+        import native_1c_tree_access_probe as probe
+        try:
+            record, main = probe.split_capture(raw)
+            if not probe.scalar_controls_valid(record): raise probe.ProbeError('controls')
+        except probe.ProbeError:
+            return {'site':site,'case':None,'category':'access_probe','calibration':None}
+        return diagnostic.observation_diagnostic(main, site, contract.validate_payload, contract.ObservationError)
     from native_1c_tree_fill_contract import validate_payload, validate_api_payload, ObservationError
     if site not in ('server','client'): raise full.FullError('invalid_input')
     def result(category, case=None, calibration=None):
@@ -121,6 +128,12 @@ def validate_observations(raw, site='server', *, profile='tree-v1'):
         from native_1c_tree_fill_contract import validate_output, ObservationError
     else:
         from native_1c_tree_copy_contract import validate_output, ObservationError
+    if profile == 'tree-copy-v1':
+        import native_1c_tree_access_probe as probe
+        diagnostic = observation_diagnostic(raw, site, profile=profile)
+        if diagnostic is not None: raise ObservationFailure(diagnostic)
+        _, main = probe.split_capture(raw)
+        return validate_output(main)
     try: return validate_output(raw)
     except ObservationError:
         diagnostic=observation_diagnostic(raw,site, profile=profile)
@@ -245,12 +258,19 @@ def run_suite(launcher, platform, launcher_epf, root, inputs, nonce, *, profile=
         messages,_=full.read_native_result(directory/'result.json')
         actual=full.secure_bytes(output,MAX_OUTPUT)
         if len(messages)!=spec.count or actual!=full.serialize_messages(messages): raise full.FullError('output_mismatch')
-        validate_observations(actual, profile=profile)
         full.absent(root/(spec.case+'.err'),directory/'result.err')
+        if profile == 'tree-copy-v1':
+            import native_1c_tree_access_probe as probe
+            try:
+                report['copy_access_probes']['server'] = probe.witness(actual, 'server', nonce, spec.source_sha256, full.digest(expected))
+            except probe.ProbeError:
+                pass  # Strict observation validation below rejects malformed probes.
+        validate_observations(actual, profile=profile)
         case.update(status='ok',module_sha256=full.digest(expected),output_sha256=full.digest(actual),output_size=len(actual),message_count=spec.count)
         report['failed_case']=None
         report['client_tree']=full.run_client_probe(platform,root/'client-tree',inputs,nonce,report['input_sha256'],tree_output=output, tree_profile=profile)
         report['observation_diagnostic']=report['client_tree'].pop('observation_diagnostic',None)
+        if profile == 'tree-copy-v1': report['copy_access_probes']['client'] = report['client_tree'].pop('copy_access_probe',None)
         if report['client_tree']['status']!='ok': raise full.FullError(report['client_tree']['failure_kind'])
         if input_hashes(inputs, profile=profile)!=report['input_sha256']: raise full.FullError('invalid_input')
         report.update(status='ok',failure_kind='none')

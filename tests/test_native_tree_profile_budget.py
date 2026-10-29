@@ -131,7 +131,7 @@ def host_majorant():
         source_file_count=512, source_sha256=H, comparison_driver_sha256=H, map_contract_sha256=H)
     provenance = dict(commit='f'*40, tree='f'*40, github_run_id='9'*20, github_run_attempt='9'*20)
     identity_paths = ('scripts/native_1c_tree_profile.py', 'scripts/native_1c_tree_fill_contract.py',
-                      'scripts/native_1c_tree_copy_contract.py', 'scripts/native_1c_tree_copy_diagnostics.py',
+                      'scripts/native_1c_tree_copy_contract.py', 'scripts/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py',
                       'scripts/native_1c_tree_profiles.py', 'scripts/native_1c_smoke.py', 'scripts/native_1c_full_host.py')
     return dict(schema='native-1c-tree-host-v1', profile=tree.PROFILE, nonce=NONCE,
         image=smoke.IMAGE, platform='linux/amd64', configured_timezone='Etc/UTC',

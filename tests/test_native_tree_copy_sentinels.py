@@ -61,6 +61,6 @@ class CopySentinelTests(unittest.TestCase):
         for payload in ('XM15G99','XM00G01','XM19G01','XM15G011','XM15G01PRIVATE'):
             changed=lines.copy();changed[5]=f'TC-5: [{payload}]\n'.encode()
             self.assertEqual(d.observation_diagnostic(b''.join(changed),'server',contract.validate_payload,contract.ObservationError)['category'],'payload_contract')
-        self.assertEqual(len(d.DIAGNOSTIC_CATEGORIES),1217)
-        self.assertEqual(len(set(d.DIAGNOSTIC_CATEGORIES)),1217)
+        self.assertEqual(len(d.DIAGNOSTIC_CATEGORIES),1218)
+        self.assertEqual(len(set(d.DIAGNOSTIC_CATEGORIES)),1218)
         self.assertEqual(max(map(len,d.DIAGNOSTIC_CATEGORIES)),30)

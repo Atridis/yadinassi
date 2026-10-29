@@ -83,12 +83,13 @@ class CopySubstepDiagnostics(unittest.TestCase):
     def test_authenticated_failure_boundary_keeps_substep_but_never_payload(self):
         import copy,json
         from test_native_tree_copy_profile import success_envelope, SPEC, NONCE, PROFILE
-        value,hashes,modules=success_envelope(maximum_output())
+        value,hashes,modules=success_envelope(__import__('test_native_tree_copy_measurement').capture(maximum_output()))
         value['outputs']=[]
         report=value['report'];report.update(status='stage3_failed',native_tests_completed=False)
         stage=report['stage3'];stage.update(status='failed',failure_kind='unsupported_observation',failed_case=SPEC.case)
         case=stage['cases'][0];case.update(status='failed',module_sha256=None,output_sha256=None,output_size=None,message_count=None)
         stage['client_tree']=budget.tree.full.empty_dates_report()
+        stage['copy_access_probes']={'server':None,'client':None}
         for category in d.CASE5_CATEGORIES:
             stage['observation_diagnostic']=dict(site='server',case=5,category=category,calibration=None)
             with self.assertRaises(budget.host.TreeError) as caught:

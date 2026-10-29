@@ -12,13 +12,33 @@ from scripts import native_1c_tree_copy_contract as wire
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / 'integrational_tests/measurements/tree_copy.bsl').read_text(encoding='utf-8')
-HELPERS = SOURCE[:SOURCE.index('Сообщить("TC-C:')]
+HELPERS = SOURCE[:SOURCE.index('Сообщить("TC-P:')]
 
 
-def emit(source=SOURCE):
+def emit_capture(source=SOURCE):
     output = []
     Interpreter(output.append).execute(source)
     return ('\n'.join(output) + '\n').encode('ascii')
+
+
+# Synthetic fixture only; controls are not native wrapper identity answers.
+PROBE_RECORD = b'TC-P: [TFTFTFTFTTFTTFTTFTTFTTF]\n'
+
+
+def capture(main):
+    return PROBE_RECORD + main
+
+
+def emit(source=SOURCE):
+    raw = emit_capture(source)
+    if raw.startswith(b'TC-P: ['):
+        from scripts.native_1c_tree_access_probe import split_capture
+        return split_capture(raw)[1]
+    return raw
+
+
+def maximum_capture():
+    return capture(maximum_output())
 
 
 def synthetic_method(mode):
