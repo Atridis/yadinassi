@@ -13,6 +13,7 @@ import catalog_reference_codec as policy
 import catalog_reference_identity as measurement
 
 ROOT = Path(__file__).resolve().parents[1]
+REAL_SEED_SUPPORTED = hasattr(os, 'O_NOFOLLOW')
 
 
 class CodecSeedTests(unittest.TestCase):
@@ -72,6 +73,7 @@ class CodecSeedTests(unittest.TestCase):
         native.create_db, native.batch, native.enterprise = create_db, batch, enterprise
         return native, operations
 
+    @unittest.skipUnless(REAL_SEED_SUPPORTED, 'actual seed reader requires O_NOFOLLOW')
     def test_real_seed_both_cases_hashes_module_and_builds_manifest(self):
         for case in policy.CASES:
             native, operations = self.backend(case)
@@ -90,6 +92,15 @@ class CodecSeedTests(unittest.TestCase):
             self.assertIsNone(native.seed_pending)
             self.assertIsNone(native.seed_launched)
             self.assertFalse(list(native.root.glob('redump-*')))
+
+    def test_capability_gate_is_limited_to_actual_seed_reader(self):
+        self.assertEqual(REAL_SEED_SUPPORTED, hasattr(os, 'O_NOFOLLOW'))
+        real_seed = CodecSeedTests.test_real_seed_both_cases_hashes_module_and_builds_manifest
+        self.assertEqual(bool(getattr(real_seed, '__unittest_skip__', False)),
+                         not REAL_SEED_SUPPORTED)
+        for name in ('test_missing_alias_reproduces_failure_after_dump_before_import',
+                     'test_every_runtime_record_policy_attribute_is_present'):
+            self.assertFalse(getattr(getattr(CodecSeedTests,name),'__unittest_skip__',False))
 
     def test_missing_alias_reproduces_failure_after_dump_before_import(self):
         native, operations = self.backend('distinct_a')
