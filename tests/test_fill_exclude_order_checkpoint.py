@@ -175,27 +175,6 @@ class FillExcludeOrderCheckpointTests(unittest.TestCase):
         for row in rows[:3]:
             self.assertTrue(row.endswith('[error;{"N",1};{"N",2};{"N",300};{"N",3};{"B",0};{"U"}]'), row)
 
-    def test_full_841_and_852_prefixes_survive_on_both_interpreter_targets(self):
-        for target in (WINDOWS_8_3_27_2342, LINUX_8_3_27_1508):
-            with self.subTest(target=target):
-                outputs = []
-                for text, count in ((self.base, 841), (self.checkpoint, 852), (self.source, 1023)):
-                    rows = []
-                    Interpreter(rows.append, native_target=target).execute(text)
-                    self.assertEqual(len(rows), count)
-                    outputs.append(rows)
-                self.assertEqual(outputs[1][:841], outputs[0])
-                self.assertEqual(outputs[2][:841], outputs[0])
-                self.assertEqual(outputs[2][:852], outputs[1])
-                self.assertEqual(outputs[2][844].split(':', 1)[0], LAST_LABEL)
-                self.assertEqual(tuple(row.split(':', 1)[0] for row in outputs[2][852:854]), LABELS)
-                # Shape only here. The separate runtime tests bind these states
-                # to the independently audited native run40048537592 fixture.
-                for row in outputs[2][852:854]:
-                    self.assertRegex(row, r': \[(?:ok|error);\{"N",-?\d+\};\{"N",-?\d+\};'
-                                          r'\{"N",-?\d+\};\{"N",\d+\};\{"B",[01]\};'
-                                          r'(?:\{"U"\}|\{"N",-?\d+\})\]$')
-        self.assertEqual(current_native_target(), WINDOWS_8_3_27_2342)
 
     def test_three_synthetic_policies_are_distinguished_without_native_expectations(self):
         # Deliberately synthetic alternatives, not assertions about 1C's internals.

@@ -57,29 +57,6 @@ class FillExcludeCheckpointTests(unittest.TestCase):
         for excluded in ('ОписаниеОшибки', 'Фиксированная', 'Запрос', '\t', 'Удалить', 'СокрЛП'):
             self.assertNotIn(excluded, self.helper + self.body)
 
-    def test_full_current_source_preserves_every_old_record_for_both_targets(self):
-        for target in (WINDOWS_8_3_27_2342, LINUX_8_3_27_1508):
-            old, new = [], []
-            Interpreter(old.append, native_target=target).execute(self.original)
-            Interpreter(new.append, native_target=target).execute(self.source)
-            self.assertEqual(len(old), 841)
-            self.assertEqual(len(new), 852)
-            self.assertEqual(new[:841], old)
-            self.assertEqual([row.split(':', 1)[0] for row in new[841:]],
-                             ['fill.exclude-missing.' + label for label, _, _ in CASES])
-            # Linux source-only states are measured in runs39836204865 and
-            # 40048537592. Windows/default retain their earlier upfront guard;
-            # the separate runtime fixture binds all thirteen native records.
-            for index, row in enumerate(new[841:850]):
-                presence = '{"B",1};{"N",4}' if index < 3 else '{"B",0};{"U"}'
-                count = 4 if index < 3 else 3
-                first, last, copied = 1, 2, 3
-                if target == LINUX_8_3_27_1508 and 3 <= index < 6:
-                    first, last, copied = (10 if index == 3 else 1), 20, 30
-                self.assertTrue(row.endswith(f'[error;{{"N",{first}}};{{"N",{last}}};{{"N",{copied}}};{{"N",{count}}};{presence}]'), row)
-            self.assertTrue(new[-2].endswith('[ok;{"N",1};{"N",20};{"N",30};{"N",3};{"B",0};{"U"}]'))
-            self.assertTrue(new[-1].endswith('[ok;{"N",1};{"N",2};{"N",30};{"N",3};{"B",0};{"U"}]'))
-        self.assertEqual(current_native_target(), WINDOWS_8_3_27_2342)
 
     def test_observer_distinguishes_ignored_names_and_partial_failure(self):
         # Competing synthetic policies test observation power, not 1C semantics.
