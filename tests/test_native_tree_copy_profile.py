@@ -14,6 +14,7 @@ from yadinassi import Interpreter
 import test_native_tree_profile_budget as budget
 from test_native_tree_copy_measurement import emit_capture as emit, maximum_capture as maximum_output, synthetic_method, emit_missing_capture
 from yadinassi.value_trees import BSLValueTree
+from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
 from scripts import native_1c_tree_copy_diagnostics as diagnostics
 
@@ -46,7 +47,7 @@ def success_envelope(raw):
         parent = Path(tmp).resolve(strict=True); root = parent/'capture'; root.mkdir()
         (root/(SPEC.case+'.out')).write_bytes(raw)
         tree.write_report(parent/'stage3-report.json', stage, profile=PROFILE)
-        with mock.patch.object(full, 'final_client_process_census'):
+        with synthetic_producer_reader(tree.full), mock.patch.object(full, 'final_client_process_census'):
             envelope = tree.finish_report(report, NONCE, root, quiet=True,
                 bus_cleanup_failed=False, profile=PROFILE)
     return json.loads(envelope), hashes, modules

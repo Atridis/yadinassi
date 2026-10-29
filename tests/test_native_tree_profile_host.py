@@ -1,4 +1,7 @@
+import contextlib
 import importlib.util
+import os
+from unittest import mock
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,6 +10,74 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('tree_profile_host_test', ROOT / 'scripts/native_1c_tree_profile.py')
 HOST = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(HOST)
+
+
+_USE_SYNTHETIC_PRODUCER_READER = os.name == 'nt'
+
+
+@contextlib.contextmanager
+def synthetic_producer_reader(producer):
+    """Static Windows fixture I/O only, not Linux descriptor-security evidence.
+
+    Patch the exact producer module instance: tree.full is not host.FULL.
+    Keep real parsing, stage validation, output hashes and host admission active.
+    """
+    if not _USE_SYNTHETIC_PRODUCER_READER:
+        yield
+        return
+    from test_native_1c_full_host import read_synthetic_file, full as fixture_host
+    def read(path, limit, *, allow_empty=False):
+        try:
+            return read_synthetic_file(path, limit, nonempty=not allow_empty)
+        except fixture_host.FullError:
+            raise producer.FullError('artifact_missing') from None
+    with mock.patch.object(producer, 'secure_bytes', side_effect=read):
+        yield
+
+
+class ProducerFixtureReaderTests(unittest.TestCase):
+    def test_exact_module_binding_and_restoration_including_exception(self):
+        import test_native_tree_profile_budget as budget
+        producer = budget.tree.full
+        original = producer.secure_bytes
+        host_reader = budget.full.read_regular
+        with mock.patch(__name__ + '._USE_SYNTHETIC_PRODUCER_READER', False):
+            with synthetic_producer_reader(producer):
+                self.assertIs(producer.secure_bytes, original)
+        with mock.patch(__name__ + '._USE_SYNTHETIC_PRODUCER_READER', True):
+            with self.assertRaisesRegex(RuntimeError, 'test exit'):
+                with synthetic_producer_reader(producer):
+                    self.assertIsNot(producer.secure_bytes, original)
+                    self.assertIs(budget.full.read_regular, host_reader)
+                    raise RuntimeError('test exit')
+        self.assertIs(producer.secure_bytes, original)
+        self.assertIs(budget.full.read_regular, host_reader)
+
+    def test_bounded_static_fixture_reader_rejects_invalid_files(self):
+        import test_native_tree_profile_budget as budget
+        producer = budget.tree.full
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(strict=True)
+            empty, oversized, valid = (root/name for name in ('empty', 'oversized', 'valid'))
+            empty.write_bytes(b''); oversized.write_bytes(b'abcd'); valid.write_bytes(b'abc')
+            with mock.patch(__name__ + '._USE_SYNTHETIC_PRODUCER_READER', True):
+                with synthetic_producer_reader(producer):
+                    self.assertEqual(producer.secure_bytes(valid, 3), b'abc')
+                    self.assertEqual(producer.secure_bytes(empty, 3, allow_empty=True), b'')
+                    for path in (root/'missing', root, empty, oversized):
+                        with self.subTest(path=path.name), self.assertRaises(producer.FullError):
+                            producer.secure_bytes(path, 3)
+
+    def test_synthetic_capability_branch_preserves_both_producer_boundaries(self):
+        import test_native_tree_copy_profile as copy_profile
+        import test_native_tree_profile_budget as budget
+        # Force the unsupported-descriptor capability branch without changing
+        # global os.name or claiming this Linux run is Windows validation.
+        with mock.patch(__name__ + '._USE_SYNTHETIC_PRODUCER_READER', True):
+            with mock.patch.object(budget.tree.full, '_open_no_follow',
+                                   side_effect=AssertionError('production reader reached')):
+                TreeHostTests('test_real_producer_to_host_boundary_states').test_real_producer_to_host_boundary_states()
+                copy_profile.CopyProfileTests('test_real_producer_and_host_accept_only_bound_copy_evidence').test_real_producer_and_host_accept_only_bound_copy_evidence()
 
 
 class TreeHostTests(unittest.TestCase):
@@ -312,7 +383,7 @@ class TreeHostTests(unittest.TestCase):
                             stage.update(status='ok',failure_kind='none')
                             (capture/(HOST.CASE+'.out')).write_bytes(payload)
                 tree.write_report(parent/'stage3-report.json',stage)
-                with mock.patch.object(tree.full,'final_client_process_census'):
+                with synthetic_producer_reader(tree.full), mock.patch.object(tree.full,'final_client_process_census'):
                     wire=tree.finish_report(report,nonce,capture,quiet=True,bus_cleanup_failed=False)
                 # Genuine production producer/serializer and production outer validator.
                 if state=='success':
