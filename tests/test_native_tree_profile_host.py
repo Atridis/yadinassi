@@ -98,6 +98,35 @@ class TreeHostTests(unittest.TestCase):
             self.assertEqual((root / 'native-smoke/sentinel').read_bytes(), b'preserve')
             self.assertEqual(list((root / 'pinned-old').iterdir()), [])
 
+    def test_private_cleanup_failure_overrides_only_when_it_fails(self):
+        from unittest import mock
+        state={'stage':'comparison'}
+        manager=mock.Mock(name='owned-private-directory')
+        manager.name='unused-synthetic-path'
+        with mock.patch.object(HOST.tempfile,'TemporaryDirectory',return_value=manager):
+            with self.assertRaisesRegex(ValueError,'primary'):
+                with HOST.private_work(Path('.'),state):
+                    raise ValueError('primary')
+        self.assertEqual(state['stage'],'comparison')
+        manager.cleanup.side_effect=OSError('private path must never be exported')
+        with mock.patch.object(HOST.tempfile,'TemporaryDirectory',return_value=manager):
+            with self.assertRaises(OSError):
+                with HOST.private_work(Path('.'),state):
+                    raise ValueError('primary')
+        self.assertEqual(state['stage'],'private_cleanup')
+
+    def test_failure_diagnostics_are_closed_and_private(self):
+        import json
+        for secret in ('/private/account/token.txt', 'password=abc123', 'raw native output',
+                       'docker_command_failed extra', 'unexpected\npath', '💥'):
+            result = HOST.failure_diagnostic({'stage': secret}, RuntimeError(secret))
+            self.assertEqual(result, {'stage': 'unknown', 'reason': 'unexpected_failure'})
+            self.assertNotIn(secret, json.dumps(result))
+        for stage in HOST.FAILURE_STAGES:
+            for reason in HOST.FAILURE_REASONS:
+                self.assertEqual(HOST.failure_diagnostic({'stage': stage}, HOST.TreeError(reason)),
+                                 {'stage': stage, 'reason': reason})
+
     def test_lifecycle_failures_never_export(self):
         import contextlib
         import os
@@ -130,12 +159,14 @@ class TreeHostTests(unittest.TestCase):
                     outputs[2] = (0, b'still-running')
                 stack.enter_context(mock.patch.object(smoke, 'bounded_run', side_effect=outputs))
                 export = stack.enter_context(mock.patch.object(HOST, 'export_artifact'))
+                state = {}
                 if failure:
                     with self.assertRaises((HOST.TreeError, smoke.SmokeError)):
-                        HOST.run(root, root, export_native_outputs=True)
+                        HOST.run(root, root, export_native_outputs=True, failure_state=state)
                     export.assert_not_called()
+                    self.assertEqual(state['stage'], {'container': 'container_run', 'cleanup': 'container_cleanup', 'comparison': 'comparison', 'provenance': 'final_provenance'}[failure])
                 else:
-                    result = HOST.run(root, root, export_native_outputs=True)
+                    result = HOST.run(root, root, export_native_outputs=True, failure_state=state)
                     self.assertTrue(result['private_payloads_removed'])
                     self.assertTrue(result['runtime_parity_accepted'])
                     export.assert_called_once()
@@ -202,6 +233,30 @@ class TreeHostTests(unittest.TestCase):
             with self.assertRaises(HOST.TreeError) as rejected:
                 validate(wrong)
             self.assertFalse(hasattr(rejected.exception, 'observation_diagnostic'))
+        native_failed = copy.deepcopy(failure)
+        native_failed['report']['stage3'].update(observation_diagnostic=None, failure_kind='process_failed')
+        with self.assertRaises(HOST.TreeError) as summary:
+            validate(native_failed)
+        self.assertEqual(summary.exception.native_failure, {'stage': 'tree', 'reason': 'process_failed',
+                         'case': HOST.CASE, 'process_stage': 'not_checked', 'process_reason': 'none'})
+        bad_changes = [lambda e: e.update(nonce='2' * 32),
+                       lambda e: e['report']['stage3'].update(input_sha256={}),
+                       lambda e: e['report']['stage3'].update(failure_kind='/secret/token=123'),
+                       lambda e: e['report']['stage3'].update(failed_case='/private/path'),
+                       lambda e: e['report']['stage3'].update(failure_kind='unsupported_observation'),
+                       lambda e: e['report']['stage3'].update(failed_case=None),
+                       lambda e: e['report']['stage3']['cases'][0].update(status='ok'),
+                       lambda e: e['report']['stage3']['cases'][0].update(status='not_started'),
+                       lambda e: e['report']['stage3']['cases'][0].update(source_sha256='c' * 64),
+                       lambda e: e['report']['stage3']['client_tree']['process_diagnostics'].update(reason='private-log'),
+                       lambda e: e['report']['stage3']['client_tree'].update(module_sha256='c' * 64),
+                       lambda e: e.update(outputs=[{'data_b64':'rawsecret'}])]
+        for change in bad_changes:
+            altered = copy.deepcopy(native_failed)
+            change(altered)
+            with self.assertRaises(HOST.TreeError) as rejected:
+                validate(altered)
+            self.assertFalse(hasattr(rejected.exception, 'native_failure'))
         client_failed = copy.deepcopy(envelope)
         client_failed['outputs'] = []
         client_failed['report'].update(status='stage3_failed', native_tests_completed=False)
@@ -214,6 +269,40 @@ class TreeHostTests(unittest.TestCase):
         with self.assertRaises(HOST.TreeError) as diagnostic:
             validate(client_failed)
         self.assertEqual(diagnostic.exception.observation_diagnostic['site'], 'client')
+        generic_client = copy.deepcopy(client_failed)
+        generic_client['report']['stage3'].update(observation_diagnostic=None, failure_kind='process_failed')
+        generic_client['report']['stage3']['client_tree']['failure_kind'] = 'process_failed'
+        with self.assertRaises(HOST.TreeError) as summary:
+            validate(generic_client)
+        self.assertEqual(summary.exception.native_failure['reason'], 'process_failed')
+        self.assertEqual(summary.exception.native_failure['process_stage'], 'after_exit')
+        mutations_generic = [lambda e: e['report']['stage3']['client_tree'].update(failure_kind='timeout'),
+                             lambda e: e['report']['stage3']['cases'][0].update(module_sha256=None),
+                             lambda e: e['report']['stage3']['cases'][0].update(output_sha256=None),
+                             lambda e: e['report']['stage3']['cases'][0].update(output_size=True),
+                             lambda e: e['report']['stage3']['cases'][0].update(message_count=True),
+                             lambda e: e['report']['stage3'].update(failed_case=HOST.CASE)]
+        for change in mutations_generic:
+            altered = copy.deepcopy(generic_client)
+            change(altered)
+            with self.assertRaises(HOST.TreeError) as rejected:
+                validate(altered)
+            self.assertFalse(hasattr(rejected.exception, 'native_failure'))
+        pre_case = copy.deepcopy(native_failed)
+        ps = pre_case['report']['stage3']
+        ps.update(failed_case=None, failure_kind='invalid_input')
+        ps['cases'][0].update(status='not_started')
+        ps['cases'][0].update(dict.fromkeys(HOST.FULL.CASE_KEYS - {'name', 'status'}, None))
+        with self.assertRaises(HOST.TreeError) as summary:
+            validate(pre_case)
+        self.assertIsNone(summary.exception.native_failure['case'])
+        post_client = copy.deepcopy(envelope)
+        post_client['outputs'] = []
+        post_client['report'].update(status='stage3_failed', native_tests_completed=False)
+        post_client['report']['stage3'].update(status='failed', failure_kind='export_failed')
+        with self.assertRaises(HOST.TreeError) as summary:
+            validate(post_client)
+        self.assertEqual(summary.exception.native_failure['reason'], 'export_failed')
         for key in HOST.FULL.CLIENT_FLAGS | HOST.FULL.CLIENT_HASHES:
             wrong = copy.deepcopy(client_failed)
             before = wrong['report']['stage3']['client_tree'][key]

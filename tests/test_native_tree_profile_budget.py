@@ -139,7 +139,11 @@ def bounds():
         data_b64=base64.b64encode(b'x'*8192).decode())])
     failure = dict(schema='native-1c-tree-host-v1', profile=tree.PROFILE, status='failed',
         native_measurement_accepted=False, runtime_parity_accepted=False,
-        observation_diagnostic=stage['observation_diagnostic'])
+        observation_diagnostic=stage['observation_diagnostic'],
+        failure_diagnostic=dict(stage=longest(host.FAILURE_STAGES+('unknown',)),
+                                reason=longest(host.FAILURE_REASONS+('unexpected_failure',))),
+        native_failure=dict(stage='tree',reason=longest(full.FAILURES|{'unsupported_observation'}),
+                            case=host.CASE,process_stage='before_probe',process_reason='unexpected_processes'))
     return dict(stage=len(wire(stage)), native_report=len(wire(native)),
         transport=len(wire(envelope))+1, host_report=len(wire(value))+1,
         artifact_provenance=len(provenance), artifact_total=len(provenance)+8192,
@@ -198,11 +202,31 @@ class TreeBudgetTests(unittest.TestCase):
                 self.assertEqual(host.main(),1)
             self.assertEqual((Path(directory)/'native-smoke/tree-report.json').read_bytes(),wire(value)+b'\n')
 
+    def test_production_failure_serializer_is_finite_and_bounded(self):
+        error=host.TreeError(longest(host.FAILURE_REASONS))
+        error.observation_diagnostic=dict(site='server',case=32,category='payload_contract',calibration=None)
+        error.native_failure=dict(stage='tree',reason=longest(full.FAILURES|{'unsupported_observation'}),
+                                  case=host.CASE,process_stage='before_probe',process_reason='unexpected_processes')
+        def fail(*args,**kwargs):
+            kwargs['failure_state']['stage']=longest(host.FAILURE_STAGES)
+            raise error
+        with tempfile.TemporaryDirectory() as directory,contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch.object(host,'ROOT',Path(directory)),mock.patch.object(host,'run',side_effect=fail),\
+                 mock.patch.object(sys,'argv',['tree','--execute-approved-image']),mock.patch.dict('os.environ',{},clear=True):
+                self.assertEqual(host.main(),1)
+            raw=(Path(directory)/'native-smoke/tree-report.json').read_bytes()
+            self.assertLessEqual(len(raw),bounds()['failure_report'])
+            value=json.loads(raw)
+            self.assertFalse(value['native_measurement_accepted'])
+            self.assertFalse(value['runtime_parity_accepted'])
+            self.assertEqual(value['native_failure'],error.native_failure)
+            self.assertEqual(value['observation_diagnostic'],error.observation_diagnostic)
+
     def test_majorant_covers_actual_host_builder_keys(self):
         path=ROOT/'scripts/native_1c_tree_profile.py'
         expected=set(host_majorant())-{'private_payloads_removed'}
         self.assertEqual(assignment_dict_keys(path,'run','result'),expected)
-        failure={'schema','profile','status','native_measurement_accepted','runtime_parity_accepted'}
+        failure={'schema','profile','status','native_measurement_accepted','runtime_parity_accepted','failure_diagnostic'}
         self.assertEqual(assignment_dict_keys(path,'main','report'),failure)
         self.assertEqual(set(stage_majorant())-set(tree.empty_report(NONCE)),set())
 

@@ -4,6 +4,7 @@ This profile never changes the ordinary six-scenario inventory or comparators.
 """
 from __future__ import annotations
 import base64
+import contextlib
 import binascii
 import importlib.util
 import json
@@ -120,6 +121,51 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator)
                         and client_failure['process_diagnostics']['reason'] == 'none')
             failure = TreeError('tree_observation_rejected')
             failure.observation_diagnostic = diagnostic.copy()
+            raise failure
+        if stage['status'] == 'failed' and diagnostic is None:
+            require(report['status'] == 'stage3_failed' and report['native_tests_completed'] is False and data['outputs'] == [])
+            require(type(stage['failure_kind']) is str and stage['failure_kind'] in FULL.FAILURES | {'unsupported_observation'} and stage['failure_kind'] not in ('none', 'unsupported_observation'))
+            require(stage['failed_case'] in (None, CASE))
+            require(type(stage['cases']) is list and len(stage['cases']) == 1)
+            failed_case = stage['cases'][0]
+            require(type(failed_case) is dict and set(failed_case) == FULL.CASE_KEYS and failed_case['name'] == CASE)
+            require(failed_case['status'] in ('not_started', 'failed', 'ok'))
+            require(failed_case['source_sha256'] in (None, SOURCE_SHA256) and failed_case['module_sha256'] in (None, module_hashes[CASE]))
+            require(failed_case['output_sha256'] is None or FULL.is_digest(failed_case['output_sha256']))
+            require(failed_case['output_size'] is None or type(failed_case['output_size']) is int and 0 < failed_case['output_size'] <= MAX_OUTPUT)
+            require(failed_case['message_count'] is None or type(failed_case['message_count']) is int and failed_case['message_count'] == MESSAGE_COUNT)
+            failed_client = stage['client_tree']
+            require(type(failed_client) is dict and FULL.CLIENT_OUTPUT_KEYS <= set(failed_client))
+            require(type(failed_client.get('failure_kind')) is str and failed_client['failure_kind'] in FULL.FAILURES | {'unsupported_observation'})
+            base_client = {k: v for k, v in failed_client.items() if k not in FULL.CLIENT_OUTPUT_KEYS}
+            if base_client['failure_kind'] == 'unsupported_observation':
+                require(base_client['status'] == 'failed')
+                base_client['failure_kind'] = 'invalid_result'
+            FULL.validate_client_probe(base_client, SOURCE_SHA256, module_hashes['client_tree'])
+            if failed_client['status'] == 'failed':
+                require(failed_client['failure_kind'] == stage['failure_kind'])
+            if failed_client['status'] == 'ok':
+                require(failed_case['status'] == 'ok' and all(failed_client[k] == failed_case[k] and type(failed_client[k]) is type(failed_case[k]) for k in FULL.CLIENT_OUTPUT_KEYS))
+            else:
+                require(all(failed_client[k] is None for k in FULL.CLIENT_OUTPUT_KEYS))
+            if stage['failed_case'] == CASE:
+                require(failed_case['status'] == 'failed' and failed_client['status'] == 'not_started')
+                require(all(failed_case[k] is None for k in ('module_sha256', 'output_sha256', 'output_size', 'message_count')))
+            else:
+                require(failed_case['status'] in ('not_started', 'ok'))
+                if failed_case['status'] == 'not_started':
+                    require(all(failed_case[k] is None for k in FULL.CASE_KEYS - {'name', 'status'}))
+                    require(failed_client['status'] == 'not_started')
+                else:
+                    require(failed_case['source_sha256'] == SOURCE_SHA256 and failed_case['module_sha256'] == module_hashes[CASE])
+                    require(FULL.is_digest(failed_case['output_sha256']) and type(failed_case['output_size']) is int
+                            and 0 < failed_case['output_size'] <= MAX_OUTPUT and type(failed_case['message_count']) is int
+                            and failed_case['message_count'] == MESSAGE_COUNT)
+            process = FULL.validate_process_diagnostics(failed_client['process_diagnostics'])
+            failure = TreeError('tree_native_evidence_rejected')
+            failure.native_failure = {'stage': 'tree', 'reason': stage['failure_kind'],
+                                      'case': 'tree_fill_values' if stage['failed_case'] == CASE else None,
+                                      'process_stage': process['stage'], 'process_reason': process['reason']}
             raise failure
         require(report['status'] == 'ok' and report['native_tests_completed'] is True)
         require(stage['status'] == 'ok' and stage['failure_kind'] == 'none' and stage['failed_case'] is None)
@@ -275,29 +321,49 @@ def container_command(staged, hashes, name, nonce, smoke):
             '--tree-suite', '--invocation-nonce', nonce]
 
 
-def run(root, temp_root, *, export_native_outputs=False):
+@contextlib.contextmanager
+def private_work(temp_root, state):
+    manager = tempfile.TemporaryDirectory(prefix='onec-tree-', dir=temp_root)
+    try:
+        yield manager.name
+    finally:
+        prior = state['stage']
+        state['stage'] = 'private_cleanup'
+        manager.cleanup()
+        state['stage'] = prior
+
+
+def run(root, temp_root, *, export_native_outputs=False, failure_state=None):
     """Return only finite metadata after container and private-directory cleanup."""
+    failure_state = {} if failure_state is None else failure_state
+    failure_state['stage'] = 'credentials'
     smoke = sibling('native_1c_smoke')
     token, actor = os.environ.pop('GHCR_TOKEN', ''), os.environ.pop('GHCR_USER', '')
     require(token and re.fullmatch('[A-Za-z0-9-]{1,39}', actor), 'registry_credentials_missing')
     name, nonce = 'onec-tree-' + uuid.uuid4().hex, uuid.uuid4().hex
+    failure_state['stage'] = 'provenance'
     provenance = FULL.repository_provenance(root)
     interpreter = FULL.interpreter_provenance(root)
     host_identity = {p: FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) for p in ('scripts/native_1c_tree_profile.py', 'scripts/native_1c_tree_fill_contract.py', 'scripts/native_1c_smoke.py', 'scripts/native_1c_full_host.py')}
     goldens = FULL.windows_fingerprints(root)
     result = None
-    with tempfile.TemporaryDirectory(prefix='onec-tree-', dir=temp_root) as directory:
+    with private_work(temp_root, failure_state) as directory:
         work = Path(directory).resolve()
         staged = work / 'staged'
+        failure_state['stage'] = 'staging'
         hashes = stage_inputs(root, staged, smoke)
+        failure_state['stage'] = 'adapter'
         modules = module_hashes(staged, hashes, smoke)
+        failure_state['stage'] = 'preflight'
         FULL.verify_client_interpreter(root, staged / 'bootstrap/client_probe.bsl', hashes[FULL.CLIENT_SOURCE])
         auth = work / 'auth'
         auth.mkdir(mode=0o700)
         try:
             env = smoke.docker_environment(auth)
+            failure_state['stage'] = 'registry_login'
             smoke.run_silent(['docker', 'login', 'ghcr.io', '--username', actor, '--password-stdin'], env, 60, token.encode())
             token = ''
+            failure_state['stage'] = 'image_pull'
             smoke.run_silent(['docker', 'pull', '--platform', 'linux/amd64', smoke.IMAGE], env, 600)
         finally:
             token = ''
@@ -305,19 +371,27 @@ def run(root, temp_root, *, export_native_outputs=False):
         clean = work / 'no-auth'
         clean.mkdir(mode=0o700)
         env = smoke.docker_environment(clean)
+        failure_state['stage'] = 'image_inspect'
         code, image = smoke.bounded_run(['docker', 'image', 'inspect', '--format', '{{.Os}}/{{.Architecture}}|{{len .Config.Volumes}}', smoke.IMAGE], env, 30, 128)
         require(code == 0 and image.strip() == b'linux/amd64|0', 'unexpected_image_platform_or_volumes')
         try:
+            failure_state['stage'] = 'container_run'
             code, raw = smoke.bounded_run(container_command(staged, hashes, name, nonce, smoke), env, smoke.FULL_MAX_RUNTIME, MAX_TRANSPORT)
+            failure_state['stage'] = 'envelope'
             report, native = validate_envelope(raw, nonce, hashes, modules, smoke.validate_report)
             require(code == 0, 'tree_container_failed')
             del raw
         finally:
+            primary_stage = failure_state['stage']
+            failure_state['stage'] = 'container_cleanup'
             smoke.run_silent(['docker', 'rm', '--force', name], env, 30)
             cleanup_code, remaining = smoke.bounded_run(['docker', 'ps', '--all', '--filter', 'name=^/' + name + '$', '--format', '{{.Names}}'], env, 30, 128)
             require(cleanup_code == 0 and not remaining.strip(), 'container_cleanup_unverified')
+            failure_state['stage'] = primary_stage
         require(all(FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) == h for p, h in host_identity.items()), 'tree_host_changed')
+        failure_state['stage'] = 'comparison'
         comparison = compare_output(root, work, native, hashes)
+        failure_state['stage'] = 'final_provenance'
         validate_inputs(staged, hashes, smoke)
         require(all(FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) == h for p, h in host_identity.items()), 'tree_host_changed')
         require(FULL.repository_provenance(root) == provenance and FULL.interpreter_provenance(root) == interpreter,
@@ -330,6 +404,7 @@ def run(root, temp_root, *, export_native_outputs=False):
                   'native_measurement_accepted': True, 'runtime_parity_accepted': comparison['acceptance_status'] == 'accepted'}
         retained = native if export_native_outputs else None
         del native
+    failure_state['stage'] = 'private_cleanup'
     require(not Path(directory).exists(), 'private_cleanup_unverified')
     result['private_payloads_removed'] = True
     require(len(json.dumps(result, separators=(',', ':')).encode()) <= FULL.MAX_REPORT, 'tree_host_report_limit')
@@ -338,6 +413,7 @@ def run(root, temp_root, *, export_native_outputs=False):
                      'provenance.json': (json.dumps(result, sort_keys=True, separators=(',', ':')) + '\n').encode()}
         result['native_artifact_sha256'] = {name: FULL.digest(data) for name, data in artifacts.items()}
         require(len(json.dumps(result, separators=(',', ':')).encode()) + 1 <= FULL.MAX_REPORT, 'tree_host_report_limit')
+        failure_state['stage'] = 'artifact_export'
         export_artifact(root, artifacts)
     require(len(json.dumps(result, separators=(',', ':')).encode()) + 1 <= FULL.MAX_REPORT, 'tree_host_report_limit')
     return result
@@ -444,6 +520,29 @@ def export_artifact(root: Path, files: dict[str, bytes]) -> None:
         raise failure from None
 
 
+FAILURE_STAGES = ('credentials', 'provenance', 'staging', 'adapter', 'preflight', 'registry_login',
+                  'image_pull', 'image_inspect', 'container_run', 'envelope', 'container_cleanup',
+                  'comparison', 'final_provenance', 'private_cleanup', 'artifact_export')
+FAILURE_REASONS = ('tree_native_evidence_rejected', 'tree_report_invalid', 'tree_observation_rejected',
+                   'registry_credentials_missing', 'repository_identity_unverified', 'repository_commit_mismatch',
+                   'repository_sources_unverified', 'tree_source_changed', 'tree_inventory_invalid',
+                   'tree_staged_source_changed', 'docker_command_timeout', 'docker_command_unavailable',
+                   'docker_command_failed', 'container_timeout', 'container_output_limit',
+                   'container_cleanup_unverified', 'tree_container_failed', 'tree_host_changed',
+                   'execution_provenance_changed', 'private_cleanup_unverified', 'unexpected_image_platform_or_volumes',
+                   'tree_host_report_limit', 'native_artifact_export_failed', 'native_artifact_target_exists')
+
+
+def failure_diagnostic(state, error):
+    # Exact closed membership only. Unknown strings, including paths and secrets,
+    # collapse to one token; never use repr/str output in the public record.
+    stage = state.get('stage') if type(state) is dict else None
+    stage = stage if type(stage) is str and stage in FAILURE_STAGES else 'unknown'
+    reason = str(error)
+    reason = reason if reason in FAILURE_REASONS else 'unexpected_failure'
+    return {'stage': stage, 'reason': reason}
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
@@ -454,13 +553,23 @@ def main():
     require(not parent.is_symlink(), 'tree_artifact_parent_invalid')
     parent.mkdir(mode=0o700, exist_ok=True)
     require(not (parent / 'tree-report.json').exists(), 'tree_report_exists')
+    failure_state = {'stage': 'credentials'}
     try:
         report = run(ROOT, Path(os.environ.get('RUNNER_TEMP', tempfile.gettempdir())),
-                     export_native_outputs=args.export_native_outputs)
+                     export_native_outputs=args.export_native_outputs, failure_state=failure_state)
     except Exception as error:
         report = {'schema': 'native-1c-tree-host-v1', 'profile': PROFILE,
                   'status': 'failed', 'native_measurement_accepted': False,
-                  'runtime_parity_accepted': False}
+                  'runtime_parity_accepted': False,
+                  'failure_diagnostic': failure_diagnostic(failure_state, error)}
+        if isinstance(error, TreeError) and hasattr(error, 'native_failure'):
+            value = error.native_failure
+            require(type(value) is dict and set(value) == {'stage', 'reason', 'case', 'process_stage', 'process_reason'}
+                    and value['stage'] == 'tree' and value['reason'] in FULL.FAILURES | {'unsupported_observation'}
+                    and value['reason'] != 'none' and value['case'] in (None, CASE)
+                    and value['process_stage'] in ('not_checked', 'baseline', 'before_probe', 'after_exit')
+                    and value['process_reason'] in ('none', 'unverified', 'native_not_quiet', 'unexpected_processes'))
+            report['native_failure'] = value
         if isinstance(error, TreeError) and hasattr(error, 'observation_diagnostic'):
             validate_diagnostic(error.observation_diagnostic)
             report['observation_diagnostic'] = error.observation_diagnostic
