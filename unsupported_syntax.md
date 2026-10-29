@@ -259,9 +259,10 @@ runtime, не заявляет Windows native parity и не выбирает п
 
 ## Неподтвержденные операции ДереваЗначений
 
-После bounded Rows.Find/FindRows/UnloadColumn/LoadColumn остаются неподдержанными копирование
-дерева, сортировка/итоги/сдвиг, UI-выбор, сериализация внутренним
-форматом/XML и transport. В Rows.UnloadColumn и Rows.LoadColumn отдельно поддержано усечение
+После bounded Rows.Find/FindRows/UnloadColumn/LoadColumn, Copy(), Rows.Total() и Rows.Move()
+остаются неподдержанными сортировка, UI-выбор, сериализация внутренним
+форматом/XML и transport. Copy поддерживает только вызов без аргументов;
+параметры и фильтры копирования остаются вне поддержанного subset. В Rows.UnloadColumn и Rows.LoadColumn отдельно поддержано усечение
 конечного числового селектора к нулю; [точный срез](docs/value-tree-unload-column-runtime.md).
 В остальных индексных операциях не допускаются дробные, отрицательные и выходящие за
 границы индексы, зарезервированные имена колонок Rows/Parent (и RU-аналоги),
