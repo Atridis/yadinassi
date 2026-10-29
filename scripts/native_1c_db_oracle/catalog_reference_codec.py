@@ -37,6 +37,7 @@ compare_values = measurement.compare_values
 measure_reference = measurement.measure_reference
 bind_state = measurement.bind_state
 rendered_module_sha256 = measurement.rendered_module_sha256
+canonical_module_sha256 = measurement.canonical_module_sha256
 _validate_reference = measurement._validate_reference
 TOOL1CD, CASES = measurement.TOOL1CD, measurement.CASES
 
