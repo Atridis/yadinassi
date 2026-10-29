@@ -239,15 +239,44 @@ class TreeBudgetTests(unittest.TestCase):
         stage=report.pop('stage3');stage['status']='ok'
         stage['cases'][0].update(status='ok',output_size=len(raw),output_sha256=full.digest(raw))
         with tempfile.TemporaryDirectory() as directory:
-            parent=Path(directory);capture=parent/'capture';capture.mkdir()
+            parent=Path(directory).resolve(strict=True);capture=parent/'capture';capture.mkdir()
             (capture/(tree.CASE+'.out')).write_bytes(raw)
             tree.write_report(parent/'stage3-report.json',stage)
             with mock.patch.object(tree,'validate_observations'),mock.patch.object(tree.full,'final_client_process_census'):
                 actual=tree.finish_report(report,NONCE,capture,quiet=True,bus_cleanup_failed=False)
             value=json.loads(actual)
+            self.assertEqual(len(value['outputs']),1)
             self.assertEqual(value['outputs'][0]['data_b64'],base64.b64encode(raw).decode())
             self.assertLessEqual(len(actual),bounds()['transport'])
             self.assertTrue(actual.endswith(b'\n'))
+
+    def test_owned_temp_alias_is_canonicalized_without_weakening_reader(self):
+        raw=b'x'*8192
+        with tempfile.TemporaryDirectory() as directory:
+            owned=Path(directory).resolve(strict=True)
+            physical=owned/'physical';physical.mkdir()
+            alias=owned/'alias'
+            try:
+                alias.symlink_to(physical,target_is_directory=True)
+            except (OSError,NotImplementedError):
+                self.skipTest('Creating directory symlinks is unavailable')
+            capture=physical/'capture';capture.mkdir()
+            (capture/(tree.CASE+'.out')).write_bytes(raw)
+            stage=stage_majorant();stage['status']='ok'
+            stage['cases'][0].update(status='ok',output_size=len(raw),output_sha256=full.digest(raw))
+            tree.write_report(physical/'stage3-report.json',stage)
+            # The production no-follow reader still rejects a symlink ancestor.
+            with self.assertRaises(suite.FullError):
+                suite.secure_bytes(alias/'capture'/(tree.CASE+'.out'),8192)
+            for parent,expected in ((alias,False),(alias.resolve(strict=True),True)):
+                report=native_majorant();report.pop('stage3');report['status']='ok'
+                with mock.patch.object(tree,'validate_observations'),mock.patch.object(tree.full,'final_client_process_census'):
+                    result=json.loads(tree.finish_report(report,NONCE,parent/'capture',quiet=True,bus_cleanup_failed=False))
+                self.assertEqual(len(result['outputs']),1 if expected else 0)
+                if expected:
+                    self.assertEqual(result['outputs'][0]['data_b64'],base64.b64encode(raw).decode())
+                else:
+                    self.assertFalse(result['report']['native_tests_completed'])
 
     def test_client_marker_guard_budget(self):
         source=(ROOT/tree.SOURCE).read_text(encoding='utf-8').encode()
