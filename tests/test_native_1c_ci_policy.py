@@ -434,7 +434,18 @@ class WorkflowTests(unittest.TestCase):
             expected_headers["smoke"].splitlines()[0], "    name: Native 1C tree profile", 1).replace(
             "needs.eligibility.result == 'success' &&",
             "needs.eligibility.result == 'success' &&\n      github.event_name != 'workflow_dispatch' &&\n      github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", 1)
-        expected_headers["tree_copy_smoke"] = expected_headers["tree_smoke"].replace("Native 1C tree profile", "Native 1C tree Copy measurement")
+        expected_headers["tree_copy_smoke"] = expected_headers["tree_smoke"].replace(
+            "Native 1C tree profile", "Native 1C ${{ matrix.profile }} measurement") + """    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: tree-copy-v1
+            artifact: tree-copy
+            case: tree_copy
+          - profile: tree-sort-v1
+            artifact: tree-sort
+            case: tree_sort
+"""
         for job, expected in expected_headers.items():
             with self.subTest(job=job):
                 self.assertEqual(workflow_job(job).split("    steps:\n", 1)[0], expected)
@@ -446,6 +457,28 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r"^      - ", native, re.M)), 8)
         self.assertEqual(native.count("GHCR_TOKEN: ${{ github.token }}"), 2)
         self.assertIn("        env:\n          GHCR_USER: ${{ github.actor }}\n          GHCR_TOKEN: ${{ github.token }}\n        run: python3 scripts/native_1c_smoke.py", native)
+
+    def test_exact_tree_matrix_header_rejects_bypass_and_mixed_entries(self):
+        original = workflow_job
+        changes = (
+            lambda block: block.replace("needs.eligibility.result == 'success' &&",
+                                        "needs.eligibility.result == 'success' || true ||", 1),
+            lambda block: block.replace('profile: tree-sort-v1', 'profile: tree-copy-v1', 1),
+            lambda block: block.replace('profile: tree-sort-v1', 'profile: arbitrary-v1', 1),
+            lambda block: block.replace('artifact: tree-sort', 'artifact: tree-copy', 1),
+            lambda block: block.replace('case: tree_sort', 'case: tree_copy', 1),
+        )
+        for change in changes:
+            def mutated(job):
+                block = original(job)
+                return change(block) if job == 'tree_copy_smoke' else block
+            # Execute the real whole-header equality guard, retaining its
+            # subTest failure reporting rather than loosening it to substrings.
+            result = unittest.TestResult()
+            with mock.patch(__name__ + '.workflow_job', side_effect=mutated):
+                WorkflowTests('test_exact_job_headers_do_not_allow_extra_bypass_conditions').run(result)
+            self.assertEqual(len(result.errors), 0)
+            self.assertEqual(len(result.failures), 1)
 
     def test_immutable_actions_checkout_and_binding_precede_native_token(self):
         native = workflow_job("smoke")

@@ -378,6 +378,13 @@ class BSLValueTreeRowCollection(BSLObject):
         if destination != position:
             self.items.insert(destination, self.items.pop(position))
 
+    def sort(self, *arguments):
+        if not 1 <= len(arguments) <= 3:
+            raise TypeError("Неверное количество параметров (Сортировать)")
+        from .value_tree_sort import sort_rows
+        sort_rows(self, arguments[0], arguments[1] if len(arguments) > 1 else False,
+                  arguments[2] if len(arguments) > 2 else None)
+
     def index_of(self, row):
         self._live()
         if type(row) is not BSLValueTreeRow:
@@ -814,6 +821,8 @@ class BSLValueTreeRowCollection(BSLObject):
         return super().get_member(name)
 
     def get_method(self, name):
+        if name.casefold() in ("sort", "сортировать"):
+            return HostFunction(name, self.sort, returns_value=False)
         if name.casefold() in ("move", "сдвинуть"):
             return HostFunction(name, self.move, returns_value=False)
         if name.casefold() in ("loadcolumn", "загрузитьколонку"):

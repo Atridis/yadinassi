@@ -260,7 +260,7 @@ runtime, не заявляет Windows native parity и не выбирает п
 ## Неподтвержденные операции ДереваЗначений
 
 После bounded Rows.Find/FindRows/UnloadColumn/LoadColumn, Copy(), Rows.Total() и Rows.Move()
-остаются неподдержанными сортировка, UI-выбор, сериализация внутренним
+остаются неподдержанными UI-выбор, сериализация внутренним
 форматом/XML и transport. Copy поддерживает только вызов без аргументов;
 параметры и фильтры копирования остаются вне поддержанного subset. В Rows.UnloadColumn и Rows.LoadColumn отдельно поддержано усечение
 конечного числового селектора к нулю; [точный срез](docs/value-tree-unload-column-runtime.md).
@@ -278,3 +278,8 @@ coercion claim. [Поиск: scope и ограничения](docs/value-tree-fi
 Для Rows.Find не поддержаны значения Date/UUID/Type/TypeDescription/коллекции/объекты,
 флаги кроме Boolean, Числа 1 и строки "True", непустой список колонок без имен
 и прочие неизмеренные преобразования. [Границы bounded Find](docs/value-tree-find-runtime.md).
+
+Rows.Sort имеет только bounded numeric implementation для явной interpreter-цели
+`linux-8.3.27.1508`: Windows-цель, строковые/смешанные ключи, CompareValues,
+неизмеренные преобразования флага, повторные имена и прочие направления
+остаются неподдержанными. [Точные границы и native evidence](docs/value-tree-sort-runtime.md).
