@@ -10,15 +10,15 @@ from test_native_1c_db_oracle_standard_activation import checkout_source_sha256
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = '.github/workflows/native-1c-file-db-oracle.yml'
 STANDARD_WORKFLOW_SHA256 = 'fdca596908e058649cb4614e459f5f74882acecf56464a6cdf2f01fee3cb3b5c'
-SOURCE_PINS = {'scripts/native_1c_db_oracle/config_catalog_identity_binding.py': '2e5a9efb49de55e37387cb81c2d792c3413029e00de9a279180bbacb187bcd19', 'scripts/native_1c_db_oracle/config_framing_reader.py': 'f13d345a315719988fc992a45e81ae6eb0f84d93de87fd6f44f1b93acae95a95', 'yadinassi/storage/config_catalog_name.py': '1d77c88a2d9baabf38c1b0dba65b71316f94f292be8a3b7741a8d792c56338aa'}
+SOURCE_PINS = {'scripts/native_1c_db_oracle/config_catalog_identity_binding.py': '2e5a9efb49de55e37387cb81c2d792c3413029e00de9a279180bbacb187bcd19', 'scripts/native_1c_db_oracle/config_framing_reader.py': '7986c3ca6beb7b45e47d68a16093f1580c49ff33e10b6d9e8e947ad0d2e961d4', 'yadinassi/storage/config_catalog_name.py': '1d77c88a2d9baabf38c1b0dba65b71316f94f292be8a3b7741a8d792c56338aa'}
 
 
 class IdentityActivationTests(unittest.TestCase):
     def test_only_one_workflow_selector_changes(self):
         raw = (ROOT / WORKFLOW).read_bytes()
-        self.assertEqual(raw.count(b'--config-catalog-field-matrix'), 1)
+        self.assertEqual(raw.count(b'--config-catalog-attribute-binding'), 1)
         self.assertNotIn(b'--config-catalog-standard-binding', raw)
-        original = raw.replace(b'--config-catalog-field-matrix', b'--config-catalog-standard-binding')
+        original = raw.replace(b'--config-catalog-attribute-binding', b'--config-catalog-standard-binding')
         self.assertEqual(checkout_source_sha256(original), STANDARD_WORKFLOW_SHA256)
 
     def test_exact_current_source_pins(self):
