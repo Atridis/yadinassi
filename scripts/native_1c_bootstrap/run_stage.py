@@ -164,7 +164,9 @@ def strict_simple_result(path: Path, output: Path) -> str:
     return hashlib.sha256(expected).hexdigest()
 
 
-def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, tree_suite: bool = False) -> dict:
+def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, tree_suite: bool = False, tree_profile: str = 'tree-v1') -> dict:
+    if type(tree_profile) is not str or tree_profile not in ('tree-v1', 'tree-copy-v1') or (not tree_suite and tree_profile != 'tree-v1'):
+        raise StageError("invalid_input")
     if type(tree_suite) is not bool:
         raise StageError("invalid_input")
     if tree_suite:
@@ -266,11 +268,11 @@ def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_c
         report.update(failed_stage=stage, failure_kind=fallback, diagnostics=diagnostics)
     if tree_suite:
         import tree_suite as tree_lane
-        suite = tree_lane.empty_report(full_nonce)
+        suite = tree_lane.empty_report(full_nonce, profile=tree_profile)
         if report['status'] == 'ok' and all(report[flag] for flag in FLAGS):
             suite = tree_lane.run_suite(launcher, platform, launcher_epf,
-                                       ROOT / ('stage3-' + full_nonce), INPUTS, full_nonce)
-        tree_lane.write_report(ROOT / 'stage3-report.json', suite)
+                                       ROOT / ('stage3-' + full_nonce), INPUTS, full_nonce, profile=tree_profile)
+        tree_lane.write_report(ROOT / 'stage3-report.json', suite, profile=tree_profile)
         return report
     if full_nonce is not None:
         # Stage two keeps its exact legacy schema. Stage three starts only after
@@ -288,7 +290,8 @@ def main(argv: list[str] | None = None) -> int:
     # Fixed full-mode arguments only; the nonce never selects an arbitrary path.
     arguments = [] if argv is None else argv
     full_nonce = None
-    tree_suite = bool(arguments and arguments[0] == '--tree-suite')
+    tree_suite = bool(arguments and arguments[0] in ('--tree-suite', '--tree-copy-suite'))
+    tree_profile = 'tree-copy-v1' if arguments and arguments[0] == '--tree-copy-suite' else 'tree-v1'
     if tree_suite:
         import full_suite
         if len(arguments) != 3 or arguments[1] != '--invocation-nonce' or not full_suite.valid_nonce(arguments[2]):
@@ -332,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
         full_nonce = arguments[2]
     # Only this bounded report is consumed by the shell. No tracebacks/raw errors.
     try:
-        report = run() if full_nonce is None else run(full_nonce=full_nonce, **({"tree_suite": True} if tree_suite else {}), client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, **({"client_values": True} if client_values else {}), **({"client_collections": True} if client_collections else {}), **({"client_numbers": True} if client_numbers else {}), **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
+        report = run() if full_nonce is None else run(full_nonce=full_nonce, **({"tree_suite": True, **({"tree_profile": tree_profile} if tree_profile != "tree-v1" else {})} if tree_suite else {}), client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, **({"client_values": True} if client_values else {}), **({"client_collections": True} if client_collections else {}), **({"client_numbers": True} if client_numbers else {}), **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
     except Exception:
         report = empty_report()
         # An unexpected exception could follow a persisted user write. Never

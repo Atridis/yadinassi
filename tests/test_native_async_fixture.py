@@ -289,8 +289,32 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_tree_copy_profile(source):
+    """Exact Copy selector inverse before the unchanged historical tree inverse."""
+    inventory = json.loads((REPOSITORY / 'tests/tree_copy_profile_source_inverse.json').read_text(encoding='utf-8'))
+    contract = inventory['scripts/native_1c_bootstrap/full_suite.py']
+    base = '02fbe29f8b30213e79ea63709bcf84f5f5788ae8b33a5122ab1a567e2b07c6e1'
+    candidate = 'e203d1469d191d48ab3db74d03877010b833689b46263f4585723bc29a0f928a'
+    if contract['base_sha256'] != base or contract['candidate_sha256'] != candidate:
+        raise AssertionError('tree copy inverse identity')
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('tree copy outer source identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('tree copy inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('tree copy inner source identity')
+    return source
+
+
 def without_tree_profile_measurement(source):
     """Hash-bound tree profile inverse; historical test fixtures only."""
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != '0cf75e36ca12243cc95db40ec20d83e0779e3771519de2cb066e4f67cb6c501d':
+        source = without_tree_copy_profile(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_profile_source_inverse.json').read_text(encoding='utf-8'))
     contract = inventory['scripts/native_1c_bootstrap/full_suite.py']
     base = '0cf75e36ca12243cc95db40ec20d83e0779e3771519de2cb066e4f67cb6c501d'

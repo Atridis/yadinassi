@@ -41,7 +41,7 @@ class TreeHostTests(unittest.TestCase):
         for tree in ('success', 'failed', 'skipped', 'cancelled', ''):
             for required in ('true', 'false'):
                 env = {'ELIGIBILITY_RESULT': 'success', 'NATIVE_RESULT': 'success',
-                       'TREE_RESULT': tree, 'TREE_REQUIRED': required}
+                       'TREE_RESULT': tree, 'TREE_COPY_RESULT': 'success', 'TREE_REQUIRED': required}
                 with mock.patch.dict(os.environ, env, clear=True), mock.patch('builtins.print'):
                     with self.assertRaises(SystemExit) as result:
                         exec(code, {'os': os})
