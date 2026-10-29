@@ -104,10 +104,14 @@ def _template(name: str, values: dict[str, str]) -> bytes:
     return re.sub(r"@@([A-Z_]+)@@", replace, raw).encode("utf-8-sig")
 
 
-def _module(name: str, nonce: str, evidence: str) -> bytes:
+def _module(name: str, nonce: str, evidence: str, *, reference_case=None) -> bytes:
     values = {"NONCE": nonce, "EVIDENCE": evidence, "SETUP_USER": SETUP_USER,
               "CRUD_USER": CRUD_USER, "SETUP_ROLE": SETUP_ROLE, "CRUD_ROLE": CRUD_ROLE}
     raw = (ROOT / "modules" / name).read_text(encoding="utf-8-sig")
+    if reference_case is not None:
+        from catalog_reference_native import render_template
+        if name == "NativeOracleServer.bsl":
+            raw = render_template(raw, reference_case, DraftError)
     def replace(match):
         if match[1] not in values:
             raise DraftError("Unknown module template literal")
@@ -270,7 +274,7 @@ def inspect(root: Path, version: int, *, catalog_field_matrix=False) -> dict:
             "nonprivileged_module": True}
 
 
-def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False) -> dict:
+def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False, reference_case=None) -> dict:
     matrix = _matrix(catalog_field_matrix)
     if type(nonce) is not str or not re.fullmatch(r"[0-9a-f]{32}", nonce):
         raise DraftError("Invalid oracle nonce")
@@ -303,7 +307,7 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catal
         values.update(ROLE_NAME=role, ROLE_UUID=str(uuid.uuid4()))
         added[f"Roles/{role}.xml"] = _template("Role.xml", values)
         added[f"Roles/{role}/Ext/Rights.xml"] = _template(template, values)
-    added.update({path: _module(name, nonce, ep) for name, path in MODULE_FILES.items()})
+    added.update({path: _module(name, nonce, ep, reference_case=reference_case) for name, path in MODULE_FILES.items()})
     if matrix:
         for extra_name, kind in matrix.VARIANTS:
             extra_values = dict(values)

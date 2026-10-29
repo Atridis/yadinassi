@@ -14,3 +14,6 @@ integrational_tests/.work/
 # Native launcher output is disposable; historical Windows evidence is in tests/fixtures.
 /integrational_tests/output/*
 !/integrational_tests/output/.gitkeep
+
+# Fixed case A handoff; descriptor, digest and report validation remain mandatory.
+/native-db-oracle/distinct_a.json

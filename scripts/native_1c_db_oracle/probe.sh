@@ -6,7 +6,7 @@ exec 2>/dev/null
 case "$#" in
   2) ;;
   3) case "$3" in
-       --catalog-readonly-binding|--config-catalog-attribute-binding|--config-catalog-field-matrix|--config-catalog-identity-binding|--config-catalog-standard-binding|--config-catalog-name-binding|--config-catalog-reference-observation|--config-root-reference-projection-observation|--config-content-decode-observation|--config-blob-chain-observation|--config-entry-reference-observation|--config-zero-marker-filename-observation|--config-slot-marker-observation|--config-framing-observation|--config-transport-observation|--record-metadata-observation|--record-reader-validation|--params-transport-observation|--params-dbnames-extraction|--dbnames-identity-validation) ;;
+       --catalog-reference-distinct-a|--catalog-reference-distinct-b|--catalog-readonly-binding|--config-catalog-attribute-binding|--config-catalog-field-matrix|--config-catalog-identity-binding|--config-catalog-standard-binding|--config-catalog-name-binding|--config-catalog-reference-observation|--config-root-reference-projection-observation|--config-content-decode-observation|--config-blob-chain-observation|--config-entry-reference-observation|--config-zero-marker-filename-observation|--config-slot-marker-observation|--config-framing-observation|--config-transport-observation|--record-metadata-observation|--record-reader-validation|--params-transport-observation|--params-dbnames-extraction|--dbnames-identity-validation) ;;
        *) exit 2 ;;
      esac ;;
   *) exit 2 ;;

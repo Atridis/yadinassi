@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class CatalogAttributeActivationTests(unittest.TestCase):
     def test_workflow_changes_only_one_reviewed_selector(self):
-        raw = (ROOT / '.github/workflows/native-1c-file-db-oracle.yml').read_bytes()
+        raw = (ROOT / 'tests/fixtures/native_catalog_readonly_workflow.yml').read_bytes()
         self.assertEqual(raw.count(b'--catalog-readonly-binding'), 1)
         previous = raw.replace(b'--catalog-readonly-binding', b'--config-catalog-field-matrix')
         self.assertEqual(checkout_source_sha256(previous),

@@ -414,9 +414,9 @@ class WorkflowTests(unittest.TestCase):
         source = WORKFLOW_PATH.read_text()
         self.assertIn("\npermissions: {}\n", source)
         self.assertEqual(re.findall(r"^  ([a-z_]+):$", source.split("\njobs:\n")[1], re.M),
-                         ["eligibility", "native_oracle", "verdict"])
-        self.assertEqual(source.count("contents: read"), 1)
-        self.assertEqual(source.count("packages: read"), 1)
+                         ["eligibility", "native_reference_a", "native_oracle", "verdict"])
+        self.assertEqual(source.count("contents: read"), 2)
+        self.assertEqual(source.count("packages: read"), 2)
         self.assertNotIn(": write", source)
         for job in ("eligibility", "verdict"):
             block = workflow_job(job)
@@ -431,7 +431,7 @@ class WorkflowTests(unittest.TestCase):
         native = workflow_job("native_oracle")
         self.assertEqual(native.count("GHCR_TOKEN:"), 1)
         self.assertEqual(native.count("GHCR_USER:"), 1)
-        self.assertIn("        env:\n          GHCR_USER: ${{ github.actor }}\n          GHCR_TOKEN: ${{ github.token }}\n        run: python3 scripts/native_1c_db_oracle.py", native)
+        self.assertIn("          GHCR_USER: ${{ github.actor }}\n          GHCR_TOKEN: ${{ github.token }}\n        run: python3 scripts/native_1c_db_oracle.py", native)
 
     def test_job_headers_are_exact_and_cannot_silently_add_bypass_conditions(self):
         headers = {
@@ -476,6 +476,14 @@ class WorkflowTests(unittest.TestCase):
     timeout-minutes: 5
 """,
         }
+        old_native=headers['native_oracle']
+        headers['native_reference_a']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C reference identity case A')+"""    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      reference_sha256: ${{ steps.native.outputs.reference_sha256 }}
+      run_id: ${{ github.run_id }}
+      run_attempt: ${{ github.run_attempt }}
+"""
+        headers['native_oracle']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C reference identity case B').replace('needs: eligibility', 'needs: [eligibility, native_reference_a]').replace("needs.eligibility.result == 'success' &&", "needs.eligibility.result == 'success' && needs.native_reference_a.result == 'success' &&")
         for job, expected in headers.items():
             with self.subTest(job=job):
                 self.assertEqual(workflow_job(job).split("    steps:\n", 1)[0], expected)
@@ -484,6 +492,8 @@ class WorkflowTests(unittest.TestCase):
         native = workflow_job("native_oracle")
         self.assertEqual(re.findall(r"uses: ([^\n]+)", native), [
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7",
+            "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8",
+            "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7",
             "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7",
         ])
         checkout = native.split("      - uses:", 1)[1].split("      - name:", 1)[0]
@@ -500,15 +510,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(binding, native.index("GHCR_TOKEN:"))
         self.assertEqual(re.findall(r"^        run: (.+)$", native, re.M), [
             "python3 -I -B scripts/native_1c_db_oracle_ci_policy.py bind",
-            "python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-readonly-binding --output native-db-oracle/report.json",
+            "python3 -I -B -c 'import os,re; raise SystemExit(0 if re.fullmatch(r\"[1-9][0-9]{0,19}\",os.environ.get(\"REFERENCE_A_ARTIFACT_ID\",\"\")) else 1)'",
+            "python3 scripts/native_1c_db_oracle.py --validate-reference-a",
+            "python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-reference-identity distinct_b --output native-db-oracle/distinct_b.json",
             'test "${NATIVE_REPORT_READY}" = "true"',
         ])
-        self.assertEqual(native.count('--catalog-readonly-binding'), 1)
+        self.assertEqual(native.count('--catalog-reference-identity distinct_b'), 1)
         for selector in ('--config-catalog-attribute-binding', '--config-catalog-field-matrix', '--config-catalog-identity-binding', '--config-catalog-standard-binding', '--config-catalog-name-binding', '--config-catalog-reference-observation', '--config-root-reference-projection-observation', '--config-content-decode-observation', '--config-blob-chain-observation', '--config-entry-reference-observation', '--config-zero-marker-filename-observation', '--config-slot-marker-observation', '--config-framing-observation', '--config-transport-observation', '--dbnames-identity-validation', '--params-dbnames-extraction',
                          '--params-transport-observation', '--record-reader-validation',
                          '--record-metadata-observation'):
             self.assertNotIn(selector, native)
-        self.assertEqual(len(re.findall(r"^      - ", native, re.M)), 5)
+        self.assertEqual(len(re.findall(r"^      - ", native, re.M)), 9)
         for forbidden in ("pip install", "setup-python", "docker run", "docker pull", "container:", "services:",
                           "native_1c_smoke.py", "--export-native-outputs", "--full-suite", "--image", "--commit", "--tree"):
             self.assertNotIn(forbidden, native)
@@ -526,21 +538,26 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(native.index("id: native"), native.index("NATIVE_REPORT_READY:"))
         self.assertLess(native.index("NATIVE_REPORT_READY:"), native.index("actions/upload-artifact@"))
 
-    def test_artifact_is_one_exact_host_validated_json_not_raw_or_directory(self):
-        native = workflow_job("native_oracle")
-        artifact = native.split("      - name: Upload only the validated finite DB-oracle report\n", 1)[1]
-        self.assertEqual(artifact.rstrip(), """        if: always() && steps.native.outputs.report_ready == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: native-1c-file-db-oracle-summary
-          path: native-db-oracle/report.json
-          if-no-files-found: error
-          retention-days: 7""")
-        self.assertEqual(re.findall(r"^          path: (.+)$", native, re.M), ["native-db-oracle/report.json"])
-        self.assertIn("32 KiB cap", native)
-        self.assertNotIn("*", artifact)
-        for forbidden in (".1CD", ".cf", ".dt", ".log", ".xml", "native-outputs/"):
-            self.assertNotIn(forbidden, artifact)
+    def test_artifacts_are_exact_host_validated_json_not_raw_or_directory(self):
+        for job,paths in (('native_reference_a',['native-db-oracle/distinct_a.json']),
+                          ('native_oracle',['native-db-oracle/distinct_b.json','native-db-oracle/reference-aggregate.json'])):
+            native=workflow_job(job)
+            uploads=[part for part in native.split('      - name: ')[1:] if 'actions/upload-artifact@' in part]
+            self.assertEqual([re.search(r'^          path: (.+)$',part,re.M)[1] for part in uploads],paths)
+            for part in uploads:
+                self.assertIn('if: always() && steps.native.outputs.',part)
+                self.assertIn(" == 'true'",part)
+                self.assertIn('if-no-files-found: error',part)
+                self.assertIn('retention-days: 7',part)
+                for forbidden in ('*','.1CD','.cf','.dt','.log','.xml','native-outputs/'):
+                    self.assertNotIn(forbidden,part)
+        native=workflow_job('native_oracle')
+        self.assertIn('artifact-ids: ${{ needs.native_reference_a.outputs.artifact_id }}',native)
+        self.assertIn('digest-mismatch: error',native)
+        self.assertNotIn('github-token:',native)
+        self.assertLess(native.index('--validate-reference-a'),native.index('GHCR_TOKEN:'))
+        for key in ('SHA256','RUN_ID','RUN_ATTEMPT'):
+            self.assertEqual(native.count('REFERENCE_A_'+key+':'),2)
 
     def test_admission_boundary_comment_does_not_claim_package_privacy(self):
         source = WORKFLOW_PATH.read_text()
