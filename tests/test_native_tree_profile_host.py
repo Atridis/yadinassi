@@ -173,6 +173,48 @@ class TreeHostTests(unittest.TestCase):
                 self.assertTrue(any(call.args[0][:3] == ['docker', 'rm', '--force'] for call in silent.call_args_list))
                 self.assertFalse(list(root.glob('onec-tree-*')))
 
+    @unittest.skipUnless(__import__('os').name == 'posix', 'POSIX traversal permission model')
+    def test_public_staging_is_readable_for_different_container_uid(self):
+        import os
+        import stat
+        from unittest import mock
+        smoke=HOST.sibling('native_1c_smoke')
+        # Model the kernel's owner/group/other selection without changing UID,
+        # capabilities, ACLs, or permissions outside the owned test directory.
+        def permits(path,uid,gid,bits):
+            info=path.stat();mode=stat.S_IMODE(info.st_mode)
+            shift=6 if uid==info.st_uid else 3 if gid==info.st_gid else 0
+            return ((mode>>shift)&bits)==bits
+        with tempfile.TemporaryDirectory() as directory:
+            private=Path(directory).resolve(strict=True)
+            private.chmod(0o700)
+            different_uid=private.stat().st_uid+10001
+            different_gid=private.stat().st_gid+10001
+            self.assertFalse(permits(private,different_uid,different_gid,1))
+            staging=private/'public-sources'
+            previous=os.umask(0o077)
+            try:
+                # Fixture canonicalization only: production raw bytes remain pinned.
+                original=HOST.FULL.read_regular
+                def read(path,*args,**kwargs):
+                    raw=original(path,*args,**kwargs)
+                    return raw.replace(b'\r\n',b'\n')
+                with mock.patch.object(HOST.FULL,'read_regular',side_effect=read):
+                    HOST.stage_inputs(ROOT,staging,smoke)
+            finally:
+                os.umask(previous)
+            self.assertEqual(stat.S_IMODE(private.stat().st_mode),0o700)
+            for path in (staging,*staging.rglob('*')):
+                if path.is_dir():
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o755)
+                    self.assertTrue(permits(path,different_uid,different_gid,5))
+                else:
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o444)
+                    self.assertTrue(permits(path,different_uid,different_gid,4))
+                    self.assertFalse(permits(path,different_uid,different_gid,2))
+            # This is a bind-root model: private host parent is not mounted.
+            self.assertFalse(permits(private,different_uid,different_gid,1))
+
     def test_success_contract_and_tampered_witnesses(self):
         import base64
         import copy

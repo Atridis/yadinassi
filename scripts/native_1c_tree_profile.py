@@ -237,7 +237,11 @@ def staged_files(smoke):
 def stage_inputs(root, destination, smoke):
     files = staged_files(smoke)
     require(not destination.exists() and not destination.is_symlink(), 'tree_staging_exists')
-    destination.mkdir(mode=0o700)
+    # Only approved public source inputs are mounted here; the container runs
+    # as UID 1000, which need not be the hosted runner's UID. Private work and
+    # registry-auth directories remain 0700 and are never mounted.
+    destination.mkdir(mode=0o755)
+    destination.chmod(0o755)
     hashes = {}
     for source, target in files.items():
         raw = FULL.read_regular(root / source, FULL.MAX_FILE, nonempty=True)
@@ -247,6 +251,9 @@ def stage_inputs(root, destination, smoke):
         with path.open('xb') as stream:
             stream.write(raw)
         path.chmod(0o444)
+    for directory in destination.rglob('*'):
+        if directory.is_dir():
+            directory.chmod(0o755)
     require(hashes[SOURCE] == SOURCE_SHA256, 'tree_source_changed')
     validate_inputs(destination, hashes, smoke)
     return hashes
