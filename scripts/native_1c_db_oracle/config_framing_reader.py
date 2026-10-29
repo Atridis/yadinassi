@@ -1891,6 +1891,31 @@ def load_catalog_attribute_projector():
     return module
 
 
+def _observe_catalog_attributes_from_graph(handle, *, profile,
+        limits=None, chain_limits=None, content_limits=None,
+        reference_limits=None, identity_limits=None):
+    """Harness-only integration; runtime compilation never imports this module.
+
+    The caller must enclose this complete parse in its CONFIG graph stage.
+    No native/XML oracle values enter this same-reader path.
+    """
+    from filedb_catalog import _BindingHandle
+    if type(handle) is not _BindingHandle:
+        raise ValueError('CONFIG requires a binding handle')
+    try:
+        handle._check()
+        reader = handle._graph.reader
+        return _observe_catalog_prefix(None, reader.header.file_size,
+            profile=profile, limits=limits, chain_limits=chain_limits,
+            content_limits=content_limits, catalog_limits=reader._budget.limits,
+            reference_limits=reference_limits, name_limits=identity_limits,
+            standard=True, identity=True, attributes=True, _binding_handle=handle)
+    except BaseException:
+        handle._graph.failed = True
+        raise
+
+
+
 def observe_config_catalog_attributes(read_at, file_size, *, profile,
         limits=None, chain_limits=None, content_limits=None, catalog_limits=None,
         reference_limits=None, identity_limits=None):
@@ -1922,7 +1947,7 @@ def observe_config_catalog_standard(read_at, file_size, *, profile,
 
 
 def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
-                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False):
+                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False, _binding_handle=None):
     """Resolve partial Catalog declarations on one private CONFIG resource graph.
 
     Every selected entry is validated and decoded exactly once before return.
@@ -1956,8 +1981,20 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
     content_limits = content_limits if content_limits is not None else ConfigContentDecodeLimits()
     if profile.candidate_stride > limits.max_record_bytes:
         raise ResourceLimit('config_record_bytes')
-    reader = CatalogReader(read_at, file_size, limits=catalog_limits)
-    catalog = reader.read_catalog()
+    if _binding_handle is None:
+        reader = CatalogReader(read_at, file_size, limits=catalog_limits)
+        catalog = reader.read_catalog()
+        opener = reader
+    else:
+        from filedb_catalog import _BindingHandle
+        if type(_binding_handle) is not _BindingHandle or _binding_handle.role != 'config':
+            raise ValueError('CONFIG requires its identity-bound graph handle')
+        _binding_handle._check()
+        reader = _binding_handle._graph.reader
+        catalog = _binding_handle._graph.catalog
+        if reader.header.file_size != file_size or reader._budget.limits != catalog_limits:
+            raise ValueError('CONFIG binding size or budget mismatch')
+        opener = _binding_handle
     selected = None
     for table in catalog.tables:
         if _ascii_config(table.name):
@@ -1971,8 +2008,8 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
             or len(selected.fields) != len(profile.declarations)
             or any(item.raw != wanted for item, wanted in zip(selected.fields, profile.declarations))):
         raise UnsupportedLayout('config_profile_mismatch')
-    data = reader._open_table_data(selected)
-    blob = reader._open_table_blob(selected)
+    data = opener._open_table_data(selected)
+    blob = opener._open_table_blob(selected)
     if data.info.logical_length % profile.candidate_stride:
         raise InvalidStructure('config_record_length')
     slots = data.info.logical_length // profile.candidate_stride

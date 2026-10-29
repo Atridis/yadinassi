@@ -618,6 +618,177 @@ class CatalogReader:
         return InternalFile._table_blob(self._source, table.files[1])
 
 
+class _BindingFile:
+    """Revocable private view; never exposes a source or page constructor."""
+
+    def __init__(self, handle, internal):
+        self._handle, self._internal = handle, internal
+        self.info = internal.info
+        # Existing transport helpers need accounting, not a positioned source.
+        self._source = _BindingBudgetView(handle._graph.reader._budget)
+
+    def _validate_range(self, offset, length):
+        self._handle._check()
+        try:
+            return self._internal._validate_range(offset, length)
+        except BaseException:
+            self._handle._graph.failed = True
+            raise
+
+    def _matches_blob_budget(self, budget):
+        self._handle._check()
+        internal = self._internal
+        return (internal._source.budget is budget
+                and internal._source.roles.get(self.info.physical_header_page) == "table_blob_header")
+
+    def _read_range(self, offset, length):
+        self._handle._check()
+        try:
+            return self._internal._read_range(offset, length)
+        except BaseException:
+            self._handle._graph.failed = True
+            raise
+
+    def read_range(self, offset, length):
+        self._handle._check()
+        try:
+            return self._internal.read_range(offset, length)
+        except BaseException:
+            self._handle._graph.failed = True
+            raise
+
+
+@dataclass(frozen=True)
+class _BindingBudgetView:
+    budget: object
+
+
+class _BindingHandle:
+    def __init__(self, graph, role, table):
+        self._graph, self.role, self.table = graph, role, table
+        self._data_attempted = self._blob_attempted = False
+        self._data_complete = self._blob_complete = False
+
+    def _check(self):
+        graph = self._graph
+        if (graph.failed or graph.reader._binding_graph is not graph
+                or graph._active is not self):
+            graph.failed = True
+            raise ValueError("inactive binding handle")
+
+    def _open_table_data(self, table):
+        self._check()
+        if table is not self.table or self._data_attempted:
+            self._graph.failed = True
+            raise ValueError("binding data opening is identity-bound and single-use")
+        self._data_attempted = True
+        try:
+            if not table.files[0]:
+                raise UnsupportedLayout("missing_table_data_header")
+            result = InternalFile._table_data(self._graph.reader._source, table.files[0])
+            self._data_complete = True
+            return _BindingFile(self, result)
+        except BaseException:
+            self._graph.failed = True
+            raise
+
+    def _open_table_blob(self, table):
+        self._check()
+        if (table is not self.table or self.role == "records"
+                or not self._data_complete or self._blob_attempted):
+            self._graph.failed = True
+            raise ValueError("binding BLOB opening requires its completed data handle")
+        self._blob_attempted = True
+        try:
+            if not table.files[1]:
+                raise UnsupportedLayout("missing_table_blob_header")
+            result = InternalFile._table_blob(self._graph.reader._source, table.files[1])
+            self._blob_complete = True
+            return _BindingFile(self, result)
+        except BaseException:
+            self._graph.failed = True
+            raise
+
+
+class _CatalogBindingGraph:
+    """Private CONFIG -> PARAMS -> one compiled Catalog lifetime, no retries.
+
+    A stage context must enclose its entire parse/validation, not just opening.
+    It revokes every range view on exit and poisons the session on failure.
+    The legacy single-table interface is irreversibly consumed, never reset.
+    """
+
+    def __init__(self, reader, catalog):
+        if (type(reader) is not CatalogReader or type(catalog) is not PhysicalCatalog
+                or reader._catalog is not catalog or not reader._used
+                or reader._table_opened or reader._table_blob_opened
+                or getattr(reader, "_binding_graph", None) is not None
+                or getattr(reader, "_dbnames_attempted", False)):
+            raise ValueError("binding requires an unused identical completed catalog")
+        reader._budget.charge("output_bytes", 512)
+        self.reader, self.catalog = reader, catalog
+        self.failed, self._next, self._active = False, 0, None
+        self._tables = []
+        reader._binding_graph = self
+        reader._table_opened = reader._table_blob_opened = True
+
+    def stage(self, role, *, binding=None):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def scope():
+            try:
+                if (self.failed or self.reader._binding_graph is not self
+                        or self._active is not None or self._next >= 3
+                        or role != ("config", "params", "records")[self._next]):
+                    raise ValueError("binding stage order or lifetime")
+                self.reader._budget.charge("bytes_processed", 257 * len(self.catalog.tables))
+                self.reader._budget.charge("output_bytes", 1024)
+                if role == "records":
+                    # The graph admits only a bounded Reference table name;
+                    # the row entrypoint separately validates the exact compiled
+                    # binding and all declarations before opening its data.
+                    target = getattr(binding, "table_name", None)
+                    if (type(target) is not str or not target.startswith("_Reference")
+                            or not 1 <= len(target[10:]) <= 10
+                            or target[10] == "0" or not target[10:].isascii()
+                            or not target[10:].isdigit() or int(target[10:]) > 2147483647):
+                        raise ValueError("invalid compiled table name")
+                else:
+                    if binding is not None:
+                        raise ValueError("unexpected binding")
+                    target = "CONFIG" if role == "config" else "PARAMS"
+                table = None
+                for candidate in self.catalog.tables:
+                    name = candidate.name
+                    matched = (name == target if role == "records" else
+                               len(name) == len(target) and all(
+                                   actual == expected or actual == chr(ord(expected) + 32)
+                                   for actual, expected in zip(name, target)))
+                    if matched:
+                        if table is not None:
+                            raise UnsupportedLayout("binding_table_count")
+                        table = candidate
+                if table is None:
+                    raise UnsupportedLayout("binding_table_count")
+                if any(table is previous for previous in self._tables):
+                    raise UnsupportedSharing("binding_table_alias")
+                handle = _BindingHandle(self, role, table)
+                self._active = handle
+                self._tables.append(table)
+                yield handle
+                handle._check()
+                if not handle._data_complete or (role != "records" and not handle._blob_complete):
+                    raise ValueError("incomplete binding stage")
+                self._next += 1
+            except BaseException:
+                self.failed = True
+                raise
+            finally:
+                self._active = None
+        return scope()
+
+
 def read_catalog(read_at: Callable[[int, int], bytes], file_size: int,
                  *, limits: CatalogLimits | None = None) -> PhysicalCatalog:
     """Inspect a borrowed positioned source without importing runtime modules."""

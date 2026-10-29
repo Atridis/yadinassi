@@ -76,9 +76,13 @@ class _TableBlobStore:
     """
 
     def __init__(self, blob: InternalFile, budget: _TransportBudget):
-        if (type(blob) is not InternalFile or type(budget) is not _TransportBudget
-                or blob._source.budget is not budget.catalog
-                or blob._source.roles.get(blob.info.physical_header_page) != "table_blob_header"):
+        from .filedb_catalog import _BindingFile
+        if type(budget) is not _TransportBudget:
+            raise ValueError("table BLOB and transport must share the catalog source")
+        same_source = (blob._matches_blob_budget(budget.catalog) if type(blob) is _BindingFile else
+                       type(blob) is InternalFile and blob._source.budget is budget.catalog
+                       and blob._source.roles.get(blob.info.physical_header_page) == "table_blob_header")
+        if not same_source:
             raise ValueError("table BLOB and transport must share the catalog source")
         if blob.info.logical_length % BLOB_SIZE:
             raise InvalidStructure("unaligned_blob_store")
@@ -352,7 +356,25 @@ def read_dbnames(read_at, file_size: int, *, profile: DBNamesProfile,
 
 def _read_dbnames_from_catalog(reader: CatalogReader, catalog: PhysicalCatalog, *,
                              profile: DBNamesProfile,
-                             limits: NamedFileLimits | None = None) -> NamedFileBytes:
+                             limits: NamedFileLimits | None = None,
+                             _binding_handle=None) -> NamedFileBytes:
+    if _binding_handle is None:
+        return _read_dbnames_from_catalog_inner(reader, catalog, profile=profile, limits=limits)
+    try:
+        return _read_dbnames_from_catalog_inner(reader, catalog, profile=profile,
+            limits=limits, _binding_handle=_binding_handle)
+    except BaseException:
+        from .filedb_catalog import _CatalogBindingGraph
+        graph = getattr(reader, '_binding_graph', None) if type(reader) is CatalogReader else None
+        if type(graph) is _CatalogBindingGraph:
+            graph.failed = True
+        raise
+
+
+def _read_dbnames_from_catalog_inner(reader: CatalogReader, catalog: PhysicalCatalog, *,
+                             profile: DBNamesProfile,
+                             limits: NamedFileLimits | None = None,
+                             _binding_handle=None) -> NamedFileBytes:
     """Private same-reader seam; one attempt consumes its extraction state.
 
     Only the identical completed catalog is admitted. All mapping, BLOB ownership
@@ -362,8 +384,16 @@ def _read_dbnames_from_catalog(reader: CatalogReader, catalog: PhysicalCatalog, 
     if (type(reader) is not CatalogReader or type(catalog) is not PhysicalCatalog
             or reader._catalog is not catalog or not reader._used):
         raise ValueError("extraction requires the identical completed catalog")
-    if (getattr(reader, "_dbnames_attempted", False) or reader._table_opened
-            or reader._table_blob_opened):
+    if _binding_handle is not None:
+        from .filedb_catalog import _BindingHandle
+        if (type(_binding_handle) is not _BindingHandle
+                or _binding_handle._graph.reader is not reader
+                or _binding_handle._graph.catalog is not catalog
+                or _binding_handle.role != "params"):
+            raise ValueError("DBNames requires its identical PARAMS binding handle")
+        _binding_handle._check()
+    if (getattr(reader, "_dbnames_attempted", False) or
+            (_binding_handle is None and (reader._table_opened or reader._table_blob_opened))):
         raise ValueError("DBNames extraction is single-use")
     reader._dbnames_attempted = True
     if type(profile) is not DBNamesProfile:
@@ -386,7 +416,8 @@ def _read_dbnames_from_catalog(reader: CatalogReader, catalog: PhysicalCatalog, 
             or len(selected.fields) != len(profile.declarations)
             or any(item.raw != expected for item, expected in zip(selected.fields, profile.declarations))):
         raise UnsupportedLayout("dbnames_profile_mismatch")
-    data = reader._open_table_data(selected)
+    opener = reader if _binding_handle is None else _binding_handle
+    data = opener._open_table_data(selected)
     if data.info.logical_length % profile.record_size:
         raise InvalidStructure("dbnames_record_length")
     slots = data.info.logical_length // profile.record_size
@@ -429,7 +460,7 @@ def _read_dbnames_from_catalog(reader: CatalogReader, catalog: PhysicalCatalog, 
         raise InvalidStructure("dbnames_size_mismatch")
     if length > limits.max_packed_bytes:
         raise ResourceLimit("transport_blob_bytes")
-    blob = reader._open_table_blob(selected)
+    blob = opener._open_table_blob(selected)
     budget = _TransportBudget(reader._budget, limits._transport_limits())
     packed = _TableBlobStore(blob, budget).chain(first, length)
     # Hashing reads the existing bytes; reserve its digest representation first.

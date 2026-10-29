@@ -181,6 +181,21 @@ class ProjectionTests(unittest.TestCase):
         # private data/BLOB entry points are not reachable from read_catalog and
         # have their own exact raises; never widen either historical policy.
         tree = ast.parse((ROOT/comparison.READER_SOURCE).read_text(encoding='utf-8'))
+        # The separately opt-in three-table binding graph is not reachable from
+        # the legacy catalog-only entrypoint. Keep its finite diagnostic policy
+        # separate; do not widen the historical allowlist to admit graph errors.
+        graph_names = {'_BindingFile', '_BindingBudgetView', '_BindingHandle', '_CatalogBindingGraph'}
+        graph_nodes = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name in graph_names]
+        self.assertEqual({n.name for n in graph_nodes}, graph_names)
+        legacy = ast.Module(body=[n for n in tree.body if n not in graph_nodes], type_ignores=[])
+        self.assertFalse([n for n in ast.walk(legacy) if isinstance(n, ast.Call)
+                          and isinstance(n.func, ast.Name) and n.func.id in graph_names])
+        for role in ('data', 'blob'):
+            graph_calls = [n for cls in graph_nodes for n in ast.walk(cls)
+                           if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                           and n.func.attr == '_table_' + role]
+            self.assertEqual(len(graph_calls), 1)
+        tree = legacy
         mapped = {kind.__name__: codes for kind, (_, codes) in comparison.READER_ERRORS.items()}
         helpers = {('InternalFile','_table_data'):{('InvalidStructure','table_data_header_role')},
             ('InternalFile','_table_blob'):{('InvalidStructure','table_blob_header_role')},

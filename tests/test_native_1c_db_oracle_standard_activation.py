@@ -15,7 +15,7 @@ SOURCE_PINS = {
     'scripts/native_1c_db_oracle/config_catalog_standard_binding.py':
         '9a144719343eb5acc4577b8b78b39a1a7e354365b9147533669fde96ee77e777',
     'scripts/native_1c_db_oracle/config_framing_reader.py':
-        '7986c3ca6beb7b45e47d68a16093f1580c49ff33e10b6d9e8e947ad0d2e961d4',
+        '5590051c5f0e9548c777be908cbd4d0f3dff293b44c14dbaabc3ed80e1a9f43e',
     'yadinassi/storage/config_catalog_name.py':
         '1d77c88a2d9baabf38c1b0dba65b71316f94f292be8a3b7741a8d792c56338aa',
 }
@@ -38,9 +38,9 @@ def checkout_source_sha256(raw):
 class StandardActivationTests(unittest.TestCase):
     def test_workflow_changes_exactly_one_selector_and_nothing_else(self):
         raw = (ROOT/WORKFLOW).read_bytes()
-        self.assertEqual(raw.count(b'--config-catalog-attribute-binding'), 1)
+        self.assertEqual(raw.count(b'--catalog-readonly-binding'), 1)
         self.assertNotIn(b'--config-catalog-name-binding', raw)
-        original = raw.replace(b'--config-catalog-attribute-binding', b'--config-catalog-name-binding')
+        original = raw.replace(b'--catalog-readonly-binding', b'--config-catalog-name-binding')
         self.assertEqual(checkout_source_sha256(original), WORKFLOW_LF_SHA256)
 
     def test_reviewed_policy_parser_and_reader_source_pins(self):
@@ -52,7 +52,7 @@ class StandardActivationTests(unittest.TestCase):
         for path, expected in SOURCE_PINS.items():
             yield path, (ROOT/path).read_bytes(), expected
         original = (ROOT/WORKFLOW).read_bytes().replace(
-            b'--config-catalog-attribute-binding', b'--config-catalog-name-binding')
+            b'--catalog-readonly-binding', b'--config-catalog-name-binding')
         yield WORKFLOW, original, WORKFLOW_LF_SHA256
 
     def test_real_pinned_sources_accept_lf_and_crlf_checkouts(self):
