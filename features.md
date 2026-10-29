@@ -5777,3 +5777,14 @@ Owner/Parent, метаданные и строгие ограничения пр
 Run40768375140 был измерительным и отклонил старый runtime; свежая native-приёмка
 нового runtime остаётся обязательной. Старые1022 сообщения, BSL32 и codec не
 переписаны. [Точные преобразования и ресурсные границы](docs/value-tree-total-runtime.md).
+
+
+### Experimental offline Catalog runtime coordinator
+
+- The bounded CONFIG → DBNames → record reader is available from
+  `yadinassi.storage.catalog_reader.read_catalog_binding` without importing the
+  native-test harness. Its callback must refer to a consistent frozen image.
+- Admission is still the owned String Code/Description0, two-attribute, one-row
+  profile. This is a storage API prerequisite, not BSL Catalog support or CRUD.
+- Runtime-extraction native validation is pending; see
+  [scope and evidence](docs/catalog-readonly-binding.md#runtime-coordinator-extraction-native-validation-pending).

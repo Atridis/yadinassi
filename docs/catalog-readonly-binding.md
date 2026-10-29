@@ -67,10 +67,11 @@ handle is identity-bound, single-use and revoked on stage exit. Mapping, parsing
 comparison, budget or late stage failures poison the lifetime; no retry/partial
 success is returned by the intended coordinator.
 
-CONFIG transport orchestration is still a **harness-only private seam**. The pure
-runtime compiler and bound-record reader do not import scripts. This implementation
-therefore does not claim a standalone public offline Catalog API. Public legacy
-`read_records` and its fixed-profile admission remain unchanged.
+The accepted original implementation below used a harness-only CONFIG transport
+coordinator. The runtime extraction described next moves the live binding route
+into storage modules without importing scripts. This remains an experimental,
+caller-owned offline reader, not a BSL Catalog API. Public legacy `read_records`
+and its fixed-profile admission remain unchanged.
 
 `read_bound_catalog_records` validates its exact graph/reader/catalog identity and
 independently reconstructs the entire binding layout before opening data. Frozen
@@ -141,3 +142,47 @@ all seven other optional-context allowances remain128. Future enum growth change
 the executable bound. No cap was increased. These are local mathematical/report
 construction checks, not native execution evidence. The separate source-bound
 native acceptance above stays limited to the measured owned layout.
+
+
+## Runtime coordinator extraction (native validation pending)
+
+`yadinassi.storage.catalog_reader.read_catalog_binding(read_at, file_size,
+catalog_name=..., limits=None)` now coordinates the same three-stage lifetime
+using only runtime storage imports. `read_at` is a bounded random-read callback;
+the caller must supply a consistent, already-frozen offline image. The API does
+not open a database path, acquire native locks, authenticate, or establish that a
+live source is consistent. Its immutable result contains the private configuration
+projection, selected identity/attributes, independently compiled binding, decoded
+rows and cumulative usage.
+
+`config_catalog_transport` contains the mechanically extracted live CONFIG
+traversal, chain/inflate primitives and profile/observation dependency closure.
+Its relative imports and direct attribute-projector import replace the harness's
+flat staged imports; the parser logic, charges and admission are unchanged. The
+historical source-pinned observer remains separate so old protocols and evidence
+are not silently reinterpreted. The current binding adapter loads exact verified
+runtime siblings and delegates; it contains no second live coordinator. Neither
+XML/native capture nor expected values enter the runtime path.
+
+The current restriction to String Code, no Description, two attributes and at most
+one active record is intentionally unchanged. Code and attribute lengths and
+numeric precision/scale still come from CONFIG. No arbitrary layout, multiple-row
+selection, BSL manager/reference, applied-state resolution or CRUD is added by this
+extraction. Those are subsequent independently measured tasks.
+
+Synthetic tests compare every CONFIG result field, source callback and resource
+counter against the historical implementation, including malformed bytes and each
+lowered catalog budget. Separate tests exercise graph poisoning, late failures,
+exact sibling loading and a cold storage-only read with no harness on the import
+path. These checks are not a replacement for a fresh dedicated native run.
+
+The selected lane retains invocation23/report37/capture38 because its wire fields
+and semantics are unchanged. Its exact inventory now contains37 sources, including
+the two runtime modules; earlier35-source evidence is not acceptance of this source.
+The complete report majorant is32137/32768, with the full12288-byte capture ceiling,
+all lifecycle collections and final newline retained. All seven failure-context
+fields now use the exact closed production-validated enum domains (including raw
+metadata operation/phase values before mapping and allowed nulls), rather than an
+unnecessarily loose128-character allowance. Tests cover each domain, JSON wire
+length, rejection of out-of-domain/wrong-type values and growth of an enum. No
+production report, capture or storage resource cap was increased.

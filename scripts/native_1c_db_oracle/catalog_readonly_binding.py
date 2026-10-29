@@ -168,7 +168,7 @@ def reader_failure(error):
 def compare_values(result, identifier, oracle, reader):
     require(identifier in TARGETS, 'invalid_input')
     if (type(oracle) is not _PrivateOracle
-            or type(result) is not reader.CatalogBindingReadResult):
+            or type(result) is not reader._load_storage()['catalog_reader'].CatalogBindingReadResult):
         fail('record_mismatch','record_result')
     try:
         _compare_configuration(result,oracle)

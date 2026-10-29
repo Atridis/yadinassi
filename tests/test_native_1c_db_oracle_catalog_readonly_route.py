@@ -62,10 +62,12 @@ class CatalogReadonlyRoutingTests(unittest.TestCase):
             | {'yadinassi/storage/filedb_named_file.py', 'yadinassi/storage/filedb_dbnames.py',
                'yadinassi/storage/filedb_records.py', 'yadinassi/storage/config_catalog_binding.py',
                'yadinassi/storage/config_catalog_records.py',
+               'yadinassi/storage/config_catalog_transport.py',
+               'yadinassi/storage/catalog_reader.py',
                'scripts/native_1c_db_oracle/catalog_binding_reader.py',
                'scripts/native_1c_db_oracle/catalog_readonly_binding.py'})
         self.assertEqual(set(current), expected)
-        self.assertEqual(len(current), 35)
+        self.assertEqual(len(current), 37)
         self.assertEqual(len(current), len(set(current.values())))
         self.assertEqual(len(inputs.CONFIG_CATALOG_ATTRIBUTE_SOURCE_FILES), 28)
         for name in OLD_OPTIONS:
@@ -137,7 +139,7 @@ class CatalogReadonlyRoutingTests(unittest.TestCase):
         code = ('import sys;sys.path.insert(0,sys.argv[1]);'
             'import catalog_readonly_binding as p;import catalog_binding_reader as r;'
             'modules=r._load_storage();'
-            'assert set(modules)=={"filedb_named_file","filedb_dbnames","filedb_records","config_catalog_binding","config_catalog_records"};'
+            'assert set(modules)=={"filedb_named_file","filedb_dbnames","filedb_records","config_catalog_binding","config_catalog_records","config_root_projection","config_catalog_references","config_catalog_transport","catalog_reader"};'
             'assert p.SCHEMA==37 and p.CAPTURE_SCHEMA==38;'
             'assert not any(n=="yadinassi" or n.startswith("yadinassi.") for n in sys.modules);'
             'print("closed")')
