@@ -1,4 +1,12 @@
 // Standalone bounded Copy observer. No native expectations or runtime implementation.
+Функция TCFailureCode(Знач PrivateText)
+    Tags = СтрРазделить("I:copy-identity-compare|G01:copy-identities-count62|G02:copy-identities-over62|G03:copy-number|G04:copy-word|G05:copy-cell|G06:copy-inner|G07:copy-rows|G08:copy-result-type|G09:copy-columns|G10:copy-column-type|G11:copy-types|G12:copy-date|G13:copy-collection-parent|G14:copy-root-parent|G15:copy-exception-result|S01:copy-snapshot-01|S02:copy-snapshot-02|S03:copy-snapshot-03|S04:copy-snapshot-04|S05:copy-snapshot-05|S06:copy-snapshot-06|S07:copy-snapshot-07|S08:copy-snapshot-08|S09:copy-snapshot-09|S10:copy-snapshot-10|S11:copy-snapshot-11|S12:copy-snapshot-12|S13:copy-snapshot-13|S14:copy-snapshot-14|S15:copy-snapshot-15|S16:copy-snapshot-16|S17:copy-snapshot-17|S18:copy-snapshot-18|S19:copy-snapshot-19|S20:copy-snapshot-20|S21:copy-snapshot-21|S22:copy-snapshot-22|S23:copy-snapshot-23|S24:copy-snapshot-24|S25:copy-snapshot-25|S26:copy-snapshot-26|S27:copy-snapshot-27|S28:copy-snapshot-28|S29:copy-snapshot-29|S30:copy-snapshot-30|S31:copy-snapshot-31|S32:copy-snapshot-32|S33:copy-snapshot-33|S34:copy-snapshot-34|S35:copy-snapshot-35|F01:copy-flatten-01|F02:copy-flatten-02|F03:copy-flatten-03", "|", Истина);
+    Для Каждого Tag Из Tags Цикл
+        Pair = СтрРазделить(Tag, ":", Истина);
+        Если СтрНайти(PrivateText, Pair[1]) > 0 Или СтрНайти(PrivateText, "copy-detail-" + Pair[0]) > 0 Тогда Возврат Pair[0]; КонецЕсли;
+    КонецЦикла;
+    Возврат "";
+КонецФункции
 Функция TCNum(Знач V)
     Если ТипЗнч(V) <> Тип("Число") Или V < 0 Или V > 9 Или Цел(V) <> V Тогда ВызватьИсключение "copy-number"; КонецЕсли;
     Возврат Сред("0123456789", V + 1, 1);
@@ -19,7 +27,11 @@
         КонецПопытки;
         Если Same Тогда Возврат Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", I + 1, 1); КонецЕсли;
     КонецЦикла;
-    Если Registry.Count() >= 62 Тогда ВызватьИсключение "copy-identities"; КонецЕсли;
+    Count = Registry.Count();
+    Если Count >= 62 Тогда
+        Если Count = 62 Тогда ВызватьИсключение "copy-identities-count62"; КонецЕсли;
+        ВызватьИсключение "copy-identities-over62";
+    КонецЕсли;
     Registry.Add(V); Возврат Сред("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", Registry.Count(), 1);
 КонецФункции
 Функция TCExact(Знач A, Знач B)
@@ -48,41 +60,84 @@
     Возврат "A" + TCId(V, Registry) + TCId(Inner, Registry) + TCNum(V[0]) + TCNum(Inner[0]) + "_";
 КонецФункции
 Процедура TCFlatten(Знач Rows, Знач Nodes)
-    Для Каждого R Из Rows Цикл
-        Если Nodes.Count() >= 5 Тогда ВызватьИсключение "copy-rows"; КонецЕсли;
-        Nodes.Add(R); TCFlatten(R.Rows, Nodes);
-    КонецЦикла;
+    Point = "01";
+    Попытка
+        Для Каждого R Из Rows Цикл
+            Point = "01"; Если Nodes.Count() >= 5 Тогда ВызватьИсключение "copy-rows"; КонецЕсли;
+            Point = "02"; Nodes.Add(R);
+            Point = "03"; TCFlatten(R.Rows, Nodes);
+            Point = "01";
+        КонецЦикла;
+    Исключение
+        PrivateFlattenDescription = ОписаниеОшибки();
+        Code = TCFailureCode(PrivateFlattenDescription);
+        Если Code = "" Тогда Code = "F" + Point; КонецЕсли;
+        ВызватьИсключение "copy-detail-" + Code;
+    КонецПопытки;
 КонецПроцедуры
 Функция TCSnapshot(Знач T, Знач Registry)
-    Если ТипЗнч(T) <> Тип("ДеревоЗначений") Тогда ВызватьИсключение "copy-result-type"; КонецЕсли;
-    Если T.Columns.Count() > 4 Тогда ВызватьИсключение "copy-columns"; КонецЕсли;
-    Out = TCId(T, Registry) + TCId(T.Rows, Registry) + TCId(T.Columns, Registry) + TCNum(T.Columns.Count());
-    Для Каждого C Из T.Columns Цикл
-        D = C.ValueType; Types = D.Types(); Kind = "U";
-        Если Types.Count() = 1 Тогда
-            Если Types[0] = Тип("Число") Тогда Kind = "N";
-            ИначеЕсли Types[0] = Тип("Строка") Тогда Kind = "S";
-            Иначе ВызватьИсключение "copy-column-type"; КонецЕсли;
-        ИначеЕсли Types.Count() <> 0 Тогда ВызватьИсключение "copy-types"; КонецЕсли;
-        DateKind = "0";
-        Если D.DateQualifiers.DateFractions = DateFractions.Date Тогда DateKind = "1";
-        ИначеЕсли D.DateQualifiers.DateFractions = DateFractions.Time Тогда DateKind = "2";
-        ИначеЕсли D.DateQualifiers.DateFractions <> DateFractions.DateTime Тогда ВызватьИсключение "copy-date"; КонецЕсли;
-        Out = Out + TCId(C, Registry) + TCWord(C.Name) + TCWord(C.Title) + TCNum(C.Width) + Kind
-            + TCNum(D.NumberQualifiers.Digits) + TCNum(D.NumberQualifiers.FractionDigits)
-            + TCFlag(D.NumberQualifiers.AllowedSign = AllowedSign.Nonnegative)
-            + TCNum(D.StringQualifiers.Length) + TCFlag(D.StringQualifiers.AllowedLength = AllowedLength.Fixed)
-            + DateKind + TCNum(D.BinaryDataQualifiers.Length) + TCFlag(D.BinaryDataQualifiers.AllowedLength = AllowedLength.Fixed);
-    КонецЦикла;
-    Nodes = Новый Массив; TCFlatten(T.Rows, Nodes); Out = Out + TCNum(Nodes.Count());
-    Для Каждого R Из Nodes Цикл
-        Out = Out + TCId(R, Registry) + TCId(R.Parent, Registry) + TCId(R.Owner(), Registry)
-            + TCNum(R.Level()) + TCId(R.Rows, Registry) + TCNum(R.Rows.Count());
-        Если R.Rows.Parent <> R Тогда ВызватьИсключение "copy-collection-parent"; КонецЕсли;
-        Для I = 0 По T.Columns.Count() - 1 Цикл Out = Out + TCCell(R.Get(I), Registry); КонецЦикла;
-    КонецЦикла;
-    Если T.Rows.Parent <> Неопределено Тогда ВызватьИсключение "copy-root-parent"; КонецЕсли;
-    Возврат Out;
+    Point = "01";
+    Попытка
+        Если ТипЗнч(T) <> Тип("ДеревоЗначений") Тогда ВызватьИсключение "copy-result-type"; КонецЕсли;
+        Point = "02"; Если T.Columns.Count() > 4 Тогда ВызватьИсключение "copy-columns"; КонецЕсли;
+        Point = "03"; Out = TCId(T, Registry);
+        Point = "04"; Out = Out + TCId(T.Rows, Registry);
+        Point = "05"; Out = Out + TCId(T.Columns, Registry);
+        Point = "06"; Out = Out + TCNum(T.Columns.Count());
+        Point = "07";
+        Для Каждого C Из T.Columns Цикл
+            Point = "08"; D = C.ValueType;
+            Point = "09"; Types = D.Types(); Kind = "U";
+            Point = "10";
+            Если Types.Count() = 1 Тогда
+                Если Types[0] = Тип("Число") Тогда Kind = "N";
+                ИначеЕсли Types[0] = Тип("Строка") Тогда Kind = "S";
+                Иначе ВызватьИсключение "copy-column-type"; КонецЕсли;
+            ИначеЕсли Types.Count() <> 0 Тогда ВызватьИсключение "copy-types"; КонецЕсли;
+            DateKind = "0"; Point = "11";
+            Если D.DateQualifiers.DateFractions = DateFractions.Date Тогда DateKind = "1";
+            ИначеЕсли D.DateQualifiers.DateFractions = DateFractions.Time Тогда DateKind = "2";
+            ИначеЕсли D.DateQualifiers.DateFractions <> DateFractions.DateTime Тогда ВызватьИсключение "copy-date"; КонецЕсли;
+            Point = "12"; Out = Out + TCId(C, Registry);
+            Point = "13"; Out = Out + TCWord(C.Name);
+            Point = "14"; Out = Out + TCWord(C.Title);
+            Point = "15"; Out = Out + TCNum(C.Width) + Kind;
+            Point = "16"; Out = Out + TCNum(D.NumberQualifiers.Digits);
+            Point = "17"; Out = Out + TCNum(D.NumberQualifiers.FractionDigits);
+            Point = "18"; Out = Out + TCFlag(D.NumberQualifiers.AllowedSign = AllowedSign.Nonnegative);
+            Point = "19"; Out = Out + TCNum(D.StringQualifiers.Length);
+            Point = "20"; Out = Out + TCFlag(D.StringQualifiers.AllowedLength = AllowedLength.Fixed) + DateKind;
+            Point = "21"; Out = Out + TCNum(D.BinaryDataQualifiers.Length);
+            Point = "22"; Out = Out + TCFlag(D.BinaryDataQualifiers.AllowedLength = AllowedLength.Fixed);
+            Point = "07";
+        КонецЦикла;
+        Nodes = Новый Массив;
+        Point = "23"; TCFlatten(T.Rows, Nodes);
+        Point = "24"; Out = Out + TCNum(Nodes.Count());
+        Point = "25";
+        Для Каждого R Из Nodes Цикл
+            Point = "26"; Out = Out + TCId(R, Registry);
+            Point = "27"; Out = Out + TCId(R.Parent, Registry);
+            Point = "28"; Out = Out + TCId(R.Owner(), Registry);
+            Point = "29"; Out = Out + TCNum(R.Level());
+            Point = "30"; Out = Out + TCId(R.Rows, Registry);
+            Point = "31"; Out = Out + TCNum(R.Rows.Count());
+            Point = "32"; Если R.Rows.Parent <> R Тогда ВызватьИсключение "copy-collection-parent"; КонецЕсли;
+            Point = "33";
+            Для I = 0 По T.Columns.Count() - 1 Цикл
+                Point = "34"; Out = Out + TCCell(R.Get(I), Registry);
+                Point = "33";
+            КонецЦикла;
+            Point = "25";
+        КонецЦикла;
+        Point = "35"; Если T.Rows.Parent <> Неопределено Тогда ВызватьИсключение "copy-root-parent"; КонецЕсли;
+        Возврат Out;
+    Исключение
+        PrivateSnapshotDescription = ОписаниеОшибки();
+        Code = TCFailureCode(PrivateSnapshotDescription);
+        Если Code = "" Тогда Code = "S" + Point; КонецЕсли;
+        ВызватьИсключение "copy-detail-" + Code;
+    КонецПопытки;
 КонецФункции
 Функция TCArray()
     Inner = Новый Массив; Inner.Add(2); A = Новый Массив; A.Add(1); A.Add(Inner); Возврат A;
@@ -176,7 +231,8 @@
         Возврат Status + "/" + Out;
     Исключение
         PrivateProbeDescription = ОписаниеОшибки();
-        Если СтрНайти(PrivateProbeDescription, "copy-identity-compare") > 0 Тогда Возврат "X" + Stage + "I"; КонецЕсли;
+        Code = TCFailureCode(PrivateProbeDescription);
+        Если Code <> "" Тогда Возврат "X" + Stage + Code; КонецЕсли;
         Возврат "X" + Stage;
     КонецПопытки;
 КонецФункции

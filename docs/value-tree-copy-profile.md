@@ -14,7 +14,7 @@ routes. The original default remains `tree-v1`. Both use the same hardened,
 digest-pinned native image and unchanged isolation/cleanup rules.
 
 The Copy shard has exactly one source, `integrational_tests/measurements/tree_copy.bsl`,
-SHA256 `483e02b29b06410a42c4be1b4104fbad7da9ab39556443d018aab003b5607ce9`.
+SHA256 `e097e2e51bbe4865297083e4a522f2ad6a5b683288255a0395428d6134fbaf05`.
 It emits calibration plus nine cases. The staged inventory has 23 fixed inputs,
 including the registry, Copy decoder and finite diagnostic helper. The default
 Fill shard has 22 inputs (its original 21 plus the registry). Every staged byte
@@ -99,5 +99,96 @@ the actual failure is still a hypothesis until the next native run.
 `XOI`, `XMI` map to generic `identity_b/i/o/m` for cases1–9. All remain rejected
 observer outcomes, never accepted observations or raw error text. The four-field
 diagnostic schema, successful Copy grammar, positive controls and parity gate
-are unchanged. The longest finite category is 21 characters; existing byte caps
-are unchanged and rechecked.
+are unchanged. The initial substep revision used categories of at most21 characters; the
+next sentinel revision below expands the closed vocabulary without changing caps.
+
+
+## Second acquisition and fixed sentinels
+
+The diagnostic head `76dc081aa12bedc29c6a815a65f41817cf78f81b` localized failure
+to server `case5_step15`: the copy snapshot after adding/assigning a source row,
+after the source snapshot14 succeeded. There was no identity-comparison suffix.
+Thus the deleted-handle-comparison hypothesis is **not supported by this run**.
+No valid Copy output was exported; no runtime semantics are established.
+
+The next revision preserves all calls/accessor frequencies, source/result snapshot
+order, nine cases, success grammar, registry cap62, and acceptance predicates.
+Known fixed guard exceptions are classified separately from unknown accessor
+faults. Snapshot/flatten handlers capture their original exception description
+immediately and propagate only a closed fixed code. The classifier never exports
+private descriptions. Registry G01 is emitted only after the observed Count equals
+62; G02 means Count greater than62. Existing identity lookup still precedes the cap.
+
+Guard codes:
+
+| Code | Meaning |
+| --- | --- |
+| G01 | `registry_62` (`copy-identities-count62`) |
+| G02 | `registry_over62` (`copy-identities-over62`) |
+| G03 | `number_bound` (`copy-number`) |
+| G04 | `word_vocabulary` (`copy-word`) |
+| G05 | `cell_shape` (`copy-cell`) |
+| G06 | `inner_array_shape` (`copy-inner`) |
+| G07 | `flatten_row_limit` (`copy-rows`) |
+| G08 | `result_type` (`copy-result-type`) |
+| G09 | `column_limit` (`copy-columns`) |
+| G10 | `column_type` (`copy-column-type`) |
+| G11 | `types_count` (`copy-types`) |
+| G12 | `date_qualifier` (`copy-date`) |
+| G13 | `collection_parent` (`copy-collection-parent`) |
+| G14 | `root_parent` (`copy-root-parent`) |
+| G15 | `exception_result` (`copy-exception-result`) |
+
+Unknown non-guard snapshot faults use these exact operation points:
+
+| Code | Operation |
+| --- | --- |
+| S01 | `result_type_read` |
+| S02 | `columns_count_guard` |
+| S03 | `tree_identity` |
+| S04 | `root_rows_identity` |
+| S05 | `columns_identity` |
+| S06 | `columns_count_encode` |
+| S07 | `columns_iteration` |
+| S08 | `column_value_type` |
+| S09 | `description_types` |
+| S10 | `type_count_and_items` |
+| S11 | `date_qualifiers` |
+| S12 | `column_identity` |
+| S13 | `column_name` |
+| S14 | `column_title` |
+| S15 | `column_width` |
+| S16 | `number_digits` |
+| S17 | `number_fraction` |
+| S18 | `number_allowed_sign` |
+| S19 | `string_length` |
+| S20 | `string_allowed_length` |
+| S21 | `binary_length` |
+| S22 | `binary_allowed_length` |
+| S23 | `flatten_rows` |
+| S24 | `flatten_count_encode` |
+| S25 | `nodes_iteration` |
+| S26 | `row_identity` |
+| S27 | `row_parent` |
+| S28 | `row_owner` |
+| S29 | `row_level` |
+| S30 | `row_children_identity` |
+| S31 | `row_children_count` |
+| S32 | `row_collection_parent` |
+| S33 | `cell_loop_column_count` |
+| S34 | `cell_read_and_encode` |
+| S35 | `root_rows_parent` |
+
+Flatten F01 covers iteration/count, F02 appending the node, and F03 child access/
+recursive traversal. A deeper known code is propagated rather than overwritten.
+`I` remains the specific identity-comparison code. Public categories preserve
+case5 step and reason (`case5_step15_registry_62`, for example); other cases retain
+B/I/O/M phase via `detail_b/i/o/m_<reason>`. The resulting closed set has1217
+categories, maximum30characters, with the same four diagnostic fields. All X
+records still fail observation admission; no partial or fabricated semantic output
+is accepted. Explicit byte-majorants remain below the unchanged caps.
+
+Fresh Rows accessor identity is only a hypothesis for registry growth. A tiny
+independent repeated-access probe is being prepared separately; this revision
+adds no executable route, control record, or parity exception. Native acquisition
+must first determine whether the cap or another exact guard/accessor is failing.

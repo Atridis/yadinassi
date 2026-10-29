@@ -10,13 +10,16 @@ OBSERVER_STAGES = 'BIOM'
 CASE5_STEPS = tuple(f'{i:02}' for i in range(1, 19))
 IDENTITY_CATEGORIES = tuple('identity_' + stage.lower() for stage in OBSERVER_STAGES)
 CASE5_CATEGORIES = tuple('case5_step' + step + suffix for step in CASE5_STEPS for suffix in ('', '_identity'))
+DETAIL_REASONS = {'G01': 'registry_62', 'G02': 'registry_over62', 'G03': 'number_bound', 'G04': 'word_vocabulary', 'G05': 'cell_shape', 'G06': 'inner_array_shape', 'G07': 'flatten_row_limit', 'G08': 'result_type', 'G09': 'column_limit', 'G10': 'column_type', 'G11': 'types_count', 'G12': 'date_qualifier', 'G13': 'collection_parent', 'G14': 'root_parent', 'G15': 'exception_result', 'S01': 'snapshot_01', 'S02': 'snapshot_02', 'S03': 'snapshot_03', 'S04': 'snapshot_04', 'S05': 'snapshot_05', 'S06': 'snapshot_06', 'S07': 'snapshot_07', 'S08': 'snapshot_08', 'S09': 'snapshot_09', 'S10': 'snapshot_10', 'S11': 'snapshot_11', 'S12': 'snapshot_12', 'S13': 'snapshot_13', 'S14': 'snapshot_14', 'S15': 'snapshot_15', 'S16': 'snapshot_16', 'S17': 'snapshot_17', 'S18': 'snapshot_18', 'S19': 'snapshot_19', 'S20': 'snapshot_20', 'S21': 'snapshot_21', 'S22': 'snapshot_22', 'S23': 'snapshot_23', 'S24': 'snapshot_24', 'S25': 'snapshot_25', 'S26': 'snapshot_26', 'S27': 'snapshot_27', 'S28': 'snapshot_28', 'S29': 'snapshot_29', 'S30': 'snapshot_30', 'S31': 'snapshot_31', 'S32': 'snapshot_32', 'S33': 'snapshot_33', 'S34': 'snapshot_34', 'S35': 'snapshot_35', 'F01': 'flatten_01', 'F02': 'flatten_02', 'F03': 'flatten_03'}
+DETAIL_CATEGORIES = tuple('detail_' + stage.lower() + '_' + reason for stage in OBSERVER_STAGES for reason in DETAIL_REASONS.values())
+CASE5_CATEGORIES += tuple('case5_step' + step + '_' + reason for step in CASE5_STEPS for reason in DETAIL_REASONS.values())
 DIAGNOSTIC_CATEGORIES = (
     'invalid_type', 'output_limit', 'encoding', 'record_count', 'calibration',
     'record_shape', 'observer_b', 'observer_i', 'observer_o', 'observer_m',
     'payload_contract',
-) + IDENTITY_CATEGORIES + CASE5_CATEGORIES
+) + IDENTITY_CATEGORIES + CASE5_CATEGORIES + DETAIL_CATEGORIES
 CASE_CATEGORIES = ('record_shape', 'observer_b', 'observer_i', 'observer_o',
-                   'observer_m', 'payload_contract') + IDENTITY_CATEGORIES + CASE5_CATEGORIES
+                   'observer_m', 'payload_contract') + IDENTITY_CATEGORIES + CASE5_CATEGORIES + DETAIL_CATEGORIES
 GLOBAL_CATEGORIES = ('invalid_type', 'output_limit', 'encoding', 'record_count')
 # Client message characters; LF is framing, not inside a captured message.
 MESSAGE_CHARACTERS = frozenset('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz -.:[]_/')
@@ -82,6 +85,14 @@ def observation_diagnostic(raw, site, validate_payload, observation_error):
         if not line.startswith(prefix) or not line.endswith(b']\n'):
             return result('record_shape', case)
         payload = line[len(prefix):-2]
+        if payload.startswith(b'XM') and len(payload) >= 7:
+            step, code = payload[2:4].decode('ascii'), payload[4:].decode('ascii')
+            if case == 5 and step in CASE5_STEPS and code in DETAIL_REASONS:
+                return result('case5_step' + step + '_' + DETAIL_REASONS[code], case)
+        if len(payload) >= 5 and payload[:1] == b'X' and chr(payload[1]) in OBSERVER_STAGES:
+            code = payload[2:].decode('ascii')
+            if code in DETAIL_REASONS:
+                return result('detail_' + chr(payload[1]).lower() + '_' + DETAIL_REASONS[code], case)
         if case == 5 and payload in {('XM' + step + suffix).encode() for step in CASE5_STEPS for suffix in ('', 'I')}:
             return result('case5_step' + payload[2:4].decode() + ('_identity' if payload.endswith(b'I') else ''), case)
         if len(payload) == 3 and payload[:1] == b'X' and payload[-1:] == b'I' and chr(payload[1]) in OBSERVER_STAGES:

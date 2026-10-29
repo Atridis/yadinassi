@@ -78,7 +78,7 @@ class CopySubstepDiagnostics(unittest.TestCase):
             with mock.patch.object(BSLValueTree,'get_method',synthetic_method(mode)):
                 self.assertEqual(emit(),emit(original))
         self.assertEqual(len(maximum_output()),6745)
-        self.assertEqual(max(map(len,d.DIAGNOSTIC_CATEGORIES)),21)
+        self.assertEqual(max(map(len,d.DIAGNOSTIC_CATEGORIES)),30)
 
     def test_authenticated_failure_boundary_keeps_substep_but_never_payload(self):
         import copy,json

@@ -179,9 +179,21 @@ class CopyProfileTests(unittest.TestCase):
 
     def test_fixed_stage_cli_and_invalid_combinations_never_start(self):
         import run_stage
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(run_stage,'ROOT',Path(tmp)),\
-             mock.patch.object(run_stage,'run',return_value={'status':'ok'}) as run:
-            (Path(tmp)/'stage3-report.json').write_text('{"status":"ok"}')
+        import full_suite
+        with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
+            # macOS temporary roots may start at the /var symlink. The owned
+            # fixture must use its canonical path; production stays no-follow.
+            root = Path(tmp).resolve(strict=True)
+            stack.enter_context(mock.patch.object(run_stage, 'ROOT', root))
+            run = stack.enter_context(mock.patch.object(run_stage, 'run', return_value={'status':'ok'}))
+            if os.name == 'nt':
+                # This is dispatch evidence, not a Windows descriptor-security
+                # test. Patch the exact module imported by run_stage.main.
+                from test_native_1c_full_host import read_synthetic_file
+                stack.enter_context(mock.patch.object(full_suite, 'secure_bytes',
+                    side_effect=lambda path, limit, *, allow_empty=False:
+                        read_synthetic_file(path, limit, nonempty=not allow_empty)))
+            (root/'stage3-report.json').write_text('{"status":"ok"}')
             self.assertEqual(run_stage.main(['--tree-copy-suite','--invocation-nonce',NONCE]),0)
             self.assertEqual(run.call_args.kwargs['tree_profile'],PROFILE)
             self.assertTrue(run.call_args.kwargs['tree_suite'])
@@ -194,6 +206,25 @@ class CopyProfileTests(unittest.TestCase):
             for extra in ('--client-probe','--tree-suite','source.bsl'):
                 self.assertEqual(run_stage.main(['--tree-copy-suite','--invocation-nonce',NONCE,extra]),2)
             run.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'posix', 'requires owned POSIX directory symlink')
+    def test_stage_fixture_alias_rejected_but_canonical_root_accepted(self):
+        import run_stage
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp).resolve(strict=True)
+            root = parent/'real'; root.mkdir()
+            alias = parent/'alias'; alias.symlink_to(root, target_is_directory=True)
+            (root/'stage3-report.json').write_text('{"status":"ok"}')
+            with mock.patch.object(run_stage, 'run', return_value={'status':'ok'}) as run:
+                with mock.patch.object(run_stage, 'ROOT', alias):
+                    self.assertEqual(run_stage.main(['--tree-copy-suite','--invocation-nonce',NONCE]), 1)
+                (root/'stage2-report.json').unlink()
+                with mock.patch.object(run_stage, 'ROOT', alias.resolve(strict=True)):
+                    self.assertEqual(run_stage.main(['--tree-copy-suite','--invocation-nonce',NONCE]), 0)
+                self.assertEqual(run.call_count, 2)
+                for call in run.call_args_list:
+                    self.assertEqual(call.kwargs['tree_profile'], PROFILE)
+                    self.assertTrue(call.kwargs['tree_suite'])
 
 class CopyStructuralBudgetTests(unittest.TestCase):
     def test_complete_structural_majorants_fit_original_caps(self):
