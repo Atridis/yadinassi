@@ -3,8 +3,9 @@
 `project_catalog_attributes(data, *, budget, limits=None)` is an opt-in Python
 projection of one **already selected, decoded Catalog payload**. It is not a
 file selector, a native fixture verdict, or an end-to-end Catalog reader.
-Only synthetic tests currently establish this new API's behavior. No previous
-native run is relabeled as evidence for it.
+Synthetic tests cover the parser contract; the accepted owned native run below
+adds only its exact source-bound fixture evidence. The API does not self-certify
+arbitrary payloads, and no older native run is relabeled as evidence for it.
 
 ## Independent input and useful output
 
@@ -111,7 +112,7 @@ Unicode, lowered/cumulative budgets, maximum count, immutable results, and
 isolated `python -I -S -B` import without the interpreter. Existing CONFIG APIs,
 older oracle lane contracts, rights, fixtures and record codecs remain unchanged.
 
-## Separate dedicated native binding route (acceptance pending)
+## Separate dedicated native binding route
 
 `--config-catalog-attribute-binding` alone selects invocation 22, report 35,
 capture 36 and `owned_config_catalog_attribute_binding_v1`. It stages exactly
@@ -142,8 +143,8 @@ Private names, UUIDs and qualifiers never enter public reports. The projection
 adds only `attribute_count=2` and a finite identity/fields/attributes verdict.
 Source, recipe, manifest and frozen-image hashes remain bound. The unchanged
 13-stage/11-snapshot/5-comparison lifecycle and four cleanup gates are required;
-subsequent failure discards the success. Native execution and acceptance are
-still pending, and older identity/matrix runs cannot establish this new claim.
+subsequent failure discards the success. The accepted run below establishes only
+this fixed owned binding; older identity/matrix runs do not establish this claim.
 
 Independent complete-envelope tests charge maximum counters, all staged source
 paths, optional failure context, the entire capture allowance and final newline:
@@ -155,10 +156,40 @@ paths, optional failure context, the entire capture allowance and final newline:
 | Report with full capture allowance | 32094 | 32768 |
 
 The report includes all 13 stages, 11 snapshots, 5 comparisons, 3 artifacts and
-4 cleanup gates. Separate ordinary runtime provenance now counts 72 source files;
-its new digest requires fresh runtime validation. No guard/cap is increased.
+4 cleanup gates. Separate ordinary runtime provenance counts 72 source files.
+[Ordinary native run 40794387367](https://github.com/Atridis/yadinassi/actions/runs/40794387367)
+was separately accepted for original commit `504374c330e263e3eb0017ef7222940fc295fa71`.
+That runtime evidence and the dedicated CONFIG evidence below have distinct
+scopes; neither substitutes for later source/CI gates. No guard/cap is increased.
 
-A source-bound run still needs a cold production FINAL check followed by the
-independently frozen checker. Until that run is audited, native attribute
-projection remains unverified. BSL `Метаданные`, `Справочники`, references,
-queries, general CRUD and live database access remain unsupported.
+## Accepted owned native evidence (original source identity)
+
+Dedicated [run 40794561097](https://github.com/Atridis/yadinassi/actions/runs/40794561097)
+was independently audited and accepted at original commit
+`504374c330e263e3eb0017ef7222940fc295fa71`, tree
+`1f491fae28e4b8ae3ab60818f55e435b1eb5020a`. The cold production FINAL validator
+passed first, followed by the unchanged independently prefrozen checker. The
+source inventory has 681 files and the isolated inventory has 28 staged sources.
+The 18974-byte report has SHA-256
+`34819abb2f6f9913ea5ceb41704ddbfa28350b4a84a28d4db5a2e6228190906d`.
+
+All 16 selected CONFIG entries completed. The three Catalog identities and
+standard properties matched independent canonical redump XML; their complete
+attribute collections also matched: the original Catalog's two attribute
+UUIDs/Names and explicit String/Number qualifiers, and both additional Catalogs'
+empty collections. The grammar was not changed in response to this result.
+The required 13 stages, 11 snapshots, 5 comparisons, 3 artifacts and all four
+cleanup gates passed. Actual projection/capture sizes were 1957/3004 bytes,
+within the independently bounded envelopes above.
+
+This is a source-bound owned producer proof, not independent replay of retained
+raw database bytes or general native validation of every admitted length/type.
+The fixture's configured qualifiers are not universal constants. General
+Catalog grammar, extension/type resolution, applied CONFIG identity, DBNames to
+physical-field/value binding, BSL `Метаданные`/`Справочники`, queries, CRUD and
+live database access remain unsupported.
+
+Later documentation-only commits do not become the source of this native run.
+Its evidence remains bound to the original commit/tree above; changed staged
+inputs would require fresh source-bound evidence. Ordinary CI and merge gates
+are separate from this dedicated acceptance.
