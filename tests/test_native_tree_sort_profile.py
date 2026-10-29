@@ -146,8 +146,14 @@ class SortProfileTests(unittest.TestCase):
                     report,payload=host.validate_envelope(produced,NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
                     self.assertEqual(payload,raw)
                     self.assertTrue(report['native_tests_completed'])
+                    # This is a synthetic comparison fixture, not raw checkout
+                    # admission. Windows may store the BSL checkout as CRLF.
+                    # Materialize the same canonical UTF-8/LF source used by
+                    # the adjacent availability tests; keep production strict.
+                    source=parent/s.source;source.parent.mkdir(parents=True)
+                    source.write_bytes((ROOT/s.source).read_text(encoding='utf-8').encode('utf-8'))
                     with budget.synthetic_inventory_reader():
-                        compared=host.compare_output(ROOT,parent,payload,hashes,
+                        compared=host.compare_output(parent,parent,payload,hashes,
                             runner=lambda *a:(0,payload,b''),profile=PROFILE)
                     self.assertEqual(compared['acceptance_status'],'rejected' if state=='unavailable' else 'accepted')
                     self.assertEqual(compared['native_sort_available'],state!='unavailable')
@@ -161,6 +167,35 @@ class SortProfileTests(unittest.TestCase):
                         self.assertEqual(rejected.exception.native_failure['reason'],'process_failed')
                     if state.endswith('_observer'):
                         self.assertEqual(rejected.exception.observation_diagnostic['site'],state.split('_')[0])
+
+    def test_crlf_checkout_lifecycle_and_unchanged_source_hash_guard(self):
+        from test_native_1c_full_host import read_synthetic_file
+        s=spec();canonical=(ROOT/s.source).read_text(encoding='utf-8').encode('utf-8')
+        self.assertEqual(full.digest(canonical),s.source_sha256)
+        crlf=canonical.replace(b'\n',b'\r\n')
+        self.assertEqual(len(crlf),14803)
+        self.assertEqual(full.digest(crlf),'cec5ee13fc4ec61e80f0fa2c3addd987dfefcf6a15bdaa37e0557ebaef3ffc04')
+        raw=maximum_output();hashes={s.source:s.source_sha256}
+        with tempfile.TemporaryDirectory() as tmp:
+            parent=Path(tmp).resolve(strict=True);checkout=parent/'checkout'
+            source=checkout/s.source;source.parent.mkdir(parents=True);source.write_bytes(crlf)
+            # Exercise the exact Windows static-fixture reader instance. It
+            # reads bytes without newline normalization; the host must reject.
+            with mock.patch.object(host.FULL,'read_regular',side_effect=read_synthetic_file):
+                self.assertEqual(host.FULL.read_regular(source,host.FULL.MAX_FILE),crlf)
+                runner=mock.Mock(side_effect=AssertionError('untrusted source executed'))
+                for data,claimed in ((crlf,s.source_sha256),(canonical+b'// drift\n',s.source_sha256),
+                                     (canonical,'0'*64)):
+                    source.write_bytes(data)
+                    with self.assertRaisesRegex(host.TreeError,'tree_source_changed'):
+                        host.compare_output(checkout,parent,raw,{s.source:claimed},runner=runner,profile=PROFILE)
+                runner.assert_not_called()
+                source.write_bytes(crlf)
+                # Run the actual ten producer branches from this CRLF checkout,
+                # including success and unavailable, not a separate facsimile.
+                with mock.patch(__name__+'.ROOT',checkout):
+                    self.test_real_producer_failure_and_unavailable_capture_paths()
+                self.assertEqual(source.read_bytes(),crlf)
 
     def test_both_positive_controls_required_even_for_exact_parity(self):
         s=spec()
