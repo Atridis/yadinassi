@@ -1,7 +1,8 @@
-# Experimental single-Catalog read-only binding — local prototype
+# Experimental single-Catalog read-only binding — accepted owned profile
 
-This prototype has synthetic evidence only. It is not a BSL Catalog manager,
-CRUD API, general metadata resolver, or accepted native row-binding lane.
+The dedicated native lane is accepted for the bounded owned profile described
+below. This is not a BSL Catalog manager, CRUD API, general metadata resolver,
+or acceptance of arbitrary Catalog layouts.
 
 ## Independent compilation
 
@@ -18,8 +19,8 @@ CodeLength and attribute length/precision/scale come from CONFIG. The local fini
 compile admission allows positive strings up to 2047 UTF-16 units and Number
 precision up to 38 with scale between zero and precision, further restricted by
 4096 bytes per whole record. These are conservative implementation ceilings, not
-platform maxima or native coverage. Native evidence for the previous independent
-pieces covered only the owned Code2/Payload32/Number9,2 shape. Synthetic admission
+platform maxima or native coverage. Native evidence for this binder covers only the owned
+Code2/Payload32/Number9,2 shape. Synthetic admission
 of other qualifiers must not be represented as native acceptance.
 
 ## Measured fixed facts, not configuration constants
@@ -67,7 +68,7 @@ comparison, budget or late stage failures poison the lifetime; no retry/partial
 success is returned by the intended coordinator.
 
 CONFIG transport orchestration is still a **harness-only private seam**. The pure
-runtime compiler and bound-record reader do not import scripts. This prototype
+runtime compiler and bound-record reader do not import scripts. This implementation
 therefore does not claim a standalone public offline Catalog API. Public legacy
 `read_records` and its fixed-profile admission remain unchanged.
 
@@ -78,19 +79,40 @@ retains existing empty/reserved/active framing and rejects freed slots. Results
 are private immutable physical rows; reference/version/predefined bytes remain
 opaque. Decimal scale is derived from metadata and independent of Decimal context.
 
-## Required next evidence
+## Native acceptance and remaining scope
 
-A fresh dedicated source-bound lane must independently compare the complete
-CONFIG identity/type collection, DBNames/physical mapping, and decoded baseline,
-created and updated rows against the owned canonical XML/native lifecycle. Parser
-inputs must remain expectation-free. Existing matrix fixtures and rights can be
-reused for the current profile. No native acceptance, full-fixture pass or workflow activation is claimed here.
-The implemented finite protocol and local budget proof are described below.
+The fresh dedicated [run40824662535](https://github.com/Atridis/yadinassi/actions/runs/40824662535)
+passed on its first attempt at original source
+`cbbcd9a28d0f9eb2a43d2bb9b1cf13dfe153e2db`, tree
+`7da0812a2dd09d1f796bee34fc229e95c3c25598` (696 source files, 35 staged files).
+Its exact-source production FINAL validator ran cold before the unchanged,
+independently prefrozen checker; both accepted the report. Six baseline/create/update
+origin and observer readbacks matched independently derived bindings and row values.
+Three Catalog metadata collections and two attributes were checked; all four cleanup
+verdicts passed. This acceptance is attributed to that original source, not to later
+documentation commits.
+
+Artifact12876555108 ZIP SHA256:
+`171397988c8bdf33e6ceb7dafd98331669dd74c52ba747ef5d7ff887be317ad7`.
+The 19173-byte report SHA256 is
+`c8f29c2bf42b1d60ac4f9eee47bb433b628eed4603904098b8d9efc8ab0c32f8`;
+its public capture is 2434 bytes. Only the current owned String Code/Description0,
+variable String and signed Number layout is covered; no altered-qualifier native
+witness or general layout support is implied.
+
+Separate original-source validation passed: 6087 local unit tests (one skip),
+17 launcher tests, fresh Linux build/smoke, Move32 and Total32 binary replay on
+six routes each, and a new whole138 runtime74 gate. The separate ordinary native
+[run40824485588](https://github.com/Atridis/yadinassi/actions/runs/40824485588)
+was also accepted for original `cbbcd9a28d0f9eb2a43d2bb9b1cf13dfe153e2db`;
+it is not a substitute for the dedicated binding proof. Four-OS PR CI and later
+merge/post-merge validation remain separate obligations.
+
 CONFIG suffix/full grammar, hierarchy/owners/common fields, zero/unbounded or
 fixed strings, references/unions, numeric Code, Description, extensions, applied
 state resolution, deletion, indexes and live-database consistency remain unsupported.
 
-## Dedicated producer implementation (native run pending)
+## Dedicated producer implementation
 
 The separate `--catalog-readonly-binding` route uses invocation23/report37/capture38
 and exactly35 staged sources. `catalog_binding_reader.read_catalog_binding` is the
@@ -117,5 +139,5 @@ all optional diagnostic contexts and final newline is32688/32768. Only failed_st
 and failure_kind allowances use their exact production-enforced finite domains;
 all seven other optional-context allowances remain128. Future enum growth changes
 the executable bound. No cap was increased. These are local mathematical/report
-construction checks, not native execution evidence. Fresh full gates and a dedicated
-source-bound native acceptance remain pending.
+construction checks, not native execution evidence. The separate source-bound
+native acceptance above stays limited to the measured owned layout.
