@@ -382,13 +382,20 @@ class ManualWorkflowTests(unittest.TestCase):
             self.assertIn("github.event_name != 'workflow_dispatch' &&", tree)
             self.assertIn("github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", tree)
             self.assertIn("if: always() && steps.tree.outputs.tree_outputs_ready == 'true'", tree)
-            prefix, case, selection = ('tree', 'tree_fill_values', '') if job == 'tree_smoke' else (
-                'tree-copy', 'tree_copy', ' --profile tree-copy-v1')
-            self.assertIn('run: python3 scripts/native_1c_tree_profile.py --execute-approved-image --export-native-outputs' + selection + '\n', tree)
-            self.assertIn('path: native-smoke/' + prefix + '-report.json\n', tree)
+            if job == 'tree_smoke':
+                self.assertIn('run: python3 scripts/native_1c_tree_profile.py --execute-approved-image --export-native-outputs\n', tree)
+                self.assertIn('path: native-smoke/tree-report.json\n', tree)
+                expected_paths = ['native-smoke/tree-outputs/tree_fill_values.out',
+                                  'native-smoke/tree-outputs/provenance.json']
+            else:
+                self.assertIn('run: python3 scripts/native_1c_tree_profile.py --execute-approved-image --export-native-outputs --profile "$TREE_PROFILE"\n', tree)
+                self.assertIn('TREE_PROFILE: ${{ matrix.profile }}\n', tree)
+                self.assertIn('path: native-smoke/${{ matrix.artifact }}-report.json\n', tree)
+                self.assertIn('      fail-fast: false\n', tree)
+                expected_paths = ['native-smoke/${{ matrix.artifact }}-outputs/${{ matrix.case }}.out',
+                                  'native-smoke/${{ matrix.artifact }}-outputs/provenance.json']
             output_paths = tree.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
-            self.assertEqual(output_paths.split(), ['native-smoke/' + prefix + '-outputs/' + case + '.out',
-                                                   'native-smoke/' + prefix + '-outputs/provenance.json'])
+            self.assertEqual([line.strip() for line in output_paths.splitlines()], expected_paths)
         for job in ('smoke', 'tree_smoke', 'tree_copy_smoke'):
             matches = re.findall(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)
             self.assertEqual(len(matches), 1)

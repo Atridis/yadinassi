@@ -845,10 +845,12 @@ def without_exclude_order_measurement(source, *, host=False):
          '93fb5e833fab672b985c3f3c5a961ad0abb4279e3bd82e4c37992b0c062b1f3c') if host else
         ('518a75c7aa4027ad692e853d3361bfc5e13a5c3829a5cafee0ebf72238c2cc43',
          '2331a79996c930885858630417ed75cde1a0a827d604ffa38ce4200277cbc135'))
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == current
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == current):
+        raise AssertionError
 
     def replace_once(text, old, new):
-        assert text.count(old) == 1
+        if not (text.count(old) == 1):
+            raise AssertionError
         return text.replace(old, new, 1)
 
     if host:
@@ -912,7 +914,8 @@ def without_exclude_order_measurement(source, *, host=False):
                               'CLIENT_COLLECTIONS_MESSAGE_COUNT = 841')
         nodes = [node for node in ast.parse(source).body
                  if isinstance(node, ast.FunctionDef) and node.name == 'client_collections_module']
-        assert len(nodes) == 1
+        if not (len(nodes) == 1):
+            raise AssertionError
         current_adapter = ast.get_source_segment(source, nodes[0])
         adapter = current_adapter
         for new, old in (
@@ -956,24 +959,29 @@ def without_exclude_order_measurement(source, *, host=False):
         for name, expected_count in (('declarations', 116), ('endings', 116),
                                      ('sites', 16), ('regions', 16), ('local_declarations', 4)):
             begin = '    ' + name + ' = {\n'
-            assert adapter.count(begin) == 1
+            if not (adapter.count(begin) == 1):
+                raise AssertionError
             old_body = adapter.split(begin, 1)[1].split('    }\n', 1)[0]
             body = old_body
             for entry in additions.get(name, ()):
                 body = replace_once(body, entry, '')
             lines = body.splitlines(keepends=True)
-            assert len(lines) == expected_count
+            if not (len(lines) == expected_count):
+                raise AssertionError
             restored = []
             for line in lines:
                 match = re.fullmatch(r'        ([0-9]+)(: [^\n]+\n)', line)
-                assert match is not None
+                if not (match is not None):
+                    raise AssertionError
                 index = int(match[1])
-                assert index >= 64 or (name == 'regions' and index == 3)
+                if not (index >= 64 or (name == 'regions' and index == 3)):
+                    raise AssertionError
                 restored.append('        ' + str(index - 57 if index >= 64 else index) + match[2])
             adapter = replace_once(adapter, begin + old_body + '    }\n',
                                    begin + ''.join(restored) + '    }\n')
         source = replace_once(source, current_adapter, adapter)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == historical
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == historical):
+        raise AssertionError
     return source
 
 
