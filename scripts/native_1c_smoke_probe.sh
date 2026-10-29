@@ -28,6 +28,11 @@ client_numbers=false
 client_async=false
 client_args=()
 preprocessor_measurement=false
+tree_suite=false
+if [ "$#" -eq 3 ] && [ "$1" = --tree-suite ]; then
+    tree_suite=true
+    set -- --full-suite "$2" "$3" --client-probe
+fi
 if [ "$#" -ge 5 ] && [ "$#" -le 10 ] && [ "${!#}" = --client-preprocessor-measurement ] && [ "${4}" = --client-probe ]; then
     preprocessor_measurement=true
     set -- "${@:1:$(($# - 1))}"
@@ -122,7 +127,7 @@ PYSTOPBUS
         printf '{"schema":1,"status":"python_unsupported"}\n'
     else
         python3 - "$result" "$stage" "$libraries_resolved" "$display_started" \
-          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" "$client_dates" "$client_values" "$client_collections" "$client_numbers" "$client_async" "$bus_cleanup_failed" "$preprocessor_measurement" <<'PY'
+          "$infobase_created" "$configuration_dumped" "$bootstrap" "$full_suite" "$invocation_nonce" "$client_probe" "$watchdog_check" "$client_dates" "$client_values" "$client_collections" "$client_numbers" "$client_async" "$bus_cleanup_failed" "$preprocessor_measurement" "$tree_suite" <<'PY'
 import hashlib
 import json
 import os
@@ -132,6 +137,9 @@ import sys
 import xml.etree.ElementTree as ET
 
 emitter_args = sys.argv[1:]
+tree_mode = emitter_args.pop() if len(emitter_args) == 19 else "false"
+if tree_mode not in {"false", "true"}:
+    raise ValueError("tree mode")
 preprocessor_mode = emitter_args.pop() if len(emitter_args) == 18 else "false"
 if preprocessor_mode not in {"false", "true"}:
     raise ValueError("preprocessor mode")
@@ -222,6 +230,15 @@ if bootstrap == "true":
         # Even a simultaneous native-format failure cannot imply no mutation
         # after stage two may have begun. The host rejects this to unknown.
         report["status"] = "stage2_failed"
+if tree_mode == "true":
+    sys.path.insert(0, "/smoke/bootstrap")
+    import tree_suite as tree_lane
+    import full_suite
+    raw = tree_lane.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
+        quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
+        bus_cleanup_failed=bus_cleanup_failed == "true")
+    sys.stdout.buffer.write(raw)
+    raise SystemExit(0)
 if full_mode == "true":
     sys.path.insert(0, "/smoke/bootstrap")
     import full_suite
@@ -410,7 +427,10 @@ configuration_dumped=true
 if [ "$bootstrap" = true ]; then
     stage=stage2
     # All source inputs are host-allowlisted and read-only. All outputs stay tmpfs.
-    if [ "$full_suite" = true ]; then
+    if [ "$tree_suite" = true ]; then
+        python3 /smoke/bootstrap/run_stage.py --tree-suite --invocation-nonce "$invocation_nonce" \
+            > /tmp/onec-smoke/stage2-console.log 2>&1
+    elif [ "$full_suite" = true ]; then
         python3 /smoke/bootstrap/run_stage.py --full-suite --invocation-nonce "$invocation_nonce" "${client_args[@]}" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     else

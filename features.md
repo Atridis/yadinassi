@@ -5791,3 +5791,16 @@ Run40768375140 был измерительным и отклонил стары�
   ([run40855667250](https://github.com/Atridis/yadinassi/actions/runs/40855667250)).
   Acceptance is limited to that owned profile; ordinary and four-OS CI audits
   remain separate. [Scope and evidence](docs/catalog-readonly-binding.md#source-bound-runtime-extraction-acceptance).
+
+
+### Tree native profile and absent-method regression
+
+A bounded standalone tree profile preserves the ordinary six integration sources
+and all1023 collection observations. The initial32 FillValues calls on tree rows
+all raised exceptions on real1C; passing that transport run does not mean a new
+method was implemented. Official1C syntax-help inventories place FillValues on
+ValueTable only. It is not a pending tree feature. Additive native controls check
+working table/tree operations, both language aliases, missing methods and missing
+arguments without exporting raw exception text. These new controls still require
+their own source-bound native run. No runtime method is added.
+[Evidence, scope and source attribution](docs/value-tree-fill-measurement.md).

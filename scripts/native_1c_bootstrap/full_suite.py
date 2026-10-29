@@ -1221,16 +1221,22 @@ def final_client_process_census(nonce: str) -> None:
 def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                      hashes: dict, *, stall: bool = False, dates_output: Path | None = None,
                      values_output: Path | None = None, collections_output: Path | None = None,
-                     numbers_output: Path | None = None, preprocessor_measurement: bool = False) -> dict:
+                     numbers_output: Path | None = None, preprocessor_measurement: bool = False,
+                     tree_output: Path | None = None) -> dict:
     """Fresh client-only EPF; stall is the explicitly requested negative checkpoint."""
-    parity_output = (numbers_output if numbers_output is not None else
+    if tree_output is not None:
+        import tree_suite
+    parity_output = (tree_output if tree_output is not None else
+                     numbers_output if numbers_output is not None else
                      collections_output if collections_output is not None else
                      values_output if values_output is not None else dates_output)
-    record = (empty_numbers_report() if numbers_output is not None else
+    record = (empty_dates_report() if tree_output is not None else
+              empty_numbers_report() if numbers_output is not None else
               empty_collections_report() if collections_output is not None else
               empty_values_report() if values_output is not None else
               empty_dates_report() if dates_output is not None else empty_client_report())
-    marker_reader = (client_numbers_marker if numbers_output is not None else
+    marker_reader = (tree_suite.client_marker if tree_output is not None else
+                     client_numbers_marker if numbers_output is not None else
                      client_collections_marker if collections_output is not None else
                      client_values_marker if values_output is not None else
                      client_dates_marker if dates_output is not None else client_marker)
@@ -1241,7 +1247,7 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         if (type(preprocessor_measurement) is not bool or (preprocessor_measurement and (stall or parity_output is not None))
                 or not valid_nonce(nonce) or type(stall) is not bool
                 or (parity_output is not None and stall)
-                or (sum(value is not None for value in (dates_output, values_output, collections_output, numbers_output)) > 1)
+                or (sum(value is not None for value in (dates_output, values_output, collections_output, numbers_output, tree_output)) > 1)
                 or platform.timeout != 120
                 or platform.user != 'NativeSmoke' or platform.password is not None):
             raise FullError('invalid_input')
@@ -1269,7 +1275,15 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
                                preprocessor_client_marker if preprocessor_measurement else infobase_client_marker)
             marker_reader = lambda path, nonce, phase: selected_reader(
                 path, nonce, phase, source_hash=hashes[CLIENT_SOURCE])
-        if numbers_output is not None:
+        if tree_output is not None:
+            if tree_output != root.parent / (tree_suite.CASE + '.out'):
+                raise FullError('invalid_input')
+            tree_source = secure_bytes(inputs / tree_suite.TARGET, MAX_OUTPUT)
+            if digest(tree_source) != hashes[tree_suite.SOURCE]:
+                raise FullError('invalid_input')
+            record['source_sha256'] = digest(tree_source)
+            module = tree_suite.client_module(tree_source, source)
+        elif numbers_output is not None:
             numbers_source = secure_bytes(inputs / 'scenarios/numbers.bsl', MAX_OUTPUT)
             if digest(numbers_source) != hashes['integrational_tests/tests/numbers.bsl']:
                 raise FullError('invalid_input')
@@ -1400,6 +1414,8 @@ def run_client_probe(platform, root: Path, inputs: Path, nonce: str,
         if preprocessor_measurement or preprocessor_runtime:
             record['preprocessor_profile'] = completion['values'][137]
     except Exception as error:
+        if tree_output is not None and isinstance(error, tree_suite.ObservationFailure):
+            record['observation_diagnostic'] = error.diagnostic
         record.pop('infobase_context', None)
         record.pop('preprocessor_profile', None)
         if isinstance(error, ClientProcessError):

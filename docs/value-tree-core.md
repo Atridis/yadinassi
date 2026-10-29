@@ -88,11 +88,15 @@ Rows/Parent or Russian equivalents are rejected, including rename. Deleting the
 last column of a populated tree or clearing its columns is rejected before any
 mutation. Deleted object lifetime/presentation is not claimed as compatible.
 
-No Copy, Sort, FillValues, UI,
+No Copy, Sort, UI,
 XML/internal serialization or transport. Internal serialization also explicitly
 rejects Type("ValueTree") and the four dependent type identities, rather than
 inventing native UUIDs. Object string presentations and conversion edge cases remain unverified; the
 five type displays above are the separately measured exception.
+
+`FillValues / ЗаполнитьЗначения` is a ValueTable method, not a missing tree
+feature. The [API inventory and negative regression](value-tree-fill-measurement.md)
+explain the corrected scope; no invented tree method is added.
 
 ## Resource limits (Yadinassi limits, not platform limits)
 
