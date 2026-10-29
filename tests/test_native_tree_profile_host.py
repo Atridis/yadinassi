@@ -209,11 +209,133 @@ class TreeHostTests(unittest.TestCase):
                     self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o755)
                     self.assertTrue(permits(path,different_uid,different_gid,5))
                 else:
-                    self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o444)
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o644)
                     self.assertTrue(permits(path,different_uid,different_gid,4))
                     self.assertFalse(permits(path,different_uid,different_gid,2))
             # This is a bind-root model: private host parent is not mounted.
             self.assertFalse(permits(private,different_uid,different_gid,1))
+
+    @unittest.skipUnless(__import__('os').name == 'posix' and __import__('os').geteuid() != 0,
+                         'real nonroot POSIX copied-template permissions')
+    def test_real_staged_launcher_copies_need_owner_write(self):
+        import errno
+        import sys
+        from unittest import mock
+        smoke = HOST.sibling('native_1c_smoke')
+        class ReachedBuild(Exception):
+            pass
+        with tempfile.TemporaryDirectory() as directory:
+            private = Path(directory).resolve(strict=True)
+            staging = private / 'public-sources'
+            original = HOST.FULL.read_regular
+            def canonical_fixture(path, *args, **kwargs):
+                return original(path, *args, **kwargs).replace(b'\r\n', b'\n')
+            with mock.patch.object(HOST.FULL, 'read_regular', side_effect=canonical_fixture):
+                HOST.stage_inputs(ROOT, staging, smoke)
+            spec = importlib.util.spec_from_file_location(
+                'tree_permission_staged_launcher', staging / 'launcher/test_launcher.py')
+            launcher = importlib.util.module_from_spec(spec)
+            with mock.patch.dict(sys.modules, {spec.name: launcher}):
+                spec.loader.exec_module(launcher)
+            template = launcher.TEMPLATES / 'TestModule/Ext/ObjectModule.bsl'
+            source = staging / 'scenarios/tree_fill_values.bsl'
+            platform = launcher.Platform(private / 'never-execute', private / 'unused-db')
+            with mock.patch.object(launcher, 'build_epf', side_effect=ReachedBuild) as build, \
+                    mock.patch.object(launcher, 'run_process') as process:
+                try:
+                    template.chmod(0o444)
+                    with self.assertRaises(PermissionError) as error:
+                        launcher.run_case(platform, source, private / 'unused.epf',
+                                          private / 'readonly-copy', private / 'unused.out')
+                    self.assertEqual(error.exception.errno, errno.EACCES)
+                    build.assert_not_called()
+                    template.chmod(0o644)
+                    with self.assertRaises(ReachedBuild):
+                        launcher.run_case(platform, source, private / 'unused.epf',
+                                          private / 'editable-copy', private / 'unused.out')
+                    build.assert_called_once()
+                    copied = private / 'editable-copy/src/TestModule/Ext/ObjectModule.bsl'
+                    self.assertEqual(copied.read_text(encoding='utf-8-sig'),
+                                     source.read_text(encoding='utf-8-sig'))
+                    process.assert_not_called()
+                finally:
+                    template.chmod(0o644)
+                    for path in private.rglob('*'):
+                        if path.is_file():
+                            path.chmod(0o644)
+
+    def test_real_producer_to_host_boundary_states(self):
+        import copy,json
+        from unittest import mock
+        from test_native_1c_smoke import bootstrap_report
+        import test_native_tree_profile_budget as budget
+        tree=budget.tree;smoke=HOST.sibling('native_1c_smoke')
+        lines=['TF-C: [-]']
+        for case in range(1,33):
+            before=HOST.CONTRACT.baseline(case)
+            shared=before[:50]+'R01Q0....' if case==31 else before
+            lines.append(f'TF-{case}: [E{before}{before}{shared}]')
+        payload=('\n'.join(lines)+'\n').encode()
+        inputs=dict.fromkeys(tree.INPUT_FILES,'a'*64);inputs[HOST.SOURCE]=HOST.SOURCE_SHA256
+        modules={HOST.CASE:'b'*64,'client_tree':'c'*64};nonce='1'*32
+        for state in ('bootstrap','pre_case','server','client','success'):
+            with self.subTest(state=state),tempfile.TemporaryDirectory() as directory:
+                parent=Path(directory).resolve(strict=True);capture=parent/'capture';capture.mkdir()
+                report=bootstrap_report();stage=tree.empty_report(nonce)
+                if state=='bootstrap':
+                    report.update(status='stage2_failed',runtime_version=None,runtime_version_source='not_measured',security_settings_changed=False)
+                    report['stage2'].update(status='failed',failed_stage='inject',failure_kind='metadata_rejected',
+                        actual_version=None,version_source='not_measured',simple_output_sha256=None,
+                        security_change_attempted=False,security_settings_state='not_attempted',
+                        protection_observation=smoke.DIAGNOSTICS.empty_protection_observation(),
+                        **dict.fromkeys(smoke.STAGE_FLAGS,False))
+                else:
+                    stage.update(status='failed',failure_kind='process_failed',input_sha256=inputs)
+                    case=stage['cases'][0]
+                    if state=='server':
+                        stage['failed_case']=HOST.CASE
+                        case.update(status='failed',source_sha256=HOST.SOURCE_SHA256)
+                    if state in ('client','success'):
+                        case.update(status='ok',source_sha256=HOST.SOURCE_SHA256,module_sha256=modules[HOST.CASE],
+                                    output_sha256=HOST.FULL.digest(payload),output_size=len(payload),message_count=33)
+                        client=stage['client_tree']
+                        client.update(status='ok',failure_kind='none',source_sha256=HOST.SOURCE_SHA256,
+                            module_sha256=modules['client_tree'],roundtrip_sha256=modules['client_tree'],
+                            **dict.fromkeys(HOST.FULL.CLIENT_FLAGS,True),
+                            **{k:case[k] for k in HOST.FULL.CLIENT_OUTPUT_KEYS})
+                        client['process_diagnostics'].update(stage='after_exit',reason='none')
+                        if state=='client':
+                            client.update(status='failed',failure_kind='process_failed',completed=False,witness_verified=False,
+                                          **dict.fromkeys(HOST.FULL.CLIENT_OUTPUT_KEYS,None))
+                        else:
+                            stage.update(status='ok',failure_kind='none')
+                            (capture/(HOST.CASE+'.out')).write_bytes(payload)
+                tree.write_report(parent/'stage3-report.json',stage)
+                with mock.patch.object(tree.full,'final_client_process_census'):
+                    wire=tree.finish_report(report,nonce,capture,quiet=True,bus_cleanup_failed=False)
+                # Genuine production producer/serializer and production outer validator.
+                if state=='success':
+                    self.assertEqual(HOST.validate_envelope(wire,nonce,inputs,modules,smoke.validate_report)[1],payload)
+                else:
+                    with self.assertRaises(HOST.TreeError) as caught:
+                        HOST.validate_envelope(wire,nonce,inputs,modules,smoke.validate_report)
+                    if state=='bootstrap':
+                        self.assertEqual(caught.exception.prerequisite_failure,{'stage':'inject','reason':'metadata_rejected'})
+                        changes=[lambda e:e.update(nonce='2'*32),
+                                 lambda e:e['report']['stage2'].update(failure_kind='secret/path'),
+                                 lambda e:e['report']['stage3']['cases'][0].update(status='ok'),
+                                 lambda e:e['report']['stage3'].update(input_sha256={'unexpected':'a'*64}),
+                                 lambda e:e.update(outputs=[{'data_b64':'secret'}])]
+                        for change in changes:
+                            altered=json.loads(wire);change(altered)
+                            with self.assertRaises(HOST.TreeError) as rejected:
+                                HOST.validate_envelope(json.dumps(altered).encode(),nonce,inputs,modules,smoke.validate_report)
+                            self.assertFalse(hasattr(rejected.exception,'prerequisite_failure'))
+                            self.assertIn(rejected.exception.envelope_phase,HOST.ENVELOPE_PHASES)
+
+                    else:
+                        self.assertEqual(caught.exception.native_failure['reason'],'process_failed')
+                    self.assertEqual(json.loads(wire)['outputs'],[])
 
     def test_success_contract_and_tampered_witnesses(self):
         import base64

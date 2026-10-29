@@ -70,21 +70,45 @@ def validate_diagnostic(value):
 
 def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator):
     """Accept successful native server/client evidence, never observer errors."""
+    phase = 'transport'
     try:
         require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}', nonce))
         data = FULL.strict_json(raw, MAX_TRANSPORT)
         require(type(data) is dict and set(data) == {'schema', 'profile', 'nonce', 'report', 'outputs'})
         require((data['schema'], data['profile'], data['nonce']) == (SCHEMA, PROFILE, nonce))
+        phase = 'outer_report'
         report = data['report']
         require(type(report) is dict)
         report_validator(json.dumps(report, separators=(',', ':')).encode(), bootstrap=True, full_suite=True)
+        phase = 'stage_shape'
         stage = report['stage3']
         require(type(stage) is dict and set(stage) == {
             'schema', 'profile', 'nonce', 'status', 'failure_kind', 'failed_case',
             'input_sha256', 'cases', 'client_tree', 'observation_diagnostic'})
         require((stage['schema'], stage['profile'], stage['nonce']) == (STAGE_SCHEMA, PROFILE, nonce))
         require(type(input_hashes) is dict and input_hashes.get(SOURCE) == SOURCE_SHA256)
+        phase = 'prerequisite_failure'
+        if stage['input_sha256'] == {} and type(report.get('stage2')) is dict and report['stage2'].get('status') == 'failed':
+            require(report['status'] == 'stage3_failed' and report['native_tests_completed'] is False and data['outputs'] == [])
+            require(stage['status'] in ('not_started', 'failed') and stage['failure_kind'] in ('prerequisites_failed', 'export_failed'))
+            require(stage['failed_case'] is None and stage['observation_diagnostic'] is None)
+            require(type(stage['cases']) is list and len(stage['cases']) == 1)
+            unstarted = stage['cases'][0]
+            require(type(unstarted) is dict and set(unstarted) == FULL.CASE_KEYS and unstarted['name'] == CASE
+                    and unstarted['status'] == 'not_started'
+                    and all(unstarted[k] is None for k in FULL.CASE_KEYS - {'name', 'status'}))
+            client = stage['client_tree']
+            require(type(client) is dict and FULL.CLIENT_OUTPUT_KEYS <= set(client)
+                    and client['status'] == 'not_started' and all(client[k] is None for k in FULL.CLIENT_OUTPUT_KEYS))
+            FULL.validate_client_probe({k: v for k, v in client.items() if k not in FULL.CLIENT_OUTPUT_KEYS}, SOURCE_SHA256, module_hashes['client_tree'])
+            detail = {'stage': report['stage2']['failed_stage'], 'reason': report['stage2']['failure_kind']}
+            validate_prerequisite_failure(detail)
+            failure = TreeError('tree_native_evidence_rejected')
+            failure.prerequisite_failure = detail
+            raise failure
+        phase = 'input_inventory'
         require(stage['input_sha256'] == input_hashes)
+        phase = 'observation_diagnostic'
         diagnostic = stage['observation_diagnostic']
         validate_diagnostic(diagnostic)
         if diagnostic is not None:
@@ -122,6 +146,7 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator)
             failure = TreeError('tree_observation_rejected')
             failure.observation_diagnostic = diagnostic.copy()
             raise failure
+        phase = 'native_failure'
         if stage['status'] == 'failed' and diagnostic is None:
             require(report['status'] == 'stage3_failed' and report['native_tests_completed'] is False and data['outputs'] == [])
             require(type(stage['failure_kind']) is str and stage['failure_kind'] in FULL.FAILURES | {'unsupported_observation'} and stage['failure_kind'] not in ('none', 'unsupported_observation'))
@@ -167,6 +192,7 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator)
                                       'case': 'tree_fill_values' if stage['failed_case'] == CASE else None,
                                       'process_stage': process['stage'], 'process_reason': process['reason']}
             raise failure
+        phase = 'success_witness'
         require(report['status'] == 'ok' and report['native_tests_completed'] is True)
         require(stage['status'] == 'ok' and stage['failure_kind'] == 'none' and stage['failed_case'] is None)
         require(type(stage['cases']) is list and len(stage['cases']) == 1)
@@ -183,6 +209,7 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator)
                                    SOURCE_SHA256, module_hashes['client_tree'])
         require(client['status'] == 'ok')
         require(all(client[k] == case[k] and type(client[k]) is type(case[k]) for k in FULL.CLIENT_OUTPUT_KEYS))
+        phase = 'output_transport'
         outputs = data['outputs']
         require(type(outputs) is list and len(outputs) == 1)
         output = outputs[0]
@@ -193,12 +220,16 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator)
         payload = base64.b64decode(output['data_b64'], validate=True)
         require(base64.b64encode(payload).decode('ascii') == output['data_b64'])
         require(len(payload) == case['output_size'] and FULL.digest(payload) == case['output_sha256'])
+        phase = 'observation_contract'
         CONTRACT.validate_output(payload)
         return report, payload
-    except TreeError:
+    except TreeError as error:
+        error.envelope_phase = phase
         raise
-    except (ValueError, TypeError, KeyError, UnicodeError, binascii.Error, RecursionError, FULL.FullError):
-        raise TreeError('tree_native_evidence_rejected') from None
+    except Exception:
+        error = TreeError('tree_native_evidence_rejected')
+        error.envelope_phase = phase
+        raise error from None
 
 
 def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_child):
@@ -250,7 +281,8 @@ def stage_inputs(root, destination, smoke):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('xb') as stream:
             stream.write(raw)
-        path.chmod(0o444)
+        # The mount is read-only; launcher copytree copies must remain editable.
+        path.chmod(0o644)
     for directory in destination.rglob('*'):
         if directory.is_dir():
             directory.chmod(0o755)
@@ -527,6 +559,23 @@ def export_artifact(root: Path, files: dict[str, bytes]) -> None:
         raise failure from None
 
 
+PREREQUISITE_STAGES = ('inject', 'load', 'redump', 'bootstrap', 'named_designer', 'verify',
+                       'launcher_build', 'simple_epf', 'unknown')
+PREREQUISITE_REASONS = ('timeout', 'process_failed', 'invalid_dump_result', 'artifact_missing',
+                       'metadata_rejected', 'module_mismatch', 'compile_error', 'permission_denied',
+                       'hook_missing', 'marker_invalid', 'version_mismatch', 'output_mismatch',
+                       'unexpected_failure', 'stale_evidence', 'unsupported_api')
+
+
+def validate_prerequisite_failure(value):
+    require(type(value) is dict and set(value) == {'stage', 'reason'}
+            and type(value['stage']) is str and value['stage'] in PREREQUISITE_STAGES
+            and type(value['reason']) is str and value['reason'] in PREREQUISITE_REASONS)
+
+
+ENVELOPE_PHASES = ('transport', 'outer_report', 'stage_shape', 'prerequisite_failure', 'input_inventory', 'observation_diagnostic',
+                   'native_failure', 'success_witness', 'output_transport', 'observation_contract')
+
 FAILURE_STAGES = ('credentials', 'provenance', 'staging', 'adapter', 'preflight', 'registry_login',
                   'image_pull', 'image_inspect', 'container_run', 'envelope', 'container_cleanup',
                   'comparison', 'final_provenance', 'private_cleanup', 'artifact_export')
@@ -569,6 +618,12 @@ def main():
                   'status': 'failed', 'native_measurement_accepted': False,
                   'runtime_parity_accepted': False,
                   'failure_diagnostic': failure_diagnostic(failure_state, error)}
+        if isinstance(error, TreeError) and hasattr(error, 'prerequisite_failure'):
+            validate_prerequisite_failure(error.prerequisite_failure)
+            report['prerequisite_failure'] = error.prerequisite_failure
+        if isinstance(error, TreeError) and hasattr(error, 'envelope_phase'):
+            require(error.envelope_phase in ENVELOPE_PHASES)
+            report['envelope_phase'] = error.envelope_phase
         if isinstance(error, TreeError) and hasattr(error, 'native_failure'):
             value = error.native_failure
             require(type(value) is dict and set(value) == {'stage', 'reason', 'case', 'process_stage', 'process_reason'}

@@ -140,6 +140,8 @@ def bounds():
     failure = dict(schema='native-1c-tree-host-v1', profile=tree.PROFILE, status='failed',
         native_measurement_accepted=False, runtime_parity_accepted=False,
         observation_diagnostic=stage['observation_diagnostic'],
+        envelope_phase=longest(host.ENVELOPE_PHASES),
+        prerequisite_failure=dict(stage=longest(host.PREREQUISITE_STAGES),reason=longest(host.PREREQUISITE_REASONS)),
         failure_diagnostic=dict(stage=longest(host.FAILURE_STAGES+('unknown',)),
                                 reason=longest(host.FAILURE_REASONS+('unexpected_failure',))),
         native_failure=dict(stage='tree',reason=longest(full.FAILURES|{'unsupported_observation'}),
@@ -204,6 +206,8 @@ class TreeBudgetTests(unittest.TestCase):
 
     def test_production_failure_serializer_is_finite_and_bounded(self):
         error=host.TreeError(longest(host.FAILURE_REASONS))
+        error.envelope_phase=longest(host.ENVELOPE_PHASES)
+        error.prerequisite_failure=dict(stage=longest(host.PREREQUISITE_STAGES),reason=longest(host.PREREQUISITE_REASONS))
         error.observation_diagnostic=dict(site='server',case=32,category='payload_contract',calibration=None)
         error.native_failure=dict(stage='tree',reason=longest(full.FAILURES|{'unsupported_observation'}),
                                   case=host.CASE,process_stage='before_probe',process_reason='unexpected_processes')
