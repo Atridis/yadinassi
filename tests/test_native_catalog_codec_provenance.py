@@ -5,7 +5,8 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
-from test_native_1c_full_host import full
+import test_native_1c_full_host as host_tests
+from test_native_1c_full_host import full, SyntheticFilesystemCase
 
 ROOT = Path(__file__).resolve().parents[1]
 CODEC = 'yadinassi/storage/catalog_reference_uuid.py'
@@ -36,7 +37,7 @@ def provenance():
         return full.interpreter_provenance(ROOT)
 
 
-class CodecProvenanceTests(unittest.TestCase):
+class CodecProvenanceTests(SyntheticFilesystemCase):
     def test_actual_77_source_inventory_includes_codec_and_recomputes_digest(self):
         hashes = independent_hashes()
         self.assertEqual(len(hashes),77)
@@ -60,3 +61,47 @@ class CodecProvenanceTests(unittest.TestCase):
         self.assertNotEqual(before['source_sha256'],after['source_sha256'])
         self.assertEqual({k:v for k,v in before.items() if k!='source_sha256'},
                          {k:v for k,v in after.items() if k!='source_sha256'})
+
+
+class CodecProvenanceFixtureScopeTests(unittest.TestCase):
+    def test_windows_adapter_runs_both_provenance_assertions_and_is_restored(self):
+        # Simulate only the existing test-fixture capability switch, not os.name.
+        # A production-reader sentinel proves these assertions use the adapter.
+        with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', True), \
+                mock.patch.object(full, 'read_regular',
+                                  side_effect=AssertionError('production reader called')) as original:
+            suite = unittest.defaultTestLoader.loadTestsFromTestCase(CodecProvenanceTests)
+            result = unittest.TestResult()
+            suite.run(result)
+            self.assertEqual(result.testsRun, 2)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(result.failures, [])
+            self.assertEqual(result.skipped, [])
+            self.assertIs(full.read_regular, original)
+            original.assert_not_called()
+
+    def test_posix_setup_keeps_production_reader_unchanged(self):
+        original = full.read_regular
+        case = CodecProvenanceTests('test_actual_77_source_inventory_includes_codec_and_recomputes_digest')
+        with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', False):
+            try:
+                case.setUp()
+                self.assertIs(full.read_regular, original)
+            finally:
+                case.doCleanups()
+        self.assertIs(full.read_regular, original)
+
+    def test_windows_adapter_rejection_is_not_swallowed_and_cleanup_restores_reader(self):
+        original = full.read_regular
+        case = CodecProvenanceTests('test_actual_77_source_inventory_includes_codec_and_recomputes_digest')
+        with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', True), \
+                mock.patch.object(host_tests, 'read_synthetic_file',
+                                  side_effect=full.FullError('invalid_private_file')) as rejected:
+            try:
+                case.setUp()
+                with self.assertRaisesRegex(full.FullError, '^invalid_private_file$'):
+                    provenance()
+                rejected.assert_called()
+            finally:
+                case.doCleanups()
+        self.assertIs(full.read_regular, original)
