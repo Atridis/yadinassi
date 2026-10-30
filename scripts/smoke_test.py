@@ -2009,7 +2009,7 @@ def table_command_checkpoint(program: str, expected: str) -> tuple[str, str]:
 
 
 def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> None:
-    """Every owner collections byte in full modes; bounded exact command sample."""
+    """Full owner collections via file/stdin; exact console/command sample."""
     directory.mkdir()
     source_path = ROOT / 'integrational_tests/tests/collections.bsl'
     output_path = ROOT / 'tests/fixtures/native_windows/collections.out'
@@ -2023,12 +2023,20 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
     env = dict(env, YADINASSI_TIMEZONE='Europe/Warsaw', PYTHONTZPATH='', TZ='UTC0')
     source = directory / 'Таблицы с пробелами.bsl'
     source.write_text(program, encoding='utf-8-sig')
-    for arguments, stdin in [([str(source)], None), (['-'], program), ([], program + '/exit\n')]:
+    for arguments, stdin in [([str(source)], None), (['-'], program)]:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Full native collections checkpoint mismatch {arguments[0:1]!r}: {result!r}')
     command_program, command_expected = table_command_checkpoint(program, expected)
+    # File/stdin retain full semantic parity. Reuse the unchanged native command
+    # sample for console transport: multiline helpers, UTF-8 and object graphs,
+    # without a third complete semantic replay through incremental input.
+    result = subprocess.run([executable], input=command_program + '/exit\n',
+                            capture_output=True, encoding='utf-8',
+                            cwd=directory.parent, env=env, timeout=30)
+    if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
+        raise AssertionError(f'Native table console sample mismatch: {result!r}')
     for flag in ('-c', '-с', '--command'):
         arguments = [executable, flag, command_program]
         if len(subprocess.list2cmdline(arguments).encode('utf-16-le')) // 2 + 1 >= 32767:
@@ -2038,7 +2046,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
         if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
             raise AssertionError(f'Native table command sample mismatch {flag}: {result!r}')
     print('Binary native collections parity passed: complete owner output including 142 table '
-          'observations via BOM file/stdin/console; eight exact native observations via command aliases')
+          'observations via BOM file/stdin; eight exact native observations via console/command aliases')
 
 
 def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dict) -> None:

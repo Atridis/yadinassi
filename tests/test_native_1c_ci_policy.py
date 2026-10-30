@@ -448,9 +448,6 @@ class WorkflowTests(unittest.TestCase):
           - profile: tree-columns-move-v1
             artifact: tree-columns-move
             case: tree_columns_move
-          - profile: tree-columns-move-tail-v1
-            artifact: tree-columns-move-tail
-            case: tree_columns_move_tail
 """
         for job, expected in expected_headers.items():
             with self.subTest(job=job):

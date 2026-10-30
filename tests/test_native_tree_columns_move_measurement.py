@@ -28,6 +28,8 @@ def model(mode='bounded', returns_value=False):
     def get(receiver, name):
         if name.casefold() not in ('move', 'сдвинуть'):
             return original(receiver, name)
+        if mode == 'missing':
+            raise ValueError('Метод не найден: ' + name)
         def action(*args):
             if mode == 'noop':
                 return None
@@ -74,8 +76,9 @@ class ColumnsMoveObserverTests(unittest.TestCase):
         vm = Interpreter(); vm.execute(HELPERS)
         return wire.validate_payload(vm.execute(f'CMProbe({case})').encode(), case)
 
-    def test_actual_absent_method_is_not_available(self):
-        raw = emit()
+    def test_explicit_missing_method_model_is_not_available(self):
+        with model('missing'):
+            raw = emit()
         decoded = wire.validate_output(raw)
         self.assertEqual(len(decoded), 28)
         self.assertTrue(all(item['status'] == 'M' for item in decoded))

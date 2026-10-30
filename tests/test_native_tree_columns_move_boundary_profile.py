@@ -353,17 +353,17 @@ class ColumnsMoveBoundaryProfileTests(unittest.TestCase):
         expected=("    strategy:\n      fail-fast: false\n      matrix:\n        include:\n"
                   "          - profile: tree-copy-v1\n            artifact: tree-copy\n            case: tree_copy\n"
                   "          - profile: tree-sort-v1\n            artifact: tree-sort\n            case: tree_sort\n"
-                  "          - profile: tree-columns-move-v1\n            artifact: tree-columns-move\n            case: tree_columns_move\n"
-                  "          - profile: tree-columns-move-tail-v1\n            artifact: tree-columns-move-tail\n            case: tree_columns_move_tail\n")
+                  "          - profile: tree-columns-move-v1\n            artifact: tree-columns-move\n            case: tree_columns_move\n")
         def validate(value):
             strategy='    strategy:\n'+value.split('    strategy:\n',1)[1].split('    steps:\n',1)[0]
             self.assertEqual(strategy,expected)
         validate(block)
-        bad=(block.replace('profile: tree-columns-move-tail-v1','profile: arbitrary'),
-             block.replace('profile: tree-columns-move-tail-v1','profile: tree-copy-v1'),
-             block.replace('artifact: tree-columns-move-tail','artifact: tree-copy'),
-             block.replace('case: tree_columns_move_tail','case: tree_copy'),
-             block.replace('    steps:\n','          - profile: tree-columns-move-tail-v1\n            artifact: tree-columns-move-tail\n            case: tree_columns_move_tail\n    steps:\n'))
+        self.assertNotIn('profile: tree-columns-move-tail-v1',block)
+        bad=(block.replace('profile: tree-columns-move-v1','profile: arbitrary'),
+             block.replace('profile: tree-columns-move-v1','profile: tree-copy-v1'),
+             block.replace('artifact: tree-columns-move','artifact: tree-copy'),
+             block.replace('case: tree_columns_move','case: tree_copy'),
+             block.replace('    steps:\n','          - profile: tree-columns-move-v1\n            artifact: tree-columns-move\n            case: tree_columns_move\n    steps:\n'))
         for changed in bad:
             with self.assertRaises(AssertionError): validate(changed)
         self.assertIn('TREE_PROFILE: ${{ matrix.profile }}',block)

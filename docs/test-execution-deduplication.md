@@ -52,3 +52,34 @@ byte-identical to that PR #148 head. Its native evidence is therefore inherited,
 not newly captured by this test-only PR. Four-platform build/test CI runs on the
 stacked PR; the native workflow's main-base restriction is unchanged. Retargeting
 to main after #148 merges does not itself constitute fresh native evidence.
+
+## Native collections console transport sampling
+
+The collections binary smoke retains the complete historical source and exact
+owner output through BOM/Cyrillic/spaced file and stdin: 4,579 output lines,
+including all 142 table observations. Console now reuses the existing eight
+native command observations and unchanged multiline helpers, followed by
+`/exit`. The `-c`, Cyrillic `-с`, and `--command` samples are unchanged. All six
+routes retain exact stdout, empty stderr, zero exit status and the 30-second
+limit; command routes retain the Windows UTF-16 argv-size guard.
+
+The sample covers table/column codecs, column properties/addition, selected
+copy, fixed strings, nested sharing and object graphs. Console still exercises
+multiline declarations, UTF-8 and persistent state. Explicit tradeoff: the other
+134 table observations and preceding collections families no longer run through
+console in their complete historical sequence; this checkpoint no longer tests
+the long whole-corpus incremental-input workload. Full semantic parity remains
+file/stdin; dedicated CLI tests cover multiline state and error/EOF recovery.
+
+Focused tests verify transport inputs, complete native records, pinned sample
+source/output hashes, all exit/stdout/stderr failures and timeout propagation.
+Native fixtures, source reconstruction and interpreter code are unchanged. This
+is not evidence of a Mac timeout cause or a frozen-binary performance fix; fresh
+platform binary CI remains required.
+
+On the isolated main-based candidate, 19 targeted tests passed both normally and
+with `python -O`. A single local Linux interpreter replay through the actual
+smoke helper passed all six exact-output checks: file 3.569 s, stdin 3.718 s,
+console 1.119 s, and command aliases 0.281 / 0.281 / 0.314 s respectively.
+These are individual interpreter timings, not a before/after benchmark, a
+whole-suite pass or frozen Mac binary validation.

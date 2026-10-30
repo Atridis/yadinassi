@@ -1,0 +1,82 @@
+{
+  "schema": "native-tree-columns-move-checkpoints-v1",
+  "native_target": "linux-8.3.27.1508",
+  "scope": "51 exact measured cases; original acquisitions precede runtime implementation. No Windows 1C target claim.",
+  "captures": [
+    {
+      "profile": "tree-columns-move-v1",
+      "case_count": 28,
+      "fixture": "linux-8.3.27.1508.out",
+      "source": "integrational_tests/measurements/tree_columns_move.bsl",
+      "source_sha256": "af85ce64db72688c4520912756cda36eb95355af88d8f2c56d4ffbb662879b22",
+      "native_sha256": "2a691dda9e209583781d356a142f8866e057400bebfc6f83a5d39581d27b727c",
+      "native_size": 7480,
+      "run_id": 41030064575,
+      "attempt": 1,
+      "head": "e8c02167fb3dd522541927bc96aafb3deaaf424b",
+      "tested_merge": "78b5657f3c8fdcdfc2dc86f8a5b507f00972ac4d",
+      "tree": "c1ecbc9a5b31660377915d5e8888debfb0caf592",
+      "source_count": 800,
+      "server_client_modules": {
+        "server": "14861c3d08df5617ff80c4ad872921077ca8cb195aab3c62c8203d92570117e4",
+        "client": "4650ba296555e43d932531e6660bc1b4a90f13edd5eb1b9ffbc89d37e7da26a9"
+      },
+      "server_client_equal": true,
+      "native_acquisition_accepted": true,
+      "runtime_parity_accepted": false,
+      "cleanup_verified": true,
+      "audit_result_sha256": "21ad98add8ac273b5f828e1a375de340ab03600648188f0ba2970a722eef4234",
+      "artifact_provenance_sha256": "a3e3c581f937112ea63a28418839328e2121571eedbc555e4969bc10a077a7c5"
+    },
+    {
+      "profile": "tree-columns-move-boundary-v1",
+      "case_count": 17,
+      "fixture": "linux-8.3.27.1508_boundary.out",
+      "source": "integrational_tests/measurements/tree_columns_move_boundary.bsl",
+      "source_sha256": "d35743dc427a908906d225c538b68e621dd9f5e0f830a434de662f1508d14e11",
+      "native_sha256": "f19dee0a3f8ec4cb718902b2e259ee8c269ffd4d89803289dce73e5c62b150ad",
+      "native_size": 4779,
+      "run_id": 41034467262,
+      "attempt": 1,
+      "head": "72f16f84cd46c4c69e71c199bf669e92329bf4b9",
+      "tested_merge": "30df438921b25b2f4f0e6ea2423385519b8249dd",
+      "tree": "de299ae2d68520c97db1c02d24c8281efdd93d61",
+      "source_count": 806,
+      "server_client_modules": {
+        "server": "6a479334434c18ef37c998145497a315cc01be5becb6d9686e746146010caff8",
+        "client": "3fe2d6df44d360f87051512f06f8949be4567f705a2ab2daaad8cc3437925d24"
+      },
+      "server_client_equal": true,
+      "native_acquisition_accepted": true,
+      "runtime_parity_accepted": false,
+      "cleanup_verified": true,
+      "audit_result_sha256": "9d2afd804725763590337093005f06a0727c75dc6beee08eccd8f2c87552a5dd",
+      "artifact_provenance_sha256": "5e9fd9652f066ad0e22b5f1e75770e38d72f434a6ab4b31aa6d7a31145413dc2"
+    },
+    {
+      "profile": "tree-columns-move-tail-v1",
+      "case_count": 6,
+      "fixture": "linux-8.3.27.1508_tail.out",
+      "source": "integrational_tests/measurements/tree_columns_move_tail.bsl",
+      "source_sha256": "db973872a07d3026d4a809a0b03e6a722687ace845a182166013c26d1d201fa1",
+      "native_sha256": "564cd7b8bd2d859471e6be65ab02e7f045294d77d97034160d5e78c9f7b54b2e",
+      "native_size": 1691,
+      "run_id": 41037650691,
+      "attempt": 1,
+      "head": "30f96e112656e8250be7e25005e5f7382e807dc7",
+      "tested_merge": "55e439f8a5a3a7016c47feebf4ca3eaf91324a88",
+      "tree": "0a1020bccb74703d2e99781de95829407e643a50",
+      "source_count": 812,
+      "server_client_modules": {
+        "server": "47304a1b6d840e7b72f15dab11417353a7aef5333fff1682d9ef14020dd64803",
+        "client": "27f6e484bb6568461f19693d5d71a068a305d0ebc499d9dc66e9b4f8443abd9f"
+      },
+      "server_client_equal": true,
+      "native_acquisition_accepted": true,
+      "runtime_parity_accepted": false,
+      "cleanup_verified": true,
+      "audit_result_sha256": "0225a03141ff2f1a8523132fc5f639ec37ad6db2686e9d093cb27ab932925782",
+      "artifact_provenance_sha256": "9314249249f16c5f308d5edda451369635af486556d9180f06b38ddd9975021d"
+    }
+  ]
+}

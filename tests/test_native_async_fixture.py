@@ -365,11 +365,14 @@ def without_tree_total_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_total_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -380,11 +383,14 @@ def without_tree_move_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_move_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -395,11 +401,14 @@ def without_tree_load_restoration_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_load_restored_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -412,11 +421,14 @@ def without_tree_columns_diagnostic_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_columns_diagnostic_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -431,11 +443,14 @@ def without_tree_rows_diagnostic_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_rows_diagnostic_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -451,11 +466,14 @@ def without_tree_load_finite_reason_measurement(source):
         source = without_tree_rows_diagnostic_measurement(source, host=True)
     inventory = json.loads((REPOSITORY / 'tests/tree_load_finite_reason_source_inverse.json').read_text(encoding='utf-8'))
     contract = inventory['scripts/native_1c_full_host.py']
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -474,11 +492,14 @@ def without_tree_load_calibration_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_load_calibration_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -495,11 +516,14 @@ def without_tree_load_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_load_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -525,11 +549,14 @@ def without_tree_unload_supplement_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_unload_supplement_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -548,11 +575,14 @@ def without_tree_unload_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_unload_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -576,11 +606,14 @@ def without_child_cleanup(source):
     if 'bae7fc1e006a68f9fba17800e5332d68bbcb028996e7f9b29d45ecf4b4759ada' in source or '5a9a57fc6ef11e895191d9796bda5387c5bda25510dfa4e42591cadfade273b4' in source:
         source = without_tree_unload_measurement(source, host=True)
     contract = json.loads((REPOSITORY / 'tests/child_cleanup_source_inverse.json').read_text(encoding='utf-8'))
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -597,11 +630,14 @@ def without_tree_find_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_find_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 
@@ -626,11 +662,14 @@ def without_tree_findrows_measurement(source, *, host=False):
     inventory = json.loads((REPOSITORY / 'tests/tree_findrows_source_inverse.json').read_text(encoding='utf-8'))
     path = 'scripts/native_1c_full_host.py' if host else 'scripts/native_1c_bootstrap/full_suite.py'
     contract = inventory[path]
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['candidate_sha256']):
+        raise AssertionError
     for edit in reversed(contract['edits']):
-        assert source.count(edit['new']) == 1
+        if not (source.count(edit['new']) == 1):
+            raise AssertionError
         source = source.replace(edit['new'], edit['old'], 1)
-    assert hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']
+    if not (hashlib.sha256(source.encode('utf-8')).hexdigest() == contract['base_sha256']):
+        raise AssertionError
     return source
 
 

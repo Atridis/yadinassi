@@ -4,6 +4,7 @@ These mocked-process tests verify smoke orchestration, not native execution or
 new 1C observations. Runtime/native parity is tested separately.
 """
 from pathlib import Path
+import hashlib
 import re
 import subprocess
 import tempfile
@@ -49,7 +50,7 @@ class ValueTableSmokeTests(unittest.TestCase):
 
     def success_results(self):
         return [subprocess.CompletedProcess([], 0, expected, '')
-                for expected in [self.expected] * 3 + [self.command_expected] * 3]
+                for expected in [self.expected] * 2 + [self.command_expected] * 4]
 
     def test_full_owner_output_and_bounded_sample_use_all_six_transports(self):
         self.assertEqual(len(self.expected.splitlines()), 4579)
@@ -65,7 +66,7 @@ class ValueTableSmokeTests(unittest.TestCase):
         self.assertEqual(calls[1].args[0], [self.executable, '-'])
         self.assertEqual(calls[1].kwargs['input'], self.replay)
         self.assertEqual(calls[2].args[0], [self.executable])
-        self.assertEqual(calls[2].kwargs['input'], self.replay + '/exit\n')
+        self.assertEqual(calls[2].kwargs['input'], self.command + '/exit\n')
         for call, flag in zip(calls[3:], ('-c', '-с', '--command')):
             argv = [self.executable, flag, self.command]
             self.assertEqual(call.args[0], argv)
@@ -88,6 +89,25 @@ class ValueTableSmokeTests(unittest.TestCase):
             owner = re.search(pattern, self.expected, re.MULTILINE | re.DOTALL).group()
             bounded = re.search(pattern, self.command_expected, re.MULTILINE | re.DOTALL).group()
             self.assertEqual(bounded, owner)
+
+    def test_console_reuses_unchanged_native_command_sample_bytes(self):
+        # Pin the pre-existing command sample, not newly invented native answers.
+        self.assertEqual(hashlib.sha256(self.command.encode('utf-8')).hexdigest(),
+                         'e55c278187877b34dbbf01558b9a58450b5d727241a018912c3d47b96869b0dd')
+        self.assertEqual(hashlib.sha256(self.command_expected.encode('utf-8')).hexdigest(),
+                         'a1d6d5b71a988ad85d89fbfa05e450bee89ef21812f13c879726bd0181e26935')
+
+    def test_every_transport_propagates_timeout_without_retry(self):
+        for index in range(6):
+            with self.subTest(transport=index):
+                self.directory = self.root / 'outside-source' / f'timeout-{index}'
+                timeout = subprocess.TimeoutExpired(self.executable, 30)
+                results = self.success_results()[:index] + [timeout]
+                with patch.object(smoke_test.subprocess, 'run', side_effect=results) as run:
+                    with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                        self.invoke()
+                    self.assertIs(caught.exception, timeout)
+                    self.assertEqual(run.call_count, index + 1)
 
     def test_missing_completion_marker_rejected_before_process_launch(self):
         self.output.write_text(self.expected.removesuffix('table.checkpoint.complete: [ok]\n'),

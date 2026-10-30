@@ -51,8 +51,9 @@ class TailObserverTests(unittest.TestCase):
         vm=Interpreter();vm.execute(HELPERS)
         return wire.validate_payload(vm.execute(f'CTProbe({case})').encode(),case)
 
-    def test_actual_absent_method_has_all6_full_fresh_fixtures_not_availability(self):
-        raw=emit();records=wire.validate_output(raw)
+    def test_explicit_missing_method_model_has_all6_full_fresh_fixtures_not_availability(self):
+        with original_model('missing'):raw=emit()
+        records=wire.validate_output(raw)
         self.assertEqual(len(raw),1691)
         self.assertEqual(len(records),6)
         self.assertTrue(all(r['status']=='M' for r in records))
