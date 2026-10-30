@@ -35,7 +35,7 @@ jobs:
             os: macos-15-intel
             architecture: x64
           - target: mac-arm
-            os: macos-14
+            os: macos-15
             architecture: arm64
     steps:
       - uses: actions/checkout@v7
