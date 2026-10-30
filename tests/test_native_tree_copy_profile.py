@@ -137,7 +137,7 @@ class CopyProfileTests(unittest.TestCase):
         # JSON writers may escape slash: charge that overhead too, not only Python compact serialization.
         encoded = budget.wire(marker).replace(b'/', b'\\/')
         self.assertLessEqual(len(encoded)+encoded.count(b',')+encoded.count(b':')+3, 16384)
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, synthetic_producer_reader(tree.full):
             path=Path(tmp).resolve(strict=True)/'marker.json';path.write_bytes(encoded)
             self.assertEqual(tree.client_marker(path, NONCE, 'completed', profile=PROFILE), marker)
             with self.assertRaises(full.FullError): tree.client_marker(path, NONCE, 'completed')
