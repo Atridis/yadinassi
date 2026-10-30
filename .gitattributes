@@ -10,3 +10,8 @@ tests/fixtures/value_tree_copy_linux_8_3_27_1508.out -text
 
 # Preserve the authenticated numeric ValueTree.Rows.Sort capture on every checkout.
 tests/fixtures/value_tree_sort/linux-8.3.27.1508.out -text
+
+# Description experiment pins exact canonical template bytes on every OS.
+scripts/native_1c_db_oracle/metadata/Catalog.xml text eol=lf
+scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl text eol=lf
+scripts/native_1c_db_oracle/modules/CatalogDescriptionObservation.bsl text eol=lf
