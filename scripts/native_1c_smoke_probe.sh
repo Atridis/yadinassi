@@ -29,13 +29,16 @@ client_async=false
 client_args=()
 preprocessor_measurement=false
 tree_suite=false
-if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] || [ "$1" = --tree-sort-suite ] || [ "$1" = --tree-columns-move-suite ] || [ "$1" = --tree-columns-move-boundary-suite ] || [ "$1" = --tree-columns-move-tail-suite ]; }; then
+if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] || [ "$1" = --tree-sort-suite ] || [ "$1" = --tree-columns-move-suite ] || [ "$1" = --tree-columns-move-boundary-suite ] || [ "$1" = --tree-columns-move-tail-suite ] || [ "$1" = --tree-columns-clear-suite ] || [ "$1" = --tree-columns-clear-lifetime-suite ] || [ "$1" = --tree-columns-clear-metadata-suite ]; }; then
     tree_suite=true
     if [ "$1" = --tree-copy-suite ]; then tree_suite=copy; fi
     if [ "$1" = --tree-sort-suite ]; then tree_suite=sort; fi
     if [ "$1" = --tree-columns-move-suite ]; then tree_suite=columns-move; fi
     if [ "$1" = --tree-columns-move-boundary-suite ]; then tree_suite=columns-move-boundary; fi
     if [ "$1" = --tree-columns-move-tail-suite ]; then tree_suite=columns-move-tail; fi
+    if [ "$1" = --tree-columns-clear-suite ]; then tree_suite=columns-clear; fi
+    if [ "$1" = --tree-columns-clear-lifetime-suite ]; then tree_suite=columns-clear-lifetime; fi
+    if [ "$1" = --tree-columns-clear-metadata-suite ]; then tree_suite=columns-clear-metadata; fi
     set -- --full-suite "$2" "$3" --client-probe
 fi
 if [ "$#" -ge 5 ] && [ "$#" -le 10 ] && [ "${!#}" = --client-preprocessor-measurement ] && [ "${4}" = --client-probe ]; then
@@ -143,7 +146,7 @@ import xml.etree.ElementTree as ET
 
 emitter_args = sys.argv[1:]
 tree_mode = emitter_args.pop() if len(emitter_args) == 19 else "false"
-if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail"}:
+if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata"}:
     raise ValueError("tree mode")
 preprocessor_mode = emitter_args.pop() if len(emitter_args) == 18 else "false"
 if preprocessor_mode not in {"false", "true"}:
@@ -235,13 +238,13 @@ if bootstrap == "true":
         # Even a simultaneous native-format failure cannot imply no mutation
         # after stage two may have begun. The host rejects this to unknown.
         report["status"] = "stage2_failed"
-if tree_mode in {"true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail"}:
+if tree_mode in {"true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata"}:
     sys.path.insert(0, "/smoke/bootstrap")
     import tree_suite as tree_lane
     import full_suite
     raw = tree_lane.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
         quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
-        bus_cleanup_failed=bus_cleanup_failed == "true", profile={"copy":"tree-copy-v1", "sort":"tree-sort-v1", "columns-move":"tree-columns-move-v1", "columns-move-boundary":"tree-columns-move-boundary-v1", "columns-move-tail":"tree-columns-move-tail-v1", "true":"tree-v1"}[tree_mode])
+        bus_cleanup_failed=bus_cleanup_failed == "true", profile={"copy":"tree-copy-v1", "sort":"tree-sort-v1", "columns-move":"tree-columns-move-v1", "columns-move-boundary":"tree-columns-move-boundary-v1", "columns-move-tail":"tree-columns-move-tail-v1", "columns-clear":"tree-columns-clear-v1", "columns-clear-lifetime":"tree-columns-clear-lifetime-v1", "columns-clear-metadata":"tree-columns-clear-metadata-v1", "true":"tree-v1"}[tree_mode])
     sys.stdout.buffer.write(raw)
     raise SystemExit(0)
 if full_mode == "true":
@@ -439,6 +442,9 @@ if [ "$bootstrap" = true ]; then
         if [ "$tree_suite" = columns-move ]; then tree_flag=--tree-columns-move-suite; fi
         if [ "$tree_suite" = columns-move-boundary ]; then tree_flag=--tree-columns-move-boundary-suite; fi
         if [ "$tree_suite" = columns-move-tail ]; then tree_flag=--tree-columns-move-tail-suite; fi
+        if [ "$tree_suite" = columns-clear ]; then tree_flag=--tree-columns-clear-suite; fi
+        if [ "$tree_suite" = columns-clear-lifetime ]; then tree_flag=--tree-columns-clear-lifetime-suite; fi
+        if [ "$tree_suite" = columns-clear-metadata ]; then tree_flag=--tree-columns-clear-metadata-suite; fi
         python3 /smoke/bootstrap/run_stage.py "$tree_flag" --invocation-nonce "$invocation_nonce" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     elif [ "$full_suite" = true ]; then

@@ -21,6 +21,14 @@ _MAX_SEARCH_TEXT = 1_000_000
 _MAX_COPY_TEXT = 1_000_000
 
 
+def _clear_fields(value, names):
+    # Call only after an exact runtime-class gate. Bound keys before traversing
+    # or hashing them; injected instance callbacks must never be delegated to.
+    fields = value.__dict__
+    return (type(fields) is dict and len(fields) == len(names)
+            and all(type(key) is str for key in fields) and set(fields) == names)
+
+
 class _SearchBudget:
     """Local logical-work limit, not a native platform limit."""
     def __init__(self):
@@ -127,6 +135,9 @@ class BSLValueTreeColumn(BSLObject):
         if name.casefold() not in {"name", "имя", "title", "заголовок", "width", "ширина", "valuetype", "типзначения"}:
             return super().get_member(name)
         if self._deleted:
+            if (getattr(self, "_columns_clear_reset", False) is True
+                    and name.casefold() in {"name", "имя", "title", "заголовок", "width", "ширина"}):
+                return Decimal(0) if name.casefold() in {"width", "ширина"} else ""
             raise ValueError("Колонка дерева удалена")
         return BSLValueTableColumn.get_member(self, name)
 
@@ -281,14 +292,42 @@ class BSLValueTreeColumnCollection(BSLObject):
         if position >= 0 and destination < count and destination != position:
             self.items.insert(destination, self.items.pop(position))
 
-    def clear(self):
-        if self.table._all_rows and self.items:
-            raise ValueError("Очистка колонок непустого дерева пока не подтверждена")
+    def clear(self, *arguments):
+        """Measured Linux Clear lifetime; validate before invalidating any object."""
+        if arguments:
+            raise TypeError("Неверное количество параметров (Очистить)")
+        from .native_targets import LINUX_8_3_27_1508, current_native_target
+        if current_native_target() != LINUX_8_3_27_1508:
+            # Preserve the pre-existing target-independent empty/schema-only
+            # behavior; new retained-object lifetime semantics are Linux-only.
+            if self.table._all_rows and self.items:
+                raise ValueError("Очистка колонок непустого дерева пока не подтверждена")
+            for column in self.items:
+                column._deleted = True
+            self.items.clear()
+            return
+        if type(self) is not BSLValueTreeColumnCollection or type(self.table) is not BSLValueTree or self.table.columns is not self:
+            raise ValueError("Неверная коллекция очистки дерева")
+        rows = BSLValueTree._clear_graph(self.table)
+        for row in rows:
+            row.cells.clear()
+            row.rows.items.clear()
+            row.rows._columns_clear_forward = True
+            row._deleted = True
+        self.table.rows.items.clear()
+        self.table._all_rows.clear()
         for column in self.items:
             column._deleted = True
+            column._columns_clear_reset = True
+            column.name = column.title = ""
+            column.width = Decimal(0)
         self.items.clear()
 
     def get_method(self, name):
+        if name.casefold() in ("clear", "очистить"):
+            from .native_targets import LINUX_8_3_27_1508, current_native_target
+            return HostFunction(name, self.clear,
+                                returns_value=current_native_target() != LINUX_8_3_27_1508)
         if name.casefold() in ("move", "сдвинуть"):
             return HostFunction(name, self.move, returns_value=False)
         return _method(name, {"count": lambda: Decimal(len(self.items)), "количество": lambda: Decimal(len(self.items)),
@@ -372,6 +411,91 @@ class BSLValueTreeRowCollection(BSLObject):
         self.tree = tree
         self.parent = parent
         self.items = []
+        self._columns_clear_forward = False
+
+    def _clear_target(self):
+        """Only Columns.Clear-detached wrappers redirect measured operations.
+
+        The wrapper retains its Parent label; rows created through it belong to
+        the active root collection. Ordinary Rows.Clear/Delete do not set this.
+        """
+        if type(self) is not BSLValueTreeRowCollection:
+            raise ValueError("Неверная отсоединенная коллекция дерева")
+        if self._columns_clear_forward is False:
+            return None
+        from .native_targets import LINUX_8_3_27_1508, current_native_target
+        if current_native_target() != LINUX_8_3_27_1508:
+            raise ValueError("Отсоединенные коллекции дерева для этой платформы пока не подтверждены")
+        if (self._columns_clear_forward is not True
+                or not _clear_fields(self, {"tree", "parent", "items", "_columns_clear_forward"})
+                or type(self.tree) is not BSLValueTree or type(self.parent) is not BSLValueTreeRow
+                or self.parent.tree is not self.tree or self.parent.rows is not self
+                or self.parent._deleted is not True):
+            raise ValueError("Неверная отсоединенная коллекция дерева")
+        root = self.tree.rows
+        if (type(root) is not BSLValueTreeRowCollection or root is self
+                or not _clear_fields(root, {"tree", "parent", "items", "_columns_clear_forward"})
+                or root.tree is not self.tree or root.parent is not None
+                or root._columns_clear_forward is not False or type(root.items) is not list
+                or type(self.tree._all_rows) is not dict
+                or type(self.tree.columns) is not BSLValueTreeColumnCollection
+                or self.tree.columns.table is not self.tree or type(self.tree.columns.items) is not list):
+            raise ValueError("Неверная корневая коллекция дерева")
+        BSLValueTree._budget(len(self.tree._all_rows), len(self.tree.columns.items))
+        if len(root.items) > _MAX_ROWS:
+            raise ValueError("ДеревоЗначений: превышен предел строк Yadinassi")
+        BSLValueTree._clear_graph(self.tree)
+        return root
+
+    def _clear_defaults(self):
+        """Validate rebuilt schema before existing root insertion reads defaults.
+
+        Descriptors/qualifiers are normally immutable; these checks also reject
+        corrupted host-created instances without evaluating their callbacks.
+        Existing cell values are never inspected.
+        """
+        from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
+            BSLDateQualifiers, BSLBinaryDataQualifiers, BSLAllowedSign,
+            BSLAllowedLength, BSLDateFractions)
+        from .dates import BSLDate
+        budget = _SearchBudget()
+        text_size = 0
+        fields = {"types", "number_qualifiers", "string_qualifiers", "date_qualifiers", "binary_data_qualifiers"}
+        def count(value, maximum):
+            if type(value) is not Decimal:
+                raise ValueError("Неверный квалификатор вставки дерева")
+            _search_scalar(value, budget)
+            if not 0 <= value <= maximum or value != value.to_integral_value():
+                raise ValueError("Неверный квалификатор вставки дерева")
+        for column in self.tree.columns.items:
+            description = column.value_type
+            if (type(description) is not BSLTypeDescription or not _clear_fields(description, fields)
+                    or type(description.types) is not tuple or len(description.types) > 6
+                    or any(type(kind) is not BSLType for kind in description.types)
+                    or any(kind not in (BSLType.BOOLEAN, BSLType.STRING, BSLType.DATE,
+                                        BSLType.NUMBER, BSLType.NULL, BSLType.UUID) for kind in description.types)
+                    or len(set(description.types)) != len(description.types)):
+                raise ValueError("Неверное описание типов вставки дерева")
+            n, q, d, b = (description.number_qualifiers, description.string_qualifiers,
+                           description.date_qualifiers, description.binary_data_qualifiers)
+            if (type(n) is not BSLNumberQualifiers or type(q) is not BSLStringQualifiers
+                    or type(d) is not BSLDateQualifiers or type(b) is not BSLBinaryDataQualifiers
+                    or type(n.allowed_sign) is not BSLAllowedSign
+                    or type(q.allowed_length) is not BSLAllowedLength
+                    or type(b.allowed_length) is not BSLAllowedLength
+                    or type(d.date_fractions) is not BSLDateFractions):
+                raise ValueError("Неверные квалификаторы вставки дерева")
+            count(n.digits, _MAX_NUMBER_DIGITS); count(n.fraction_digits, n.digits)
+            count(q.length, _MAX_DEFAULT_TEXT); count(b.length, _MAX_DEFAULT_TEXT)
+            default = column.default
+            if type(default) is str:
+                text_size += len(default)
+                if text_size > _MAX_DEFAULT_TEXT:
+                    raise ValueError("ДеревоЗначений: превышен предел значений по умолчанию")
+            elif (description.types == (BSLType.STRING,)
+                    or not (default is None or default is NULL or type(default) is bool
+                            or type(default) is Decimal or type(default) is BSLDate)):
+                raise ValueError("Неверное значение по умолчанию вставки дерева")
 
     def __str__(self):
         return "КоллекцияСтрокДереваЗначений"
@@ -385,10 +509,16 @@ class BSLValueTreeRowCollection(BSLObject):
         return iter(self.items)
 
     def count(self):
+        target = BSLValueTreeRowCollection._clear_target(self)
+        if target is not None:
+            return BSLValueTreeRowCollection.count(target)
         self._live()
         return Decimal(len(self.items))
 
     def get(self, index):
+        target = BSLValueTreeRowCollection._clear_target(self)
+        if target is not None:
+            return BSLValueTreeRowCollection.get(target, index)
         self._live()
         return self.items[_position(index, len(self.items))]
 
@@ -398,9 +528,17 @@ class BSLValueTreeRowCollection(BSLObject):
         raise ValueError("Строки дерева недоступны для замены")
 
     def add(self):
+        target = BSLValueTreeRowCollection._clear_target(self)
+        if target is not None:
+            BSLValueTreeRowCollection._clear_defaults(self)
+            return BSLValueTreeRowCollection.add(target)
         return self.insert(Decimal(len(self.items)))
 
     def insert(self, index):
+        target = BSLValueTreeRowCollection._clear_target(self)
+        if target is not None:
+            BSLValueTreeRowCollection._clear_defaults(self)
+            return BSLValueTreeRowCollection.insert(target, index)
         self._live()
         position = _position(index, len(self.items), True)
         self.tree._budget(len(self.tree._all_rows) + 1, len(self.tree.columns.items))
@@ -877,11 +1015,16 @@ class BSLValueTreeRowCollection(BSLObject):
         self._remove_subtrees([row])
 
     def clear(self):
+        target = BSLValueTreeRowCollection._clear_target(self)
+        if target is not None:
+            return BSLValueTreeRowCollection.clear(target)
         self._live()
         self._remove_subtrees(self.items)
         self.items.clear()
 
     def get_member(self, name):
+        if name.casefold() in ("parent", "родитель") and BSLValueTreeRowCollection._clear_target(self) is not None:
+            return self.parent
         self._live()
         if name.casefold() in ("parent", "родитель"):
             return self.parent
@@ -925,6 +1068,54 @@ class BSLValueTree(BSLObject):
             return self.rows
         return super().get_member(name)
 
+
+    def _clear_graph(self):
+        """Bounded structural preflight, never inspecting or converting cell values."""
+        if (type(self) is not BSLValueTree or not _clear_fields(self, {"_all_rows", "columns", "rows"})
+                or type(self.columns) is not BSLValueTreeColumnCollection
+                or self.columns.table is not self or type(self.columns.items) is not list
+                or type(self.rows) is not BSLValueTreeRowCollection or self.rows.tree is not self
+                or self.rows.parent is not None or self.rows._columns_clear_forward is not False
+                or type(self.rows.items) is not list or type(self._all_rows) is not dict):
+            raise ValueError("Неверная структура очистки дерева")
+        columns = self.columns.items
+        BSLValueTree._budget(len(self._all_rows), len(columns))
+        budget = _SearchBudget()
+        column_ids = set()
+        for column in columns:
+            budget.charge(1)
+            if (type(column) is not BSLValueTreeColumn or column.table is not self
+                    or column._deleted is not False or id(column) in column_ids):
+                raise ValueError("Неверная колонка очистки дерева")
+            column_ids.add(id(column))
+        ordered, seen = [], set()
+        pending = [(self.rows, 0)]
+        while pending:
+            collection, depth = pending.pop()
+            if (type(collection.items) is not list or len(collection.items) > _MAX_ROWS
+                    or collection._columns_clear_forward is not False or (collection.items and depth > _MAX_DEPTH)):
+                raise ValueError("Неверная коллекция очистки дерева")
+            budget.charge(len(collection.items))
+            for row in collection.items:
+                if (type(row) is not BSLValueTreeRow or id(row) in seen
+                        or row.tree is not self or row.collection is not collection
+                        or row.parent is not collection.parent or row._deleted is not False
+                        or type(row.depth) is not int or row.depth != depth
+                        or type(row.cells) is not dict or len(row.cells) != len(columns)
+                        or type(row.rows) is not BSLValueTreeRowCollection
+                        or row.rows.tree is not self or row.rows.parent is not row):
+                    raise ValueError("Неверная строка очистки дерева")
+                budget.charge(len(row.cells))
+                if any(type(key) is not BSLValueTreeColumn or id(key) not in column_ids for key in row.cells):
+                    raise ValueError("Неверные ячейки очистки дерева")
+                seen.add(id(row)); ordered.append(row)
+                BSLValueTree._budget(len(ordered), len(columns))
+                pending.append((row.rows, depth + 1))
+        if (len(ordered) != len(self._all_rows)
+                or any(type(row) is not BSLValueTreeRow or id(row) not in seen or value is not None
+                       for row, value in self._all_rows.items())):
+            raise ValueError("Неверный реестр очистки дерева")
+        return ordered
 
     def copy(self, *args):
         """Native-backed structural copy; cell values stay shared references.
