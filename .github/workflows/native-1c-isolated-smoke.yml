@@ -375,9 +375,9 @@ jobs:
           - profile: tree-columns-move-v1
             artifact: tree-columns-move
             case: tree_columns_move
-          - profile: tree-columns-clear-v1
-            artifact: tree-columns-clear
-            case: tree_columns_clear
+          - profile: tree-columns-clear-metadata-v1
+            artifact: tree-columns-clear-metadata
+            case: tree_columns_clear_metadata
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

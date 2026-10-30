@@ -25,6 +25,60 @@ class ClearPolicyTests(unittest.TestCase):
         tree=BSLValueTree();column=tree.columns.add('Key');root=tree.rows.add();child=root.rows.add();deep=child.rows.add();sibling=tree.rows.add()
         return tree,column,(root,child,deep,sibling)
 
+    def test_windows_preserves_legacy_empty_schema_only_and_zero_column_rows(self):
+        with target_context(WINDOWS_8_3_27_2342):
+            for has_columns, has_rows in ((False, False), (True, False), (False, True), (True, True)):
+                with self.subTest(columns=has_columns, rows=has_rows):
+                    tree=BSLValueTree()
+                    column=tree.columns.add('Key') if has_columns else None
+                    if column is not None:
+                        column.title='P'; column.width=D(9)
+                    row=tree.rows.add() if has_rows else None
+                    held=row.rows if row is not None else None
+                    if has_columns and has_rows:
+                        with self.assertRaisesRegex(ValueError, 'Очистка колонок непустого дерева пока не подтверждена'):
+                            tree.columns.clear()
+                    else:
+                        tree.columns.clear()
+                    self.assertEqual(len(tree.rows.items), int(has_rows))
+                    self.assertEqual(len(tree._all_rows), int(has_rows))
+                    self.assertEqual(len(tree.columns.items), int(has_columns and has_rows))
+                    if column is not None:
+                        self.assertEqual((column.name,column.title,column.width),('Key','P',D(9)))
+                        self.assertEqual(column._deleted, not has_rows)
+                        self.assertFalse(getattr(column,'_columns_clear_reset',False))
+                        if not has_rows:
+                            with self.assertRaises(ValueError):column.get_member('Title')
+                    if row is not None:
+                        self.assertIs(tree.rows.items[0],row); self.assertFalse(row._deleted)
+                        self.assertFalse(held._columns_clear_forward)
+                        self.assertIs(held.get_member('Parent'),row)
+
+    def test_target_expression_and_extra_arguments_preserve_mutation_order(self):
+        for target in (WINDOWS_8_3_27_2342,LINUX_8_3_27_1508):
+            for name in ('Clear','Очистить'):
+                for has_rows in (False,True):
+                    for expression,arguments in ((False,'1'),(True,'1'),(True,'')):
+                        with self.subTest(target=target,name=name,rows=has_rows,expression=expression,args=arguments):
+                            vm=Interpreter(native_target=target)
+                            vm.execute('T=New ValueTree;T.Columns.Add("Key");'+('T.Rows.Add();' if has_rows else ''))
+                            succeeds=target==WINDOWS_8_3_27_2342 and not has_rows and not arguments
+                            source=('R=' if expression else '')+'T.Columns.'+name+'('+arguments+');'
+                            if succeeds:
+                                vm.execute(source);self.assertIsNone(vm.variables['r'])
+                            else:
+                                with self.assertRaises(BSLRuntimeError):vm.execute(source)
+                            vm.execute('C=T.Columns.Count();N=T.Rows.Count();')
+                            self.assertEqual(vm.variables['c'],D(not succeeds))
+                            self.assertEqual(vm.variables['n'],D(has_rows))
+
+    def test_linux_zero_column_rows_use_measured_lifetime_not_legacy_noop(self):
+        tree=BSLValueTree(); row=tree.rows.add(); held=row.rows
+        tree.columns.clear()
+        self.assertEqual(tree.rows.items,[]);self.assertTrue(row._deleted)
+        self.assertTrue(held._columns_clear_forward)
+        fresh=held.add();self.assertIs(fresh.collection,tree.rows)
+
     def test_reset_rows_columns_and_measured_wrapper_operations(self):
         tree,column,rows=self.fixture();held=[r.rows for r in rows]
         tree.columns.clear()

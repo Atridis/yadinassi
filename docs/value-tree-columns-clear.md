@@ -59,3 +59,24 @@ The original required CC12 matrix row is restored. The exploratory CL6 matrix ro
 is retired, not its assertions: all six cases remain exact offline regressions,
 and its immutable closed registry/source remain manually reproducible. No extra
 permanent native job, full-suite change, permission change or cap increase.
+
+## Pending nondefault metadata qualification
+
+The original retained column's Title was already empty and Width already zero;
+CC12/CL6 therefore do not discriminate reset of nondefault Title/Width. The
+current generic runtime reset of those nondefault values is not yet validated
+and blocks merge. A separate immutable [CD3 measurement](value-tree-columns-clear-metadata-measurement.md)
+uses Title `P` and Width9, verifies independent before observations, and prescribes
+no after answer. Runtime bytes remain frozen pending those facts. The temporary
+measurement head substitutes CD3 for CC12; CC12 restoration remains mandatory.
+
+### Legacy non-Linux compatibility
+
+The pre-existing non-Linux target behavior remains unchanged: empty/schema-only
+Clear removes columns and marks held columns deleted without the new reset or
+collection-forwarding lifetime. A zero-column tree with rows remains a no-op;
+a tree containing both rows and columns is still rejected. Legacy expression
+calls retain their previous Undefined result when allowed. These are compatibility
+guarantees, not fresh Windows native observations. Linux uses the measured
+procedure-only semantics described above. Old observer instrumentation remains
+on its original default target and serves as regression coverage.

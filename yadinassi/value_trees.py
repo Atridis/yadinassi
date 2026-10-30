@@ -298,7 +298,14 @@ class BSLValueTreeColumnCollection(BSLObject):
             raise TypeError("Неверное количество параметров (Очистить)")
         from .native_targets import LINUX_8_3_27_1508, current_native_target
         if current_native_target() != LINUX_8_3_27_1508:
-            raise ValueError("Очистка колонок дерева для этой платформы пока не подтверждена")
+            # Preserve the pre-existing target-independent empty/schema-only
+            # behavior; new retained-object lifetime semantics are Linux-only.
+            if self.table._all_rows and self.items:
+                raise ValueError("Очистка колонок непустого дерева пока не подтверждена")
+            for column in self.items:
+                column._deleted = True
+            self.items.clear()
+            return
         if type(self) is not BSLValueTreeColumnCollection or type(self.table) is not BSLValueTree or self.table.columns is not self:
             raise ValueError("Неверная коллекция очистки дерева")
         rows = BSLValueTree._clear_graph(self.table)
@@ -318,7 +325,9 @@ class BSLValueTreeColumnCollection(BSLObject):
 
     def get_method(self, name):
         if name.casefold() in ("clear", "очистить"):
-            return HostFunction(name, self.clear, returns_value=False)
+            from .native_targets import LINUX_8_3_27_1508, current_native_target
+            return HostFunction(name, self.clear,
+                                returns_value=current_native_target() != LINUX_8_3_27_1508)
         if name.casefold() in ("move", "сдвинуть"):
             return HostFunction(name, self.move, returns_value=False)
         return _method(name, {"count": lambda: Decimal(len(self.items)), "количество": lambda: Decimal(len(self.items)),

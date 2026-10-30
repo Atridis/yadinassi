@@ -5953,3 +5953,12 @@ Rows.Clear/Delete lifetime guards and last-column Delete guard remain unchanged;
 other detached-collection operations and Windows 1C target remain unmeasured.
 The required CC12 native lane is restored; exploratory CL6 is retained offline,
 not permanently duplicated in native CI. See [scope, safety and attributed evidence](docs/value-tree-columns-clear.md).
+
+### Columns.Clear: nondefault retained Title/Width qualification pending
+
+CC12/CL6 retained-column Title/Width began empty/zero, so nondefault reset is not
+proven by those captures. A fixed three-case CD3 measurement independently verifies
+Title `P`/Width9 before Clear and records the after values without imposing reset.
+Runtime code and original fixtures remain unchanged; merge is blocked until the
+metadata evidence is reviewed and the required CC12 lane is restored. See
+[measurement scope](docs/value-tree-columns-clear-metadata-measurement.md).

@@ -92,10 +92,13 @@ class NativeClearTests(unittest.TestCase):
                     result=host.compare_output(root,root,native(record),{record['source']:record['source_sha256']},runner=runner,profile=record['profile'])
                 self.assertEqual(result['acceptance_status'],'accepted')
 
-    def test_required_clear_lane_restored_and_exploratory_lane_retired(self):
+    def test_temporary_metadata_lane_is_closed_and_prior_lifetime_probe_retired(self):
         workflow=(ROOT/'.github/workflows/native-1c-isolated-smoke.yml').read_text(encoding='utf-8')
-        self.assertIn('          - profile: tree-columns-clear-v1\n            artifact: tree-columns-clear\n            case: tree_columns_clear\n',workflow)
+        self.assertIn('          - profile: tree-columns-clear-metadata-v1\n            artifact: tree-columns-clear-metadata\n            case: tree_columns_clear_metadata\n',workflow)
+        # Measurement head only: restore required CC12 after metadata facts.
+        self.assertNotIn('profile: tree-columns-clear-v1',workflow)
         self.assertNotIn('profile: tree-columns-clear-lifetime-v1',workflow)
+        self.assertEqual(profiles.select('tree-columns-clear-v1').count,13)
         self.assertEqual(profiles.select('tree-columns-clear-lifetime-v1').count,7)
         attrs=(ROOT/'.gitattributes').read_text(encoding='utf-8')
         self.assertIn('tests/fixtures/value_tree_columns_clear/*.out -text',attrs)
