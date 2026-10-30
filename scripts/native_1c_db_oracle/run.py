@@ -324,7 +324,7 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
                 and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool and type(config_catalog_observation) is bool and type(config_catalog_name_binding) is bool and type(config_catalog_standard_binding) is bool and type(config_catalog_identity_binding) is bool and type(config_catalog_field_matrix) is bool and type(config_catalog_attribute_binding) is bool and type(catalog_readonly_binding) is bool
@@ -335,12 +335,18 @@ class Native:
                 and not (reference_rows and reference_codec), 'invalid_input')
         require(description_case is None or type(description_case) is str and description_case in ('description8','description17'), 'invalid_input')
         require(type(description_rows) is bool and (not description_rows or description_case is not None), 'invalid_input')
-        self.description_rows = description_rows
+        require(type(params_slots) is bool and (not params_slots or description_case is not None)
+                and not (params_slots and description_rows), 'invalid_input')
+        self.params_slots = params_slots
+        # Reuse the exact schema3 observer rendering, not its public typed reader.
+        self.description_rows = description_rows or params_slots
         self.description_case = description_case
         self.description_policy = None
         self.description_witness = None
         if description_case is not None:
-            if description_rows:
+            if params_slots:
+                import params_slot_policy as description_policy
+            elif description_rows:
                 import catalog_description_rows as description_policy
             else:
                 import catalog_description_policy as description_policy
@@ -899,7 +905,36 @@ class Native:
             except BaseException: pass
             raise
 
+    def compare_params_slot_state(self, identifier, report):
+        policy = self.description_policy
+        require(getattr(self, 'params_slots', False) and policy is not None
+                and identifier in policy.TARGETS and self.record_pending is not None
+                and self.record_pending[0] == identifier, 'invalid_input')
+        _, frozen, evidence = self.record_pending
+        try:
+            expected = next(item for item in report['snapshots'] if item['id'] == identifier)
+            require(evidence['origin'] == {key:expected['physical'][key] for key in ('bytes','sha256')}, 'snapshot_changed')
+            from snapshots import inspect_frozen_catalog
+            from params_slot_observer import observe
+            self.reader_attempted = True
+            measured, projection = inspect_frozen_catalog(frozen, quiescent=self.quiescent,
+                read_catalog=observe, limits=filedb_catalog.CatalogLimits(), before_read=self.remaining)
+            require(measured == evidence['postimage'], 'snapshot_changed')
+            clean = {key:value for key,value in evidence.items() if key != 'description'}
+            result = policy.bind_state(clean, report, projection)
+        except BaseException:
+            try: self.remove(frozen)
+            except BaseException: pass
+            self.record_pending = None
+            raise
+        else:
+            self.remove(frozen)
+            self.record_pending = None
+            return result
+
     def compare_description_state(self, identifier, report):
+        if getattr(self, 'params_slots', False):
+            return self.compare_params_slot_state(identifier, report)
         policy = self.description_policy
         require(policy is not None and identifier in policy.TARGETS
                 and self.record_pending is not None and self.record_pending[0] == identifier, 'invalid_input')
@@ -1282,7 +1317,10 @@ class Controller:
         self.record_policy = None
         self.params_policy = None
         self.description_policy = None
-        if report.get('schema') == 53:
+        if report.get('schema') == 56:
+            import params_slot_policy
+            self.description_policy = params_slot_policy
+        elif report.get('schema') == 53:
             import catalog_description_rows
             self.description_policy = catalog_description_rows
         elif report.get('schema') == 50:
@@ -1400,7 +1438,8 @@ class Controller:
             'quiescent':True,'copy_verified':True})
         if self.description_policy is not None and identifier in self.description_policy.TARGETS:
             state = self.backend.compare_description_state(identifier, self.report)
-            self.report['description_measurement']['states'].append(state)
+            key = 'params_slot_measurement' if self.report['schema'] == 56 else 'description_measurement'
+            self.report[key]['states'].append(state)
         if self.record_policy is not None and identifier in ('created','updated'):
             state = self.backend.compare_record_state(identifier, self.report)
             self.report['record_readback']['states'].append(state)
@@ -1587,9 +1626,10 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--catalog-description-rows-8', '--catalog-description-rows-17', '--catalog-description-8', '--catalog-description-17', '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix', '--catalog-readonly-binding','--catalog-reference-distinct-a','--catalog-reference-distinct-b','--catalog-reference-codec-distinct-a','--catalog-reference-codec-distinct-b','--catalog-reference-rows-distinct-a','--catalog-reference-rows-distinct-b','--config-catalog-attribute-binding'): return 2
+    if flag not in (None, '--catalog-params-slots-8', '--catalog-params-slots-17', '--catalog-description-rows-8', '--catalog-description-rows-17', '--catalog-description-8', '--catalog-description-17', '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix', '--catalog-readonly-binding','--catalog-reference-distinct-a','--catalog-reference-distinct-b','--catalog-reference-codec-distinct-a','--catalog-reference-codec-distinct-b','--catalog-reference-rows-distinct-a','--catalog-reference-rows-distinct-b','--config-catalog-attribute-binding'): return 2
+    params_slots = flag in ('--catalog-params-slots-8','--catalog-params-slots-17')
     description_rows = flag in ('--catalog-description-rows-8','--catalog-description-rows-17')
-    description_case = {'--catalog-description-8':'description8','--catalog-description-17':'description17',
+    description_case = {'--catalog-params-slots-8':'description8','--catalog-params-slots-17':'description17','--catalog-description-8':'description8','--catalog-description-17':'description17',
         '--catalog-description-rows-8':'description8','--catalog-description-rows-17':'description17'}.get(flag)
     record_metadata = flag == '--record-metadata-observation'
     record_reader = flag == '--record-reader-validation'
@@ -1619,11 +1659,13 @@ def main():
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'description_case':description_case,'description_rows':True} if description_rows else {'description_case':description_case} if description_case is not None else {'reference_case':reference_case, 'reference_rows':True} if reference_rows else {'reference_case':reference_case, 'reference_codec':True} if reference_codec else {'reference_case':reference_case} if reference_case is not None else {'catalog_readonly_binding':True} if catalog_readonly_binding else {'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'description_case':description_case,'params_slots':True} if params_slots else {'description_case':description_case,'description_rows':True} if description_rows else {'description_case':description_case} if description_case is not None else {'reference_case':reference_case, 'reference_rows':True} if reference_rows else {'reference_case':reference_case, 'reference_codec':True} if reference_codec else {'reference_case':reference_case} if reference_case is not None else {'catalog_readonly_binding':True} if catalog_readonly_binding else {'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
         if description_case is not None:
-            if description_rows:
+            if params_slots:
+                import params_slot_policy as selected
+            elif description_rows:
                 import catalog_description_rows as selected
             else:
                 import catalog_description_policy as selected

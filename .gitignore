@@ -27,3 +27,6 @@ integrational_tests/.work/
 
 # Only the authenticated runtime Description8 handoff may precede Description17.
 /native-db-oracle/description_rows8.json
+
+# Exact authenticated first-case PARAMS observation handoff only.
+/native-db-oracle/params_slots8.json
