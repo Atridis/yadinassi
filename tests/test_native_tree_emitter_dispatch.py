@@ -17,7 +17,8 @@ ROOT=Path(__file__).resolve().parents[1]
 SOURCE=(ROOT/'scripts/native_1c_smoke_probe.sh').read_text(encoding='utf-8')
 EMITTER=SOURCE.split("<<'PY'\n",1)[1].split('\nPY\n',1)[0]
 MODES={'true':'tree-v1','copy':'tree-copy-v1','sort':'tree-sort-v1',
-       'columns-move':'tree-columns-move-v1'}
+       'columns-move':'tree-columns-move-v1',
+       'columns-move-boundary':'tree-columns-move-boundary-v1'}
 NONCE='f'*32
 
 
@@ -28,7 +29,7 @@ def arguments(mode):
 
 
 def previous_emitter():
-    return EMITTER.replace('{"false", "true", "copy", "sort", "columns-move"}',
+    return EMITTER.replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
                            '{"false", "true", "copy", "sort"}').replace(
         '{"true", "copy", "sort", "columns-move"}', '{"true", "copy", "sort"}')
 
@@ -125,10 +126,55 @@ class TreeEmitterDispatchTests(unittest.TestCase):
             with self.assertRaises(host.TreeError):
                 host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile='tree-sort-v1')
 
+    def test_boundary_mode_both_sets_required_and_prior_modes_unchanged(self):
+        old=EMITTER.replace(', "columns-move-boundary"}', '}')
+        only_allowlist=old.replace('if tree_mode not in {"false", "true", "copy", "sort", "columns-move"}:',
+            'if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary"}:')
+        only_dispatch=old.replace('if tree_mode in {"true", "copy", "sort", "columns-move"}:',
+            'if tree_mode in {"true", "copy", "sort", "columns-move", "columns-move-boundary"}:')
+        for code in (old,only_allowlist,only_dispatch):
+            finish=mock.Mock(return_value=b'boundary-envelope')
+            raw,error=execute(arguments('columns-move-boundary'),finish,code)
+            finish.assert_not_called();self.assertNotEqual(raw,b'boundary-envelope')
+            if code!=only_allowlist:self.assertIsInstance(error,ValueError)
+        for mode in ('false','true','copy','sort','columns-move'):
+            finish=mock.Mock(return_value=b'prior-envelope')
+            previous,error=execute(arguments(mode),finish,old)
+            current,new_error=execute(arguments(mode),finish)
+            self.assertEqual(previous,current);self.assertEqual(type(error),type(new_error))
+        for args in (arguments('columns-move-boundary')+['columns-move-boundary'],
+                     arguments('columns-move-boundary')+['columns-move'],
+                     arguments('columns-move')+['columns-move-boundary']):
+            finish=mock.Mock();raw,error=execute(args,finish)
+            self.assertIsInstance(error,ValueError);self.assertEqual(raw,b'');finish.assert_not_called()
+
+    def test_boundary_actual_emitter_to_real_producer_and_strict_host(self):
+        import test_native_tree_columns_move_boundary_profile as boundary
+        host,tree,full,smoke=boundary.host,boundary.tree,boundary.full,boundary.smoke
+        spec=boundary.spec();raw=boundary.maximum_output()
+        envelope,hashes,modules=boundary.success_envelope(raw)
+        with tempfile.TemporaryDirectory() as tmp:
+            parent=Path(tmp).resolve(strict=True);capture=parent/'capture';capture.mkdir()
+            (capture/(spec.case+'.out')).write_bytes(raw)
+            tree.write_report(parent/'stage3-report.json',envelope['report']['stage3'],profile=spec.name)
+            def finish(report,nonce,requested_root,**kwargs):
+                self.assertEqual(requested_root,Path('/tmp/onec-smoke')/('stage3-'+NONCE))
+                return tree.finish_report(bootstrap_report(),nonce,capture,**kwargs)
+            with synthetic_producer_reader(tree.full),mock.patch.object(full,'final_client_process_census'):
+                emitted,error=execute(arguments('columns-move-boundary'),finish)
+            self.assertIsInstance(error,SystemExit);self.assertEqual(error.code,0)
+            self.assertEqual(host.validate_envelope(emitted,NONCE,hashes,modules,
+                smoke.validate_report,profile=spec.name)[1],raw)
+            for profile in ('tree-columns-move-v1','tree-sort-v1'):
+                with self.assertRaises(host.TreeError):
+                    host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
+
     def test_shell_finish_passes_the_mode_after_preprocessor(self):
         self.assertIn('"$bus_cleanup_failed" "$preprocessor_measurement" "$tree_suite" <<\'PY\'',SOURCE)
         self.assertIn('if [ "$1" = --tree-columns-move-suite ]; then tree_suite=columns-move; fi',SOURCE)
         self.assertIn('if [ "$tree_suite" = columns-move ]; then tree_flag=--tree-columns-move-suite; fi',SOURCE)
+        self.assertIn('if [ "$1" = --tree-columns-move-boundary-suite ]; then tree_suite=columns-move-boundary; fi',SOURCE)
+        self.assertIn('if [ "$tree_suite" = columns-move-boundary ]; then tree_flag=--tree-columns-move-boundary-suite; fi',SOURCE)
 
 
 if __name__=='__main__':unittest.main()

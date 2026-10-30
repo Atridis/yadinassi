@@ -55,6 +55,8 @@ def selected_contract(profile):
         return sibling('native_1c_tree_sort_contract')
     if profile == 'tree-columns-move-v1':
         return sibling('native_1c_tree_columns_move_contract')
+    if profile == 'tree-columns-move-boundary-v1':
+        return sibling('native_1c_tree_columns_move_boundary_contract')
     raise ValueError('invalid_tree_profile')
 
 
@@ -74,7 +76,7 @@ def validate_diagnostic(value, *, profile='tree-v1'):
             return COPY_DIAGNOSTICS.validate_diagnostic(value)
         except COPY_DIAGNOSTICS.DiagnosticError:
             raise TreeError('tree_report_invalid') from None
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1'):
         require(value is None or type(value) is dict and value == {
             'site': value.get('site'), 'case': None, 'category': 'record_count', 'calibration': None}
             and type(value['site']) is str and value['site'] in ('server', 'client'))
@@ -307,7 +309,7 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
     if profile == 'tree-copy-v1': require(ACCESS_PROBE.scalar_controls_valid(ACCESS_PROBE.split_capture(native)[0]), 'tree_probe_controls_invalid')
     observations = contract.validate_output(native_main)
     available = profile != 'tree-copy-v1' or (observations[0]['status'] == 'S' and observations[7]['status'] == 'S')
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1'):
         available = all(observations[index]['status'] == 'S' for index in (0, 1))
     source = root / spec.source
     raw = FULL.read_regular(source, FULL.MAX_FILE, nonempty=True)
@@ -334,6 +336,7 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
                 'interpreter_main_size':len(actual_main) if valid else None} if profile == 'tree-copy-v1' else {}),
             **({'native_sort_available': available} if profile == 'tree-sort-v1' else {}),
             **({'native_columns_move_available': available} if profile == 'tree-columns-move-v1' else {}),
+            **({'native_columns_move_boundary_available': available} if profile == 'tree-columns-move-boundary-v1' else {}),
             'native_sha256': FULL.digest(native), 'native_size': len(native),
             'interpreter_sha256': FULL.digest(actual), 'interpreter_size': len(actual)}
 
@@ -347,6 +350,7 @@ def staged_files(smoke, *, profile='tree-v1'):
             'scripts/' + spec.contract + '.py': 'bootstrap/' + spec.contract + '.py',
             'scripts/native_1c_tree_profiles.py': 'bootstrap/native_1c_tree_profiles.py',
             **({'scripts/native_1c_tree_copy_diagnostics.py': 'bootstrap/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py': 'bootstrap/native_1c_tree_access_probe.py'} if profile == 'tree-copy-v1' else {}),
+        **({'scripts/native_1c_tree_columns_move_contract.py': 'bootstrap/native_1c_tree_columns_move_contract.py'} if profile == 'tree-columns-move-boundary-v1' else {}),
             spec.source: 'scenarios/' + spec.case + '.bsl'}
 
 
@@ -446,7 +450,7 @@ def container_command(staged, hashes, name, nonce, smoke, *, profile='tree-v1'):
             'HOME=/tmp/home', 'XDG_RUNTIME_DIR=/tmp/runtime', 'DISPLAY=:99',
             'LANG=ru_RU.UTF-8', 'LC_ALL=ru_RU.UTF-8', 'TZ=Etc/UTC',
             '/bin/bash', '--noprofile', '--norc', '/smoke/probe.sh',
-            {'tree-v1': '--tree-suite', 'tree-copy-v1': '--tree-copy-suite', 'tree-sort-v1': '--tree-sort-suite', 'tree-columns-move-v1': '--tree-columns-move-suite'}[profile], '--invocation-nonce', nonce]
+            {'tree-v1': '--tree-suite', 'tree-copy-v1': '--tree-copy-suite', 'tree-sort-v1': '--tree-sort-suite', 'tree-columns-move-v1': '--tree-columns-move-suite', 'tree-columns-move-boundary-v1': '--tree-columns-move-boundary-suite'}[profile], '--invocation-nonce', nonce]
 
 
 @contextlib.contextmanager
@@ -477,6 +481,7 @@ def run(root, temp_root, *, export_native_outputs=False, failure_state=None, pro
         'tree-v1': (), 'tree-copy-v1': (),
         'tree-sort-v1': ('scripts/native_1c_tree_sort_contract.py',),
         'tree-columns-move-v1': ('scripts/native_1c_tree_columns_move_contract.py',),
+        'tree-columns-move-boundary-v1': ('scripts/native_1c_tree_columns_move_contract.py', 'scripts/native_1c_tree_columns_move_boundary_contract.py'),
     }[profile]
     host_identity = {p: FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) for p in ('scripts/native_1c_tree_profile.py', 'scripts/native_1c_tree_fill_contract.py', 'scripts/native_1c_tree_copy_contract.py', 'scripts/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py', 'scripts/native_1c_tree_profiles.py', 'scripts/native_1c_smoke.py', 'scripts/native_1c_full_host.py') + contract_paths}
     goldens = FULL.windows_fingerprints(root)
@@ -714,7 +719,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute-approved-image', action='store_true', required=True)
     parser.add_argument('--export-native-outputs', action='store_true')
-    parser.add_argument('--profile', choices=('tree-v1', 'tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1'), action='append')
+    parser.add_argument('--profile', choices=('tree-v1', 'tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1'), action='append')
     args = parser.parse_args()
     if args.profile is not None and len(args.profile) != 1:
         parser.error('profile must be selected once')
