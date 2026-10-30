@@ -231,7 +231,7 @@ class ColumnsMoveBoundaryProfileTests(unittest.TestCase):
         encoded=budget.wire(marker).replace(b'/',b'\\/')
         self.assertEqual(len(raw),4779)
         self.assertEqual(len(encoded)+encoded.count(b',')+encoded.count(b':')+3,5031)
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, synthetic_producer_reader(tree.full):
             path=Path(tmp).resolve(strict=True)/'marker.json';path.write_bytes(encoded)
             self.assertEqual(tree.client_marker(path,NONCE,'completed',profile=PROFILE),marker)
             with self.assertRaises(full.FullError): tree.client_marker(path,NONCE,'completed')
