@@ -44,7 +44,7 @@ Finite new UnsupportedLayout labels are `dbnames_chain_reference`,
 `dbnames_chain_cycle`, `dbnames_chain_zero_target`, `dbnames_chain_unlinked`.
 No exception values, indices or chain data enter native reports.
 
-## Evidence and pending acceptance
+## Evidence and bounded native acceptance
 
 Authentic measurement run41038717311 on4078eb1de7bd7407a2781d2e0e1ae54d4c5ec693
 (treeef9d8c0a8c786754a513fee9581b1b309e3ef323) observed, in both Description8/17
@@ -59,13 +59,24 @@ little-endian interpretation. Original source/run receipts are not rebound to
 this new implementation.
 
 The reviewed workflow returns to the42-source public typed Description lane;
-the44-source observational route remains explicitly selectable. New source
-hashes and finite diagnostics require fresh readiness and native validation.
+the44-source observational route remains explicitly selectable. The exact reviewed source
+hashes and finite diagnostics were bound to fresh readiness and native validation.
 The comparison-profile hash recipe explicitly binds
 `params_slot_policy=closed_marker1_chain_v1`; the previous recipe hash is rejected.
 Diagnostic exception dictionaries also require exact string keys before lookup;
 foreign keys, subclasses or more than8 attributes produce fixed unknown results
 without invoking hooks or exposing values.
-Actual created/updated/applied Description, metadata and UUID parity at
-Payload32/32/64 for both cases is still pending. Synthetic admission and the
-historical44-source measurement do not establish that runtime parity.
+Authenticated [run41045553007](https://github.com/Atridis/yadinassi/actions/runs/41045553007)
+on commit `fb5c2e87e99b983cb65cc6f11fbb69ca8ecebbfa` (tree
+`f4154045d578abac148fcbfb68cbb94d97b14c2e`) passed the strict42-source lane:
+both Description8/17 cases matched actual Description, metadata and typed UUID
+at created/updated/applied with Payload32/32/64. Baseline was absent; source,
+postimage, handoff and all cleanup gates were verified. Recipe hash
+`80718abb0df1a21de7dc00d43f57f2cefeaa0de80eb0a25a5bf7e7f7b016bbba` binds this policy.
+The final Core/DB union preserves all42 input bytes exactly; this receipt remains
+attributed to fb5c2e87, not a new execution on the union. Full current-head CI
+and ordinary native gates remain required. Other Description lengths remain
+a structural metadata-derived generalization, not additional native measurements.
+Synthetic admission and the earlier44-source measurement are separate evidence;
+earlier failed42 runs remain failures. This is not arbitrary removed-record,
+write, multirow or platform-wide compatibility support.

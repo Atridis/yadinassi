@@ -118,3 +118,17 @@ Payload64 images with renamed target tables reproduce an exact shared-class
 This demonstrates a classification gap, **not** the cause of the genuine run.
 The longest finite code and all report/capture/aggregate bounds are unchanged.
 A fresh source-bound native diagnostic run remains necessary.
+
+
+### Subsequent bounded admission and native acceptance
+
+The source-bound diagnostic run41032055755 identified `dbnames_nonreserved_slot`,
+not the earlier synthetic example. The separate44-source run41038717311 measured
+the PARAMS marker/link census before and after migration. A narrow opt-in
+`closed_marker1_chain_v1` profile then admitted only complete bounded marker-one
+chains, retaining strict active filename decoding and all shared ownership,
+budget and parity gates. [The exact contract and attribution](params-closed-chain.md)
+record strict42-source run41045553007 on fb5c2e87: both lengths8/17 passed all
+three Description/metadata/typedUUID comparisons at Payload32/32/64. The final
+Core/DB union retains those42 bytes; no historical failed run is reclassified,
+and no union-wide or unmeasured-format native claim follows from this receipt.

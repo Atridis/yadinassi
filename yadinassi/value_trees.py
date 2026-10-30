@@ -216,6 +216,71 @@ class BSLValueTreeColumnCollection(BSLObject):
             del row.cells[column]
         column._deleted = True
 
+    def move(self, *arguments):
+        """Measured Linux column permutation; row/cell storage is untouched.
+
+        A deleted owned column has source index -1. Destinations include Count,
+        which is a no-op, as is every admitted deleted-column destination.
+        Structural/resource guards are local policy, not native error claims.
+        """
+        if len(arguments) != 2:
+            raise TypeError("Неверное количество параметров (Сдвинуть)")
+        from .native_targets import LINUX_8_3_27_1508, current_native_target
+        if current_native_target() != LINUX_8_3_27_1508:
+            raise ValueError("Сдвиг колонок дерева для этой платформы пока не подтвержден")
+        if (type(self) is not BSLValueTreeColumnCollection
+                or type(self.table) is not BSLValueTree or self.table.columns is not self
+                or type(self.items) is not list or len(self.items) > _MAX_COLUMNS):
+            raise ValueError("Неверная коллекция колонок сдвига дерева")
+        budget = _SearchBudget()
+        schema, identities = {}, set()
+        for item in self.items:
+            budget.charge(1)
+            if (type(item) is not BSLValueTreeColumn or item.table is not self.table
+                    or item._deleted is not False or id(item) in identities):
+                raise ValueError("Неверная колонка сдвига дерева")
+            identities.add(id(item))
+            name = _search_name(item.name, budget)
+            if name in schema:
+                raise ValueError("Повторное имя колонки сдвига дерева")
+            schema[name] = item
+        column, offset = arguments
+        count = len(self.items)
+        if type(column) is str:
+            column = schema.get(_search_name(column, budget))
+            if column is None:
+                raise ValueError("Колонка сдвига дерева не найдена")
+        if type(column) is BSLValueTreeColumn:
+            if column.table is not self.table:
+                raise ValueError("Колонка не принадлежит дереву")
+            if column._deleted is True:
+                position = -1
+            elif column._deleted is False and id(column) in identities:
+                position = next(i for i, item in enumerate(self.items) if item is column)
+            else:
+                raise ValueError("Колонка отсутствует в коллекции дерева")
+        elif type(column) is Decimal:
+            index = _move_number(column)
+            # Reject huge exponents before int; truncate before the actual range
+            # check, including the measured numeric selector -0.5 -> 0.
+            if index.copy_abs() >= count + 1:
+                raise IndexError("Индекс колонки дерева вне границ")
+            position = int(index.to_integral_value(rounding=ROUND_DOWN))
+            if not 0 <= position < count:
+                raise IndexError("Индекс колонки дерева вне границ")
+        else:
+            raise TypeError("Ожидается колонка, имя или числовой индекс дерева")
+        distance = _move_number(offset)
+        # Source -1 permits distance Count+1. Fractions truncate first, without
+        # permitting a huge Python integer allocation for an extreme exponent.
+        if distance.copy_abs() >= count + 2:
+            raise IndexError("Сдвиг колонки дерева вне границ")
+        destination = position + int(distance.to_integral_value(rounding=ROUND_DOWN))
+        if not 0 <= destination <= count:
+            raise IndexError("Сдвиг колонки дерева вне границ")
+        if position >= 0 and destination < count and destination != position:
+            self.items.insert(destination, self.items.pop(position))
+
     def clear(self):
         if self.table._all_rows and self.items:
             raise ValueError("Очистка колонок непустого дерева пока не подтверждена")
@@ -224,6 +289,8 @@ class BSLValueTreeColumnCollection(BSLObject):
         self.items.clear()
 
     def get_method(self, name):
+        if name.casefold() in ("move", "сдвинуть"):
+            return HostFunction(name, self.move, returns_value=False)
         return _method(name, {"count": lambda: Decimal(len(self.items)), "количество": lambda: Decimal(len(self.items)),
             "get": self.get, "получить": self.get, "find": self.find, "найти": self.find,
             "indexof": self.index_of, "индекс": self.index_of, "add": self.add, "добавить": self.add,
