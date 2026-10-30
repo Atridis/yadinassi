@@ -1,11 +1,15 @@
 """Exact authenticated Linux Columns.Move captures; no snapshot normalization."""
+from contextlib import contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import stat
+from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest import mock
 
 from yadinassi import Interpreter
 from yadinassi.native_targets import LINUX_8_3_27_1508
@@ -44,6 +48,43 @@ def source(record):
     if hashlib.sha256(raw).hexdigest() != record['source_sha256']:
         raise AssertionError('native Columns.Move source changed')
     return raw
+
+
+@contextmanager
+def synthetic_source_reader(expected, *, windows=None):
+    """Windows-only static fixture adapter, never native host admission.
+
+    The fake-runner test exercises byte/hash gates, not descriptor/path metadata
+    equality on Windows. POSIX retains the actual reader. Explicit ``windows``
+    is solely for exercising this fixture branch on other test hosts.
+    """
+    if windows is None:
+        windows = os.name == 'nt'
+    def read(path, limit, *, nonempty=False):
+        try:
+            if path != expected or limit != host.FULL.MAX_FILE:
+                raise ValueError('fixture path or limit')
+            if any(parent.is_symlink() for parent in (path, *path.parents)):
+                raise ValueError('link')
+            before = path.lstat()
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+                raise ValueError('file')
+            with path.open('rb') as stream:
+                raw = stream.read(limit + 1)
+            after = path.lstat()
+            identity = lambda value: (value.st_dev, value.st_ino, value.st_mode,
+                value.st_nlink, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+            if (identity(before) != identity(after) or len(raw) != before.st_size
+                    or len(raw) > limit or (nonempty and not raw)):
+                raise ValueError('unstable fixture')
+            return raw
+        except (OSError, ValueError):
+            raise host.FULL.FullError('invalid_private_file') from None
+    if windows:
+        with mock.patch.object(host.FULL, 'read_regular', side_effect=read):
+            yield
+    else:
+        yield
 
 
 class NativeColumnsMoveTests(unittest.TestCase):
@@ -130,16 +171,83 @@ class NativeColumnsMoveTests(unittest.TestCase):
                 def runner(*args):
                     calls.append(args)
                     return 0, native(record), b''
-                with self.assertRaisesRegex(host.TreeError, 'tree_source_changed'):
-                    host.compare_output(root, root, native(record),
+                with synthetic_source_reader(path):
+                    with self.assertRaisesRegex(host.TreeError, 'tree_source_changed'):
+                        host.compare_output(root, root, native(record),
+                            {record['source']: record['source_sha256']}, runner=runner, profile=record['profile'])
+                    self.assertEqual(calls, [])
+                    path.write_bytes(path.read_text(encoding='utf-8').encode('utf-8'))
+                    self.assertEqual(path.read_bytes(), canonical)
+                    result = host.compare_output(root, root, native(record),
                         {record['source']: record['source_sha256']}, runner=runner, profile=record['profile'])
-                self.assertEqual(calls, [])
-                path.write_bytes(path.read_text(encoding='utf-8').encode('utf-8'))
-                self.assertEqual(path.read_bytes(), canonical)
-                result = host.compare_output(root, root, native(record),
-                    {record['source']: record['source_sha256']}, runner=runner, profile=record['profile'])
-                self.assertEqual(result['acceptance_status'], 'accepted')
-                self.assertEqual(len(calls), 1)
+                    self.assertEqual(result['acceptance_status'], 'accepted')
+                    self.assertEqual(len(calls), 1)
+
+
+    def test_windows_fixture_adapter_keeps_all_three_profile_hash_and_file_gates(self):
+        for record in checkpoints():
+            with self.subTest(profile=record['profile']), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve(); path = root / record['source']
+                path.parent.mkdir(parents=True); canonical = source(record)
+                calls = []; original = host.FULL.read_regular
+                def runner(*args):
+                    calls.append(args)
+                    return 0, native(record), b''
+                def compare(hashes=None):
+                    return host.compare_output(root, root, native(record), hashes or
+                        {record['source']: record['source_sha256']}, runner=runner, profile=record['profile'])
+                with synthetic_source_reader(path, windows=True):
+                    for raw in (canonical.replace(b'\n', b'\r\n'), canonical + b' '):
+                        path.write_bytes(raw)
+                        with self.assertRaisesRegex(host.TreeError, '^tree_source_changed$'):
+                            compare()
+                        self.assertEqual(calls, [])
+                    path.write_bytes(canonical)
+                    with self.assertRaisesRegex(host.TreeError, '^tree_source_changed$'):
+                        compare({record['source']: '0' * 64})
+                    self.assertEqual(calls, [])
+                    self.assertEqual(compare()['acceptance_status'], 'accepted')
+                    self.assertEqual(len(calls), 1); calls.clear()
+                    self.assertFalse(list(root.glob('tree-cache-*')))
+                    path.write_bytes(b'')
+                    with self.assertRaisesRegex(host.FULL.FullError, '^invalid_private_file$'):
+                        compare()
+                    with mock.patch.object(host.FULL, 'MAX_FILE', 32):
+                        path.write_bytes(b'x' * 33)
+                        with self.assertRaisesRegex(host.FULL.FullError, '^invalid_private_file$'):
+                            compare()
+                    path.write_bytes(canonical)
+                    with self.assertRaisesRegex(host.FULL.FullError, '^invalid_private_file$'):
+                        host.FULL.read_regular(path.with_name('wrong.bsl'), host.FULL.MAX_FILE, nonempty=True)
+                    self.assertEqual(calls, [])
+                self.assertIs(host.FULL.read_regular, original)
+                with self.assertRaisesRegex(RuntimeError, '^cleanup sentinel$'):
+                    with synthetic_source_reader(path, windows=True):
+                        raise RuntimeError('cleanup sentinel')
+                self.assertIs(host.FULL.read_regular, original)
+
+    def test_descriptor_path_mismatch_reproduction_is_not_a_remote_cause_claim(self):
+        # This deliberately models one rejected metadata signature; the remote
+        # Windows log did not identify which exact metadata field differed.
+        for record in checkpoints():
+            with self.subTest(profile=record['profile']), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve(); path = root / record['source']
+                path.parent.mkdir(parents=True); path.write_bytes(source(record))
+                original = host.FULL.read_regular; fstat = os.fstat
+                def mismatched(fd):
+                    value = fstat(fd)
+                    fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+                    result = {name: getattr(value, name) for name in fields}
+                    result['st_ino'] += 1
+                    return SimpleNamespace(**result)
+                with mock.patch.object(host.FULL.os, 'fstat', side_effect=mismatched):
+                    with self.assertRaisesRegex(host.FULL.FullError, '^invalid_private_file$'):
+                        original(path, host.FULL.MAX_FILE, nonempty=True)
+                    with synthetic_source_reader(path, windows=True):
+                        self.assertEqual(host.FULL.read_regular(path, host.FULL.MAX_FILE, nonempty=True), source(record))
+                self.assertIs(host.FULL.read_regular, original)
+                with synthetic_source_reader(path, windows=False):
+                    self.assertIs(host.FULL.read_regular, original)
 
 
 if __name__ == '__main__': unittest.main()
