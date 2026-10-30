@@ -11,7 +11,7 @@ import re
 import protocol as core
 import catalog_description_measurement as measurement
 from contract import source_binding
-from snapshots import MAX_FILE_BYTES
+from snapshots import MAX_FILE_BYTES, OracleError
 from protocol import require, exact, integer, digest, encode, decode
 
 SCHEMA, CAPTURE_SCHEMA, AGGREGATE_SCHEMA = 53, 54, 55
@@ -35,6 +35,109 @@ PHYSICAL_NUMBERS = ('description_length','payload_length','field_count','record_
     'next_ordinal','previous_offset','next_offset','previous_displacement','next_displacement')
 PHYSICAL_KEYS = set(PHYSICAL_NUMBERS) | {'status','descriptor_sha256','active_count_known',
     'utf16_count_matches','description_type','value_sha256'}
+
+
+
+# Reuse the established finite diagnostic vocabulary, never exception text.
+import catalog_readonly_binding as _binding_diagnostics
+import filedb_catalog as _catalog_errors
+DIAGNOSTICS = {k:frozenset(v) for k,v in _binding_diagnostics.DIAGNOSTICS.items()}
+DIAGNOSTICS.update(adapter=frozenset(('metadata_profile','one_active_row')),
+    parity=frozenset(('metadata','description','typed_uuid')),
+    unclassified=frozenset(('unknown_exception',)))
+PHASES = ('origin','public_reader','adapter','comparison','postimage','cleanup')
+_READER_CATEGORIES = {
+    _catalog_errors.UnsupportedLayout:'unsupported_layout',
+    _catalog_errors.InvalidStructure:'structural_rejection',
+    _catalog_errors.ResourceLimit:'resource_limit',
+    _catalog_errors.UnsupportedSharing:'unsupported_sharing_policy',
+    _catalog_errors.SourceIOError:'io_or_change',
+    _catalog_errors.ChangedDuringRead:'io_or_change',
+    _catalog_errors.NotRegularFile:'io_or_change',
+}
+
+class DescriptionParityError(OracleError):
+    def __init__(self, code):
+        require(type(code) is str and code in DIAGNOSTICS['parity'],'unexpected_failure')
+        super().__init__('transport_invalid')
+        self.code=code
+
+class DescriptionAdapterError(OracleError):
+    def __init__(self, code):
+        require(type(code) is str and code in DIAGNOSTICS['adapter'],'unexpected_failure')
+        # The previous adapter CatalogError was sanitized as unexpected_failure.
+        super().__init__('unexpected_failure')
+        self.code=code
+
+class DiagnosticFailure(OracleError):
+    def __init__(self, diagnostic, kind='unexpected_failure'):
+        _diagnostic(diagnostic)
+        require(type(kind) is str and kind in core.FAILURES,'unexpected_failure')
+        super().__init__(kind)
+        self.diagnostic=copy.deepcopy(diagnostic)
+
+
+def _diagnostic(value):
+    exact(value,{'snapshot','phase','category','code'})
+    require(type(value['snapshot']) is str and value['snapshot'] in TARGETS
+        and type(value['phase']) is str and value['phase'] in PHASES
+        and type(value['category']) is str and value['category'] in DIAGNOSTICS
+        and type(value['code']) is str and value['code'] in DIAGNOSTICS[value['category']])
+    if value['snapshot']=='baseline':
+        require(value['phase'] in ('postimage','comparison') and value['category']=='unclassified')
+    if value['category']=='adapter':require(value['phase']=='adapter')
+    if value['category']=='parity':require(value['phase']=='comparison')
+    if value['category'] not in ('adapter','parity','unclassified'):require(value['phase']=='public_reader')
+
+
+def diagnostic_for(error,*,snapshot,phase):
+    require(type(snapshot) is str and snapshot in TARGETS
+        and type(phase) is str and phase in PHASES,'invalid_input')
+    kind=type(error);category='unclassified';code='unknown_exception'
+    selected=next((category for cls,category in _READER_CATEGORIES.items() if kind is cls),None) if phase=='public_reader' else None
+    if kind is DescriptionParityError and phase=='comparison':selected='parity'
+    elif kind is DescriptionAdapterError and phase=='public_reader':selected='adapter';phase='adapter'
+    if selected is not None:
+        # Only exact trusted types reach this read; subclass properties and
+        # hostile str/repr/getattribute hooks are never inspected or executed.
+        fields=object.__getattribute__(error,'__dict__')
+        candidate=dict.get(fields,'code') if type(fields) is dict else None
+        if type(candidate) is str and candidate in DIAGNOSTICS[selected]:
+            category,code=selected,candidate
+    return {'snapshot':snapshot,'phase':phase,'category':category,'code':code}
+
+
+def wrap_failure(error,*,snapshot,phase):
+    diagnostic=diagnostic_for(error,snapshot=snapshot,phase=phase)
+    kind='unexpected_failure'
+    kind_type=type(error)
+    if kind_type is OracleError or kind_type is DescriptionParityError or kind_type is DescriptionAdapterError:
+        fields=object.__getattribute__(error,'__dict__')
+        candidate=dict.get(fields,'kind') if type(fields) is dict else None
+        if type(candidate) is str and candidate in core.FAILURES:kind=candidate
+    return DiagnosticFailure(diagnostic,kind)
+
+
+def _bound_failure(report,diagnostic,*,final=False):
+    _diagnostic(diagnostic)
+    require(report.get('schema')==SCHEMA and report.get('status')=='failed'
+        and report.get('accepted') is False
+        and report.get('description_measurement') is None
+        and report.get('failed_stage')==STAGES[diagnostic['snapshot']])
+    snapshots=report.get('snapshots')
+    require(type(snapshots) is list and len(snapshots)>0
+        and type(snapshots[-1]) is dict and snapshots[-1].get('id')==diagnostic['snapshot'])
+    cleanup=report.get('cleanup');require(type(cleanup) is dict)
+    required=('native_processes_stopped','raw_files_removed','container_removed','private_staging_removed') if final else ('native_processes_stopped','raw_files_removed')
+    require(all(cleanup.get(k) is True for k in required))
+
+
+def set_failure(report,diagnostic,*,final=False):
+    report.pop('description_failure',None)
+    try:_bound_failure(report,diagnostic,final=final)
+    except (OracleError,KeyError,TypeError):return False
+    report['description_failure']=copy.deepcopy(diagnostic)
+    return True
 
 
 def _token(value):
@@ -68,6 +171,9 @@ def discard_capture(report, final=False):
     """No usable partial observation survives lifecycle/cleanup failure."""
     if report.get('schema')==SCHEMA:
         report['description_measurement']=None
+        # Any explicit discard (including host transport/provenance failure)
+        # removes the diagnostic. Controller may restore only after cleanup.
+        report.pop('description_failure',None)
 
 
 def _image(value):
@@ -193,6 +299,15 @@ def bind_state(identifier,evidence,observation,witness,report,*,typed_uuid=None)
             'case':witness.case,'operation':witness.operation,'present':witness.present,
             'utf16_units':witness.utf16_units,'scalar_count':witness.scalar_count,'trailing_spaces':witness.trailing_spaces},
         'comparison':measurement.compare_readback(observation,witness,case=report['description_case']) if present else None}
+    # Do not turn stale/invalid witness identity into a parity diagnostic.
+    _image(value['origin']);_image(value['postimage'])
+    require(value['origin']=={k:expected['physical'][k] for k in ('bytes','sha256')},'snapshot_changed')
+    _witness(value['witness'],report,value['observe_token'],present)
+    if present:
+        if not value['comparison']['metadata_matches'] or value['comparison']['physical']['payload_length']!=(64 if identifier=='applied' else 32):
+            raise DescriptionParityError('metadata')
+        if value['comparison']['status']!='readback_matches':raise DescriptionParityError('description')
+        if typed_verdict!='matches':raise DescriptionParityError('typed_uuid')
     _state(value,identifier,report)
     capture=report['description_measurement'];require(type(capture) is dict and type(capture.get('states')) is list)
     require([s['snapshot'] for s in capture['states']]==list(TARGETS[:TARGETS.index(identifier)])
@@ -207,9 +322,12 @@ def validate_report(raw, *, nonce, provenance, final=False):
     _case(report['description_case']);_sources(provenance)
     view=copy.deepcopy(report)
     for key in EXTRA_KEYS:del view[key]
+    view.pop('description_failure',None)
     view.update(schema=core.SCHEMA,lane=core.LANE)
     core.validate_report(encode(view),nonce=nonce,provenance=provenance,final=final)
     capture=report['description_measurement']
+    if 'description_failure' in report:
+        _bound_failure(report,report['description_failure'],final=final)
     if report['status']=='failed':
         require(capture is None)
         return report

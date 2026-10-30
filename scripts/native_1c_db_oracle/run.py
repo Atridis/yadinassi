@@ -904,6 +904,8 @@ class Native:
         require(policy is not None and identifier in policy.TARGETS
                 and self.record_pending is not None and self.record_pending[0] == identifier, 'invalid_input')
         _, frozen, evidence = self.record_pending
+        diagnostic_mode = getattr(self, 'description_rows', False)
+        phase = 'postimage'
         try:
             expected = next(item for item in report['snapshots'] if item['id'] == identifier)
             require(evidence['origin'] == {key: expected['physical'][key] for key in ('bytes','sha256')}, 'snapshot_changed')
@@ -917,23 +919,43 @@ class Native:
                 else:
                     from catalog_description_physical import read_description
                 self.reader_attempted = True
+                reader_error = None
+                failure_sentinel = object()
                 def read_selected(read_at, size, *, limits):
-                    return read_description(read_at, size, catalog_name='NativeOracleItems', limits=limits)
+                    nonlocal reader_error
+                    try:
+                        return read_description(read_at, size, catalog_name='NativeOracleItems', limits=limits)
+                    except BaseException as error:
+                        if not diagnostic_mode:
+                            raise
+                        # Keep the exact private exception, not text/attributes.
+                        # Returning a unique sentinel lets the frozen boundary
+                        # finish before we bind its measured digest to evidence.
+                        reader_error = error
+                        return failure_sentinel
                 measured, observation = inspect_frozen_catalog(frozen, quiescent=self.quiescent,
                     read_catalog=read_selected, limits=filedb_catalog.CatalogLimits(), before_read=self.remaining)
                 require(measured == evidence['postimage'], 'snapshot_changed')
+                if diagnostic_mode and reader_error is not None:
+                    require(observation is failure_sentinel, 'unexpected_failure')
+                    phase = 'public_reader'
+                    raise reader_error
                 if getattr(self, 'description_rows', False):
                     observation, typed_uuid = observation
             else:
                 summary = self.physical_summary(frozen / '1Cv8.1CD')
                 require({key:summary[key] for key in ('bytes','sha256')} == evidence['postimage'], 'snapshot_changed')
             clean = {key:value for key,value in evidence.items() if key != 'description'}
+            phase = 'comparison'
             result = policy.bind_state(identifier, clean, observation, witness, report,
                 **({'typed_uuid':typed_uuid} if getattr(self, 'description_rows', False) else {}))
-        except BaseException:
+        except BaseException as error:
+            removed = True
             try: self.remove(frozen)
-            except BaseException: pass
+            except BaseException: removed = False
             self.record_pending = None
+            if diagnostic_mode and removed:
+                raise policy.wrap_failure(error, snapshot=identifier, phase=phase) from None
             raise
         else:
             self.remove(frozen)
@@ -1405,6 +1427,7 @@ class Controller:
         observation_failure = None
         readback_failure = None
         params_failure = None
+        description_failure = None
         try:
             for stage in STAGES[:-1]:
                 self.stage=stage
@@ -1474,6 +1497,9 @@ class Controller:
                 self.done(stage)
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
         except BaseException as error:
+            if self.description_policy is not None and self.report.get('schema') == 53:
+                if type(error) is self.description_policy.DiagnosticFailure:
+                    description_failure = error.diagnostic
             if self.params_policy is not None and type(error) in (self.params_policy.ObservationFailure,
                     self.observation.ObservationFailure, comparison.ComparisonFailure) and self.stage == 'baseline':
                 params_failure = self.params_policy.ObservationFailure(error.category, error.code)
@@ -1533,6 +1559,8 @@ class Controller:
                 self.report['artifacts']=[]
                 if self.description_policy is not None:
                     self.description_policy.discard_capture(self.report)
+                    if description_failure is not None and processes and files:
+                        self.description_policy.set_failure(self.report, description_failure)
                 elif self.params_policy is not None:
                     if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
                         self.report['reader_validation'] = 'failed'

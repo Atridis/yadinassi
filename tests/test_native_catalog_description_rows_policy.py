@@ -140,4 +140,110 @@ class DescriptionRowsPolicyTests(unittest.TestCase):
         reports[1]['description_measurement']['states'][3]['typed_uuid_verdict']='differs'
         with self.assertRaises(OracleError):p.build_aggregate(reports,hashes,run_id=123,run_attempt=1)
 
+
+def failure_fixture(*,final=True):
+    r=fixture(final=final)
+    r.update(status='failed',failed_stage='apply_cf',failure_kind='unexpected_failure',accepted=False,artifacts=[])
+    r['snapshots']=r['snapshots'][:8];r['comparisons']=r['comparisons'][:3]
+    for stage in r['stages'][7:-1]:
+        stage['status']='failed' if stage['id']=='apply_cf' else 'not_started'
+        stage['checks']={k:False for k in stage['checks']}
+    p.discard_capture(r)
+    return r
+
+class DescriptionDiagnosticTests(unittest.TestCase):
+    def test_exact_existing_domain_and_special_finite_classes(self):
+        self.assertEqual(sum(len(v) for k,v in p.DIAGNOSTICS.items() if k not in ('adapter','parity','unclassified')),193)
+        count=0
+        for cls,category in p._READER_CATEGORIES.items():
+            for code in p.DIAGNOSTICS[category]:
+                d=p.diagnostic_for(cls(code),snapshot='applied',phase='public_reader')
+                self.assertEqual((d['category'],d['code'],d['phase']),(category,code,'public_reader'));count+=1
+        self.assertGreater(count,150)
+        for code in ('metadata_profile','one_active_row'):
+            d=p.diagnostic_for(p.DescriptionAdapterError(code),snapshot='applied',phase='public_reader')
+            self.assertEqual((d['category'],d['code'],d['phase']),('adapter',code,'adapter'))
+        for code in ('metadata','description','typed_uuid'):
+            error=p.DescriptionParityError(code);self.assertEqual(error.kind,'transport_invalid')
+            d=p.diagnostic_for(error,snapshot='applied',phase='comparison')
+            self.assertEqual((d['category'],d['code'],d['phase']),('parity',code,'comparison'))
+            self.assertEqual(p.wrap_failure(error,snapshot='applied',phase='comparison').kind,'transport_invalid')
+
+    def test_no_error_text_properties_subclasses_or_hostile_code_hooks(self):
+        called=[]
+        class Hostile(p._catalog_errors.UnsupportedLayout):
+            def __getattribute__(self,name):called.append(name);raise AssertionError('private hook')
+            def __str__(self):called.append('str');raise AssertionError('private str')
+            def __repr__(self):called.append('repr');raise AssertionError('private repr')
+        class HostileText(str):
+            def __hash__(self):called.append('hash');raise AssertionError('private hash')
+            def __eq__(self,other):called.append('eq');raise AssertionError('private eq')
+        class HostileDict(dict):
+            def get(self,*args):called.append('get');raise AssertionError('private get')
+        error=p._catalog_errors.UnsupportedLayout('declaration_mismatch')
+        error.__dict__=HostileDict(code='declaration_mismatch')
+        for error in (Hostile('secret'),ValueError('private path and data'),
+                      p._catalog_errors.UnsupportedLayout('private'),p._catalog_errors.UnsupportedLayout(HostileText('declaration_mismatch')),error):
+            d=p.diagnostic_for(error,snapshot='applied',phase='public_reader')
+            self.assertEqual((d['category'],d['code']),('unclassified','unknown_exception'))
+            self.assertEqual(p.wrap_failure(error,snapshot='applied',phase='public_reader').kind,'unexpected_failure')
+        self.assertEqual(called,[])
+
+    def test_unknown_metaclass_hash_and_equality_never_run(self):
+        called=[]
+        class HostileMeta(type):
+            def __hash__(cls):called.append('class hash');raise AssertionError('private hash')
+            def __eq__(cls,other):called.append('class eq');raise AssertionError('private eq')
+        class Unknown(Exception,metaclass=HostileMeta):pass
+        for phase in p.PHASES:
+            error=Unknown()
+            d=p.diagnostic_for(error,snapshot='applied',phase=phase)
+            self.assertEqual((d['category'],d['code']),('unclassified','unknown_exception'))
+            self.assertEqual(p.wrap_failure(error,snapshot='applied',phase=phase).kind,'unexpected_failure')
+        self.assertEqual(called,[])
+
+    def test_reader_codes_only_after_reader_phase_not_superseding_integrity(self):
+        for phase in ('origin','postimage','cleanup','adapter','comparison'):
+            d=p.diagnostic_for(p._catalog_errors.UnsupportedLayout('declaration_mismatch'),snapshot='applied',phase=phase)
+            self.assertEqual((d['phase'],d['category'],d['code']),(phase,'unclassified','unknown_exception'))
+        for error,phase in ((p.DescriptionAdapterError('one_active_row'),'postimage'),(p.DescriptionParityError('metadata'),'public_reader')):
+            self.assertEqual(p.diagnostic_for(error,snapshot='applied',phase=phase)['category'],'unclassified')
+        for phase in ('bad',None,True):
+            with self.assertRaises(OracleError):p.diagnostic_for(ValueError(),snapshot='applied',phase=phase)
+
+    def test_failure_only_last_snapshot_stage_and_cleanup_binding(self):
+        r=failure_fixture();d=p.diagnostic_for(p._catalog_errors.UnsupportedLayout('declaration_mismatch'),snapshot='applied',phase='public_reader')
+        self.assertTrue(p.set_failure(r,d,final=True));validate(r)
+        self.assertIsNone(r['description_measurement']);self.assertFalse(r['accepted'])
+        native=failure_fixture(final=False);self.assertTrue(p.set_failure(native,d));validate(native,False)
+        with self.assertRaises(OracleError):validate(native,True)
+        for key in r['cleanup']:
+            bad=copy.deepcopy(r);bad['cleanup'][key]=False
+            self.assertFalse(p.set_failure(bad,d,final=True));self.assertNotIn('description_failure',bad)
+        for changes in (dict(snapshot='updated'),dict(phase='postimage'),dict(code='private'),dict(extra='secret')):
+            bad=copy.deepcopy(r);bad['description_failure']={**d,**changes}
+            with self.assertRaises(OracleError):validate(bad)
+        bad=fixture();bad['description_failure']=d
+        with self.assertRaises(OracleError):validate(bad)
+        self.assertFalse(p.set_failure(bad,d,final=True));self.assertNotIn('description_failure',bad)
+        for final in (False,True):
+            bad=copy.deepcopy(r);p.discard_capture(bad,final=final)
+            self.assertIsNone(bad['description_measurement']);self.assertNotIn('description_failure',bad)
+
+    def test_baseline_cannot_claim_unexecuted_reader_adapter_or_parity(self):
+        for category,code,phase in (('unsupported_layout','declaration_mismatch','public_reader'),
+                ('adapter','one_active_row','adapter'),('parity','metadata','comparison'),
+                ('unclassified','unknown_exception','public_reader'),('unclassified','unknown_exception','cleanup')):
+            with self.assertRaises(OracleError):p._diagnostic(dict(snapshot='baseline',phase=phase,category=category,code=code))
+        for phase in ('postimage','comparison'):
+            p._diagnostic(dict(snapshot='baseline',phase=phase,category='unclassified',code='unknown_exception'))
+
+    def test_parity_bind_codes_are_fixed_without_changing_failure_kind(self):
+        r=fixture();r['description_measurement']['states']=r['description_measurement']['states'][:1]
+        ev=evidence(r,'created',1);text=measurement.CASES['description8'][1];w=witness(token=ev['token'],value=text,present=True)
+        for code,length,value,typed in (('metadata',17,text,UUID(NATIVE_UUID)),('description',8,'other',UUID(NATIVE_UUID)),('typed_uuid',8,text,UUID(int=1))):
+            ob,_=observation(length,value)
+            with self.assertRaises(p.DescriptionParityError) as caught:p.bind_state('created',ev,ob,w,r,typed_uuid=typed)
+            self.assertEqual(caught.exception.code,code);self.assertEqual(caught.exception.kind,'transport_invalid')
+
 if __name__=='__main__':unittest.main()

@@ -50,7 +50,7 @@ compact aggregate validates both complete final reports and exact raw hashes.
 
 Independent rectangular serialized maxima (including newlines where applicable):
 capture6984 <=8192; full42-source report with a complete8192-byte capture
-reservation28408 <=32768; aggregate633 <=2048. No cap is raised. Full lifecycle,
+reservation28565 <=32768; aggregate633 <=2048. No cap is raised. Full lifecycle,
 source provenance, cleanup and failure context remain present.
 
 Empty/overlength native assignment enforcement, BSL managers/writes, numeric
@@ -68,3 +68,29 @@ new exact-head native acceptance.
 - `catalog_reader.py`: `d5d57bd1c2ea66ab3774a08e0f396a7874701654be433d218217e5492a94d2f8`
 - `config_catalog_binding.py`: `f7e3239cdf8597e4377eff6ca01c8bbbec8f2d071bd6931dbc3f9e19fd3dab98`
 - `config_catalog_records.py`: `29346abc74341186a6ddd54d111c6ec5e2fe651dfc9bf8e8e57446dfeba3ffb4`
+
+## Failure-only diagnostic follow-up
+
+Fresh dedicated run40978039802 on source4f492d2a failed case8 after the applied
+snapshot reported designer2/runtime2/Payload64 and the ordinary logical row
+readback. The new typed Description hook did not complete; case17 was skipped.
+The valid failed report has no capture and all cleanup gates passed. Its generic
+`unexpected_failure` does **not** identify a layout, decoder, UUID or metadata
+cause. No compatibility inference is made from the ordinary native lane.
+
+The diagnostic follow-up preserves production readers, BSL and all parity gates.
+A private exception is classified only after the same frozen descriptor's final
+integrity/quiescence checks and exact postimage digest binding. An internal unique
+sentinel permits those checks to finish; it never turns a reader exception into
+a successful result. Superseding integrity failures cannot publish a reader code.
+Only exact recognized classes and the existing finite diagnostic domain are
+mapped; subclass, unknown and forged codes become fixed `unclassified` without
+formatting the exception or reading user properties. Adapter and parity failures
+have separate finite labels. Values, UUIDs, paths and descriptors stay private.
+
+Optional `description_failure` exists only on a failed report with null capture,
+matching final snapshot/stage and verified cleanup. Host failures scrub it.
+Successful reports never contain it. The independent full rectangular envelope
+reserves an additional157 bytes (total28565), still within32768; capture6984 and
+aggregate633 are unchanged. These diagnostics require a fresh reviewed native
+run before attributing the actual migration failure to any particular reason.

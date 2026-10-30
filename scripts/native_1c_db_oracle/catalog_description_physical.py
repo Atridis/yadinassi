@@ -214,9 +214,11 @@ def read_description_rows(read_at, file_size, *, catalog_name, limits=None):
             or attributes.attributes[1].name != 'Amount'
             or attributes.attributes[1].type_token != 'N'
             or attributes.attributes[1].qualifiers != (9,2,0)):
-        raise c.UnsupportedLayout('description_metadata_profile')
+        from catalog_description_rows import DescriptionAdapterError
+        raise DescriptionAdapterError('metadata_profile')
     if len(raw.records.rows) != 1 or len(result.rows) != 1 or raw.records.slots != 2:
-        raise c.UnsupportedLayout('description_one_active_row')
+        from catalog_description_rows import DescriptionAdapterError
+        raise DescriptionAdapterError('one_active_row')
     table = raw.records.table
     observation = DescriptionObservation('layout_observed', identity, attributes,
         table, hashlib.sha256(table.raw_descriptor).hexdigest(), binding.placements,

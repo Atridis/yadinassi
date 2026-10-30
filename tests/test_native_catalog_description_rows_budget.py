@@ -78,6 +78,8 @@ def report_envelope():
         pair['byte_windows']=windows
         report['comparisons'].append({'id':n,'kind':'observational' if ctrl is None else 'matched_control','source':src,'control':ctrl,'treatment':treat,'physical':pair})
     report['rejected_basename']='1Cv8'+'X'*48
+    report['description_failure']={'snapshot':longest(p.TARGETS),'phase':longest(p.PHASES),
+        'category':longest(p.DIAGNOSTICS),'code':longest([code for codes in p.DIAGNOSTICS.values() for code in codes])}
     report['failure_context']={'operation':longest(protocol.COMMAND_STAGES),'site':longest(protocol.CONTEXT_SITES),
         'bsl_phase':longest(protocol.BSL_PHASES),'region':longest(protocol.INVENTORY_REGIONS),
         'reason':longest(protocol.INVENTORY_REASONS),'entry_class':longest(snapshots.ENTRY_CLASSES),'entry_shape':longest(snapshots.ENTRY_SHAPES)}
@@ -143,5 +145,5 @@ class DescriptionBudgetTests(unittest.TestCase):
         tree=ast.parse(Path(__file__).read_text(encoding='utf-8'))
         self.assertFalse(any(isinstance(node,ast.Assert) for node in ast.walk(tree)))
 
-EXPECTED = {'sources':42,'physical_comparison':1078,'capture_rectangular':6983,'capture_cap':8192,'report_without_capture':20219,'report_full_capture_plus_newline':28408,'report_cap':32768,'aggregate_plus_newline':633,'aggregate_cap':2048}
+EXPECTED = {'sources':42,'physical_comparison':1078,'capture_rectangular':6983,'capture_cap':8192,'report_without_capture':20376,'report_full_capture_plus_newline':28565,'report_cap':32768,'aggregate_plus_newline':633,'aggregate_cap':2048}
 if __name__=='__main__':unittest.main()
