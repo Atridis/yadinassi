@@ -5973,3 +5973,12 @@ non-Linux empty/schema-only behavior, zero-column/nonempty no-op and allowed
 expression results are preserved as legacy compatibility, not fresh Windows
 native evidence. New nonempty lifetime semantics remain Linux-target only. See
 [scope and attributed evidence](docs/value-tree-columns-clear.md).
+
+- Ограниченное CONFIG-зависимое чтение числового кода: отдельный профиль
+  компилятора допускает N(CodeLength,0), старый String-профиль неизменён.
+  Публичные raw/typed пути используют единый граф и возвращают Decimal для Code.
+  Run41103649225 на17f29e0a подтвердил все шесть сопоставлений публичного reader
+  Code/UUID/Description/метаданных для длин3/6, включая Payload32→64.
+  Другие длины — структурное обобщение, не дополнительное native-наблюдение;
+  семантика присваивания и автонумерации этим прогоном не расширена.
+  [Границы и исходная атрибуция](docs/catalog-numeric-code-runtime.md).

@@ -117,7 +117,7 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
             reader._budget.charge('tokens', min(len(extracted.data), parse_limits.max_tokens + 1))
             parsed = dbnames.parse_dbnames(extracted.data, profile=profile, limits=parse_limits)
             binding = compiler.compile_catalog_binding(identity, attributes, parsed,
-                profile=compiler.CatalogBindingProfile(compiler.PROFILE_IDENTIFIER), budget=reader._budget)
+                profile=compiler.CatalogBindingProfile(compiler.NUMERIC_PROFILE_IDENTIFIER), budget=reader._budget)
             del parsed, extracted, reservation
         with graph.stage('records', binding=binding) as handle:
             rows = row_reader.read_bound_catalog_records(reader, physical_catalog, binding,
@@ -158,7 +158,11 @@ def _project_rows(graph, identity, binding, records):
             or binding.metadata_uuid != identity.metadata_uuid
             or binding.name != identity.name):
         raise catalog_module.InvalidStructure('binding_reference_identity')
-    if (type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
+    if (type(binding.code_type) is not int or binding.code_type not in (0, 1)
+            or type(identity.code_type) is not int or binding.code_type != identity.code_type
+            or type(binding.code_length) is not int or type(identity.code_length) is not int
+            or binding.code_length != identity.code_length
+            or type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
             or binding.description_length != identity.description_length):
         raise catalog_module.InvalidStructure('binding_reference_identity')
     field_count = 7 + int(binding.description_length > 0)

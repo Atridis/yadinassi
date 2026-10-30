@@ -11,14 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = '.github/workflows/native-1c-file-db-oracle.yml'
 PREVIOUS_WORKFLOW = '1d104a9155553f3e7b6f2dbcc3fd6fb782056bb615b7b2c4931c6713aa1dd47c'
 # Current candidate compatibility-integrity pins, NOT the original native
-# activation receipt. New Description runtime acceptance requires fresh native
-# evidence bound to the current 42-source lane. Historical hashes remain in
+# activation receipt. New Numeric Code runtime acceptance requires fresh native
+# evidence bound to its public-reader lane (standalone measurement is not parity). Historical hashes remain in
 # docs/catalog-description-rows.md; retain direct current LF/CRLF/drift checks.
 SOURCE_PINS = {
-    'yadinassi/storage/catalog_reader.py': 'ace8d7bee2288f82594719b36e5e3c5d61bc9bacebfbd42af88324e01ee06dd7',
+    'yadinassi/storage/catalog_reader.py': '0e2f5adb060b5ffa151c79558d2f3cb9f26bc683ab95826de1afadbe708bfe8b',
     'yadinassi/storage/config_catalog_transport.py': 'b526877c583900b263779c00f8db5c74cb40ff423b1df0e16f866cc4abca01ff',
-    'yadinassi/storage/config_catalog_binding.py': 'd09e0ed9f4ac6a6ecf7f3cb9534540c683da40b92807e88df79b51a313a44e01',
-    'yadinassi/storage/config_catalog_records.py': 'fe9fe800eec627583a35b83831e82f3af2289990a98b953510e1692a07e165c0',
+    'yadinassi/storage/config_catalog_binding.py': 'f3db1bd229f1fe39fe59aa81d960e3b7617de3bbc4fab68c1b894d19aa89a9ba',
+    'yadinassi/storage/config_catalog_records.py': 'a6eb0a5e5d41219b10ae23c0871919dc04c7c21c39c3d9eb518ba06f231c4eb4',
     'scripts/native_1c_db_oracle/catalog_binding_reader.py': '18d3729d2dc6bd8b198ade1188eb79cd8c48ad75001399e79975b7eb6c8f81b9',
     'scripts/native_1c_db_oracle/catalog_readonly_binding.py': '47b661c13fcdd515fdfdde76130ab4b3f2bb9f781965cbd505b429cb5bd6bedb',
 }

@@ -9,7 +9,7 @@ lengths 8 and 17 with Payload32 (native run 40971133699, source a318b990).
 Other bounded lengths are structural generalization, not native range proof.
 Finite synthetic admission below is not native acceptance of other layouts.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
 from .config_catalog_name import CatalogIdentityPrefix
@@ -17,6 +17,7 @@ from .config_catalog_attributes import CatalogAttribute, CatalogAttributes
 from .filedb_dbnames import DBNamesEntry, DBNamesIndex, DBNAMES_PROFILE_IDENTIFIER
 
 PROFILE_IDENTIFIER = 'owned_catalog_string_code_two_attributes_v1'
+NUMERIC_PROFILE_IDENTIFIER = 'owned_catalog_string_or_number_code_two_attributes_v1'
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z', re.ASCII)
 _KIND = re.compile(r'[A-Za-z][A-Za-z0-9_]{0,31}\Z', re.ASCII)
 _ZERO = '00000000-0000-0000-0000-000000000000'
@@ -45,7 +46,7 @@ class CatalogBindingProfile:
     identifier: str
 
     def __post_init__(self):
-        if type(self.identifier) is not str or self.identifier != PROFILE_IDENTIFIER:
+        if type(self.identifier) is not str or self.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER):
             _fail('profile')
 
 
@@ -93,6 +94,7 @@ class CatalogBinding:
     code_length: int
     placements: tuple[BoundFieldPlacement, ...]
     description_length: int = 0
+    code_type: int = field(default=1, kw_only=True)
 
 
 def _uuid(value, *, nonzero=True):
@@ -120,11 +122,15 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
     CONFIG applied-state identity. Old APIs and decoder admissions are unchanged.
     Reservation precedes scans/retained construction and is never refunded.
     """
-    if type(profile) is not CatalogBindingProfile:
+    if (type(profile) is not CatalogBindingProfile
+            or type(profile.identifier) is not str
+            or profile.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER)):
         _fail('profile')
     if limits is not None and type(limits) is not CatalogBindingLimits:
         _fail('limits')
     limits = limits if limits is not None else CatalogBindingLimits()
+    # Frozen dataclasses may still be forged through object.__setattr__.
+    CatalogBindingLimits.__post_init__(limits)
     if (type(identity) is not CatalogIdentityPrefix or type(attributes) is not CatalogAttributes
             or type(dbnames) is not DBNamesIndex):
         _fail('input_type')
@@ -141,10 +147,12 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
     if not _uuid(identity.metadata_uuid):
         _fail('identity')
     _name(identity.name)
-    if (type(identity.code_type) is not int or identity.code_type != 1
+    if (type(identity.code_type) is not int or identity.code_type not in (0, 1)
+            or (identity.code_type == 0 and profile.identifier != NUMERIC_PROFILE_IDENTIFIER)
             or type(identity.description_length) is not int
             or not 0 <= identity.description_length <= limits.max_string_length
-            or type(identity.code_length) is not int or not 1 <= identity.code_length <= limits.max_string_length):
+            or type(identity.code_length) is not int
+            or not 1 <= identity.code_length <= (limits.max_numeric_precision if identity.code_type == 0 else limits.max_string_length)):
         _fail('standard_profile')
     if type(attributes.attributes) is not tuple or len(attributes.attributes) != 2:
         _fail('attribute_shape')
@@ -201,10 +209,10 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
         ('_VERSION', 'RV', 0, 0, 0, 'CS'),
         ('_MARKED', 'L', 0, 0, 0, 'CS'),
         ('_PREDEFINEDID', 'B', 0, 16, 0, 'CS'),
-        ('_CODE', 'NVC', 0, identity.code_length, 0, 'CI'),
+        ('_CODE', 'N' if identity.code_type == 0 else 'NVC', 0, identity.code_length, 0, 'CS' if identity.code_type == 0 else 'CI'),
         (string_name, 'NVC', 0, first.qualifiers[0], 0, 'CI'),
         (number_name, 'N', 0, precision, scale, 'CS'))
-    widths = (16, 16, 1, 16, 2 + 2 * identity.code_length,
+    widths = (16, 16, 1, 16, (identity.code_length + 2) // 2 if identity.code_type == 0 else 2 + 2 * identity.code_length,
               2 + 2 * first.qualifiers[0], (precision + 2) // 2)
     if identity.description_length:
         declarations = declarations[:5] + (('_DESCRIPTION', 'NVC', 0,
@@ -222,4 +230,4 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
                        for i, declaration in enumerate(declarations))
     bound = tuple(BoundCatalogAttribute(item.metadata_uuid, item.name, physical, item.type_token, item.qualifiers)
                   for item, physical in ((first, string_name), (second, number_name)))
-    return CatalogBinding(identity.metadata_uuid, identity.name, table_name, declarations, bound, '0', 0, record_size, identity.code_length, placements, identity.description_length)
+    return CatalogBinding(identity.metadata_uuid, identity.name, table_name, declarations, bound, '0', 0, record_size, identity.code_length, placements, identity.description_length, code_type=identity.code_type)
