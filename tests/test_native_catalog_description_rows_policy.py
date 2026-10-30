@@ -153,7 +153,7 @@ def failure_fixture(*,final=True):
 
 class DescriptionDiagnosticTests(unittest.TestCase):
     def test_exact_existing_domain_and_special_finite_classes(self):
-        self.assertEqual(sum(len(v) for k,v in p.DIAGNOSTICS.items() if k not in ('adapter','parity','unclassified')),193)
+        self.assertEqual(sum(len(v) for k,v in p.DIAGNOSTICS.items() if k not in ('adapter','parity','unclassified','builtin')),228)
         count=0
         for cls,category in p._READER_CATEGORIES.items():
             for code in p.DIAGNOSTICS[category]:
@@ -182,11 +182,48 @@ class DescriptionDiagnosticTests(unittest.TestCase):
             def get(self,*args):called.append('get');raise AssertionError('private get')
         error=p._catalog_errors.UnsupportedLayout('declaration_mismatch')
         error.__dict__=HostileDict(code='declaration_mismatch')
-        for error in (Hostile('secret'),ValueError('private path and data'),
+        for error in (Hostile('secret'),TypeError('private path and data'),
                       p._catalog_errors.UnsupportedLayout('private'),p._catalog_errors.UnsupportedLayout(HostileText('declaration_mismatch')),error):
             d=p.diagnostic_for(error,snapshot='applied',phase='public_reader')
             self.assertEqual((d['category'],d['code']),('unclassified','unknown_exception'))
             self.assertEqual(p.wrap_failure(error,snapshot='applied',phase='public_reader').kind,'unexpected_failure')
+        self.assertEqual(called,[])
+
+    def test_runtime_additions_are_closed_and_old_domain_preserved(self):
+        original=p._binding_diagnostics.DIAGNOSTICS
+        self.assertEqual(sum(map(len,original.values())),193)
+        self.assertEqual(sum(map(len,p._RUNTIME_DIAGNOSTICS.values())),35)
+        self.assertEqual(sum(map(len,p.DIAGNOSTICS.values())),235)
+        for category,codes in original.items():
+            self.assertLessEqual(codes,p.DIAGNOSTICS[category])
+        for category,codes in p._RUNTIME_DIAGNOSTICS.items():
+            self.assertFalse(set(codes)&set(original[category]))
+        for cls,category in p._READER_CATEGORIES.items():
+            for code in p._RUNTIME_DIAGNOSTICS.get(category,()):
+                diagnostic=p.diagnostic_for(cls(code),snapshot='applied',phase='public_reader')
+                report=failure_fixture();self.assertTrue(p.set_failure(report,diagnostic,final=True));validate(report)
+                for wrong in (code+'_private','transport_unknown','config_projection_unknown'):
+                    self.assertEqual(p.diagnostic_for(cls(wrong),snapshot='applied',phase='public_reader')['category'],'unclassified')
+
+    def test_exact_value_error_only_without_private_object_access(self):
+        called=[]
+        class Private:
+            def __str__(self):called.append('str');raise AssertionError
+            def __repr__(self):called.append('repr');raise AssertionError
+        class Derived(ValueError):
+            def __getattribute__(self,name):called.append(name);raise AssertionError
+        error=ValueError(Private());error.code=Private()
+        diagnostic=p.diagnostic_for(error,snapshot='applied',phase='public_reader')
+        self.assertEqual(diagnostic,dict(snapshot='applied',phase='public_reader',category='builtin',code='value_error'))
+        report=failure_fixture();self.assertTrue(p.set_failure(report,diagnostic,final=True));validate(report)
+        self.assertEqual(p.wrap_failure(error,snapshot='applied',phase='public_reader').kind,'unexpected_failure')
+        for phase in p.PHASES:
+            if phase!='public_reader':self.assertEqual(p.diagnostic_for(error,snapshot='applied',phase=phase)['category'],'unclassified')
+        for other in (Derived(Private()),TypeError(Private()),RuntimeError(Private()),KeyError(Private())):
+            self.assertEqual(p.diagnostic_for(other,snapshot='applied',phase='public_reader')['category'],'unclassified')
+        for phase in ('postimage','comparison','cleanup','adapter'):
+            with self.assertRaises(OracleError):p._diagnostic(dict(diagnostic,phase=phase))
+        with self.assertRaises(OracleError):p._diagnostic(dict(diagnostic,snapshot='baseline'))
         self.assertEqual(called,[])
 
     def test_unknown_metaclass_hash_and_equality_never_run(self):

@@ -94,3 +94,27 @@ Successful reports never contain it. The independent full rectangular envelope
 reserves an additional157 bytes (total28565), still within32768; capture6984 and
 aggregate633 are unchanged. These diagnostics require a fresh reviewed native
 run before attributing the actual migration failure to any particular reason.
+
+### Source-backed diagnostic coverage
+
+The next genuine run41028931049 again failed at applied/public_reader, with the
+fixed `unclassified/unknown_exception` result and verified cleanup. That result
+cannot distinguish an unlisted storage code from an unclassified exception type.
+A source audit found35 missing exact storage class/code pairs:32 literal pairs
+in loaded runtime/loader modules and3 additional members of the closed transport
+counter family. The policy now enumerates those35 pairs explicitly, without
+prefixes or wildcard matching, preserving all193 historical diagnostic pairs.
+Exact builtin ValueError has one fixed type-only discriminator; its message,
+arguments and properties are not read. Other builtin types, unknown codes and
+subclasses remain unclassified. This does not change any storage admission rule.
+
+An independent conservative AST scan checks172 literal class/code pairs in15
+staged runtime/loader modules and7 dynamic raise sites. It checks closed catalog
+budget, transport budget, format and CONFIG projection families, including the
+typed entrypoint's fixed identity-mode selector. This is source coverage, not a
+general reachability or native-cause proof. Synthetic
+Payload64 images with renamed target tables reproduce an exact shared-class
+`binding_table_count` error that the previous policy classified as unknown.
+This demonstrates a classification gap, **not** the cause of the genuine run.
+The longest finite code and all report/capture/aggregate bounds are unchanged.
+A fresh source-bound native diagnostic run remains necessary.

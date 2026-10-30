@@ -42,6 +42,28 @@ PHYSICAL_KEYS = set(PHYSICAL_NUMBERS) | {'status','descriptor_sha256','active_co
 import catalog_readonly_binding as _binding_diagnostics
 import filedb_catalog as _catalog_errors
 DIAGNOSTICS = {k:frozenset(v) for k,v in _binding_diagnostics.DIAGNOSTICS.items()}
+# Explicit reviewed public runtime reader additions; no prefixes or inferred codes.
+_RUNTIME_DIAGNOSTICS = {
+    'structural_rejection': frozenset((
+        'binding_reference_identity', 'binding_reference_role', 'binding_typed_rows',
+        'blob_declared_length', 'dbnames_duplicate', 'dbnames_filename_length',
+        'dbnames_not_found', 'dbnames_record_length', 'dbnames_reference',
+        'dbnames_size', 'dbnames_size_mismatch', 'deflate_invalid',
+        'deflate_nonprogress', 'deflate_trailing', 'deflate_truncated')),
+    'resource_limit': frozenset((
+        'dbnames_record_bytes', 'dbnames_slots', 'transport_blob_bytes',
+        'transport_plain_bytes', 'transport_inflate_input_bytes',
+        'transport_blob_visits', 'transport_inflate_calls')),
+    'unsupported_layout': frozenset((
+        'binding_table_count', 'compiled_binding_invalid', 'dbnames_filename_encoding',
+        'dbnames_nonreserved_slot', 'dbnames_numeric_digit', 'dbnames_numeric_padding',
+        'dbnames_numeric_sign', 'dbnames_part', 'dbnames_profile_mismatch',
+        'dbnames_reserved_slot', 'dbnames_table_ambiguous', 'dbnames_table_missing')),
+    'unsupported_sharing_policy': frozenset(('binding_table_alias',)),
+}
+for _category, _codes in _RUNTIME_DIAGNOSTICS.items():
+    DIAGNOSTICS[_category] = DIAGNOSTICS[_category] | _codes
+DIAGNOSTICS['builtin'] = frozenset(('value_error',))
 DIAGNOSTICS.update(adapter=frozenset(('metadata_profile','one_active_row')),
     parity=frozenset(('metadata','description','typed_uuid')),
     unclassified=frozenset(('unknown_exception',)))
@@ -94,6 +116,9 @@ def diagnostic_for(error,*,snapshot,phase):
     require(type(snapshot) is str and snapshot in TARGETS
         and type(phase) is str and phase in PHASES,'invalid_input')
     kind=type(error);category='unclassified';code='unknown_exception'
+    if kind is ValueError and phase=='public_reader':
+        # Exact builtin only: never inspect args, attributes, text or subclasses.
+        return {'snapshot':snapshot,'phase':phase,'category':'builtin','code':'value_error'}
     selected=next((category for cls,category in _READER_CATEGORIES.items() if kind is cls),None) if phase=='public_reader' else None
     if kind is DescriptionParityError and phase=='comparison':selected='parity'
     elif kind is DescriptionAdapterError and phase=='public_reader':selected='adapter';phase='adapter'

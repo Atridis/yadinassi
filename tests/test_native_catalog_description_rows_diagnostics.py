@@ -56,7 +56,7 @@ class DescriptionDiagnosticsTests(lifecycle.RowsLifecycleTests):
             (c.UnsupportedLayout('declaration_mismatch'),'unsupported_layout','declaration_mismatch'),
             (c.UnsupportedLayout('nonreserved_free_slot'),'unsupported_layout','nonreserved_free_slot'),
             (c.ResourceLimit('record_slots'),'resource_limit','record_slots'),
-            (ValueError('PRIVATE EXCEPTION VALUE'),'unclassified','unknown_exception')):
+            (ValueError('PRIVATE EXCEPTION VALUE'),'builtin','value_error')):
             with self.subTest(code=code):
                 report,observed=self.apply_fault(error)
                 self.assertIs(observed,error)
