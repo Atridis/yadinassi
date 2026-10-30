@@ -324,11 +324,11 @@ def kill_identity(identity):
 
 
 class Native:
-    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False):
+    def __init__(self, nonce, provenance, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False, zero_case=None):
         require(type(record_metadata) is bool and type(record_reader) is bool
                 and type(params_transport) is bool and type(params_extraction) is bool
                 and type(dbnames_identity) is bool and type(config_transport) is bool and type(config_framing) is bool and type(config_marker_census) is bool and type(config_zero_marker_filename) is bool and type(config_entry_reference) is bool and type(config_blob_chain) is bool and type(config_content_decode) is bool and type(config_root_reference_projection) is bool and type(config_catalog_observation) is bool and type(config_catalog_name_binding) is bool and type(config_catalog_standard_binding) is bool and type(config_catalog_identity_binding) is bool and type(config_catalog_field_matrix) is bool and type(config_catalog_attribute_binding) is bool and type(catalog_readonly_binding) is bool
-                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation, config_catalog_name_binding, config_catalog_standard_binding, config_catalog_identity_binding, config_catalog_field_matrix, config_catalog_attribute_binding, catalog_readonly_binding, reference_case is not None, description_case is not None, numeric_case is not None)) <= 1, 'invalid_input')
+                and sum((record_metadata, record_reader, params_transport, params_extraction, dbnames_identity, config_transport, config_framing, config_marker_census, config_zero_marker_filename, config_entry_reference, config_blob_chain, config_content_decode, config_root_reference_projection, config_catalog_observation, config_catalog_name_binding, config_catalog_standard_binding, config_catalog_identity_binding, config_catalog_field_matrix, config_catalog_attribute_binding, catalog_readonly_binding, reference_case is not None, description_case is not None, numeric_case is not None, zero_case is not None)) <= 1, 'invalid_input')
         require(reference_case is None or type(reference_case) is str and reference_case in ('distinct_a','distinct_b'), 'invalid_input')
         require(type(reference_codec) is bool and (not reference_codec or reference_case is not None), 'invalid_input')
         require(type(reference_rows) is bool and (not reference_rows or reference_case is not None)
@@ -339,6 +339,8 @@ class Native:
                 and not (params_slots and description_rows), 'invalid_input')
         require(numeric_case is None or type(numeric_case) is str and numeric_case in ('number3','number6'), 'invalid_input')
         require(type(numeric_rows) is bool and (not numeric_rows or numeric_case is not None),'invalid_input')
+        require(zero_case is None or type(zero_case) is str and zero_case in ('zero0','zero8'),'invalid_input')
+        self.zero_case = zero_case
         self.numeric_rows = numeric_rows
         self.numeric_case = numeric_case
         self.params_slots = params_slots
@@ -347,7 +349,10 @@ class Native:
         self.description_case = description_case
         self.description_policy = None
         self.description_witness = None
-        if numeric_case is not None:
+        if zero_case is not None:
+            import catalog_zero_code_policy as zero_policy
+            self.description_policy = zero_policy
+        elif numeric_case is not None:
             if numeric_rows:
                 import catalog_numeric_code_rows_policy as numeric_policy
             else:
@@ -681,9 +686,10 @@ class Native:
         require(type(token) is str and re.fullmatch('[0-9a-f]{32}',token) is not None,'invalid_input')
         control=self.evidence/'control.json'; result=self.evidence/'result.json'
         completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
+        zero_mode = getattr(self, 'zero_case', None) is not None
         numeric_mode = getattr(self, 'numeric_case', None) is not None
-        description_path = self.evidence / ('numeric-code-observation.json' if numeric_mode else 'description-observation.json')
-        description_mode = numeric_mode or getattr(self, 'description_case', None) is not None
+        description_path = self.evidence / ('zero-code-observation.json' if zero_mode else 'numeric-code-observation.json' if numeric_mode else 'description-observation.json')
+        description_mode = zero_mode or numeric_mode or getattr(self, 'description_case', None) is not None
         if description_mode:
             absent(description_path)
             self.description_witness = None
@@ -722,7 +728,10 @@ class Native:
             elif reference_mode:
                 absent(reference_path)
             if description_mode and finished['status'] != 'error' and operation in ('create','update','observe'):
-                if numeric_mode:
+                if zero_mode:
+                    from catalog_zero_code_measurement import validate_witness as validate_description, WITNESS_LIMIT
+                    witness_options = {'case':self.zero_case}
+                elif numeric_mode:
                     from catalog_numeric_code_measurement import validate_witness as validate_description, WITNESS_LIMIT
                     witness_options = {'case':self.numeric_case}
                 else:
@@ -744,7 +753,7 @@ class Native:
                 data=self.observation.marker(regular_bytes(result,MAX_REPORT_BYTES),
                     nonce=self.nonce,token=token,operation=operation)
             else:
-                marker_reader = self.description_policy.marker if numeric_mode else marker
+                marker_reader = self.description_policy.marker if numeric_mode or zero_mode else marker
                 data=marker_reader(regular_bytes(result,MAX_REPORT_BYTES),nonce=self.nonce,token=token,operation=operation,
                             contract_version=comparison.SCHEMA)
             self.provenance['actual_version']=data['actual_version']
@@ -774,14 +783,14 @@ class Native:
                    **({'reference_case': self.reference_case} if getattr(self, 'reference_case', None) is not None else {}),
                    **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}),
                    **({'description_case': self.description_case} if getattr(self, 'description_case', None) is not None else {}),
-                   **({'numeric_case': self.numeric_case} if getattr(self, 'numeric_case', None) is not None else {}))
+                   **({'zero_case': self.zero_case} if getattr(self,'zero_case',None) is not None else {'numeric_case': self.numeric_case} if (getattr(self, 'numeric_case', None) is not None or getattr(self,'zero_case',None) is not None) else {}))
             if getattr(self, 'reference_case', None) is not None:
                 server = self.v1 / 'CommonModules/NativeOracleServer/Ext/Module.bsl'
                 self.reference_module_sha256 = self.record_policy.canonical_module_sha256(regular_bytes(server,1048576))
             promote_v2(self.v1,self.v2,
                        **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}),
                    **({'description_case': self.description_case} if getattr(self, 'description_case', None) is not None else {}),
-                   **({'numeric_case': self.numeric_case} if getattr(self, 'numeric_case', None) is not None else {}))
+                   **({'zero_case': self.zero_case} if getattr(self,'zero_case',None) is not None else {'numeric_case': self.numeric_case} if (getattr(self, 'numeric_case', None) is not None or getattr(self,'zero_case',None) is not None) else {}))
         except (ValueError,OSError):
             raise OracleError('metadata_rejected') from None
         with self.seed_command('import'):
@@ -802,7 +811,7 @@ class Native:
             verify_redump(expected,target,version=version,
                           **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}),
                    **({'description_case': self.description_case} if getattr(self, 'description_case', None) is not None else {}),
-                   **({'numeric_case': self.numeric_case} if getattr(self, 'numeric_case', None) is not None else {}))
+                   **({'zero_case': self.zero_case} if getattr(self,'zero_case',None) is not None else {'numeric_case': self.numeric_case} if (getattr(self, 'numeric_case', None) is not None or getattr(self,'zero_case',None) is not None) else {}))
             manifest_policy = (self.record_policy if getattr(self, 'catalog_binding', False)
                                else getattr(self, 'params_policy', None))
             if (manifest_policy is not None and manifest_policy.SCHEMA in (9, 27, 29, 31, 33, 35, 37, 39, 42, 45)
@@ -885,7 +894,7 @@ class Native:
     def _clear_numeric_private_state(self):
         # A failed acquisition must not retain a private sidecar or its frozen
         # pending evidence in memory. Other profiles retain their old behavior.
-        if getattr(self, 'numeric_case', None) is not None:
+        if (getattr(self, 'numeric_case', None) is not None or getattr(self,'zero_case',None) is not None):
             self.description_witness = None
             self.record_pending = None
 
@@ -895,7 +904,7 @@ class Native:
             policy = getattr(self, 'description_policy', None) or self.record_policy
             require(policy is not None and identifier in policy.TARGETS
                     and self.stage == policy.STAGES[identifier]
-                    and designer == (expected_logical(identifier)['designer_version'] if (getattr(self, 'description_rows', False) or getattr(self, 'numeric_case', None) is not None) else 1)
+                    and designer == (expected_logical(identifier)['designer_version'] if (getattr(self, 'description_rows', False) or (getattr(self, 'numeric_case', None) is not None or getattr(self,'zero_case',None) is not None)) else 1)
                     and self.record_pending is None, 'invalid_input')
             frozen = self.artifacts / 'record_observer_frozen'
             absent(frozen)
@@ -909,7 +918,7 @@ class Native:
                     self.redump(database, designer)
                     data = self.enterprise(database, 'observe', token=token)
                     logical = logical_from_marker(data, designer)
-                    logical_validator = self.description_policy.validate_logical if getattr(self,'numeric_case',None) is not None else validate_logical
+                    logical_validator = self.description_policy.validate_logical if (getattr(self,'numeric_case',None) is not None or getattr(self,'zero_case',None) is not None) else validate_logical
                     logical_validator(logical, identifier)
                     with self.command_context('snapshot_freeze'):
                         self.budgets(self.physical_summary(database / '1Cv8.1CD')['bytes'])
@@ -934,7 +943,7 @@ class Native:
                 except BaseException: pass
                 raise
         except BaseException:
-            if getattr(self, 'numeric_case', None) is not None:
+            if (getattr(self, 'numeric_case', None) is not None or getattr(self,'zero_case',None) is not None):
                 self.description_witness = None
                 self.record_pending = None
             raise
@@ -968,7 +977,7 @@ class Native:
 
     def compare_numeric_code_state(self, identifier, report):
         policy = self.description_policy
-        require(getattr(self,'numeric_case',None) is not None and policy is not None
+        require((getattr(self,'numeric_case',None) is not None or getattr(self,'zero_case',None) is not None) and policy is not None
                 and identifier in policy.TARGETS and self.record_pending is not None
                 and self.record_pending[0] == identifier, 'invalid_input')
         _, frozen, evidence = self.record_pending
@@ -979,7 +988,9 @@ class Native:
             observation = None
             if identifier != 'baseline':
                 from snapshots import inspect_frozen_catalog
-                if getattr(self,'numeric_rows',False):
+                if getattr(self,'zero_case',None) is not None:
+                    from catalog_zero_code_physical import read_zero_code as read_numeric_code
+                elif getattr(self,'numeric_rows',False):
                     from catalog_numeric_code_rows_reader import read_numeric_code_rows as read_numeric_code
                 else:
                     from catalog_numeric_code_physical import read_numeric_code
@@ -1005,7 +1016,7 @@ class Native:
             return result
 
     def compare_description_state(self, identifier, report):
-        if getattr(self,'numeric_case',None) is not None:
+        if (getattr(self,'numeric_case',None) is not None or getattr(self,'zero_case',None) is not None):
             return self.compare_numeric_code_state(identifier,report)
         if getattr(self, 'params_slots', False):
             return self.compare_params_slot_state(identifier, report)
@@ -1392,7 +1403,10 @@ class Controller:
         self.record_policy = None
         self.params_policy = None
         self.description_policy = None
-        if report.get('schema') == 62:
+        if report.get('schema') == 65:
+            import catalog_zero_code_policy as selected
+            self.description_policy = selected
+        elif report.get('schema') == 62:
             import catalog_numeric_code_rows_policy
             self.description_policy = catalog_numeric_code_rows_policy
         elif report.get('schema') == 59:
@@ -1514,13 +1528,13 @@ class Controller:
         summary=self.baseline_step('freeze',self.backend.freeze,database,identifier)
         logical=self.baseline_step('observe',self.backend.observe,identifier,
                                    expected_logical(identifier)['designer_version'])
-        logical_validator = self.description_policy.validate_logical if self.report.get('schema') in (59,62) else validate_logical
+        logical_validator = self.description_policy.validate_logical if self.report.get('schema') in (59,62,65) else validate_logical
         logical_validator(logical,identifier)
         self.report['snapshots'].append({'id':identifier,'physical':summary,'logical':logical,
             'quiescent':True,'copy_verified':True})
         if self.description_policy is not None and identifier in self.description_policy.TARGETS:
             state = self.backend.compare_description_state(identifier, self.report)
-            key = 'numeric_code_rows_measurement' if self.report['schema'] == 62 else 'numeric_code_measurement' if self.report['schema'] == 59 else 'params_slot_measurement' if self.report['schema'] == 56 else 'description_measurement'
+            key = 'zero_code_measurement' if self.report['schema'] == 65 else 'numeric_code_rows_measurement' if self.report['schema'] == 62 else 'numeric_code_measurement' if self.report['schema'] == 59 else 'params_slot_measurement' if self.report['schema'] == 56 else 'description_measurement'
             self.report[key]['states'].append(state)
         if self.record_policy is not None and identifier in ('created','updated'):
             state = self.backend.compare_record_state(identifier, self.report)
@@ -1614,7 +1628,7 @@ class Controller:
                 elif stage=='restore_dt': self.snapshot(self.backend.restore(),'restored')
                 elif stage=='verify_restore':
                     self.backend.audit('restored')
-                    logical_validator = self.description_policy.validate_logical if self.report.get('schema') in (59,62) else validate_logical
+                    logical_validator = self.description_policy.validate_logical if self.report.get('schema') in (59,62,65) else validate_logical
                     logical_validator(self.backend.observe('deleted',2),'deleted')
                 self.done(stage)
             self.report.update(status='ok',failed_stage=None,failure_kind='none')
@@ -1709,7 +1723,8 @@ def main():
     if len(sys.argv) not in (3,4) or sys.argv[1]!='--invocation-nonce' or re.fullmatch('[0-9a-f]{32}',sys.argv[2]) is None:
         return 2
     flag = sys.argv[3] if len(sys.argv)==4 else None
-    if flag not in (None, '--catalog-numeric-code-rows-3', '--catalog-numeric-code-rows-6', '--catalog-numeric-code-3', '--catalog-numeric-code-6', '--catalog-params-slots-8', '--catalog-params-slots-17', '--catalog-description-rows-8', '--catalog-description-rows-17', '--catalog-description-8', '--catalog-description-17', '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix', '--catalog-readonly-binding','--catalog-reference-distinct-a','--catalog-reference-distinct-b','--catalog-reference-codec-distinct-a','--catalog-reference-codec-distinct-b','--catalog-reference-rows-distinct-a','--catalog-reference-rows-distinct-b','--config-catalog-attribute-binding'): return 2
+    if flag not in (None, '--catalog-zero-code-0', '--catalog-zero-code-8', '--catalog-numeric-code-rows-3', '--catalog-numeric-code-rows-6', '--catalog-numeric-code-3', '--catalog-numeric-code-6', '--catalog-params-slots-8', '--catalog-params-slots-17', '--catalog-description-rows-8', '--catalog-description-rows-17', '--catalog-description-8', '--catalog-description-17', '--record-metadata-observation', '--record-reader-validation', '--params-transport-observation', '--params-dbnames-extraction', '--dbnames-identity-validation', '--config-transport-observation', '--config-framing-observation', '--config-slot-marker-observation', '--config-zero-marker-filename-observation', '--config-entry-reference-observation', '--config-blob-chain-observation', '--config-content-decode-observation', '--config-root-reference-projection-observation', '--config-catalog-reference-observation', '--config-catalog-name-binding', '--config-catalog-standard-binding', '--config-catalog-identity-binding', '--config-catalog-field-matrix', '--catalog-readonly-binding','--catalog-reference-distinct-a','--catalog-reference-distinct-b','--catalog-reference-codec-distinct-a','--catalog-reference-codec-distinct-b','--catalog-reference-rows-distinct-a','--catalog-reference-rows-distinct-b','--config-catalog-attribute-binding'): return 2
+    zero_case = {'--catalog-zero-code-0':'zero0','--catalog-zero-code-8':'zero8'}.get(flag)
     numeric_rows = flag in ('--catalog-numeric-code-rows-3','--catalog-numeric-code-rows-6')
     numeric_case = {'--catalog-numeric-code-rows-3':'number3','--catalog-numeric-code-rows-6':'number6','--catalog-numeric-code-3':'number3','--catalog-numeric-code-6':'number6'}.get(flag)
     params_slots = flag in ('--catalog-params-slots-8','--catalog-params-slots-17')
@@ -1744,10 +1759,13 @@ def main():
     nonce=sys.argv[2]
     try:
         from inputs import verify_inputs
-        options=({'numeric_case':numeric_case,'numeric_rows':True} if numeric_rows else {'numeric_case':numeric_case} if numeric_case is not None else {'description_case':description_case,'params_slots':True} if params_slots else {'description_case':description_case,'description_rows':True} if description_rows else {'description_case':description_case} if description_case is not None else {'reference_case':reference_case, 'reference_rows':True} if reference_rows else {'reference_case':reference_case, 'reference_codec':True} if reference_codec else {'reference_case':reference_case} if reference_case is not None else {'catalog_readonly_binding':True} if catalog_readonly_binding else {'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
+        options=({'zero_case':zero_case} if zero_case is not None else {'numeric_case':numeric_case,'numeric_rows':True} if numeric_rows else {'numeric_case':numeric_case} if numeric_case is not None else {'description_case':description_case,'params_slots':True} if params_slots else {'description_case':description_case,'description_rows':True} if description_rows else {'description_case':description_case} if description_case is not None else {'reference_case':reference_case, 'reference_rows':True} if reference_rows else {'reference_case':reference_case, 'reference_codec':True} if reference_codec else {'reference_case':reference_case} if reference_case is not None else {'catalog_readonly_binding':True} if catalog_readonly_binding else {'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {})
         provenance=verify_inputs(INPUTS,nonce,**options)
         selected=comparison
-        if numeric_case is not None:
+        if zero_case is not None:
+            import catalog_zero_code_policy as selected
+            report=selected.empty_report(nonce,provenance,zero_case=zero_case)
+        elif numeric_case is not None:
             if numeric_rows:
                 import catalog_numeric_code_rows_policy as selected
             else:

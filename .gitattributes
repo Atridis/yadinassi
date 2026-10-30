@@ -26,3 +26,5 @@ tests/fixtures/value_tree_columns_clear/provenance.json -text
 tests/fixtures/value_tree_columns_clear/metadata-provenance.json -text
 
 scripts/native_1c_db_oracle/modules/CatalogNumericCodeObservation.bsl text eol=lf
+
+scripts/native_1c_db_oracle/modules/CatalogZeroCodeObservation.bsl text eol=lf
