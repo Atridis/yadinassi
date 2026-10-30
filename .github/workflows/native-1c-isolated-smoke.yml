@@ -378,9 +378,9 @@ jobs:
           - profile: tree-columns-clear-v1
             artifact: tree-columns-clear
             case: tree_columns_clear
-          - profile: tree-columns-delete-v1
-            artifact: tree-columns-delete
-            case: tree_columns_delete
+          - profile: tree-columns-delete-string-v1
+            artifact: tree-columns-delete-string
+            case: tree_columns_delete_string
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
