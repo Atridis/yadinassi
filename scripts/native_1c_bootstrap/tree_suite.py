@@ -71,15 +71,19 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
         except probe.ProbeError:
             return {'site':site,'case':None,'category':'access_probe','calibration':None}
         return diagnostic.observation_diagnostic(main, site, contract.validate_payload, contract.ObservationError)
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1'):
         if profile == 'tree-sort-v1':
             import native_1c_tree_sort_contract as contract
         elif profile == 'tree-columns-move-v1':
             import native_1c_tree_columns_move_contract as contract
         elif profile == 'tree-columns-move-boundary-v1':
             import native_1c_tree_columns_move_boundary_contract as contract
-        else:
+        elif profile == 'tree-columns-move-tail-v1':
             import native_1c_tree_columns_move_tail_contract as contract
+        elif profile == 'tree-columns-clear-v1':
+            import native_1c_tree_columns_clear_contract as contract
+        else:
+            raise full.FullError('invalid_input')
         if site not in ('server', 'client'): raise full.FullError('invalid_input')
         try:
             contract.validate_output(raw)
@@ -121,7 +125,7 @@ def validate_diagnostic(value, *, profile='tree-v1'):
             return diagnostic.validate_diagnostic(value)
         except diagnostic.DiagnosticError:
             raise full.FullError('invalid_result') from None
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1'):
         if value is not None and (type(value) is not dict or value != {
                 'site':value.get('site'),'case':None,'category':'record_count','calibration':None}
                 or type(value['site']) is not str or value['site'] not in ('server','client')):
@@ -158,6 +162,8 @@ def validate_observations(raw, site='server', *, profile='tree-v1'):
         from native_1c_tree_columns_move_boundary_contract import validate_output, ObservationError
     elif profile == 'tree-columns-move-tail-v1':
         from native_1c_tree_columns_move_tail_contract import validate_output, ObservationError
+    elif profile == 'tree-columns-clear-v1':
+        from native_1c_tree_columns_clear_contract import validate_output, ObservationError
     else:
         raise full.FullError('invalid_input')
     if profile == 'tree-copy-v1':
@@ -235,7 +241,7 @@ def client_module(source, template, *, profile='tree-v1'):
 КонецФункции
 '''
     prefix='&НаКлиенте\nПерем TreeLaneMessages;\n&НаКлиенте\nПерем TreeLaneCharacters;\n'
-    if profile in ('tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1'):
+    if profile in ('tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1'):
         wrapper = wrapper.replace('Или Code = 95;', 'Или Code = 95 Или Code = 47;')
     return full.generated_module((prefix+harness[:fixed.start()]+wrapper+harness[fixed.end():]).encode('utf-8'))
 
