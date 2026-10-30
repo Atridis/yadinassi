@@ -341,7 +341,8 @@ class SortProfileTests(unittest.TestCase):
         block=text.split('\n  tree_copy_smoke:\n',1)[1].split('\n  verdict:\n',1)[0]
         expected=("    strategy:\n      fail-fast: false\n      matrix:\n        include:\n"
                   "          - profile: tree-copy-v1\n            artifact: tree-copy\n            case: tree_copy\n"
-                  "          - profile: tree-sort-v1\n            artifact: tree-sort\n            case: tree_sort\n")
+                  "          - profile: tree-sort-v1\n            artifact: tree-sort\n            case: tree_sort\n"
+                  "          - profile: tree-columns-move-v1\n            artifact: tree-columns-move\n            case: tree_columns_move\n")
         def validate(value):
             strategy='    strategy:\n'+value.split('    strategy:\n',1)[1].split('    steps:\n',1)[0]
             self.assertEqual(strategy,expected)

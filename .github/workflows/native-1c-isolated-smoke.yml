@@ -372,6 +372,9 @@ jobs:
           - profile: tree-sort-v1
             artifact: tree-sort
             case: tree_sort
+          - profile: tree-columns-move-v1
+            artifact: tree-columns-move
+            case: tree_columns_move
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

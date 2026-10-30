@@ -29,10 +29,11 @@ client_async=false
 client_args=()
 preprocessor_measurement=false
 tree_suite=false
-if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] || [ "$1" = --tree-sort-suite ]; }; then
+if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] || [ "$1" = --tree-sort-suite ] || [ "$1" = --tree-columns-move-suite ]; }; then
     tree_suite=true
     if [ "$1" = --tree-copy-suite ]; then tree_suite=copy; fi
     if [ "$1" = --tree-sort-suite ]; then tree_suite=sort; fi
+    if [ "$1" = --tree-columns-move-suite ]; then tree_suite=columns-move; fi
     set -- --full-suite "$2" "$3" --client-probe
 fi
 if [ "$#" -ge 5 ] && [ "$#" -le 10 ] && [ "${!#}" = --client-preprocessor-measurement ] && [ "${4}" = --client-probe ]; then
@@ -238,7 +239,7 @@ if tree_mode in {"true", "copy", "sort"}:
     import full_suite
     raw = tree_lane.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
         quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
-        bus_cleanup_failed=bus_cleanup_failed == "true", profile={"copy":"tree-copy-v1", "sort":"tree-sort-v1", "true":"tree-v1"}[tree_mode])
+        bus_cleanup_failed=bus_cleanup_failed == "true", profile={"copy":"tree-copy-v1", "sort":"tree-sort-v1", "columns-move":"tree-columns-move-v1", "true":"tree-v1"}[tree_mode])
     sys.stdout.buffer.write(raw)
     raise SystemExit(0)
 if full_mode == "true":
@@ -433,6 +434,7 @@ if [ "$bootstrap" = true ]; then
         tree_flag=--tree-suite
         if [ "$tree_suite" = copy ]; then tree_flag=--tree-copy-suite; fi
         if [ "$tree_suite" = sort ]; then tree_flag=--tree-sort-suite; fi
+        if [ "$tree_suite" = columns-move ]; then tree_flag=--tree-columns-move-suite; fi
         python3 /smoke/bootstrap/run_stage.py "$tree_flag" --invocation-nonce "$invocation_nonce" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     elif [ "$full_suite" = true ]; then

@@ -165,7 +165,7 @@ def strict_simple_result(path: Path, output: Path) -> str:
 
 
 def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, tree_suite: bool = False, tree_profile: str = 'tree-v1') -> dict:
-    if type(tree_profile) is not str or tree_profile not in ('tree-v1', 'tree-copy-v1', 'tree-sort-v1') or (not tree_suite and tree_profile != 'tree-v1'):
+    if type(tree_profile) is not str or tree_profile not in ('tree-v1', 'tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1') or (not tree_suite and tree_profile != 'tree-v1'):
         raise StageError("invalid_input")
     if type(tree_suite) is not bool:
         raise StageError("invalid_input")
@@ -290,9 +290,9 @@ def main(argv: list[str] | None = None) -> int:
     # Fixed full-mode arguments only; the nonce never selects an arbitrary path.
     arguments = [] if argv is None else argv
     full_nonce = None
-    tree_suite = bool(arguments and arguments[0] in ('--tree-suite', '--tree-copy-suite', '--tree-sort-suite'))
+    tree_suite = bool(arguments and arguments[0] in ('--tree-suite', '--tree-copy-suite', '--tree-sort-suite', '--tree-columns-move-suite'))
     tree_profile = {'--tree-suite':'tree-v1', '--tree-copy-suite':'tree-copy-v1',
-                    '--tree-sort-suite':'tree-sort-v1'}.get(arguments[0] if arguments else '', 'tree-v1')
+                    '--tree-sort-suite':'tree-sort-v1', '--tree-columns-move-suite':'tree-columns-move-v1'}.get(arguments[0] if arguments else '', 'tree-v1')
     if tree_suite:
         import full_suite
         if len(arguments) != 3 or arguments[1] != '--invocation-nonce' or not full_suite.valid_nonce(arguments[2]):
