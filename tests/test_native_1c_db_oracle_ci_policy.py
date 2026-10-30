@@ -498,10 +498,10 @@ class WorkflowTests(unittest.TestCase):
         for name in ('native_codec_a', 'native_codec_b'):
             headers[name] = headers[name].replace(
                 "needs.eligibility.outputs.route == 'catalog-reference-codec-v1' &&",
-                "(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1') &&")
+                "(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1') &&")
         headers['native_codec_a'] = headers['native_codec_a'].replace(
             '      reference_sha256: ${{ steps.native.outputs.reference_sha256 }}\n',
-            '      reference_sha256: ${{ steps.native.outputs.reference_sha256 }}\n      description_sha256: ${{ steps.native.outputs.description_sha256 }}\n      description_rows_sha256: ${{ steps.native.outputs.description_rows_sha256 }}\n      params_slots_sha256: ${{ steps.native.outputs.params_slots_sha256 }}\n')
+            '      reference_sha256: ${{ steps.native.outputs.reference_sha256 }}\n      description_sha256: ${{ steps.native.outputs.description_sha256 }}\n      description_rows_sha256: ${{ steps.native.outputs.description_rows_sha256 }}\n      params_slots_sha256: ${{ steps.native.outputs.params_slots_sha256 }}\n      numeric_code_sha256: ${{ steps.native.outputs.numeric_code_sha256 }}\n')
         for job, expected in headers.items():
             with self.subTest(job=job):
                 self.assertEqual(workflow_job(job).split("    steps:\n", 1)[0], expected)
