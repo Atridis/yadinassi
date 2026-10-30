@@ -207,7 +207,8 @@ DBNAMES_DECLARATIONS = (
 class DBNamesProfile:
     """One explicitly admitted recipe; no inferred or native-supported default.
 
-    All constructor inputs are required. Exact spelling and primitive types are
+    The three geometry inputs are required; the keyword-only slot policy defaults
+    to the original strict recipe. Exact spelling and primitive types are
     significant. Status-first, declaration-order and no hidden version are the
     named hypothesis, not information measured from the table's row contents.
     """
@@ -215,12 +216,22 @@ class DBNamesProfile:
     declarations: tuple[tuple[str, str, int, int, int, str], ...]
     recordlock: str
     format_item: int
+    slot_policy: str = field(default='reserved_and_active_v1', kw_only=True)
     identifier: str = field(default="params_dbnames_8380_8192_v1", init=False)
     framing: str = field(default="status_then_declared_no_version_v1", init=False)
     record_size: int = field(init=False)
     placements: tuple[tuple[int, int], ...] = field(init=False)
 
     def __post_init__(self):
+        if type(self.slot_policy) is not str or self.slot_policy not in (
+                'reserved_and_active_v1', 'closed_marker1_chain_v1'):
+            raise ValueError("unsupported DBNames slot policy")
+        object.__setattr__(self, 'identifier', ('params_dbnames_8380_8192_v1'
+            if self.slot_policy == 'reserved_and_active_v1' else
+            'params_dbnames_closed_marker1_chain_8380_8192_v1'))
+        object.__setattr__(self, 'framing', ('status_then_declared_no_version_v1'
+            if self.slot_policy == 'reserved_and_active_v1' else
+            'status_then_declared_closed_marker1_chain_v1'))
         if type(self.recordlock) is not str or self.recordlock != "0":
             raise ValueError("DBNames requires explicit recordlock zero")
         if type(self.format_item) is not int or self.format_item != 0:
@@ -333,6 +344,101 @@ def _unsigned_decimal(raw: bytes, digits: int) -> int:
     return value
 
 
+def _validated_slot_policy(profile: DBNamesProfile) -> str:
+    """Exact stored discriminator; forged values never invoke user hooks."""
+    if type(profile) is not DBNamesProfile:
+        raise ValueError("profile must be DBNamesProfile")
+    values = object.__getattribute__(profile, '__dict__')
+    # Even exact dict lookup can call a forged colliding key's equality. Check
+    # its bounded canonical key domain using only builtin iteration first.
+    if (type(values) is not dict or len(values) != 8
+            or any(type(key) is not str for key in dict.__iter__(values))
+            or set(dict.__iter__(values)) != {'declarations', 'recordlock',
+                'format_item', 'slot_policy', 'identifier', 'framing',
+                'record_size', 'placements'}):
+        raise ValueError("invalid DBNames stored profile keys")
+    policy = dict.get(values, 'slot_policy')
+    if type(policy) is not str or policy not in (
+            'reserved_and_active_v1', 'closed_marker1_chain_v1'):
+        raise ValueError("unsupported DBNames slot policy")
+    expected = ('params_dbnames_8380_8192_v1', 'status_then_declared_no_version_v1') if policy == 'reserved_and_active_v1' else (
+        'params_dbnames_closed_marker1_chain_8380_8192_v1', 'status_then_declared_closed_marker1_chain_v1')
+    identifier, framing = dict.get(values, 'identifier'), dict.get(values, 'framing')
+    if type(identifier) is not str or type(framing) is not str or (identifier, framing) != expected:
+        raise ValueError("DBNames slot policy identity mismatch")
+    declarations, placements = dict.get(values, 'declarations'), dict.get(values, 'placements')
+    if (type(declarations) is not tuple or len(declarations) != 7
+            or any(type(item) is not tuple or len(item) != 6
+                   or any(type(value) is not kind for value, kind in zip(
+                       item, (str, str, int, int, int, str))) for item in declarations)
+            or type(placements) is not tuple or len(placements) != 7
+            or any(type(item) is not tuple or len(item) != 2
+                   or any(type(value) is not int for value in item) for item in placements)
+            or type(dict.get(values, 'recordlock')) is not str
+            or type(dict.get(values, 'format_item')) is not int
+            or type(dict.get(values, 'record_size')) is not int):
+        raise ValueError("invalid DBNames stored profile")
+    canonical = DBNamesProfile(DBNAMES_DECLARATIONS, '0', 0, slot_policy=policy)
+    if (declarations != canonical.declarations or placements != canonical.placements
+            or dict.get(values, 'recordlock') != canonical.recordlock
+            or dict.get(values, 'format_item') != canonical.format_item
+            or dict.get(values, 'record_size') != canonical.record_size):
+        raise ValueError("DBNames stored profile mismatch")
+    return policy
+
+
+def _scan_closed_marker1_slots(data: InternalFile, profile: DBNamesProfile, slots: int):
+    """Private bounded PARAMS admission, before any selected transport access.
+
+    Marker one is admitted only as a member of the complete offset-one u32LE
+    chain rooted in the reserved slot. It does not decode removed row payloads.
+    """
+    budget = data._source.budget
+    # Reserve arrays, Python integers/set entries and scalar result references
+    # conservatively before allocation, including failed attempts. These are
+    # representation weights (not exact heap sizes); slot count also caps work.
+    budget.charge('output_bytes', 8192 + 512 * slots)
+    budget.charge('bytes_processed', 64 * slots)
+    markers, links = bytearray(slots), [0] * slots
+    selected_slot, removed_count = None, 0
+    for slot in range(slots):
+        base = slot * profile.record_size
+        marker = _scalar(data, base, 1)[0]
+        markers[slot] = marker
+        if slot == 0:
+            if marker != 1:
+                raise UnsupportedLayout('dbnames_reserved_slot')
+            links[0] = int.from_bytes(_scalar(data, base + 1, 4), 'little')
+        elif marker == 1:
+            removed_count += 1
+            links[slot] = int.from_bytes(_scalar(data, base + 1, 4), 'little')
+        elif marker == 0:
+            name = _filename(data, base + profile.placements[0][0])
+            if _ascii_equal(name, 'DBNAMES'):
+                if selected_slot is not None:
+                    raise InvalidStructure('dbnames_duplicate')
+                selected_slot = base
+        else:
+            raise UnsupportedLayout('dbnames_nonreserved_slot')
+    visited = set()
+    current = links[0] if slots else 0
+    while current:
+        # Charge each examined edge, including the rejecting edge. All integer
+        # values came from fixed four-byte reads, so arithmetic is bounded.
+        budget.charge('bytes_processed', 8)
+        if current >= slots:
+            raise UnsupportedLayout('dbnames_chain_reference')
+        if current in visited:
+            raise UnsupportedLayout('dbnames_chain_cycle')
+        if markers[current] == 0:
+            raise UnsupportedLayout('dbnames_chain_zero_target')
+        visited.add(current)
+        current = links[current]
+    if len(visited) != removed_count:
+        raise UnsupportedLayout('dbnames_chain_unlinked')
+    return selected_slot
+
+
 def read_dbnames(read_at, file_size: int, *, profile: DBNamesProfile,
                  limits: NamedFileLimits | None = None,
                  catalog_limits: CatalogLimits | None = None) -> NamedFileBytes:
@@ -342,8 +448,7 @@ def read_dbnames(read_at, file_size: int, *, profile: DBNamesProfile,
     mapping, native execution, or consistency guarantee is supplied. Failures
     are all-or-nothing and contain only finite codes, never source values.
     """
-    if type(profile) is not DBNamesProfile:
-        raise ValueError("profile must be DBNamesProfile")
+    _validated_slot_policy(profile)
     if limits is not None and type(limits) is not NamedFileLimits:
         raise ValueError("limits must be NamedFileLimits")
     limits = limits if limits is not None else NamedFileLimits()
@@ -396,8 +501,7 @@ def _read_dbnames_from_catalog_inner(reader: CatalogReader, catalog: PhysicalCat
             (_binding_handle is None and (reader._table_opened or reader._table_blob_opened))):
         raise ValueError("DBNames extraction is single-use")
     reader._dbnames_attempted = True
-    if type(profile) is not DBNamesProfile:
-        raise ValueError("profile must be DBNamesProfile")
+    _validated_slot_policy(profile)
     if limits is not None and type(limits) is not NamedFileLimits:
         raise ValueError("limits must be NamedFileLimits")
     limits = limits if limits is not None else NamedFileLimits()
@@ -423,21 +527,24 @@ def _read_dbnames_from_catalog_inner(reader: CatalogReader, catalog: PhysicalCat
     slots = data.info.logical_length // profile.record_size
     if slots > limits.max_slots:
         raise ResourceLimit("dbnames_slots")
-    selected_slot = None
-    for slot in range(slots):
-        base = slot * profile.record_size
-        marker = _scalar(data, base, 1)
-        if slot == 0:
-            if marker != b"\x01":
-                raise UnsupportedLayout("dbnames_reserved_slot")
-            continue
-        if marker != b"\x00":
-            raise UnsupportedLayout("dbnames_nonreserved_slot")
-        name = _filename(data, base + profile.placements[0][0])
-        if _ascii_equal(name, "DBNAMES"):
-            if selected_slot is not None:
-                raise InvalidStructure("dbnames_duplicate")
-            selected_slot = base
+    if _validated_slot_policy(profile) == 'closed_marker1_chain_v1':
+        selected_slot = _scan_closed_marker1_slots(data, profile, slots)
+    else:
+        selected_slot = None
+        for slot in range(slots):
+            base = slot * profile.record_size
+            marker = _scalar(data, base, 1)
+            if slot == 0:
+                if marker != b"\x01":
+                    raise UnsupportedLayout("dbnames_reserved_slot")
+                continue
+            if marker != b"\x00":
+                raise UnsupportedLayout("dbnames_nonreserved_slot")
+            name = _filename(data, base + profile.placements[0][0])
+            if _ascii_equal(name, "DBNAMES"):
+                if selected_slot is not None:
+                    raise InvalidStructure("dbnames_duplicate")
+                selected_slot = base
     if selected_slot is None:
         raise InvalidStructure("dbnames_not_found")
     # Decode transport fields only after the complete filename/framing scan.

@@ -15,7 +15,7 @@ PREVIOUS_WORKFLOW = '1d104a9155553f3e7b6f2dbcc3fd6fb782056bb615b7b2c4931c6713aa1
 # evidence bound to the current 42-source lane. Historical hashes remain in
 # docs/catalog-description-rows.md; retain direct current LF/CRLF/drift checks.
 SOURCE_PINS = {
-    'yadinassi/storage/catalog_reader.py': '176fa6d84d1eee965ee127a00dc44249587878659615d984d22cb4a734202bb6',
+    'yadinassi/storage/catalog_reader.py': 'ace8d7bee2288f82594719b36e5e3c5d61bc9bacebfbd42af88324e01ee06dd7',
     'yadinassi/storage/config_catalog_transport.py': 'b526877c583900b263779c00f8db5c74cb40ff423b1df0e16f866cc4abca01ff',
     'yadinassi/storage/config_catalog_binding.py': 'd09e0ed9f4ac6a6ecf7f3cb9534540c683da40b92807e88df79b51a313a44e01',
     'yadinassi/storage/config_catalog_records.py': 'fe9fe800eec627583a35b83831e82f3af2289990a98b953510e1692a07e165c0',

@@ -37,6 +37,10 @@ def source():
     for old,new in ((5,30),(8,31),(9,34),(10,32),(11,33)):
         value.page(new)[:]=params.page(old)
     value.page(30)[24:28]=u32(32);value.page(31)[24:28]=u32(33)
+    # Public coordinator selects the closed marker-one recipe: an all-active
+    # PARAMS image has a zero reserved head. The original extraction fixture
+    # retains opaque R padding to test the unchanged strict/default recipe.
+    value.page(32)[1:5]=u32(0)
     declarations=(('_IDRREF','B',0,16,0,'CS'),('_VERSION','RV',0,0,0,'CS'),
         ('_MARKED','L',0,0,0,'CS'),('_PREDEFINEDID','B',0,16,0,'CS'),
         ('_CODE','NVC',0,2,0,'CI'),('_FLD62','NVC',0,32,0,'CI'),('_FLD741','N',0,9,2,'CS'))

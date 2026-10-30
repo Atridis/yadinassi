@@ -153,7 +153,7 @@ def failure_fixture(*,final=True):
 
 class DescriptionDiagnosticTests(unittest.TestCase):
     def test_exact_existing_domain_and_special_finite_classes(self):
-        self.assertEqual(sum(len(v) for k,v in p.DIAGNOSTICS.items() if k not in ('adapter','parity','unclassified','builtin')),228)
+        self.assertEqual(sum(len(v) for k,v in p.DIAGNOSTICS.items() if k not in ('adapter','parity','unclassified','builtin')),232)
         count=0
         for cls,category in p._READER_CATEGORIES.items():
             for code in p.DIAGNOSTICS[category]:
@@ -192,8 +192,8 @@ class DescriptionDiagnosticTests(unittest.TestCase):
     def test_runtime_additions_are_closed_and_old_domain_preserved(self):
         original=p._binding_diagnostics.DIAGNOSTICS
         self.assertEqual(sum(map(len,original.values())),193)
-        self.assertEqual(sum(map(len,p._RUNTIME_DIAGNOSTICS.values())),35)
-        self.assertEqual(sum(map(len,p.DIAGNOSTICS.values())),235)
+        self.assertEqual(sum(map(len,p._RUNTIME_DIAGNOSTICS.values())),39)
+        self.assertEqual(sum(map(len,p.DIAGNOSTICS.values())),239)
         for category,codes in original.items():
             self.assertLessEqual(codes,p.DIAGNOSTICS[category])
         for category,codes in p._RUNTIME_DIAGNOSTICS.items():
@@ -204,6 +204,17 @@ class DescriptionDiagnosticTests(unittest.TestCase):
                 report=failure_fixture();self.assertTrue(p.set_failure(report,diagnostic,final=True));validate(report)
                 for wrong in (code+'_private','transport_unknown','config_projection_unknown'):
                     self.assertEqual(p.diagnostic_for(cls(wrong),snapshot='applied',phase='public_reader')['category'],'unclassified')
+
+    def test_closed_chain_codes_remain_finite_reader_failures(self):
+        for code in ('dbnames_chain_reference','dbnames_chain_cycle','dbnames_chain_zero_target','dbnames_chain_unlinked'):
+            error=p._catalog_errors.UnsupportedLayout(code)
+            value=p.diagnostic_for(error,snapshot='applied',phase='public_reader')
+            self.assertEqual((value['category'],value['code']),('unsupported_layout',code))
+            report=failure_fixture();self.assertTrue(p.set_failure(report,value,final=True));validate(report)
+            self.assertIsNone(report['description_measurement']);self.assertFalse(report['accepted'])
+            for phase in ('comparison','postimage','cleanup'):
+                self.assertEqual(p.diagnostic_for(error,snapshot='applied',phase=phase)['category'],'unclassified')
+            self.assertEqual(p.diagnostic_for(p._catalog_errors.UnsupportedLayout(code+'_private'),snapshot='applied',phase='public_reader')['category'],'unclassified')
 
     def test_exact_value_error_only_without_private_object_access(self):
         called=[]
@@ -225,6 +236,71 @@ class DescriptionDiagnosticTests(unittest.TestCase):
             with self.assertRaises(OracleError):p._diagnostic(dict(diagnostic,phase=phase))
         with self.assertRaises(OracleError):p._diagnostic(dict(diagnostic,snapshot='baseline'))
         self.assertEqual(called,[])
+
+    def test_attribute_dictionary_keys_never_invoke_foreign_hooks(self):
+        called=[]
+        class Collision:
+            def __init__(self,target):self.target=target
+            def __hash__(self):return hash(self.target)
+            def __eq__(self,other):called.append('eq');raise AssertionError('private equality')
+        class Text(str):
+            def __hash__(self):called.append('hash');raise AssertionError('private hash')
+            def __eq__(self,other):called.append('eq');raise AssertionError('private equality')
+        class Dictionary(dict):
+            def __iter__(self):called.append('iter');raise AssertionError('private iter')
+            def __len__(self):called.append('len');raise AssertionError('private len')
+            def get(self,*args):called.append('get');raise AssertionError('private get')
+        factories=(lambda:p._catalog_errors.UnsupportedLayout('dbnames_chain_cycle'),
+            lambda:p.DescriptionAdapterError('one_active_row'),
+            lambda:p.DescriptionParityError('metadata'),lambda:OracleError('transport_invalid'))
+        for factory in factories:
+            for target in ('code','kind'):
+                for fields in ({Collision(target):'secret'},Dictionary(code='metadata',kind='transport_invalid'),
+                               {str(i):None for i in range(9)}):
+                    error=factory();error.__dict__=fields
+                    for phase in p.PHASES:
+                        value=p.diagnostic_for(error,snapshot='applied',phase=phase)
+                        self.assertEqual(value['category'],'unclassified')
+                        self.assertEqual(p.wrap_failure(error,snapshot='applied',phase=phase).kind,'unexpected_failure')
+        error=p._catalog_errors.UnsupportedLayout('dbnames_chain_cycle')
+        error.__dict__={'code':'dbnames_chain_cycle',**{str(i):None for i in range(7)}}
+        self.assertEqual(p.diagnostic_for(error,snapshot='applied',phase='public_reader')['code'],'dbnames_chain_cycle')
+        # A string subclass can be inserted without its hook via an inherited
+        # hash implementation; classification must reject by exact type first.
+        class Key(str):
+            def __eq__(self,other):called.append('keyeq');raise AssertionError
+            __hash__=str.__hash__
+        error.__dict__={Key('code'):'dbnames_chain_cycle'}
+        self.assertEqual(p.diagnostic_for(error,snapshot='applied',phase='public_reader')['category'],'unclassified')
+        self.assertEqual(called,[])
+
+    def test_trusted_context_and_notes_fit_eight_attribute_limit(self):
+        errors=[p._catalog_errors.UnsupportedLayout('dbnames_chain_cycle'),
+            p.DescriptionAdapterError('one_active_row'),p.DescriptionParityError('metadata'),OracleError('transport_invalid')]
+        for error in errors:
+            error.failure_context={'operation':'inventory'}
+            error.failure_context_stage='apply_cf'
+            error.add_note('private note never read')
+            self.assertLessEqual(len(error.__dict__),5)
+            fields=dict(error.__dict__)
+            for index in range(8-len(fields)):fields['extra_'+str(index)]=None
+            error.__dict__=fields
+            if type(error) is OracleError:
+                self.assertEqual(p.wrap_failure(error,snapshot='applied',phase='public_reader').kind,'transport_invalid')
+            else:
+                phase='comparison' if type(error) is p.DescriptionParityError else 'public_reader'
+                self.assertNotEqual(p.diagnostic_for(error,snapshot='applied',phase=phase)['category'],'unclassified')
+            fields['ninth']=None
+            self.assertEqual(p.diagnostic_for(error,snapshot='applied',phase='public_reader')['category'],'unclassified')
+            self.assertEqual(p.wrap_failure(error,snapshot='applied',phase='public_reader').kind,'unexpected_failure')
+
+    def test_recipe_binds_closed_marker1_profile_and_rejects_prior_hash(self):
+        self.assertEqual(p.PROFILE_DESCRIPTION['params_slot_policy'],'closed_marker1_chain_v1')
+        prior=dict(p.PROFILE_DESCRIPTION);del prior['params_slot_policy']
+        prior_hash=hashlib.sha256(protocol.encode(prior)).hexdigest()
+        self.assertNotEqual(prior_hash,p.PROFILE_SHA256)
+        report=fixture();report['description_measurement']['profile_sha256']=prior_hash
+        with self.assertRaises(OracleError):validate(report)
 
     def test_unknown_metaclass_hash_and_equality_never_run(self):
         called=[]

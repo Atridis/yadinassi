@@ -104,7 +104,8 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
             identity, attributes = selected
         with graph.stage('params') as handle:
             extracted = named._read_dbnames_from_catalog(reader, physical_catalog,
-                profile=named.DBNamesProfile(core.DECLARATIONS, '0', 0), _binding_handle=handle)
+                profile=named.DBNamesProfile(core.DECLARATIONS, '0', 0,
+                    slot_policy='closed_marker1_chain_v1'), _binding_handle=handle)
             profile = dbnames.DBNamesParseProfile(dbnames.DBNAMES_PROFILE_IDENTIFIER)
             parse_limits = dbnames.DBNamesParseLimits()
             reservation = dbnames.reserve_dbnames_parse(extracted.data, profile=profile, limits=parse_limits)

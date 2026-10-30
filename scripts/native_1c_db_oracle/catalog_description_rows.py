@@ -23,11 +23,13 @@ CASES = tuple(measurement.CASES)
 TARGETS = ('baseline', 'created', 'updated', 'applied')
 STAGES = dict(zip(TARGETS, ('baseline', 'create', 'update', 'apply_cf')))
 EXTRA_KEYS = {'description_case', 'description_measurement'}
-PROFILE_SHA256 = hashlib.sha256(encode({'id':PROFILE_ID,
+PROFILE_DESCRIPTION = {'id':PROFILE_ID,
+    'params_slot_policy':'closed_marker1_chain_v1',
     'seeds_sha256':hashlib.sha256(encode(dict(measurement.CASES))).hexdigest(),
     'layout':'CONFIG-derived widths; one NVC _DESCRIPTION after _CODE; otherwise unresolved',
     'scope':'same-postimage public typed rows once; independent Description and UUID parity; applied Payload64',
-    'acceptance':'core lifecycle and cleanup plus exact Description and actual native UUID parity'})).hexdigest()
+    'acceptance':'core lifecycle and cleanup plus exact Description and actual native UUID parity'}
+PROFILE_SHA256 = hashlib.sha256(encode(PROFILE_DESCRIPTION)).hexdigest()
 OUTCOMES = ('readback_matches','readback_differs','layout_unresolved','case_metadata_mismatch')
 PHYSICAL_NUMBERS = ('description_length','payload_length','field_count','record_size',
     'active_count','description_ordinal','description_offset','description_width',
@@ -58,7 +60,9 @@ _RUNTIME_DIAGNOSTICS = {
         'binding_table_count', 'compiled_binding_invalid', 'dbnames_filename_encoding',
         'dbnames_nonreserved_slot', 'dbnames_numeric_digit', 'dbnames_numeric_padding',
         'dbnames_numeric_sign', 'dbnames_part', 'dbnames_profile_mismatch',
-        'dbnames_reserved_slot', 'dbnames_table_ambiguous', 'dbnames_table_missing')),
+        'dbnames_reserved_slot', 'dbnames_table_ambiguous', 'dbnames_table_missing',
+        'dbnames_chain_reference', 'dbnames_chain_cycle',
+        'dbnames_chain_zero_target', 'dbnames_chain_unlinked')),
     'unsupported_sharing_policy': frozenset(('binding_table_alias',)),
 }
 for _category, _codes in _RUNTIME_DIAGNOSTICS.items():
@@ -112,6 +116,16 @@ def _diagnostic(value):
     if value['category'] not in ('adapter','parity','unclassified'):require(value['phase']=='public_reader')
 
 
+def _finite_error_attribute(error,name):
+    # Call only for exact trusted exception classes. Reject all foreign keys
+    # before lookup: even dict.get on an exact dict can invoke colliding key eq.
+    fields=object.__getattribute__(error,'__dict__')
+    if type(fields) is not dict or dict.__len__(fields)>8:return None
+    for key in dict.__iter__(fields):
+        if type(key) is not str:return None
+    return dict.get(fields,name)
+
+
 def diagnostic_for(error,*,snapshot,phase):
     require(type(snapshot) is str and snapshot in TARGETS
         and type(phase) is str and phase in PHASES,'invalid_input')
@@ -125,8 +139,7 @@ def diagnostic_for(error,*,snapshot,phase):
     if selected is not None:
         # Only exact trusted types reach this read; subclass properties and
         # hostile str/repr/getattribute hooks are never inspected or executed.
-        fields=object.__getattribute__(error,'__dict__')
-        candidate=dict.get(fields,'code') if type(fields) is dict else None
+        candidate=_finite_error_attribute(error,'code')
         if type(candidate) is str and candidate in DIAGNOSTICS[selected]:
             category,code=selected,candidate
     return {'snapshot':snapshot,'phase':phase,'category':category,'code':code}
@@ -137,8 +150,7 @@ def wrap_failure(error,*,snapshot,phase):
     kind='unexpected_failure'
     kind_type=type(error)
     if kind_type is OracleError or kind_type is DescriptionParityError or kind_type is DescriptionAdapterError:
-        fields=object.__getattribute__(error,'__dict__')
-        candidate=dict.get(fields,'kind') if type(fields) is dict else None
+        candidate=_finite_error_attribute(error,'kind')
         if type(candidate) is str and candidate in core.FAILURES:kind=candidate
     return DiagnosticFailure(diagnostic,kind)
 
