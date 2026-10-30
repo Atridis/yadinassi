@@ -48,7 +48,8 @@ def _validate_binding(binding, budget):
         _name(binding.name)
     except CatalogBindingError:
         _bad_binding()
-    if (type(binding.code_length) is not int or not 1 <= binding.code_length <= 2047
+    if (type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
+            or type(binding.code_length) is not int or not 1 <= binding.code_length <= 2047
             or type(binding.recordlock) is not str or binding.recordlock != '0'
             or type(binding.format_item) is not int or binding.format_item != 0
             or type(binding.attributes) is not tuple or len(binding.attributes) != 2):
@@ -80,19 +81,23 @@ def _validate_binding(binding, budget):
                 (a.physical_name, 'NVC', 0, a.qualifiers[0], 0, 'CI'),
                 (b.physical_name, 'N', 0, precision, scale, 'CS'))
     widths = (16, 16, 1, 16, 2 + 2 * binding.code_length, 2 + 2 * a.qualifiers[0], (precision + 2) // 2)
+    if binding.description_length:
+        expected = expected[:5] + (('_DESCRIPTION', 'NVC', 0, binding.description_length, 0, 'CI'),) + expected[5:]
+        widths = widths[:5] + (2 + 2 * binding.description_length,) + widths[5:]
+    count = len(expected)
     size = 1 + sum(widths)
     if (size > 4096 or type(binding.record_size) is not int or binding.record_size != size
-            or type(binding.declarations) is not tuple or len(binding.declarations) != 7
-            or type(binding.placements) is not tuple or len(binding.placements) != 7):
+            or type(binding.declarations) is not tuple or len(binding.declarations) != count
+            or type(binding.placements) is not tuple or len(binding.placements) != count):
         _bad_binding()
     for actual, wanted in zip(binding.declarations, expected):
         if (type(actual) is not tuple or len(actual) != 6
                 or any(type(v) is not t for v, t in zip(actual, (str, str, int, int, int, str)))
                 or actual != wanted):
             _bad_binding()
-    offsets = [0] * 7
+    offsets = [0] * count
     cursor = 1
-    for index in (1, 0, 2, 3, 4, 5, 6):
+    for index in (1, 0, *range(2, count)):
         offsets[index] = cursor
         cursor += widths[index]
     for i, place in enumerate(binding.placements):

@@ -1,3 +1,6 @@
+> Current Description extension: see [metadata-derived raw/typed reads](catalog-description-rows.md).
+> The Description0-only claims below describe the historical baseline and its receipts.
+
 # Experimental single-Catalog read-only binding — accepted owned profile
 
 The dedicated native lane is accepted for the bounded owned profile described

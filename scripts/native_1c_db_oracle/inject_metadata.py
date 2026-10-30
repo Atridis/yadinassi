@@ -116,7 +116,7 @@ def _template(name: str, values: dict[str, str], *, description_case=None) -> by
     return re.sub(r"@@([A-Z_]+)@@", replace, raw).encode("utf-8-sig")
 
 
-def _module(name: str, nonce: str, evidence: str, *, reference_case=None, description_case=None) -> bytes:
+def _module(name: str, nonce: str, evidence: str, *, reference_case=None, description_case=None, description_rows=False) -> bytes:
     values = {"NONCE": nonce, "EVIDENCE": evidence, "SETUP_USER": SETUP_USER,
               "CRUD_USER": CRUD_USER, "SETUP_ROLE": SETUP_ROLE, "CRUD_ROLE": CRUD_ROLE}
     if description_case is not None and name == "NativeOracleServer.bsl":
@@ -124,7 +124,7 @@ def _module(name: str, nonce: str, evidence: str, *, reference_case=None, descri
             raise DraftError("Incompatible closed Catalog cases")
         from catalog_description_measurement import transform
         source = (ROOT / "modules" / name).read_bytes()
-        raw = transform(source, name="modules/" + name, case=description_case).decode("utf-8-sig")
+        raw = transform(source, name="modules/" + name, case=description_case, rows=description_rows).decode("utf-8-sig")
     else:
         raw = (ROOT / "modules" / name).read_text(encoding="utf-8-sig")
     if reference_case is not None:
@@ -294,8 +294,10 @@ def inspect(root: Path, version: int, *, catalog_field_matrix=False, description
             "nonprivileged_module": True}
 
 
-def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False, reference_case=None, description_case=None) -> dict:
+def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False, reference_case=None, description_case=None, description_rows=False) -> dict:
     matrix = _matrix(catalog_field_matrix)
+    if type(description_rows) is not bool or description_rows and description_case is None:
+        raise DraftError('Invalid closed Description rows mode')
     _description_mode(description_case, catalog_field_matrix, reference_case)
     if type(nonce) is not str or not re.fullmatch(r"[0-9a-f]{32}", nonce):
         raise DraftError("Invalid oracle nonce")
@@ -328,7 +330,7 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catal
         values.update(ROLE_NAME=role, ROLE_UUID=str(uuid.uuid4()))
         added[f"Roles/{role}.xml"] = _template("Role.xml", values)
         added[f"Roles/{role}/Ext/Rights.xml"] = _template(template, values)
-    added.update({path: _module(name, nonce, ep, reference_case=reference_case, description_case=description_case) for name, path in MODULE_FILES.items()})
+    added.update({path: _module(name, nonce, ep, reference_case=reference_case, description_case=description_case, description_rows=description_rows) for name, path in MODULE_FILES.items()})
     if matrix:
         for extra_name, kind in matrix.VARIANTS:
             extra_values = dict(values)

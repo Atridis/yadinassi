@@ -2,8 +2,8 @@
 
 The caller is responsible for providing a consistent offline source through read_at.
 This API neither opens a live database nor creates a transaction or authentication
-session. Current admission retains the owned String Code/Description0, String and
-Number attribute profile and one active record. No BSL manager is exported yet.
+session. Current admission retains the owned String Code, optional metadata-derived
+Description, String and Number attribute profile and one active record. No BSL manager is exported yet.
 """
 from dataclasses import dataclass
 from uuid import UUID
@@ -157,10 +157,14 @@ def _project_rows(graph, identity, binding, records):
             or binding.metadata_uuid != identity.metadata_uuid
             or binding.name != identity.name):
         raise catalog_module.InvalidStructure('binding_reference_identity')
+    if (type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
+            or binding.description_length != identity.description_length):
+        raise catalog_module.InvalidStructure('binding_reference_identity')
+    field_count = 7 + int(binding.description_length > 0)
     expected = ('_IDRREF', 'B', 0, 16, 0, 'CS')
-    # The admitted profile has exactly seven declarations. Check shape and
+    # The admitted profile has exactly seven or eight declarations. Check shape and
     # unique role before indexing even for malformed private intermediate data.
-    if (type(binding.placements) is not tuple or len(binding.placements) != 7
+    if (type(binding.placements) is not tuple or len(binding.placements) != field_count
             or any(type(p) is not compiler.BoundFieldPlacement
                    or type(p.declaration) is not tuple or len(p.declaration) != 6
                    for p in binding.placements)
@@ -174,7 +178,7 @@ def _project_rows(graph, identity, binding, records):
     for record in records.rows:
         if (type(record) is not row_types.PhysicalRecord
                 or type(record.raw) is not bytes
-                or type(record.fields) is not tuple or len(record.fields) != 7
+                or type(record.fields) is not tuple or len(record.fields) != field_count
                 or any(type(f) is not row_types.PhysicalValue
                        or type(f.declaration) is not catalog_module.PhysicalField
                        for f in record.fields)

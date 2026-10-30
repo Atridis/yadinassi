@@ -15,6 +15,19 @@ import test_native_1c_db_oracle_ci_policy as old
 
 def legacy_codec_view(block):
     """Select the unchanged old-route branches; separate tests cover new route."""
+    # Exact inverse for the new route: do not erase arbitrary commands/env.
+    block = block.replace('      description_rows_sha256: ${{ steps.native.outputs.description_rows_sha256 }}\n', '')
+    for key,source in (('SHA256','description_rows_sha256'),('RUN_ID','run_id'),('RUN_ATTEMPT','run_attempt')):
+        block = block.replace('          DESCRIPTION_ROWS8_'+key+': ${{ needs.native_codec_a.outputs.'+source+' }}\n', '')
+    block = block.replace(" || needs.eligibility.outputs.route == 'catalog-description-rows-v1'", '')
+    block = block.replace("needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || ", '')
+    for number in ('8','17'):
+        block = block.replace("needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description_rows"+number+".json' || ", '')
+        command = 'python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-description-rows description'+number+' --output native-db-oracle/description_rows'+number+'.json'
+        branch = '          if [ "${{ needs.eligibility.outputs.route }}" = catalog-description-rows-v1 ]; then\n            '+command+'\n          elif '
+        block = block.replace(branch, '          if ')
+    branch = '          if [ "${{ needs.eligibility.outputs.route }}" = catalog-description-rows-v1 ]; then\n            python3 scripts/native_1c_db_oracle.py --validate-description-rows8\n          elif '
+    block = block.replace(branch, '          if ')
     block = re.sub(r"^      description_sha256:.*\n", "", block, flags=re.M)
     block = re.sub(r"^          DESCRIPTION8_(?:SHA256|RUN_ID|RUN_ATTEMPT):.*\n", "", block, flags=re.M)
     block = block.replace(" || needs.eligibility.outputs.route == 'catalog-description-measurement-v1'", "")
@@ -39,11 +52,11 @@ class CodecWorkflowTests(unittest.TestCase):
     def test_fixed_selector_disjoint_jobs_and_exact_dependencies(self):
         eligibility = old.workflow_job('eligibility')
         self.assertIn('    outputs:\n      route: ${{ steps.admission.outputs.route }}\n', eligibility)
-        self.assertIn('          NATIVE_DB_ROUTE: catalog-description-measurement-v1\n', eligibility)
+        self.assertIn('          NATIVE_DB_ROUTE: catalog-description-rows-v1\n', eligibility)
         for name in ('native_reference_a', 'native_oracle'):
             self.assertIn("needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&", old.workflow_job(name))
         for name in ('native_codec_a', 'native_codec_b'):
-            self.assertIn("(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1') &&", old.workflow_job(name))
+            self.assertIn("(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1') &&", old.workflow_job(name))
         self.assertIn('needs: eligibility', old.workflow_job('native_codec_a'))
         self.assertIn('needs: [eligibility, native_codec_a]', old.workflow_job('native_codec_b'))
         self.assertIn("needs.native_codec_a.result == 'success' &&", old.workflow_job('native_codec_b'))
@@ -75,6 +88,17 @@ class CodecWorkflowTests(unittest.TestCase):
         self.assertIn('digest-mismatch: error', before)
         self.assertNotIn('github-token:', block)
 
+    def test_new_route_inverse_does_not_hide_command_or_handoff_drift(self):
+        for name,old_value,new_value in (
+            ('native_codec_a','--catalog-description-rows description8','--catalog-description-rows description17'),
+            ('native_codec_b','--validate-description-rows8','--validate-description8'),
+            ('native_codec_b','DESCRIPTION_ROWS8_SHA256: ${{ needs.native_codec_a.outputs.description_rows_sha256 }}','DESCRIPTION_ROWS8_SHA256: foreign'),
+            ('native_codec_a','description_rows_sha256: ${{ steps.native.outputs.description_rows_sha256 }}','description_rows_sha256: foreign'),
+        ):
+            original=old.workflow_job(name)
+            self.assertIn(old_value,original)
+            self.assertNotEqual(legacy_codec_view(original),legacy_codec_view(original.replace(old_value,new_value)))
+
     def test_selected_verdict_is_closed_and_requires_unselected_skip(self):
         program = old.inline_program('verdict')
         block = program.split('# BEGIN NATIVE DB ORACLE ROUTE VERDICT\n', 1)[1].split('# END NATIVE DB ORACLE ROUTE VERDICT', 1)[0]
@@ -83,9 +107,9 @@ class CodecWorkflowTests(unittest.TestCase):
         select = namespace['selected_native_result']
         states = ('success', 'failure', 'cancelled', 'skipped', 'timed_out', '', None)
         for route, reference_a, reference_b, codec_a, codec_b in itertools.product(
-                ('catalog-reference-identity-v1', 'catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', '', None, 'other'), states, states, states, states):
+                ('catalog-reference-identity-v1', 'catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', '', None, 'other'), states, states, states, states):
             expected = ('success' if route == 'catalog-reference-identity-v1' and reference_a == reference_b == 'success' and codec_a == codec_b == 'skipped'
-                        or route in ('catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1') and codec_a == codec_b == 'success' and reference_a == reference_b == 'skipped' else 'failure')
+                        or route in ('catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1') and codec_a == codec_b == 'success' and reference_a == reference_b == 'skipped' else 'failure')
             self.assertEqual(select(route, reference_a, reference_b, codec_a, codec_b), expected)
 
     def test_actual_admission_rejects_unknown_missing_route_without_output(self):
@@ -95,13 +119,13 @@ class CodecWorkflowTests(unittest.TestCase):
             event, context = old.fixtures()
             (root/'event.json').write_text(json.dumps(event), encoding='utf-8')
             context.update(GITHUB_EVENT_PATH=str(root/'event.json'), GITHUB_OUTPUT=str(root/'output'))
-            for route in (None, '', 'other', 'catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1'):
+            for route in (None, '', 'other', 'catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1'):
                 env = dict(context)
                 if route is not None: env['NATIVE_DB_ROUTE'] = route
                 output = root/'output'
                 if output.exists(): output.unlink()
                 result = subprocess.run([sys.executable,'-I','-B','-c',program], env=old.subprocess_environment(env), capture_output=True)
-                accepted = route in ('catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1')
+                accepted = route in ('catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1')
                 self.assertEqual(result.returncode, 0 if accepted else 1)
                 self.assertEqual(output.exists(), accepted)
                 if accepted: self.assertEqual(output.read_text(), 'route='+route+'\n')
