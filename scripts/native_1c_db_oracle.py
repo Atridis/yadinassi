@@ -374,7 +374,7 @@ def export_report(raw, root_identity, *, output=OUTPUT):
     No fallback to a path-following write: the real CI host is POSIX. Portable
     protocol/orchestration tests do not need to simulate an unsafe export path.
     """
-    require(output in (OUTPUT, *REFERENCE_OUTPUTS.values(), REFERENCE_AGGREGATE, *CODEC_OUTPUTS.values(), CODEC_AGGREGATE, *ROWS_OUTPUTS.values(), ROWS_AGGREGATE, *DESCRIPTION_OUTPUTS.values(), DESCRIPTION_AGGREGATE, *DESCRIPTION_ROWS_OUTPUTS.values(), DESCRIPTION_ROWS_AGGREGATE, *PARAMS_SLOT_OUTPUTS.values(), PARAMS_SLOT_AGGREGATE), 'invalid_input')
+    require(output in (OUTPUT, *REFERENCE_OUTPUTS.values(), REFERENCE_AGGREGATE, *CODEC_OUTPUTS.values(), CODEC_AGGREGATE, *ROWS_OUTPUTS.values(), ROWS_AGGREGATE, *DESCRIPTION_OUTPUTS.values(), DESCRIPTION_AGGREGATE, *DESCRIPTION_ROWS_OUTPUTS.values(), DESCRIPTION_ROWS_AGGREGATE, *PARAMS_SLOT_OUTPUTS.values(), PARAMS_SLOT_AGGREGATE, *NUMERIC_CODE_OUTPUTS.values(), NUMERIC_CODE_AGGREGATE), 'invalid_input')
     require(os.open in os.supports_dir_fd and hasattr(os,'O_NOFOLLOW')
             and hasattr(os,'O_DIRECTORY'),'unsupported_platform_command')
     require(type(raw) is bytes and len(raw)+1<=MAX_REPORT_BYTES,'artifact_limit')
