@@ -1,4 +1,4 @@
-"""Closed immutable identities for the nine independently bounded tree shards."""
+"""Closed immutable identities for the ten independently bounded tree shards."""
 from typing import NamedTuple
 
 
@@ -65,6 +65,11 @@ COLUMNS_CLEAR_METADATA = Profile('tree-columns-clear-metadata-v1', 'native-1c-tr
     'tree_columns_clear_metadata', 'c120b7813f7035c44bb98aac76dad4bf435417eab1ef0ad732c3e7ef7a02e435',
     4, 'native_1c_tree_columns_clear_metadata_contract', '\nСообщить("CD-C1: [" + CCCalibrate() + "]");\n', 2, 'tree-columns-clear-metadata')
 
+
+COLUMNS_DELETE = Profile('tree-columns-delete-v1', 'native-1c-tree-columns-delete-v1', 'native-1c-tree-columns-delete-stage-v1',
+    'tree_columns_delete', '250c6a8026b3a88c803de7e06565f6c50add4c67cd91a65ffe6c2fceb0d77f2d',
+    15, 'native_1c_tree_columns_delete_contract', '\nСообщить("DL-C1: [" + CCCalibrate() + "]");\n', 2, 'tree-columns-delete')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
@@ -86,4 +91,6 @@ def select(name='tree-v1'):
         return COLUMNS_CLEAR_LIFETIME
     if name == COLUMNS_CLEAR_METADATA.name:
         return COLUMNS_CLEAR_METADATA
+    if name == COLUMNS_DELETE.name:
+        return COLUMNS_DELETE
     raise ValueError('invalid_tree_profile')

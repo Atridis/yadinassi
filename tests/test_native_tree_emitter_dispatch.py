@@ -22,7 +22,8 @@ MODES={'true':'tree-v1','copy':'tree-copy-v1','sort':'tree-sort-v1',
        'columns-move-tail':'tree-columns-move-tail-v1',
        'columns-clear':'tree-columns-clear-v1',
        'columns-clear-lifetime':'tree-columns-clear-lifetime-v1',
-       'columns-clear-metadata':'tree-columns-clear-metadata-v1'}
+       'columns-clear-metadata':'tree-columns-clear-metadata-v1',
+       'columns-delete':'tree-columns-delete-v1'}
 NONCE='f'*32
 
 
@@ -33,7 +34,7 @@ def arguments(mode):
 
 
 def previous_emitter():
-    return EMITTER.replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
+    return EMITTER.replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
                            '{"false", "true", "copy", "sort"}').replace(
         '{"true", "copy", "sort", "columns-move"}', '{"true", "copy", "sort"}')
 
@@ -131,7 +132,7 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                 host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile='tree-sort-v1')
 
     def test_boundary_mode_both_sets_required_and_prior_modes_unchanged(self):
-        old=EMITTER.replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}')
+        old=EMITTER.replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}')
         only_allowlist=old.replace('if tree_mode not in {"false", "true", "copy", "sort", "columns-move"}:',
             'if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary"}:')
         only_dispatch=old.replace('if tree_mode in {"true", "copy", "sort", "columns-move"}:',
@@ -174,7 +175,7 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                     host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
 
     def test_tail_mode_both_sets_required_and_prior_modes_unchanged(self):
-        old=EMITTER.replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}')
+        old=EMITTER.replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}')
         only_allowlist=old.replace('if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary"}:',
             'if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail"}:')
         only_dispatch=old.replace('if tree_mode in {"true", "copy", "sort", "columns-move", "columns-move-boundary"}:',
@@ -217,9 +218,9 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                     host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
 
     def test_clear_mode_requires_both_closed_sets_and_preserves_all_prior_routes(self):
-        old=EMITTER.replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}')
-        admission=next(line for line in EMITTER.replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode not in '))
-        dispatch=next(line for line in EMITTER.replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode in '))
+        old=EMITTER.replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}')
+        admission=next(line for line in EMITTER.replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode not in '))
+        dispatch=next(line for line in EMITTER.replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode in '))
         only_admission=old.replace(admission.replace(', "columns-clear"}', '}'),admission)
         only_dispatch=old.replace(dispatch.replace(', "columns-clear"}', '}'),dispatch)
         for code in (old,only_admission,only_dispatch):
@@ -295,6 +296,26 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                 with self.assertRaises(host.TreeError):
                     host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
 
+    def test_delete_actual_emitter_to_real_producer_and_strict_host(self):
+        import test_native_tree_columns_delete_profile as clear
+        host,tree,full,smoke=clear.host,clear.tree,clear.full,clear.smoke
+        spec=clear.spec();raw=clear.maximum_output()
+        envelope,hashes,modules=clear.success_envelope(raw)
+        with tempfile.TemporaryDirectory() as tmp:
+            parent=Path(tmp).resolve(strict=True);capture=parent/'capture';capture.mkdir()
+            (capture/(spec.case+'.out')).write_bytes(raw)
+            tree.write_report(parent/'stage3-report.json',envelope['report']['stage3'],profile=spec.name)
+            def finish(report,nonce,requested_root,**kwargs):
+                self.assertEqual(requested_root,Path('/tmp/onec-smoke')/('stage3-'+NONCE))
+                return tree.finish_report(bootstrap_report(),nonce,capture,**kwargs)
+            with synthetic_producer_reader(tree.full),mock.patch.object(full,'final_client_process_census'):
+                emitted,error=execute(arguments('columns-delete'),finish)
+            self.assertIsInstance(error,SystemExit);self.assertEqual(error.code,0)
+            self.assertEqual(host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=spec.name)[1],raw)
+            for profile in ('tree-v1','tree-copy-v1','tree-sort-v1','tree-columns-move-v1','tree-columns-move-boundary-v1','tree-columns-move-tail-v1','tree-columns-clear-v1','tree-columns-clear-lifetime-v1','tree-columns-clear-metadata-v1'):
+                with self.assertRaises(host.TreeError):
+                    host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
+
     def test_actual_bash_fixed_clear_setup_stage_flag_and_workflow_command(self):
         from test_native_catalog_description_rows_workflow import dispatch
         # Execute the actual bounded setup/flag fragments, never the native body.
@@ -302,7 +323,7 @@ class TreeEmitterDispatchTests(unittest.TestCase):
         flags='tree_flag=--tree-suite\n'+SOURCE.split('tree_flag=--tree-suite\n',1)[1].split('        python3 /smoke/bootstrap/run_stage.py',1)[0]
         for token,mode in (('--tree-suite','true'),('--tree-copy-suite','copy'),('--tree-sort-suite','sort'),
                            ('--tree-columns-move-suite','columns-move'),('--tree-columns-move-boundary-suite','columns-move-boundary'),
-                           ('--tree-columns-move-tail-suite','columns-move-tail'),('--tree-columns-clear-suite','columns-clear'),('--tree-columns-clear-lifetime-suite','columns-clear-lifetime'),('--tree-columns-clear-metadata-suite','columns-clear-metadata')):
+                           ('--tree-columns-move-tail-suite','columns-move-tail'),('--tree-columns-clear-suite','columns-clear'),('--tree-columns-clear-lifetime-suite','columns-clear-lifetime'),('--tree-columns-clear-metadata-suite','columns-clear-metadata'),('--tree-columns-delete-suite','columns-delete')):
             script='set -- '+token+' --invocation-nonce '+NONCE+'\n'+setup+'printf "%s\\n" "$tree_suite" "$*"\n'+flags+'printf "%s\\n" "$tree_flag"'
             result=dispatch(script)
             self.assertEqual(result.returncode,0,result.stderr)

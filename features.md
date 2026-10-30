@@ -5982,3 +5982,12 @@ native evidence. New nonempty lifetime semantics remain Linux-target only. See
   Другие длины — структурное обобщение, не дополнительное native-наблюдение;
   семантика присваивания и автонумерации этим прогоном не расширена.
   [Границы и исходная атрибуция](docs/catalog-numeric-code-runtime.md).
+
+### ValueTree.Columns.Delete: bounded lifetime measurement preparation
+
+Prepared a separate14-case native observer for last-column deletion, EN/RU
+selectors, retained row/column/collection lifetimes and nondefault metadata.
+This does not remove the runtime last-column guard or infer Delete behavior
+from Clear. Exact strict controls, finite captures and original exceptions are
+preserved; actual native acquisition is pending. See
+[measurement scope and bounds](docs/value-tree-columns-delete-measurement.md).
