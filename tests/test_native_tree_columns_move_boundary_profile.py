@@ -231,7 +231,7 @@ class ColumnsMoveBoundaryProfileTests(unittest.TestCase):
         encoded=budget.wire(marker).replace(b'/',b'\\/')
         self.assertEqual(len(raw),4779)
         self.assertEqual(len(encoded)+encoded.count(b',')+encoded.count(b':')+3,5031)
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, synthetic_producer_reader(tree.full):
             path=Path(tmp).resolve(strict=True)/'marker.json';path.write_bytes(encoded)
             self.assertEqual(tree.client_marker(path,NONCE,'completed',profile=PROFILE),marker)
             with self.assertRaises(full.FullError): tree.client_marker(path,NONCE,'completed')
@@ -354,7 +354,7 @@ class ColumnsMoveBoundaryProfileTests(unittest.TestCase):
                   "          - profile: tree-copy-v1\n            artifact: tree-copy\n            case: tree_copy\n"
                   "          - profile: tree-sort-v1\n            artifact: tree-sort\n            case: tree_sort\n"
                   "          - profile: tree-columns-move-v1\n            artifact: tree-columns-move\n            case: tree_columns_move\n"
-                  "          - profile: tree-columns-clear-lifetime-v1\n            artifact: tree-columns-clear-lifetime\n            case: tree_columns_clear_lifetime\n")
+                  "          - profile: tree-columns-clear-v1\n            artifact: tree-columns-clear\n            case: tree_columns_clear\n")
         def validate(value):
             strategy='    strategy:\n'+value.split('    strategy:\n',1)[1].split('    steps:\n',1)[0]
             self.assertEqual(strategy,expected)

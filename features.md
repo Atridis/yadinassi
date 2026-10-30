@@ -5940,3 +5940,16 @@ or forwarding. This is measurement preparation, not runtime support. It temporar
 replaces the existing Clear measurement matrix row; final runtime acceptance must
 restore the original twelve-case Clear lane and retain lifetime observations as
 offline regressions. See [bounded lifetime probe](docs/value-tree-columns-clear-lifetime-measurement.md).
+
+### ValueTree Columns.Clear: measured Linux runtime lifetime
+
+`Columns.Clear()` / `Колонки.Очистить()` now reproduces the authenticated twelve
+Clear cases and six retained-collection cases for the Linux 8.3.27.1508 semantic
+target, independently of the Python host OS. Active rows/columns are removed; old
+rows remain invalid; held columns expose the measured reset Name/Title/Width.
+Pre-held row collections preserve their Parent labels while measured
+Count/Get/Add/Insert/Clear operations address active root storage. Ordinary
+Rows.Clear/Delete lifetime guards and last-column Delete guard remain unchanged;
+other detached-collection operations and Windows 1C target remain unmeasured.
+The required CC12 native lane is restored; exploratory CL6 is retained offline,
+not permanently duplicated in native CI. See [scope, safety and attributed evidence](docs/value-tree-columns-clear.md).

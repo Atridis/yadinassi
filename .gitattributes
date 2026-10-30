@@ -19,3 +19,7 @@ scripts/native_1c_db_oracle/modules/CatalogDescriptionObservation.bsl text eol=l
 # Preserve authenticated Columns.Move checkpoints byte-exact on every checkout.
 tests/fixtures/value_tree_columns_move/*.out -text
 tests/fixtures/value_tree_columns_move/provenance.json -text
+
+# Preserve authenticated Columns.Clear lifetime captures on every checkout.
+tests/fixtures/value_tree_columns_clear/*.out -text
+tests/fixtures/value_tree_columns_clear/provenance.json -text
