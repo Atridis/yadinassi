@@ -1,0 +1,22 @@
+{
+  "run_id": 40966832988,
+  "attempt": 1,
+  "head": "c460c127e76571e6b7930e60d074c19e7373a295",
+  "tested_merge": "13d17c9c8d7ac47761b30a62f6736ddc209c5f66",
+  "tree": "02225abeed780d76cfdb16e148d69f144fb8c02d",
+  "source_count": 769,
+  "source_sha256": "5607a0c42901d624cfae1d166aed8d3ea258a2b0c8e0c894dcd032526a6fb5a3",
+  "native_sha256": "63264e3a24c6b3381e300f22766c11eecbffb20e17a03fadc95745aec6594871",
+  "native_size": 6443,
+  "server_client_equal": true,
+  "server_client_modules": {
+    "server": "78442f2c4fcf4f0e91d741b41af8f90b6de9a089d287a27574bcca027f615325",
+    "client": "cb9238022105b01dc1bbfe1c7c5a05835991c167e7ac75c6eee3297d22140e41"
+  },
+  "native_acquisition_accepted": true,
+  "runtime_parity_accepted": false,
+  "native_target": "linux-8.3.27.1508",
+  "schema": "native-tree-sort-checkpoint-v1",
+  "scope": "21 numeric-key cases; observed errors/identity/hierarchy; no Windows or general sort algorithm claim",
+  "audit_result_sha256": "1a9ae4bad85abe032be990bf0988b679aafbca6767bf76d56467979f29343bc9"
+}

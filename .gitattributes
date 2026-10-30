@@ -7,3 +7,6 @@ integrational_tests/directive_probes/preprocessor_profiles_measurement.json -tex
 
 # Preserve the authenticated ValueTree.Copy capture exactly on every checkout.
 tests/fixtures/value_tree_copy_linux_8_3_27_1508.out -text
+
+# Preserve the authenticated numeric ValueTree.Rows.Sort capture on every checkout.
+tests/fixtures/value_tree_sort/linux-8.3.27.1508.out -text

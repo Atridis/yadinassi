@@ -342,7 +342,7 @@ jobs:
           retention-days: 7
 
   tree_copy_smoke:
-    name: Native 1C tree Copy measurement
+    name: Native 1C ${{ matrix.profile }} measurement
     needs: eligibility
     if: >-
       needs.eligibility.result == 'success' &&
@@ -362,6 +362,16 @@ jobs:
       packages: read
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: tree-copy-v1
+            artifact: tree-copy
+            case: tree_copy
+          - profile: tree-sort-v1
+            artifact: tree-sort
+            case: tree_sort
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -380,28 +390,29 @@ jobs:
           python-version: "3.12.10"
       - name: Install exact host interpreter dependencies
         run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
-      - name: Measure tree Copy profile with isolated native client and server
+      - name: Measure fixed tree profile with isolated native client and server
         id: tree
         env:
+          TREE_PROFILE: ${{ matrix.profile }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_tree_profile.py --execute-approved-image --export-native-outputs --profile tree-copy-v1
-      - name: Upload finite tree Copy profile report
+        run: python3 scripts/native_1c_tree_profile.py --execute-approved-image --export-native-outputs --profile "$TREE_PROFILE"
+      - name: Upload finite fixed tree profile report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-tree-copy-summary
-          path: native-smoke/tree-copy-report.json
+          name: native-1c-${{ matrix.artifact }}-summary
+          path: native-smoke/${{ matrix.artifact }}-report.json
           if-no-files-found: error
           retention-days: 7
-      - name: Upload validated fixed tree Copy observations
+      - name: Upload validated fixed tree observations
         if: always() && steps.tree.outputs.tree_outputs_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-tree-copy-outputs
+          name: native-1c-${{ matrix.artifact }}-outputs
           path: |
-            native-smoke/tree-copy-outputs/tree_copy.out
-            native-smoke/tree-copy-outputs/provenance.json
+            native-smoke/${{ matrix.artifact }}-outputs/${{ matrix.case }}.out
+            native-smoke/${{ matrix.artifact }}-outputs/provenance.json
           if-no-files-found: error
           retention-days: 7
 
