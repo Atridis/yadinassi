@@ -1,10 +1,10 @@
-# Numeric Catalog Code: standalone measurement preparation
+# Numeric Catalog Code: bounded native measurement
 
-Base: merged main `6134989a6054ac1312eff83cf23cdbb2ac047438`, tree
-`459967398ee01f03d55ee7014da31594f9168431`. This change adds standalone fixtures,
-observation code and synthetic tests only. No injector, runner, workflow,
-production storage reader or existing source is changed. It is not a native
-execution or Numeric Code runtime-support claim.
+The initial standalone preparation was based on merged main
+`6134989a6054ac1312eff83cf23cdbb2ac047438`, tree
+`459967398ee01f03d55ee7014da31594f9168431`. It was then integrated as a separate
+bounded native observation lane. Production Number-code admission remains
+unchanged and unsupported; this document records measurements, not runtime support.
 
 ## Existing evidence and unresolved semantics
 
@@ -28,8 +28,8 @@ bounded decoder scope, not a newly verified platform limit.
 Zero, negative, fractional, overflowing and automatically allocated assignments,
 length0, prefix behavior and String-to-Number conversion are deferred. The private
 witness parser can represent bounded negative/fractional/zero readback without
-asserting that those assignments are supported. Native compilation and readback
-must still verify the proposed BSL metadata property use and new XML variants.
+asserting that those assignments are supported. The accepted run below verified compilation, metadata and committed readback
+for these two XML variants only; it does not resolve the deferred assignments.
 
 ## Exactly two independent cases
 
@@ -52,9 +52,10 @@ Raw, hash-bound transformations of the original Catalog XML and server module
 have exact inverses. The appended observer is separately hash-pinned. Old templates
 and existing schema2/schema3 witnesses remain unchanged. The transformed
 logical report uses `observed_number` as a finite role tag, not a numeric value or
-pretend K1. **It is intentionally not compatible with the old K1 protocol and is
-not registered for execution.** Integration needs an explicit closed mapped-core
-view; no old protocol may silently start accepting new tags.
+pretend K1. The standalone tag was deliberately incompatible with the old K1
+protocol and was initially not registered for execution. The integrated lane now
+uses an explicit closed mapped-core view; the old protocol still rejects the
+new tag. This separation was retained in the authenticated native measurement.
 
 ## Independent physical observation
 
@@ -98,7 +99,7 @@ UUID, Description, descriptor bytes, or a brute-forceable hash of Code alone.
 Valid layout/value differences remain measurement results, with
 `runtime_support=not_claimed`, not runtime admission.
 
-## Required next integration review (not implemented)
+## Integration requirements (completed for the measured source)
 
 1. Allocate a unique invocation/report/capture/aggregate schema family after
    checking the actual registry. Prove the exact import/source closure, including
@@ -117,13 +118,13 @@ Valid layout/value differences remain measurement results, with
 5. Prove complete rectangular serialized envelopes at actual source count,
    all stages/snapshots/failure paths and full capture reservation. Caps remain
    8192 capture and32768 full report, with separate captures for the two cases.
-   Current standalone projection/private bounds do NOT establish that integrated
-   report fits. If it cannot fit, reduce the measurement projection, not gates.
+   The original standalone projection/private bounds alone did not establish
+   that the integrated report fits; the completed integrated proof is below. If it cannot fit, reduce the measurement projection, not gates.
 6. Independent source review, normal/-O tests, strict cold readiness, root-owned
    publication and authenticated native acquisition are required before facts
    can justify a later small production-binding proposal.
 
-## Integrated lane (pre-native preparation)
+## Integrated measurement lane
 
 The separate `catalog-numeric-code-measurement-v1` lane uses invocation schema30,
 report59, capture60 and aggregate61, with an exact42-source cold-import closure.
@@ -144,6 +145,37 @@ Independent rectangular constructors reserve the entire8192-byte capture inside
 an otherwise maximal report: capture5992, fullreport28555, aggregate619 bytes
 (including their newline), private witness1207 including BOM. Limits remain
 8192/32768/2048, and no schema or resource limits are increased. Native availability
-and actual Number metadata still require a fresh exact-source Designer/native run.
+and actual Number metadata were verified at the exact source recorded below.
 Historical Description and PARAMS receipts keep their original source attribution;
 shared harness changes require fresh provenance, not relabeling previous evidence.
+
+## Authenticated native observations
+
+[Run41069562516](https://github.com/Atridis/yadinassi/actions/runs/41069562516)
+at commit `6ed1f84511a093be1f3226c5e279a2624064872f`, tree
+`b6a2fc0ae7b0edff224bb224fc7e11593a2765b4`, authenticated both independent cases
+and their aggregate. All six present states matched actual committed Code, UUID,
+Description and metadata. Baselines were absent. The exact42-source cold FINAL
+and independent checker passed normally and with optimization; eight distinct
+observer tokens, two fresh case nonces, A-to-B precredential handoff and all four
+cleanup flags were verified. Actual values and private witnesses are not published.
+
+| CodeLength | Physical Code | Offset | Width | Next offset | Record bytes created/updated/applied | Payload lengths |
+| --- | --- | --- | --- | --- | --- | --- |
+| 3 | N(3,0) | 50 | 2 | 52 | 141/141/205 | 32/32/64 |
+| 6 | N(6,0) | 50 | 4 | 54 | 143/143/207 | 32/32/64 |
+
+Observed Code digit counts were3/2/2 and6/2/2 respectively. DescriptionLength8
+and disabled autonumbering were verified in both cases. The metadata-derived
+width hypothesis `(CodeLength+2)//2` matches these odd/even cases; this is not
+proof of all lengths, platform versions, allocation histories or write semantics.
+The production raw/typed reader still rejects Number-code catalogs. A future
+runtime extension requires its own exact-source public-reader native parity.
+
+Audit RESULT SHA256:
+`b212ffcb71ae5cbc39df43422aa24481de5aa3542fbc355bf8eeebd5dd181a98`;
+sealed evidence inventory SHA256:
+`7950cd56aec5dbd10d670d472f3d0a5e990523a633d27296580d6afde5dc8837`.
+The earlier run41067673738 atdf4c89af failed before export because the fixed output
+allowlist omitted numeric paths. It produced no validated report: its native
+internal outcome and cleanup remain unknown, not retroactively accepted.
