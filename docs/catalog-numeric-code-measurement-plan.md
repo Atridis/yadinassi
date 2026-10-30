@@ -3,8 +3,9 @@
 The initial standalone preparation was based on merged main
 `6134989a6054ac1312eff83cf23cdbb2ac047438`, tree
 `459967398ee01f03d55ee7014da31594f9168431`. It was then integrated as a separate
-bounded native observation lane. Production Number-code admission remains
-unchanged and unsupported; this document records measurements, not runtime support.
+bounded native observation lane. At the measured6ed1f845 source, production Number-code admission remained
+unsupported. This document records that original measurement, not acceptance
+of a later runtime extension.
 
 ## Existing evidence and unresolved semantics
 
@@ -169,8 +170,9 @@ Observed Code digit counts were3/2/2 and6/2/2 respectively. DescriptionLength8
 and disabled autonumbering were verified in both cases. The metadata-derived
 width hypothesis `(CodeLength+2)//2` matches these odd/even cases; this is not
 proof of all lengths, platform versions, allocation histories or write semantics.
-The production raw/typed reader still rejects Number-code catalogs. A future
-runtime extension requires its own exact-source public-reader native parity.
+The production raw/typed reader at the measured6ed1f845 source rejected Number-code
+catalogs. The separate later runtime extension requires its own exact-source
+public-reader native parity; this measurement cannot supply that acceptance.
 
 Audit RESULT SHA256:
 `b212ffcb71ae5cbc39df43422aa24481de5aa3542fbc355bf8eeebd5dd181a98`;

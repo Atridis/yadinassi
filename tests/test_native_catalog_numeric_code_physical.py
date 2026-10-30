@@ -96,11 +96,15 @@ class NumericCodePhysicalTests(unittest.TestCase):
         for n in (1,42,0,-42):
             self.assertEqual(read(source(6,n)).records.rows[0].fields[4].value,Decimal(n))
 
-    def test_production_number_binding_still_rejects(self):
+    def test_public_numeric_binding_matches_independent_observation(self):
+        # Runtime extension has its own fresh native gate; this is synthetic
+        # parity, not a reinterpretation of the original measurement receipt.
         value=source()
-        with self.assertRaises(existing.catalog_module.UnsupportedLayout) as cm:
-            existing.read_catalog_binding(value.read_at,value.size,catalog_name='NativeOracleItems')
-        self.assertEqual(cm.exception.code,'binding_metadata_profile')
+        result=existing.read_catalog_binding(value.read_at,value.size,catalog_name='NativeOracleItems')
+        observed=read(value)
+        self.assertEqual(result.records.rows,observed.records.rows)
+        self.assertEqual(result.records.record_size,observed.records.record_size)
+        self.assertEqual(result.binding.code_type,0)
 
     def test_unexpected_descriptor_retained_without_record_read(self):
         for edit in (lambda ds:ds[:4]+[('_OTHER',*ds[4][1:])]+ds[5:],

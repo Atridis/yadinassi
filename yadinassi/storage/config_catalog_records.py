@@ -48,8 +48,9 @@ def _validate_binding(binding, budget):
         _name(binding.name)
     except CatalogBindingError:
         _bad_binding()
-    if (type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
-            or type(binding.code_length) is not int or not 1 <= binding.code_length <= 2047
+    if (type(binding.code_type) is not int or binding.code_type not in (0, 1)
+            or type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
+            or type(binding.code_length) is not int or not 1 <= binding.code_length <= (38 if binding.code_type == 0 else 2047)
             or type(binding.recordlock) is not str or binding.recordlock != '0'
             or type(binding.format_item) is not int or binding.format_item != 0
             or type(binding.attributes) is not tuple or len(binding.attributes) != 2):
@@ -77,10 +78,10 @@ def _validate_binding(binding, budget):
     precision, scale, _ = b.qualifiers
     expected = (('_IDRREF', 'B', 0, 16, 0, 'CS'), ('_VERSION', 'RV', 0, 0, 0, 'CS'),
                 ('_MARKED', 'L', 0, 0, 0, 'CS'), ('_PREDEFINEDID', 'B', 0, 16, 0, 'CS'),
-                ('_CODE', 'NVC', 0, binding.code_length, 0, 'CI'),
+                ('_CODE', 'N' if binding.code_type == 0 else 'NVC', 0, binding.code_length, 0, 'CS' if binding.code_type == 0 else 'CI'),
                 (a.physical_name, 'NVC', 0, a.qualifiers[0], 0, 'CI'),
                 (b.physical_name, 'N', 0, precision, scale, 'CS'))
-    widths = (16, 16, 1, 16, 2 + 2 * binding.code_length, 2 + 2 * a.qualifiers[0], (precision + 2) // 2)
+    widths = (16, 16, 1, 16, (binding.code_length + 2) // 2 if binding.code_type == 0 else 2 + 2 * binding.code_length, 2 + 2 * a.qualifiers[0], (precision + 2) // 2)
     if binding.description_length:
         expected = expected[:5] + (('_DESCRIPTION', 'NVC', 0, binding.description_length, 0, 'CI'),) + expected[5:]
         widths = widths[:5] + (2 + 2 * binding.description_length,) + widths[5:]

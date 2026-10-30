@@ -32,3 +32,5 @@ integrational_tests/.work/
 /native-db-oracle/params_slots8.json
 
 /native-db-oracle/numeric_code3.json
+
+/native-db-oracle/numeric_code_rows3.json
