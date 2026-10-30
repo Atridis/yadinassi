@@ -5931,3 +5931,12 @@ synthetic binding_table_count не является причиной насто�
 не задаётся. Совпадающий no-op не делает проверку успешной. Runtime-ограничение
 Clear непустого дерева и guard удаления последней колонки сохранены; native-запуск
 ещё требуется. [Наблюдения, интеграция и лимиты](docs/value-tree-columns-clear-profile.md).
+
+### ValueTree Columns.Clear: retained-collection lifetime measurement
+
+A separate six-case `tree-columns-clear-lifetime-v1` observer measures saved
+collection routing after Clear and rebuilding, without assuming wrapper identity
+or forwarding. This is measurement preparation, not runtime support. It temporarily
+replaces the existing Clear measurement matrix row; final runtime acceptance must
+restore the original twelve-case Clear lane and retain lifetime observations as
+offline regressions. See [bounded lifetime probe](docs/value-tree-columns-clear-lifetime-measurement.md).

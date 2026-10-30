@@ -23,6 +23,7 @@ def input_files(*, profile='tree-v1'):
         'scripts/native_1c_tree_profiles.py': 'bootstrap/native_1c_tree_profiles.py',
         **({'scripts/native_1c_tree_copy_diagnostics.py': 'bootstrap/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py': 'bootstrap/native_1c_tree_access_probe.py'} if profile == 'tree-copy-v1' else {}),
         **({'scripts/native_1c_tree_columns_move_contract.py': 'bootstrap/native_1c_tree_columns_move_contract.py'} if profile in ('tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1') else {}),
+        **({'scripts/native_1c_tree_columns_clear_contract.py': 'bootstrap/native_1c_tree_columns_clear_contract.py'} if profile == 'tree-columns-clear-lifetime-v1' else {}),
         'scripts/' + spec.contract + '.py': 'bootstrap/' + spec.contract + '.py',
         spec.source: spec.target,
     }
@@ -71,7 +72,7 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
         except probe.ProbeError:
             return {'site':site,'case':None,'category':'access_probe','calibration':None}
         return diagnostic.observation_diagnostic(main, site, contract.validate_payload, contract.ObservationError)
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1'):
         if profile == 'tree-sort-v1':
             import native_1c_tree_sort_contract as contract
         elif profile == 'tree-columns-move-v1':
@@ -80,6 +81,8 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
             import native_1c_tree_columns_move_boundary_contract as contract
         elif profile == 'tree-columns-move-tail-v1':
             import native_1c_tree_columns_move_tail_contract as contract
+        elif profile == 'tree-columns-clear-lifetime-v1':
+            import native_1c_tree_columns_clear_lifetime_contract as contract
         elif profile == 'tree-columns-clear-v1':
             import native_1c_tree_columns_clear_contract as contract
         else:
@@ -125,7 +128,7 @@ def validate_diagnostic(value, *, profile='tree-v1'):
             return diagnostic.validate_diagnostic(value)
         except diagnostic.DiagnosticError:
             raise full.FullError('invalid_result') from None
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1'):
         if value is not None and (type(value) is not dict or value != {
                 'site':value.get('site'),'case':None,'category':'record_count','calibration':None}
                 or type(value['site']) is not str or value['site'] not in ('server','client')):
@@ -162,6 +165,8 @@ def validate_observations(raw, site='server', *, profile='tree-v1'):
         from native_1c_tree_columns_move_boundary_contract import validate_output, ObservationError
     elif profile == 'tree-columns-move-tail-v1':
         from native_1c_tree_columns_move_tail_contract import validate_output, ObservationError
+    elif profile == 'tree-columns-clear-lifetime-v1':
+        from native_1c_tree_columns_clear_lifetime_contract import validate_output, ObservationError
     elif profile == 'tree-columns-clear-v1':
         from native_1c_tree_columns_clear_contract import validate_output, ObservationError
     else:
@@ -241,8 +246,10 @@ def client_module(source, template, *, profile='tree-v1'):
 КонецФункции
 '''
     prefix='&НаКлиенте\nПерем TreeLaneMessages;\n&НаКлиенте\nПерем TreeLaneCharacters;\n'
-    if profile in ('tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1'):
+    if profile in ('tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1'):
         wrapper = wrapper.replace('Или Code = 95;', 'Или Code = 95 Или Code = 47;')
+    if profile == 'tree-columns-clear-lifetime-v1':
+        wrapper = wrapper.replace('Или Code = 47;', 'Или Code = 47 Или Code = 126;')
     return full.generated_module((prefix+harness[:fixed.start()]+wrapper+harness[fixed.end():]).encode('utf-8'))
 
 

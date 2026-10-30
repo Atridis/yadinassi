@@ -1,4 +1,4 @@
-"""Closed immutable identities for the seven independently bounded tree shards."""
+"""Closed immutable identities for the eight independently bounded tree shards."""
 from typing import NamedTuple
 
 
@@ -55,6 +55,11 @@ COLUMNS_CLEAR = Profile('tree-columns-clear-v1', 'native-1c-tree-columns-clear-v
     13, 'native_1c_tree_columns_clear_contract', '\nСообщить("CC-C1: [" + CCCalibrate() + "]");\n', 2, 'tree-columns-clear')
 
 
+
+COLUMNS_CLEAR_LIFETIME = Profile('tree-columns-clear-lifetime-v1', 'native-1c-tree-columns-clear-lifetime-v1', 'native-1c-tree-columns-clear-lifetime-stage-v1',
+    'tree_columns_clear_lifetime', '5cb69498147e03354f140d571f921adfa7cf940deab3179d1cb20f4c444ea352',
+    7, 'native_1c_tree_columns_clear_lifetime_contract', '\nСообщить("CL-C1: [" + CLCalibrate() + "]");\n', 2, 'tree-columns-clear-lifetime')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
@@ -72,4 +77,6 @@ def select(name='tree-v1'):
         return COLUMNS_MOVE_TAIL
     if name == COLUMNS_CLEAR.name:
         return COLUMNS_CLEAR
+    if name == COLUMNS_CLEAR_LIFETIME.name:
+        return COLUMNS_CLEAR_LIFETIME
     raise ValueError('invalid_tree_profile')
