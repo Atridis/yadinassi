@@ -141,7 +141,7 @@ import xml.etree.ElementTree as ET
 
 emitter_args = sys.argv[1:]
 tree_mode = emitter_args.pop() if len(emitter_args) == 19 else "false"
-if tree_mode not in {"false", "true", "copy", "sort"}:
+if tree_mode not in {"false", "true", "copy", "sort", "columns-move"}:
     raise ValueError("tree mode")
 preprocessor_mode = emitter_args.pop() if len(emitter_args) == 18 else "false"
 if preprocessor_mode not in {"false", "true"}:
@@ -233,7 +233,7 @@ if bootstrap == "true":
         # Even a simultaneous native-format failure cannot imply no mutation
         # after stage two may have begun. The host rejects this to unknown.
         report["status"] = "stage2_failed"
-if tree_mode in {"true", "copy", "sort"}:
+if tree_mode in {"true", "copy", "sort", "columns-move"}:
     sys.path.insert(0, "/smoke/bootstrap")
     import tree_suite as tree_lane
     import full_suite
