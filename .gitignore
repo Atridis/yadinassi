@@ -30,3 +30,5 @@ integrational_tests/.work/
 
 # Exact authenticated first-case PARAMS observation handoff only.
 /native-db-oracle/params_slots8.json
+
+/native-db-oracle/numeric_code3.json

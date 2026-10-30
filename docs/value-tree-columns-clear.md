@@ -1,8 +1,8 @@
 # ValueTree Columns.Clear: bounded Linux lifetime model
 
-`Columns.Clear()` / `Колонки.Очистить()` is a procedure with no arguments. The
+On the measured Linux target, `Columns.Clear()` / `Колонки.Очистить()` is a procedure with no arguments. The
 Linux 8.3.27.1508 interpreter target now reproduces all original CC12 observations
-and CL6 lifetime checkpoints exactly. The Python host OS is not the target:
+and CL6 lifetime checkpoints plus the three CD3 metadata cases exactly. The Python host OS is not the target:
 Linux-target execution is supported on Windows Python too; Windows 1C target
 lifetime behavior remains unmeasured and guarded.
 
@@ -29,7 +29,7 @@ The last-column Delete guard is unchanged.
 
 ## Safety policy, distinct from native observations
 
-Columns.Clear performs an iterative, bounded structural preflight before mutation:
+The measured Linux Columns.Clear path performs an iterative, bounded structural preflight before mutation:
 exact ownership/types, unique acyclic reachable rows, registry agreement, depth,
 column/cell-key identity and existing row/column/cell/work limits. Cell values are
 opaque and no equality, string, numeric or iteration hooks are invoked. Every measured forwarded operation prevalidates the active graph. Forwarded
@@ -60,15 +60,22 @@ is retired, not its assertions: all six cases remain exact offline regressions,
 and its immutable closed registry/source remain manually reproducible. No extra
 permanent native job, full-suite change, permission change or cap increase.
 
-## Pending nondefault metadata qualification
+## Nondefault retained metadata qualification
 
-The original retained column's Title was already empty and Width already zero;
-CC12/CL6 therefore do not discriminate reset of nondefault Title/Width. The
-current generic runtime reset of those nondefault values is not yet validated
-and blocks merge. A separate immutable [CD3 measurement](value-tree-columns-clear-metadata-measurement.md)
-uses Title `P` and Width9, verifies independent before observations, and prescribes
-no after answer. Runtime bytes remain frozen pending those facts. The temporary
-measurement head substitutes CD3 for CC12; CC12 restoration remains mandatory.
+CD3 native run **41083458195** independently initialized the original held column
+with Title `P` and Width9. Active-before schema and retained-reference queries
+agreed; after successful Clear the same column identity reported empty Name/Title
+and Width0, with active schema and rows empty. The 560-byte capture SHA-256 is
+`1bca7cb6c5bc71e8cead17c9c5e5e8ac8b213ec9742cfde13d4b5c44b32b7f01`.
+This discriminating acquisition passed fresh runtime parity with the existing
+model; no runtime change was needed. Its separate provenance retains that original
+attribution rather than rewriting CC12/CL6's earlier mismatch results.
+
+All **21 cases** remain exact server/generated-client/production-host regressions.
+CC12 is again the required native lane; CL6 and CD3 exploratory rows are retired,
+while their fixed profiles and original evidence remain reproducible offline.
+Fresh final CC12 and platform gates still apply to the restored head. The earlier
+fresh CC12 runtime acquisition, run41078088339, remains separately attributed.
 
 ### Legacy non-Linux compatibility
 

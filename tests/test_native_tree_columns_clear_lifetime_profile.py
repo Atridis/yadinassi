@@ -134,7 +134,12 @@ class LifetimeProfileTests(unittest.TestCase):
         self.assertEqual(raw,b'fixed\n');self.assertEqual(error.code,0);self.assertEqual(finish.call_args.kwargs['profile'],PROFILE)
         for lead in ('if tree_mode not in ', 'if tree_mode in '):
             line=next(line for line in emitter.EMITTER.splitlines() if line.startswith(lead))
-            broken=emitter.EMITTER.replace(line,line.replace(', "columns-clear-lifetime"}','}'))
+            member=', "columns-clear-lifetime"'
+            self.assertEqual(line.count(member),1)
+            changed=line.replace(member,'')
+            self.assertNotEqual(changed,line)
+            broken=emitter.EMITTER.replace(line,changed)
+            self.assertNotEqual(broken,emitter.EMITTER)
             finish.reset_mock();raw,error=emitter.execute(emitter.arguments('columns-clear-lifetime'),finish,broken)
             finish.assert_not_called()
         for args in (emitter.arguments('columns-clear-lifetime')+['columns-clear'],emitter.arguments('columns-clear-lifetime')+['columns-clear-lifetime'],emitter.arguments('columns_clear_lifetime')):

@@ -1,4 +1,4 @@
-"""Exact CC12 and CL6 Linux native replays, preserving original run attribution."""
+"""Exact CC12, CL6 and CD3 Linux native replays, preserving original run attribution."""
 import hashlib
 import json
 import os
@@ -16,14 +16,18 @@ from test_value_tree_columns_move_native import synthetic_source_reader
 ROOT=Path(__file__).resolve().parents[1]
 FIXTURE=ROOT/'tests/fixtures/value_tree_columns_clear'
 PROVENANCE_SHA='7e313d56654634af3a6bcd89ba244883e1b86f54d66fdc6ab27007e9d75dc71e'
+METADATA_PROVENANCE_SHA='31ce6f89bced80c2ccb1877503c36033dbf4e2e583840899fdc015a1c7849b09'
 PINS=(('tree-columns-clear-v1',12,2252,41066943188,'4db4c7b231ca12b087ba6ff7e3a16069b0dffc27b5c35c12db7dc061d082460c'),
-      ('tree-columns-clear-lifetime-v1',6,2820,41072087598,'ae2cba92a2129f9ba4695413aab6a739577bbef75b5283338d8552cd94ffddfb'))
+      ('tree-columns-clear-lifetime-v1',6,2820,41072087598,'ae2cba92a2129f9ba4695413aab6a739577bbef75b5283338d8552cd94ffddfb'),
+      ('tree-columns-clear-metadata-v1',3,560,41083458195,'1bca7cb6c5bc71e8cead17c9c5e5e8ac8b213ec9742cfde13d4b5c44b32b7f01'))
 
 
 def checkpoints():
     raw=(FIXTURE/'provenance.json').read_bytes()
     if hashlib.sha256(raw).hexdigest()!=PROVENANCE_SHA:raise AssertionError('Clear provenance changed')
-    return json.loads(raw.decode('utf-8'))['captures']
+    metadata=(FIXTURE/'metadata-provenance.json').read_bytes()
+    if hashlib.sha256(metadata).hexdigest()!=METADATA_PROVENANCE_SHA:raise AssertionError('Metadata provenance changed')
+    return json.loads(raw.decode('utf-8'))['captures']+json.loads(metadata.decode('utf-8'))['captures']
 
 
 def native(record):
@@ -39,25 +43,37 @@ def source(record):
 
 
 class NativeClearTests(unittest.TestCase):
-    def test_original_native_provenance_and_exact_18_records(self):
+    def test_original_native_provenance_and_exact_21_records(self):
+        self.assertEqual(len(checkpoints()),len(PINS))
         total=0
         for record,pin in zip(checkpoints(),PINS):
             self.assertEqual((record['profile'],record['case_count'],record['native_size'],record['run_id'],record['native_sha256']),pin)
-            self.assertTrue(record['native_acquisition_accepted']);self.assertFalse(record['runtime_parity_accepted'])
+            self.assertTrue(record['native_acquisition_accepted']);self.assertEqual(record['runtime_parity_accepted'],record['profile']=='tree-columns-clear-metadata-v1')
             self.assertTrue(record['server_client_equal']);self.assertTrue(record['cleanup_verified'])
             spec=profiles.select(record['profile']);self.assertEqual(spec.source,record['source']);self.assertEqual(spec.source_sha256,record['source_sha256'])
             raw=native(record);self.assertEqual(len(raw),record['native_size']);self.assertNotIn(b'\r',raw)
             records=host.selected_contract(record['profile']).require_available(raw)
             self.assertEqual(len(records),record['case_count']);total+=len(records);source(record)
-        self.assertEqual(total,18)
+        self.assertEqual(total,21)
 
-    def test_exact_server_replay_all18(self):
+    def test_metadata_discriminates_nondefault_reset_with_same_identity(self):
+        record=checkpoints()[2]
+        records=host.selected_contract(record['profile']).require_available(native(record))
+        before,after=records[2]['snapshots']
+        self.assertEqual(records[2]['status'],'S')
+        self.assertEqual(before['schema'][0][1][0:3],'ad9')
+        self.assertEqual(before['queries'][16:18],(('W','d'),('N',9)))
+        self.assertEqual(before['queries'][14],after['queries'][14])
+        self.assertEqual(after['queries'][15:18],(('W','n'),('W','n'),('N',0)))
+        self.assertEqual(after['schema'],());self.assertEqual(after['nodes'],())
+
+    def test_exact_server_replay_all21(self):
         for record in checkpoints():
             with self.subTest(profile=record['profile']):
                 output=[];Interpreter(output.append,native_target=LINUX_8_3_27_1508).execute(source(record).decode('utf-8'))
                 self.assertEqual(('\n'.join(output)+'\n').encode('ascii'),native(record))
 
-    def test_exact_generated_client_replay_all18(self):
+    def test_exact_generated_client_replay_all21(self):
         import test_native_tree_profile_budget as budget
         template=(ROOT/budget.suite.CLIENT_SOURCE).read_text(encoding='utf-8').encode('utf-8')
         for record in checkpoints():
@@ -92,13 +108,12 @@ class NativeClearTests(unittest.TestCase):
                     result=host.compare_output(root,root,native(record),{record['source']:record['source_sha256']},runner=runner,profile=record['profile'])
                 self.assertEqual(result['acceptance_status'],'accepted')
 
-    def test_temporary_metadata_lane_is_closed_and_prior_lifetime_probe_retired(self):
+    def test_required_clear_lane_restored_and_exploratory_lane_retired(self):
         workflow=(ROOT/'.github/workflows/native-1c-isolated-smoke.yml').read_text(encoding='utf-8')
-        self.assertIn('          - profile: tree-columns-clear-metadata-v1\n            artifact: tree-columns-clear-metadata\n            case: tree_columns_clear_metadata\n',workflow)
-        # Measurement head only: restore required CC12 after metadata facts.
-        self.assertNotIn('profile: tree-columns-clear-v1',workflow)
+        self.assertIn('          - profile: tree-columns-clear-v1\n            artifact: tree-columns-clear\n            case: tree_columns_clear\n',workflow)
         self.assertNotIn('profile: tree-columns-clear-lifetime-v1',workflow)
-        self.assertEqual(profiles.select('tree-columns-clear-v1').count,13)
+        self.assertNotIn('profile: tree-columns-clear-metadata-v1',workflow)
+        self.assertEqual(profiles.select('tree-columns-clear-metadata-v1').count,4)
         self.assertEqual(profiles.select('tree-columns-clear-lifetime-v1').count,7)
         attrs=(ROOT/'.gitattributes').read_text(encoding='utf-8')
         self.assertIn('tests/fixtures/value_tree_columns_clear/*.out -text',attrs)

@@ -5922,6 +5922,16 @@ synthetic binding_table_count не является причиной насто�
   для обоих случаев и всех трёх состояний, включая Payload64;
   [контракт и границы](docs/params-closed-chain.md).
 
+- Подготовлен отдельный измерительный профиль числового кода справочника:
+  две свежие конфигурации CodeType=Number с CodeLength=3/6, DescriptionLength=8
+  и отключённой автонумерацией. Сопоставляются фактические сохранённые Code,
+  UUID и Description с независимым физическим наблюдением, включая Payload64.
+  Run41069562516 на6ed1f845 подтвердил все шесть сопоставлений Code/UUID/Description/
+  метаданных: N(3,0) шириной2 и N(6,0) шириной4, включая Payload64. Это отдельное
+  измерение, не поддержка числового кода производственным reader; другие длины
+  и семантика присваивания не доказаны этим прогоном.
+  [Контракт и точная атрибуция](docs/catalog-numeric-code-measurement-plan.md).
+
 ## Columns.Clear дерева значений — измерение времени жизни ссылок
 
 Добавлен закрытый измерительный профиль `tree-columns-clear-v1`: 12 случаев
@@ -5954,11 +5964,12 @@ other detached-collection operations and Windows 1C target remain unmeasured.
 The required CC12 native lane is restored; exploratory CL6 is retained offline,
 not permanently duplicated in native CI. See [scope, safety and attributed evidence](docs/value-tree-columns-clear.md).
 
-### Columns.Clear: nondefault retained Title/Width qualification pending
+### Columns.Clear: nondefault retained metadata verified
 
-CC12/CL6 retained-column Title/Width began empty/zero, so nondefault reset is not
-proven by those captures. A fixed three-case CD3 measurement independently verifies
-Title `P`/Width9 before Clear and records the after values without imposing reset.
-Runtime code and original fixtures remain unchanged; merge is blocked until the
-metadata evidence is reviewed and the required CC12 lane is restored. See
-[measurement scope](docs/value-tree-columns-clear-metadata-measurement.md).
+A separate authenticated CD3 acquisition confirms original held Title `P`/Width9
+reset to empty/zero with unchanged column identity. All 21 CC12/CL6/CD3 cases remain
+exact offline regressions; only CC12 remains in automatic native CI. Existing
+non-Linux empty/schema-only behavior, zero-column/nonempty no-op and allowed
+expression results are preserved as legacy compatibility, not fresh Windows
+native evidence. New nonempty lifetime semantics remain Linux-target only. See
+[scope and attributed evidence](docs/value-tree-columns-clear.md).
