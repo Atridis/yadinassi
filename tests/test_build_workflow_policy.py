@@ -66,7 +66,7 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
         self.assertEqual(platforms, [('windows', 'windows-2022', 'x64'),
                                      ('linux', 'ubuntu-22.04', 'x64'),
                                      ('mac-x86', 'macos-15-intel', 'x64'),
-                                     ('mac-arm', 'macos-14', 'arm64')])
+                                     ('mac-arm', 'macos-15', 'arm64')])
         self.assertNotIn('if:', header)
         self.assertNotIn('        if:', steps)
 
