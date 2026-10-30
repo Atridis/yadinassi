@@ -127,7 +127,7 @@ class CatalogBindingTests(unittest.TestCase):
 
     def test_standard_profile_restrictions(self):
         i, _ = identities()
-        for changes in ({'code_type': 0}, {'description_length': 16}, {'code_length': 0},
+        for changes in ({'code_type': 0}, {'description_length': -1}, {'code_length': 0},
                         {'code_length': True}, {'description_length': False}):
             self.error('standard_profile', identity=dataclasses.replace(i, **changes))
 

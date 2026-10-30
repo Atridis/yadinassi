@@ -1,9 +1,10 @@
-"""Standalone private Description layout measurement; never runtime admission.
+"""Private Description views: independent measurement and public typed adapter.
 
 The sole layout hypothesis is the established seven fields plus one NVC
 _DESCRIPTION immediately after _CODE. Widths come from CONFIG, not a case,
 seed, XML manifest, native readback, or a search for a matching row value.
-A generically valid but different descriptor is retained as unresolved.
+The standalone read_description retains a different valid descriptor as unresolved.
+read_description_rows instead requires actual public runtime admission.
 """
 from dataclasses import dataclass, replace
 import hashlib
@@ -192,3 +193,34 @@ def public_observation(value):
                        next_displacement=f.width,
                        value_sha256=hashlib.sha256(encoded).hexdigest())
     return out
+
+
+def read_description_rows(read_at, file_size, *, catalog_name, limits=None):
+    """Public typed runtime API once; native witnesses never enter this call.
+
+    The physical view and UUID belong to the same admitted record/owner graph.
+    Creating the bounded report view does not open or re-read the database.
+    """
+    result = loader.read_catalog_rows(read_at, file_size, catalog_name=catalog_name, limits=limits)
+    raw = loader._raw_rows_view(result)
+    c = loader.catalog_module
+    identity, attributes, binding = raw.identity, raw.attributes, raw.binding
+    if (identity.code_type != 1 or identity.code_length != 2
+            or binding.description_length != identity.description_length
+            or len(attributes.attributes) != 2
+            or attributes.attributes[0].name != 'Payload'
+            or attributes.attributes[0].type_token != 'S'
+            or attributes.attributes[0].qualifiers not in ((32,1),(64,1))
+            or attributes.attributes[1].name != 'Amount'
+            or attributes.attributes[1].type_token != 'N'
+            or attributes.attributes[1].qualifiers != (9,2,0)):
+        from catalog_description_rows import DescriptionAdapterError
+        raise DescriptionAdapterError('metadata_profile')
+    if len(raw.records.rows) != 1 or len(result.rows) != 1 or raw.records.slots != 2:
+        from catalog_description_rows import DescriptionAdapterError
+        raise DescriptionAdapterError('one_active_row')
+    table = raw.records.table
+    observation = DescriptionObservation('layout_observed', identity, attributes,
+        table, hashlib.sha256(table.raw_descriptor).hexdigest(), binding.placements,
+        binding.record_size, raw.records, raw.usage)
+    return observation, result.rows[0].reference_uuid

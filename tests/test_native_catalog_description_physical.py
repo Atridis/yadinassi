@@ -86,11 +86,12 @@ class DescriptionPhysicalTests(unittest.TestCase):
         self.assertEqual(actual.records.rows,baseline.records.rows)
         self.assertEqual(subject.public_observation(actual)['description_width'],0)
 
-    def test_original_production_binding_still_rejects_nonzero(self):
+    def test_production_binding_positive_is_metadata_derived(self):
         for n in (8,17):
             value=source(n,'Я ')
-            with self.assertRaises(existing.catalog_module.UnsupportedLayout):
-                existing.read_catalog_binding(value.read_at,value.size,catalog_name='NativeOracleItems')
+            result=existing.read_catalog_binding(value.read_at,value.size,catalog_name='NativeOracleItems')
+            self.assertEqual(result.binding.description_length,n)
+            self.assertEqual(result.records.rows[0].fields[5].value,'Я ')
 
     def test_shorter_replacement_padding_not_decoded_or_stripped(self):
         actual=read(source(text='Я '))

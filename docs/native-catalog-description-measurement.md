@@ -1,3 +1,6 @@
+> This is the historical schema50 measurement design. Verified PR152 observations and
+> the separate prospective runtime lane are documented in [Description rows](catalog-description-rows.md).
+
 # Closed Description measurement lane (local integration; no native result)
 
 This local integration extends no production admission. Native compatibility

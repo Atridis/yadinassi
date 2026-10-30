@@ -4,6 +4,9 @@ No descriptor, native projection or XML expectation enters this compiler.
 Standard names/order/nullability/case are a frozen *owned-profile* observation
 (run 40181431793, source 56e07ca0, report SHA256 abe1cee5d69a4721da82d4efa2f067c839ddda47d9c62956273b45f909d06651).
 Lengths and numeric qualifiers are configuration values, not fixture constants.
+Positive Description NVC placement was independently observed at configured
+lengths 8 and 17 with Payload32 (native run 40971133699, source a318b990).
+Other bounded lengths are structural generalization, not native range proof.
 Finite synthetic admission below is not native acceptance of other layouts.
 """
 from dataclasses import dataclass
@@ -89,6 +92,7 @@ class CatalogBinding:
     record_size: int
     code_length: int
     placements: tuple[BoundFieldPlacement, ...]
+    description_length: int = 0
 
 
 def _uuid(value, *, nonzero=True):
@@ -128,7 +132,7 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
             or type(dbnames.declared_count) is not int or dbnames.declared_count != len(dbnames.entries)
             or type(dbnames.profile) is not str or dbnames.profile != DBNAMES_PROFILE_IDENTIFIER):
         _fail('dbnames_shape')
-    # At most three UUID targets, seven declarations and three bounded names.
+    # At most three UUID targets, eight declarations and three bounded names.
     # Each entry's relevant text is bounded below (36+32); three linear joins
     # and collision scans fit this processing reservation. No full index copy.
     budget.charge('output_bytes', 8192)
@@ -138,7 +142,8 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
         _fail('identity')
     _name(identity.name)
     if (type(identity.code_type) is not int or identity.code_type != 1
-            or type(identity.description_length) is not int or identity.description_length != 0
+            or type(identity.description_length) is not int
+            or not 0 <= identity.description_length <= limits.max_string_length
             or type(identity.code_length) is not int or not 1 <= identity.code_length <= limits.max_string_length):
         _fail('standard_profile')
     if type(attributes.attributes) is not tuple or len(attributes.attributes) != 2:
@@ -199,18 +204,22 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
         ('_CODE', 'NVC', 0, identity.code_length, 0, 'CI'),
         (string_name, 'NVC', 0, first.qualifiers[0], 0, 'CI'),
         (number_name, 'N', 0, precision, scale, 'CS'))
-    record_size = 1 + 16 + 16 + 1 + 16 + (2 + 2 * identity.code_length) + (2 + 2 * first.qualifiers[0]) + (precision + 2) // 2
-    if record_size > limits.max_record_bytes:
-        _fail('record_bytes')
     widths = (16, 16, 1, 16, 2 + 2 * identity.code_length,
               2 + 2 * first.qualifiers[0], (precision + 2) // 2)
-    offsets = [0] * 7
+    if identity.description_length:
+        declarations = declarations[:5] + (('_DESCRIPTION', 'NVC', 0,
+            identity.description_length, 0, 'CI'),) + declarations[5:]
+        widths = widths[:5] + (2 + 2 * identity.description_length,) + widths[5:]
+    record_size = 1 + sum(widths)
+    if record_size > limits.max_record_bytes:
+        _fail('record_bytes')
+    offsets = [0] * len(widths)
     cursor = 1
-    for index in (1, 0, 2, 3, 4, 5, 6):
+    for index in (1, 0, *range(2, len(widths))):
         offsets[index] = cursor
         cursor += widths[index]
     placements = tuple(BoundFieldPlacement(declaration, offsets[i], widths[i])
                        for i, declaration in enumerate(declarations))
     bound = tuple(BoundCatalogAttribute(item.metadata_uuid, item.name, physical, item.type_token, item.qualifiers)
                   for item, physical in ((first, string_name), (second, number_name)))
-    return CatalogBinding(identity.metadata_uuid, identity.name, table_name, declarations, bound, '0', 0, record_size, identity.code_length, placements)
+    return CatalogBinding(identity.metadata_uuid, identity.name, table_name, declarations, bound, '0', 0, record_size, identity.code_length, placements, identity.description_length)

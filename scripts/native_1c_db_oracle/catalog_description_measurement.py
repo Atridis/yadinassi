@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from uuid import UUID
 from types import MappingProxyType
 
 CASES = MappingProxyType({'description8': (8, 'AБ😀xy  ', 'Я '),
@@ -59,38 +60,52 @@ def _changes(case, name):
          '        NativeDescriptionObserve(Корень, ТокенЗапуска, Операция);\n    КонецЕсли;'))
 
 
-def _hook(case):
+def _hook(case, rows=False):
     raw = (ROOT / 'modules/CatalogDescriptionObservation.bsl').read_bytes()
     if hashlib.sha256(raw).hexdigest() != HOOK_SHA256 or raw.count(b'@@DESCRIPTION_CASE@@') != 1:
         raise ValueError('description_template_invalid')
-    return '\n' + raw.decode('utf-8').replace('@@DESCRIPTION_CASE@@', case)
+    hook = raw.decode('utf-8').replace('@@DESCRIPTION_CASE@@', case)
+    if rows:
+        hook = _replace(hook, (
+            ('    Наименование = "";', '    Наименование = "";\n    UUID = "";'),
+            ('        Наименование = Выборка.Наименование;',
+             '        Наименование = Выборка.Наименование;\n        UUID = Строка(Выборка.Ссылка.УникальныйИдентификатор());'),
+            ('schema,nonce,token,case,operation,present,actual_description",',
+             'schema,nonce,token,case,operation,present,actual_description,actual_uuid",'),
+            ('        2, @@NONCE@@', '        3, @@NONCE@@'),
+            ('Операция, Есть, Наименование);', 'Операция, Есть, Наименование, UUID);')))
+    return '\n' + hook
 
 
-def transform(raw, *, name, case):
+def transform(raw, *, name, case, rows=False):
     """Transform exact ORIGINAL template bytes, before normal literal rendering.
 
-    Not an injector replacement: executable staging/redump integration is deferred.
+    The injector consumes this transform; it does not replace staging/redump gates.
     Every accepted output has a byte-exact inverse back to the pinned baseline.
     """
     _case(case)
+    if type(rows) is not bool:
+        raise ValueError('description_template_invalid')
     if type(raw) is not bytes or name not in PINS or hashlib.sha256(raw).hexdigest() != PINS[name]:
         raise ValueError('description_template_invalid')
     text = _replace(raw.decode('utf-8'), _changes(case, name))
     if name.endswith('.bsl'):
-        text += _hook(case)
+        text += _hook(case, rows)
     result = text.encode('utf-8')
-    if inverse(result, name=name, case=case) != raw:
+    if inverse(result, name=name, case=case, rows=rows) != raw:
         raise ValueError('description_template_invalid')
     return result
 
 
-def inverse(raw, *, name, case):
+def inverse(raw, *, name, case, rows=False):
     _case(case)
+    if type(rows) is not bool:
+        raise ValueError('description_template_invalid')
     if type(raw) is not bytes or name not in PINS:
         raise ValueError('description_template_invalid')
     text = raw.decode('utf-8')
     if name.endswith('.bsl'):
-        hook = _hook(case)
+        hook = _hook(case, rows)
         if not text.endswith(hook):
             raise ValueError('description_template_invalid')
         text = text[:-len(hook)]
@@ -116,9 +131,11 @@ class DescriptionWitness:
     present: bool
     nonce: str
     token: str
+    actual_uuid: str = ""
+    schema: int = 2
 
 
-def validate_witness(raw, *, nonce, token, case, operation):
+def validate_witness(raw, *, nonce, token, case, operation, rows=False):
     def fail():
         raise ValueError('description_witness_invalid')
     def pairs(items):
@@ -129,7 +146,7 @@ def validate_witness(raw, *, nonce, token, case, operation):
             result[key] = value
         return result
     _case(case)
-    if (type(raw) is not bytes or not 1 <= len(raw) <= WITNESS_LIMIT
+    if (type(rows) is not bool or type(raw) is not bytes or not 1 <= len(raw) <= WITNESS_LIMIT
         or type(operation) is not str or operation not in ('create', 'update', 'observe')
         or any(type(x) is not str or re.fullmatch('[0-9a-f]{32}', x) is None for x in (nonce, token))):
         fail()
@@ -137,14 +154,27 @@ def validate_witness(raw, *, nonce, token, case, operation):
         data = json.loads(raw.decode('utf-8-sig'), object_pairs_hook=pairs, parse_constant=lambda _: fail())
     except (ValueError, UnicodeError, RecursionError):
         fail()
-    if (type(data) is not dict or set(data) != {'schema','nonce','token','case','operation','present','actual_description'}
-        or type(data['schema']) is not int or data['schema'] != 2
+    if (type(data) is not dict or set(data) != {'schema','nonce','token','case','operation','present','actual_description'} | ({'actual_uuid'} if rows else set())
+        or type(data['schema']) is not int or data['schema'] != (3 if rows else 2)
         or any(data[k] != v for k,v in [('nonce',nonce),('token',token),('case',case),('operation',operation)])
         or type(data['present']) is not bool
         or type(data['actual_description']) is not str
         or (not data['present'] and data['actual_description'] != '')
         or (operation in ('create','update') and not data['present'])):
         fail()
+    actual_uuid = data.get('actual_uuid', '')
+    if rows:
+        if type(actual_uuid) is not str:
+            fail()
+        if data['present']:
+            try:
+                identifier = UUID(actual_uuid)
+            except (ValueError, AttributeError):
+                fail()
+            if str(identifier) != actual_uuid or identifier.int == 0:
+                fail()
+        elif actual_uuid != '':
+            fail()
     value = data['actual_description']
     try:
         units = len(value.encode('utf-16-le')) // 2
@@ -152,7 +182,7 @@ def validate_witness(raw, *, nonce, token, case, operation):
         fail()
     if units > MAX_ACTUAL_UNITS:
         fail()
-    return DescriptionWitness(value, units, len(value), len(value)-len(value.rstrip(' ')), hashlib.sha256(raw).hexdigest(), case, operation, data['present'], nonce, token)
+    return DescriptionWitness(value, units, len(value), len(value)-len(value.rstrip(' ')), hashlib.sha256(raw).hexdigest(), case, operation, data['present'], nonce, token, actual_uuid, data['schema'])
 
 
 def verify_case_metadata(case, description_length):
