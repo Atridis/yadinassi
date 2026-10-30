@@ -1,0 +1,34 @@
+{
+  "schema": "native-tree-columns-clear-metadata-checkpoints-v1",
+  "native_target": "linux-8.3.27.1508",
+  "scope": "CD3 exact original acquisition proves retained nondefault Title P and Width9 reset; not a Windows native claim.",
+  "captures": [
+    {
+      "profile": "tree-columns-clear-metadata-v1",
+      "case_count": 3,
+      "fixture": "linux-8.3.27.1508_metadata.out",
+      "source": "integrational_tests/measurements/tree_columns_clear_metadata.bsl",
+      "source_sha256": "c120b7813f7035c44bb98aac76dad4bf435417eab1ef0ad732c3e7ef7a02e435",
+      "native_sha256": "1bca7cb6c5bc71e8cead17c9c5e5e8ac8b213ec9742cfde13d4b5c44b32b7f01",
+      "native_size": 560,
+      "run_id": 41083458195,
+      "attempt": 1,
+      "head": "51eed132ca63b0534e7fc2c4e29c38214b78b804",
+      "tested_merge": "0b8216c3ead93130d9973e062ced12d50983e865",
+      "tree": "4a9f90479abc45113d9a9813df4eaeee5279e6cd",
+      "source_count": 872,
+      "server_client_modules": {
+        "server": "c19f0bfd5984d74a5ecbceffbf9c4c0c370a53dddac7e0a857f3bfebfc0ac1da",
+        "client": "1d6fd2beef23c316352c4d74599fa76b228ba48a44df0b6a4e092b1a14dcfd6e"
+      },
+      "server_client_equal": true,
+      "native_acquisition_accepted": true,
+      "runtime_parity_accepted": true,
+      "cleanup_verified": true,
+      "audit_result_sha256": "6185cfb1c8a827489eacceb1423a6f55e91baf9531b99413e89b6f651a606885",
+      "artifact_provenance_sha256": "476f1e803a693c2c6a4f57418c2ef35c0d5bb592c351e9baa454a9a0e95c2298",
+      "acquisition_receipt_sha256": "a1f125ee9b6ccbaebc9da6152ccac8123b0e26e6f849095af956db2b5b7de78f",
+      "acquisition_seal": "1c530d1152c6de753c7659dedd7f166d132e332d70edbec3945f69188d7b9b66"
+    }
+  ]
+}

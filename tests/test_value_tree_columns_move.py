@@ -136,9 +136,9 @@ class ColumnsMovePolicyTests(unittest.TestCase):
         for arguments in ((), (D(0),), (D(0), D(0), D(0))):
             self.reject(tree.columns, *arguments)
 
-    def test_clear_and_last_column_guards_unchanged(self):
+    def test_unmeasured_clear_target_and_last_column_guards(self):
         tree = self.fixture(); tree.rows.add()
-        with self.assertRaises(ValueError): tree.columns.clear()
+        with target_context(WINDOWS_8_3_27_2342), self.assertRaises(ValueError): tree.columns.clear()
         tree.columns.delete(tree.columns.items[-1]); tree.columns.delete(tree.columns.items[-1])
         with self.assertRaises(ValueError): tree.columns.delete(tree.columns.items[-1])
 

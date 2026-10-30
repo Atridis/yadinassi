@@ -5931,3 +5931,45 @@ synthetic binding_table_count не является причиной насто�
   измерение, не поддержка числового кода производственным reader; другие длины
   и семантика присваивания не доказаны этим прогоном.
   [Контракт и точная атрибуция](docs/catalog-numeric-code-measurement-plan.md).
+
+## Columns.Clear дерева значений — измерение времени жизни ссылок
+
+Добавлен закрытый измерительный профиль `tree-columns-clear-v1`: 12 случаев
+`Columns.Clear / Колонки.Очистить`, активная структура и независимые результаты
+доступа через сохранённые ссылки. Оба непустых EN/RU-контроля требуют успешного
+вызова и отсутствия активных колонок/строк; поведение сохранённых ссылок заранее
+не задаётся. Совпадающий no-op не делает проверку успешной. Runtime-ограничение
+Clear непустого дерева и guard удаления последней колонки сохранены; native-запуск
+ещё требуется. [Наблюдения, интеграция и лимиты](docs/value-tree-columns-clear-profile.md).
+
+### ValueTree Columns.Clear: retained-collection lifetime measurement
+
+A separate six-case `tree-columns-clear-lifetime-v1` observer measures saved
+collection routing after Clear and rebuilding, without assuming wrapper identity
+or forwarding. This is measurement preparation, not runtime support. It temporarily
+replaces the existing Clear measurement matrix row; final runtime acceptance must
+restore the original twelve-case Clear lane and retain lifetime observations as
+offline regressions. See [bounded lifetime probe](docs/value-tree-columns-clear-lifetime-measurement.md).
+
+### ValueTree Columns.Clear: measured Linux runtime lifetime
+
+`Columns.Clear()` / `Колонки.Очистить()` now reproduces the authenticated twelve
+Clear cases and six retained-collection cases for the Linux 8.3.27.1508 semantic
+target, independently of the Python host OS. Active rows/columns are removed; old
+rows remain invalid; held columns expose the measured reset Name/Title/Width.
+Pre-held row collections preserve their Parent labels while measured
+Count/Get/Add/Insert/Clear operations address active root storage. Ordinary
+Rows.Clear/Delete lifetime guards and last-column Delete guard remain unchanged;
+other detached-collection operations and Windows 1C target remain unmeasured.
+The required CC12 native lane is restored; exploratory CL6 is retained offline,
+not permanently duplicated in native CI. See [scope, safety and attributed evidence](docs/value-tree-columns-clear.md).
+
+### Columns.Clear: nondefault retained metadata verified
+
+A separate authenticated CD3 acquisition confirms original held Title `P`/Width9
+reset to empty/zero with unchanged column identity. All 21 CC12/CL6/CD3 cases remain
+exact offline regressions; only CC12 remains in automatic native CI. Existing
+non-Linux empty/schema-only behavior, zero-column/nonempty no-op and allowed
+expression results are preserved as legacy compatibility, not fresh Windows
+native evidence. New nonempty lifetime semantics remain Linux-target only. See
+[scope and attributed evidence](docs/value-tree-columns-clear.md).
