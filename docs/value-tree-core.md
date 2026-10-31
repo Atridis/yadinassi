@@ -87,10 +87,12 @@ Except for the separately measured method-local UnloadColumn/LoadColumn, Move an
 strict finite integral in-range indices only; tree column widths must be integral
 and in 0..2^32-1. No implicit ValueTable index coercion is assumed. Names matching
 Rows/Parent or Russian equivalents are rejected, including rename. Deleting the
-last column of a populated tree or clearing its columns is rejected before any
-mutation. Deleted object lifetime/presentation is not claimed as compatible.
+last column of a populated tree and clearing its columns now have bounded Linux
+lifetime support. Other targets retain their earlier guards;
+see [Columns.Delete](value-tree-columns-delete.md). Other deleted-object
+lifetimes remain outside that claim.
 
-No Sort, UI,
+No UI,
 XML/internal serialization or transport. Internal serialization also explicitly
 rejects Type("ValueTree") and the four dependent type identities, rather than
 inventing native UUIDs. Object string presentations and conversion edge cases remain unverified; the

@@ -37,3 +37,11 @@ That acquisition succeeded while its runtime comparison failed; it is not
 relabeled. Final runtime acceptance must restore the DL14 required lane and
 retain DS6 offline replay with its own original acquisition attribution. No DS6
 native capture exists at preparation time.
+
+
+## Subsequent native acquisition
+
+The original measurement has since been acquired and authenticated. Its old
+interpreter mismatch is preserved. See [bounded runtime support](value-tree-columns-delete.md)
+for exact run attribution and the separate implementation; historical preparation
+statements above describe the original measurement stage.

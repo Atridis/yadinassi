@@ -48,11 +48,12 @@ def model(mode):
 
 
 class DeleteMeasurementTests(unittest.TestCase):
-    def test_current_guard_is_recorded_not_removed(self):
+    def test_current_linux_last_column_result_is_observed(self):
         records=wire.require_available(emit());self.assertEqual(len(records),14)
         for i in (2,3):
-            self.assertEqual(records[i]['status'],'O')
-            self.assertEqual(records[i]['snapshots'][0],records[i]['snapshots'][1])
+            self.assertEqual(records[i]['status'],'S')
+            self.assertEqual(records[i]['snapshots'][1]['nodes'],())
+            self.assertEqual(records[i]['snapshots'][1]['schema'],())
         self.assertEqual(emit(),emit())
 
     def test_both_aliases_and_exact_fixed_arguments(self):

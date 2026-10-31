@@ -5991,3 +5991,14 @@ This does not remove the runtime last-column guard or infer Delete behavior
 from Clear. Exact strict controls, finite captures and original exceptions are
 preserved; actual native acquisition is pending. See
 [measurement scope and bounds](docs/value-tree-columns-delete-measurement.md).
+
+
+### ValueTree.Columns.Delete: native Linux lifetime
+
+Добавлено измеренное поведение удаления последней колонки по индексу или объекту
+колонки для linux-8.3.27.1508: активные строки очищаются, сохранённые коллекции
+поддерживают измеренные Count/Add/Parent, а метаданные удалённой колонки
+сбрасываются. Непоследнее удаление по имени и процедурный вызов проверены
+отдельно. Последнее удаление по имени остаётся в прежней ограниченной области.
+Исходные 20 native-наблюдений и их прежнее несовпадение с интерпретатором
+сохранены без изменения атрибуции. [Границы поддержки](docs/value-tree-columns-delete.md).

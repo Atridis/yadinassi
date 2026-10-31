@@ -108,3 +108,11 @@ bytes are unchanged. Shared acquisition routing necessarily has new source
 hashes, so fresh authenticated native measurement is required. Runtime remains
 unchanged; a matched unsupported last-column result is only an observation, not
 full Delete support.
+
+
+## Subsequent native acquisition
+
+The original measurement has since been acquired and authenticated. Its old
+interpreter mismatch is preserved. See [bounded runtime support](value-tree-columns-delete.md)
+for exact run attribution and the separate implementation; historical preparation
+statements above describe the original measurement stage.
