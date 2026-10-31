@@ -90,9 +90,15 @@ FILE_IO_FAMILY = Profile('file-io-family-v1', 'native-1c-file-io-family-v1', 'na
     'file_io_family', '338249c25f36779b6c3f8869c96a7dac7c1ac6e2a3bca9767c7b7e180f81939b',
     35, 'native_1c_file_io_family_contract', '\nСообщить("FI-C1: [" + FIEncode("") + "]");\n', 5, 'file-io-family')
 
+XML_WORKFLOW_FAMILY = Profile('xml-workflow-family-v1', 'native-1c-xml-workflow-family-v1', 'native-1c-xml-workflow-family-stage-v1',
+    'xml_workflow_family', '403ae0f300e5a07fe3c78dff32148f96f7de667ed3b3e0720b8fad3afe454f92',
+    35, 'native_1c_xml_workflow_family_contract', '\nСообщить("XF-C1: [" + XFEncode("") + "]");\n', 5, 'xml-workflow-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
+    if name == XML_WORKFLOW_FAMILY.name:
+        return XML_WORKFLOW_FAMILY
     if name == FILE_IO_FAMILY.name:
         return FILE_IO_FAMILY
     if name == JSON_FAMILY.name:
