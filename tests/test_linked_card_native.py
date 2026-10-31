@@ -47,7 +47,28 @@ def wire(s,state):
     return (scalar_wire.C1+scalar_wire.C2+b''.join(f'CR-{i:02}: [ok|{scalar(v)}]\n'.encode() for i,v in enumerate(values,1))).decode()
 
 
-class LinkedFixtureTests(unittest.TestCase):
+def _windows_source_fixture():
+    return os.name == 'nt'
+
+
+@contextmanager
+def source_fixture_reader(*, windows=None):
+    # Static repository/dependency fixtures are not Linux descriptor-race proof.
+    # One scoped boundary covers source hashes, staging and all report validators;
+    # hashes, path/link guards, byte caps and POSIX production reads stay intact.
+    if windows is None:windows=_windows_source_fixture()
+    scope=mock.patch.object(inputs.runtime,'_read',new=static_bundle_bytes) if windows else nullcontext()
+    with scope:yield
+
+
+class LinkedSourceFixtureCase(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        scope=source_fixture_reader();scope.__enter__()
+        self.addCleanup(scope.__exit__,None,None,None)
+
+
+class LinkedFixtureTests(LinkedSourceFixtureCase):
     def test_saved_requests_and_mapping_without_uuid_alias(self):
         for repeat in (1,2):
             s,m,files=fixture.load(repeat)
@@ -168,11 +189,11 @@ class LinkedFixtureTests(unittest.TestCase):
             self.assertEqual((root/'catalog-source-1/Roles/NativeOracleSetupAdministrator/Ext/Rights.xml').read_bytes(),(v1/'Roles/NativeOracleSetupAdministrator/Ext/Rights.xml').read_bytes())
 
 
-class LinkedStagingTests(unittest.TestCase):
+class LinkedStagingTests(LinkedSourceFixtureCase):
     def setUp(self):
+        super().setUp()
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.staged=Path(self.temp.name).resolve()/'stage'
-        self.scope=mock.patch.object(inputs.runtime,'_read',new=static_bundle_bytes) if os.name=='nt' else nullcontext();self.scope.__enter__();self.addCleanup(self.scope.__exit__,None,None,None)
         self.identity=dict(commit='c'*40,tree='d'*40,sources=inputs.source_hashes(ROOT),image=IMAGE,platform='linux/amd64',actual_version=None,locale='ru_RU.UTF-8',timezone='Etc/UTC')
         inputs.stage_inputs(ROOT,self.staged,NONCE,self.identity)
     def test_closed_inventory_and_empty_report(self):
@@ -214,7 +235,7 @@ assert backend.catalog_install_failure is None
 print('closed-linked')
 '''
         # Same Windows static fixture bridge used by reviewed staging tests.
-        if os.name=='nt':
+        if _windows_source_fixture():
             code=code.replace('import linked_card_inputs as inputs','import linked_card_inputs as inputs\n'+inspect.getsource(static_bundle_bytes)+'\ninputs.runtime._read=static_bundle_bytes')
         # Exercise the complete cold installer under an explicit missing-Unix-
         # flags contract too; the ordinary POSIX pass keeps its strict reader.
@@ -229,7 +250,7 @@ print('closed-linked')
 
 
 
-class LinkedAcquisitionTests(unittest.TestCase):
+class LinkedAcquisitionTests(LinkedSourceFixtureCase):
     def test_twelve_sessions_fresh_clones_same_postimage_and_cleanup(self):
         class Backend:
             def __init__(self,root):
@@ -273,7 +294,7 @@ class LinkedAcquisitionTests(unittest.TestCase):
             self.assertIsNone(backend.catalog_attempt)
 
 
-class LinkedHostTests(unittest.TestCase):
+class LinkedHostTests(LinkedSourceFixtureCase):
     def test_specialization_restored_even_on_failure(self):
         import native_1c_linked_catalog_oracle as entry
         h=entry.host
@@ -299,7 +320,7 @@ class LinkedHostTests(unittest.TestCase):
             result=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(ROOT/'scripts/native_1c_linked_catalog_oracle.py'),str(ROOT/'scripts')],cwd=tmp,capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
 
-class LinkedReportTests(unittest.TestCase):
+class LinkedReportTests(LinkedSourceFixtureCase):
     def test_eight_context_report_keeps_unavailable_and_raw_unresolved(self):
         from test_linked_card_physical import image
         import linked_card_physical
@@ -335,7 +356,7 @@ class LinkedReportTests(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises((OracleError,ValueError)):
                 policy.validate_report(policy.encode_report(bad),nonce=NONCE,provenance=identity)
 
-class LinkedDiagnosticsTests(unittest.TestCase):
+class LinkedDiagnosticsTests(LinkedSourceFixtureCase):
     def test_extended_witness_phase_preserves_finite_projection(self):
         import linked_card_diagnostics as diagnostics
         # The linked collector passes only the finite common shape to the shared
@@ -351,7 +372,7 @@ class LinkedDiagnosticsTests(unittest.TestCase):
             self.assertEqual(previous['phase'],'setup-witness-24')
             with self.assertRaises(OracleError):diagnostics.collect(object(),Path('/owned'),dict(previous,phase='raw private exception'))
 
-class LinkedInstallDiagnosticsTests(unittest.TestCase):
+class LinkedInstallDiagnosticsTests(LinkedSourceFixtureCase):
     def test_redump_namespace_and_default_shape_have_bounded_reason(self):
         import linked_card_diagnostics as d
         _,_,files=fixture.load(1);saved={n:v for n,v in files.items() if n.endswith('.xml')}
@@ -416,3 +437,47 @@ class LinkedInstallDiagnosticsTests(unittest.TestCase):
         policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=identity)
         value['failure_context']['phase']='native'
         with self.assertRaises(OracleError):policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=identity)
+
+
+class LinkedSourceFixtureBoundaryTests(unittest.TestCase):
+    def test_forced_windows_metadata_mismatch_covers_reports_install_and_staging(self):
+        from types import SimpleNamespace
+        real_os=inputs.runtime.os
+        class DescriptorMismatchOS:
+            def __getattr__(self,name):return getattr(real_os,name)
+            def fstat(self,fd):
+                value=real_os.fstat(fd)
+                result=SimpleNamespace(**{name:getattr(value,name) for name in dir(value) if name.startswith('st_')})
+                result.st_ctime_ns+=1
+                return result
+        actual_reader=inputs.runtime._read
+        fixture_path=ROOT/'scripts/native_1c_db_oracle/linked_card_inputs.py'
+        with mock.patch.object(inputs.runtime,'os',DescriptorMismatchOS()):
+            with self.assertRaises(OracleError):actual_reader(fixture_path)
+            for kind,name in (
+                (LinkedReportTests,'test_eight_context_report_keeps_unavailable_and_raw_unresolved'),
+                (LinkedInstallDiagnosticsTests,'test_install_exception_stays_fixed_and_report_bound'),
+                (LinkedStagingTests,'test_closed_inventory_and_empty_report'),
+                (LinkedStagingTests,'test_cold_staged_imports')):
+                with self.subTest(case=name),mock.patch(__name__+'._windows_source_fixture',return_value=True):
+                    result=unittest.TestResult();kind(name).run(result)
+                    self.assertTrue(result.wasSuccessful(),result.errors+result.failures)
+                    self.assertIs(inputs.runtime._read,actual_reader)
+            with self.assertRaises(OracleError):actual_reader(fixture_path)
+        self.assertIs(inputs.runtime.os,real_os)
+
+    def test_adapter_keeps_hashes_caps_and_restores_on_exception(self):
+        actual_reader=inputs.runtime._read
+        with source_fixture_reader(windows=False):self.assertIs(inputs.runtime._read,actual_reader)
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory).resolve()/'fixture';path.write_bytes(b'bound')
+            with self.assertRaisesRegex(RuntimeError,'fixture exit'):
+                with source_fixture_reader(windows=True):
+                    self.assertEqual(inputs.runtime._read(path,5),b'bound')
+                    with self.assertRaises(OracleError):inputs.runtime._read(path,4)
+                    with self.assertRaises(OracleError):inputs.runtime._read(path.parent)
+                    raise RuntimeError('fixture exit')
+        self.assertIs(inputs.runtime._read,actual_reader)
+        with source_fixture_reader(windows=True):windows_hashes=inputs.source_hashes(ROOT)
+        if os.name!='nt':
+            with source_fixture_reader(windows=False):self.assertEqual(windows_hashes,inputs.source_hashes(ROOT))
