@@ -7,6 +7,8 @@ from . import file_io
 from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
                      BSLXMLValidationType, BSLXMLNamespaceContext, XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES)
 from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
+from . import binary_streams
+from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
 from .text_documents import BSLTextDocument
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
@@ -54,7 +56,7 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
@@ -226,6 +228,12 @@ class Interpreter:
                                 ("ЗаписьТекста", BSLTextWriter, "TextWriter"),
                                 ("ДвоичныеДанные", BSLBinaryData, "BinaryData")):
             self.register_type(ru, factory, en)
+        for ru, factory, en in (("БуферДвоичныхДанных", BSLBinaryDataBuffer, "BinaryDataBuffer"),
+                                ("ПотокВПамяти", BSLMemoryStream, "MemoryStream"),
+                                ("ФайловыйПоток", BSLFileStream, "FileStream")):
+            self.register_type(ru, factory, en)
+        for ru, function, en in binary_streams.FUNCTIONS:
+            self.register_function(ru, function, en)
         for ru, function, en, returns_value in file_io.FUNCTIONS:
             self.register_function(ru, function, en, returns_value=returns_value)
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
@@ -633,6 +641,10 @@ class Interpreter:
             return JSON_LINE_BREAKS
         if name in ("кодировкатекста", "textencoding"):
             return TEXT_ENCODINGS
+        if name in ("порядокбайтов", "byteorder"): return binary_streams.BYTE_ORDERS
+        if name in ("режимоткрытияфайла", "fileopenmode"): return binary_streams.FILE_OPEN_MODES
+        if name in ("доступкфайлу", "fileaccess"): return binary_streams.FILE_ACCESSES
+        if name in ("позициявпотоке", "positioninstream"): return binary_streams.POSITIONS_IN_STREAM
         if name in ("типузлаxml", "xmlnodetype"): return XML_NODE_TYPES
         if name in ("пробельныесимволыxml", "xmlspace"): return XML_SPACES
         if name in ("типпроверкиxml", "xmlvalidationtype"): return XML_VALIDATION_TYPES

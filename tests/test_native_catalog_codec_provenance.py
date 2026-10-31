@@ -41,7 +41,7 @@ def provenance():
 class CodecProvenanceTests(SyntheticFilesystemCase):
     def test_actual_87_source_inventory_includes_format_and_metadata_and_recomputes_digest(self):
         hashes = independent_hashes()
-        self.assertEqual(len(hashes),87)
+        self.assertEqual(len(hashes),88)
         self.assertIn(CODEC,hashes)
         self.assertIn('yadinassi/json_processing.py', hashes)
         self.assertIn('yadinassi/file_io.py', hashes)
@@ -57,7 +57,7 @@ class CodecProvenanceTests(SyntheticFilesystemCase):
             self.assertIn(name, hashes)
         value = provenance()
         expected = hashlib.sha256(json.dumps(hashes,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-        self.assertEqual(value['source_file_count'],87)
+        self.assertEqual(value['source_file_count'],88)
         self.assertEqual(value['source_sha256'],expected)
         self.assertEqual(value['comparison_driver_sha256'],hashes[DRIVERS[1]])
         self.assertEqual(value['map_contract_sha256'],hashes['scripts/native_1c_map_contract.py'])

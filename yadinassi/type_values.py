@@ -1,3 +1,4 @@
+from .binary_streams import (BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLByteOrder, BSLFileOpenMode, BSLFileAccess, BSLPositionInStream)
 """Type/TypeOf for the explicit standalone BSL value model, not Python reflection."""
 
 from decimal import Decimal
@@ -41,6 +42,15 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLBinaryDataBuffer, BSLType.BINARY_DATA_BUFFER, "BinaryDataBuffer"),
+    (BSLMemoryStream, BSLType.MEMORY_STREAM, "MemoryStream"),
+    (BSLFileStream, BSLType.FILE_STREAM, "FileStream"),
+    (BSLStream, BSLType.STREAM, "Stream"),
+    (BSLByteOrder, BSLType.BYTE_ORDER, "ByteOrder"),
+    (BSLFileOpenMode, BSLType.FILE_OPEN_MODE, "FileOpenMode"),
+    (BSLFileAccess, BSLType.FILE_ACCESS, "FileAccess"),
+    (BSLPositionInStream, BSLType.POSITION_IN_STREAM, "PositionInStream"),
+
     (BSLCatalogs, BSLType.CATALOGS_MANAGER, None),
     (BSLXMLReader, BSLType.XML_READER, "XMLReader"),
     (BSLXMLWriter, BSLType.XML_WRITER, "XMLWriter"),
