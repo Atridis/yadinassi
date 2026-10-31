@@ -1,5 +1,5 @@
 """Local isolated runner/source/postimage tests; never launches native or Docker."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import copy
 import hashlib
 import json
@@ -165,6 +165,22 @@ class MetadataRunnerTests(unittest.TestCase):
         self.assertTrue(all(r['comparison']['payload_matches']for r in result))
         self.assertIsNone(backend.metadata_attempt)
     def test_launch_completion_nonce_and_cleanup(self):
+        reader=stages.static_marker_bytes if os.name=='nt' else None
+        self._check_launch_completion_nonce_and_cleanup(reader)
+
+    def test_static_completion_fixture_without_posix_nofollow(self):
+        # Windows-only fixture adapter; production Linux no-follow stays unchanged.
+        with mock.patch.dict(os.__dict__):
+            os.__dict__.pop('O_NOFOLLOW',None)
+            self._check_launch_completion_nonce_and_cleanup(stages.static_marker_bytes)
+
+    def _check_launch_completion_nonce_and_cleanup(self,reader):
+        context=(mock.patch.object(runner.lifecycle,'regular_bytes',side_effect=reader)
+                 if reader is not None else nullcontext())
+        with context:
+            self._launch_completion_cases()
+
+    def _launch_completion_cases(self):
         for bad in (None,'token','schema','status','operation','absent'):
             with self.subTest(bad=bad),tempfile.TemporaryDirectory() as work:
                 backend=runner.Native(stages.NONCE,identity())
