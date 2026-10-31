@@ -26,6 +26,7 @@ from .value_tables import (BSLValueTable, BSLValueTableColumn,
                            BSLCollectionIndexes, BSLCollectionIndex)
 from .value_lists import BSLValueList, BSLValueListItem
 from .type_values import type_of
+from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
 
@@ -232,6 +233,9 @@ class _Writer:
         self.emit('"')
 
     def value(self, value, depth=0):
+        # !todo: measure native catalog reference/type codecs; metadata UUID is not a type GUID.
+        if (type(value) is BSLCatalogReference or type(value) is BSLCatalogType):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов и ссылок справочников пока не поддерживается")
         self.nodes += 1
         if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
             raise _resource("ЗначениеВСтрокуВнутр")

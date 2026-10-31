@@ -1,0 +1,493 @@
+{
+  "names": [
+    "C01a9a4ac",
+    "C992ca266"
+  ],
+  "metadata_ids": [
+    "f4cb09c4-73dc-437a-9ed6-6f0191ae0fd5",
+    "82430f0a-7dab-4ce2-a33c-e5da861e2db8"
+  ],
+  "record_ids": [
+    "895e6e79-e0c6-474d-bad2-7aeee4aa3846",
+    "161a1dd2-e18e-472c-bf4d-ac8fba4cc7a4"
+  ],
+  "extra_ids": [
+    "2de10d96-3956-4328-acc7-6d0b2efa7a2f",
+    "364102af-be9e-4710-891b-6b740c72fdbe"
+  ],
+  "generated_ids": {
+    "C01a9a4ac": {
+      "CATALOG_UUID": "f4cb09c4-73dc-437a-9ed6-6f0191ae0fd5",
+      "AMOUNT_UUID": "2768917a-6650-4d9e-87de-362254adeccf",
+      "LIST_TYPE_UUID": "d63e8337-db35-4568-8131-73e3c341b347",
+      "LIST_VALUE_UUID": "15e90229-8d94-49ad-9ae1-780f90a501a8",
+      "MANAGER_TYPE_UUID": "d6d8e99f-1787-43bb-8736-cf84b0c8f11b",
+      "MANAGER_VALUE_UUID": "c3f33b17-60a5-4371-9116-0cab3d67aeb5",
+      "OBJECT_TYPE_UUID": "b66bb23b-606f-493f-9442-0d7d554e7db4",
+      "OBJECT_VALUE_UUID": "6893f849-8860-4ca8-8600-5c7ba8768b20",
+      "PAYLOAD_UUID": "f726d20c-11a7-4c9f-a2b9-fc191a1358a4",
+      "REF_TYPE_UUID": "e482cd13-c1bb-46eb-bee1-51807f45b98c",
+      "REF_VALUE_UUID": "ae980931-e044-4a5d-bc59-c95c5c853762",
+      "SELECTION_TYPE_UUID": "2716ddb0-e661-4411-96c8-a9d47daa6ba1",
+      "SELECTION_VALUE_UUID": "62a84827-4920-4e0b-ab3d-ba482615f727"
+    },
+    "C992ca266": {
+      "CATALOG_UUID": "82430f0a-7dab-4ce2-a33c-e5da861e2db8",
+      "AMOUNT_UUID": "37826994-75b4-4ef9-ba0e-3b184d400017",
+      "LIST_TYPE_UUID": "bdecf58a-d29c-4076-821c-a561a8caf2ba",
+      "LIST_VALUE_UUID": "81c0fbe8-7c5b-4501-ab7d-53d1e608bb28",
+      "MANAGER_TYPE_UUID": "43af5243-4a8e-44fb-92a1-1ff6c128c155",
+      "MANAGER_VALUE_UUID": "137ca735-e493-42de-8608-791f69bcfc61",
+      "OBJECT_TYPE_UUID": "1755563e-c6f2-4583-9ab6-abda6c08ede8",
+      "OBJECT_VALUE_UUID": "32add295-a441-41bd-b0b3-8029d3d29946",
+      "PAYLOAD_UUID": "12606b53-3c3b-4880-aff4-b3fd3826153a",
+      "REF_TYPE_UUID": "fef7506b-33a8-486c-87b9-cd0c63c870fb",
+      "REF_VALUE_UUID": "94f220b8-7370-48da-baf1-09a75b6f8821",
+      "SELECTION_TYPE_UUID": "14d92502-4f60-4167-bccf-d0218f4e099e",
+      "SELECTION_VALUE_UUID": "4a26fe51-a907-4be1-926e-bd5d39601e2c"
+    }
+  },
+  "rows": [
+    [
+      "364102af-be9e-4710-891b-6b740c72fdbe",
+      "30",
+      "Alpha",
+      "first",
+      11,
+      false
+    ],
+    [
+      "895e6e79-e0c6-474d-bad2-7aeee4aa3846",
+      "10",
+      "Zulu",
+      "second",
+      22,
+      true
+    ],
+    [
+      "2de10d96-3956-4328-acc7-6d0b2efa7a2f",
+      "20",
+      "Mike",
+      "third",
+      33,
+      false
+    ]
+  ],
+  "status": "local-preparation-only",
+  "states": [
+    "empty",
+    "one",
+    "several",
+    "deleted",
+    "reused"
+  ],
+  "source_hashes": {
+    "Catalogs/C01a9a4ac.xml": "309cc73c4443a93c26b9baad522ddc644fcda10ad48e3bd7151496de2503d035",
+    "Catalogs/C992ca266.xml": "8d22bdbab07ec007e1984be9e53c03af0b50707ab1b5b94d3b3b740903936a18",
+    "cursor.bsl": "09dec3bfa48b174bd3dabca18de2709ce9e6e12cf2836355921f6f6f2f31dae9",
+    "errors.bsl": "2818a956eb138ac73559c3123c095e3ba11cb20ce16d624afb2a4824b032c833",
+    "fields.bsl": "59d6ca67612e435670d1dc5e11bc9d633d2103c981782b7574e50a21155bad85",
+    "fresh.bsl": "a7d889f7bf5736f2cb7d182d7b99a773f3fefc6b394fd0ce049f70ac50dd1614",
+    "identity.bsl": "623491c4e4e3da1d6d7b8d3666de5ceb186ce794d03955bef0976dd7ea1d0c3d",
+    "lookup.bsl": "8bb3a6fcc81714ee1aa01fc87a0eff408a6ce210a7f18ede1b7e060ab8c9c7f4",
+    "row4.bsl": "6fa7787093e2135ded88be261701a9b4807cbdc52d825520b03c2e1fe4b121a4",
+    "setup-deleted.bsl": "f70c10d47e43c8d2a4660522cd8e17bb9bf000ad75e3c8f012e3599ba5c1e9e1",
+    "setup-empty.bsl": "5fa7ac18eba6eba476c941fe74d2abd6b4b469dced3705457220322e7baffb0e",
+    "setup-one.bsl": "880197279db5d538e1424130423b093820cc0f55ccb38db1082c9b24f0f68de4",
+    "setup-reused.bsl": "06f0baa220a0092886eb83ef623f2f106fbd98fd17435bbed2ea227a7f0bc445",
+    "setup-several.bsl": "ccfabda6f629f3a9bf38429a4462a474a0f164928b050e26793c036e207ac053",
+    "types.bsl": "7d48ef458f966b0a70a9c91cefaac538bc6a4bfc214cae3651fc96898521a274"
+  },
+  "cursor": [
+    [
+      "control.name",
+      "Catalogs.C01a9a4ac.Metadata().Name"
+    ],
+    [
+      "control.uuid",
+      "String(Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).UUID())"
+    ],
+    [
+      "before.ref",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "before.code",
+      "S.Code"
+    ],
+    [
+      "before.desc",
+      "S.Description"
+    ],
+    [
+      "next.1",
+      "S.Next()"
+    ],
+    [
+      "ref.1",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "next.2",
+      "S.Next()"
+    ],
+    [
+      "ref.2",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "next.3",
+      "S.Next()"
+    ],
+    [
+      "ref.3",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "next.4",
+      "S.Next()"
+    ],
+    [
+      "ref.4",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "exhaust.next",
+      "S.Next()"
+    ],
+    [
+      "exhaust.code",
+      "S.Code"
+    ],
+    [
+      "reset",
+      "!S.Reset();"
+    ],
+    [
+      "reset.ref",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "reset.next",
+      "S.Next()"
+    ],
+    [
+      "reset.code",
+      "S.Code"
+    ],
+    [
+      "reset.next2",
+      "S.Next()"
+    ],
+    [
+      "reset.next3",
+      "S.Next()"
+    ],
+    [
+      "reset.next4",
+      "S.Next()"
+    ],
+    [
+      "type",
+      "String(TypeOf(S))"
+    ],
+    [
+      "metatype",
+      "TypeOf(TypeOf(S)) = Type(\"Type\")"
+    ]
+  ],
+  "fields": [
+    [
+      "control.name",
+      "Catalogs.C01a9a4ac.Metadata().Name"
+    ],
+    [
+      "control.uuid",
+      "String(Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).UUID())"
+    ],
+    [
+      "row1.next",
+      "S.Next()"
+    ],
+    [
+      "row1.uuid",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "row1.code",
+      "S.Code"
+    ],
+    [
+      "row1.description",
+      "S.Description"
+    ],
+    [
+      "row1.payload",
+      "S.Payload"
+    ],
+    [
+      "row1.amount",
+      "S.Amount"
+    ],
+    [
+      "row1.deleted",
+      "S.DeletionMark"
+    ],
+    [
+      "row2.next",
+      "S.Next()"
+    ],
+    [
+      "row2.uuid",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "row2.code",
+      "S.Code"
+    ],
+    [
+      "row2.description",
+      "S.Description"
+    ],
+    [
+      "row2.payload",
+      "S.Payload"
+    ],
+    [
+      "row2.amount",
+      "S.Amount"
+    ],
+    [
+      "row2.deleted",
+      "S.DeletionMark"
+    ],
+    [
+      "row3.next",
+      "S.Next()"
+    ],
+    [
+      "row3.uuid",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "row3.code",
+      "S.Code"
+    ],
+    [
+      "row3.description",
+      "S.Description"
+    ],
+    [
+      "row3.payload",
+      "S.Payload"
+    ],
+    [
+      "row3.amount",
+      "S.Amount"
+    ],
+    [
+      "row3.deleted",
+      "S.DeletionMark"
+    ],
+    [
+      "exhaust",
+      "S.Next()"
+    ]
+  ],
+  "lookup": [
+    [
+      "control.name",
+      "Catalogs.C01a9a4ac.Metadata().Name"
+    ],
+    [
+      "control.uuid",
+      "String(Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).UUID())"
+    ],
+    [
+      "code.10",
+      "String(Catalogs.C01a9a4ac.FindByCode(\"10\").UUID())"
+    ],
+    [
+      "filled.10",
+      "ValueIsFilled(Catalogs.C01a9a4ac.FindByCode(\"10\"))"
+    ],
+    [
+      "code.20",
+      "String(Catalogs.C01a9a4ac.FindByCode(\"20\").UUID())"
+    ],
+    [
+      "filled.20",
+      "ValueIsFilled(Catalogs.C01a9a4ac.FindByCode(\"20\"))"
+    ],
+    [
+      "code.30",
+      "String(Catalogs.C01a9a4ac.FindByCode(\"30\").UUID())"
+    ],
+    [
+      "filled.30",
+      "ValueIsFilled(Catalogs.C01a9a4ac.FindByCode(\"30\"))"
+    ],
+    [
+      "code.40",
+      "String(Catalogs.C01a9a4ac.FindByCode(\"40\").UUID())"
+    ],
+    [
+      "filled.40",
+      "ValueIsFilled(Catalogs.C01a9a4ac.FindByCode(\"40\"))"
+    ],
+    [
+      "code.99",
+      "String(Catalogs.C01a9a4ac.FindByCode(\"99\").UUID())"
+    ],
+    [
+      "filled.99",
+      "ValueIsFilled(Catalogs.C01a9a4ac.FindByCode(\"99\"))"
+    ],
+    [
+      "desc.Alpha",
+      "String(Catalogs.C01a9a4ac.FindByDescription(\"Alpha\", True).UUID())"
+    ],
+    [
+      "empty.Alpha",
+      "Catalogs.C01a9a4ac.FindByDescription(\"Alpha\", True).IsEmpty()"
+    ],
+    [
+      "desc.Zulu",
+      "String(Catalogs.C01a9a4ac.FindByDescription(\"Zulu\", True).UUID())"
+    ],
+    [
+      "empty.Zulu",
+      "Catalogs.C01a9a4ac.FindByDescription(\"Zulu\", True).IsEmpty()"
+    ],
+    [
+      "desc.Mike",
+      "String(Catalogs.C01a9a4ac.FindByDescription(\"Mike\", True).UUID())"
+    ],
+    [
+      "empty.Mike",
+      "Catalogs.C01a9a4ac.FindByDescription(\"Mike\", True).IsEmpty()"
+    ],
+    [
+      "desc.Gone",
+      "String(Catalogs.C01a9a4ac.FindByDescription(\"Gone\", True).UUID())"
+    ],
+    [
+      "empty.Gone",
+      "Catalogs.C01a9a4ac.FindByDescription(\"Gone\", True).IsEmpty()"
+    ],
+    [
+      "desc.Absent",
+      "String(Catalogs.C01a9a4ac.FindByDescription(\"Absent\", True).UUID())"
+    ],
+    [
+      "empty.Absent",
+      "Catalogs.C01a9a4ac.FindByDescription(\"Absent\", True).IsEmpty()"
+    ],
+    [
+      "sameuuid",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")) = Catalogs.C992ca266.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\"))"
+    ],
+    [
+      "sametype",
+      "TypeOf(Catalogs.C01a9a4ac.EmptyRef()) = TypeOf(Catalogs.C992ca266.EmptyRef())"
+    ]
+  ],
+  "row4": [
+    [
+      "control.name",
+      "Catalogs.C01a9a4ac.Metadata().Name"
+    ],
+    [
+      "control.uuid",
+      "String(Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).UUID())"
+    ],
+    [
+      "next1",
+      "S.Next()"
+    ],
+    [
+      "next2",
+      "S.Next()"
+    ],
+    [
+      "next3",
+      "S.Next()"
+    ],
+    [
+      "next4",
+      "S.Next()"
+    ],
+    [
+      "fourth.Code",
+      "S.Code"
+    ],
+    [
+      "fourth.Description",
+      "S.Description"
+    ],
+    [
+      "fourth.Payload",
+      "S.Payload"
+    ],
+    [
+      "fourth.Amount",
+      "S.Amount"
+    ],
+    [
+      "fourth.DeletionMark",
+      "S.DeletionMark"
+    ],
+    [
+      "fourth.uuid",
+      "String(S.Ref.UUID())"
+    ],
+    [
+      "exhaust",
+      "S.Next()"
+    ],
+    [
+      "ref.Code",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).Code"
+    ],
+    [
+      "ref.Description",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).Description"
+    ],
+    [
+      "ref.Payload",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).Payload"
+    ],
+    [
+      "ref.Amount",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).Amount"
+    ],
+    [
+      "ref.DeletionMark",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).DeletionMark"
+    ],
+    [
+      "ref.ref",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).Ref = Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\"))"
+    ],
+    [
+      "ref.type",
+      "TypeOf(Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\"))) = Type(\"CatalogRef.C01a9a4ac\")"
+    ],
+    [
+      "ref.filled",
+      "ValueIsFilled(Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")))"
+    ],
+    [
+      "ref.metadata",
+      "Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).Metadata() = Metadata.Catalogs.C01a9a4ac"
+    ],
+    [
+      "ref.uuid",
+      "String(Catalogs.C01a9a4ac.GetRef(New UUID(\"895e6e79-e0c6-474d-bad2-7aeee4aa3846\")).UUID())"
+    ],
+    [
+      "empty.isempty",
+      "Catalogs.C01a9a4ac.EmptyRef().IsEmpty()"
+    ]
+  ]
+}

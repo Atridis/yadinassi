@@ -121,3 +121,44 @@ class FileDBContext:
         except OSError:
             raise ValueError("file database metadata inspection failed: file_io_failed") from None
         return result
+
+    def catalog_rows(self, catalog_name: str):
+        """Read one catalog from a caller-owned consistent offline image.
+
+        This descriptor lives only for this call. The existing physical/typed
+        reader retains its bounded schema and active-record admission; this
+        adapter does not turn it into a native session or an unbounded cursor.
+        Callers must bind the returned metadata identity to their own snapshot.
+        """
+        from .storage.catalog_reader import read_catalog_rows
+        from .storage.filedb_catalog import CatalogError, ChangedDuringRead, NotRegularFile, _metadata
+        if self._unsupported:
+            raise ValueError("unsupported file database directory")
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(os.path.join(self.directory, "1Cv8.1CD"), flags)
+            try:
+                before = os.fstat(fd)
+                if not stat.S_ISREG(before.st_mode):
+                    raise NotRegularFile("not_regular_file")
+
+                def read_at(offset, length):
+                    # The coordinator validates and budgets every source range.
+                    if hasattr(os, "pread"):
+                        return os.pread(fd, length, offset)
+                    os.lseek(fd, offset, os.SEEK_SET)
+                    return os.read(fd, length)
+
+                try:
+                    result = read_catalog_rows(read_at, before.st_size,
+                                               catalog_name=catalog_name)
+                finally:
+                    if _metadata(before) != _metadata(os.fstat(fd)):
+                        raise ChangedDuringRead("source_changed")
+            finally:
+                os.close(fd)
+        except CatalogError as error:
+            raise ValueError("file database catalog inspection failed: " + error.code) from None
+        except OSError:
+            raise ValueError("file database catalog inspection failed: file_io_failed") from None
+        return result

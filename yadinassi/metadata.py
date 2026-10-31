@@ -16,8 +16,9 @@ class _MetadataObject(BSLObject):
 
 
 class BSLCatalogMetadata(_MetadataObject):
-    def __init__(self, name: str):
+    def __init__(self, name: str, metadata_uuid=None):
         self._name = name
+        self._metadata_uuid = metadata_uuid
 
     def get_member(self, name: str) -> object:
         key = name.casefold()
@@ -47,7 +48,7 @@ class BSLCatalogMetadataCollection(_MetadataObject):
                 key = entry.name.casefold()
                 if key in items:
                     raise ValueError('ambiguous catalog metadata name')
-                items[key] = BSLCatalogMetadata(entry.name)
+                items[key] = BSLCatalogMetadata(entry.name, getattr(entry, "metadata_uuid", None))
             self._items = items
         return self._items
 

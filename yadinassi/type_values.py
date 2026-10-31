@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+from .catalog_types import BSLCatalogReference, BSLCatalogType
+
 from .text_documents import BSLTextDocument
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
@@ -106,7 +108,17 @@ def type_by_name(name: object) -> BSLType:
     return value_type
 
 
-def type_of(value: object) -> BSLType:
+def type_of(value: object) -> BSLType | BSLCatalogType:
+    if type(value) is BSLCatalogReference:
+        return value.value_type
+    if type(value) is BSLCatalogType:
+        return BSLType.TYPE
+    # Lazy import avoids the catalog adapter/type registry import cycle.
+    from .catalogs import BSLCatalogManager, BSLCatalogSelection
+    if type(value) is BSLCatalogManager:
+        return value._manager_type
+    if type(value) is BSLCatalogSelection:
+        return value._selection_type
     # Exact identity keeps bool distinct from numbers and rejects arbitrary host
     # objects/subclasses without invoking their metaclass equality or hash hooks.
     for python_type, value_type, _ in _VALUE_TYPES:

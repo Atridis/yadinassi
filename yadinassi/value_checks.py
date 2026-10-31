@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+from .catalog_types import BSLCatalogReference
+
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
 
@@ -67,6 +69,8 @@ def _plain_description_filled(value):
 def value_is_filled(value: object) -> bool:
     # Exact types avoid invoking arbitrary extension truth/length/iteration hooks.
     kind = type(value)
+    if kind is BSLCatalogReference:
+        return not value.is_empty()
     if kind is BSLUUID:
         return value.is_filled()
     if value is None or value is NULL:

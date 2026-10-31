@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, localcontext
 
 from .unique_identifiers import BSLUUID
+from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .dates import BSLDate, TICKS_PER_SECOND, date
 from .numeric.numbers import round_number
 from .type_qualifiers import (
@@ -48,6 +49,7 @@ def _unsupported(message):
 
 
 def _type_set(value):
+    # !todo: measure catalog type descriptions/qualifiers before admitting them.
     if value is None or (type(value) is str and not value):
         return set()
     if type(value) is str:
@@ -68,6 +70,8 @@ def _type_set(value):
     result = set()
     for kind in kinds:
         # Validate before hashing: host objects must never supply equality/hash.
+        if type(kind) is BSLCatalogType:
+            _unsupported("тип ссылки справочника")
         if type(kind) is not BSLType:
             raise TypeError("ОписаниеТипов: элементы массива должны иметь тип Тип")
         if kind is BSLType.UNDEFINED:
@@ -271,11 +275,15 @@ class BSLTypeDescription(BSLObject):
         return result
 
     def contains_type(self, kind):
+        if type(kind) is BSLCatalogType:
+            _unsupported("тип ссылки справочника")
         if type(kind) is not BSLType:
             raise TypeError("СодержитТип: ожидается значение Тип")
         return kind in self.types
 
     def adjust_value(self, value=_OMITTED):
+        if (type(value) is BSLCatalogReference or type(value) is BSLCatalogType):
+            _unsupported("приведение ссылки или типа справочника")
         if self.types == (BSLType.UUID,):
             # Native PR112 observations418..422: omitted/Undefined/canonical
             # String default to zero; UUID stays UUID. No string conversion.

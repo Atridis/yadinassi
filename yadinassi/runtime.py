@@ -14,6 +14,8 @@ from .numeric import bits, elementary, numbers
 from . import clocks, date_time_conversions, dates, formatting, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection
+from .catalogs import BSLCatalogs
+from .catalog_types import BSLCatalogType
 from .database_context import FileDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
@@ -147,6 +149,7 @@ class Interpreter:
         self._native_target = validate_native_target(native_target)
         self._database_context = database_context
         self._metadata = BSLMetadata(database_context)
+        self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
         self._scheduler = Scheduler(self._native_target)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
@@ -190,7 +193,7 @@ class Interpreter:
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
                                "FillPropertyValues", returns_value=False)
         self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
-        self.register_function("Тип", type_values.type_by_name, "Type")
+        self.register_function("Тип", self._catalogs.type_by_name, "Type")
         self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
         self.register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
                                "ValueToStringInternal")
@@ -590,6 +593,8 @@ class Interpreter:
             if not self._has_module_context:
                 raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
             return self._self_module
+        if name in ("справочники", "catalogs"):
+            return self._catalogs
         if name in ("метаданные", "metadata"):
             return self._metadata
         if name in ("символы", "chars"):
@@ -698,7 +703,7 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
-        if type(value) in (BSLChars, BSLCatalogMetadataCollection):
+        if type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -1161,7 +1166,7 @@ class Interpreter:
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
             owner = (yield from self._visit(node.object))
-            if type(owner) is BSLCatalogMetadataCollection:
+            if type(owner) in (BSLCatalogMetadataCollection, BSLCatalogs):
                 index = (yield from self._visit(node.index))
                 owner.get_index(index)
                 return _Reference(lambda: owner.get_index(index),
@@ -1206,6 +1211,8 @@ class Interpreter:
         # EDT root_New explicitly says to ignore a non-array second value.
         value_type = (yield from self._visit(node.type_expression))
         parameters = (yield from self._visit(node.parameters)) if node.parameters is not None else None
+        if type(value_type) is BSLCatalogType:
+            raise ValueError("catalog reference type construction is unsupported")
         if type(value_type) is BSLType:
             name = value_type.value
         elif type(value_type) is str:
@@ -1231,7 +1238,7 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, (yield from self._visit(node.value)))
             else:
-                if type(value) in (BSLChars, BSLCatalogMetadataCollection):
+                if type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs):
                     value.set_index((yield from self._visit(node.target.index)), (yield from self._visit(node.value)))
                     return
                 if not isinstance(value, _COLLECTIONS):

@@ -127,6 +127,8 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
             binding = compiler.compile_catalog_binding(identity, attributes, parsed,
                 profile=compiler.CatalogBindingProfile(profile_id), budget=reader._budget)
             del parsed, extracted, reservation
+        # !todo Widen max1 only after bounded native multirow/deleted-slot
+        # evidence validates liveness; this is a data-integrity gate, not ordering.
         with graph.stage('records', binding=binding) as handle:
             rows = row_reader.read_bound_catalog_records(reader, physical_catalog, binding,
                 handle=handle, limits=row_types.RecordLimits(max_active_records=1))
