@@ -79,8 +79,8 @@ FORMAT_NUMBERS = Profile('format-numbers-v1', 'native-1c-format-numbers-v1', 'na
     50, 'native_1c_format_numbers_contract', '\nСообщить("FM-C1: [" + FMEncode("") + "]");\n', 5, 'format-numbers')
 
 FORMAT_DATES = Profile('format-dates-v1', 'native-1c-format-dates-v1', 'native-1c-format-dates-stage-v1',
-    'format_dates', '7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb',
-    58, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
+    'format_dates', '606d4932ec82cc57b2465d4a3d344a8dfec776cbc0b5c2ca34e3a1e50a4ef9a9',
+    30, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
 
 def select(name='tree-v1'):
     if type(name) is not str:

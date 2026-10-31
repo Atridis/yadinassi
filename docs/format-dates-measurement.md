@@ -72,3 +72,24 @@ bare/single/double-quoted multiword masks plus a no-space control. No new
 expected native answers are supplied. All56 maximum-length records plus two
 calibrations occupy8170 bytes within the unchanged8192-byte cap. The new native
 acquisition is pending; original40 evidence must not be attributed to56 cases.
+
+## Separately attributable parser-family28 measurement
+
+Supplement56 was acquired by [run41197666432](https://github.com/Atridis/yadinassi/actions/runs/41197666432)
+on head `13d06c4e603a02fcde0358bc33617bb29a67adfb`, tree
+`d5d6d47375ab62ed88ad2df0eaf18b24ec716bd6`:56 successful native observations,
+zero observer/action errors, original40 capture an exact byte prefix. Its source,
+capture and provenance remain immutable as `supplement56*` fixtures. Native
+acquisition accepted, interpreter parity rejected. In these witnesses NFD
+duplicates/uppercase aliases select last, identical DF repeats select first,
+mixed DF/ДФ chooses the Cyrillic value in both orders. Lowercase nfd differs
+from uppercase NFD, but lowercase df works; blanket uppercasing is not justified.
+
+The active closed lane now runs a **different28-case probe**, named
+`tests/fixtures/format_dates/parser28.bsl`, byte-identical to its staged
+`integrational_tests/measurements/format_dates.bsl` copy. It is not an extension
+of56 nor a reinterpretation of those observations. Cases1–18 compare exact and
+lowercase Latin NDS/NG/NGS/NZ and Russian numeric aliases;19–26 measure DE/de/ДП/дп
+and DE duplicate/alias order;27–28 compare L/en and l/en. The maximum is4110
+bytes within the unchanged8192-byte cap. No parser/runtime policy is changed.
+Parser28 native acquisition is pending and cannot be inferred from prior runs.

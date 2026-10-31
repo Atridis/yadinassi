@@ -19,7 +19,7 @@ from yadinassi.syntax import ast
 
 SOURCE_PATH = ROOT / 'integrational_tests/measurements/format_dates.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
-SOURCE_SHA = '7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb'
+SOURCE_SHA = '606d4932ec82cc57b2465d4a3d344a8dfec776cbc0b5c2ca34e3a1e50a4ef9a9'
 
 
 def emit(witness=None, source=SOURCE, *, missing=False):
@@ -48,8 +48,8 @@ class FormatObserverTests(unittest.TestCase):
     def test_exact_source_pin_and_bounded_fixed_matrix(self):
         self.assertEqual(hashlib.sha256(SOURCE.encode('utf-8')).hexdigest(), SOURCE_SHA)
         rows = fixed_rows()
-        self.assertEqual([r[0] for r in rows], list(range(1,57)))
-        self.assertEqual(len({r[2] for r in rows}), 56)
+        self.assertEqual([r[0] for r in rows], list(range(1,29)))
+        self.assertEqual(len({r[2] for r in rows}), 28)
         parse(SOURCE)
         for _, expression, _ in rows:
             statements = parse(expression)
@@ -79,13 +79,17 @@ class FormatObserverTests(unittest.TestCase):
         capture = (fixture / 'original40.out').read_bytes()
         receipt = json.loads((fixture / 'original40-provenance.json').read_text())
         self.assertEqual(hashlib.sha256(original).hexdigest(), '5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa')
-        self.assertTrue(SOURCE.encode().startswith(original))
+        self.assertTrue((fixture / 'supplement56.bsl').read_bytes().startswith(original))
+        self.assertEqual((fixture / 'parser28.bsl').read_bytes(), SOURCE.encode())
+        self.assertEqual(hashlib.sha256((fixture / 'supplement56.bsl').read_bytes()).hexdigest(), '7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb')
+        self.assertEqual(hashlib.sha256((fixture / 'supplement56.out').read_bytes()).hexdigest(), 'fe558102e1e7f6cf879243b10ec377906d908a784fe2ed497c19826a4359fa8f')
+        self.assertTrue((fixture / 'supplement56.out').read_bytes().startswith(capture))
         self.assertEqual(hashlib.sha256(capture).hexdigest(), '186c4441a7ce4c3fb70ccd9f4304be7af1bef5d5cb2797eb91b17500881658b8')
         self.assertEqual(len(capture.splitlines()), 42)
         self.assertEqual(receipt['cases'], 40)
         self.assertEqual(receipt['head'], '1eaf2de6b60e199f21debc3d182b779b4a74b153')
         self.assertFalse(receipt['runtime_parity_accepted'])
-        self.assertEqual(wire.MAX_ENCODED_BYTES, 8170)
+        self.assertEqual(wire.MAX_ENCODED_BYTES, 4110)
 
     def test_exact_inputs_reach_witness_unchanged(self):
         seen = []
@@ -94,13 +98,13 @@ class FormatObserverTests(unittest.TestCase):
             return 'synthetic'
         raw = emit(witness)
         records = wire.require_available(raw)
-        self.assertEqual(len(seen), 56)
+        self.assertEqual(len(seen), 28)
         self.assertTrue(all(r['status']=='ok' for r in records))
-        self.assertEqual(seen[0][1], 'DF=yyyy-MM-dd HH:mm:ss')
-        self.assertEqual(seen[27][1], 'DF="yyyy-MM-dd HH:mm:ss"')
-        self.assertEqual(seen[30][1], 'DF="yyyy\';\'MM"')
-        self.assertEqual(seen[31][1], "ДФ='dd.MM.yyyy';ДП='ПУСТО'")
-        self.assertEqual(seen[37], (Decimal('123.45'), "DF=yyyy;DE='EMPTY'"))
+        self.assertEqual(seen[0], (Decimal('1234.5'), 'NFD=1;NG=0;NDS=.'))
+        self.assertEqual(seen[1][1], 'NFD=1;NG=0;nds=.'); self.assertEqual(seen[9][1], 'чдц=1')
+        self.assertEqual(seen[18][1], "DE='A'"); self.assertEqual(seen[19][1], "de='A'")
+        self.assertEqual(seen[25][1], "ДП='B';DE='A'")
+        self.assertEqual(seen[26][1], 'NFD=1;NG=0;L=en'); self.assertEqual(seen[27][1], 'NFD=1;NG=0;l=en')
 
     def test_unicode_and_empty_outputs_are_lossless(self):
         for value, units in [('',()), (' \u00a0\U0001f600', (32,160,55357,56832)), ('a'*32,(97,)*32)]:

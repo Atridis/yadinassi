@@ -37,7 +37,7 @@ def envelope(raw):
 
 class FormatProfileTests(unittest.TestCase):
     def test_closed_registry_and_exact_staging(self):
-        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_dates',58,5,'format-dates'))
+        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_dates',30,5,'format-dates'))
         self.assertEqual(tree.input_files(profile=PROFILE),host.staged_files(smoke,profile=PROFILE))
         self.assertEqual(len(tree.input_files(profile=PROFILE)),22)
         self.assertNotIn(s.source,tree.input_files(profile='tree-v1'))
@@ -49,7 +49,7 @@ class FormatProfileTests(unittest.TestCase):
             self.assertEqual(set(host.module_hashes(staged,hashes,smoke,profile=PROFILE)),{s.case,'client_tree'})
             code='import sys;sys.path.insert(0,'+repr(str(staged/'bootstrap'))+');import native_1c_format_dates_contract as c;c.require_available('+repr(output())+');print(c.MAX_ENCODED_BYTES)'
             result=subprocess.run([sys.executable,'-I','-B','-c',code],capture_output=True,timeout=30)
-            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,('8170'+os.linesep).encode(),b''))
+            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,('4110'+os.linesep).encode(),b''))
             (staged/'bootstrap/native_1c_format_dates_contract.py').unlink()
             with self.assertRaises(host.TreeError):host.module_hashes(staged,hashes,smoke,profile=PROFILE)
 
