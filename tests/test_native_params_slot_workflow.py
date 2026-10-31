@@ -66,7 +66,7 @@ class ParamsSlotWorkflowTests(unittest.TestCase):
     def test_no_jobs_permissions_or_external_trust_expansion(self):
         workflow=old.WORKFLOW_PATH.read_text()
         self.assertEqual(set(re.findall(r'^  ([a-z_]+):$',workflow,re.M)),{'push','eligibility','native_reference_a','native_oracle','native_codec_a','native_codec_b','native_metadata','native_metadata_runtime','native_catalog_read','verdict'})
-        self.assertIn('NATIVE_DB_ROUTE: catalog-read-batch-v1',old.workflow_job('eligibility'))
+        self.assertIn('NATIVE_DB_ROUTE: linked-catalog-cards-v1',old.workflow_job('eligibility'))
         for job in ('native_codec_a','native_codec_b'):
             block=old.workflow_job(job)
             self.assertIn("needs.eligibility.outputs.route == '"+ROUTE+"'",block)

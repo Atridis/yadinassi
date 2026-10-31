@@ -6020,6 +6020,17 @@ preserved; actual native acquisition is pending. See
 - Ordinary local file/text/binary I/O family: metadata, owned-file workflows,
   TextReader/TextWriter, encodings, BinaryData and conversions. Native33 accepted; [implemented scope and limits](docs/file-io-family.md).
 
+
+### Связанные read-only карточки справочников
+
+Offline `FileDBContext` связывает CONFIG, DBNames и физические записи из одного
+ограниченного снимка: товары с String/Number/Boolean/DateTime и одиночной ссылкой
+на категорию; категории могут не иметь пользовательских реквизитов. Различаются
+UUID метаданных, сгенерированного типа и записи. Поддержаны пустые/отсутствующие
+ссылки и типизированные значения по умолчанию; обход не превращается в запись.
+
+[Контракт, native-измерение и границы проверки](docs/linked-catalog-cards-next.md)
+отдельно описывают captured-byte replay, actual `.1CD` parity и отложенные `!todo`.
 ## Ordinary XML reader/writer family (native XML33 acquired)
 
 A coherent XML 1.0 workflow now covers string/file readers and writers,

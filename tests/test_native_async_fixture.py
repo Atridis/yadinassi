@@ -358,8 +358,30 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_collections_measurement_budget(source):
+    """Exact test-only budget inverse; never runtime admission or cap fallback."""
+    contract = json.loads((REPOSITORY / 'tests/collections_measurement_budget_source_inverse.json').read_text(encoding='utf-8'))
+    if (contract.get('base_sha256') != '09ff03dcbf91f0bc6bbfa72ee437d5f39b542051357a48822a90a6c628dde2f8'
+            or contract.get('candidate_sha256') != '9249cca10b29455d12bb4ab806b33f572a9f462890d2a2940e4e93aac4c9beb9'):
+        raise AssertionError('collections budget inverse identity')
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == contract['base_sha256']:
+        return source
+    if digest != contract['candidate_sha256']:
+        raise AssertionError('collections budget outer source identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('collections budget inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != contract['base_sha256']:
+        raise AssertionError('collections budget inner source identity')
+    return source
+
+
 def without_tree_total_measurement(source, *, host=False):
     """Exact Total harness inverse to accepted Move harness; test-only."""
+    if host:
+        source = without_collections_measurement_budget(source)
     if not host:
         source = without_tree_profile_measurement(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_total_source_inverse.json').read_text(encoding='utf-8'))

@@ -1731,3 +1731,26 @@ There are no automatic retries. `subprocess.run` still kills and waits for the
 child on timeout, and return code, empty stderr, and exact output assertions are
 unchanged. This is test-only policy: production execution/report limits,
 including the 8192/32768 caps, are unchanged.
+
+
+### Source-bound live collections comparison wall budget
+
+The six-scenario native host comparison allows 20 seconds only for the closed
+`collections` fixture whose actual source bytes, trusted input digest, and native
+case source digest all equal
+`55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c`.
+All other cases and the generic child default retain 10 seconds. There is no
+CLI/environment override or automatic retry. A changed fixture does not inherit
+the allowance merely through its name or updated transport identity.
+
+This is finite CI measurement wall-time headroom, not a public interpreter limit
+or a performance acceptance claim. Repeated original 10-second failures remain
+failures; local profiling found the same approximately 69.97 million calls in
+accepted and failing revisions, without a linked-catalog hot-path regression.
+It does not establish CI CPU contention or guarantee completion within 20 seconds.
+The independent historical saved-output replay budget above is unchanged.
+
+The isolated child environment, source/native validation, stdout/stderr bounds,
+process-group termination and bounded reap, observation/parity checks, native
+container/credential guards, and outer CI deadline are unchanged. A timeout still
+fails comparison and invokes the same cleanup; hard-timeout negative tests remain.

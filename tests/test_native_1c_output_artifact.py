@@ -304,7 +304,7 @@ class OrchestrationTests(SyntheticFilesystemCase):
             if tamper:
                 path=capture/"collections.out"; path.chmod(0o600); path.write_bytes(b"changed")
             if post_create is not None:
-                return original_compare(root,capture,stage3,inputs,runner=lambda args,cwd:
+                return original_compare(root,capture,stage3,inputs,runner=lambda args,cwd,**limits:
                     post_create[1] if Path(args[-2]).stem == "functions" else
                     (0,collections_payload if Path(args[-2]).stem == "collections" and collections_payload is not None
                      else PAYLOAD,b""),**kwargs)

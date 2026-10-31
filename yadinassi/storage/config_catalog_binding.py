@@ -23,6 +23,7 @@ from .config_catalog_attributes import CatalogAttribute, CatalogAttributes
 from .filedb_dbnames import DBNamesEntry, DBNamesIndex, DBNAMES_PROFILE_IDENTIFIER
 
 PROFILE_IDENTIFIER = 'owned_catalog_string_code_two_attributes_v1'
+LINKED_PROFILE_IDENTIFIER = 'owned_catalog_linked_primitive_v1'
 ZERO_PROFILE_IDENTIFIER = 'owned_catalog_zero_string_code_two_attributes_v1'
 NUMERIC_PROFILE_IDENTIFIER = 'owned_catalog_string_or_number_code_two_attributes_v1'
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z', re.ASCII)
@@ -53,7 +54,7 @@ class CatalogBindingProfile:
     identifier: str
 
     def __post_init__(self):
-        if type(self.identifier) is not str or self.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER):
+        if type(self.identifier) is not str or self.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER, LINKED_PROFILE_IDENTIFIER):
             _fail('profile')
 
 
@@ -79,6 +80,8 @@ class BoundCatalogAttribute:
     physical_name: str
     type_token: str
     qualifiers: tuple[int, ...]
+    reference_type_uuid: str | None = field(default=None, kw_only=True)
+    reference_catalog_uuid: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +105,7 @@ class CatalogBinding:
     placements: tuple[BoundFieldPlacement, ...]
     description_length: int = 0
     code_type: int = field(default=1, kw_only=True)
+    profile_identifier: str = field(default=PROFILE_IDENTIFIER, kw_only=True)
 
 
 def _uuid(value, *, nonzero=True):
@@ -131,7 +135,7 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
     """
     if (type(profile) is not CatalogBindingProfile
             or type(profile.identifier) is not str
-            or profile.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER)):
+            or profile.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER, LINKED_PROFILE_IDENTIFIER)):
         _fail('profile')
     if limits is not None and type(limits) is not CatalogBindingLimits:
         _fail('limits')
@@ -145,6 +149,8 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
             or type(dbnames.declared_count) is not int or dbnames.declared_count != len(dbnames.entries)
             or type(dbnames.profile) is not str or dbnames.profile != DBNAMES_PROFILE_IDENTIFIER):
         _fail('dbnames_shape')
+    if profile.identifier == LINKED_PROFILE_IDENTIFIER:
+        return _compile_linked(identity, attributes, dbnames, budget, limits)
     # At most three UUID targets, eight declarations and three bounded names.
     # Each entry's relevant text is bounded below (36+32); three linear joins
     # and collision scans fit this processing reservation. No full index copy.
@@ -173,6 +179,8 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
     for item in (first, second):
         if not _uuid(item.metadata_uuid):
             _fail('attribute_identity')
+        if item.reference_type_uuid is not None or item.reference_catalog_uuid is not None:
+            _fail('attribute_type')
         _name(item.name)
         if (type(item.qualifiers) is not tuple or len(item.qualifiers) > 3
                 or any(type(x) is not int for x in item.qualifiers)):
@@ -250,3 +258,91 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
     bound = tuple(BoundCatalogAttribute(item.metadata_uuid, item.name, physical, item.type_token, item.qualifiers)
                   for item, physical in ((first, string_name), (second, number_name)))
     return CatalogBinding(identity.metadata_uuid, identity.name, table_name, declarations, bound, '0', 0, record_size, identity.code_length, placements, identity.description_length, code_type=identity.code_type)
+
+
+def _linked_layout(identity, attributes, limits):
+    """Measured common declarations; CONFIG facts, never physical guesses.
+
+    Native 41227322065/report6940e058: both attribute orders, empty and three
+    active rows. DT7 and fixed-target RREF16 are measured; nullable/variant
+    references remain unsupported. Existing S/N qualifier ranges are retained
+    structural generalizations, not new native range claims.
+    """
+    if not _uuid(identity.metadata_uuid): _fail('identity')
+    _name(identity.name)
+    if (type(identity.code_type) is not int or identity.code_type != 1
+            or type(identity.code_length) is not int or identity.code_length != 2
+            or type(identity.description_length) is not int or identity.description_length != 8):
+        _fail('standard_profile')
+    if type(attributes) is not tuple or len(attributes) > 10: _fail('attribute_shape')
+    seen_ids={identity.metadata_uuid};seen_names=set();physical=set()
+    declarations=[('_IDRREF','B',0,16,0,'CS'),('_VERSION','RV',0,0,0,'CS'),
+        ('_MARKED','L',0,0,0,'CS'),('_PREDEFINEDID','B',0,16,0,'CS'),
+        ('_CODE','NVC',0,2,0,'CI'),('_DESCRIPTION','NVC',0,8,0,'CI')]
+    widths=[16,16,1,16,6,18]
+    for a in attributes:
+        if type(a) is not BoundCatalogAttribute or not _uuid(a.metadata_uuid): _fail('attribute_identity')
+        _name(a.name)
+        if a.metadata_uuid in seen_ids or a.name in seen_names: _fail('attribute_identity')
+        seen_ids.add(a.metadata_uuid);seen_names.add(a.name)
+        if (type(a.type_token) is not str or type(a.qualifiers) is not tuple
+                or len(a.qualifiers)>3 or any(type(q) is not int for q in a.qualifiers)):
+            _fail('qualifiers')
+        if type(a.physical_name) is not str: _fail('dbnames_id')
+        m=re.fullmatch(r'_FLD([1-9][0-9]{0,9})(RREF)?',a.physical_name)
+        if m is None or int(m[1])>2147483647 or int(m[1]) in physical: _fail('dbnames_collision')
+        physical.add(int(m[1]))
+        if (m[2] is not None) != (a.type_token=='#'): _fail('attribute_type')
+        q=a.qualifiers
+        if a.type_token=='#':
+            if q or not _uuid(a.reference_type_uuid) or not _uuid(a.reference_catalog_uuid) or a.reference_type_uuid==a.reference_catalog_uuid: _fail('attribute_type')
+            kind,precision,scale,case,width='B',16,0,'CS',16
+        else:
+            if a.reference_type_uuid is not None or a.reference_catalog_uuid is not None: _fail('attribute_type')
+            if a.type_token=='S':
+                if len(q)!=2 or q[1]!=1 or not 1<=q[0]<=limits.max_string_length: _fail('qualifiers')
+                kind,precision,scale,case,width='NVC',q[0],0,'CI',2+2*q[0]
+            elif a.type_token=='N':
+                if len(q)!=3 or q[2]!=0 or not 1<=q[0]<=limits.max_numeric_precision or not 0<=q[1]<=q[0]: _fail('qualifiers')
+                kind,precision,scale,case,width='N',q[0],q[1],'CS',(q[0]+2)//2
+            elif a.type_token in ('B','D'):
+                if q: _fail('qualifiers')
+                kind,precision,scale,case,width=('L' if a.type_token=='B' else 'DT'),0,0,'CS',(1 if a.type_token=='B' else 7)
+            else: _fail('attribute_type')
+        declarations.append((a.physical_name,kind,0,precision,scale,case));widths.append(width)
+    size=1+sum(widths)
+    if size>limits.max_record_bytes: _fail('record_bytes')
+    offsets=[0]*len(widths);cursor=1
+    for index in (1,0,*range(2,len(widths))):offsets[index]=cursor;cursor+=widths[index]
+    return tuple(declarations),tuple(BoundFieldPlacement(d,offsets[i],widths[i]) for i,d in enumerate(declarations)),size
+
+
+def _compile_linked(identity, attributes, dbnames, budget, limits):
+    if type(attributes.attributes) is not tuple or len(attributes.attributes)>10: _fail('attribute_shape')
+    budget.charge('output_bytes',16384)
+    budget.charge('bytes_processed',8192+2048*len(dbnames.entries))
+    budget.charge('tokens',256+24*len(dbnames.entries))
+    targets=[identity.metadata_uuid]
+    for a in attributes.attributes:
+        if type(a) is not CatalogAttribute or not _uuid(a.metadata_uuid): _fail('attribute_identity')
+        targets.append(a.metadata_uuid)
+    if len(set(targets))!=len(targets): _fail('attribute_identity')
+    chosen={}
+    for ordinal,e in enumerate(dbnames.entries):
+        if (type(e) is not DBNamesEntry or not _uuid(e.uuid,nonzero=False)
+                or type(e.kind) is not str or len(e.kind)>32 or _KIND.fullmatch(e.kind) is None
+                or type(e.id) is not int or not 0<=e.id<=2147483647
+                or type(e.ordinal) is not int or e.ordinal!=ordinal): _fail('dbnames_entry')
+        if e.uuid in targets:
+            if e.uuid in chosen: _fail('dbnames_ambiguous')
+            if e.kind!=('Reference' if e.uuid==identity.metadata_uuid else 'Fld'): _fail('dbnames_kind')
+            if e.id==0: _fail('dbnames_id')
+            chosen[e.uuid]=e
+    if len(chosen)!=len(targets): _fail('dbnames_missing')
+    if len({e.id for e in chosen.values()})!=len(targets): _fail('dbnames_collision')
+    for e in dbnames.entries:
+        for c in chosen.values():
+            if e is not c and e.kind==c.kind and e.id==c.id: _fail('dbnames_collision')
+    bound=tuple(BoundCatalogAttribute(a.metadata_uuid,a.name,'_FLD'+str(chosen[a.metadata_uuid].id)+('RREF' if a.type_token=='#' else ''),a.type_token,a.qualifiers,reference_type_uuid=a.reference_type_uuid,reference_catalog_uuid=a.reference_catalog_uuid) for a in attributes.attributes)
+    declarations,placements,size=_linked_layout(identity,bound,limits)
+    return CatalogBinding(identity.metadata_uuid,identity.name,'_Reference'+str(chosen[identity.metadata_uuid].id),declarations,bound,'0',0,size,identity.code_length,placements,identity.description_length,code_type=identity.code_type,profile_identifier=LINKED_PROFILE_IDENTIFIER)

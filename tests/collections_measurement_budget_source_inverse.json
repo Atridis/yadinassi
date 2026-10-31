@@ -1,0 +1,19 @@
+{
+  "path": "scripts/native_1c_full_host.py",
+  "base_sha256": "09ff03dcbf91f0bc6bbfa72ee437d5f39b542051357a48822a90a6c628dde2f8",
+  "candidate_sha256": "9249cca10b29455d12bb4ab806b33f572a9f462890d2a2940e4e93aac4c9beb9",
+  "edits": [
+    {
+      "old": "CASE_SECONDS = 10\n",
+      "new": "CASE_SECONDS = 10\nCOLLECTIONS_MEASUREMENT_SECONDS = 20\n"
+    },
+    {
+      "old": "                raise FullError(\"native_capture_changed\")\n",
+      "new": "                raise FullError(\"native_capture_changed\")\n            # Only this reviewed, closed measurement fixture gets extra wall-time\n            # headroom. Generic child/resource limits and all other cases stay put.\n            limits = {}\n            if (name == \"collections\"\n                    and digest(source_bytes) == COLLECTIONS_SOURCE_SHA256\n                    and input_hashes[f\"integrational_tests/tests/{name}.bsl\"] == COLLECTIONS_SOURCE_SHA256\n                    and case[\"source_sha256\"] == COLLECTIONS_SOURCE_SHA256):\n                limits[\"seconds\"] = COLLECTIONS_MEASUREMENT_SECONDS\n"
+    },
+    {
+      "old": "                code, actual, stderr = runner([sys.executable, \"-I\", \"-B\", \"-X\", \"pycache_prefix=\" + cache,\n                                              \"-c\", EXECUTE_SCRIPT, str(root), str(source), native_target], root)\n",
+      "new": "                code, actual, stderr = runner([sys.executable, \"-I\", \"-B\", \"-X\", \"pycache_prefix=\" + cache,\n                                              \"-c\", EXECUTE_SCRIPT, str(root), str(source), native_target], root, **limits)\n"
+    }
+  ]
+}

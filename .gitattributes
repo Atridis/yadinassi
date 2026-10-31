@@ -65,11 +65,17 @@ tests/fixtures/json_family/*provenance.json -text
 
 # Byte-bound catalog packet templates/generated sources; manifests hash raw bytes.
 scripts/native_1c_db_oracle/catalog_read_packet/** -text
+
+# Closed linked-card packet preserves schema/QName/source hashes on every host.
+scripts/native_1c_db_oracle/linked_card_packet/** -text
 # File family sources and future native captures remain byte-bound.
 integrational_tests/measurements/file_io_family.bsl text eol=lf
 tests/fixtures/file_io_family/*.out -text
 tests/fixtures/file_io_family/*.bsl text eol=lf
 tests/fixtures/file_io_family/*provenance.json -text
+# Source-bound linked-card native evidence bytes.
+tests/fixtures/linked_catalog_native.json -text
+tests/fixtures/linked_catalog_records.json -text
 
 # XML workflow source/captures are byte-bound across platforms.
 integrational_tests/measurements/xml_workflow_family.bsl text eol=lf

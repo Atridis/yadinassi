@@ -444,7 +444,7 @@ class ComparisonTests(SyntheticFilesystemCase):
 
     def test_fresh_real_source_path_complete_bytes_and_no_normalization(self):
         calls = []
-        def runner(args, cwd):
+        def runner(args, cwd, **limits):
             calls.append(args[-2])
             self.assertEqual(args[-1], full.WINDOWS_TARGET)
             self.assertIn("-I", args)
@@ -455,33 +455,33 @@ class ComparisonTests(SyntheticFilesystemCase):
         self.assertEqual(self.compare(runner)["status"], "ok")
         self.assertEqual(calls, [str(self.root / f"integrational_tests/tests/{name}.bsl") for name in full.SCENARIOS])
         for wrong in (self.payload.rstrip(), self.payload + b"\n", self.payload.replace(b"\n", b"\r\n")):
-            report = self.compare(lambda *args: (0, wrong, b""))
+            report = self.compare(lambda *args, **limits: (0, wrong, b""))
             self.assertEqual(report["status"], "failed")
             self.assertTrue(all(case["status"] == "mismatched" for case in report["cases"]))
             self.assertNotIn("value", json.dumps(report).replace("values", ""))
 
     def test_failure_and_stderr_never_accept_matching_prefix_or_leak_output(self):
         for response in ((1, self.payload, b"PRIVATE ERROR"), (0, self.payload, b"PRIVATE ERROR")):
-            report = self.compare(lambda *args: response)
+            report = self.compare(lambda *args, **limits: response)
             self.assertTrue(all(case["status"] == "error" for case in report["cases"]))
             self.assertNotIn("PRIVATE", json.dumps(report))
-        def timeout(*args): raise full.FullError("interpreter_timeout")
+        def timeout(*args, **limits): raise full.FullError("interpreter_timeout")
         self.assertTrue(all(case["status"] == "timeout" for case in self.compare(timeout)["cases"]))
 
     def test_source_and_payload_revalidated_before_replay(self):
         source = self.root / "integrational_tests/tests/dates.bsl"
         source.write_bytes(b"changed")
-        report = self.compare(lambda *args: (0, self.payload, b""))
+        report = self.compare(lambda *args, **limits: (0, self.payload, b""))
         self.assertEqual(report["cases"][1]["failure_kind"], "source_changed")
         path = self.capture / "numbers.out"
         path.chmod(0o600)
         path.write_bytes(b"changed")
-        report = self.compare(lambda *args: (0, self.payload, b""))
+        report = self.compare(lambda *args, **limits: (0, self.payload, b""))
         self.assertEqual(report["cases"][3]["failure_kind"], "native_capture_changed")
 
     def test_truncated_or_reordered_case_coverage_cannot_pass(self):
         self.stage3["cases"] = []
-        with self.assertRaises(full.FullError): self.compare(lambda *args: (0, self.payload, b""))
+        with self.assertRaises(full.FullError): self.compare(lambda *args, **limits: (0, self.payload, b""))
 
     def test_utc_environment_overrides_hostile_ambient_and_drops_credentials(self):
         with mock.patch.dict(os.environ, {"TZ":"Europe/Warsaw", "YADINASSI_TIMEZONE":"Asia/Kathmandu", "PYTHONPATH":"/evil", "GHCR_TOKEN":"PRIVATE"}):
@@ -599,7 +599,7 @@ class OrchestrationTests(SyntheticFilesystemCase):
             self.assertEqual(operations[-1], "ps")
             self.assertTrue(capture.is_dir())
             return real_compare(root, capture, stage3, inputs,
-                runner=lambda *args: (0, b"different\n" if mismatch else b" PRIVATE synthetic output \n\n", b""), **kwargs)
+                runner=lambda *args, **limits: (0, b"different\n" if mismatch else b" PRIVATE synthetic output \n\n", b""), **kwargs)
         with tempfile.TemporaryDirectory() as temporary, mock.patch.dict(os.environ, {"GHCR_USER":"Atridis", "GHCR_TOKEN":"PRIVATE-TOKEN"}), \
                 mock.patch.object(smoke, "run_silent", side_effect=silent), mock.patch.object(smoke, "bounded_run", side_effect=bounded), \
                 mock.patch.object(full, "repository_provenance", return_value={"commit":"c"*40,"tree":"d"*40}), \
@@ -752,6 +752,72 @@ class SemanticComparisonTests(ComparisonTests):
             native_transport_validated=True, native_evidence_accepted=True)
         self.contract = full.map_contract()
 
+    def measurement_limits(self):
+        calls = {}
+        def runner(args, cwd, **limits):
+            calls[Path(args[-2]).stem] = limits
+            return 0, self.payload, b""
+        result = self.compare(runner)
+        return calls, result
+
+    def test_measurement_budget_historical_inverse_is_exact_and_rejects_mutations(self):
+        import test_native_async_fixture as history
+        source = (smoke.ROOT / "scripts/native_1c_full_host.py").read_text(encoding="utf-8")
+        contract = json.loads((smoke.ROOT / "tests/collections_measurement_budget_source_inverse.json").read_text(encoding="utf-8"))
+        restored = history.without_collections_measurement_budget(source)
+        self.assertEqual(full.digest(restored.encode()), contract["base_sha256"])
+        self.assertEqual(history.without_collections_measurement_budget(restored), restored)
+        for mutant in (source + "# unknown suffix\n",
+                       source.replace("COLLECTIONS_MEASUREMENT_SECONDS = 20", "COLLECTIONS_MEASUREMENT_SECONDS = 21", 1),
+                       source.replace("CASE_SECONDS = 10", "CASE_SECONDS = 11", 1)):
+            with self.subTest(mutant_digest=full.digest(mutant.encode())):
+                with self.assertRaises(AssertionError):
+                    history.without_collections_measurement_budget(mutant)
+
+    def test_measurement_budget_only_for_exact_closed_collections(self):
+        calls, _ = self.measurement_limits()
+        self.assertEqual(full.CASE_SECONDS, 10)
+        self.assertEqual(full.bounded_child.__kwdefaults__["seconds"], 10)
+        self.assertEqual(full.COLLECTIONS_MEASUREMENT_SECONDS, 20)
+        self.assertEqual(calls["collections"], {"seconds": 20})
+        self.assertTrue(all(not limits for name, limits in calls.items() if name != "collections"))
+
+    def test_measurement_budget_does_not_follow_identical_bytes_under_other_name(self):
+        key = "integrational_tests/tests/dates.bsl"
+        (self.root / key).write_bytes((self.root / "integrational_tests/tests/collections.bsl").read_bytes())
+        self.inputs[key] = full.COLLECTIONS_SOURCE_SHA256
+        self.stage3["cases"][1]["source_sha256"] = full.COLLECTIONS_SOURCE_SHA256
+        calls, _ = self.measurement_limits()
+        self.assertEqual(calls["dates"], {})
+        self.assertEqual(calls["collections"], {"seconds": 20})
+
+    def test_measurement_budget_rejects_actual_source_tamper_before_child(self):
+        key = "integrational_tests/tests/collections.bsl"
+        (self.root / key).write_bytes(b"// changed source")
+        calls, result = self.measurement_limits()
+        self.assertNotIn("collections", calls)
+        self.assertEqual(result["cases"][0]["failure_kind"], "source_changed")
+
+    def test_measurement_budget_rejects_wrong_trusted_input_before_child(self):
+        self.inputs["integrational_tests/tests/collections.bsl"] = "0" * 64
+        calls, result = self.measurement_limits()
+        self.assertNotIn("collections", calls)
+        self.assertEqual(result["cases"][0]["failure_kind"], "source_changed")
+
+    def test_measurement_budget_not_granted_to_reauthenticated_changed_source(self):
+        key = "integrational_tests/tests/collections.bsl"
+        changed = b"// changed but internally consistent source"
+        (self.root / key).write_bytes(changed)
+        self.inputs[key] = full.digest(changed)
+        self.stage3["cases"][0]["source_sha256"] = full.digest(changed)
+        calls, _ = self.measurement_limits()
+        self.assertEqual(calls["collections"], {})
+
+    def test_measurement_budget_not_granted_when_native_source_identity_differs(self):
+        self.stage3["cases"][0]["source_sha256"] = "0" * 64
+        calls, _ = self.measurement_limits()
+        self.assertEqual(calls["collections"], {})
+
     def verdict(self, *, equal=False):
         return {"profile":full.MAP_MODE, "status":"equivalent", "records":1023,
                 "byte_equal_records":1023 if equal else 1022,
@@ -759,7 +825,7 @@ class SemanticComparisonTests(ComparisonTests):
 
     def semantic_compare(self, *, verdict=None, equal=False, other_diff=False, context=None):
         calls = []
-        def runner(args, cwd):
+        def runner(args, cwd, **limits):
             self.assertEqual(args[-1], full.LINUX_TARGET)
             calls.append(Path(args[-2]).stem)
             different = (calls[-1] == "collections" and not equal) or (calls[-1] == "dates" and other_diff)
@@ -786,7 +852,7 @@ class SemanticComparisonTests(ComparisonTests):
             path.chmod(0o600); path.write_bytes(native)
             self.stage3['cases'][0].update(output_size=len(native), output_sha256=full.digest(native), message_count=1023)
             result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
-                runner=lambda args,cwd: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
+                runner=lambda args,cwd,**limits: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
                 native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                 runtime_evidence=self.context)
             self.assertEqual(result['cases'][0]['failure_kind'],'tree_load_observation_invalid')
@@ -802,7 +868,7 @@ class SemanticComparisonTests(ComparisonTests):
             path.chmod(0o600); path.write_bytes(native)
             self.stage3['cases'][0].update(output_size=len(native), output_sha256=full.digest(native), message_count=1023)
             result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
-                runner=lambda args,cwd: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
+                runner=lambda args,cwd,**limits: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
                 native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                 runtime_evidence=self.context)
             self.assertEqual(result['cases'][0]['failure_kind'],'tree_move_observation_invalid')
@@ -813,7 +879,7 @@ class SemanticComparisonTests(ComparisonTests):
         # Unlike verdict-isolation tests above, exercise the real observer gate.
         # The fixture bytes are deliberately not the complete TL observation set.
         result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
-            runner=lambda args, cwd: (0, self.payload, b""),
+            runner=lambda args, cwd, **limits: (0, self.payload, b""),
             native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
             runtime_evidence=self.context)
         row = result["cases"][0]
