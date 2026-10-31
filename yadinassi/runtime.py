@@ -1240,7 +1240,8 @@ class Interpreter:
     def visit_New(self, node: ast.New) -> object:
         factory = self.types.get(node.name.casefold())
         if factory is not None and (factory.function is BSLTypeDescription
-                                    or factory.function in (BSLXMLReaderSettings, BSLXMLWriterSettings)
+                                    or factory.function is BSLXMLReaderSettings
+                                    or factory.function is BSLXMLWriterSettings
                                     or factory.function is BSLJSONWriterSettings
                                     or factory.function is BSLTextReader
                                     or factory.function is BSLTextWriter):
