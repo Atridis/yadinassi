@@ -45,8 +45,8 @@
 КонецПроцедуры
 Сообщить("CR-C1: [" + CRText("") + "]");
 Сообщить("CR-C2: [" + CRText("A ;""😀") + "]");
-CRObserve("01", "Catalogs.C01a9a4ac.Metadata().Name"); // manager.name
-CRObserve("02", "Catalogs.C992ca266.Metadata().Name"); // other.name
+CRObserve("01", "Catalogs.C01a9a4ac.EmptyRef().Metadata().Name"); // control.name
+CRObserve("02", "Catalogs.C992ca266.EmptyRef().Metadata().Name"); // control.other_name
 CRObserve("03", "String(Catalogs.C01a9a4ac.GetRef(New UUID(""895e6e79-e0c6-474d-bad2-7aeee4aa3846"")).UUID())"); // ref.uuid
 CRObserve("04", "String(Catalogs.C992ca266.GetRef(New UUID(""895e6e79-e0c6-474d-bad2-7aeee4aa3846"")).UUID())"); // other.uuid
 CRObserve("05", "String(Catalogs.C01a9a4ac.EmptyRef().UUID())"); // empty.uuid

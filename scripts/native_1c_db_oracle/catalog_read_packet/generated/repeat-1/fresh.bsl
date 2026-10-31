@@ -57,7 +57,7 @@ FreshB = Неопределено;
 КонецПопытки;
 Observed = Истина;
 Попытка
-    Result = Catalogs.C01a9a4ac.Metadata().Name;
+    Result = Catalogs.C01a9a4ac.EmptyRef().Metadata().Name;
 Исключение
     Сообщить("CR-01: [action-error]");
     Observed = Ложь;

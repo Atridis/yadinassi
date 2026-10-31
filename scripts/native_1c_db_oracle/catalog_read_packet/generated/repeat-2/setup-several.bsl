@@ -69,7 +69,7 @@ Object.Code = "20"; Object.Description = "Mike"; Object.Payload = "third"; Objec
 CREmit("02", CRCount("Cb0f3538b"));
 CREmit("03", CRCount("Cb0f3538b", Manager.GetRef(New UUID("700628db-fab5-4377-bce2-7e47b690ce71"))));
 CREmit("04", CRCount("Cb0f3538b", Manager.GetRef(New UUID("d298b04a-1867-4140-8a2a-2324c5022a8f"))));
-CREmit("05", Manager.Metadata().Name);
+CREmit("05", Manager.EmptyRef().Metadata().Name);
 CREmit("06", String(Manager.GetRef(New UUID("700628db-fab5-4377-bce2-7e47b690ce71")).UUID()));
 Если CRCount("Cf5758dc3") <> 0 Тогда ВызватьИсключение "setup-not-empty"; КонецЕсли;
 CREmit("07", CRCount("Cf5758dc3"));
@@ -84,5 +84,5 @@ Object.Code = "20"; Object.Description = "Mike"; Object.Payload = "third"; Objec
 CREmit("08", CRCount("Cf5758dc3"));
 CREmit("09", CRCount("Cf5758dc3", Manager.GetRef(New UUID("700628db-fab5-4377-bce2-7e47b690ce71"))));
 CREmit("10", CRCount("Cf5758dc3", Manager.GetRef(New UUID("d298b04a-1867-4140-8a2a-2324c5022a8f"))));
-CREmit("11", Manager.Metadata().Name);
+CREmit("11", Manager.EmptyRef().Metadata().Name);
 CREmit("12", String(Manager.GetRef(New UUID("700628db-fab5-4377-bce2-7e47b690ce71")).UUID()));

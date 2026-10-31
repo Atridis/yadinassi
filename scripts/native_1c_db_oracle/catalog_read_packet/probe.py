@@ -38,7 +38,7 @@ def cases(s):
     r=f'{m}.GetRef(New UUID("{u}"))'; t=f'{n}.GetRef(New UUID("{u}"))'
     e=f'{m}.EmptyRef()'; z=f'{m}.GetRef(New UUID("00000000-0000-0000-0000-000000000000"))'
     identity=[
-      ('manager.name',f'{m}.Metadata().Name'),('other.name',f'{n}.Metadata().Name'),
+      ('control.name',f'{m}.EmptyRef().Metadata().Name'),('control.other_name',f'{n}.EmptyRef().Metadata().Name'),
       ('ref.uuid',f'String({r}.UUID())'),('other.uuid',f'String({t}.UUID())'),
       ('empty.uuid',f'String({e}.UUID())'),('empty.isempty',f'{e}.IsEmpty()'),
       ('empty.filled',f'ValueIsFilled({e})'),('zero.empty',f'{z} = {e}'),
@@ -54,7 +54,7 @@ def cases(s):
       ('absent.uuid',f'String({m}.GetRef(New UUID("{v}")).UUID())'),
       ('absent.empty',f'{m}.GetRef(New UUID("{v}")).IsEmpty()'),
       ('absent.filled',f'ValueIsFilled({m}.GetRef(New UUID("{v}")))')]
-    types=[('control.name',f'{m}.Metadata().Name'),('control.uuid',f'String({r}.UUID())')]
+    types=[('control.name',f'{m}.EmptyRef().Metadata().Name'),('control.uuid',f'String({r}.UUID())')]
     for key,expr in [('ref',r),('empty',e),('manager',m),('global','Catalogs')]:
         types += [(key+'.type',f'String(TypeOf({expr}))'),(key+'.metatype',f'TypeOf(TypeOf({expr})) = Type("Type")')]
     for key,name in [('ru',f'СправочникСсылка.{a}'),('en',f'CatalogRef.{a}'),('lower',f'catalogref.{a.lower()}'),('upper',f'CATALOGREF.{a.upper()}')]:
@@ -67,7 +67,7 @@ def cases(s):
       ('ref.metadata.ru',f'{r}.Метаданные() = Метаданные.Справочники.{a}'),('type.number','String(Type(1))'),
       ('type.extra',f'Type("CatalogRef.{a}",1) = TypeOf({r})'),
       ('type.ru_en',f'ТипЗнч(Справочники.{a}.ПустаяСсылка()) = TypeOf({e})')]
-    errors=[('control.name',f'{m}.Metadata().Name'),('control.uuid',f'String({r}.UUID())'),
+    errors=[('control.name',f'{m}.EmptyRef().Metadata().Name'),('control.uuid',f'String({r}.UUID())'),
       ('manager.ru',f'Справочники.{a}.Метаданные() = Metadata.Catalogs.{a}'),
       ('ref.ru',f'Строка(Справочники.{a}.ПолучитьСсылку(Новый УникальныйИдентификатор("{u}")).УникальныйИдентификатор())'),
       ('empty.ru',f'Справочники.{a}.ПустаяСсылка().Пустая()'),
@@ -144,7 +144,7 @@ def render_fresh(s):
     # Capture exactly twice. Failure remains visible in dependent records.
     for v in ('FreshA','FreshB'):
         text+=f'{v} = Неопределено;\nПопытка\n    {v} = Catalogs.{a}.GetRef();\nИсключение\nКонецПопытки;\n'
-    expressions=[f'Catalogs.{a}.Metadata().Name',f'String(Catalogs.{a}.GetRef(New UUID("{u}")).UUID())',
+    expressions=[f'Catalogs.{a}.EmptyRef().Metadata().Name',f'String(Catalogs.{a}.GetRef(New UUID("{u}")).UUID())',
       'String(FreshA.UUID())','String(FreshB.UUID())','FreshA.IsEmpty()','FreshB.IsEmpty()',
       'ValueIsFilled(FreshA)','ValueIsFilled(FreshB)','FreshA <> FreshB',
       f'FreshA <> Catalogs.{a}.GetRef(New UUID("{u}"))',f'FreshB <> Catalogs.{a}.GetRef(New UUID("{u}"))',

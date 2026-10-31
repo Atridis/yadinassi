@@ -16,6 +16,26 @@ class Tests(unittest.TestCase):
             self.assertNotIn('@@',source)
             self.assertNotIn('NativeOracleItems',source)
             self.assertEqual(len(probe.cases(a)[block]),24)
+    def test_controls_use_documented_reference_metadata_not_manager_method(self):
+        from catalog_read_packet import batch
+        from catalog_read_fixture import load, BLOCKS
+        for repeat in (1, 2):
+            b, _, files = load(repeat)
+            cases = probe.cases(b.setup)
+            for block in ('identity', 'types', 'errors'):
+                self.assertIn('.EmptyRef().Metadata().Name', cases[block][0][1])
+            self.assertIn('.EmptyRef().Metadata().Name', cases['identity'][1][1])
+            # Unsupported manager method remains an observation, not a control.
+            self.assertEqual(dict(cases['identity'])['manager.metadata'],
+                f'Catalogs.{b.setup.names[0]}.Metadata() = Metadata.Catalogs.{b.setup.names[0]}')
+            for block in ('cursor', 'fields', 'lookup', 'row4'):
+                self.assertIn('.EmptyRef().Metadata().Name', batch.render_block(b, block)[1][0][1])
+            for state in batch.STATES:
+                text = files['setup-' + state + '.bsl'].decode()
+                self.assertNotIn('Manager.Metadata()', text)
+                self.assertEqual(text.count('Manager.EmptyRef().Metadata().Name'), 2)
+            self.assertIn('.EmptyRef().Metadata().Name', probe.render_fresh(b.setup))
+
     def test_observer_runs_without_unsupported_success(self):
         from yadinassi import Interpreter
         s=probe.fresh_setup()

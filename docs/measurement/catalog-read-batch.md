@@ -119,3 +119,13 @@ no exception text, private values or additional rights are exported. A phase
 locates an operation, not its cause. The preceding recovery run established a
 setup-phase runtime error despite successful identity, metadata and CheckConfig
 controls; it supplied no catalog liveness or ordering evidence.
+
+Native run 41212974182 (source 1de81ef) localized the setup exception to witness
+05, `Manager.Metadata().Name`, after successful calibration and Query/count
+operations. The bundled official EDT SyntaxHelper object128 (CatalogManager)
+method inventory does not include Metadata; object129 (CatalogRef) does.
+Setup and baseline name controls therefore use `EmptyRef().Metadata().Name`.
+Explicit manager.Metadata negative observations remain in the identity/error
+blocks; unsupported methods must not turn a working manager into a false
+context-unavailability result. Existing saved names/UUIDs and all 180 observation
+positions are retained. This finding is not multi-row or ordering acceptance.

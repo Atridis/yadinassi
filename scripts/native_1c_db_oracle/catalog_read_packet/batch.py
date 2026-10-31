@@ -97,12 +97,12 @@ def render_setup(b,state):
         if state in ('deleted','reused'):text+='Ghost.Delete();\n'
         if state=='reused':
             text+=f'Reused = Manager.CreateItem(); Reused.SetNewObjectRef(Manager.GetRef(New UUID("{b.setup.record_ids[1]}"))); Reused.Code = "40"; Reused.Description = "Reused"; Reused.Payload = "reused"; Reused.Amount = 44; Reused.Write();\n'
-        text+=f'CREmit("{offset+2:02}", CRCount("{name}"));\nCREmit("{offset+3:02}", CRCount("{name}", Manager.GetRef(New UUID("{b.setup.record_ids[0]}"))));\nCREmit("{offset+4:02}", CRCount("{name}", Manager.GetRef(New UUID("{b.setup.record_ids[1]}"))));\nCREmit("{offset+5:02}", Manager.Metadata().Name);\nCREmit("{offset+6:02}", String(Manager.GetRef(New UUID("{b.setup.record_ids[0]}")).UUID()));\n'
+        text+=f'CREmit("{offset+2:02}", CRCount("{name}"));\nCREmit("{offset+3:02}", CRCount("{name}", Manager.GetRef(New UUID("{b.setup.record_ids[0]}"))));\nCREmit("{offset+4:02}", CRCount("{name}", Manager.GetRef(New UUID("{b.setup.record_ids[1]}"))));\nCREmit("{offset+5:02}", Manager.EmptyRef().Metadata().Name);\nCREmit("{offset+6:02}", String(Manager.GetRef(New UUID("{b.setup.record_ids[0]}")).UUID()));\n'
     return text
 
 def render_block(b,block):
     b.validate();name=b.setup.names[0];manager='Catalogs.'+name
-    actions=[('control.name',f'{manager}.Metadata().Name'),('control.uuid',f'String({manager}.GetRef(New UUID("{b.setup.record_ids[0]}")).UUID())')]
+    actions=[('control.name',f'{manager}.EmptyRef().Metadata().Name'),('control.uuid',f'String({manager}.GetRef(New UUID("{b.setup.record_ids[0]}")).UUID())')]
     if block=='cursor':
         # Actions evaluated independently so unsupported Reset stays observable.
         actions += [('before.ref','String(S.Ref.UUID())'),('before.code','S.Code'),('before.desc','S.Description')]

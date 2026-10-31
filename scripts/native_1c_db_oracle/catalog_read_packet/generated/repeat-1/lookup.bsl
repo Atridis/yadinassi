@@ -47,7 +47,7 @@
 Сообщить("CR-C2: [" + CRText("A ;""😀") + "]");
 Failed = Ложь; S = Неопределено;
 Попытка
-    Result = Catalogs.C01a9a4ac.Metadata().Name;
+    Result = Catalogs.C01a9a4ac.EmptyRef().Metadata().Name;
 Исключение
     Сообщить("CR-01: [action-error]");
     Result = Неопределено; Failed = Истина;

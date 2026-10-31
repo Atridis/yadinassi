@@ -84,24 +84,24 @@
   "source_hashes": {
     "Catalogs/C01a9a4ac.xml": "309cc73c4443a93c26b9baad522ddc644fcda10ad48e3bd7151496de2503d035",
     "Catalogs/C992ca266.xml": "8d22bdbab07ec007e1984be9e53c03af0b50707ab1b5b94d3b3b740903936a18",
-    "cursor.bsl": "09dec3bfa48b174bd3dabca18de2709ce9e6e12cf2836355921f6f6f2f31dae9",
-    "errors.bsl": "2818a956eb138ac73559c3123c095e3ba11cb20ce16d624afb2a4824b032c833",
-    "fields.bsl": "59d6ca67612e435670d1dc5e11bc9d633d2103c981782b7574e50a21155bad85",
-    "fresh.bsl": "a7d889f7bf5736f2cb7d182d7b99a773f3fefc6b394fd0ce049f70ac50dd1614",
-    "identity.bsl": "623491c4e4e3da1d6d7b8d3666de5ceb186ce794d03955bef0976dd7ea1d0c3d",
-    "lookup.bsl": "8bb3a6fcc81714ee1aa01fc87a0eff408a6ce210a7f18ede1b7e060ab8c9c7f4",
-    "row4.bsl": "6fa7787093e2135ded88be261701a9b4807cbdc52d825520b03c2e1fe4b121a4",
-    "setup-deleted.bsl": "f70c10d47e43c8d2a4660522cd8e17bb9bf000ad75e3c8f012e3599ba5c1e9e1",
-    "setup-empty.bsl": "5fa7ac18eba6eba476c941fe74d2abd6b4b469dced3705457220322e7baffb0e",
-    "setup-one.bsl": "880197279db5d538e1424130423b093820cc0f55ccb38db1082c9b24f0f68de4",
-    "setup-reused.bsl": "06f0baa220a0092886eb83ef623f2f106fbd98fd17435bbed2ea227a7f0bc445",
-    "setup-several.bsl": "ccfabda6f629f3a9bf38429a4462a474a0f164928b050e26793c036e207ac053",
-    "types.bsl": "7d48ef458f966b0a70a9c91cefaac538bc6a4bfc214cae3651fc96898521a274"
+    "cursor.bsl": "eaa2e15626513068e43128ee1ca954045b8d8c72e264c85b8b3473fd6daa2049",
+    "errors.bsl": "9985ffd94569427fa4e3dc34e81b2067097a3d603921817222d18d7bf94a1338",
+    "fields.bsl": "2a45eb4bb21e63f2a5089167106f0d595fbd2625f22668f6826829dc6cf09342",
+    "fresh.bsl": "36c0db1cd8feac7c2be8cb94c18259dd917bdfa66db6062e033984a0627ad1fa",
+    "identity.bsl": "6973a4db0a9767202a13a77575b07436b912292f3902338a40c2eb569c68aced",
+    "lookup.bsl": "8de9d26f619d5b7c75ab208e6e83532d5fd588f499b7ee255dfef4a99346e15c",
+    "row4.bsl": "1c4b1a279b85dfdba402ed2707c8918e37c4de0eaa218c94e68ff777d85c8456",
+    "setup-deleted.bsl": "2eaf693ef4ee5913e4814dfaae802c10ee99940b2888163d0a434012160c0647",
+    "setup-empty.bsl": "17377dbabfa16cf2f5f849bffe61a7bda7d42d2363672c87eb7e5d3023dbfe50",
+    "setup-one.bsl": "bc98087cdbfcb4f76c51f3f31083d20923259351830202d1b1a18158799458bb",
+    "setup-reused.bsl": "7adbad9bcdc75c3269fcb857b06d5b013a970099d65f3b2c3204ddf16846e477",
+    "setup-several.bsl": "46c0db2ca5f38b34933bfd71c7d6849ba9c86d51bfeb139c96873fbcaaf15c13",
+    "types.bsl": "fc8f079ba8b74694824758a589c458944b027d0143223ab6e996c38750cbecdd"
   },
   "cursor": [
     [
       "control.name",
-      "Catalogs.C01a9a4ac.Metadata().Name"
+      "Catalogs.C01a9a4ac.EmptyRef().Metadata().Name"
     ],
     [
       "control.uuid",
@@ -199,7 +199,7 @@
   "fields": [
     [
       "control.name",
-      "Catalogs.C01a9a4ac.Metadata().Name"
+      "Catalogs.C01a9a4ac.EmptyRef().Metadata().Name"
     ],
     [
       "control.uuid",
@@ -297,7 +297,7 @@
   "lookup": [
     [
       "control.name",
-      "Catalogs.C01a9a4ac.Metadata().Name"
+      "Catalogs.C01a9a4ac.EmptyRef().Metadata().Name"
     ],
     [
       "control.uuid",
@@ -395,7 +395,7 @@
   "row4": [
     [
       "control.name",
-      "Catalogs.C01a9a4ac.Metadata().Name"
+      "Catalogs.C01a9a4ac.EmptyRef().Metadata().Name"
     ],
     [
       "control.uuid",

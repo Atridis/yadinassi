@@ -48,7 +48,7 @@
 Failed = Ложь; S = Неопределено;
 Попытка S = Catalogs.Cb0f3538b.Select(); Исключение КонецПопытки;
 Попытка
-    Result = Catalogs.Cb0f3538b.Metadata().Name;
+    Result = Catalogs.Cb0f3538b.EmptyRef().Metadata().Name;
 Исключение
     Сообщить("CR-01: [action-error]");
     Result = Неопределено; Failed = Истина;
