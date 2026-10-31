@@ -34,7 +34,7 @@ def capture_envelope():
         'postimage':{'bytes':snapshots.MAX_FILE_BYTES,'sha256':'f'*64},
         'witness':{'sha256':'f'*64,'nonce':'f'*32,'token':'f'*32,'case':longest(p.CASES),
             'operation':'observe','present':False,'code_length':0,'description_length':8,
-            'payload_length':64,'autonumbering':False,'code_type':'string','code_state':'unavailable'},'comparison':comparison_envelope()}
+            'payload_length':64,'autonumbering':False,'code_type':'string','code_state':'unavailable','code_is_empty':False},'comparison':comparison_envelope()}
     return {'schema':p.CAPTURE_SCHEMA,'profile_id':p.PROFILE_ID,'profile_sha256':p.PROFILE_SHA256,
         'runtime_support':'not_claimed','states':[copy.deepcopy(state)for _ in p.TARGETS]}
 
@@ -127,5 +127,5 @@ class ZeroIntegrationBudgetTests(unittest.TestCase):
         import ast
         self.assertFalse(any(isinstance(node,ast.Assert)for node in ast.walk(ast.parse(Path(__file__).read_text(encoding='utf-8')))))
 
-EXPECTED = {'diagnostic': 1489, 'sources': 42, 'comparison': 620, 'capture_plus_newline': 5285, 'capture_cap': 8192, 'report_without_capture': 21869, 'report_full_capture_plus_newline': 30058, 'report_cap': 32768, 'aggregate_plus_newline': 612, 'aggregate_cap': 2048, 'private_witness_plus_bom': 1921}
+EXPECTED = {'diagnostic': 1489, 'sources': 42, 'comparison': 620, 'capture_plus_newline': 5373, 'capture_cap': 8192, 'report_without_capture': 21869, 'report_full_capture_plus_newline': 30058, 'report_cap': 32768, 'aggregate_plus_newline': 612, 'aggregate_cap': 2048, 'private_witness_plus_bom': 1921}
 if __name__=='__main__':unittest.main()

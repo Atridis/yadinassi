@@ -1,8 +1,11 @@
-# Disabled Catalog Code: bounded observation preparation
+# Disabled Catalog Code: bounded observation and native acquisition
 
 Based on merged main `f3be2cd2d4370ac4f7e435fcd56b9d212188ea53`, tree
-`4fd20bb1f93d582369568212461508a471d467cf`. No native result or production
-CodeLength0 admission is claimed. The existing positive-code readers stay exact.
+`4fd20bb1f93d582369568212461508a471d467cf`. The preparation sections below record
+the original measurement design; the native acquisition section records later
+verified results. The final section describes bounded public physical/typed
+reader admission and the independently verified native parity acquisition. Existing
+positive-code readers retain their behavior.
 
 [Official1C guidance](https://1c-dn.com/library/length_of_configuration_object_codes_and_numbers/)
 recommends length0 when a code/number is not required. It does not establish wire
@@ -63,7 +66,7 @@ Entries under `nl/ru/html/SyntaxHelperContext/`:
 `Number1578.html` (the two enum members). This API spelling evidence is not
 native acceptance of the zero-length configuration or storage hypothesis.
 
-## Closed integrated measurement lane (native pending)
+## Initial closed integrated measurement lane
 
 `catalog-zero-code-measurement-v1` uses invocation32/report65/capture66/aggregate67
 with an exact42-source staged closure. The original observed_no_code logical tag
@@ -90,8 +93,8 @@ Independent rectangular serialized maxima:5285 capture bytes,28543 full report
 including a complete8192-byte capture reservation,612 aggregate and1921 private
 witness includingBOM. Caps8192/32768/2048 are unchanged. Actual CLI/probe/main,
 exclusive exporter, source staging, realGit handoff, renderer/inverse and cleanup
-negative tests protect these boundaries. Native Designer availability and all
-physical/Codeaccess facts remain unknown until a separately authenticated run.
+negative tests protect these boundaries. Native Designer availability and physical/Codeaccess facts were unknown at
+preparation time; the later authenticated acquisition is recorded below.
 
 The new private hook explicitly selects UTF-8, no BOM and
 `ПараметрыЗаписиJSON(ПереносСтрокJSON.Нет)`; it does not inherit the shared writer's
@@ -123,7 +126,7 @@ oversized files are not read partially.
 
 The optional projection is accepted only on an unsuccessful bootstrap timeout,
 with empty snapshots, null measurement and verified cleanup. It cannot change a
-failed report into a pass. No production CodeLength0 support is added. Fresh
+failed report into a pass. That diagnostic-only stage added no production CodeLength0 support. Fresh
 native execution is required to obtain the actual diagnostic.
 
 The conservative full-report bound including this diagnostic is 28959 bytes,
@@ -180,3 +183,81 @@ property enumerations are accessed through `Метаданные.Свойств�
 The correction adds that namespace to the two comparisons; the observed native
 `Каталог.ТипКода`, strict witness policy, and runtime guard remain unchanged.
 Native reruns, not this source correction, determine whether measurement works.
+
+### Native acquisition: CodeLength0 with DescriptionLength0/8
+
+[Run 41181474017](https://github.com/Atridis/yadinassi/actions/runs/41181474017)
+accepted both cases and their aggregate on immutable source
+`6e407b65c825ef81d857b11e8afc7b67866543de`, using 1C 8.3.27.1508.
+Independent cold FINAL validation in normal and optimized Python verified the
+42-source manifest, both reports, aggregate bindings and complete cleanup.
+The public report hashes are:
+
+- zero0: `c14183dd5ec24a802671cfbdab26b3117af97478089de32f7b617ff120328051`
+- zero8: `d5d8b10995016c2f412eb8773e3bddbc976dbb71f965da156e34f55a7536e4fc`
+
+| Fixture | Physical Code fields | Description fields | First attribute offset | Record bytes: Payload32 → 64 |
+| --- | ---: | ---: | ---: | ---: |
+| String CodeLength0 / DescriptionLength0 | 0 | 0 | 50 | 121 → 185 |
+| String CodeLength0 / DescriptionLength8 | 0 | 1 | 68 | 139 → 203 |
+
+All created/updated/applied observations match native metadata and UUID. The
+Description8 values match; Description0 comparison is not applicable. Native
+Code access has String type despite physical field omission. **Its exact value
+was not exported by this run, so empty string is not established.** The reports
+explicitly retain `runtime_support: not_claimed`.
+
+The follow-on finite `code_is_empty` observation is computed from the strictly
+validated private Code value, not from its type, the fixture's expectation, or
+physical field omission. It is a boolean for String observations and null for
+all other states, including absent baseline. Older reports lacking this field
+remain valid historical observations but provide no evidence of emptiness.
+This addition does not change the private BSL writer or release raw values.
+
+### Public physical and typed reader admission
+
+The public offline `read_catalog_rows` reader now admits only the measured
+String CodeLength0 shapes: DescriptionLength0 or8, Payload length32 or64,
+and Amount Number9,2. Catalog/attribute names, UUIDs and physical DBNames IDs
+remain dynamically bound. Its physical result has no `_CODE` field; the typed
+view projects reference UUIDs from the corresponding six- or seven-field
+layout. This does not implement logical BSL `Code` or a catalog manager API.
+
+The separate `catalog-zero-code-rows-v1` native route compares the actual
+public typed readback against the native UUID, Description and metadata in
+created, updated and applied states. The adapter calls the public reader once
+per state with one bounded graph lifetime. Its schema68 report requires the
+public-readback wrapper, schema69 capture and43-source manifest; a private
+physical observation alone cannot establish public reader parity. The
+schema70 aggregate binds both independently nonce-bound cases.
+
+`code_is_empty` is a required independent finite observation in this new route,
+not a success expectation or a synthesized return value. Original schema65
+measurement reports retain their historical interpretation. The original acquisition proves physical shape; the new public-reader
+acquisition below independently proves actual readback for these bounded shapes.
+
+### Native public-reader acquisition and empty Code observation
+
+[Run 41188918461](https://github.com/Atridis/yadinassi/actions/runs/41188918461),
+attempt1, accepted both cases and the aggregate on source
+`8dcb3cf8db01fcced4f1a394fca58de32cefd4ec`, tree
+`6dedf88dd1c69fd26f388f47e54f37d576484c42`, using1C8.3.27.1508.
+An independent cold FINAL audit verified all43 source identities, all three
+GitHub ZIP digests and exact members, both reports, aggregate and full cleanup
+in normal and optimized Python without importing fixture modules.
+
+The actual public typed reader matched native UUID and metadata in all six
+created/updated/applied observations. Description8 matched in all three states;
+Description0 comparison was not applicable. Physical `_CODE` remained absent.
+The separately observed native Code value had String type and
+`code_is_empty:true` in all six present states. Baseline remained absent/null.
+Unlike the earlier type-only receipt, this establishes an empty native string
+for these measured fixtures, not an inferred consequence of field omission.
+
+Report SHA256 values:
+- zero0: `c18a4b9f8db139d5792f293371b7481cdf4883f5fc0b7346cf51bbf81adc2ad7`
+- zero8: `d31555916e052ae5b532560d74981cc5d2a3e493b4a096bea538def2b5aa4fcb`
+
+This proof admits the bounded public physical/typed offline reader only. It does
+not implement a logical BSL `Code` return value or catalog manager API, and it
+does not generalize native acceptance to unmeasured qualifier combinations.

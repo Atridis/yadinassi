@@ -2,8 +2,10 @@
 
 The caller is responsible for providing a consistent offline source through read_at.
 This API neither opens a live database nor creates a transaction or authentication
-session. Current admission retains the owned String Code, optional metadata-derived
-Description, String and Number attribute profile and one active record. No BSL manager is exported yet.
+session. Admission includes the owned positive String/Number Code profiles and
+the measured String CodeLength0 shapes (Description0/8, Payload32/64, Amount9,2).
+Zero-code physical rows omit _CODE; no logical Code value is synthesized.
+Only one active record is admitted. No BSL manager is exported yet.
 """
 from dataclasses import dataclass
 from uuid import UUID
@@ -116,8 +118,14 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
             # over-limit event on failure; never refund unused reservation.
             reader._budget.charge('tokens', min(len(extracted.data), parse_limits.max_tokens + 1))
             parsed = dbnames.parse_dbnames(extracted.data, profile=profile, limits=parse_limits)
+            # Only the measured zero-code schema opts into physical field omission.
+            # Exact primitive guards precede selection; the compiler independently
+            # validates all qualifiers and rejects other zero/positive combinations.
+            zero_code = (type(identity.code_type) is int and identity.code_type == 1
+                         and type(identity.code_length) is int and identity.code_length == 0)
+            profile_id = compiler.ZERO_PROFILE_IDENTIFIER if zero_code else compiler.NUMERIC_PROFILE_IDENTIFIER
             binding = compiler.compile_catalog_binding(identity, attributes, parsed,
-                profile=compiler.CatalogBindingProfile(compiler.NUMERIC_PROFILE_IDENTIFIER), budget=reader._budget)
+                profile=compiler.CatalogBindingProfile(profile_id), budget=reader._budget)
             del parsed, extracted, reservation
         with graph.stage('records', binding=binding) as handle:
             rows = row_reader.read_bound_catalog_records(reader, physical_catalog, binding,
@@ -165,10 +173,13 @@ def _project_rows(graph, identity, binding, records):
             or type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
             or binding.description_length != identity.description_length):
         raise catalog_module.InvalidStructure('binding_reference_identity')
-    field_count = 7 + int(binding.description_length > 0)
+    zero_code = binding.code_length == 0
+    if zero_code and (binding.code_type != 1 or binding.description_length not in (0, 8)):
+        raise catalog_module.InvalidStructure('binding_reference_identity')
+    field_count = (6 if zero_code else 7) + int(binding.description_length > 0)
     expected = ('_IDRREF', 'B', 0, 16, 0, 'CS')
-    # The admitted profile has exactly seven or eight declarations. Check shape and
-    # unique role before indexing even for malformed private intermediate data.
+    # Positive-code shapes have seven/eight declarations; zero-code has six/seven.
+    # Check shape and unique role before indexing malformed private intermediate data.
     if (type(binding.placements) is not tuple or len(binding.placements) != field_count
             or any(type(p) is not compiler.BoundFieldPlacement
                    or type(p.declaration) is not tuple or len(p.declaration) != 6

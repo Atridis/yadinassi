@@ -16,6 +16,20 @@ import test_native_1c_db_oracle_ci_policy as old
 def legacy_codec_view(block):
     """Select the unchanged old-route branches; separate tests cover new route."""
     # Exact inverse for the new route: do not erase arbitrary commands/env.
+    block = block.replace('      zero_code_rows_sha256: ${{ steps.native.outputs.zero_code_rows_sha256 }}\n', '')
+    for key,source in (('SHA256','zero_code_rows_sha256'),('RUN_ID','run_id'),('RUN_ATTEMPT','run_attempt')):
+        block = block.replace('          ZERO_CODE_ROWS0_'+key+': ${{ needs.native_codec_a.outputs.'+source+' }}\n', '')
+    block = block.replace(" || needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1'", '')
+    block = block.replace("needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero-code-rows' || ", '')
+    numeric_numbers = ('0',) if block.startswith('    name: Native 1C reference codec case A\n') else ('8',) if block.startswith('    name: Native 1C reference codec case B\n') else ()
+    for number in numeric_numbers:
+        block = block.replace("needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero_code_rows"+number+".json' || ", '')
+        command = 'python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-zero-code-rows zero'+number+' --output native-db-oracle/zero_code_rows'+number+'.json'
+        branch = '          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-rows-v1 ]; then\n            '+command+'\n          elif '
+        block = block.replace(branch, '          if ')
+    branch = '          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-rows-v1 ]; then\n            python3 scripts/native_1c_db_oracle.py --validate-zero-code-rows0\n          elif '
+    block = block.replace(branch, '          if ')
+    # Exact inverse for the new route: do not erase arbitrary commands/env.
     block = block.replace('      zero_code_sha256: ${{ steps.native.outputs.zero_code_sha256 }}\n', '')
     for key,source in (('SHA256','zero_code_sha256'),('RUN_ID','run_id'),('RUN_ATTEMPT','run_attempt')):
         block = block.replace('          ZERO_CODE0_'+key+': ${{ needs.native_codec_a.outputs.'+source+' }}\n', '')
@@ -107,11 +121,11 @@ class CodecWorkflowTests(unittest.TestCase):
     def test_fixed_selector_disjoint_jobs_and_exact_dependencies(self):
         eligibility = old.workflow_job('eligibility')
         self.assertIn('    outputs:\n      route: ${{ steps.admission.outputs.route }}\n', eligibility)
-        self.assertIn('          NATIVE_DB_ROUTE: catalog-zero-code-measurement-v1\n', eligibility)
+        self.assertIn('          NATIVE_DB_ROUTE: catalog-zero-code-rows-v1\n', eligibility)
         for name in ('native_reference_a', 'native_oracle'):
             self.assertIn("needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&", old.workflow_job(name))
         for name in ('native_codec_a', 'native_codec_b'):
-            self.assertIn("(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1') &&", old.workflow_job(name))
+            self.assertIn("(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1') &&", old.workflow_job(name))
         self.assertIn('needs: eligibility', old.workflow_job('native_codec_a'))
         self.assertIn('needs: [eligibility, native_codec_a]', old.workflow_job('native_codec_b'))
         self.assertIn("needs.native_codec_a.result == 'success' &&", old.workflow_job('native_codec_b'))

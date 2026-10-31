@@ -7,6 +7,12 @@ Lengths and numeric qualifiers are configuration values, not fixture constants.
 Positive Description NVC placement was independently observed at configured
 lengths 8 and 17 with Payload32 (native run 40971133699, source a318b990).
 Other bounded lengths are structural generalization, not native range proof.
+The zero-code opt-in is limited to four observed String/CodeLength0 shapes:
+Description0/8, Payload32/64 and Amount9,2 (run 41181474017, source6e407b65).
+These zero-code bounds are conservative measured-shape admission, not a range
+generalization. Existing positive-code profiles keep their prior generalized
+qualifier ranges. UUIDs, names and DBNames IDs are independently resolved inputs.
+There is no physical _CODE declaration; no Code API value is synthesized.
 Finite synthetic admission below is not native acceptance of other layouts.
 """
 from dataclasses import dataclass, field
@@ -17,6 +23,7 @@ from .config_catalog_attributes import CatalogAttribute, CatalogAttributes
 from .filedb_dbnames import DBNamesEntry, DBNamesIndex, DBNAMES_PROFILE_IDENTIFIER
 
 PROFILE_IDENTIFIER = 'owned_catalog_string_code_two_attributes_v1'
+ZERO_PROFILE_IDENTIFIER = 'owned_catalog_zero_string_code_two_attributes_v1'
 NUMERIC_PROFILE_IDENTIFIER = 'owned_catalog_string_or_number_code_two_attributes_v1'
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z', re.ASCII)
 _KIND = re.compile(r'[A-Za-z][A-Za-z0-9_]{0,31}\Z', re.ASCII)
@@ -46,7 +53,7 @@ class CatalogBindingProfile:
     identifier: str
 
     def __post_init__(self):
-        if type(self.identifier) is not str or self.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER):
+        if type(self.identifier) is not str or self.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER):
             _fail('profile')
 
 
@@ -124,7 +131,7 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
     """
     if (type(profile) is not CatalogBindingProfile
             or type(profile.identifier) is not str
-            or profile.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER)):
+            or profile.identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER)):
         _fail('profile')
     if limits is not None and type(limits) is not CatalogBindingLimits:
         _fail('limits')
@@ -152,7 +159,11 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
             or type(identity.description_length) is not int
             or not 0 <= identity.description_length <= limits.max_string_length
             or type(identity.code_length) is not int
-            or not 1 <= identity.code_length <= (limits.max_numeric_precision if identity.code_type == 0 else limits.max_string_length)):
+            or not (0 if profile.identifier == ZERO_PROFILE_IDENTIFIER else 1) <= identity.code_length <= (limits.max_numeric_precision if identity.code_type == 0 else limits.max_string_length)):
+        _fail('standard_profile')
+    zero_code = profile.identifier == ZERO_PROFILE_IDENTIFIER
+    if zero_code and (identity.code_type != 1 or identity.code_length != 0
+                      or identity.description_length not in (0, 8)):
         _fail('standard_profile')
     if type(attributes.attributes) is not tuple or len(attributes.attributes) != 2:
         _fail('attribute_shape')
@@ -176,6 +187,9 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
             or len(second.qualifiers) != 3 or second.qualifiers[2] != 0
             or not 1 <= second.qualifiers[0] <= limits.max_numeric_precision
             or not 0 <= second.qualifiers[1] <= second.qualifiers[0]):
+        _fail('qualifiers')
+    if zero_code and (first.qualifiers not in ((32, 1), (64, 1))
+                      or second.qualifiers != (9, 2, 0)):
         _fail('qualifiers')
     selected = [None, None, None]
     for ordinal, entry in enumerate(dbnames.entries):
@@ -214,10 +228,15 @@ def compile_catalog_binding(identity, attributes, dbnames, *, profile, budget, l
         (number_name, 'N', 0, precision, scale, 'CS'))
     widths = (16, 16, 1, 16, (identity.code_length + 2) // 2 if identity.code_type == 0 else 2 + 2 * identity.code_length,
               2 + 2 * first.qualifiers[0], (precision + 2) // 2)
+    standard_count = 5
+    if zero_code:
+        declarations = declarations[:4] + declarations[5:]
+        widths = widths[:4] + widths[5:]
+        standard_count = 4
     if identity.description_length:
-        declarations = declarations[:5] + (('_DESCRIPTION', 'NVC', 0,
-            identity.description_length, 0, 'CI'),) + declarations[5:]
-        widths = widths[:5] + (2 + 2 * identity.description_length,) + widths[5:]
+        declarations = declarations[:standard_count] + (('_DESCRIPTION', 'NVC', 0,
+            identity.description_length, 0, 'CI'),) + declarations[standard_count:]
+        widths = widths[:standard_count] + (2 + 2 * identity.description_length,) + widths[standard_count:]
     record_size = 1 + sum(widths)
     if record_size > limits.max_record_bytes:
         _fail('record_bytes')

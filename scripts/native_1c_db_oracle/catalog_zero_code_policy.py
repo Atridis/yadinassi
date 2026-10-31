@@ -188,12 +188,15 @@ def _physical(p,case,identifier):
    and p['record_size']==offset+2+2*p['payload_length']+5)
 
 def _witness(w,report,token,identifier):
- exact(w,{'sha256','nonce','token','case','operation','present','code_length','description_length','payload_length','autonumbering','code_type','code_state'})
+ require(type(w)is dict and all(type(key)is str for key in dict.__iter__(w)))
+ exact(w,{'sha256','nonce','token','case','operation','present','code_length','description_length','payload_length','autonumbering','code_type','code_state'} | ({'code_is_empty'} if 'code_is_empty'in w else set()))
  require(digest(w['sha256'])and _token(w['nonce'])and w['nonce']==report['nonce']
   and _token(w['token'])and w['token']==token and w['case']==report['zero_case']and w['operation']=='observe'
   and w['code_type']=='string' and type(w['code_state'])is str
   and w['code_state'] in (('absent',) if identifier=='baseline' else ('unavailable','string','number','other'))
   and type(w['present'])is bool and w['present']is(identifier!='baseline')and w['autonumbering']is False)
+ if 'code_is_empty'in w:
+  require(type(w['code_is_empty'])is bool if w['code_state']=='string'else w['code_is_empty']is None)
  for k,v in [('code_length',0),('description_length',measurement.CASES[report['zero_case']]),('payload_length',64 if identifier=='applied'else 32)]:
   require(type(w[k])is int and w[k]==v,'logical_mismatch')
 
@@ -247,7 +250,8 @@ def bind_state(evidence,report,observation,witness):
  require((observation is None)is(not present),'invalid_input')
  public={'sha256':witness.raw_sha256,'nonce':witness.nonce,'token':witness.token,'case':witness.case,
   'operation':witness.operation,'present':witness.present,'code_length':witness.code_length,
-  'description_length':witness.description_length,'payload_length':witness.payload_length,'autonumbering':witness.autonumbering,'code_type':witness.code_type,'code_state':witness.code_state}
+  'description_length':witness.description_length,'payload_length':witness.payload_length,'autonumbering':witness.autonumbering,'code_type':witness.code_type,'code_state':witness.code_state,
+  'code_is_empty':witness.actual_code=='' if witness.code_state=='string'else None}
  _witness(public,report,evidence['token'],identifier)
  value={'snapshot':identifier,'observe_token':evidence['token'],'origin':copy.deepcopy(evidence['origin']),
   'postimage':copy.deepcopy(evidence['postimage']),'witness':public,

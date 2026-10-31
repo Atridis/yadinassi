@@ -25,7 +25,7 @@ jobs:
       - name: Validate owner, repository, reviewed push and revision without checkout
         id: admission
         env:
-          NATIVE_DB_ROUTE: catalog-zero-code-measurement-v1
+          NATIVE_DB_ROUTE: catalog-zero-code-rows-v1
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         shell: bash
         run: |
@@ -143,7 +143,7 @@ jobs:
           # END NATIVE DB ORACLE CI ADMISSION
           # BEGIN NATIVE DB ORACLE ROUTE ADMISSION
           def admitted_route(value):
-              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1"):
+              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1", "catalog-zero-code-rows-v1"):
                   raise PolicyError("route_not_approved")
               return value
           # END NATIVE DB ORACLE ROUTE ADMISSION
@@ -324,7 +324,7 @@ jobs:
     name: Native 1C reference codec case A
     needs: eligibility
     if: >-
-      (needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1') &&
+      (needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1') &&
       needs.eligibility.result == 'success' &&
       github.repository == 'Atridis/yadinassi' &&
       github.repository_id == '359770628' &&
@@ -358,6 +358,7 @@ jobs:
       numeric_code_sha256: ${{ steps.native.outputs.numeric_code_sha256 }}
       numeric_code_rows_sha256: ${{ steps.native.outputs.numeric_code_rows_sha256 }}
       zero_code_sha256: ${{ steps.native.outputs.zero_code_sha256 }}
+      zero_code_rows_sha256: ${{ steps.native.outputs.zero_code_rows_sha256 }}
       run_id: ${{ github.run_id }}
       run_attempt: ${{ github.run_attempt }}
     steps:
@@ -378,7 +379,9 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then
+          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-rows-v1 ]; then
+            python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-zero-code-rows zero0 --output native-db-oracle/zero_code_rows0.json
+          elif [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then
             python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-zero-code zero0 --output native-db-oracle/zero_code0.json
           elif [ "${{ needs.eligibility.outputs.route }}" = catalog-numeric-code-rows-v1 ]; then
             python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-numeric-code-rows number3 --output native-db-oracle/numeric_code_rows3.json
@@ -406,8 +409,8 @@ jobs:
         if: always() && steps.native.outputs.report_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-a-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero_code0.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric_code_rows3.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric_code3.json' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params_slots8.json' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description_rows8.json' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description8.json' || format('{0}_distinct_a.json', needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec') }}
+          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero-code-rows' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-a-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero_code_rows0.json' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero_code0.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric_code_rows3.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric_code3.json' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params_slots8.json' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description_rows8.json' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description8.json' || format('{0}_distinct_a.json', needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec') }}
           if-no-files-found: error
           retention-days: 7
 
@@ -415,7 +418,7 @@ jobs:
     name: Native 1C reference codec case B
     needs: [eligibility, native_codec_a]
     if: >-
-      (needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1') &&
+      (needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1') &&
       needs.eligibility.result == 'success' && needs.native_codec_a.result == 'success' &&
       github.repository == 'Atridis/yadinassi' &&
       github.repository_id == '359770628' &&
@@ -466,14 +469,17 @@ jobs:
         env:
           REFERENCE_A_SHA256: ${{ needs.native_codec_a.outputs.reference_sha256 }}
           ZERO_CODE0_SHA256: ${{ needs.native_codec_a.outputs.zero_code_sha256 }}
+          ZERO_CODE_ROWS0_SHA256: ${{ needs.native_codec_a.outputs.zero_code_rows_sha256 }}
           NUMERIC_CODE_ROWS3_SHA256: ${{ needs.native_codec_a.outputs.numeric_code_rows_sha256 }}
           NUMERIC_CODE3_SHA256: ${{ needs.native_codec_a.outputs.numeric_code_sha256 }}
           PARAMS_SLOTS8_SHA256: ${{ needs.native_codec_a.outputs.params_slots_sha256 }}
           ZERO_CODE0_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
+          ZERO_CODE_ROWS0_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           NUMERIC_CODE_ROWS3_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           NUMERIC_CODE3_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           PARAMS_SLOTS8_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           ZERO_CODE0_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
+          ZERO_CODE_ROWS0_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
           NUMERIC_CODE_ROWS3_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
           NUMERIC_CODE3_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
           PARAMS_SLOTS8_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
@@ -486,7 +492,9 @@ jobs:
           REFERENCE_A_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           REFERENCE_A_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
         run: |
-          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then
+          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-rows-v1 ]; then
+            python3 scripts/native_1c_db_oracle.py --validate-zero-code-rows0
+          elif [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then
             python3 scripts/native_1c_db_oracle.py --validate-zero-code0
           elif [ "${{ needs.eligibility.outputs.route }}" = catalog-numeric-code-rows-v1 ]; then
             python3 scripts/native_1c_db_oracle.py --validate-numeric-code-rows3
@@ -506,14 +514,17 @@ jobs:
         env:
           REFERENCE_A_SHA256: ${{ needs.native_codec_a.outputs.reference_sha256 }}
           ZERO_CODE0_SHA256: ${{ needs.native_codec_a.outputs.zero_code_sha256 }}
+          ZERO_CODE_ROWS0_SHA256: ${{ needs.native_codec_a.outputs.zero_code_rows_sha256 }}
           NUMERIC_CODE_ROWS3_SHA256: ${{ needs.native_codec_a.outputs.numeric_code_rows_sha256 }}
           NUMERIC_CODE3_SHA256: ${{ needs.native_codec_a.outputs.numeric_code_sha256 }}
           PARAMS_SLOTS8_SHA256: ${{ needs.native_codec_a.outputs.params_slots_sha256 }}
           ZERO_CODE0_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
+          ZERO_CODE_ROWS0_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           NUMERIC_CODE_ROWS3_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           NUMERIC_CODE3_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           PARAMS_SLOTS8_RUN_ID: ${{ needs.native_codec_a.outputs.run_id }}
           ZERO_CODE0_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
+          ZERO_CODE_ROWS0_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
           NUMERIC_CODE_ROWS3_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
           NUMERIC_CODE3_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
           PARAMS_SLOTS8_RUN_ATTEMPT: ${{ needs.native_codec_a.outputs.run_attempt }}
@@ -528,7 +539,9 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then
+          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-rows-v1 ]; then
+            python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-zero-code-rows zero8 --output native-db-oracle/zero_code_rows8.json
+          elif [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then
             python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-zero-code zero8 --output native-db-oracle/zero_code8.json
           elif [ "${{ needs.eligibility.outputs.route }}" = catalog-numeric-code-rows-v1 ]; then
             python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-numeric-code-rows number6 --output native-db-oracle/numeric_code_rows6.json
@@ -555,16 +568,16 @@ jobs:
         if: always() && steps.native.outputs.report_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-b-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero_code8.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric_code_rows6.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric_code6.json' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params_slots17.json' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description_rows17.json' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description17.json' || format('{0}_distinct_b.json', needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec') }}
+          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero-code-rows' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-b-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero_code_rows8.json' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero_code8.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric_code_rows6.json' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric_code6.json' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params_slots17.json' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description_rows17.json' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description17.json' || format('{0}_distinct_b.json', needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec') }}
           if-no-files-found: error
           retention-days: 7
       - name: Upload only the finite hash-bound two-case aggregate
         if: always() && steps.native.outputs.aggregate_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-aggregate.json
+          name: native-1c-${{ needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero-code-rows' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/${{ needs.eligibility.outputs.route == 'catalog-zero-code-rows-v1' && 'zero-code-rows' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' && 'numeric-code-rows' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' && 'numeric-code' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' && 'params-slots' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' && 'description-rows' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' && 'description' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' && 'rows' || 'codec' }}-aggregate.json
           if-no-files-found: error
           retention-days: 7
 
@@ -598,7 +611,7 @@ jobs:
           def selected_native_result(route, reference_a, reference_b, codec_a, codec_b):
               if route == "catalog-reference-identity-v1":
                   passed = reference_a == reference_b == "success" and codec_a == codec_b == "skipped"
-              elif route in ("catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1"):
+              elif route in ("catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1", "catalog-zero-code-rows-v1"):
                   passed = codec_a == codec_b == "success" and reference_a == reference_b == "skipped"
               else:
                   passed = False
