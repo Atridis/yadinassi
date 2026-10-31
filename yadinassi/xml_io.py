@@ -169,7 +169,9 @@ class BSLXMLReader(_FileMethods):
         self._position = -1
         self._attribute = -1
         self._current = _event(T.NONE)
-        self._settings = BSLXMLReaderSettings()
+        # Native XML33: omitted source settings use the reader legacy defaults,
+        # unlike the explicit XMLReaderSettings parameter defaults.
+        self._settings = BSLXMLReaderSettings(ignore_comments=True, cdata_as_text=True)
         self._version = ''; self._xml_encoding = ''; self._input_encoding = ''
     def _set_source(self, source, settings, schemas):
         if settings is not None and type(settings) is not BSLXMLReaderSettings:
@@ -252,7 +254,7 @@ class BSLXMLReader(_FileMethods):
             if tokens and tokens[-1]['kind'] is kind and tokens[-1].get('_chunks') is not None and tokens[-1].get('_whitespace') == whitespace:
                 tokens[-1]['_chunks'].append(value)
             else:
-                e = _event(kind); e['_chunks'] = [value]; e['_whitespace'] = whitespace; add(e)
+                e = _event(kind, '#text' if kind is T.TEXT else ''); e['_chunks'] = [value]; e['_whitespace'] = whitespace; add(e)
         def declaration(version, encoding, standalone):
             if version != '1.0': raise ValueError('XML: поддерживается версия 1.0')
             self._version = version; self._xml_encoding = encoding or ''
@@ -292,6 +294,8 @@ class BSLXMLReader(_FileMethods):
             depth = self._tokens[self._position]['depth']
             while self.read():
                 if self._current['kind'] is T.END and self._current['depth'] == depth: break
+            # Native XML33 case08 stops on the skipped element's end token.
+            return
         self.read()
     def move_to_content(self, space=None):
         if space is not None and type(space) is not BSLXMLSpace: raise TypeError('XML: ожидается ПробельныеСимволыXML')

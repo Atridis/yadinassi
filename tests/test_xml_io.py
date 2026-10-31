@@ -44,8 +44,10 @@ class XMLReaderTests(unittest.TestCase):
         self.assertEqual(r.move_to_content(),x.T.START)
         self.assertEqual(r.get_member('Name'),'r')
         r.read(); r.first_attribute(); self.assertIsNone(r.skip())
-        self.assertEqual(r.get_member('Name'),'keep')
-        r.skip(); self.assertEqual(r.get_member('Name'),'r')
+        self.assertEqual(r.get_member('Name'),'skip')
+        self.assertEqual(r.get_member('NodeType'),x.T.END)
+        r.read(); self.assertEqual(r.get_member('Name'),'keep')
+        r.skip(); r.read(); self.assertEqual(r.get_member('Name'),'r')
         self.assertEqual(r.get_member('NodeType'),x.T.END)
 
     def test_settings_declaration_cdata_whitespace(self):

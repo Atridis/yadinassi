@@ -64,6 +64,42 @@ External entity processing must remain disabled regardless of these deferrals.
 
 ## Evidence status
 
-Native execution is pending. Local synthetic observations, isolated replay,
-and contract tests are **not** real-platform evidence. Do not claim native
-parity without a source-bound native capture and independent artifact audit.
+Real 1C 8.3.27.1508 Linux acquisition: GitHub run `41227374058`, attempt 1,
+job `124614250280`, PR #171 head `fa36ac4e80ba3d7a4f720011eaec7bb7a274059f`.
+Synthetic merge `e2d02cc66f98de7aefa3c6eccd3633fad59df017`, ordered parents
+`bc272346ed2062b185017214eebae5928df1a79e` and the feature head, tree
+`a4132279a2fdb0344d6be7525524c4c030cdad24`.
+
+Native source SHA256:
+`403ae0f300e5a07fe3c78dff32148f96f7de667ed3b3e0720b8fad3afe454f92`.
+Client and server captures are identical, 35 messages / 2497 bytes:
+`07c4ee0a14ce53f0929bb2c41caf9d9c5dc5fdcc2fec68d5bb28f21874759f0c`.
+Archived provenance SHA256:
+`351a270111cac9fc8bb2ee144ae1d260b30b69a16b7c28af9536449bb61be8fc`.
+The immutable capture/provenance are under `tests/fixtures/xml_workflow_family`.
+
+The original runtime had five mismatches; its report remains rejected and is
+not relabeled as a pass. Measured corrections:
+
+- 01: text node `Name` is `#text`.
+- 08: `Skip` stops at the skipped element's end token.
+- 11: an XMLReader source with omitted settings uses legacy defaults that treat
+  CDATA as text and ignore comments (explicit settings retain documented defaults).
+- 20: default indentation includes CDATA/comment child lines.
+- 25: raw insertion has no added leading indentation, but the parent closing tag
+  still receives its ordinary line break.
+
+The corrected runtime replays **all 33** immutable observations exactly, without
+changing the native source, filtering cases or relaxing comparison rules.
+`tests/test_xml_workflow_native.py` verifies the immutable acquisition and exact
+replay. Final corrected-head CI remains a separate gate.
+
+Acquisition audit: 50 checks cover archive digest/membership, report/provenance
+identity, ordered merge/source tree, runtime85 inventory, dependencies, all22
+staged inputs and9host inputs, regenerated client/server modules, nonce/lifecycle,
+process census, cleanup, availability and original bounded-child mismatch replay.
+Original transport envelope was not archived: strict envelope validation was
+rerun on a reconstructed envelope from byte-verified report/provenance/capture.
+This is not a claim of possession of the original transport bytes. Existing
+bootstrap security-settings observations are inherited from the authorized
+harness; this feature adds no security setting changes.

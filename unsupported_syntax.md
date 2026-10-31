@@ -320,5 +320,5 @@ listed in [docs/xml-workflow-family.md](docs/xml-workflow-family.md). DOM, XDTO,
 XSD/schema validation, DTD/entity declarations and external resolution, streams,
 XML 1.1, `XMLAttributeType`, full Unicode-name ranges and unchecked malformed
 WriteRaw fragments remain unsupported (`!todo`). Internal serialization is
-explicitly rejected. The new ordinary subset still awaits its single native
-calibration batch; exact platform parity is not yet asserted.
+explicitly rejected. The ordinary subset has a source-bound native XML33 capture and exact corrected
+replay. This does not imply parity outside those scenarios; final CI is pending.

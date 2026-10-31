@@ -305,9 +305,11 @@ class BSLXMLWriter(BSLObject):
                 emit(name+'="'+text+'"')
             if not value['children']: emit('/>');return
             emit('>')
-            pretty=self._settings.indent and not any(x['kind'] in ('text','cdata','raw') for x in value['children'])
+            # Native XML33: CDATA participates in indentation; raw insertion
+            # suppresses its own leading indent but not the parent's closing LF.
+            pretty=self._settings.indent and not any(x['kind'] == 'text' for x in value['children'])
             for child in value['children']:
-                if pretty: emit('\n'+self._settings.indent_chars*(depth+1))
+                if pretty and child['kind'] != 'raw': emit('\n'+self._settings.indent_chars*(depth+1))
                 node(child,depth+1)
             if pretty: emit('\n'+self._settings.indent_chars*depth)
             emit('</'+value['qname']+'>')

@@ -1,7 +1,9 @@
 # Ordinary XML reader/writer workflow
 
-Status: local implementation and source-bound native batch prepared; **real 1C
-calibration is pending**. Local roundtrips are not native parity evidence.
+Status: the source-bound XML33 batch was acquired on real 1C 8.3.27.1508
+(client and server identical). Five ordinary differences were corrected and the
+local runtime now replays all 33 captured observations exactly. The original
+failed-runtime report is preserved unchanged; final exact-head CI is pending.
 
 ## Covered workflow
 
@@ -52,8 +54,9 @@ DOM, XDTO, schema validation, DTD declaration iteration, `XMLAttributeType`,
 custom entities, streams, XML 1.1, complete Unicode XML name ranges, exact
 malformed-input cursor timing, exotic codec behavior and unchecked raw markup
 are not implemented. Reader eagerly builds a bounded token snapshot on its first
-read. Native calibration must establish precise whitespace/empty-element token
-semantics, namespace declarations, indentation bytes and lifecycle defaults.
+read. Native XML33 establishes its ordinary token/default/indentation cases only;
+advanced whitespace, namespace, mixed-content indentation and lifecycle corners
+still require later evidence rather than inferred universal equivalence.
 
 ## Primary documentation and measurement
 
@@ -72,5 +75,5 @@ are under `catalog2`. In particular, `WriteCurrent` does not advance the reader,
 and `Close` returns the string target or an empty string for a file target.
 
 See [the single 33-case measurement contract](xml-workflow-family-measurement.md).
-No successful real-platform result is claimed before that source-bound batch is
-actually collected and independently verified.
+The archived acquisition passed 50 source/provenance/capture/cleanup checks;
+see the measurement document for identities and remaining evidence limits.
