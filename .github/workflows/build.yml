@@ -47,8 +47,9 @@ jobs:
           architecture: ${{ matrix.architecture }}
           cache: pip
           cache-dependency-path: pyproject.toml
+      # Bundle tests and binary builds use the audited native full-host transitive pin.
       - name: Install build dependencies
-        run: python -m pip install -e ".[build]"
+        run: python -m pip install -e ".[build]" wcwidth==0.8.2
       - name: Test native launcher without 1C
         run: python integrational_tests/check_launcher.py
       - name: Test interpreter and CLI
