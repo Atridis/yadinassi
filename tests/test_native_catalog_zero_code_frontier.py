@@ -2,6 +2,10 @@
 import copy
 import hashlib
 import json
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 from unittest import mock
 import test_native_catalog_zero_code_bootstrap as base
@@ -81,6 +85,34 @@ class FrontierFilesTests(base.BootstrapDiagnosticTests):
 
 
 class FrontierRenderingTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('git'), 'Git required for checkout regression')
+    def test_pinned_client_survives_autocrlf_checkout(self):
+        root=Path(__file__).resolve().parents[1]
+        rel='scripts/native_1c_db_oracle/modules/ManagedApplicationModule.bsl'
+        raw=(root/rel).read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),measurement.CLIENT_TEMPLATE_SHA256)
+        with tempfile.TemporaryDirectory(prefix='zero-client-eol-') as directory:
+            checkout=Path(directory)
+            def git(*args):
+                return subprocess.run(['git','-c','core.autocrlf=true','-c','core.safecrlf=false',*args],
+                    cwd=checkout,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+            git('init','-q')
+            (checkout/'.gitattributes').write_bytes((root/'.gitattributes').read_bytes())
+            client=checkout/rel;client.parent.mkdir(parents=True);client.write_bytes(raw)
+            git('add','--','.gitattributes',rel)
+            client.unlink();git('checkout-index','--force','--',rel)
+            checked=client.read_bytes()
+            self.assertEqual(checked,raw)
+            self.assertNotIn(b'\r\n',checked)
+            for case in measurement.CASES:
+                self.assertIn(b'NativeZeroFrontier',measurement.instrument_module(checked,name='ManagedApplicationModule.bsl',case=case))
+
+    def test_raw_crlf_client_remains_rejected(self):
+        raw=(measurement.ROOT/'modules/ManagedApplicationModule.bsl').read_bytes()
+        self.assertNotIn(b'\r',raw)
+        for case in measurement.CASES:
+            with self.assertRaisesRegex(ValueError,'zero_frontier_module_invalid'):
+                measurement.instrument_module(raw.replace(b'\n',b'\r\n'),name='ManagedApplicationModule.bsl',case=case)
     def test_closed_instrumentation_and_literals(self):
         for case in measurement.CASES:
             for name in ('ManagedApplicationModule.bsl','NativeOracleServer.bsl'):

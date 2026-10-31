@@ -28,3 +28,6 @@ tests/fixtures/value_tree_columns_clear/metadata-provenance.json -text
 scripts/native_1c_db_oracle/modules/CatalogNumericCodeObservation.bsl text eol=lf
 
 scripts/native_1c_db_oracle/modules/CatalogZeroCodeObservation.bsl text eol=lf
+
+# The zero-code frontier observer pins the managed client template on every OS.
+scripts/native_1c_db_oracle/modules/ManagedApplicationModule.bsl text eol=lf
