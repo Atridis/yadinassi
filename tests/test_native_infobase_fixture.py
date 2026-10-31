@@ -505,10 +505,26 @@ class BoundedChildTests(unittest.TestCase):
         pid = int(out.strip())
         try:
             raw = Path(f"/proc/{pid}/stat").read_bytes()
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # procfs can remove the task between open and read: both ENOENT and
+            # ESRCH mean the already-shut-down descendant is no longer present.
             pass
         else:
             self.assertIn(raw[raw.rfind(b") ") + 2:].split()[0], (b"Z", b"X", b"x"))
+
+    def test_descendant_procfs_absence_only_does_not_weaken_live_or_access_checks(self):
+        with mock.patch.object(self, "run_child", return_value=(9, b"123\n", b"")):
+            for error in (FileNotFoundError(errno.ENOENT, "gone"),
+                          ProcessLookupError(errno.ESRCH, "gone")):
+                with self.subTest(error=type(error).__name__), mock.patch.object(Path, "read_bytes", side_effect=error):
+                    self.test_exited_parent_retains_code_and_kills_closed_pipe_descendant()
+            with mock.patch.object(Path, "read_bytes", side_effect=PermissionError(errno.EACCES, "denied")):
+                with self.assertRaises(PermissionError):
+                    self.test_exited_parent_retains_code_and_kills_closed_pipe_descendant()
+            for state in (b"R", b"S", b"D", b"T"):
+                with self.subTest(live_state=state), mock.patch.object(Path, "read_bytes", return_value=b"123 (child) " + state + b" 1"):
+                    with self.assertRaises(AssertionError):
+                        self.test_exited_parent_retains_code_and_kills_closed_pipe_descendant()
 
     def test_real_signals_all_precede_reap_and_no_hidden_wait_api(self):
         events = []

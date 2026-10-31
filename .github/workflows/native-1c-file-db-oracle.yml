@@ -25,7 +25,7 @@ jobs:
       - name: Validate owner, repository, reviewed push and revision without checkout
         id: admission
         env:
-          NATIVE_DB_ROUTE: catalog-zero-code-rows-v1
+          NATIVE_DB_ROUTE: metadata-catalog-applied-view-v1
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         shell: bash
         run: |
@@ -143,7 +143,7 @@ jobs:
           # END NATIVE DB ORACLE CI ADMISSION
           # BEGIN NATIVE DB ORACLE ROUTE ADMISSION
           def admitted_route(value):
-              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1", "catalog-zero-code-rows-v1"):
+              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1", "catalog-zero-code-rows-v1", "metadata-catalog-applied-view-v1"):
                   raise PolicyError("route_not_approved")
               return value
           # END NATIVE DB ORACLE ROUTE ADMISSION
@@ -582,10 +582,75 @@ jobs:
           retention-days: 7
 
 
+  native_metadata:
+    name: Native 1C Metadata Catalogs applied-view measurement
+    needs: eligibility
+    if: >-
+      needs.eligibility.outputs.route == 'metadata-catalog-applied-view-v1' &&
+      needs.eligibility.result == 'success' &&
+      github.repository == 'Atridis/yadinassi' &&
+      github.repository_id == '359770628' &&
+      github.repository_owner == 'Atridis' &&
+      github.repository_owner_id == '30860798' &&
+      github.actor == 'Atridis' &&
+      github.actor_id == '30860798' &&
+      github.triggering_actor == 'Atridis' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.ref_type == 'branch' &&
+      github.base_ref == '' && github.head_ref == '' &&
+      github.event.ref == github.ref &&
+      github.event.deleted == false && github.event.forced == false &&
+      github.event.after == github.sha && github.event.head_commit.id == github.sha &&
+      github.workflow_ref == 'Atridis/yadinassi/.github/workflows/native-1c-file-db-oracle.yml@refs/heads/codex/native-file-db-oracle-reviewed' &&
+      github.workflow_sha == github.sha
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    # The host has one 2400-second execution deadline plus bounded cleanup.
+    # This outer budget also includes checkout, authentication and report upload.
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Verify immutable reviewed checkout before exposing the package token
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 -I -B scripts/native_1c_db_oracle_ci_policy.py bind
+      - name: Run approved digest with no network, ports or container credentials
+        id: native
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_metadata_catalog_oracle.py --run --ci-report
+      - name: Require validated report readiness on native success
+        if: always() && steps.native.outcome == 'success'
+        env:
+          NATIVE_REPORT_READY: ${{ steps.native.outputs.report_ready }}
+        shell: bash
+        run: test "${NATIVE_REPORT_READY}" = "true"
+      # The host emits report_ready only after strict finite-schema validation
+      # and component-derived 99328-byte cap. Never upload raw files.
+      - name: Upload only the validated finite Metadata measurement report
+        id: upload
+        if: always() && steps.native.outputs.report_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-1c-metadata-catalogs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-db-oracle/metadata-catalogs.json
+          if-no-files-found: error
+          retention-days: 7
+
   verdict:
     name: Native 1C file-DB oracle verdict
     if: always()
-    needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b]
+    needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b, native_metadata]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -598,6 +663,7 @@ jobs:
           NATIVE_RESULT: ${{ needs.native_oracle.result }}
           CODEC_A_RESULT: ${{ needs.native_codec_a.result }}
           CODEC_RESULT: ${{ needs.native_codec_b.result }}
+          METADATA_RESULT: ${{ needs.native_metadata.result }}
         shell: bash
         run: |
           python3 -I -B - <<'PYTHON'
@@ -608,18 +674,21 @@ jobs:
               return 0 if eligibility_result == "success" and native_result == "success" else 1
           # END NATIVE DB ORACLE CI VERDICT
           # BEGIN NATIVE DB ORACLE ROUTE VERDICT
-          def selected_native_result(route, reference_a, reference_b, codec_a, codec_b):
+          def selected_native_result(route, reference_a, reference_b, codec_a, codec_b, metadata="skipped"):
               if route == "catalog-reference-identity-v1":
-                  passed = reference_a == reference_b == "success" and codec_a == codec_b == "skipped"
+                  passed = reference_a == reference_b == "success" and codec_a == codec_b == metadata == "skipped"
               elif route in ("catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1", "catalog-zero-code-rows-v1"):
-                  passed = codec_a == codec_b == "success" and reference_a == reference_b == "skipped"
+                  passed = codec_a == codec_b == "success" and reference_a == reference_b == metadata == "skipped"
+              elif route == "metadata-catalog-applied-view-v1":
+                  passed = metadata == "success" and reference_a == reference_b == codec_a == codec_b == "skipped"
               else:
                   passed = False
               return "success" if passed else "failure"
           # END NATIVE DB ORACLE ROUTE VERDICT
           native = selected_native_result(os.environ.get("NATIVE_ROUTE"),
               os.environ.get("REFERENCE_A_RESULT"), os.environ.get("NATIVE_RESULT"),
-              os.environ.get("CODEC_A_RESULT"), os.environ.get("CODEC_RESULT"))
+              os.environ.get("CODEC_A_RESULT"), os.environ.get("CODEC_RESULT"),
+              os.environ.get("METADATA_RESULT"))
           result = final_verdict(os.environ.get("ELIGIBILITY_RESULT"), native)
           print("Native DB oracle CI passed." if result == 0 else "Native DB oracle CI failed or unavailable.")
           raise SystemExit(result)
