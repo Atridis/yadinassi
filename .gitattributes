@@ -76,3 +76,9 @@ tests/fixtures/file_io_family/*provenance.json -text
 # Source-bound linked-card native evidence bytes.
 tests/fixtures/linked_catalog_native.json -text
 tests/fixtures/linked_catalog_records.json -text
+
+# XML workflow source/captures are byte-bound across platforms.
+integrational_tests/measurements/xml_workflow_family.bsl text eol=lf
+tests/fixtures/xml_workflow_family/*.out -text
+tests/fixtures/xml_workflow_family/*.bsl text eol=lf
+tests/fixtures/xml_workflow_family/*provenance.json -text

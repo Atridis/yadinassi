@@ -6031,3 +6031,13 @@ UUID метаданных, сгенерированного типа и запи
 
 [Контракт, native-измерение и границы проверки](docs/linked-catalog-cards-next.md)
 отдельно описывают captured-byte replay, actual `.1CD` parity и отложенные `!todo`.
+## Ordinary XML reader/writer family (native XML33 acquired)
+
+A coherent XML 1.0 workflow now covers string/file readers and writers,
+namespace-aware element/attribute access, Read/Skip/MoveToContent, escaped text,
+CDATA/comments/processing instructions, basic settings and WriteCurrent without
+advancing the reader. Parsing is bounded and refuses DTD/external entities; file
+I/O reuses the ordinary regular-file boundary. One broad 33-case native batch is
+measured on real 1C; five ordinary differences corrected, all33 captured cases
+replay exactly. Final corrected-head CI remains pending. Scope and explicit `!todo`
+exclusions: [docs/xml-workflow-family.md](docs/xml-workflow-family.md).

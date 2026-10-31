@@ -4,6 +4,9 @@ from decimal import Decimal, localcontext
 from types import GeneratorType
 
 from . import file_io
+from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
+                     BSLXMLValidationType, BSLXMLNamespaceContext, XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES)
+from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
 from .text_documents import BSLTextDocument
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
@@ -210,6 +213,10 @@ class Interpreter:
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
         self.register_type("ПараметрыЗаписиJSON", BSLJSONWriterSettings, "JSONWriterSettings")
+        self.register_type("ЧтениеXML", BSLXMLReader, "XMLReader")
+        self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
+        self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
+        self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
         self.register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
         self.register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
         self.register_function("ПрочитатьJSON", read_json, "ReadJSON")
@@ -626,6 +633,9 @@ class Interpreter:
             return JSON_LINE_BREAKS
         if name in ("кодировкатекста", "textencoding"):
             return TEXT_ENCODINGS
+        if name in ("типузлаxml", "xmlnodetype"): return XML_NODE_TYPES
+        if name in ("пробельныесимволыxml", "xmlspace"): return XML_SPACES
+        if name in ("типпроверкиxml", "xmlvalidationtype"): return XML_VALIDATION_TYPES
         if name in ("типзначенияjson", "jsonvaluetype"):
             return JSON_VALUE_TYPES
         if name in ("обработкастрокиxml", "xmlstringprocessing"):
@@ -879,7 +889,7 @@ class Interpreter:
         value = self.known_receiver(node)
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
                                        BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter,
-                                       BSLTextReader, BSLTextWriter) else None
+                                       BSLTextReader, BSLTextWriter, BSLXMLReader, BSLXMLWriter) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -896,6 +906,13 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        if type(receiver) is BSLXMLReader:
+            if key in {"openfile", "открытьфайл"}: return frozenset({1, 2, 3})
+            if key in {"setstring", "установитьстроку"}: return frozenset({1, 2})
+            if key in {"movetocontent", "перейтиксодержимому"}: return frozenset({0})
+        if type(receiver) is BSLXMLWriter:
+            if key in {"openfile", "открытьфайл"}: return frozenset({1, 2})
+            if key in {"setstring", "установитьстроку"}: return frozenset({0})
         if type(receiver) in (BSLTextReader, BSLTextWriter):
             if key in {"open", "открыть"}: return frozenset({1, 2, 3, 4})
             if key in {"read", "прочитать", "readline", "прочитатьстроку"}: return frozenset({0})
@@ -1228,6 +1245,8 @@ class Interpreter:
     def visit_New(self, node: ast.New) -> object:
         factory = self.types.get(node.name.casefold())
         if factory is not None and (factory.function is BSLTypeDescription
+                                    or factory.function is BSLXMLReaderSettings
+                                    or factory.function is BSLXMLWriterSettings
                                     or factory.function is BSLJSONWriterSettings
                                     or factory.function is BSLTextReader
                                     or factory.function is BSLTextWriter):

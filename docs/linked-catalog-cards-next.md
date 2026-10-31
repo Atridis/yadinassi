@@ -50,3 +50,15 @@ frozen-.1CD parity and aggregate gates before publication/merge acceptance.
 # !todo Composite/nullable references, hierarchy/owners, tabular sections,
 additional date qualifiers, other linked standard-field shapes, arbitrary
 collation and multi-node free lists remain unsupported; no silent fallback.
+
+## Actual frozen-image parity checkpoint
+
+The completed linked runtime on `b7427c58c9315fe2a681fe83083edd842a227ea7`
+passed [native run 41241917118](https://github.com/Atridis/yadinassi/actions/runs/41241917118):
+32/32 observer blocks and 768 deterministic observations matched the real
+`FileDBContext` reader on the same immutable native `.1CD` postimages. Both schema
+identities, empty/filled states and client/server contexts were covered; all 129
+source identities and cleanup were independently verified. This is distinct from
+the earlier synthetic-transport replay. The subsequent XML/main source union must
+obtain fresh source-bound parity before its merge; this checkpoint is not relabeled
+as evidence for another runtime bundle.

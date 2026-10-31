@@ -314,3 +314,13 @@ wildcard deletion, remote URL schemes, permission setters and exotic codecs
 remain unsupported; `!todo` marks deferred corners. TextReader currently takes
 a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
 are not provided. [Full scope](docs/file-io-family.md).
+
+### XML reader/writer boundary after the ordinary workflow block
+
+The broad legacy XML exclusion does not include the ordinary reader/writer subset
+listed in [docs/xml-workflow-family.md](docs/xml-workflow-family.md). DOM, XDTO,
+XSD/schema validation, DTD/entity declarations and external resolution, streams,
+XML 1.1, `XMLAttributeType`, full Unicode-name ranges and unchecked malformed
+WriteRaw fragments remain unsupported (`!todo`). Internal serialization is
+explicitly rejected. The ordinary subset has a source-bound native XML33 capture and exact corrected
+replay. This does not imply parity outside those scenarios; final CI is pending.
