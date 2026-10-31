@@ -20,7 +20,7 @@ MAX_DESCRIPTION_UNITS = 128
 PINS = MappingProxyType({
  'metadata/Catalog.xml': '612fa20fc7a30262c27ccb52201ce57bbbba8cbbab60ae9ac82e0358a36024c5',
  'modules/NativeOracleServer.bsl': '5700a4f2f44574e47afdcea4d3ecb136436715a1391e945a8de31d5f45cfe69b'})
-HOOK_SHA256 = 'e26b456ac4a642f047e89872822f2cc622bfd86a27f1061b38c7723ea7da9306'
+HOOK_SHA256 = '85220e83f7935677bf4e531114d72097ca8620dd40043a03346aa872458d4809'
 
 
 def _case(case):

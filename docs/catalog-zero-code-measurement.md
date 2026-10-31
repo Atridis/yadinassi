@@ -171,3 +171,12 @@ Unknown output, no recognized issues, or even result code zero does not establis
 that bootstrap succeeded, that compilation caused the timeout, or that native
 CodeLength0 behavior has been measured. This remains a failed report with no
 measurement or snapshots; runtime support stays gated on actual native evidence.
+
+The first syntax diagnostic (run 41180979544, commit `a4a70aba`) found
+undefined symbols at generated server lines 642 and 644: the observation hook
+incorrectly treated `ТипКодаСправочника` as a global enumeration. Metadata
+property enumerations are accessed through `Метаданные.СвойстваОбъектов`
+([official metadata API guidance](https://its.1c.ru/db/content/metod8dev/src/developers/platform/metod/other/i8102318.htm)).
+The correction adds that namespace to the two comparisons; the observed native
+`Каталог.ТипКода`, strict witness policy, and runtime guard remain unchanged.
+Native reruns, not this source correction, determine whether measurement works.

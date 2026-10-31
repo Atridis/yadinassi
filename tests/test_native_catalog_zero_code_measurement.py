@@ -78,5 +78,13 @@ class ZeroCodeMeasurementTests(unittest.TestCase):
         d=witness();del d['code_type']
         with self.assertRaises(ValueError):parse(d)
         text=subject._hook('zero8')
-        self.assertIn('Каталог.ТипКода = ТипКодаСправочника.Строка',text)
-        self.assertIn('Каталог.ТипКода = ТипКодаСправочника.Число',text)
+        self.assertIn('Каталог.ТипКода = Метаданные.СвойстваОбъектов.ТипКодаСправочника.Строка',text)
+        self.assertIn('Каталог.ТипКода = Метаданные.СвойстваОбъектов.ТипКодаСправочника.Число',text)
+
+class NativeMetadataEnumNamespaceTests(unittest.TestCase):
+    def test_no_global_metadata_enumeration(self):
+        for case in subject.CASES:
+            text=subject._hook(case)
+            self.assertNotIn('= ТипКодаСправочника.',text)
+            self.assertEqual(text.count('Метаданные.СвойстваОбъектов.ТипКодаСправочника.'),2)
+            self.assertIn('Каталог.ТипКода = ',text)
