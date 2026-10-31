@@ -381,6 +381,9 @@ jobs:
           - profile: tree-columns-delete-v1
             artifact: tree-columns-delete
             case: tree_columns_delete
+          - profile: format-numbers-v1
+            artifact: format-numbers
+            case: format_numbers
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

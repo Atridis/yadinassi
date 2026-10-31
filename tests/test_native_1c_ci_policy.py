@@ -454,6 +454,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: tree-columns-delete-v1
             artifact: tree-columns-delete
             case: tree_columns_delete
+          - profile: format-numbers-v1
+            artifact: format-numbers
+            case: format_numbers
 """
         for job, expected in expected_headers.items():
             with self.subTest(job=job):

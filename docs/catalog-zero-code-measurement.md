@@ -4,7 +4,7 @@ Based on merged main `f3be2cd2d4370ac4f7e435fcd56b9d212188ea53`, tree
 `4fd20bb1f93d582369568212461508a471d467cf`. The preparation sections below record
 the original measurement design; the native acquisition section records later
 verified results. The final section describes bounded public physical/typed
-reader admission and its new, not-yet-acquired native parity route. Existing
+reader admission and the independently verified native parity acquisition. Existing
 positive-code readers retain their behavior.
 
 [Official1C guidance](https://1c-dn.com/library/length_of_configuration_object_codes_and_numbers/)
@@ -233,6 +233,31 @@ schema70 aggregate binds both independently nonce-bound cases.
 
 `code_is_empty` is a required independent finite observation in this new route,
 not a success expectation or a synthesized return value. Original schema65
-measurement reports retain their historical interpretation. Native acceptance
-of the new public reader route is pending; the earlier acquisition is evidence
-for physical shape, not proof that this new route has run.
+measurement reports retain their historical interpretation. The original acquisition proves physical shape; the new public-reader
+acquisition below independently proves actual readback for these bounded shapes.
+
+### Native public-reader acquisition and empty Code observation
+
+[Run 41188918461](https://github.com/Atridis/yadinassi/actions/runs/41188918461),
+attempt1, accepted both cases and the aggregate on source
+`8dcb3cf8db01fcced4f1a394fca58de32cefd4ec`, tree
+`6dedf88dd1c69fd26f388f47e54f37d576484c42`, using1C8.3.27.1508.
+An independent cold FINAL audit verified all43 source identities, all three
+GitHub ZIP digests and exact members, both reports, aggregate and full cleanup
+in normal and optimized Python without importing fixture modules.
+
+The actual public typed reader matched native UUID and metadata in all six
+created/updated/applied observations. Description8 matched in all three states;
+Description0 comparison was not applicable. Physical `_CODE` remained absent.
+The separately observed native Code value had String type and
+`code_is_empty:true` in all six present states. Baseline remained absent/null.
+Unlike the earlier type-only receipt, this establishes an empty native string
+for these measured fixtures, not an inferred consequence of field omission.
+
+Report SHA256 values:
+- zero0: `c18a4b9f8db139d5792f293371b7481cdf4883f5fc0b7346cf51bbf81adc2ad7`
+- zero8: `d31555916e052ae5b532560d74981cc5d2a3e493b4a096bea538def2b5aa4fcb`
+
+This proof admits the bounded public physical/typed offline reader only. It does
+not implement a logical BSL `Code` return value or catalog manager API, and it
+does not generalize native acceptance to unmeasured qualifier combinations.

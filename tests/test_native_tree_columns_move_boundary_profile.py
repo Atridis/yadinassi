@@ -354,7 +354,7 @@ class ColumnsMoveBoundaryProfileTests(unittest.TestCase):
                   "          - profile: tree-copy-v1\n            artifact: tree-copy\n            case: tree_copy\n"
                   "          - profile: tree-sort-v1\n            artifact: tree-sort\n            case: tree_sort\n"
                   "          - profile: tree-columns-move-v1\n            artifact: tree-columns-move\n            case: tree_columns_move\n"
-                  "          - profile: tree-columns-clear-v1\n            artifact: tree-columns-clear\n            case: tree_columns_clear\n          - profile: tree-columns-delete-v1\n            artifact: tree-columns-delete\n            case: tree_columns_delete\n")
+                  "          - profile: tree-columns-clear-v1\n            artifact: tree-columns-clear\n            case: tree_columns_clear\n          - profile: tree-columns-delete-v1\n            artifact: tree-columns-delete\n            case: tree_columns_delete\n          - profile: format-numbers-v1\n            artifact: format-numbers\n            case: format_numbers\n")
         def validate(value):
             strategy='    strategy:\n'+value.split('    strategy:\n',1)[1].split('    steps:\n',1)[0]
             self.assertEqual(strategy,expected)

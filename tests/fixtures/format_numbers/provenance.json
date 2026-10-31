@@ -1,0 +1,26 @@
+{
+  "run": 41184098782,
+  "job": 124487367574,
+  "head": "ffe286b4d94ceeae14c36f948594b3c958ea81b8",
+  "tree": "b7422efd843f2fb44800f7af38d8d2dbf9b876d1",
+  "checkout": "687572d0245fcdc5b77d560e64c99426a4a4ed6d",
+  "native_source_sha256": "a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84",
+  "native_capture_sha256": "543fa283c906e7d430e8100cf23fdf376f4d552f8d7efd196fe87fb8a858c63b",
+  "native_capture_bytes": 1804,
+  "cases": 48,
+  "artifact_metadata": [
+    {
+      "id": 13036695864,
+      "name": "native-1c-format-numbers-outputs",
+      "digest": "sha256:5c60b9bea462c1ca7c5e1dfd552de8b003ff56797396a427fa7ee437a74f47b1"
+    },
+    {
+      "id": 13036351562,
+      "name": "native-1c-format-numbers-summary",
+      "digest": "sha256:acc17279591bc5a9df1f9d3aac7184c710e91f4ab5dd6612a4270f117570f529"
+    }
+  ],
+  "platform": "Linux 1C 8.3.27.1508",
+  "scope": "Original 48 fixed observations, client/server byte-identical; not a full Format specification.",
+  "url": "https://github.com/Atridis/yadinassi/actions/runs/41184098782"
+}
