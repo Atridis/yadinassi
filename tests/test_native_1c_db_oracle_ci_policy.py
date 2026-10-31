@@ -399,7 +399,7 @@ class WorkflowTests(unittest.TestCase):
             result = subprocess.run([sys.executable, "-I", "-B", "-c", source],
                                     env=subprocess_environment({"ELIGIBILITY_RESULT": eligibility, "NATIVE_RESULT": native,
                                         "NATIVE_ROUTE":"catalog-reference-identity-v1", "REFERENCE_A_RESULT":"success",
-                                        "CODEC_A_RESULT":"skipped", "CODEC_RESULT":"skipped"}),
+                                        "CODEC_A_RESULT":"skipped", "CODEC_RESULT":"skipped", "METADATA_RESULT":"skipped"}),
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.assertEqual(result.returncode, policy.final_verdict(eligibility, native))
             self.assertNotIn(b"SECRET", result.stdout + result.stderr)
@@ -418,9 +418,9 @@ class WorkflowTests(unittest.TestCase):
         source = WORKFLOW_PATH.read_text()
         self.assertIn("\npermissions: {}\n", source)
         self.assertEqual(re.findall(r"^  ([a-z_]+):$", source.split("\njobs:\n")[1], re.M),
-                         ["eligibility", "native_reference_a", "native_oracle", "native_codec_a", "native_codec_b", "verdict"])
-        self.assertEqual(source.count("contents: read"), 4)
-        self.assertEqual(source.count("packages: read"), 4)
+                         ["eligibility", "native_reference_a", "native_oracle", "native_codec_a", "native_codec_b", "native_metadata", "verdict"])
+        self.assertEqual(source.count("contents: read"), 5)
+        self.assertEqual(source.count("packages: read"), 5)
         self.assertNotIn(": write", source)
         for job in ("eligibility", "verdict"):
             block = workflow_job(job)
@@ -476,13 +476,14 @@ class WorkflowTests(unittest.TestCase):
 """,
             "verdict": """    name: Native 1C file-DB oracle verdict
     if: always()
-    needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b]
+    needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b, native_metadata]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 """,
         }
         old_native=headers['native_oracle']
+        headers['native_metadata']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C Metadata Catalogs applied-view measurement').replace('    if: >-\n', "    if: >-\n      needs.eligibility.outputs.route == 'metadata-catalog-applied-view-v1' &&\n")
         headers['native_reference_a']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C reference identity case A')+"""    outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       reference_sha256: ${{ steps.native.outputs.reference_sha256 }}
