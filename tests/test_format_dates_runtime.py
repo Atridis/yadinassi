@@ -41,7 +41,7 @@ class FormatDatesRuntimeTests(unittest.TestCase):
                     else:self.assertEqual(got,want,(name,case))
 
     def test_final_supported56_is_explicit_projection_of_immutable_observations(self):
-        mapping=json.loads((FIXTURE/'supported56-mapping.json').read_text())
+        mapping=json.loads((FIXTURE/'supported56-mapping.json').read_text(encoding='utf-8'))
         source=(FIXTURE/'supported56.bsl').read_bytes()
         self.assertEqual(source,(ROOT/'integrational_tests/measurements/format_dates.bsl').read_bytes())
         self.assertEqual(hashlib.sha256(source).hexdigest(),mapping['source_sha256'])

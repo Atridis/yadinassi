@@ -117,7 +117,7 @@ class FormatProfileTests(unittest.TestCase):
         transport=dict(schema=s.schema,profile=PROFILE,nonce=NONCE,report=native,outputs=[dict(name=s.case+'.out',size=8192,sha256=budget.H,data_b64=base64.b64encode(b'x'*8192).decode())])
         bounds={'stage':len(budget.wire(stage)),'native':len(budget.wire(native)),'transport':len(budget.wire(transport))+1,'host':len(budget.wire(report))+1,'provenance':len(provenance)}
         for key,cap in (('stage',8192),('native',32768),('transport',65536),('host',32768),('provenance',32768)):self.assertLessEqual(bounds[key],cap,(key,bounds))
-        workflow=(ROOT/'.github/workflows/native-1c-isolated-smoke.yml').read_text()
+        workflow=(ROOT/'.github/workflows/native-1c-isolated-smoke.yml').read_text(encoding='utf-8')
         self.assertEqual(workflow.count('- profile: '+PROFILE),1)
         self.assertIn('artifact: format-dates\n            case: format_dates',workflow)
 

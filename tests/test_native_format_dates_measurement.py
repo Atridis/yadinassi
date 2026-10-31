@@ -77,7 +77,7 @@ class FormatObserverTests(unittest.TestCase):
         fixture = ROOT / 'tests/fixtures/format_dates'
         original = (fixture / 'original40.bsl').read_bytes()
         capture = (fixture / 'original40.out').read_bytes()
-        receipt = json.loads((fixture / 'original40-provenance.json').read_text())
+        receipt = json.loads((fixture / 'original40-provenance.json').read_text(encoding='utf-8'))
         self.assertEqual(hashlib.sha256(original).hexdigest(), '5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa')
         self.assertTrue((fixture / 'supplement56.bsl').read_bytes().startswith(original))
         self.assertEqual((fixture / 'supported56.bsl').read_bytes(), SOURCE.encode())
@@ -101,11 +101,32 @@ class FormatObserverTests(unittest.TestCase):
         self.assertEqual(len(seen), 56)
         self.assertTrue(all(r['status']=='ok' for r in records))
         import json
-        mapping = json.loads((ROOT / 'tests/fixtures/format_dates/supported56-mapping.json').read_text())
+        mapping = json.loads((ROOT / 'tests/fixtures/format_dates/supported56-mapping.json').read_text(encoding='utf-8'))
         self.assertEqual(len(mapping['cases']), 56)
         self.assertEqual([r[1] for r in fixed_rows()], [r['expression'] for r in mapping['cases']])
         self.assertEqual(seen[0][1], 'DF=yyyy-MM-dd HH:mm:ss')
         self.assertEqual(seen[38][1], 'NFD=1;NG=0;nds=.'); self.assertEqual(seen[-1][1], 'DF=yyyy;ДФ=MM')
+
+    def test_repository_fixture_reads_are_independent_of_default_encoding(self):
+        from unittest import mock
+        from test_format_dates_runtime import FormatDatesRuntimeTests
+        original_open = Path.open
+        def windows_default(path, mode='r', buffering=-1, encoding=None,
+                            errors=None, newline=None):
+            if 'b' not in mode and encoding in (None, 'locale'):
+                encoding = 'cp1252'
+            return original_open(path, mode=mode, buffering=buffering,
+                                 encoding=encoding, errors=errors, newline=newline)
+        mapping_path = ROOT / 'tests/fixtures/format_dates/supported56-mapping.json'
+        # This fixed fixture contains Cyrillic; a locale-default read really differs.
+        self.assertNotEqual(mapping_path.read_text(encoding='cp1252'),
+                            mapping_path.read_text(encoding='utf-8'))
+        with mock.patch.object(Path, 'open', windows_default):
+            self.test_exact_inputs_reach_witness_unchanged()
+            self.test_original40_source_capture_and_attribution_preserved()
+            runtime_case = FormatDatesRuntimeTests(
+                'test_final_supported56_is_explicit_projection_of_immutable_observations')
+            runtime_case.test_final_supported56_is_explicit_projection_of_immutable_observations()
 
     def test_unicode_and_empty_outputs_are_lossless(self):
         for value, units in [('',()), (' \u00a0\U0001f600', (32,160,55357,56832)), ('a'*32,(97,)*32)]:
