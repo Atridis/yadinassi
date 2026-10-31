@@ -133,9 +133,9 @@ def render_catalog_xml(s, request):
             text=re.sub(r'<Name>(?:Payload|Amount)</Name>','<Name>'+attribute['name']+'</Name>',text)
             text=re.sub(r'<Type>.*?</Type>','<Type>'+types[kind]+'</Type>',text,count=1,flags=re.S)
             if kind not in ('String','Number'):
-                # Schema AttributeProperties.FillValue is optional (lowerBound0).
-                # Avoid inheriting a String default into a Boolean/date/ref type.
-                text=re.sub(r'<FillValue\b[^>]*>.*?</FillValue>\n?','',text,count=1,flags=re.S)
+                # Native run 41226924613 measured this exact untyped nil default
+                # for Boolean, DateTime and the saved single CatalogRef target.
+                text=re.sub(r'<FillValue\b[^>]*>.*?</FillValue>','<FillValue xsi:nil="true"/>',text,count=1,flags=re.S)
             attributes.append(text)
         start=source.index('<ChildObjects>');end=source.index('</ChildObjects>')+len('</ChildObjects>')
         body='<ChildObjects>\n'+'\n'.join(attributes)+'\n</ChildObjects>' if attributes else '<ChildObjects/>'
@@ -215,8 +215,8 @@ def verify_redump(s, request, saved, redumped):
     for name,raw in saved.items():
         if _redump_signature(raw)!=_redump_signature(redumped[name]):
             raise ValueError('saved-xml-profile')
-    # !todo Added native FillValue nodes require typed bounded capture before
-    # admitting role-specific defaults; optional schema presence is not enough.
+    # Exact nil FillValue inputs are native-measured; no default stripping.
+    # !todo Other types/default profiles require separate native evidence.
     return True
 
 

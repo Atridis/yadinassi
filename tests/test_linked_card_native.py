@@ -68,6 +68,18 @@ class LinkedFixtureTests(unittest.TestCase):
         changed=dict(actual);changed[name]=changed[name].replace(b'<FillFromFillingValue>false</FillFromFillingValue>',b'<FillFromFillingValue>true</FillFromFillingValue>')
         with self.assertRaises(ValueError):linked.verify_redump(s,m['schema'],saved,changed)
 
+    def test_measured_nil_defaults_are_exact_not_stripped(self):
+        for repeat in (1,2):
+            setup,manifest,files=fixture.load(repeat)
+            saved={n:v for n,v in files.items() if n.endswith('.xml')}
+            name='Catalogs/'+setup.base.names[0]+'.xml';raw=saved[name]
+            needle=b'<FillValue xsi:nil="true"/>'
+            self.assertEqual(raw.count(needle),3)
+            for replacement in (b'<FillValue xsi:nil="false"/>',b'<FillValue xsi:nil="true">nonempty</FillValue>',b'<FillValue xsi:nil="true" extra="x"/>',b'<FillValue xsi:nil="true" xsi:type="xs:boolean"/>',b''):
+                changed=dict(saved);changed[name]=raw.replace(needle,replacement,1)
+                with self.subTest(repeat=repeat,replacement=replacement),self.assertRaises(ValueError):
+                    linked.verify_redump(setup,manifest['schema'],saved,changed)
+
     def test_fractional_number_transport_and_guarded_cursor(self):
         for repeat in (1,2):
             s,_,files=fixture.load(repeat)
@@ -354,7 +366,9 @@ class LinkedInstallDiagnosticsTests(unittest.TestCase):
     def test_typed_synthetic_defaults_are_owned_and_bounded(self):
         import xml.etree.ElementTree as ET
         import linked_card_diagnostics as d
-        _,_,files=fixture.load(1);saved={n:v for n,v in files.items() if n.endswith('.xml')};name=next(iter(saved))
+        _,_,files=fixture.load(1)
+        # Preserve the original omitted-default diagnostic scenario after input correction.
+        saved={n:__import__('re').sub(rb'<FillValue\s+xsi:nil="true"\s*/>',b'',v) for n,v in files.items() if n.endswith('.xml')};name=next(iter(saved))
         md='{http://v8.1c.ru/8.3/MDClasses}';xsi='{http://www.w3.org/2001/XMLSchema-instance}'
         root=ET.fromstring(saved[name]);root.set('xmlns:xs','http://www.w3.org/2001/XMLSchema')
         attrs=root.findall(md+'Catalog/'+md+'ChildObjects/'+md+'Attribute')
