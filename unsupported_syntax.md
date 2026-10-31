@@ -95,7 +95,7 @@ source-bound native-прогон подтвердил только собств�
 - `ХранилищеЗначения`.
 - `УникальныйИдентификатор` / `UUID`: расширенные/versioned конструкторы, составное/копируемое/квалифицированное ОписаниеТипов, typed cells, вложенные codecs, обратное чтение internal Type-record и межконтекстная передача не поддерживаются. [Измеренный скалярный срез](docs/uuid-native-alignment.md).
 - `Файл`, потоки, чтение/запись текста и двоичных данных как объекты языка 1С.
-- `ЧтениеXML`, `ЗаписьXML`, DOM и XDTO; `ЧтениеJSON`, `ЗаписьJSON`.
+- `ЧтениеXML`, `ЗаписьXML`, DOM и XDTO. JSON имеет отдельную ограниченную реализацию, см. ниже.
 - HTTP/FTP/почтовые соединения и сообщения, веб-сервисы, COM и внешние компоненты.
 - Для `Символы / Chars` не предоставляются конструктор, перечисление,
   отражение, тип/строковое представление/кодек самого пространства или свойства
@@ -297,3 +297,10 @@ Rows.Sort имеет только bounded numeric implementation для явно
 `linux-8.3.27.1508`: Windows-цель, строковые/смешанные ключи, CompareValues,
 неизмеренные преобразования флага, повторные имена и прочие направления
 остаются неподдержанными. [Точные границы и native evidence](docs/value-tree-sort-runtime.md).
+
+### JSON family remaining scope
+
+Advanced date conversion and revival callbacks, XDTO/application objects,
+Stream objects, advanced quote/escape settings, comments/non-standard input,
+reader CurrentLine/CurrentPosition and exact malformed-input diagnostics remain unsupported. The ordinary
+reader/writer and collection workflows are described in [JSON family](docs/json-family.md).

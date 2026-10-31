@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from .text_documents import BSLTextDocument
+from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
 from .error_info import BSLErrorInfo, BSLErrorCategory
@@ -32,6 +33,11 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLJSONWriterSettings, BSLType.JSON_WRITER_SETTINGS, "JSONWriterSettings"),
+    (BSLJSONLineBreak, BSLType.JSON_LINE_BREAK, "JSONLineBreak"),
+    (BSLJSONReader, BSLType.JSON_READER, "JSONReader"),
+    (BSLJSONWriter, BSLType.JSON_WRITER, "JSONWriter"),
+    (BSLJSONValueType, BSLType.JSON_VALUE_TYPE, "JSONValueType"),
     (BSLTextDocument, BSLType.TEXT_DOCUMENT, "TextDocument"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),

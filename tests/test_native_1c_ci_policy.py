@@ -460,6 +460,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: format-dates-v1
             artifact: format-dates
             case: format_dates
+          - profile: json-family-v1
+            artifact: json-family
+            case: json_family
 """
         for job, expected in expected_headers.items():
             with self.subTest(job=job):

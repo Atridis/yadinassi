@@ -4,6 +4,7 @@ from decimal import Decimal, localcontext
 from types import GeneratorType
 
 from .text_documents import BSLTextDocument
+from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
 from .unique_identifiers import BSLUUID
 from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
 from pathlib import Path
@@ -203,6 +204,11 @@ class Interpreter:
             self.register_function(name, function, alias)
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
+        self.register_type("ПараметрыЗаписиJSON", BSLJSONWriterSettings, "JSONWriterSettings")
+        self.register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
+        self.register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
+        self.register_function("ПрочитатьJSON", read_json, "ReadJSON")
+        self.register_function("ЗаписатьJSON", write_json, "WriteJSON", returns_value=False)
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
@@ -602,6 +608,10 @@ class Interpreter:
             return DATE_FRACTIONS
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
+        if name in ("переносстрокjson", "jsonlinebreak"):
+            return JSON_LINE_BREAKS
+        if name in ("типзначенияjson", "jsonvaluetype"):
+            return JSON_VALUE_TYPES
         if name in ("обработкастрокиxml", "xmlstringprocessing"):
             return XML_STRING_PROCESSING
         if name in ("направлениепоиска", "searchdirection"):
@@ -849,7 +859,7 @@ class Interpreter:
         # classifier as the single existing hook for known optional receivers.
         value = self.known_receiver(node)
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
-                                       BSLValueList, BSLValueTreeColumnCollection) else None
+                                       BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -866,6 +876,13 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        if type(receiver) is BSLJSONWriter:
+            if key in {"openfile", "открытьфайл"}:
+                return frozenset({1, 2, 3})
+            if key in {"setstring", "установитьстроку"}:
+                return frozenset({0})
+        if type(receiver) is BSLJSONReader and key in {"openfile", "открытьфайл"}:
+            return frozenset({1})
         if type(receiver) is BSLValueList:
             if key in {"add", "добавить"}:
                 return frozenset(range(3))
@@ -1186,7 +1203,8 @@ class Interpreter:
 
     def visit_New(self, node: ast.New) -> object:
         factory = self.types.get(node.name.casefold())
-        if factory is not None and factory.function is BSLTypeDescription:
+        if factory is not None and (factory.function is BSLTypeDescription
+                                    or factory.function is BSLJSONWriterSettings):
             # The observed descriptor overloads use positional qualifier holes.
             # Other host constructors retain their explicit omission rejection.
             values = []
