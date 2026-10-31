@@ -169,10 +169,54 @@ def validate_fragments(s, request, artifacts):
     return True
 
 
+def _redump_signature(raw):
+    """Resolve used QName meanings; unused Designer declarations are immaterial."""
+    if type(raw) is not bytes or len(raw)>65536 or b'<!' in raw:
+        raise ValueError('saved-xml-bound')
+    scopes=[]; pending=[]; meanings={}; count=0
+    xsi_type='{http://www.w3.org/2001/XMLSchema-instance}type'
+    type_tag='{http://v8.1c.ru/8.1/data/core}Type'
+    def qname(value, bindings):
+        parts=value.strip().split(':')
+        if len(parts)>2 or any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*',p) for p in parts):
+            raise ValueError('saved-namespace-profile')
+        prefix,local=parts if len(parts)==2 else ('',parts[0])
+        if prefix not in bindings:
+            raise ValueError('saved-namespace-profile')
+        # Existing used prefixes may not be rebound, even to another valid URI.
+        if prefix in NAMESPACES and bindings[prefix]!=NAMESPACES[prefix]:
+            raise ValueError('saved-namespace-profile')
+        return '{'+bindings[prefix]+'}'+local
+    try:
+        for event,item in ET.iterparse(io.BytesIO(raw),events=('start-ns','start','end')):
+            if event=='start-ns':
+                count+=1
+                if count>512:raise ValueError('saved-namespace-profile')
+                pending.append(item)
+            elif event=='start':
+                bindings=dict(scopes[-1]) if scopes else {}
+                bindings.update(pending);pending=[];scopes.append(bindings)
+                if len(scopes)>32:raise ValueError('saved-xml-bound')
+            else:
+                bindings=scopes.pop()
+                attrs=tuple(sorted((k,qname(v,bindings) if k==xsi_type else v) for k,v in item.attrib.items()))
+                value=(item.text or '').strip()
+                if item.tag==type_tag:value=qname(value,bindings)
+                meanings[id(item)]=(item.tag,attrs,value,(item.tail or '').strip(),tuple(meanings[id(c)] for c in item))
+                root=item
+    except ET.ParseError:raise ValueError('saved-xml') from None
+    return meanings[id(root)]
+
+
 def verify_redump(s, request, saved, redumped):
-    # !todo Native apply/redump must confirm these schema-defined generated inputs.
-    # Prefix/shape changes remain explicit mismatches, not permissive XML parsing.
-    validate_fragments(s,request,saved);validate_fragments(s,request,redumped)
+    validate_fragments(s,request,saved)
+    if type(redumped) is not dict or set(redumped)!=set(saved):
+        raise ValueError('saved-fragments')
+    for name,raw in saved.items():
+        if _redump_signature(raw)!=_redump_signature(redumped[name]):
+            raise ValueError('saved-xml-profile')
+    # !todo Added native FillValue nodes require typed bounded capture before
+    # admitting role-specific defaults; optional schema presence is not enough.
     return True
 
 

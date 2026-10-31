@@ -57,6 +57,17 @@ class LinkedFixtureTests(unittest.TestCase):
             for value in mapping:self.assertNotEqual(value['ref_type_uuid'],value['metadata_uuid'])
             self.assertEqual([len(c['attributes']) for c in m['schema']['catalogs']],[5,0])
             for state in fixture.STATES:linked.require_setup_evidence(wire(s,state).encode(),s,state)
+    def test_redump_ignores_only_unused_namespaces_not_used_qname_changes(self):
+        s,m,files=fixture.load(1);saved={n:v for n,v in files.items() if n.endswith('.xml')}
+        actual={n:v.replace(b'<MetaDataObject ',b'<MetaDataObject xmlns:unused="urn:synthetic-unused" ',1) for n,v in saved.items()}
+        self.assertTrue(linked.verify_redump(s,m['schema'],saved,actual))
+        self.assertEqual(fixture.actual_mapping(s,m['schema'],actual),fixture.actual_mapping(s,m['schema'],saved))
+        with self.assertRaises(ValueError):linked.validate_fragments(s,m['schema'],actual)
+        changed=dict(actual);name=next(iter(saved));changed[name]=changed[name].replace(b'http://www.w3.org/2001/XMLSchema"',b'urn:wrong-used-schema"')
+        with self.assertRaises(ValueError):linked.verify_redump(s,m['schema'],saved,changed)
+        changed=dict(actual);changed[name]=changed[name].replace(b'<FillFromFillingValue>false</FillFromFillingValue>',b'<FillFromFillingValue>true</FillFromFillingValue>')
+        with self.assertRaises(ValueError):linked.verify_redump(s,m['schema'],saved,changed)
+
     def test_fractional_number_transport_and_guarded_cursor(self):
         for repeat in (1,2):
             s,_,files=fixture.load(repeat)
@@ -339,6 +350,32 @@ class LinkedInstallDiagnosticsTests(unittest.TestCase):
             with self.assertRaises(OracleError):d.validate_install_failure(bad,saved)
         value['catalogs'][0]['differences']=[dict(path='private-data',kind='text')]
         with self.assertRaises(OracleError):d.validate_install_failure(value,saved)
+
+    def test_typed_synthetic_defaults_are_owned_and_bounded(self):
+        import xml.etree.ElementTree as ET
+        import linked_card_diagnostics as d
+        _,_,files=fixture.load(1);saved={n:v for n,v in files.items() if n.endswith('.xml')};name=next(iter(saved))
+        md='{http://v8.1c.ru/8.3/MDClasses}';xsi='{http://www.w3.org/2001/XMLSchema-instance}'
+        root=ET.fromstring(saved[name]);root.set('xmlns:xs','http://www.w3.org/2001/XMLSchema')
+        attrs=root.findall(md+'Catalog/'+md+'ChildObjects/'+md+'Attribute')
+        for index,kind,text in ((2,'xs:boolean','false'),(3,'xs:dateTime','0001-01-01T00:00:00'),(4,None,'')):
+            node=ET.SubElement(attrs[index].find(md+'Properties'),md+'FillValue')
+            if kind is not None:node.set(xsi+'type',kind)
+            else:node.set(xsi+'nil','true')
+            node.text=text
+        redumped=dict(saved);redumped[name]=ET.tostring(root)
+        value=d.install_failure('fragments',ValueError('redump-profile'),saved,redumped)
+        rows=value['catalogs'][0]['fill_values'];self.assertEqual(len(rows),3)
+        self.assertEqual([r['text'] for r in rows],['false','0001-01-01T00:00:00',''])
+        self.assertEqual(rows[0]['type_namespace'],'http://www.w3.org/2001/XMLSchema')
+        self.assertEqual(rows[2]['nil'],'true')
+        bad=copy.deepcopy(value);bad['catalogs'][0]['fill_values'][0]['attribute_uuid']='0'*36
+        with self.assertRaises(OracleError):d.validate_install_failure(bad,saved)
+        bad=copy.deepcopy(value);bad['catalogs'][0]['fill_values'][0]['text']='x'*129
+        with self.assertRaises(OracleError):d.validate_install_failure(bad,saved)
+        attrs[2].set('uuid','0'*36);redumped[name]=ET.tostring(root)
+        value=d.install_failure('fragments',ValueError('redump-profile'),saved,redumped)
+        self.assertEqual([r['attribute_index'] for r in value['catalogs'][0]['fill_values']],[3,4])
 
     def test_install_exception_stays_fixed_and_report_bound(self):
         backend=object.__new__(runner.Native)

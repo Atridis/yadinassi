@@ -86,7 +86,8 @@ class Native(lifecycle.Native):
             self.install_stage = 'mapping'
             mapping=fixture.actual_mapping(b,manifest['schema'],redumped)
             for name, kind in left.items():
-                if kind == 'directory' or name == 'ConfigDumpInfo.xml': continue
+                if kind == 'directory' or name == 'ConfigDumpInfo.xml' or name in fragments: continue
+                # Owned fragments already passed their full semantic QName/tree profile.
                 a, c = target / name, redump / name
                 if name.endswith('.xml'):
                     self.install_stage = 'xml-compare'

@@ -44,7 +44,7 @@ def validate_capture(raw,s,block):
 
 def actual_mapping(s,request,redumped):
     # Complete request/redump equality established first; no UUID name guessing.
-    linked.validate_fragments(s,request,redumped)
+    linked.verify_redump(s,request,linked.render_catalog_xml(s,request),redumped)
     import xml.etree.ElementTree as ET
     ns={'md':'http://v8.1c.ru/8.3/MDClasses','xr':'http://v8.1c.ru/8.3/xcf/readable'}
     result=[]
