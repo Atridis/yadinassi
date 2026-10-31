@@ -40,3 +40,9 @@ tests/fixtures/value_tree_columns_delete/provenance.json -text
 
 # Keep the trusted Metadata observer byte-exact in real autocrlf checkouts.
 scripts/native_1c_db_oracle/modules/MetadataCatalogProbe.bsl text eol=lf
+
+# Preserve exact Format probe source on every platform.
+integrational_tests/measurements/format_numbers.bsl text eol=lf
+
+# Immutable native Format captures, source archive and provenance on every OS.
+tests/fixtures/format_numbers/* -text

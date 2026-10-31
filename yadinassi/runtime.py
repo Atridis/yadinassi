@@ -11,7 +11,7 @@ from typing import Callable
 
 from .syntax import ast
 from .numeric import bits, elementary, numbers
-from . import clocks, date_time_conversions, dates, serialization, strings, type_values, value_checks, xml_values
+from . import clocks, date_time_conversions, dates, formatting, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
 from .database_context import FileDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
@@ -194,7 +194,7 @@ class Interpreter:
                                "ValueToStringInternal")
         self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
-        for name, function, alias in (*strings.BUILTINS, *numbers.BUILTINS,
+        for name, function, alias in (*strings.BUILTINS, *formatting.BUILTINS, *numbers.BUILTINS,
                                       *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS,
                                       *dates.BUILTINS, *clocks.BUILTINS,
                                       *date_time_conversions.BUILTINS):
