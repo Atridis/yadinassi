@@ -16,6 +16,9 @@ import tempfile
 import uuid
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[1]
+# Report validation imports the source-bound physical validator and public runtime.
+# Resolve them from this immutable checkout, never an ambient installed package.
+sys.path.insert(0,str(ROOT))
 sys.path.insert(0,str(ROOT/'scripts/native_1c_db_oracle'))
 sys.path.insert(0,str(ROOT/'yadinassi/storage'))
 import native_1c_smoke as smoke

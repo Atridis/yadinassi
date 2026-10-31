@@ -162,6 +162,28 @@ print('closed')
         self.assertEqual(policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=self.identity),value)
         for mutation in (dict(value,schema=True),dict(value,lane='other'),dict(value,lifecycle=dict(value['lifecycle'],status='ok')),dict(value,lifecycle=dict(value['lifecycle'],accepted=True))):
             with self.assertRaises(OracleError):policy.validate_report(policy.encode_report(mutation),nonce=NONCE,provenance=self.identity)
+    def test_cold_actual_host_entrypoint_can_validate_nonempty_state_modules(self):
+        code = """import sys,runpy
+from pathlib import Path
+root=Path(sys.argv[1]);sys.path.insert(0,str(root/'scripts'))
+assert not any(n=='yadinassi' or n.startswith('yadinassi.') for n in sys.modules)
+runpy.run_path(str(root/'scripts/native_1c_catalog_read_oracle.py'))
+import catalog_read_physical as physical
+import catalog_read_readback as readback
+import yadinassi
+assert Path(yadinassi.__file__).resolve()==root/'yadinassi/__init__.py'
+from catalog_read_fixture import load
+try:physical.validate_observation({},load(1)[0])
+except ValueError:pass
+else:raise RuntimeError('invalid physical payload accepted')
+assert callable(readback.compare)
+print('closed-host-validator')
+"""
+        result=subprocess.run([sys.executable,'-I','-B','-c',code,str(ROOT)],
+            cwd=self.staged,capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(result.stdout.strip(),'closed-host-validator')
+
     def test_host_confinement_and_no_caller_database(self):
         import native_1c_catalog_read_oracle as host
         command=host.container_command(self.staged,'onec-db-oracle-'+'f'*32,NONCE)
