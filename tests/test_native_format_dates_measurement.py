@@ -19,7 +19,7 @@ from yadinassi.syntax import ast
 
 SOURCE_PATH = ROOT / 'integrational_tests/measurements/format_dates.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
-SOURCE_SHA = '5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa'
+SOURCE_SHA = '7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb'
 
 
 def emit(witness=None, source=SOURCE, *, missing=False):
@@ -48,8 +48,8 @@ class FormatObserverTests(unittest.TestCase):
     def test_exact_source_pin_and_bounded_fixed_matrix(self):
         self.assertEqual(hashlib.sha256(SOURCE.encode('utf-8')).hexdigest(), SOURCE_SHA)
         rows = fixed_rows()
-        self.assertEqual([r[0] for r in rows], list(range(1,41)))
-        self.assertEqual(len({r[2] for r in rows}), 40)
+        self.assertEqual([r[0] for r in rows], list(range(1,57)))
+        self.assertEqual(len({r[2] for r in rows}), 56)
         parse(SOURCE)
         for _, expression, _ in rows:
             statements = parse(expression)
@@ -72,6 +72,21 @@ class FormatObserverTests(unittest.TestCase):
         self.assertNotIn('ОписаниеОшибки', SOURCE)
         self.assertNotIn('Выполнить(', SOURCE)
 
+    def test_original40_source_capture_and_attribution_preserved(self):
+        import json
+        fixture = ROOT / 'tests/fixtures/format_dates'
+        original = (fixture / 'original40.bsl').read_bytes()
+        capture = (fixture / 'original40.out').read_bytes()
+        receipt = json.loads((fixture / 'original40-provenance.json').read_text())
+        self.assertEqual(hashlib.sha256(original).hexdigest(), '5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa')
+        self.assertTrue(SOURCE.encode().startswith(original))
+        self.assertEqual(hashlib.sha256(capture).hexdigest(), '186c4441a7ce4c3fb70ccd9f4304be7af1bef5d5cb2797eb91b17500881658b8')
+        self.assertEqual(len(capture.splitlines()), 42)
+        self.assertEqual(receipt['cases'], 40)
+        self.assertEqual(receipt['head'], '1eaf2de6b60e199f21debc3d182b779b4a74b153')
+        self.assertFalse(receipt['runtime_parity_accepted'])
+        self.assertEqual(wire.MAX_ENCODED_BYTES, 8170)
+
     def test_exact_inputs_reach_witness_unchanged(self):
         seen = []
         def witness(*args):
@@ -79,7 +94,7 @@ class FormatObserverTests(unittest.TestCase):
             return 'synthetic'
         raw = emit(witness)
         records = wire.require_available(raw)
-        self.assertEqual(len(seen), 40)
+        self.assertEqual(len(seen), 56)
         self.assertTrue(all(r['status']=='ok' for r in records))
         self.assertEqual(seen[0][1], 'DF=yyyy-MM-dd HH:mm:ss')
         self.assertEqual(seen[27][1], 'DF="yyyy-MM-dd HH:mm:ss"')

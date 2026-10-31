@@ -76,3 +76,19 @@ FDObserve("37", "Format('20261030123456', ""UNKNOWN=xyz;DF=yyyy-MM-dd"")"); // c
 FDObserve("38", "Format(123.45, ""DF=yyyy;DE='EMPTY'"")"); // control.number
 FDObserve("39", "Format(True, ""DF=yyyy;DE='EMPTY'"")"); // control.boolean
 FDObserve("40", "Format(""abc"", ""DF=yyyy;DE='EMPTY'"")"); // control.string
+FDObserve("41", "Format(1.234, ""NFD=1;NFD=2"")"); // supplement.numeric.duplicate-forward
+FDObserve("42", "Format(1.234, ""NFD=2;NFD=1"")"); // supplement.numeric.duplicate-reverse
+FDObserve("43", "Format('20260102030405', ""DF=yyyy;DF=MM"")"); // supplement.date.duplicate-forward
+FDObserve("44", "Format('20260102030405', ""DF=MM;DF=yyyy"")"); // supplement.date.duplicate-reverse
+FDObserve("45", "Format(1.234, ""NFD=1;ЧДЦ=2"")"); // supplement.numeric.alias-forward
+FDObserve("46", "Format(1.234, ""ЧДЦ=2;NFD=1"")"); // supplement.numeric.alias-reverse
+FDObserve("47", "Format('20260102030405', ""DF=yyyy;ДФ=MM"")"); // supplement.date.alias-forward
+FDObserve("48", "Format('20260102030405', ""ДФ=MM;DF=yyyy"")"); // supplement.date.alias-reverse
+FDObserve("49", "Format(1.234, ""nfd=1"")"); // supplement.numeric.lowercase
+FDObserve("50", "Format(1.234, ""NFD=1"")"); // supplement.numeric.uppercase
+FDObserve("51", "Format('20260102030405', ""df=yyyy"")"); // supplement.date.lowercase
+FDObserve("52", "Format('20260102030405', ""DF=yyyy"")"); // supplement.date.uppercase
+FDObserve("53", "Format('20260102030405', ""DF=yyyy-MM-dd HH:mm:ss"")"); // supplement.mask.bare-space
+FDObserve("54", "Format('20260102030405', ""DF='yyyy-MM-dd HH:mm:ss'"")"); // supplement.mask.singlequoted
+FDObserve("55", "Format('20260102030405', ""DF=""""yyyy-MM-dd HH:mm:ss"""""")"); // supplement.mask.doublequoted
+FDObserve("56", "Format('20260102030405', ""DF=yyyy-MM-dd"")"); // supplement.mask.bare-no-space

@@ -49,3 +49,26 @@ Primary references (API design only, not native output evidence):
 
 No true native run, full aggregate, cross-platform CI or runtime parity is claimed
 by local synthetic tests. Actual source-bound client/server acquisition is required.
+
+## Authenticated original40 and bounded supplemental56
+
+[Run41197040716](https://github.com/Atridis/yadinassi/actions/runs/41197040716)
+on head `1eaf2de6b60e199f21debc3d182b779b4a74b153`, tree
+`5b26651439777397d8d70e8598c23f501c37bd63`, acquired40 successful observations
+with identical client/server bytes and no observer errors. Native acquisition
+was accepted; interpreter parity was rejected and its required red gate is
+retained. Exact original source, capture and attribution are archived under
+`tests/fixtures/format_dates/original40*`; this is not date runtime support.
+
+Quoted multiword date masks differed from bare multiword masks in these
+witnesses. Empty DE differed from absent DE. Same-name duplicate DF and mixed
+lowercase/Russian aliases gave different observations; these do not establish
+a general alias/case precedence rule, and numeric parser behavior is unchanged.
+
+The current temporary source appends16 discriminator cases41–56 after the
+byte-identical original40 prefix: identical NFD/DF duplicates in both orders,
+RU/EN aliases in both orders, standalone lowercase/uppercase names, and
+bare/single/double-quoted multiword masks plus a no-space control. No new
+expected native answers are supplied. All56 maximum-length records plus two
+calibrations occupy8170 bytes within the unchanged8192-byte cap. The new native
+acquisition is pending; original40 evidence must not be attributed to56 cases.
