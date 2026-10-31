@@ -3,6 +3,8 @@ from pathlib import Path
 import hashlib
 import errno
 import json
+import os
+import inspect
 import subprocess
 import sys
 import tempfile
@@ -16,10 +18,83 @@ from snapshots import OracleError
 from protocol import IMAGE
 
 
+def static_bundle_bytes(path, maximum=4 * 1024 * 1024):
+    """Bounded static fixtures, not Linux descriptor-race security evidence.
+
+    Windows path and descriptor stat need not share timestamp semantics. Keep
+    the production reader strict; use path metadata consistently in these tests.
+    This function is also embedded in the isolated test child, never the bundle.
+    """
+    import stat
+    from snapshots import OracleError
+    try:
+        if any(p.is_symlink() for p in (path, *path.parents)):
+            raise OracleError('invalid_input')
+        before = path.lstat()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or not 0 <= before.st_size <= maximum):
+            raise OracleError('invalid_input')
+        with path.open('rb') as stream:
+            raw = stream.read(maximum + 1)
+        after = path.lstat()
+        key = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_nlink,
+                         s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+        if key(before) != key(after) or len(raw) != before.st_size or len(raw) > maximum:
+            raise OracleError('invalid_input')
+        return raw
+    except OSError:
+        raise OracleError('invalid_input') from None
+
+
+def isolated_fixture_reader(code):
+    if os.name == 'nt':
+        code = code.replace('import metadata_catalog_runtime_inputs as bundle',
+            'import metadata_catalog_runtime_inputs as bundle\n' +
+            inspect.getsource(static_bundle_bytes) + '\nbundle._read=static_bundle_bytes')
+    return code
+
+
+class StaticBundleReaderTests(unittest.TestCase):
+    def test_descriptor_path_mismatch_keeps_production_closed_and_fixture_bounded(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory).resolve() / 'RECORD'
+            path.write_bytes(b'fixture')
+            info = path.lstat()
+            mismatch = SimpleNamespace(**{name: getattr(info, name) for name in
+                ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')})
+            mismatch.st_ctime_ns += 1
+            with mock.patch.object(subject.os, 'fstat', return_value=mismatch):
+                with self.assertRaises(OracleError): subject._read(path)
+                self.assertEqual(static_bundle_bytes(path, 7), b'fixture')
+            with self.assertRaises(OracleError): static_bundle_bytes(path, 6)
+            with self.assertRaises(OracleError): static_bundle_bytes(path.parent)
+            path.write_bytes(b'')
+            self.assertEqual(static_bundle_bytes(path, 0), b'')
+
+    def test_isolated_windows_fixture_adapter_does_not_need_test_imports(self):
+        from types import SimpleNamespace
+        with mock.patch.dict(globals(), os=SimpleNamespace(name='nt')):
+            code = isolated_fixture_reader('import metadata_catalog_runtime_inputs as bundle')
+        scope = {}
+        original = subject._read
+        try:
+            exec(code, scope)
+            self.assertEqual(subject._read.__name__, 'static_bundle_bytes')
+            self.assertNotIn('test_metadata_catalog_runtime_inputs', code)
+        finally:
+            subject._read = original
+
+
 class RuntimeBundleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if os.name == 'nt':
+            patcher = mock.patch.object(subject, '_read', new=static_bundle_bytes)
+            patcher.start()
+            cls.addClassCleanup(patcher.stop)
         cls.temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temp.cleanup)
         cls.staged = Path(cls.temp.name).resolve() / 'staged'
         cls.nonce = 'a' * 32
         cls.provenance = dict(commit='b'*40,tree='c'*40,
@@ -57,7 +132,7 @@ for module in (yadinassi,pyuca,tzdata,prompt_toolkit,wcwidth):
 assert yadinassi.Interpreter().execute('20 + 22') == 42
 print(json.dumps(identity,sort_keys=True))
 '''
-        run = subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(self.staged),self.nonce],
+        run = subprocess.run([sys.executable,'-I','-S','-B','-c',isolated_fixture_reader(code),str(self.staged),self.nonce],
                              capture_output=True,text=True,timeout=30)
         self.assertEqual(run.returncode,0,run.stderr)
         self.assertEqual(json.loads(run.stdout),subject.runtime_identity(self.provenance))
@@ -81,7 +156,7 @@ import metadata_catalog_runtime_readback as readback
 result=readback.readback(Path(sys.argv[3]),native_wire=(Path(sys.argv[3])/'native.out').read_bytes())
 print(json.dumps(result['comparison'],sort_keys=True))
 """
-            run=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(self.staged),
+            run=subprocess.run([sys.executable,'-I','-S','-B','-c',isolated_fixture_reader(code),str(self.staged),
                 self.nonce,str(database)],capture_output=True,text=True,timeout=30)
             self.assertEqual(run.returncode,0,run.stderr)
             self.assertEqual(path.read_bytes(),original)

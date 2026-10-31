@@ -53,6 +53,17 @@ def synthetic_inventory_reader():
         yield
 
 
+@contextlib.contextmanager
+def synthetic_capture_reader():
+    # Windows synthetic transport bytes are not Linux descriptor-race evidence.
+    from test_native_1c_full_stage import portable_fixture_bytes
+    if os.name == 'nt':
+        with mock.patch.object(tree.full, 'secure_bytes', new=portable_fixture_bytes):
+            yield
+    else:
+        yield
+
+
 def wire(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True,
                       allow_nan=False).encode('ascii')
@@ -251,8 +262,9 @@ class TreeBudgetTests(unittest.TestCase):
 
     def test_native_envelope_production_serializer_covers_capture_cap(self):
         # Structural maxima intentionally need not pass semantic acceptance.
-        # Only observation validation/census are stubbed; production serializer,
-        # file reads, hash checks, stage shape, cap checks and base64 stay real.
+        # Observation validation/census are stubbed; Windows also uses the
+        # bounded static reader. Production serializer, hash checks, stage
+        # shape, cap checks and base64 stay real.
         raw=b'x'*8192
         report=native_majorant();report['status']='ok'
         stage=report.pop('stage3');stage['status']='ok'
@@ -261,13 +273,31 @@ class TreeBudgetTests(unittest.TestCase):
             parent=Path(directory).resolve(strict=True);capture=parent/'capture';capture.mkdir()
             (capture/(tree.CASE+'.out')).write_bytes(raw)
             tree.write_report(parent/'stage3-report.json',stage)
-            with mock.patch.object(tree,'validate_observations'),mock.patch.object(tree.full,'final_client_process_census'):
+            with synthetic_capture_reader(), mock.patch.object(tree,'validate_observations'),mock.patch.object(tree.full,'final_client_process_census'):
                 actual=tree.finish_report(report,NONCE,capture,quiet=True,bus_cleanup_failed=False)
             value=json.loads(actual)
             self.assertEqual(len(value['outputs']),1)
             self.assertEqual(value['outputs'][0]['data_b64'],base64.b64encode(raw).decode())
             self.assertLessEqual(len(actual),bounds()['transport'])
             self.assertTrue(actual.endswith(b'\n'))
+
+    def test_capture_fixture_adapter_survives_descriptor_path_mismatch(self):
+        from types import SimpleNamespace
+        original_fstat = tree.full.os.fstat
+        def mismatch(fd):
+            info = original_fstat(fd)
+            value = SimpleNamespace(**{name: getattr(info, name) for name in
+                ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size',
+                 'st_mtime_ns', 'st_ctime_ns')})
+            value.st_ctime_ns += 1
+            return value
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory).resolve() / 'output'
+            path.write_bytes(b'x')
+            with mock.patch.object(tree.full.os, 'fstat', side_effect=mismatch):
+                with self.assertRaises(suite.FullError): tree.full.secure_bytes(path, 1)
+                with mock.patch.dict(globals(), os=SimpleNamespace(name='nt')):
+                    self.test_native_envelope_production_serializer_covers_capture_cap()
 
     def test_owned_temp_alias_is_canonicalized_without_weakening_reader(self):
         raw=b'x'*8192
@@ -289,7 +319,7 @@ class TreeBudgetTests(unittest.TestCase):
                 suite.secure_bytes(alias/'capture'/(tree.CASE+'.out'),8192)
             for parent,expected in ((alias,False),(alias.resolve(strict=True),True)):
                 report=native_majorant();report.pop('stage3');report['status']='ok'
-                with mock.patch.object(tree,'validate_observations'),mock.patch.object(tree.full,'final_client_process_census'):
+                with synthetic_capture_reader(), mock.patch.object(tree,'validate_observations'),mock.patch.object(tree.full,'final_client_process_census'):
                     result=json.loads(tree.finish_report(report,NONCE,parent/'capture',quiet=True,bus_cleanup_failed=False))
                 self.assertEqual(len(result['outputs']),1 if expected else 0)
                 if expected:

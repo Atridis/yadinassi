@@ -61,6 +61,13 @@ def report():
 
 
 class RuntimeIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        if os.name == 'nt':
+            from test_metadata_catalog_runtime_inputs import static_bundle_bytes
+            patcher = mock.patch.object(inputs, '_read', new=static_bundle_bytes)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def validate(self, value):
         return policy.validate_report(policy.encode_report(value), nonce=NONCE, provenance=identity())
 
