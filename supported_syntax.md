@@ -963,3 +963,14 @@ acceptance and precise scope: [JSON family](docs/json-family.md).
 `ДвоичныеДанные/BinaryData`, `КодировкаТекста/TextEncoding`, local file helpers,
 Base64 and text/binary conversions are implemented as one bounded family.
 Native33 client/server/interpreter parity accepted. [Exact methods and limits](docs/file-io-family.md).
+
+### XML document workflows (local implementation; native calibration pending)
+
+`ЧтениеXML/XMLReader`, `ЗаписьXML/XMLWriter`, basic reader/writer settings,
+`ТипУзлаXML/XMLNodeType`, `ПробельныеСимволыXML/XMLSpace`, and
+`ТипПроверкиXML/XMLValidationType.NoValidate`: ordinary string/file workflows,
+namespace-aware nodes/attributes, Read/Skip/MoveToContent, escaping/CDATA/comments/
+PI, WriteCurrent, close/reuse. Only explicit bounded XML 1.0 methods are covered;
+this is not DOM/XDTO/schema/DTD support. See
+[scope and safety limits](docs/xml-workflow-family.md); actual 1C calibration is
+pending, and local tests do not establish native parity.

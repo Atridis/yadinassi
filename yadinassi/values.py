@@ -19,6 +19,15 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    XML_READER = "ЧтениеXML"
+    XML_WRITER = "ЗаписьXML"
+    XML_READER_SETTINGS = "ПараметрыЧтенияXML"
+    XML_WRITER_SETTINGS = "ПараметрыЗаписиXML"
+    XML_NODE_TYPE = "ТипУзлаXML"
+    XML_SPACE = "ПробельныеСимволыXML"
+    XML_VALIDATION_TYPE = "ТипПроверкиXML"
+    XML_NAMESPACE_CONTEXT = "КонтекстПространствИменXML"
+
     FILE = "Файл"
     TEXT_READER = "ЧтениеТекста"
     TEXT_WRITER = "ЗаписьТекста"

@@ -1,6 +1,10 @@
 """Type/TypeOf for the explicit standalone BSL value model, not Python reflection."""
 
 from decimal import Decimal
+from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
+                     BSLXMLValidationType, BSLXMLNamespaceContext, XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES)
+from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
+
 
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
 from .text_documents import BSLTextDocument
@@ -34,6 +38,15 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLXMLReader, BSLType.XML_READER, "XMLReader"),
+    (BSLXMLWriter, BSLType.XML_WRITER, "XMLWriter"),
+    (BSLXMLReaderSettings, BSLType.XML_READER_SETTINGS, "XMLReaderSettings"),
+    (BSLXMLWriterSettings, BSLType.XML_WRITER_SETTINGS, "XMLWriterSettings"),
+    (BSLXMLNodeType, BSLType.XML_NODE_TYPE, "XMLNodeType"),
+    (BSLXMLSpace, BSLType.XML_SPACE, "XMLSpace"),
+    (BSLXMLValidationType, BSLType.XML_VALIDATION_TYPE, "XMLValidationType"),
+    (BSLXMLNamespaceContext, BSLType.XML_NAMESPACE_CONTEXT, "XMLNamespaceContext"),
+
     (BSLFile, BSLType.FILE, "File"),
     (BSLTextReader, BSLType.TEXT_READER, "TextReader"),
     (BSLTextWriter, BSLType.TEXT_WRITER, "TextWriter"),

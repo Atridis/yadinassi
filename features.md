@@ -6019,3 +6019,13 @@ preserved; actual native acquisition is pending. See
 
 - Ordinary local file/text/binary I/O family: metadata, owned-file workflows,
   TextReader/TextWriter, encodings, BinaryData and conversions. Native33 accepted; [implemented scope and limits](docs/file-io-family.md).
+
+## Ordinary XML reader/writer family (native calibration pending)
+
+A coherent XML 1.0 workflow now covers string/file readers and writers,
+namespace-aware element/attribute access, Read/Skip/MoveToContent, escaped text,
+CDATA/comments/processing instructions, basic settings and WriteCurrent without
+advancing the reader. Parsing is bounded and refuses DTD/external entities; file
+I/O reuses the ordinary regular-file boundary. One broad 33-case native batch is
+prepared, not yet measured. Scope, primary-source pin and explicit `!todo`
+exclusions: [docs/xml-workflow-family.md](docs/xml-workflow-family.md).
