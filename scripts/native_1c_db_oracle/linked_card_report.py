@@ -26,7 +26,7 @@ def empty_report(nonce, provenance):
         lifecycle=dict(status='failed', failure_kind='unexpected_failure', accepted=False,
             cleanup=dict(native_processes_stopped=False,raw_files_removed=False,
                          container_removed=False,private_staging_removed=False)),
-        installations=[], states=[], failure_context=None, native_failure=None, verdict='measurement_only_not_production_admission')
+        installations=[], states=[], failure_context=None, native_failure=None, install_failure=None, verdict='measurement_only_not_production_admission')
 
 
 def digest_summary(value):
@@ -55,7 +55,7 @@ def validate_report(raw, *, nonce, provenance, final=False):
     require(type(raw) is bytes and 0 < len(raw) <= MAX_REPORT_BYTES, 'artifact_limit')
     try: value = json.loads(raw.decode('ascii'),object_pairs_hook=protocol.unique,parse_constant=lambda _:require(False))
     except (ValueError,UnicodeError,RecursionError): raise protocol.OracleError('transport_invalid') from None
-    exact(value, ('schema','lane','nonce','provenance','lifecycle','installations','states','failure_context','native_failure','verdict'))
+    exact(value, ('schema','lane','nonce','provenance','lifecycle','installations','states','failure_context','native_failure','install_failure','verdict'))
     require(type(value['schema']) is int and value['schema'] == 1 and value['lane'] == LANE
             and value['nonce'] == nonce and type(nonce) is str and re.fullmatch('[0-9a-f]{32}',nonce) is not None and value['verdict'] == 'measurement_only_not_production_admission')
     protocol.validate_provenance(value['provenance'], provenance)
@@ -78,6 +78,12 @@ def validate_report(raw, *, nonce, provenance, final=False):
         require(life['status'] == 'failed' and failure is not None)
         from linked_card_diagnostics import validate
         validate(native_failure)
+    install_failure=value['install_failure']
+    if install_failure is not None:
+        require(life['status']=='failed' and failure is not None and failure['phase']=='install' and failure['repeat'] in (1,2))
+        _,_,files=fixture.load(failure['repeat'])
+        from linked_card_diagnostics import validate_install_failure
+        validate_install_failure(install_failure,{n:raw for n,raw in files.items() if n.endswith('.xml')})
     installs = value['installations']; states = value['states']
     require(type(installs) is list and len(installs) <= 2 and type(states) is list and len(states) <= 8)
     for repeat, installation in enumerate(installs,1):

@@ -36,44 +36,67 @@ def validate_marker(raw, *, nonce, token, operation, b):
 
 
 class Native(lifecycle.Native):
-    def install(self, database, repeat):
+    def install(self,database,repeat):
+        self.catalog_install_failure=None
+        self.install_stage='prepare';self.install_saved={};self.install_redumped={}
+        try:return self._install(database,repeat)
+        except BaseException as error:
+            from linked_card_diagnostics import install_failure
+            self.catalog_install_failure=install_failure(self.install_stage,error,self.install_saved,self.install_redumped)
+            raise
+
+    def _install(self, database, repeat):
         """Extend a verified baseline, apply and compare an exact saved redump."""
         from inject_metadata import _inventory, _canonical, read_xml, MODULE_FILES
         import linked_card_instrument as instrument
+        self.install_stage = 'prepare'
         b, manifest, files = fixture.load(repeat)
         target = self.root / ('catalog-source-' + str(repeat))
         lifecycle.absent(target)
         shutil.copytree(self.v1, target)
         fragments = {n: raw for n, raw in files.items() if n.endswith('.xml')}
+        self.install_saved = fragments; self.install_redumped = {}
+        self.install_stage = 'extend'
         changed = batch.extend_sources(b, manifest['schema'], fragments,
             lifecycle.regular_bytes(target / 'Configuration.xml', 1048576),
             lifecycle.regular_bytes(target / 'Roles/NativeOracleCatalogCRUD/Ext/Rights.xml', 65536))
         for name, raw in changed.items(): (target / name).write_bytes(raw)
+        self.install_stage = 'instrument'
         helpers = {}
         for name in ('NativeOracleServer.bsl', 'ManagedApplicationModule.bsl'):
             path = target / MODULE_FILES[name]
             raw = instrument.instrument(lifecycle.regular_bytes(path, 1048576), name, b, files,
                                         nonce=self.nonce, evidence=self.evidence)
             path.write_bytes(raw); helpers[name] = hashlib.sha256(raw).hexdigest()
+        self.install_stage = 'import'
         self.batch(database, ['/LoadConfigFromFiles', str(target)], 'seed-import')
+        self.install_stage = 'apply'
         self.batch(database, ['/UpdateDBCfg'], 'seed-apply')
         redump = self.root / ('catalog-redump-' + str(repeat)); lifecycle.absent(redump)
+        self.install_stage = 'redump'
         self.batch(database, ['/DumpConfigToFiles', str(redump), '-Format', 'Hierarchical'], 'redump')
         try:
+            self.install_stage = 'inventory'
             left, right = _inventory(target), _inventory(redump)
             require(left == right, 'metadata_rejected')
             redumped={name:lifecycle.regular_bytes(redump/name,65536) for name in fragments}
+            self.install_stage = 'fragments'
+            self.install_redumped = redumped
             batch.verify_redump(b, manifest['schema'], fragments, redumped)
+            self.install_stage = 'mapping'
             mapping=fixture.actual_mapping(b,manifest['schema'],redumped)
             for name, kind in left.items():
                 if kind == 'directory' or name == 'ConfigDumpInfo.xml': continue
                 a, c = target / name, redump / name
                 if name.endswith('.xml'):
+                    self.install_stage = 'xml-compare'
                     require(_canonical(read_xml(a)[1]) == _canonical(read_xml(c)[1]), 'metadata_rejected')
                 else:
+                    self.install_stage = 'module-compare'
                     require(a.read_text(encoding='utf-8-sig') == c.read_text(encoding='utf-8-sig'), 'metadata_rejected')
         finally:
             shutil.rmtree(redump)
+        self.install_stage = 'audit'
         audit = self.enterprise(database, 'audit')
         require(audit['role_verified'] is True and audit['users_verified'] is True
                 and audit['nonprivileged'] is True and audit['user'] == lifecycle.SETUP_USER, 'permission_mismatch')
@@ -207,6 +230,7 @@ def main():
             report['installations'] = getattr(backend,'catalog_installations',[])
             report['failure_context'] = getattr(backend,'catalog_attempt',None)
             report['native_failure'] = getattr(backend,'catalog_native_failure',None)
+            report['install_failure'] = getattr(backend,'catalog_install_failure',None)
             report['lifecycle']['failure_kind'] = error.kind if isinstance(error, lifecycle.OracleError) else 'unexpected_failure'
         finally:
             stopped, removed = backend.cleanup()

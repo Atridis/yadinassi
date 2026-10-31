@@ -163,12 +163,34 @@ inputs.activate_runtime(root)
 import linked_card_run,linked_card_report,linked_card_readback,linked_card_physical
 from linked_card_fixture import load
 assert len(load(1)[1]['schema']['catalogs'][0]['attributes'])==5
+# Cold complete installer exercise: no unit-test ambient imports or cached module state.
+import shutil,re
+from pathlib import PurePosixPath
+import inject_metadata
+inject_metadata.Path=PurePosixPath # Linux-container lexical paths only; native roots below.
+source=root.parent/'cold-source';source.mkdir()
+raw=Path(sys.argv[2]).read_text(encoding='utf-8')
+(source/'Configuration.xml').write_text(re.sub(r'<!--.*?-->','',raw),encoding='utf-8')
+(source/'ConfigDumpInfo.xml').write_text('fixture')
+v1=root.parent/'cold-v1';evidence=PurePosixPath('/tmp/onec-db-oracle/evidence')
+inject_metadata.inject(source,v1,nonce='a'*32,evidence=evidence)
+backend=object.__new__(linked_card_run.Native)
+backend.root=root.parent;backend.v1=v1;backend.nonce='a'*32;backend.evidence=evidence
+calls=[]
+def batch(database,args,label):
+    calls.append(label)
+    if label=='redump':shutil.copytree(root.parent/'catalog-source-1',Path(args[1]))
+backend.batch=batch
+backend.enterprise=lambda *a:dict(token='f'*32,actual_version='8.3.27.1508',user='NativeOracleSetup',role_verified=True,users_verified=True,nonprivileged=True)
+assert len(backend.install(root.parent/'cold-db',1)[3])==2
+assert calls==['seed-import','seed-apply','redump']
+assert backend.catalog_install_failure is None
 print('closed-linked')
 '''
         # Same Windows static fixture bridge used by reviewed staging tests.
         if os.name=='nt':
             code=code.replace('import linked_card_inputs as inputs','import linked_card_inputs as inputs\n'+inspect.getsource(static_bundle_bytes)+'\ninputs.runtime._read=static_bundle_bytes')
-        result=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(self.staged)],capture_output=True,text=True)
+        result=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(self.staged),str(ROOT/'tests/fixtures/native_bootstrap/Configuration.xml')],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),'closed-linked')
 
 
@@ -293,3 +315,41 @@ class LinkedDiagnosticsTests(unittest.TestCase):
             self.assertEqual(seen[0]['phase'],'setup');self.assertEqual(result['phase'],'setup-witness-24')
             self.assertEqual(previous['phase'],'setup-witness-24')
             with self.assertRaises(OracleError):diagnostics.collect(object(),Path('/owned'),dict(previous,phase='raw private exception'))
+
+class LinkedInstallDiagnosticsTests(unittest.TestCase):
+    def test_redump_namespace_and_default_shape_have_bounded_reason(self):
+        import linked_card_diagnostics as d
+        _,_,files=fixture.load(1);saved={n:v for n,v in files.items() if n.endswith('.xml')}
+        redumped=dict(saved);name=next(iter(saved))
+        redumped[name]=redumped[name].replace(b'<DescriptionLength>8</DescriptionLength>',b'<DescriptionLength>9</DescriptionLength>')
+        value=d.install_failure('fragments',ValueError('saved-xml-profile'),saved,redumped)
+        self.assertEqual(value['category'],'saved-xml-profile')
+        self.assertTrue(any(x['kind']=='text' and 'DescriptionLength' in x['path'] for x in value['catalogs'][0]['differences']))
+        self.assertNotIn('DescriptionLength>9',json.dumps(value))
+        inserted=dict(saved)
+        inserted[name]=saved[name].replace(b'<DescriptionLength>8</DescriptionLength>',b'<DescriptionLength>8</DescriptionLength><FillValue/>')
+        projected=d.install_failure('fragments',ValueError('saved-xml-profile'),saved,inserted)
+        self.assertTrue(any(x['kind']=='added' and 'FillValue' in x['path'] for x in projected['catalogs'][0]['differences']))
+
+        self.assertEqual(d.install_failure('prepare',RuntimeError('private exception text'),{},{}),dict(stage='prepare',category='unexpected',catalogs=[]))
+        changed=dict(saved);changed[name]=changed[name].replace(b'xmlns:cfg=',b'xmlns:unused=')
+        value=d.install_failure('fragments',ValueError('saved-namespace-profile'),saved,changed)
+        self.assertFalse(value['catalogs'][0]['namespaces']['bindings_equal'])
+        for bad in (dict(value,category='private text'),dict(value,stage='arbitrary stage')):
+            with self.assertRaises(OracleError):d.validate_install_failure(bad,saved)
+        value['catalogs'][0]['differences']=[dict(path='private-data',kind='text')]
+        with self.assertRaises(OracleError):d.validate_install_failure(value,saved)
+
+    def test_install_exception_stays_fixed_and_report_bound(self):
+        backend=object.__new__(runner.Native)
+        def fail(*args):raise ModuleNotFoundError('private path')
+        backend._install=fail
+        with self.assertRaises(ModuleNotFoundError):backend.install(Path('/owned'),1)
+        self.assertEqual(backend.catalog_install_failure,dict(stage='prepare',category='import-error',catalogs=[]))
+        identity=dict(commit='c'*40,tree='d'*40,sources=inputs.source_hashes(ROOT),image=IMAGE,platform='linux/amd64',actual_version=None,locale='ru_RU.UTF-8',timezone='Etc/UTC')
+        value=policy.empty_report(NONCE,identity)
+        value['failure_context']=dict(repeat=1,state=None,context=None,phase='install')
+        value['install_failure']=backend.catalog_install_failure
+        policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=identity)
+        value['failure_context']['phase']='native'
+        with self.assertRaises(OracleError):policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=identity)
