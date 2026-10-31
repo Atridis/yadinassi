@@ -2,6 +2,8 @@
 
 Synthetic bounded NVC/BCD admission is not native acceptance of new layouts.
 Opaque reference/version bytes remain private; no native or XML inputs exist.
+Measured zero-code logical shapes are rechecked independently before read;
+the absent physical code field does not create a synthetic Code API value.
 """
 from decimal import Decimal
 import re
@@ -50,7 +52,7 @@ def _validate_binding(binding, budget):
         _bad_binding()
     if (type(binding.code_type) is not int or binding.code_type not in (0, 1)
             or type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
-            or type(binding.code_length) is not int or not 1 <= binding.code_length <= (38 if binding.code_type == 0 else 2047)
+            or type(binding.code_length) is not int or not 0 <= binding.code_length <= (38 if binding.code_type == 0 else 2047)
             or type(binding.recordlock) is not str or binding.recordlock != '0'
             or type(binding.format_item) is not int or binding.format_item != 0
             or type(binding.attributes) is not tuple or len(binding.attributes) != 2):
@@ -71,6 +73,10 @@ def _validate_binding(binding, budget):
             or len(b.qualifiers) != 3 or b.qualifiers[2] != 0 or not 1 <= b.qualifiers[0] <= 38
             or not 0 <= b.qualifiers[1] <= b.qualifiers[0]):
         _bad_binding()
+    zero_code = binding.code_length == 0
+    if zero_code and (binding.code_type != 1 or binding.description_length not in (0, 8)
+                      or a.qualifiers not in ((32, 1), (64, 1)) or b.qualifiers != (9, 2, 0)):
+        _bad_binding()
     ids = (_identifier(binding.table_name, 'Reference'), _identifier(a.physical_name, 'FLD'),
            _identifier(b.physical_name, 'FLD'))
     if len(set(ids)) != 3:
@@ -82,9 +88,14 @@ def _validate_binding(binding, budget):
                 (a.physical_name, 'NVC', 0, a.qualifiers[0], 0, 'CI'),
                 (b.physical_name, 'N', 0, precision, scale, 'CS'))
     widths = (16, 16, 1, 16, (binding.code_length + 2) // 2 if binding.code_type == 0 else 2 + 2 * binding.code_length, 2 + 2 * a.qualifiers[0], (precision + 2) // 2)
+    standard_count = 5
+    if zero_code:
+        expected = expected[:4] + expected[5:]
+        widths = widths[:4] + widths[5:]
+        standard_count = 4
     if binding.description_length:
-        expected = expected[:5] + (('_DESCRIPTION', 'NVC', 0, binding.description_length, 0, 'CI'),) + expected[5:]
-        widths = widths[:5] + (2 + 2 * binding.description_length,) + widths[5:]
+        expected = expected[:standard_count] + (('_DESCRIPTION', 'NVC', 0, binding.description_length, 0, 'CI'),) + expected[standard_count:]
+        widths = widths[:standard_count] + (2 + 2 * binding.description_length,) + widths[standard_count:]
     count = len(expected)
     size = 1 + sum(widths)
     if (size > 4096 or type(binding.record_size) is not int or binding.record_size != size
