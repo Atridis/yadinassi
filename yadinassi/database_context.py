@@ -1,14 +1,16 @@
 """Optional, immutable file-database location, not a database session.
 
 Construction only normalizes path spelling. Every executed database-dependent
-call performs its own bounded, read-only header inspection; a recognized header
-does not establish database validity, authentication or live-read safety.
+call performs a bounded, read-only inspection. Metadata reads require a caller-
+owned consistent offline copy; unchanged file metadata cannot prove live-read
+safety. A recognized header does not establish database validity or authentication.
 """
 
 from dataclasses import dataclass, field
 import ntpath
 import os
 import posixpath
+import stat
 
 from .storage.filedb import InspectionStatus, inspect_header
 
@@ -46,7 +48,7 @@ class FileDBContext:
     POSIX host are unsupported, rather than consulting another drive or opening
     an accidentally relative filename containing backslashes.
     No existence check, symlink resolution, descriptor, user or session is kept.
-    Unsupported spelling is rejected lazily, only by connection_string().
+    Unsupported spelling is rejected lazily, only by an executed database operation.
     """
 
     directory: str | os.PathLike[str]
@@ -79,3 +81,43 @@ class FileDBContext:
                 detail += ": " + result.reason.value
             raise ValueError("file database header inspection failed: " + detail)
         return f'File="{self.directory}";'
+
+    def catalog_metadata(self):
+        """Read Catalog identities from one bounded offline CONFIG descriptor.
+
+        This creates no native session, lock or snapshot. The caller must supply
+        a consistent offline copy. Before/after descriptor metadata checks catch
+        some concurrent changes, not all; the descriptor is closed on every path.
+        """
+        from .storage.catalog_metadata import read_catalog_metadata
+        from .storage.filedb_catalog import CatalogError, ChangedDuringRead, NotRegularFile, _metadata
+        if self._unsupported:
+            raise ValueError("unsupported file database directory")
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(os.path.join(self.directory, "1Cv8.1CD"), flags)
+            try:
+                before = os.fstat(fd)
+                if not stat.S_ISREG(before.st_mode):
+                    raise NotRegularFile("not_regular_file")
+
+                def read_at(offset, length):
+                    # The coordinator's source wrapper validates and budgets all
+                    # ranges. This private descriptor has no shared seek cursor.
+                    if hasattr(os, "pread"):
+                        return os.pread(fd, length, offset)
+                    os.lseek(fd, offset, os.SEEK_SET)
+                    return os.read(fd, length)
+
+                try:
+                    result = read_catalog_metadata(read_at, before.st_size)
+                finally:
+                    if _metadata(before) != _metadata(os.fstat(fd)):
+                        raise ChangedDuringRead("source_changed")
+            finally:
+                os.close(fd)
+        except CatalogError as error:
+            raise ValueError("file database metadata inspection failed: " + error.code) from None
+        except OSError:
+            raise ValueError("file database metadata inspection failed: file_io_failed") from None
+        return result

@@ -146,7 +146,7 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
     def test_launcher_unit_binary_and_artifact_steps_remain(self):
         commands = re.findall(r'^        run: (.+)$', self.source, re.M)
         self.assertEqual(commands, [
-            'python -m pip install -e ".[build]"',
+            'python -m pip install -e ".[build]" wcwidth==0.8.2',
             'python integrational_tests/check_launcher.py',
             'python -m unittest discover -s tests -v',
             'python scripts/build.py --target ${{ matrix.target }}',

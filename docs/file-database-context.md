@@ -3,8 +3,11 @@
 A database is optional. Existing script, `-c`, Cyrillic `-с`, `--command`, stdin
 `-` and console modes continue to work without one. `--f DIRECTORY` attaches a
 small immutable **location context**, not a native 1C session. The implementation
-uses the existing bounded read-only header inspector and does not require an
-installed 1C platform, credentials or a native database driver.
+uses bounded read-only inspectors and does not require an installed 1C platform,
+credentials or a native database driver. The connection-string contract below
+is separate from the experimental [CONFIG-only BSL catalog metadata
+view](bsl-catalog-metadata.md), whose fresh public-adapter native acceptance
+is still pending.
 
 ## CLI and lazy execution
 
@@ -16,9 +19,9 @@ yadinassi --f "/path/to/База с пробелами"
 ```
 
 The directory must contain a caller-provided consistent offline `1Cv8.1CD` copy.
-No snapshot or lock is created. Only an executed zero-argument call to
-`InfoBaseConnectionString()` / `СтрокаСоединенияИнформационнойБазы()` inspects that
-file. Its recognized header and physical size must satisfy the existing
+No snapshot or lock is created. An executed zero-argument call to
+`InfoBaseConnectionString()` / `СтрокаСоединенияИнформационнойБазы()` inspects the
+file header. Its recognized header and physical size must satisfy the existing
 [header-inspection contract](filedb-header-inspection.md). Inspection remains
 read-only and reads at most 24 header bytes per call. A recognized geometry is
 not proof of database validity, transaction consistency or safe live access.
