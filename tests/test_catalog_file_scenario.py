@@ -47,11 +47,11 @@ While S.Next() Do
 EndDo;
 Message(M.FindByCode("missing").IsEmpty());
 Message(S.Next());
-S.Reset(); Message(S.Next()); Message(S.Code);
+Message(S.Next()); Message(S.Code);
 ''')
         self.assertEqual(output, ['K1', 'alpha', '1,25', '', 'Нет',
                                   'Да', 'Да', 'Да', 'Да', 'Да', 'alpha', '1,25',
-                                  'Да', 'Да', 'Нет', 'Да', 'K1'])
+                                  'Да', 'Да', 'Да', 'Нет', 'K1'])
 
     def test_both_physical_empty_shapes(self):
         for length in (0, 127):
@@ -63,7 +63,7 @@ S.Reset(); Message(S.Next()); Message(S.Code);
 M = Справочники[CatalogName];
 S = M.Выбрать();
 Сообщить(S.Следующий()); Сообщить(S.Следующий());
-S.Сбросить(); Сообщить(S.Следующий());
+Сообщить(S.Следующий());
 Сообщить(M.НайтиПоКоду("K1").Пустая());
 Сообщить(ЗначениеЗаполнено(M.ПустаяСсылка()));
 ''')
@@ -80,9 +80,9 @@ Message(M.FindByCode("K1") = S.Ref); Message(S.Next());
 ''')
         self.assertEqual(output, ['Да', 'Да', 'Да', 'Нет'])
 
-    def test_unmeasured_multiple_records_and_free_slots_stay_rejected(self):
-        for shape, error in (('multiple', 'active_records'),
-                             ('freed', 'nonreserved_free_slot')):
+    def test_duplicate_records_and_unlinked_free_slots_stay_rejected(self):
+        for shape, error in (('multiple', 'ordering is unsupported'),
+                             ('freed', 'catalog_unlinked_free_slot')):
             with self.subTest(shape=shape):
                 value = fixture.source()
                 if shape == 'multiple':

@@ -22,8 +22,8 @@ def result(rows=(), metadata=A):
         return NS(reference_uuid=UUID(uid), physical_record=NS(fields=tuple(
             NS(declaration=NS(name=name), value=value) for name, value in values.items())))
     return NS(identity=NS(name='Products', metadata_uuid=metadata),
-              binding=NS(attributes=(NS(name='TextValue', physical_name='_FLD7'),
-                                     NS(name='Amount', physical_name='_FLD8'))),
+              binding=NS(code_type=1, attributes=(NS(name='TextValue', physical_name='_FLD7', type_token='S'),
+                                     NS(name='Amount', physical_name='_FLD8', type_token='N'))),
               rows=tuple(row(*values) for values in rows))
 
 
@@ -66,23 +66,36 @@ While S.Next() Do
 EndDo;
 Message(M.FindByCode("absent").IsEmpty());
 Message(S.Next());
-S.Reset(); Message(S.Next());
+Message(S.Next());
 ''')
         self.assertEqual(output, ['002', 'Second', 'payload', '1,25', 'Да',
-                                  'Да', 'Да', 'Да', 'Нет', 'Да'])
+                                  'Да', 'Да', 'Да', 'Да', 'Нет'])
 
     def test_cursor_empty_and_synthetic_multiple_state_machine(self):
         runtime, _, _ = self.setup_runtime()
         manager = runtime._catalogs.get_index('Products')
         empty = BSLCatalogSelection(manager, result())
-        self.assertFalse(empty.next()); empty.reset(); self.assertFalse(empty.next())
-        cursor = BSLCatalogSelection(manager, result(((U, '2', 'B'), (V, '1', 'A'))))
-        with self.assertRaisesRegex(ValueError, 'not positioned'):
-            cursor.get_member('Code')
-        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '2')
-        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '1')
-        self.assertFalse(cursor.next()); self.assertFalse(cursor.next())
-        cursor.reset(); self.assertTrue(cursor.next())
+        self.assertFalse(empty.next()); self.assertFalse(empty.next())
+        self.assertIsNone(empty.get_member('Code'))
+        cursor = BSLCatalogSelection(manager, result(((U, '20', 'B'), (V, '10', 'A'))))
+        self.assertIsNone(cursor.get_member('Code'))
+        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '10')
+        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '20')
+        self.assertFalse(cursor.next()); self.assertEqual(cursor.get_member('Code'), '20')
+        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '10')
+        with self.assertRaisesRegex(ValueError, 'not found'):
+            cursor.get_method('Reset')
+
+    def test_default_fields_preserve_reserved_name_guard(self):
+        runtime, context, _ = self.setup_runtime()
+        rows = result()
+        rows.binding.attributes = (NS(name='Code', type_token='S', physical_name='_FLD7'),)
+        context.catalog_rows.return_value = rows
+        manager = runtime._catalogs.get_index('Products')
+        with self.assertRaisesRegex(ValueError, 'ambiguous catalog field'):
+            manager.empty_ref().get_member('Code')
+        with self.assertRaisesRegex(ValueError, 'ambiguous catalog field'):
+            manager.select().get_member('Code')
 
     def test_database_is_lazy_and_untaken_branches_stay_lazy(self):
         runtime = Interpreter(lambda value: None)

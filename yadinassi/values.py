@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    CATALOGS_MANAGER = "Справочники менеджер"
     TEXT_DOCUMENT = "ТекстовыйДокумент"
     UUID = "УникальныйИдентификатор"
     PROMISE = "Обещание"

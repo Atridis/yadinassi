@@ -22,7 +22,7 @@ class CatalogDynamicTypesTests(unittest.TestCase):
     def test_type_and_presentation(self):
         self.assertIs(type_of(self.ref), self.kind)
         self.assertIs(type_of(self.kind), BSLType.TYPE)
-        self.assertEqual(to_string(self.kind), 'СправочникСсылка.Товары')
+        self.assertEqual(to_string(self.kind), 'Товары')
         self.assertTrue(equal(self.kind, BSLCatalogType(UUID(int=10), 'Товары', self.snapshot)))
         self.assertFalse(equal(self.kind, BSLCatalogType(UUID(int=11), 'Другой', self.snapshot)))
 
@@ -31,8 +31,8 @@ class CatalogDynamicTypesTests(unittest.TestCase):
                  for family in ('ref', 'manager', 'selection')]
         self.assertEqual(len(set(kinds)), 3)
         self.assertEqual([str(k) for k in kinds],
-                         ['СправочникСсылка.Name', 'СправочникМенеджер.Name',
-                          'СправочникВыборка.Name'])
+                         ['Name', 'Справочник менеджер: Name',
+                          'Справочник выборка: Name'])
         for kind in kinds:
             self.assertIs(type_of(kind), BSLType.TYPE)
             with self.assertRaisesRegex(ValueError, 'справочников'):
@@ -118,7 +118,7 @@ class CatalogDynamicTypesTests(unittest.TestCase):
         self.assertEqual(vm.execute('String(ref.UUID())'), str(UUID(int=20)))
 
     def test_explicit_unsupported_consumers(self):
-        for value in (self.ref, self.kind):
+        for value in (self.ref, self.kind, BSLType.CATALOGS_MANAGER):
             with self.assertRaisesRegex(ValueError, 'справочников'):
                 value_to_string_internal(value)
             nested = BSLArray()

@@ -34,9 +34,9 @@ class BSLCatalogType(BSLObject):
         return hash((id(self.snapshot), self.metadata_uuid, self.family))
 
     def __str__(self):
-        prefix = {'ref': 'СправочникСсылка', 'manager': 'СправочникМенеджер',
-                  'selection': 'СправочникВыборка'}[self.family]
-        return prefix + '.' + self.name
+        # Native41214218572: presentation is not the Type lookup name.
+        return {'ref': self.name, 'manager': 'Справочник менеджер: ' + self.name,
+                'selection': 'Справочник выборка: ' + self.name}[self.family]
 
 
 @dataclass(frozen=True, slots=True)

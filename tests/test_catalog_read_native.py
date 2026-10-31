@@ -246,7 +246,7 @@ class CatalogAcquisitionTests(unittest.TestCase):
             i=b.setup.names.index(name)
             values={'_CODE':'30','_DESCRIPTION':'Alpha','_MARKED':False,'_FLD7':'first','_FLD8':Decimal(11)}
             return NS(identity=NS(name=name,metadata_uuid=b.setup.metadata_ids[i]),
-                binding=NS(attributes=(NS(name='Payload',physical_name='_FLD7'),NS(name='Amount',physical_name='_FLD8'))),
+                binding=NS(code_type=1,attributes=(NS(name='Payload',physical_name='_FLD7',type_token='S'),NS(name='Amount',physical_name='_FLD8',type_token='N'))),
                 rows=(NS(reference_uuid=UUID(b.setup.record_ids[0]),physical_record=NS(fields=tuple(NS(declaration=NS(name=n),value=v) for n,v in values.items()))),))
         context.catalog_rows.side_effect=rows
         with mock.patch('yadinassi.database_context.FileDBContext',return_value=context):actual=readback.execute(Path('/synthetic-never-opened'),b)

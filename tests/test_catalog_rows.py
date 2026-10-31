@@ -175,6 +175,7 @@ class CatalogRowsTests(unittest.TestCase):
             else:
                 image.page(40)[16:24] = (381).to_bytes(8, 'little')
                 image.page(43)[254:381] = image.page(43)[127:254]
+                image.page(43)[380] = 255  # malformed second active row, not a count gate
             self.assert_rejected_before_codec(image)
 
     def test_projection_budget_failure_precedes_codec(self):

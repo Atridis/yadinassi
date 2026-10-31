@@ -1,8 +1,7 @@
 """Read-only catalog managers over the bounded offline CONFIG/row profile.
 
-This work-in-progress adapter retains the storage reader's one-active-row gate.
-Multi-row ordering, cursor boundary behavior and native lookup collation require
-batch evidence before that gate can be widened. No live session or writes exist.
+Native41214218572 establishes the bounded multi-row scenario and cursor cycle.
+No live session or writes exist; advanced ordering/collation remain restricted.
 """
 from decimal import Decimal
 from uuid import UUID
@@ -73,7 +72,7 @@ class BSLCatalogManager(BSLObject):
         return self._ref(_ZERO)
 
     def get_ref(self, uuid=_OMITTED):
-        if uuid is _OMITTED:
+        if uuid is _OMITTED or uuid is None:
             uuid = BSLUUID()
         if type(uuid) is not BSLUUID:
             raise TypeError('GetRef requires UUID')
@@ -104,8 +103,18 @@ class BSLCatalogManager(BSLObject):
         for row in result.rows:
             if row.reference_uuid == ref.reference_uuid:
                 return _field(self._fields(result, row), name)
-        # !todo Measure absent/empty reference field defaults; do not invent rows.
-        raise ValueError('reading fields of an empty or absent catalog reference is unsupported')
+        return _field(self._default_fields(result, ref), name)
+
+    def _default_fields(self, result, ref=None):
+        # Native absent reference values are scalar defaults, not a physical row.
+        logical = {'code': Decimal(0) if result.binding.code_type == 0 else '',
+                   'description': '', 'ref': ref, 'deletionmark': False}
+        for attribute in result.binding.attributes:
+            key = attribute.name.casefold()
+            if key in logical or key in ('код', 'наименование', 'ссылка', 'пометкаудаления'):
+                raise ValueError('ambiguous catalog field name')
+            logical[key] = '' if attribute.type_token == 'S' else Decimal(0)
+        return logical
 
     # !todo Add hierarchy/filter/order options after native batch verification.
     def select(self):
@@ -141,8 +150,7 @@ class BSLCatalogManager(BSLObject):
                    'выбрать': self.select, 'select': self.select,
                    'найтипокоду': self.find_by_code, 'findbycode': self.find_by_code,
                    'найтипонаименованию': self.find_by_description,
-                   'findbydescription': self.find_by_description,
-                   'метаданные': lambda: self._metadata, 'metadata': lambda: self._metadata}
+                   'findbydescription': self.find_by_description}
         method = methods.get(name.casefold())
         return HostFunction(name, method) if method else super().get_member(name)
 
@@ -160,33 +168,44 @@ def _field(fields, name):
 
 
 class BSLCatalogSelection(BSLObject):
-    """Explicit cursor; boundary/reset behavior remains pending native batch."""
+    """Native cursor: exhaustion retains fields; the next call restarts."""
     def __init__(self, manager, result):
         self._manager, self._result = manager, result
         self._selection_type = manager._selection_type
+        rows = tuple(result.rows)
+        if len(rows) > 1:
+            keys = [manager._fields(result, row)['code'] for row in rows]
+            # !todo Measure arbitrary string collation, ties and zero-code order.
+            # The batch established ascending fixed-width digit String codes.
+            if (not all(type(key) is str and key.isascii() and key.isdigit() for key in keys)
+                    or len({len(key) for key in keys}) != 1 or len(set(keys)) != len(keys)):
+                raise ValueError('multi-row catalog code ordering is unsupported')
+            rows = tuple(row for _, row in sorted(zip(keys, rows), key=lambda item: item[0]))
+        self._rows = rows
         self._position = -1
+        self._next_position = 0
 
-    # !todo Confirm boundary/reset states and default order with native batch;
-    # storage max1/free-slot guards remain until multirow liveness is proven.
     def next(self):
-        self._position = min(self._position + 1, len(self._result.rows))
-        return self._position < len(self._result.rows)
-
-    def reset(self):
-        self._position = -1
+        if self._next_position >= len(self._rows):
+            self._next_position = 0
+            return False
+        self._position = self._next_position
+        self._next_position += 1
+        return True
 
     def get_method(self, name):
-        key = name.casefold()
-        if key in ('next', 'следующий'):
+        if name.casefold() in ('next', 'следующий'):
             return HostFunction(name, self.next)
-        if key in ('reset', 'сбросить'):
-            return HostFunction(name, self.reset)
+        # Native Reset/Сбросить is unavailable. Never invent a cursor method.
         return super().get_method(name)
 
     def get_member(self, name):
-        if not 0 <= self._position < len(self._result.rows):
-            raise ValueError('catalog cursor is not positioned on a record')
-        return _field(self._manager._fields(self._result, self._result.rows[self._position]), name)
+        if self._position < 0:
+            # Empty/not-yet-positioned fields are Undefined, including Ref.
+            defaults = self._manager._default_fields(self._result)
+            _field(defaults, name)  # Validate the field name before returning.
+            return None
+        return _field(self._manager._fields(self._result, self._rows[self._position]), name)
 
     def __str__(self):
         raise ValueError('catalog selection presentation is unsupported')

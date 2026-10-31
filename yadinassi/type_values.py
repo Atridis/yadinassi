@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 
+from .catalogs import BSLCatalogs
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 
 from .text_documents import BSLTextDocument
@@ -34,6 +35,7 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLCatalogs, BSLType.CATALOGS_MANAGER, None),
     (BSLTextDocument, BSLType.TEXT_DOCUMENT, "TextDocument"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
@@ -114,7 +116,9 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
     if type(value) is BSLCatalogType:
         return BSLType.TYPE
     # Lazy import avoids the catalog adapter/type registry import cycle.
-    from .catalogs import BSLCatalogManager, BSLCatalogSelection
+    from .catalogs import BSLCatalogManager, BSLCatalogSelection, BSLCatalogs
+    if type(value) is BSLCatalogs:
+        return BSLType.CATALOGS_MANAGER
     if type(value) is BSLCatalogManager:
         return value._manager_type
     if type(value) is BSLCatalogSelection:

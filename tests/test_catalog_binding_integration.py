@@ -49,7 +49,7 @@ def source():
     value.catalog((2,10,14))
     for block,desc in descriptions:
         encoded=serialize(desc).encode();value.chain(tuple(range(block,block+(len(encoded)+249)//250)),encoded)
-    data=b'\x01'+b'R'*126+row()
+    data=b'\x01'+bytes(4)+b'R'*122+row()
     value.page(40)[:24]=b'\x1c\xfd'+bytes(14)+len(data).to_bytes(8,'little')
     value.page(40)[24:28]=u32(43);value.page(43)[:len(data)]=data
     return value

@@ -42,7 +42,7 @@ class ByteBackend(old.ByteBackend):
             if logical[1]=='1.25' else b'\x00\x00\x00\x02\x50')
         if self.mutate_image==(identifier,'origin_value') and rows:rows=row('WRONG')
         if self.mutate_image==(identifier,'origin_count'):rows=b''
-        data=b'\x01'+b'R'*126+rows
+        data=b'\x01'+bytes(4)+b'R'*122+rows
         value.page(40)[16:24]=len(data).to_bytes(8,'little')
         value.page(43)[:]=bytes(len(value.page(43)));value.page(43)[:len(data)]=data
         writer=self.artifacts/'synthetic_producer';writer.mkdir();(writer/'1Cv8.1CD').write_bytes(value.full_bytes())

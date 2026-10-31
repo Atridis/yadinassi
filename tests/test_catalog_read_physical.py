@@ -47,11 +47,13 @@ class PhysicalSlotMeasurementTests(unittest.TestCase):
         self.assertEqual(len(result['slots'][2]['raw_hex']),290)
         self.assertNotIn('active_count',result)
 
-    def test_production_refusal_unchanged(self):
-        for rows,marker,code in ((2,0,'active_records'),(1,1,'nonreserved_free_slot')):
-            value=fixture.source(rows=rows);value.page(43)[145]=marker
-            with self.assertRaisesRegex(catalog_reader.catalog_module.CatalogError,code):
-                catalog_reader.read_catalog_rows(value.read_at,value.size,catalog_name='NativeOracleItems')
+    def test_production_multirow_admission_and_unlinked_free_refusal(self):
+        value=fixture.source(rows=2)
+        result=catalog_reader.read_catalog_rows(value.read_at,value.size,catalog_name='NativeOracleItems')
+        self.assertEqual(len(result.rows), 2)
+        value=fixture.source();value.page(43)[145]=1
+        with self.assertRaisesRegex(catalog_reader.catalog_module.CatalogError,'catalog_unlinked_free_slot'):
+            catalog_reader.read_catalog_rows(value.read_at,value.size,catalog_name='NativeOracleItems')
 
     def test_empty_shapes(self):
         for length,count in ((0,0),(145,1)):

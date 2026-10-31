@@ -54,3 +54,6 @@ tests/fixtures/format_dates/*.out -text
 tests/fixtures/format_dates/*.bsl text eol=lf
 tests/fixtures/format_dates/*provenance.json -text
 tests/fixtures/format_dates/*mapping.json -text
+
+# Native catalog batch captures preserve exact bytes across checkouts.
+tests/fixtures/catalog_read_slots/*.json -text
