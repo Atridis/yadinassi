@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import subprocess
+import shutil
 import unittest
 from unittest import mock
 import test_native_1c_db_oracle_ci_policy as existing
@@ -16,6 +18,32 @@ ROUTE='metadata-catalog-applied-view-v1'
 
 
 class MetadataWorkflowTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('git'), 'git is required for the real autocrlf checkout')
+    def test_trusted_probe_retains_exact_bytes_in_real_autocrlf_checkout(self):
+        root=Path(__file__).resolve().parents[1]
+        relative=Path('scripts/native_1c_db_oracle/modules/MetadataCatalogProbe.bsl')
+        expected=(root/relative).read_bytes()
+        self.assertNotIn(b'\r',expected)
+        env={key:value for key,value in os.environ.items()
+             if key.upper() in ('PATH','SYSTEMROOT','WINDIR','TEMP','TMP')}
+        env.update(GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull)
+        with tempfile.TemporaryDirectory(prefix='metadata-lf-') as work:
+            source=Path(work)/'source';source.mkdir();checkout=Path(work)/'checkout'
+            (source/relative).parent.mkdir(parents=True)
+            (source/relative).write_bytes(expected)
+            (source/'.gitattributes').write_bytes((root/'.gitattributes').read_bytes())
+            def git(*args):
+                result=subprocess.run(['git',*args],cwd=source,env=env,
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+                self.assertEqual(result.returncode,0,result.stderr.decode(errors='replace'))
+                return result.stdout
+            git('init','--template=')
+            git('-c','core.autocrlf=false','add','.')
+            git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid',
+                '-c','commit.gpgsign=false','commit','-m','Synthetic autocrlf fixture')
+            git('clone','--no-hardlinks','--config','core.autocrlf=true',str(source),str(checkout))
+            self.assertEqual((checkout/relative).read_bytes(),expected)
+
     def test_only_selected_route_and_exhaustive_terminal_verdict(self):
         namespace={'PolicyError':ValueError}
         exec(routes.marker('eligibility','ROUTE ADMISSION'),namespace)
