@@ -72,6 +72,7 @@ def discard_capture(report,final=False):
 
 BOOTSTRAP_FAILURE_KEY='zero_bootstrap_failure'
 BOOTSTRAP_LOG_STATES=('absent','empty','nonempty','unavailable')
+BOOTSTRAP_FRONTIER_PHASES=frozenset(('dispatch','control','marker','metadata','serialize'))
 
 def _diagnostic_keys(value,keys):
  require(type(value)is dict and len(value)==len(keys))
@@ -79,7 +80,8 @@ def _diagnostic_keys(value,keys):
  require(set(value)==set(keys))
 
 def validate_bootstrap_failure(value):
- _diagnostic_keys(value,{'schema','nonce','token','bootstrap','result','completion','pending','out','console'})
+ require(type(value)is dict and all(type(key)is str for key in dict.__iter__(value)))
+ _diagnostic_keys(value,{'schema','nonce','token','bootstrap','result','completion','pending','out','console'} | ({'frontier'} if type(value)is dict and 'frontier'in value else set()))
  require(type(value['schema'])is int and value['schema']==1 and _token(value['nonce']) and _token(value['token']))
  for name in ('bootstrap','result','completion','pending'):
   allowed=('absent','invalid','valid_ok','valid_error')if name in ('completion','pending')else('absent','invalid','valid_ok')
@@ -89,7 +91,32 @@ def validate_bootstrap_failure(value):
   require(type(log['state'])is str and log['state']in BOOTSTRAP_LOG_STATES)
   for key in ('module_error','undefined_symbol','syntax_error'):
    require(type(log[key])is bool and (log['state']=='nonempty' or log[key]is False))
+ if 'frontier'in value:
+  _diagnostic_keys(value['frontier'],set(measurement.FRONTIER_POINTS))
+  for point,item in value['frontier'].items():validate_frontier_projection(item,point)
  return value
+
+
+def validate_frontier_projection(value,point):
+ _diagnostic_keys(value,{'state','status','phase'})
+ require(type(value['state'])is str and value['state']in('absent','invalid','valid'))
+ if value['state']!='valid':
+  require(value['status']is None and value['phase']is None)
+ elif point in ('client_before_call','server_enter','client_after_call'):
+  status='returned' if point=='client_after_call' else 'entered'
+  require(type(value['status'])is str and value['status']==status and type(value['phase'])is str and value['phase']=='dispatch')
+ else:
+  require(type(value['status'])is str and value['status']in('ok','error') and type(value['phase'])is str)
+  require(value['phase']=='complete' if value['status']=='ok' else value['phase']in BOOTSTRAP_FRONTIER_PHASES)
+ return value
+
+
+def frontier_marker(raw,*,nonce,token,point):
+ require(type(point)is str and point in measurement.FRONTIER_POINTS)
+ value=decode(raw);_diagnostic_keys(value,{'schema','nonce','token','point','status','phase'})
+ require(type(value['schema'])is int and value['schema']==1 and type(value['nonce'])is str and value['nonce']==nonce
+  and type(value['token'])is str and value['token']==token and type(value['point'])is str and value['point']==point)
+ return validate_frontier_projection({'state':'valid','status':value['status'],'phase':value['phase']},point)
 
 def _bootstrap_failure_bound(report,value,final):
  require(value['nonce']==report.get('nonce'))

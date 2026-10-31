@@ -196,3 +196,78 @@ def compare_readback(observation,witness,*,case):
         else:name='matches' if observation.records.rows[0].fields[4].value==witness.actual_description else 'differs'
     return dict(schema=1,metadata_matches=metadata,code_availability=witness.code_state,
         uuid_verdict=uuid,description_verdict=name,physical=public,witness_sha256=witness.raw_sha256)
+
+
+FRONTIER_POINTS = ('client_before_call', 'server_enter', 'server_return', 'client_after_call')
+CLIENT_TEMPLATE_SHA256 = '18a04341b78ea0e7d3ed9d3fcaa7b18ac9fa2585f793bf398054f88094c8ac59'
+FRONTIER_HELPER = '''
+// Failure-only bootstrap frontier. Diagnostic errors never change dispatch.
+Процедура NativeZeroFrontier(Точка, ТокенЗапуска, Статус, Фаза)
+    Попытка
+        КореньДиагностики = @@EVIDENCE@@;
+        ЧтениеДиагностики = Новый ЧтениеJSON;
+        ЧтениеДиагностики.ОткрытьФайл(КореньДиагностики + "/control.json");
+        КонтрольДиагностики = ПрочитатьJSON(ЧтениеДиагностики);
+        ЧтениеДиагностики.Закрыть();
+        Если ТипЗнч(КонтрольДиагностики) <> Тип("Структура") Тогда
+            Возврат;
+        КонецЕсли;
+        Если КонтрольДиагностики.Количество() <> 4 Или КонтрольДиагностики.schema <> 1
+            Или КонтрольДиагностики.nonce <> @@NONCE@@ Или КонтрольДиагностики.token <> ТокенЗапуска
+            Или КонтрольДиагностики.operation <> "bootstrap" Тогда
+            Возврат;
+        КонецЕсли;
+        ПутьДиагностики = КореньДиагностики + "/zero-frontier-" + Точка + ".json";
+        ФайлДиагностики = Новый Файл(ПутьДиагностики);
+        Если ФайлДиагностики.Существует() Тогда
+            Возврат;
+        КонецЕсли;
+        ДанныеДиагностики = Новый Структура("schema,nonce,token,point,status,phase", 1, @@NONCE@@, ТокенЗапуска, Точка, Статус, Фаза);
+        ЗаписьДиагностики = Новый ЗаписьJSON;
+        ЗаписьДиагностики.ОткрытьФайл(ПутьДиагностики);
+        ЗаписатьJSON(ЗаписьДиагностики, ДанныеДиагностики);
+        ЗаписьДиагностики.Закрыть();
+    Исключение
+        // Missing or malformed diagnostic is not proof that this point was not reached.
+    КонецПопытки;
+КонецПроцедуры
+'''
+
+
+def _frontier_changes(name):
+    if name == 'ManagedApplicationModule.bsl':
+        call = '            Ответ = NativeOracleServer.NativeВыполнить(ПараметрЗапуска);'
+        return ((call, '            NativeZeroFrontier("client_before_call", ПараметрЗапуска, "entered", "dispatch");\n' + call +
+            '\n            NativeZeroFrontier("client_after_call", ПараметрЗапуска, "returned", "dispatch");'),)
+    if name == 'NativeOracleServer.bsl':
+        entry = 'Функция NativeВыполнить(ТокенЗапуска) Экспорт'
+        ret = '    Возврат Контекст;'
+        return ((entry, entry+'\n    NativeZeroFrontier("server_enter", ТокенЗапуска, "entered", "dispatch");'),
+                (ret, '    NativeZeroFrontier("server_return", ТокенЗапуска, Контекст.status, Контекст.phase);\n'+ret))
+    raise ValueError('zero_frontier_module_invalid')
+
+
+def instrument_module(raw, *, name, case):
+    """Closed zero-only source transformation; legacy templates stay byte-exact."""
+    _case(case)
+    if name == 'NativeOracleServer.bsl':
+        baseline = transform(raw, name='modules/'+name, case=case)
+    elif name == 'ManagedApplicationModule.bsl' and type(raw) is bytes and hashlib.sha256(raw).hexdigest() == CLIENT_TEMPLATE_SHA256:
+        baseline = raw
+    else:
+        raise ValueError('zero_frontier_module_invalid')
+    text = baseline.decode('utf-8')
+    for old, new in _frontier_changes(name):
+        if text.count(old) != 1 or new in text:
+            raise ValueError('zero_frontier_module_invalid')
+        text = text.replace(old, new)
+    result = (text + FRONTIER_HELPER).encode('utf-8')
+    # Exact invertibility ensures no incidental transformation of the underlying module.
+    inverse = result.decode('utf-8')[:-len(FRONTIER_HELPER)]
+    for old, new in reversed(_frontier_changes(name)):
+        if inverse.count(new) != 1:
+            raise ValueError('zero_frontier_module_invalid')
+        inverse = inverse.replace(new, old)
+    if inverse.encode('utf-8') != baseline:
+        raise ValueError('zero_frontier_module_invalid')
+    return result

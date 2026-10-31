@@ -743,12 +743,23 @@ class Native:
                 except BaseException:
                     return result
 
+            def frontier_state(point):
+                try:
+                    state, raw = read(self.evidence / ('zero-frontier-' + point + '.json'), 2048)
+                    if state == 'absent':
+                        return {'state':'absent','status':None,'phase':None}
+                    return self.description_policy.frontier_marker(raw, nonce=self.nonce, token=token, point=point)
+                except BaseException:
+                    return {'state':'invalid','status':None,'phase':None}
+
+            from catalog_zero_code_measurement import FRONTIER_POINTS
             result = {'schema': 1, 'nonce': self.nonce, 'token': token,
                       'bootstrap': marker_state('bootstrap.json'),
                       'result': marker_state('result.json'),
                       'completion': marker_state('completion.json', True),
                       'pending': marker_state('completion.pending.json', True),
-                      'out': log_state(log), 'console': log_state(console)}
+                      'out': log_state(log), 'console': log_state(console),
+                      'frontier': {point:frontier_state(point) for point in FRONTIER_POINTS}}
             self.budgets()
             require(self.quiescent(), 'snapshot_not_quiescent')
             self.description_policy.validate_bootstrap_failure(result)
@@ -769,8 +780,12 @@ class Native:
         control=self.evidence/'control.json'; result=self.evidence/'result.json'
         completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
         zero_mode = getattr(self, 'zero_case', None) is not None
+        frontier_paths = ()
         if zero_mode:
             self.zero_bootstrap_failure = None
+            from catalog_zero_code_measurement import FRONTIER_POINTS
+            frontier_paths = tuple(self.evidence / ('zero-frontier-' + point + '.json') for point in FRONTIER_POINTS)
+            absent(*frontier_paths)
         numeric_mode = getattr(self, 'numeric_case', None) is not None
         description_path = self.evidence / ('zero-code-observation.json' if zero_mode else 'numeric-code-observation.json' if numeric_mode else 'description-observation.json')
         description_mode = zero_mode or numeric_mode or getattr(self, 'description_case', None) is not None
@@ -867,6 +882,7 @@ class Native:
             completion.unlink(missing_ok=True); pending.unlink(missing_ok=True)
             if reference_mode: reference_path.unlink(missing_ok=True)
             if description_mode: description_path.unlink(missing_ok=True)
+            for frontier_path in frontier_paths: frontier_path.unlink(missing_ok=True)
 
     def seed(self):
         with self.seed_command('create'):

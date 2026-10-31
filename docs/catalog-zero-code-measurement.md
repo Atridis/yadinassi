@@ -130,3 +130,23 @@ The conservative full-report bound including this diagnostic is 28959 bytes,
 below the unchanged 32768-byte cap. Capture, aggregate and private witness bounds
 remain 5285, 612 and 1921 bytes respectively. These are synthetic size proofs, not
 native observations.
+
+## Dispatch frontier discriminator
+
+The follow-up run `41179297186` at `5daf2e39f6270eb40fc12ed7aff7cc7bfa061087`
+produced a valid nonce-bound bootstrap marker, but no result/completion marker.
+The fixed `/Out` file was empty; the console was nonempty without any of the three
+selected phrases. All cleanup checks passed. This narrows the observed frontier
+but does not identify a compiler, transport or application-startup cause.
+
+The next zero-route-only probe adds four fixed markers: client before call,
+server entry, server return, and client after call. Markers bind the control's
+bootstrap operation, nonce and launch token. Server return includes only the
+existing fixed status/phase; client after call does not inspect the unvalidated
+reply. Marker-write errors cannot replace the original operation outcome. No
+marker is overwritten or retried. Absence remains ambiguous because diagnostic
+writing can itself fail. The collector accepts only exact nonce/token/point-bound
+small files and exports fixed states/statuses/phases, never raw file contents.
+All four files are removed in the ordinary launch cleanup. Other native routes
+render byte-for-byte unchanged. The conservative full-report bound is now 29316
+bytes under the unchanged 32768-byte cap.

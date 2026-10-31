@@ -129,11 +129,11 @@ def _template(name: str, values: dict[str, str], *, description_case=None, numer
 def _module(name: str, nonce: str, evidence: str, *, reference_case=None, description_case=None, description_rows=False, numeric_case=None, zero_case=None) -> bytes:
     values = {"NONCE": nonce, "EVIDENCE": evidence, "SETUP_USER": SETUP_USER,
               "CRUD_USER": CRUD_USER, "SETUP_ROLE": SETUP_ROLE, "CRUD_ROLE": CRUD_ROLE}
-    if zero_case is not None and name == 'NativeOracleServer.bsl':
+    if zero_case is not None and name in ('NativeOracleServer.bsl', 'ManagedApplicationModule.bsl'):
         _zero_mode(zero_case,numeric_case=numeric_case,description_case=description_case,reference_case=reference_case)
-        from catalog_zero_code_measurement import transform
+        from catalog_zero_code_measurement import instrument_module
         source = (ROOT / "modules" / name).read_bytes()
-        raw = transform(source,name='modules/'+name,case=zero_case).decode('utf-8-sig')
+        raw = instrument_module(source,name=name,case=zero_case).decode('utf-8-sig')
     elif numeric_case is not None and name == "NativeOracleServer.bsl":
         _numeric_mode(numeric_case, description_case=description_case, reference_case=reference_case)
         from catalog_numeric_code_measurement import transform
