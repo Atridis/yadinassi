@@ -6,6 +6,9 @@ from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLS
 from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 
 
+from .catalogs import BSLCatalogs
+from .catalog_types import BSLCatalogReference, BSLCatalogType
+
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
 from .text_documents import BSLTextDocument
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
@@ -38,6 +41,7 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLCatalogs, BSLType.CATALOGS_MANAGER, None),
     (BSLXMLReader, BSLType.XML_READER, "XMLReader"),
     (BSLXMLWriter, BSLType.XML_WRITER, "XMLWriter"),
     (BSLXMLReaderSettings, BSLType.XML_READER_SETTINGS, "XMLReaderSettings"),
@@ -131,7 +135,19 @@ def type_by_name(name: object) -> BSLType:
     return value_type
 
 
-def type_of(value: object) -> BSLType:
+def type_of(value: object) -> BSLType | BSLCatalogType:
+    if type(value) is BSLCatalogReference:
+        return value.value_type
+    if type(value) is BSLCatalogType:
+        return BSLType.TYPE
+    # Lazy import avoids the catalog adapter/type registry import cycle.
+    from .catalogs import BSLCatalogManager, BSLCatalogSelection, BSLCatalogs
+    if type(value) is BSLCatalogs:
+        return BSLType.CATALOGS_MANAGER
+    if type(value) is BSLCatalogManager:
+        return value._manager_type
+    if type(value) is BSLCatalogSelection:
+        return value._selection_type
     # Exact identity keeps bool distinct from numbers and rejects arbitrary host
     # objects/subclasses without invoking their metaclass equality or hash hooks.
     for python_type, value_type, _ in _VALUE_TYPES:

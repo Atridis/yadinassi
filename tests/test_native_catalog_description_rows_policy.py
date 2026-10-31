@@ -153,7 +153,7 @@ def failure_fixture(*,final=True):
 
 class DescriptionDiagnosticTests(unittest.TestCase):
     def test_exact_existing_domain_and_special_finite_classes(self):
-        self.assertEqual(sum(len(v) for k,v in p.DIAGNOSTICS.items() if k not in ('adapter','parity','unclassified','builtin')),232)
+        self.assertEqual(sum(len(v) for k,v in p.DIAGNOSTICS.items() if k not in ('adapter','parity','unclassified','builtin')),238)
         count=0
         for cls,category in p._READER_CATEGORIES.items():
             for code in p.DIAGNOSTICS[category]:
@@ -192,8 +192,8 @@ class DescriptionDiagnosticTests(unittest.TestCase):
     def test_runtime_additions_are_closed_and_old_domain_preserved(self):
         original=p._binding_diagnostics.DIAGNOSTICS
         self.assertEqual(sum(map(len,original.values())),193)
-        self.assertEqual(sum(map(len,p._RUNTIME_DIAGNOSTICS.values())),39)
-        self.assertEqual(sum(map(len,p.DIAGNOSTICS.values())),239)
+        self.assertEqual(sum(map(len,p._RUNTIME_DIAGNOSTICS.values())),45)
+        self.assertEqual(sum(map(len,p.DIAGNOSTICS.values())),245)
         for category,codes in original.items():
             self.assertLessEqual(codes,p.DIAGNOSTICS[category])
         for category,codes in p._RUNTIME_DIAGNOSTICS.items():

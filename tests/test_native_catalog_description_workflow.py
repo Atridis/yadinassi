@@ -6,7 +6,7 @@ import test_native_1c_db_oracle_ci_policy as old
 class DescriptionWorkflowTests(unittest.TestCase):
     def test_only_existing_job_pair_and_fixed_inputs(self):
         workflow=old.WORKFLOW.read_text() if hasattr(old,'WORKFLOW') else (old.ROOT/'.github/workflows/native-1c-file-db-oracle.yml').read_text()
-        self.assertEqual(set(re.findall(r'^  ([a-z_]+):$',workflow,re.M)),{'push','eligibility','native_reference_a','native_oracle','native_codec_a','native_codec_b','native_metadata','native_metadata_runtime','verdict'})
+        self.assertEqual(set(re.findall(r'^  ([a-z_]+):$',workflow,re.M)),{'push','eligibility','native_reference_a','native_oracle','native_codec_a','native_codec_b','native_metadata','native_metadata_runtime','native_catalog_read','verdict'})
         for name,number in (('native_codec_a','8'),('native_codec_b','17')):
             block=old.workflow_job(name)
             self.assertIn("needs.eligibility.outputs.route == 'catalog-description-measurement-v1'",block)

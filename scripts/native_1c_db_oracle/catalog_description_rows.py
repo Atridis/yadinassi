@@ -48,6 +48,7 @@ DIAGNOSTICS = {k:frozenset(v) for k,v in _binding_diagnostics.DIAGNOSTICS.items(
 _RUNTIME_DIAGNOSTICS = {
     'structural_rejection': frozenset((
         'binding_reference_identity', 'binding_reference_role', 'binding_typed_rows',
+        'catalog_free_head_range', 'catalog_free_head_active', 'catalog_unlinked_free_slot',
         'blob_declared_length', 'dbnames_duplicate', 'dbnames_filename_length',
         'dbnames_not_found', 'dbnames_record_length', 'dbnames_reference',
         'dbnames_size', 'dbnames_size_mismatch', 'deflate_invalid',
@@ -58,6 +59,7 @@ _RUNTIME_DIAGNOSTICS = {
         'transport_blob_visits', 'transport_inflate_calls')),
     'unsupported_layout': frozenset((
         'binding_table_count', 'compiled_binding_invalid', 'dbnames_filename_encoding',
+        'catalog_slot_policy', 'catalog_multiple_free_slots', 'catalog_slot_marker',
         'dbnames_nonreserved_slot', 'dbnames_numeric_digit', 'dbnames_numeric_padding',
         'dbnames_numeric_sign', 'dbnames_part', 'dbnames_profile_mismatch',
         'dbnames_reserved_slot', 'dbnames_table_ambiguous', 'dbnames_table_missing',

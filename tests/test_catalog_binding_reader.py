@@ -117,12 +117,12 @@ class CatalogBindingReaderTests(unittest.TestCase):
         value.page(43)[127] = 1
         readers, graphs, roles, patches = self.captured()
         with patches[0], patches[1], patches[2]:
-            with self.assertRaises(entry.catalog_module.UnsupportedLayout) as caught: self.read(value)
-        self.assertEqual(caught.exception.code, 'nonreserved_free_slot')
+            with self.assertRaises(entry.catalog_module.InvalidStructure) as caught: self.read(value)
+        self.assertEqual(caught.exception.code, 'catalog_unlinked_free_slot')
         self.assertEqual(roles, ['config', 'params', 'records'])
         self.assertTrue(graphs[0].failed)
 
-    def test_one_row_limit_is_explicit(self):
+    def test_bounded_multirow_limit_is_explicit(self):
         modules = entry._load_storage()
         original = modules['config_catalog_records'].read_bound_catalog_records
         observed = []
@@ -130,7 +130,7 @@ class CatalogBindingReaderTests(unittest.TestCase):
             observed.append(kwargs['limits'].max_active_records)
             return original(*args, **kwargs)
         with mock.patch.object(modules['config_catalog_records'], 'read_bound_catalog_records', rows): self.read()
-        self.assertEqual(observed, [1])
+        self.assertEqual(observed, [4096])
 
     def test_dbnames_reservation_charged_before_parse_including_tokens(self):
         modules = entry._load_storage()

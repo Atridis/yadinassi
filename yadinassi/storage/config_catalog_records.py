@@ -153,7 +153,7 @@ def _decode(raw, declaration):
     return Decimal((0 if sign else 1, digits, -scale))
 
 
-def read_bound_catalog_records(reader, catalog, binding, *, handle, limits=None):
+def read_bound_catalog_records(reader, catalog, binding, *, handle, limits=None, slot_policy="active_only"):
     """Consume the records stage of one CONFIG/PARAMS/records lifetime.
 
     All-or-nothing private result; failure poisons the graph. Old record APIs,
@@ -172,6 +172,8 @@ def read_bound_catalog_records(reader, catalog, binding, *, handle, limits=None)
         raise ValueError('records require their identical active binding graph')
     try:
         handle._check()
+        if type(slot_policy) is not str or slot_policy not in ('active_only', 'closed_free_single_v1'):
+            raise UnsupportedLayout('catalog_slot_policy')
         if limits is not None and type(limits) is not RecordLimits:
             raise ValueError('limits must be RecordLimits')
         limits = limits if limits is not None else RecordLimits()
@@ -205,8 +207,33 @@ def read_bound_catalog_records(reader, catalog, binding, *, handle, limits=None)
             return PhysicalRecords(table, data.info, binding.record_size, 0, 'empty_zero_length', (), reader.usage)
         if data._read_range(0, 1) != b'\1':
             raise UnsupportedLayout('reserved_slot_marker')
+        free_slot = 0
+        if slot_policy == 'closed_free_single_v1':
+            # Native batch 41214218572: reserved head and one free node store a
+            # little-endian slot number at bytes1:5. Validate all markers before
+            # decoding any active record; _MARKED is unrelated to slot liveness.
+            reader._budget.charge('bytes_processed', 5 * slots)
+            free_slot = int.from_bytes(data._read_range(1, 4), 'little')
+            if free_slot >= slots:
+                raise InvalidStructure('catalog_free_head_range')
+            for slot in range(1, slots):
+                prefix = data._read_range(slot * binding.record_size, 5)
+                if prefix[0] == 0:
+                    if slot == free_slot:
+                        raise InvalidStructure('catalog_free_head_active')
+                elif prefix[0] == 1:
+                    if slot != free_slot:
+                        raise InvalidStructure('catalog_unlinked_free_slot')
+                    # !todo Multiple free-node chains need a bounded native
+                    # deletion sequence; this measured profile admits one only.
+                    if int.from_bytes(prefix[1:5], 'little') != 0:
+                        raise UnsupportedLayout('catalog_multiple_free_slots')
+                else:
+                    raise UnsupportedLayout('catalog_slot_marker')
         rows = []
         for slot in range(1, slots):
+            if slot_policy == 'closed_free_single_v1' and slot == free_slot:
+                continue
             raw = data._read_range(slot * binding.record_size, binding.record_size)
             if raw[0] != 0:
                 raise UnsupportedLayout('nonreserved_free_slot')

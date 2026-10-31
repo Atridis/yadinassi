@@ -5,7 +5,8 @@ This API neither opens a live database nor creates a transaction or authenticati
 session. Admission includes the owned positive String/Number Code profiles and
 the measured String CodeLength0 shapes (Description0/8, Payload32/64, Amount9,2).
 Zero-code physical rows omit _CODE; no logical Code value is synthesized.
-Only one active record is admitted. No BSL manager is exported yet.
+Typed projection admits bounded multi-row records and the measured single-free-slot profile.
+Raw and typed routes share this physical admission.
 """
 from dataclasses import dataclass
 from uuid import UUID
@@ -129,7 +130,8 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
             del parsed, extracted, reservation
         with graph.stage('records', binding=binding) as handle:
             rows = row_reader.read_bound_catalog_records(reader, physical_catalog, binding,
-                handle=handle, limits=row_types.RecordLimits(max_active_records=1))
+                handle=handle, limits=row_types.RecordLimits(max_active_records=4096),
+                slot_policy="closed_free_single_v1")
         if project_rows:
             # Reserve retained wrappers, UUIDs, tuple/result and bounded role
             # checks/conversion work on the SAME lifetime before construction.

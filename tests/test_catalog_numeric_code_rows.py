@@ -36,7 +36,7 @@ def numeric_source(length=3, number=987, payload_length=32, *, edit=None, rows=1
     value.chain(tuple(range(14,14+(len(descriptor)+249)//250)),descriptor)
     row = (b'\0'+b'V'*16+b'R'*16+b'\0'+b'P'*16+fixture.bcd(number,max(1,length))
            +(fixture.text_value('X',description_length) if description_length else b'')+fixture.text_value('alpha',payload_length)+b'\x10\0\0\x01\x25')
-    raw = b'\x01'+b'R'*(len(row)-1)+row*rows
+    raw = b'\x01'+bytes(4)+b'R'*(len(row)-5)+row*rows
     value.page(40)[16:24] = len(raw).to_bytes(8,'little')
     value.page(43)[:] = bytes(fixture.fixture.P)
     value.page(43)[:len(raw)] = raw

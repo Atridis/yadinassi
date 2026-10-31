@@ -144,13 +144,13 @@ class ZeroPublicRowsTests(unittest.TestCase):
         for kwargs in ({'description':1},{'description':17},{'payload':31},{'payload':65},{'kind':0}):
             with self.subTest(kwargs=kwargs),self.assertRaises(c.UnsupportedLayout):self.read(source(**kwargs))
 
-    def test_physical_extra_code_misordered_description_and_two_rows_rejected(self):
+    def test_physical_extra_code_misordered_description_and_multiple_rows(self):
         edits = (lambda ds:ds[:4]+[('_CODE','NVC',0,0,0,'CI')]+ds[4:],
                  lambda ds:ds[:4]+list(reversed(ds[4:])),
                  lambda ds:ds[:4]+[('_DESCRIPTION','NVC',0,17,0,'CI')]+ds[5:])
         for edit in edits:
             with self.assertRaises(c.CatalogError):self.read(source(edit=edit))
-        with self.assertRaises(c.CatalogError):self.read(source(rows=2))
+        self.assertEqual(len(self.read(source(rows=2)).rows), 2)
 
     def test_same_lifetime_cumulative_budget_exact_and_one_less(self):
         usage=self.read().usage

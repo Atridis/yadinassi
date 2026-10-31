@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    CATALOGS_MANAGER = "Справочники менеджер"
     XML_READER = "ЧтениеXML"
     XML_WRITER = "ЗаписьXML"
     XML_READER_SETTINGS = "ПараметрыЧтенияXML"
