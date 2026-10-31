@@ -271,3 +271,37 @@ def instrument_module(raw, *, name, case):
     if inverse.encode('utf-8') != baseline:
         raise ValueError('zero_frontier_module_invalid')
     return result
+
+
+COMPILE_CATEGORIES = ('undefined_symbol','syntax_error','undefined_method','unknown_type','other')
+COMPILE_MODULES = ('server','client','session','other')
+COMPILE_STATES = ('completed','process_failed','timeout','unavailable')
+
+
+def compile_log_projection(raw):
+    """Read-only projection of owned compiler output; never return any log text."""
+    if type(raw)is not bytes or len(raw)>32768:
+        raise ValueError('compile_log_invalid')
+    if raw.startswith((b'\xff\xfe', b'\xfe\xff')):
+        text=raw.decode('utf-16')
+    else:
+        try:text=raw.decode('utf-8-sig')
+        except UnicodeError:text=raw.decode('cp1251')
+    modules={'ОбщийМодуль.NativeOracleServer.Модуль':'server','CommonModule.NativeOracleServer.Module':'server',
+             'МодульУправляемогоПриложения':'client','ManagedApplicationModule':'client',
+             'МодульСеанса':'session','SessionModule':'session'}
+    categories=(('undefined_symbol',('Переменная не определена','Variable is not defined')),
+                ('syntax_error',('Синтаксическая ошибка','Syntax error')),
+                ('undefined_method',('Процедура или функция с указанным именем не определена','Procedure or function with the specified name is not defined')),
+                ('unknown_type',('Тип не определен','Type is not defined')))
+    issues=[];truncated=False
+    for match in re.finditer(r'\{([^{}\r\n]{1,200})\((\d{1,5}),(\d{1,5})\)\}[ \t]*:[ \t]*([^\r\n]{0,500})',text):
+        module=modules.get(match[1],'other');line=int(match[2]);column=int(match[3])
+        if not 1<=line<=65535 or not 1<=column<=65535:
+            continue
+        category=next((name for name,phrases in categories if any(phrase in match[4]for phrase in phrases)),'other')
+        item={'module':module,'line':line if module!='other'else 0,'column':column if module!='other'else 0,'category':category}
+        if item in issues:continue
+        if len(issues)==8:truncated=True;break
+        issues.append(item)
+    return {'log_state':'nonempty'if raw else 'empty','issues':issues,'truncated':truncated}

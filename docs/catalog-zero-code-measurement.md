@@ -150,3 +150,24 @@ small files and exports fixed states/statuses/phases, never raw file contents.
 All four files are removed in the ordinary launch cleanup. Other native routes
 render byte-for-byte unchanged. The conservative full-report bound is now 29316
 bytes under the unchanged 32768-byte cap.
+
+### Bounded post-bootstrap syntax observation
+
+If a stopped bootstrap has a valid bootstrap marker and client-before-call
+marker, but no server-entry marker, the zero-only lane may run one read-only
+Designer `/CheckConfig -ThickClientManagedApplication -Server` check. These
+switches select managed thick-client and server-emulation syntax checks
+([platform command-line reference](https://1c-dn.com/library/tutorials/1c_enterprise_administrator_guide_file_mode_8_3_27/), section 7.4.5).
+The original timeout and failure context remain authoritative. The existing
+command timeout, global deadline, process census and filesystem/log budgets
+are unchanged. Absence of a frontier marker does not prove why execution stopped.
+
+Only the bounded result code, diagnostic state, log state and up to eight
+unique module/line/column/category tuples are exported. Module names are mapped
+to fixed `server`, `client`, `session`, or `other`; unknown modules lose their
+coordinates. No source text, symbol names, paths or raw log lines are published.
+Oversized or unstable logs are unavailable, not truncated into trusted input.
+Unknown output, no recognized issues, or even result code zero does not establish
+that bootstrap succeeded, that compilation caused the timeout, or that native
+CodeLength0 behavior has been measured. This remains a failed report with no
+measurement or snapshots; runtime support stays gated on actual native evidence.

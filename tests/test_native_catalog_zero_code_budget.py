@@ -44,6 +44,7 @@ def diagnostic_envelope():
         **{name:dict(state='unavailable',module_error=False,undefined_symbol=False,syntax_error=False)for name in ('out','console')})
 
     value['frontier'] = {point:dict(state='invalid',status='returned',phase=longest(protocol.BSL_PHASES)) for point in measurement.FRONTIER_POINTS}
+    value['compile'] = dict(state=longest(measurement.COMPILE_STATES),result_code=255,log_state='unavailable',issues=[dict(module=longest(measurement.COMPILE_MODULES),line=65535,column=65535,category=longest(measurement.COMPILE_CATEGORIES)) for _ in range(8)],truncated=False)
     return value
 
 def report_envelope():
@@ -126,5 +127,5 @@ class ZeroIntegrationBudgetTests(unittest.TestCase):
         import ast
         self.assertFalse(any(isinstance(node,ast.Assert)for node in ast.walk(ast.parse(Path(__file__).read_text(encoding='utf-8')))))
 
-EXPECTED = {'diagnostic': 747, 'sources': 42, 'comparison': 620, 'capture_plus_newline': 5285, 'capture_cap': 8192, 'report_without_capture': 21127, 'report_full_capture_plus_newline': 29316, 'report_cap': 32768, 'aggregate_plus_newline': 612, 'aggregate_cap': 2048, 'private_witness_plus_bom': 1921}
+EXPECTED = {'diagnostic': 1489, 'sources': 42, 'comparison': 620, 'capture_plus_newline': 5285, 'capture_cap': 8192, 'report_without_capture': 21869, 'report_full_capture_plus_newline': 30058, 'report_cap': 32768, 'aggregate_plus_newline': 612, 'aggregate_cap': 2048, 'private_witness_plus_bom': 1921}
 if __name__=='__main__':unittest.main()

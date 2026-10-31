@@ -81,7 +81,7 @@ def _diagnostic_keys(value,keys):
 
 def validate_bootstrap_failure(value):
  require(type(value)is dict and all(type(key)is str for key in dict.__iter__(value)))
- _diagnostic_keys(value,{'schema','nonce','token','bootstrap','result','completion','pending','out','console'} | ({'frontier'} if type(value)is dict and 'frontier'in value else set()))
+ _diagnostic_keys(value,{'schema','nonce','token','bootstrap','result','completion','pending','out','console'} | ({'frontier'} if 'frontier'in value else set()) | ({'compile'} if 'compile'in value else set()))
  require(type(value['schema'])is int and value['schema']==1 and _token(value['nonce']) and _token(value['token']))
  for name in ('bootstrap','result','completion','pending'):
   allowed=('absent','invalid','valid_ok','valid_error')if name in ('completion','pending')else('absent','invalid','valid_ok')
@@ -94,6 +94,11 @@ def validate_bootstrap_failure(value):
  if 'frontier'in value:
   _diagnostic_keys(value['frontier'],set(measurement.FRONTIER_POINTS))
   for point,item in value['frontier'].items():validate_frontier_projection(item,point)
+ if 'compile'in value:
+  validate_compile_projection(value['compile'])
+  require(value['bootstrap']=='valid_ok' and 'frontier'in value
+   and value['frontier']['client_before_call']=={'state':'valid','status':'entered','phase':'dispatch'}
+   and value['frontier']['server_enter']=={'state':'absent','status':None,'phase':None})
  return value
 
 
@@ -117,6 +122,24 @@ def frontier_marker(raw,*,nonce,token,point):
  require(type(value['schema'])is int and value['schema']==1 and type(value['nonce'])is str and value['nonce']==nonce
   and type(value['token'])is str and value['token']==token and type(value['point'])is str and value['point']==point)
  return validate_frontier_projection({'state':'valid','status':value['status'],'phase':value['phase']},point)
+
+
+def validate_compile_projection(value):
+ _diagnostic_keys(value,{'state','result_code','log_state','issues','truncated'})
+ require(type(value['state'])is str and value['state']in measurement.COMPILE_STATES)
+ code=value['result_code'];require(code is None or type(code)is int and -1<=code<=255)
+ require(type(value['log_state'])is str and value['log_state']in('absent','empty','nonempty','unavailable'))
+ require(type(value['truncated'])is bool and type(value['issues'])is list and len(value['issues'])<=8)
+ require(not value['truncated'] or len(value['issues'])==8)
+ require(value['log_state']=='nonempty' or value['issues']==[] and value['truncated']is False)
+ for issue in value['issues']:
+  _diagnostic_keys(issue,{'module','line','column','category'})
+  require(type(issue['module'])is str and issue['module']in measurement.COMPILE_MODULES
+   and type(issue['category'])is str and issue['category']in measurement.COMPILE_CATEGORIES)
+  for key in ('line','column'):require(type(issue[key])is int and 0<=issue[key]<=65535)
+  require((issue['line']==0 and issue['column']==0)if issue['module']=='other'else(issue['line']>0 and issue['column']>0))
+ require(len({(i['module'],i['line'],i['column'],i['category']) for i in value['issues']})==len(value['issues']))
+ return value
 
 def _bootstrap_failure_bound(report,value,final):
  require(value['nonce']==report.get('nonce'))

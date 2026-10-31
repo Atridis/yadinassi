@@ -767,6 +767,78 @@ class Native:
         except BaseException:
             return None
 
+    def _zero_compile_diagnostic(self, database, diagnostic):
+        """One read-only syntax check after the owned failed bootstrap has stopped."""
+        from catalog_zero_code_measurement import compile_log_projection
+        try:
+            require(getattr(self,'zero_case',None) is not None,'invalid_input')
+            self.description_policy.validate_bootstrap_failure(diagnostic)
+            require(self.stage == 'seed_v1' and self.seed_pending == self.seed_launched == 'bootstrap'
+                    and diagnostic['nonce'] == self.nonce and diagnostic['bootstrap'] == 'valid_ok'
+                    and diagnostic.get('frontier', {}).get('client_before_call') ==
+                        {'state':'valid','status':'entered','phase':'dispatch'}
+                    and diagnostic['frontier']['server_enter'] ==
+                        {'state':'absent','status':None,'phase':None}, 'invalid_input')
+            require(self.quiescent(), 'snapshot_not_quiescent')
+            self.remaining(); self.budgets()
+            log=self.evidence / f'{self.counter+1:03}-zero-compile.log'
+            result=self.evidence / f'{self.counter+1:03}-zero-compile.result'
+            absent(log,result)
+            args=self.command('DESIGNER',database,SETUP_USER)+[
+                '/CheckConfig','-ThickClientManagedApplication','-Server','/Out',str(log),'/DumpResult',str(result)]
+            state='completed'
+            try:
+                self.process(args,'zero-compile')
+            except OracleError as error:
+                if error.kind not in ('process_failed','timeout'):
+                    return None
+                state=error.kind
+            require(self.quiescent(), 'snapshot_not_quiescent')
+            self.budgets()
+            def read(path, limit):
+                try:
+                    before = path.lstat()
+                except FileNotFoundError:
+                    return 'absent', None
+                require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                        and 0 <= before.st_size <= limit, 'artifact_limit')
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                with os.fdopen(fd, 'rb') as stream:
+                    opened = os.fstat(stream.fileno())
+                    require((opened.st_dev, opened.st_ino, opened.st_size) ==
+                            (before.st_dev, before.st_ino, before.st_size), 'stale_evidence')
+                    raw = stream.read(limit + 1)
+                    after = os.fstat(stream.fileno())
+                current = path.lstat()
+                identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns,
+                                          item.st_ctime_ns, item.st_nlink, item.st_mode)
+                require(len(raw) == before.st_size and identity(before) == identity(after)
+                        == identity(current), 'stale_evidence')
+                return ('nonempty' if raw else 'empty'), raw
+
+            code=None
+            try:
+                _,raw=read(result,64)
+                text=raw.decode('utf-8-sig').strip()
+                if re.fullmatch('-?[0-9]{1,3}',text) and -1<=int(text)<=255:
+                    code=int(text)
+            except BaseException:
+                pass
+            projection={'log_state':'unavailable','issues':[],'truncated':False}
+            try:
+                log_state,raw=read(log,32768)
+                projection=compile_log_projection(raw) if raw is not None else {'log_state':log_state,'issues':[],'truncated':False}
+            except FileNotFoundError:
+                projection['log_state']='absent'
+            except BaseException:
+                pass
+            self.budgets(); require(self.quiescent(), 'snapshot_not_quiescent')
+            value={'state':state,'result_code':code,**projection}
+            self.description_policy.validate_compile_projection(value)
+            return value
+        except BaseException:
+            return None
+
     def enterprise(self, database, operation, *, token=None):
         require(type(operation) is str and 'enterprise_'+operation in self.command_stages(),'invalid_input')
         if operation in ('audit_contract', 'audit_record_metadata'):
@@ -874,6 +946,10 @@ class Native:
                             and type(dict.get(fields, 'kind')) is str and dict.get(fields, 'kind') == 'timeout'
                             and type(dict.get(fields, 'oracle_site')) is str and dict.get(fields, 'oracle_site') == 'poll'):
                         self.zero_bootstrap_failure = self._zero_bootstrap_diagnostic(token)
+                        if self.zero_bootstrap_failure is not None:
+                            compiler = self._zero_compile_diagnostic(database, self.zero_bootstrap_failure)
+                            if compiler is not None:
+                                self.zero_bootstrap_failure['compile'] = compiler
                 except BaseException:
                     self.zero_bootstrap_failure = None
             raise

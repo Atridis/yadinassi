@@ -18,7 +18,7 @@ def static_fixture_descriptors(root):
     """Bounded Windows fixture adapter; never changes production/native Linux reads."""
     opened_real,inspected_real=stage.os.open,stage.os.fstat
     paths={};allowed={'bootstrap.json','result.json','completion.json','completion.pending.json',
-                     '001-bootstrap.log','001-bootstrap-console.log','002-bootstrap.log','002-bootstrap-console.log'}
+                     '001-bootstrap.log','001-bootstrap-console.log','002-bootstrap.log','002-bootstrap-console.log','002-zero-compile.log','002-zero-compile.result'}
     allowed.update('zero-frontier-'+point+'.json' for point in facts.measurement.FRONTIER_POINTS)
     nofollow=getattr(stage.os,'O_NOFOLLOW',0)
     def opened(path,flags,*args,**kwargs):
