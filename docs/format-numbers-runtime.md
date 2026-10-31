@@ -20,14 +20,15 @@ Eight additional cases from [run 41185012239](https://github.com/Atridis/yadinas
 are retained as immutable `supplement56.bsl`, native capture and provenance in
 that fixture directory. All original 48 native output records are unchanged.
 Three distinct unknown names/values are ignored, NG=3,0 repeats groups of three,
-NG=3,2 repeats pairs after the final triplet, and mixed-case RU/EN aliases share
-the duplicate-last rule. These witnesses support a generic rule, not a dispatch
+and NG=3,2 repeats pairs after the final triplet. Later authenticated parser-family
+probes corrected the initial mixed-case inference: numeric aliases are exact-case,
+with last-canonical-value selection; lowercase names are ignored. These witnesses support a generic rule, not a dispatch
 on the literal names/values of test cases.
 
 The required native runner restores the original 48-case source. Offline tests
 also replay the six supported supplemental cases, while explicitly asserting
-that ND and custom DF (native-supported supplemental controls 52/53) fail closed
-in this bounded runtime. This is a documented gap, not claimed 56-case parity.
+that ND (native-supported supplemental control52) fails closed. Custom DF
+control53 is now admitted by separately measured numeric-mask Date support. This is a documented gap, not claimed 56-case parity.
 
 ## Numeric behavior
 
@@ -53,16 +54,18 @@ are documentation-derived local tests, not additional native measurements.
 
 ## Scanner and unsupported directives
 
-The whole mask is consumed. ASCII spaces/tabs around fields and semicolon
-separators are allowed. Single-quoted values preserve punctuation and spaces;
-doubled apostrophes represent an apostrophe. Bare values trim outer space/tab.
+The whole mask is consumed. Numeric and locale parameter names use exact uppercase
+spelling; lowercase names follow the generic unknown-name no-op rule. Date keys
+use their separately documented selection rules. ASCII spaces/tabs around fields and semicolon
+separators are allowed. Single- or double-quoted values preserve punctuation and spaces;
+doubled matching quotes represent that quote. Bare values trim outer space/tab.
 Canonical duplicate aliases use the last value, but every entry is validated;
 an invalid overwritten entry is not silently accepted. Malformed quoting,
 missing assignments, unsupported locale and out-of-subset parameter values
 raise an error rather than a plausible default.
 
 Unknown ASCII/Russian letter-only names use a generic no-op rule; no expression/fixture-name dispatch exists. Recognized but
-unimplemented native ND/ЧЦ, NS/ЧС, NLZ/ЧВН, NN/ЧО, NF/ЧФ, DF/ДФ, DLF/ДЛФ, DE/ДП,
+unimplemented native ND/ЧЦ, NS/ЧС, NLZ/ЧВН, NN/ЧО, NF/ЧФ, DLF/ДЛФ,
 BF/БЛ and BT/БИ explicitly fail. This is not complete native numeric, Date,
 Boolean or locale formatting support. The NF/ЧФ numeric-template family is
 specified in the [official localization guidelines](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_Development_Standards/Localization_requirements/Localization_guidelines_____Dates__numbers__and_Boolean/?language=en)
@@ -72,10 +75,9 @@ and must not fall through the unknown-name no-op path.
 
 Exact Number (Decimal), String, Boolean, Date, Undefined and Null values are
 accepted. Non-numeric values use their existing String presentation after mask
-validation; supported numeric directives do not affect them. Empty Date and
-out-of-range Date states are rejected: their native Format-specific behavior is
-outside this slice. This does not establish all Date default presentations or
-custom Boolean/date formats. Objects and Python primitive subclasses are
+validation; supported numeric directives do not affect them. Date values now use the separately measured [numeric-mask Date slice](format-dates-runtime.md),
+including empty-date presentation. Out-of-range Date states remain rejected.
+This does not establish unmeasured Date/Boolean/locale families. Objects and Python primitive subclasses are
 rejected without invoking arbitrary conversion hooks.
 
 A missing second argument uses the empty mask. A finite exact Number as second

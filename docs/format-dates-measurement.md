@@ -93,3 +93,14 @@ lowercase Latin NDS/NG/NGS/NZ and Russian numeric aliases;19–26 measure DE/de/
 and DE duplicate/alias order;27–28 compare L/en and l/en. The maximum is4110
 bytes within the unchanged8192-byte cap. No parser/runtime policy is changed.
 Parser28 native acquisition is pending and cannot be inferred from prior runs.
+
+## Final supported56 runtime contract
+
+All three historical captures are preserved with their original mismatched
+interpreter status. The final named `supported56.bsl` and explicit
+`supported56-mapping.json` select previously authenticated supported expressions,
+not guessed answers. The active source is its byte-identical staged copy.
+Original month-name/12-hour controls and parser28 non-ru locale control remain
+explicit archived policy gaps. No parity validator is weakened. See
+[the runtime scope and exact case selection](format-dates-runtime.md). Fresh
+exact-head native runtime acceptance remains pending.

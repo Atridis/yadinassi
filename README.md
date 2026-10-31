@@ -258,3 +258,5 @@ MIT, см. [LICENSE](LICENSE).
 Клиентское [асинхронное ядро языка](docs/async-language.md) поддерживает
 `Асинх` / `Async`, `Ждать` / `Await` и обещания с настоящим сохранением кадров.
 Асинхронные семейства API платформы этим не добавляются.
+
+- Bounded numeric-mask Date `Формат / Format`: [scope, authenticated parser-family evidence and explicit controls](docs/format-dates-runtime.md).
