@@ -457,6 +457,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: format-numbers-v1
             artifact: format-numbers
             case: format_numbers
+          - profile: format-dates-v1
+            artifact: format-dates
+            case: format_dates
 """
         for job, expected in expected_headers.items():
             with self.subTest(job=job):

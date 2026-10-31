@@ -78,6 +78,10 @@ FORMAT_NUMBERS = Profile('format-numbers-v1', 'native-1c-format-numbers-v1', 'na
     'format_numbers', 'a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84',
     50, 'native_1c_format_numbers_contract', '\nСообщить("FM-C1: [" + FMEncode("") + "]");\n', 5, 'format-numbers')
 
+FORMAT_DATES = Profile('format-dates-v1', 'native-1c-format-dates-v1', 'native-1c-format-dates-stage-v1',
+    'format_dates', '5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa',
+    42, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
@@ -103,6 +107,8 @@ def select(name='tree-v1'):
         return COLUMNS_DELETE
     if name == COLUMNS_DELETE_STRING.name:
         return COLUMNS_DELETE_STRING
+    if name == FORMAT_DATES.name:
+        return FORMAT_DATES
     if name == FORMAT_NUMBERS.name:
         return FORMAT_NUMBERS
     raise ValueError('invalid_tree_profile')

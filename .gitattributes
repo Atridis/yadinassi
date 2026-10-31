@@ -43,3 +43,8 @@ integrational_tests/measurements/format_numbers.bsl text eol=lf
 
 # Immutable native Format captures, source archive and provenance on every OS.
 tests/fixtures/format_numbers/* -text
+
+integrational_tests/measurements/format_dates.bsl text eol=lf
+# Future native date captures must retain exact observed bytes.
+tests/fixtures/format_dates/*.out -text
+tests/fixtures/format_dates/*.bsl text eol=lf

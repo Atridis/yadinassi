@@ -72,8 +72,10 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
         except probe.ProbeError:
             return {'site':site,'case':None,'category':'access_probe','calibration':None}
         return diagnostic.observation_diagnostic(main, site, contract.validate_payload, contract.ObservationError)
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1'):
-        if profile == 'format-numbers-v1':
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1'):
+        if profile == 'format-dates-v1':
+            import native_1c_format_dates_contract as contract
+        elif profile == 'format-numbers-v1':
             import native_1c_format_numbers_contract as contract
         elif profile == 'tree-sort-v1':
             import native_1c_tree_sort_contract as contract
@@ -136,7 +138,7 @@ def validate_diagnostic(value, *, profile='tree-v1'):
             return diagnostic.validate_diagnostic(value)
         except diagnostic.DiagnosticError:
             raise full.FullError('invalid_result') from None
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1'):
         if value is not None and (type(value) is not dict or value != {
                 'site':value.get('site'),'case':None,'category':'record_count','calibration':None}
                 or type(value['site']) is not str or value['site'] not in ('server','client')):
@@ -161,7 +163,9 @@ def validate_diagnostic(value, *, profile='tree-v1'):
 
 def validate_observations(raw, site='server', *, profile='tree-v1'):
     spec = profiles.select(profile)
-    if profile == 'format-numbers-v1':
+    if profile == 'format-dates-v1':
+        from native_1c_format_dates_contract import validate_output, ObservationError
+    elif profile == 'format-numbers-v1':
         from native_1c_format_numbers_contract import validate_output, ObservationError
     elif profile == 'tree-v1':
         from native_1c_tree_fill_contract import validate_output, ObservationError
@@ -218,7 +222,7 @@ def client_module(source, template, *, profile='tree-v1'):
     if inverse!=original: raise full.FullError('invalid_input')
     # Format's bounded observer emits inside a helper procedure. Capture those
     # calls too; the exact source pin and inverse above still bind all inputs.
-    if profile == 'format-numbers-v1':
+    if profile in ('format-numbers-v1', 'format-dates-v1'):
         declarations = declarations.replace('Сообщить(', 'TreeLaneCapture(')
     harness=full.client_parity_template(template).decode('utf-8')
     # The historical template inverse restores a legacy default writer. This
@@ -268,7 +272,7 @@ def client_module(source, template, *, profile='tree-v1'):
     prefix='&НаКлиенте\nПерем TreeLaneMessages;\n&НаКлиенте\nПерем TreeLaneCharacters;\n'
     if profile in ('tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1'):
         wrapper = wrapper.replace('Или Code = 95;', 'Или Code = 95 Или Code = 47;')
-    if profile == 'format-numbers-v1':
+    if profile in ('format-numbers-v1', 'format-dates-v1'):
         wrapper = wrapper.replace('Или Code = 95;', 'Или Code = 95 Или Code = 124;')
     if profile == 'tree-columns-clear-lifetime-v1':
         wrapper = wrapper.replace('Или Code = 47;', 'Или Code = 47 Или Code = 126;')
