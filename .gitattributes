@@ -31,3 +31,9 @@ scripts/native_1c_db_oracle/modules/CatalogZeroCodeObservation.bsl text eol=lf
 
 # The zero-code frontier observer pins the managed client template on every OS.
 scripts/native_1c_db_oracle/modules/ManagedApplicationModule.bsl text eol=lf
+
+integrational_tests/measurements/tree_columns_delete_string.bsl text eol=lf
+
+# Preserve original authenticated Delete observations byte-for-byte.
+tests/fixtures/value_tree_columns_delete/*.out -text
+tests/fixtures/value_tree_columns_delete/provenance.json -text

@@ -218,14 +218,81 @@ class BSLValueTreeColumnCollection(BSLObject):
         return column
 
     def delete(self, column):
+        from .native_targets import LINUX_8_3_27_1508, current_native_target
+        if current_native_target() == LINUX_8_3_27_1508:
+            return BSLValueTreeColumnCollection._delete_linux(self, column)
         column = self.resolve(column)
-        # Last-column lifetime is not established by a native checkpoint.
         if len(self.items) == 1 and self.table._all_rows:
             raise ValueError("Удаление последней колонки непустого дерева пока не подтверждено")
         self.items.remove(column)
         for row in self.table._all_rows:
             del row.cells[column]
         column._deleted = True
+
+    def _delete_linux(self, *arguments):
+        """Measured Linux Delete lifetime; validate before any mutation."""
+        if len(arguments) > 1:
+            raise TypeError("Слишком много фактических параметров (Удалить)")
+        if not arguments:
+            raise TypeError("Неподдерживаемое число аргументов (Удалить)")
+        column = arguments[0]
+        if (type(self) is not BSLValueTreeColumnCollection
+                or not _clear_fields(self, {"table", "items"})
+                or type(self.table) is not BSLValueTree or self.table.columns is not self):
+            raise ValueError("Неверная коллекция удаления колонок дерева")
+        rows = BSLValueTree._clear_graph(self.table)
+        budget = _SearchBudget()
+        schema = {}
+        for item in self.items:
+            if (not _clear_fields(item, {"table", "name", "value_type", "title", "width", "_deleted", "default"})
+                    or type(item.name) is not str or type(item.title) is not str
+                    or type(item.width) is not Decimal):
+                raise ValueError("Неверная колонка удаления дерева")
+            key = _search_name(item.name, budget)
+            _search_scalar(item.title, budget)
+            _search_scalar(item.width, budget)
+            if (key and key in schema) or not 0 <= item.width <= 2 ** 32 - 1 or item.width != item.width.to_integral_value():
+                raise ValueError("Неверная схема удаления дерева")
+            schema[key] = item
+        BSLValueTreeRowCollection._clear_defaults(self.table.rows)
+        named = type(column) is str
+        if named:
+            selected = schema.get(_search_name(column, budget))
+            if selected is None:
+                raise ValueError("Колонка дерева не найдена")
+        elif type(column) is BSLValueTreeColumn:
+            selected = next((item for item in self.items if item is column), None)
+            if selected is None:
+                raise ValueError("Колонка не принадлежит дереву")
+        elif type(column) is Decimal:
+            _search_scalar(column, budget)
+            selected = self.items[_position(column, len(self.items))]
+        else:
+            raise TypeError("Ожидается колонка, имя или числовой индекс дерева")
+        # DS6 establishes named non-last statements, not named-last lifetime.
+        if named and len(self.items) == 1:
+            if rows:
+                raise ValueError("Удаление последней колонки по имени пока не подтверждено")
+            # Preserve schema-only named-last legacy behavior until measured.
+            self.items.remove(selected)
+            selected._deleted = True
+            return
+        if len(self.items) == 1:
+            for row in rows:
+                row.cells.clear()
+                row.rows.items.clear()
+                row.rows._columns_clear_forward = "delete"
+                row._deleted = True
+            self.table.rows.items.clear()
+            self.table._all_rows.clear()
+        else:
+            for row in rows:
+                del row.cells[selected]
+        self.items.remove(selected)
+        selected._deleted = True
+        selected._columns_clear_reset = True
+        selected.name = selected.title = ""
+        selected.width = Decimal(0)
 
     def move(self, *arguments):
         """Measured Linux column permutation; row/cell storage is untouched.
@@ -324,10 +391,11 @@ class BSLValueTreeColumnCollection(BSLObject):
         self.items.clear()
 
     def get_method(self, name):
-        if name.casefold() in ("clear", "очистить"):
+        if name.casefold() in ("clear", "очистить", "delete", "удалить"):
             from .native_targets import LINUX_8_3_27_1508, current_native_target
-            return HostFunction(name, self.clear,
-                                returns_value=current_native_target() != LINUX_8_3_27_1508)
+            linux = current_native_target() == LINUX_8_3_27_1508
+            function = self.clear if name.casefold() in ("clear", "очистить") else ((lambda *args: BSLValueTreeColumnCollection._delete_linux(self, *args)) if linux else self.delete)
+            return HostFunction(name, function, returns_value=not linux)
         if name.casefold() in ("move", "сдвинуть"):
             return HostFunction(name, self.move, returns_value=False)
         return _method(name, {"count": lambda: Decimal(len(self.items)), "количество": lambda: Decimal(len(self.items)),
@@ -413,8 +481,8 @@ class BSLValueTreeRowCollection(BSLObject):
         self.items = []
         self._columns_clear_forward = False
 
-    def _clear_target(self):
-        """Only Columns.Clear-detached wrappers redirect measured operations.
+    def _clear_target(self, operation=None):
+        """Only measured column-removal wrappers redirect their observed operations.
 
         The wrapper retains its Parent label; rows created through it belong to
         the active root collection. Ordinary Rows.Clear/Delete do not set this.
@@ -426,7 +494,11 @@ class BSLValueTreeRowCollection(BSLObject):
         from .native_targets import LINUX_8_3_27_1508, current_native_target
         if current_native_target() != LINUX_8_3_27_1508:
             raise ValueError("Отсоединенные коллекции дерева для этой платформы пока не подтверждены")
-        if (self._columns_clear_forward is not True
+        cause = self._columns_clear_forward
+        delete_cause = type(cause) is str and cause == "delete"
+        if delete_cause and operation not in ("count", "add", "parent"):
+            raise ValueError("Эта операция отсоединенной коллекции после удаления пока не подтверждена")
+        if ((cause is not True and not delete_cause)
                 or not _clear_fields(self, {"tree", "parent", "items", "_columns_clear_forward"})
                 or type(self.tree) is not BSLValueTree or type(self.parent) is not BSLValueTreeRow
                 or self.parent.tree is not self.tree or self.parent.rows is not self
@@ -509,7 +581,7 @@ class BSLValueTreeRowCollection(BSLObject):
         return iter(self.items)
 
     def count(self):
-        target = BSLValueTreeRowCollection._clear_target(self)
+        target = BSLValueTreeRowCollection._clear_target(self, "count")
         if target is not None:
             return BSLValueTreeRowCollection.count(target)
         self._live()
@@ -528,7 +600,7 @@ class BSLValueTreeRowCollection(BSLObject):
         raise ValueError("Строки дерева недоступны для замены")
 
     def add(self):
-        target = BSLValueTreeRowCollection._clear_target(self)
+        target = BSLValueTreeRowCollection._clear_target(self, "add")
         if target is not None:
             BSLValueTreeRowCollection._clear_defaults(self)
             return BSLValueTreeRowCollection.add(target)
@@ -1023,7 +1095,7 @@ class BSLValueTreeRowCollection(BSLObject):
         self.items.clear()
 
     def get_member(self, name):
-        if name.casefold() in ("parent", "родитель") and BSLValueTreeRowCollection._clear_target(self) is not None:
+        if name.casefold() in ("parent", "родитель") and BSLValueTreeRowCollection._clear_target(self, "parent") is not None:
             return self.parent
         self._live()
         if name.casefold() in ("parent", "родитель"):
