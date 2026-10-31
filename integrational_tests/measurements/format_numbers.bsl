@@ -84,3 +84,11 @@ FMObserve("45", "Format(1)"); // arity.missing
 FMObserve("46", "Format(1, """", 3)"); // arity.extra
 FMObserve("47", "Format(1, 2)"); // format.number
 FMObserve("48", "Format(1, ""UNKNOWN=1;NFD=2"")"); // unknown
+FMObserve("49", "Format(123.45, ""MYSTERY=foo;NFD=2;NG=0;NDS=."")"); // unknown.other-name
+FMObserve("50", "Format(123.45, ""UNUSED=';=non';NFD=2;NG=0;NDS=."")"); // unknown.quoted-value
+FMObserve("51", "Format(123.45, ""НЕИЗВЕСТНО=2;NFD=2;NG=0;NDS=."")"); // unknown.cyrillic
+FMObserve("52", "Format(123.45, ""ND=5;NFD=2;NG=0;NDS=."")"); // known.total-digits
+FMObserve("53", "Format('20261030123456', ""DF=yyyy"")"); // known.date-format
+FMObserve("54", "Format(1234567.89, ""NFD=2;NG=3,0;NGS=_;NDS=."")"); // group.repeated
+FMObserve("55", "Format(1234567.89, ""NFD=2;NG=3,2;NGS=_;NDS=."")"); // group.secondary
+FMObserve("56", "Format(1.2345, ""nfd=1;ЧДЦ=3;NG=0;NDS=."")"); // duplicate.mixed-case-alias
