@@ -65,3 +65,6 @@ tests/fixtures/json_family/*provenance.json -text
 
 # Byte-bound catalog packet templates/generated sources; manifests hash raw bytes.
 scripts/native_1c_db_oracle/catalog_read_packet/** -text
+
+# Closed linked-card packet preserves schema/QName/source hashes on every host.
+scripts/native_1c_db_oracle/linked_card_packet/** -text
