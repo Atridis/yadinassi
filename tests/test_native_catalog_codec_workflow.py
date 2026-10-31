@@ -16,6 +16,20 @@ import test_native_1c_db_oracle_ci_policy as old
 def legacy_codec_view(block):
     """Select the unchanged old-route branches; separate tests cover new route."""
     # Exact inverse for the new route: do not erase arbitrary commands/env.
+    block = block.replace('      zero_code_sha256: ${{ steps.native.outputs.zero_code_sha256 }}\n', '')
+    for key,source in (('SHA256','zero_code_sha256'),('RUN_ID','run_id'),('RUN_ATTEMPT','run_attempt')):
+        block = block.replace('          ZERO_CODE0_'+key+': ${{ needs.native_codec_a.outputs.'+source+' }}\n', '')
+    block = block.replace(" || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1'", '')
+    block = block.replace("needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero-code' || ", '')
+    numeric_numbers = ('0',) if block.startswith('    name: Native 1C reference codec case A\n') else ('8',) if block.startswith('    name: Native 1C reference codec case B\n') else ()
+    for number in numeric_numbers:
+        block = block.replace("needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1' && 'zero_code"+number+".json' || ", '')
+        command = 'python3 scripts/native_1c_db_oracle.py --execute-approved-image --file-db-oracle --catalog-zero-code zero'+number+' --output native-db-oracle/zero_code'+number+'.json'
+        branch = '          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then\n            '+command+'\n          elif '
+        block = block.replace(branch, '          if ')
+    branch = '          if [ "${{ needs.eligibility.outputs.route }}" = catalog-zero-code-measurement-v1 ]; then\n            python3 scripts/native_1c_db_oracle.py --validate-zero-code0\n          elif '
+    block = block.replace(branch, '          if ')
+    # Exact inverse for the new route: do not erase arbitrary commands/env.
     block = block.replace('      numeric_code_rows_sha256: ${{ steps.native.outputs.numeric_code_rows_sha256 }}\n', '')
     for key,source in (('SHA256','numeric_code_rows_sha256'),('RUN_ID','run_id'),('RUN_ATTEMPT','run_attempt')):
         block = block.replace('          NUMERIC_CODE_ROWS3_'+key+': ${{ needs.native_codec_a.outputs.'+source+' }}\n', '')
@@ -93,11 +107,11 @@ class CodecWorkflowTests(unittest.TestCase):
     def test_fixed_selector_disjoint_jobs_and_exact_dependencies(self):
         eligibility = old.workflow_job('eligibility')
         self.assertIn('    outputs:\n      route: ${{ steps.admission.outputs.route }}\n', eligibility)
-        self.assertIn('          NATIVE_DB_ROUTE: catalog-numeric-code-rows-v1\n', eligibility)
+        self.assertIn('          NATIVE_DB_ROUTE: catalog-zero-code-measurement-v1\n', eligibility)
         for name in ('native_reference_a', 'native_oracle'):
             self.assertIn("needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&", old.workflow_job(name))
         for name in ('native_codec_a', 'native_codec_b'):
-            self.assertIn("(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1') &&", old.workflow_job(name))
+            self.assertIn("(needs.eligibility.outputs.route == 'catalog-reference-codec-v1' || needs.eligibility.outputs.route == 'catalog-reference-rows-v1' || needs.eligibility.outputs.route == 'catalog-description-measurement-v1' || needs.eligibility.outputs.route == 'catalog-description-rows-v1' || needs.eligibility.outputs.route == 'catalog-params-slot-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-measurement-v1' || needs.eligibility.outputs.route == 'catalog-numeric-code-rows-v1' || needs.eligibility.outputs.route == 'catalog-zero-code-measurement-v1') &&", old.workflow_job(name))
         self.assertIn('needs: eligibility', old.workflow_job('native_codec_a'))
         self.assertIn('needs: [eligibility, native_codec_a]', old.workflow_job('native_codec_b'))
         self.assertIn("needs.native_codec_a.result == 'success' &&", old.workflow_job('native_codec_b'))
@@ -131,6 +145,12 @@ class CodecWorkflowTests(unittest.TestCase):
 
     def test_new_route_inverse_does_not_hide_command_or_handoff_drift(self):
         for name,old_value,new_value in (
+            ('native_codec_b','ZERO_CODE0_SHA256: ${{ needs.native_codec_a.outputs.zero_code_sha256 }}','ZERO_CODE0_SHA256: foreign'),
+            ('native_codec_a','zero_code_sha256: ${{ steps.native.outputs.zero_code_sha256 }}','zero_code_sha256: foreign'),
+            ('native_codec_a',"'zero_code0.json'","'zero_code8.json'"),
+            ('native_codec_b',"'zero_code8.json'","'zero_code0.json'"),
+            ('native_codec_a','--catalog-zero-code zero0','--catalog-zero-code zero8'),
+            ('native_codec_b','--validate-zero-code0','--validate-numeric-code-rows3'),
             ('native_codec_a','--catalog-numeric-code-rows number3','--catalog-numeric-code-rows number6'),
             ('native_codec_b','--validate-numeric-code-rows3','--validate-numeric-code3'),
             ('native_codec_b','NUMERIC_CODE_ROWS3_SHA256: ${{ needs.native_codec_a.outputs.numeric_code_rows_sha256 }}','NUMERIC_CODE_ROWS3_SHA256: foreign'),
@@ -165,9 +185,9 @@ class CodecWorkflowTests(unittest.TestCase):
         select = namespace['selected_native_result']
         states = ('success', 'failure', 'cancelled', 'skipped', 'timed_out', '', None)
         for route, reference_a, reference_b, codec_a, codec_b in itertools.product(
-                ('catalog-reference-identity-v1', 'catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1', '', None, 'other'), states, states, states, states):
+                ('catalog-reference-identity-v1', 'catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1', 'catalog-zero-code-measurement-v1', '', None, 'other'), states, states, states, states):
             expected = ('success' if route == 'catalog-reference-identity-v1' and reference_a == reference_b == 'success' and codec_a == codec_b == 'skipped'
-                        or route in ('catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1') and codec_a == codec_b == 'success' and reference_a == reference_b == 'skipped' else 'failure')
+                        or route in ('catalog-reference-codec-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1', 'catalog-zero-code-measurement-v1') and codec_a == codec_b == 'success' and reference_a == reference_b == 'skipped' else 'failure')
             self.assertEqual(select(route, reference_a, reference_b, codec_a, codec_b), expected)
 
     def test_actual_admission_rejects_unknown_missing_route_without_output(self):
@@ -177,13 +197,13 @@ class CodecWorkflowTests(unittest.TestCase):
             event, context = old.fixtures()
             (root/'event.json').write_text(json.dumps(event), encoding='utf-8')
             context.update(GITHUB_EVENT_PATH=str(root/'event.json'), GITHUB_OUTPUT=str(root/'output'))
-            for route in (None, '', 'other', 'catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1'):
+            for route in (None, '', 'other', 'catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1', 'catalog-zero-code-measurement-v1'):
                 env = dict(context)
                 if route is not None: env['NATIVE_DB_ROUTE'] = route
                 output = root/'output'
                 if output.exists(): output.unlink()
                 result = subprocess.run([sys.executable,'-I','-B','-c',program], env=old.subprocess_environment(env), capture_output=True)
-                accepted = route in ('catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1')
+                accepted = route in ('catalog-reference-codec-v1', 'catalog-reference-identity-v1', 'catalog-reference-rows-v1', 'catalog-description-measurement-v1', 'catalog-description-rows-v1', 'catalog-params-slot-measurement-v1', 'catalog-numeric-code-measurement-v1', 'catalog-numeric-code-rows-v1', 'catalog-zero-code-measurement-v1')
                 self.assertEqual(result.returncode, 0 if accepted else 1)
                 self.assertEqual(output.exists(), accepted)
                 if accepted: self.assertEqual(output.read_text(), 'route='+route+'\n')

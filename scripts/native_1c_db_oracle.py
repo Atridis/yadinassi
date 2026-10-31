@@ -48,24 +48,26 @@ NUMERIC_CODE_OUTPUTS = {case: OUTPUT.parent / ('numeric_code'+case.removeprefix(
 NUMERIC_CODE_AGGREGATE = OUTPUT.parent / 'numeric-code-aggregate.json'
 NUMERIC_CODE_ROWS_OUTPUTS = {case: OUTPUT.parent / ('numeric_code_rows'+case.removeprefix('number')+'.json') for case in ('number3','number6')}
 NUMERIC_CODE_ROWS_AGGREGATE = OUTPUT.parent / 'numeric-code-rows-aggregate.json'
+ZERO_CODE_OUTPUTS = {case: OUTPUT.parent / ('zero_code'+case.removeprefix('zero')+'.json') for case in ('zero0','zero8')}
+ZERO_CODE_AGGREGATE = OUTPUT.parent / 'zero-code-aggregate.json'
 
 
-def provenance(*, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows)
+def provenance(*, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False, zero_case=None):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows,zero_case=zero_case)
     try:
         repository=smoke.FULL.repository_provenance(ROOT)
     except (smoke.FULL.FullError,OSError):
         raise OracleError('provenance_mismatch') from None
     return {'commit':repository['commit'],'tree':repository['tree'],
-        'sources':source_hashes(ROOT,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows),
+        'sources':source_hashes(ROOT,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows,zero_case=zero_case),
         'image':IMAGE,'platform':'linux/amd64','actual_version':None,'locale':'ru_RU.UTF-8','timezone':'Etc/UTC'}
 
 
-def container_command(staged,name,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False):
+def container_command(staged,name,nonce, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False, zero_case=None):
     require(type(name) is str and re.fullmatch('onec-db-oracle-[0-9a-f]{32}',name) is not None,'invalid_input')
     require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}',nonce) is not None,'invalid_input')
     require(staged.is_dir() and not staged.is_symlink() and ',' not in str(staged),'invalid_input')
-    staged_hashes(staged,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows)
+    staged_hashes(staged,record_metadata=record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows,zero_case=zero_case)
     return ['docker','run','--name',name,'--hostname','onec-db-oracle',
         '--pull','never','--platform','linux/amd64','--network','none',
         '--user','1000:1000','--read-only','--no-healthcheck','--cap-drop','ALL',
@@ -80,6 +82,7 @@ def container_command(staged,name,nonce, *, record_metadata=False, record_reader
         'HOME=/tmp/onec-db-oracle/home','TMPDIR=/tmp/onec-db-oracle/temp','XDG_RUNTIME_DIR=/tmp/runtime','DISPLAY=:99',
         'LANG=ru_RU.UTF-8','LC_ALL=ru_RU.UTF-8','TZ=Etc/UTC',
         '/bin/bash','--noprofile','--norc','/oracle/probe.sh','--invocation-nonce',nonce] + (
+        ['--catalog-zero-code-'+zero_case.removeprefix('zero')] if zero_case is not None else
         ['--catalog-numeric-code'+('-rows' if numeric_rows else '')+'-'+numeric_case.removeprefix('number')] if numeric_case is not None else
         ['--catalog-params-slots-'+description_case.removeprefix('description')] if params_slots else
         ['--catalog-description-'+('rows-' if description_rows else '')+description_case.removeprefix('description')] if description_case is not None else
@@ -120,7 +123,10 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False,record_re
     entry['checks']=({key:report['cleanup'][key] for key in CHECKS[stage]} if stage=='cleanup'
                      else {key:False for key in CHECKS[stage]})
     report['artifacts']=[]
-    if report.get('schema') == 62:
+    if report.get('schema') == 65:
+        import catalog_zero_code_policy as selected
+        selected.discard_capture(report,final=True)
+    elif report.get('schema') == 62:
         import catalog_numeric_code_rows_policy
         catalog_numeric_code_rows_policy.discard_capture(report,final=True)
     elif report.get('schema') == 59:
@@ -208,10 +214,18 @@ def fail_report(report,kind,stage='preflight',*,preserve_primary=False,record_re
         discard_capture(report)
 
 
-def run_oracle(temp_root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False):
-    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows)
+def run_oracle(temp_root, *, record_metadata=False, record_reader=False, params_transport=False, params_extraction=False, dbnames_identity=False, config_transport=False, config_framing=False, config_marker_census=False, config_zero_marker_filename=False, config_entry_reference=False, config_blob_chain=False, config_content_decode=False, config_root_reference_projection=False, config_catalog_observation=False, config_catalog_name_binding=False, config_catalog_standard_binding=False, config_catalog_identity_binding=False, config_catalog_field_matrix=False, config_catalog_attribute_binding=False, catalog_readonly_binding=False, reference_case=None, reference_codec=False, reference_rows=False, description_case=None, description_rows=False, params_slots=False, numeric_case=None, numeric_rows=False, zero_case=None):
+    inventory(record_metadata,record_reader=record_reader,params_transport=params_transport,params_extraction=params_extraction,dbnames_identity=dbnames_identity,config_transport=config_transport,config_framing=config_framing,config_marker_census=config_marker_census,config_zero_marker_filename=config_zero_marker_filename,config_entry_reference=config_entry_reference,config_blob_chain=config_blob_chain,config_content_decode=config_content_decode,config_root_reference_projection=config_root_reference_projection,config_catalog_observation=config_catalog_observation,config_catalog_name_binding=config_catalog_name_binding,config_catalog_standard_binding=config_catalog_standard_binding,config_catalog_identity_binding=config_catalog_identity_binding,config_catalog_field_matrix=config_catalog_field_matrix,config_catalog_attribute_binding=config_catalog_attribute_binding,catalog_readonly_binding=catalog_readonly_binding,reference_case=reference_case,reference_codec=reference_codec,reference_rows=reference_rows,description_case=description_case,description_rows=description_rows,params_slots=params_slots,numeric_case=numeric_case,numeric_rows=numeric_rows,zero_case=zero_case)
     options=({'reference_case':reference_case,'reference_rows':True} if reference_rows else {'reference_case':reference_case,'reference_codec':True} if reference_codec else {'reference_case':reference_case}) if reference_case is not None else {'catalog_readonly_binding':True} if catalog_readonly_binding else {'config_catalog_attribute_binding':True} if config_catalog_attribute_binding else {'config_catalog_field_matrix':True} if config_catalog_field_matrix else {'config_catalog_identity_binding':True} if config_catalog_identity_binding else {'config_catalog_standard_binding':True} if config_catalog_standard_binding else {'config_catalog_name_binding':True} if config_catalog_name_binding else {'config_catalog_observation':True} if config_catalog_observation else {'config_root_reference_projection':True} if config_root_reference_projection else {'config_content_decode':True} if config_content_decode else {'config_blob_chain':True} if config_blob_chain else {'config_entry_reference':True} if config_entry_reference else {'config_zero_marker_filename':True} if config_zero_marker_filename else {'config_marker_census':True} if config_marker_census else {'config_framing':True} if config_framing else {'config_transport':True} if config_transport else {'dbnames_identity':True} if dbnames_identity else {'params_extraction':True} if params_extraction else {'params_transport':True} if params_transport else {'record_reader':True} if record_reader else {'record_metadata':True} if record_metadata else {}
-    if numeric_case is not None:
+    if zero_case is not None:
+        import catalog_zero_code_policy as selected
+        options={'zero_case':zero_case}
+        make_report=lambda nonce, provenance: selected.empty_report(nonce,provenance,zero_case=zero_case)
+        def check_report(raw, **options):
+            value=selected.validate_report(raw, **options)
+            require(value['zero_case']==zero_case,'provenance_mismatch')
+            return value
+    elif numeric_case is not None:
         if numeric_rows:
             import catalog_numeric_code_rows_policy as selected
         else:
@@ -382,7 +396,7 @@ def export_report(raw, root_identity, *, output=OUTPUT):
     No fallback to a path-following write: the real CI host is POSIX. Portable
     protocol/orchestration tests do not need to simulate an unsafe export path.
     """
-    require(output in (OUTPUT, *REFERENCE_OUTPUTS.values(), REFERENCE_AGGREGATE, *CODEC_OUTPUTS.values(), CODEC_AGGREGATE, *ROWS_OUTPUTS.values(), ROWS_AGGREGATE, *DESCRIPTION_OUTPUTS.values(), DESCRIPTION_AGGREGATE, *DESCRIPTION_ROWS_OUTPUTS.values(), DESCRIPTION_ROWS_AGGREGATE, *PARAMS_SLOT_OUTPUTS.values(), PARAMS_SLOT_AGGREGATE, *NUMERIC_CODE_OUTPUTS.values(), NUMERIC_CODE_AGGREGATE, *NUMERIC_CODE_ROWS_OUTPUTS.values(), NUMERIC_CODE_ROWS_AGGREGATE), 'invalid_input')
+    require(output in (OUTPUT, *REFERENCE_OUTPUTS.values(), REFERENCE_AGGREGATE, *CODEC_OUTPUTS.values(), CODEC_AGGREGATE, *ROWS_OUTPUTS.values(), ROWS_AGGREGATE, *DESCRIPTION_OUTPUTS.values(), DESCRIPTION_AGGREGATE, *DESCRIPTION_ROWS_OUTPUTS.values(), DESCRIPTION_ROWS_AGGREGATE, *PARAMS_SLOT_OUTPUTS.values(), PARAMS_SLOT_AGGREGATE, *NUMERIC_CODE_OUTPUTS.values(), NUMERIC_CODE_AGGREGATE, *NUMERIC_CODE_ROWS_OUTPUTS.values(), NUMERIC_CODE_ROWS_AGGREGATE, *ZERO_CODE_OUTPUTS.values(), ZERO_CODE_AGGREGATE), 'invalid_input')
     require(os.open in os.supports_dir_fd and hasattr(os,'O_NOFOLLOW')
             and hasattr(os,'O_DIRECTORY'),'unsupported_platform_command')
     require(type(raw) is bytes and len(raw)+1<=MAX_REPORT_BYTES,'artifact_limit')
@@ -507,6 +521,48 @@ def validate_description8(root_identity, *, description_rows=False, params_slots
     return raw
 
 
+def read_zero_code0(root_identity):
+    """Read exactly the reviewed A artifact, without following path components."""
+    selected = ZERO_CODE_OUTPUTS
+    root_fd=os.open(ROOT,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    parent_fd=None
+    try:
+        info=os.fstat(root_fd)
+        require((info.st_dev,info.st_ino)==root_identity,'provenance_mismatch')
+        parent_fd=os.open(OUTPUT.parent.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=root_fd)
+        require(set(os.listdir(parent_fd)) == {selected['zero0'].name}, 'transport_invalid')
+        fd=os.open(selected['zero0'].name,os.O_RDONLY|os.O_NOFOLLOW,dir_fd=parent_fd)
+        with os.fdopen(fd,'rb') as stream:
+            before=os.fstat(stream.fileno())
+            require(stat.S_ISREG(before.st_mode) and before.st_nlink==1 and 0<before.st_size<=MAX_REPORT_BYTES,'transport_invalid')
+            raw=stream.read(MAX_REPORT_BYTES+1)
+            after=os.fstat(stream.fileno())
+            require((before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_size,after.st_mtime_ns,after.st_ctime_ns)
+                    and len(raw)==before.st_size,'transport_invalid')
+            return raw
+    finally:
+        if parent_fd is not None: os.close(parent_fd)
+        os.close(root_fd)
+
+
+def validate_zero_code0(root_identity):
+    import catalog_zero_code_policy as policy
+    prefix='ZERO_CODE0_'
+    expected=os.environ.get(prefix+'SHA256')
+    require(type(expected) is str and re.fullmatch('[0-9a-f]{64}',expected) is not None,'provenance_mismatch')
+    for key in ('RUN_ID','RUN_ATTEMPT'):
+        current=os.environ.get('GITHUB_'+key)
+        require(type(current) is str and re.fullmatch('[1-9][0-9]{0,19}',current) is not None
+                and os.environ.get(prefix+key)==current,'provenance_mismatch')
+    raw=read_zero_code0(root_identity)
+    require(hashlib.sha256(raw).hexdigest()==expected,'provenance_mismatch')
+    value=decode(raw)
+    current=provenance(zero_case='zero8')
+    report=policy.validate_report(raw,nonce=value.get('nonce'),provenance=current,final=True)
+    require(report['zero_case']=='zero0' and report['accepted'] is True,'provenance_mismatch')
+    return raw
+
+
 def read_numeric_code3(root_identity):
     """Read exactly the reviewed A artifact, without following path components."""
     selected = NUMERIC_CODE_OUTPUTS
@@ -599,6 +655,13 @@ class Arguments(argparse.ArgumentParser):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv == ['--validate-zero-code0']:
+        try:
+            require('GHCR_TOKEN' not in os.environ and 'GHCR_USER' not in os.environ,'invalid_input')
+            info=ROOT.stat(); validate_zero_code0((info.st_dev,info.st_ino))
+            return 0
+        except (OracleError,OSError,ValueError):
+            return 2
     if argv in (['--validate-numeric-code3'],['--validate-numeric-code-rows3']):
         try:
             info=ROOT.stat(); (validate_numeric_code_rows3 if argv == ['--validate-numeric-code-rows3'] else validate_numeric_code3)((info.st_dev,info.st_ino))
@@ -636,6 +699,7 @@ def main(argv=None):
         help='explicit bounded owned-record readback and validation')
     modes.add_argument('--catalog-reference-identity',choices=('distinct_a','distinct_b'))
     modes.add_argument('--catalog-reference-codec',choices=('distinct_a','distinct_b'))
+    modes.add_argument('--catalog-zero-code',choices=('zero0','zero8'))
     modes.add_argument('--catalog-numeric-code',choices=('number3','number6'))
     modes.add_argument('--catalog-numeric-code-rows',choices=('number3','number6'))
     modes.add_argument('--catalog-params-slots',choices=('description8','description17'))
@@ -680,6 +744,7 @@ def main(argv=None):
         help='bounded owned DBNames UUID/name comparison, without native byte equivalence')
     parser.add_argument('--output',default=str(OUTPUT))
     args=parser.parse_args(argv)
+    zero_case = args.catalog_zero_code
     numeric_rows = args.catalog_numeric_code_rows is not None
     numeric_case = args.catalog_numeric_code_rows if numeric_rows else args.catalog_numeric_code
     params_slots = args.catalog_params_slots is not None
@@ -693,6 +758,8 @@ def main(argv=None):
         selected_output=(PARAMS_SLOT_OUTPUTS if params_slots else DESCRIPTION_ROWS_OUTPUTS if description_rows else DESCRIPTION_OUTPUTS)[description_case]
     if numeric_case is not None:
         selected_output=(NUMERIC_CODE_ROWS_OUTPUTS if numeric_rows else NUMERIC_CODE_OUTPUTS)[numeric_case]
+    if zero_case is not None:
+        selected_output=ZERO_CODE_OUTPUTS[zero_case]
     if not args.execute_approved_image or not args.file_db_oracle or args.output!=str(selected_output):
         parser.error('invalid_input')
     output=ROOT/selected_output
@@ -718,6 +785,9 @@ def main(argv=None):
             options=({'description_case':description_case,'params_slots':True} if params_slots else {'description_case':description_case,'description_rows':True} if description_rows else {'description_case':description_case})
         if numeric_case is not None:
             options={'numeric_case':numeric_case,**({'numeric_rows':True} if numeric_rows else {})}
+        if zero_case is not None:
+            options={'zero_case':zero_case}
+        prior_zero = validate_zero_code0(root_identity) if zero_case == 'zero8' else None
         prior_numeric = (validate_numeric_code_rows3 if numeric_rows else validate_numeric_code3)(root_identity) if numeric_case == 'number6' else None
         prior_description = (validate_description8(root_identity,params_slots=True) if params_slots else validate_description8(root_identity,description_rows=True) if description_rows else validate_description8(root_identity)) if description_case == 'description17' else None
         prior_raw = None
@@ -733,13 +803,15 @@ def main(argv=None):
                 prior_raw = validate_reference_a(root_identity)
         report=run_oracle(Path(tempfile.gettempdir()),**options)
         raw=encode(report)
-        if reference_case is None and description_case is None and numeric_case is None:
+        if reference_case is None and description_case is None and numeric_case is None and zero_case is None:
             export_report(raw,root_identity)
         else:
             export_report(raw,root_identity,output=selected_output)
         if 'GITHUB_OUTPUT' in os.environ:
             with open(os.environ['GITHUB_OUTPUT'],'a',encoding='ascii') as target:
                 target.write('report_ready=true\n')
+                if zero_case == 'zero0':
+                    target.write('zero_code_sha256='+hashlib.sha256(raw+b'\n').hexdigest()+'\n')
                 if numeric_case == 'number3':
                     target.write(('numeric_code_rows_sha256=' if numeric_rows else 'numeric_code_sha256=')+hashlib.sha256(raw+b'\n').hexdigest()+'\n')
                 if description_case == 'description8':
@@ -747,6 +819,18 @@ def main(argv=None):
                 if reference_case == 'distinct_a':
                     target.write('reference_sha256='+hashlib.sha256(raw+b'\n').hexdigest()+'\n')
         aggregate_agrees = True
+        if prior_zero is not None and report['accepted']:
+            import catalog_zero_code_policy as policy
+            reports=(decode(prior_zero),report)
+            hashes=(hashlib.sha256(prior_zero).hexdigest(),hashlib.sha256(raw+b'\n').hexdigest())
+            aggregate=policy.build_aggregate(reports,hashes,
+                run_id=int(os.environ.get('GITHUB_RUN_ID','')),run_attempt=int(os.environ.get('GITHUB_RUN_ATTEMPT','')))
+            policy.validate_aggregate(encode(aggregate),provenance=report['provenance'],reports=reports,
+                report_sha256s=hashes,run_id=int(os.environ.get('GITHUB_RUN_ID','')),run_attempt=int(os.environ.get('GITHUB_RUN_ATTEMPT','')))
+            export_report(encode(aggregate),root_identity,output=ZERO_CODE_AGGREGATE)
+            if 'GITHUB_OUTPUT' in os.environ:
+                with open(os.environ['GITHUB_OUTPUT'],'a',encoding='ascii') as target:
+                    target.write('aggregate_ready=true\n')
         if prior_numeric is not None and report['accepted']:
             if numeric_rows:
                 import catalog_numeric_code_rows_policy as policy

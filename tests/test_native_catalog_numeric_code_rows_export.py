@@ -60,7 +60,7 @@ class NumericExportTests(unittest.TestCase):
                 self.assertIs(type(value),dict);paths.update(value.values())
             elif name.endswith('_AGGREGATE'):
                 self.assertIsInstance(value,Path);paths.add(value)
-        self.assertEqual(len(paths),25)
+        self.assertEqual(len(paths),28)
         with mock.patch.object(host,'ROOT',self.root):
             for path in sorted(paths):
                 host.export_report(b'{}',self.identity,output=path)

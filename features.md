@@ -5983,6 +5983,13 @@ native evidence. New nonempty lifetime semantics remain Linux-target only. See
   семантика присваивания и автонумерации этим прогоном не расширена.
   [Границы и исходная атрибуция](docs/catalog-numeric-code-runtime.md).
 
+- Подготовлен отдельный эксперимент CodeLength=0: две свежие конфигурации
+  с DescriptionLength0/8, без присваивания Code. Доступность свойства Code и
+  отсутствие физического поля проверяются независимо, а не предполагаются.
+  Закрытый измерительный маршрут интегрирован; native-прогон ещё не выполнен,
+  производственный reader не расширен.
+  [Границы измерения](docs/catalog-zero-code-measurement.md).
+
 ### ValueTree.Columns.Delete: bounded lifetime measurement preparation
 
 Prepared a separate14-case native observer for last-column deletion, EN/RU
