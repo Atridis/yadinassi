@@ -3,94 +3,15 @@
 Native41214218572 establishes the bounded multi-row scenario and cursor cycle.
 No live session or writes exist; advanced ordering/collation remain restricted.
 """
-from dataclasses import dataclass
 from decimal import Decimal
-from datetime import datetime
 from uuid import UUID
 
-from .dates import BSLDate, _date_from_datetime
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .unique_identifiers import BSLUUID
 from .values import BSLObject, HostFunction
 
 _OMITTED = object()
 _ZERO = UUID(int=0)
-
-
-@dataclass(frozen=True, slots=True)
-class CatalogCardField:
-    """Logical adapter seam, NOT a CONFIG token or physical declaration.
-
-    Native 41227322065 establishes the measured mixed-field bridge. Storage
-    retains physical values; only this adapter constructs logical BSL values.
-    # !todo Composite types, hierarchy and tabular parts remain unsupported.
-    """
-    name: str
-    physical_name: str
-    kind: str
-    target_metadata_uuid: UUID | None = None
-
-    def __post_init__(self):
-        if (type(self.name) is not str or not 1 <= len(self.name) <= 256
-                or type(self.physical_name) is not str or not 1 <= len(self.physical_name) <= 64):
-            raise ValueError('catalog card field requires bounded names')
-        if type(self.kind) is not str or self.kind not in ('string', 'number', 'boolean', 'datetime', 'catalog_ref'):
-            raise ValueError('unsupported catalog card field kind')
-        if self.kind == 'catalog_ref':
-            if type(self.target_metadata_uuid) is not UUID or self.target_metadata_uuid.int == 0:
-                raise ValueError('catalog reference field requires target metadata UUID')
-        elif self.target_metadata_uuid is not None:
-            raise ValueError('scalar field cannot have a reference target')
-
-    def project(self, value, catalogs):
-        expected = {'string': str, 'number': Decimal, 'boolean': bool,
-                    'datetime': BSLDate, 'catalog_ref': UUID}[self.kind]
-        if type(value) is not expected:
-            # No bytes/strings guessed into references, dates or booleans.
-            raise TypeError('catalog card logical field type mismatch')
-        if self.kind == 'number' and not value.is_finite():
-            raise ValueError('catalog card number must be finite')
-        if self.kind == 'datetime':
-            return value.require_known()
-        if self.kind == 'catalog_ref':
-            return catalogs._manager_by_metadata_uuid(self.target_metadata_uuid)._ref(value)
-        return value
-
-    def default(self, catalogs):
-        if self.kind == 'catalog_ref':
-            return catalogs._manager_by_metadata_uuid(self.target_metadata_uuid).empty_ref()
-        return {'string': '', 'number': Decimal(0), 'boolean': False,
-                'datetime': BSLDate(0)}[self.kind]
-
-
-def _bound_card(attribute):
-    from .storage.config_catalog_binding import BoundCatalogAttribute
-    if type(attribute) is CatalogCardField:
-        return attribute
-    if type(attribute) is not BoundCatalogAttribute:
-        raise TypeError('invalid bound catalog attribute')
-    kinds = {'S': 'string', 'N': 'number', 'B': 'boolean', 'D': 'datetime', '#': 'catalog_ref'}
-    if attribute.type_token not in kinds:
-        raise ValueError('unsupported bound catalog attribute')
-    target = UUID(attribute.reference_catalog_uuid) if attribute.type_token == '#' else None
-    return CatalogCardField(attribute.name, attribute.physical_name, kinds[attribute.type_token], target)
-
-
-def _bound_value(attribute, value):
-    # Storage returns explicit physical datetime/bytes, never Python types to BSL.
-    # Only measured fixed-reference fields invoke the record UUID byte mapping.
-    if type(attribute) is CatalogCardField:
-        return value
-    if attribute.type_token == 'D':
-        if type(value) is not datetime or value.tzinfo is not None or value.microsecond:
-            raise TypeError('invalid physical catalog date')
-        return _date_from_datetime(value)
-    if attribute.type_token == '#':
-        from .storage.catalog_reference_uuid import decode_catalog_reference_uuid
-        if type(value) is not bytes or len(value) != 16:
-            raise TypeError('invalid physical catalog reference')
-        return decode_catalog_reference_uuid(value)
-    return value
 
 
 class BSLCatalogs(BSLObject):
@@ -112,14 +33,6 @@ class BSLCatalogs(BSLObject):
         if key not in self._managers:
             self._managers[key] = BSLCatalogManager(self, item)
         return self._managers[key]
-
-    def _manager_by_metadata_uuid(self, metadata_uuid):
-        # The target is catalog metadata identity, never a native Ref TypeId.
-        matches = [item for item in self._metadata._snapshot().values()
-                   if item._metadata_uuid is not None and UUID(item._metadata_uuid) == metadata_uuid]
-        if len(matches) != 1:
-            raise ValueError('catalog target metadata identity not found or ambiguous')
-        return self.get_index(matches[0]._name)
 
     def set_index(self, name, value):
         raise ValueError('catalog managers are read-only')
@@ -172,24 +85,17 @@ class BSLCatalogManager(BSLObject):
             raise ValueError('catalog metadata identity changed')
         return result
 
-    def _attributes(self, result):
-        attributes = result.binding.attributes
-        if type(attributes) is not tuple or len(attributes) > 64:
-            raise ValueError('catalog attribute collection exceeds bounded profile')
-        return attributes
-
     def _fields(self, result, row):
         fields = {field.declaration.name: field.value for field in row.physical_record.fields}
         logical = {'code': fields.get('_CODE', ''),
                    'description': fields.get('_DESCRIPTION', ''),
                    'ref': self._ref(row.reference_uuid),
                    'deletionmark': fields['_MARKED']}
-        for attribute in self._attributes(result):
+        for attribute in result.binding.attributes:
             key = attribute.name.casefold()
             if key in logical or key in ('код', 'наименование', 'ссылка', 'пометкаудаления'):
                 raise ValueError('ambiguous catalog field name')
-            value = fields[attribute.physical_name]
-            logical[key] = _bound_card(attribute).project(_bound_value(attribute, value), self._catalogs)
+            logical[key] = fields[attribute.physical_name]
         return logical
 
     def _read_member(self, ref, name):
@@ -203,11 +109,11 @@ class BSLCatalogManager(BSLObject):
         # Native absent reference values are scalar defaults, not a physical row.
         logical = {'code': Decimal(0) if result.binding.code_type == 0 else '',
                    'description': '', 'ref': ref, 'deletionmark': False}
-        for attribute in self._attributes(result):
+        for attribute in result.binding.attributes:
             key = attribute.name.casefold()
             if key in logical or key in ('код', 'наименование', 'ссылка', 'пометкаудаления'):
                 raise ValueError('ambiguous catalog field name')
-            logical[key] = _bound_card(attribute).default(self._catalogs)
+            logical[key] = '' if attribute.type_token == 'S' else Decimal(0)
         return logical
 
     # !todo Add hierarchy/filter/order options after native batch verification.

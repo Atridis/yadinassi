@@ -15,9 +15,9 @@
 Работа с таблицами, конфигурацией и пользовательским интерфейсом не входит
 в текущий автономный объектный API интерпретатора.
 
-Отдельный ограниченный контекст `--f` поддерживает
-`СтрокаСоединенияИнформационнойБазы()` / `InfoBaseConnectionString()`, проверку
-заголовка и [ограниченное offline-чтение справочников](docs/linked-catalog-cards-next.md). Это не сеанс 1С,
+Отдельный ограниченный контекст `--f` поддерживает только
+`СтрокаСоединенияИнформационнойБазы()` / `InfoBaseConnectionString()` и read-only
+проверку распознаваемой геометрии заголовка `1Cv8.1CD`. Это не сеанс 1С,
 аутентификация или подтверждение валидности базы. `--user` и `--psw` явно
 отклоняются, а не игнорируются. Загрузка/выгрузка CF/DT и соответствующие
 подкоманды пока не реализованы. Произвольная нативная канонизация путей,
@@ -54,9 +54,7 @@ source-bound native-прогон подтвердил только собств�
 цикл информационной базы; строковое/типовое представление и сериализация самого
 приемника также не поддержаны.
 
-- `Справочники`: запись/изменение объектов, иерархия, владельцы, составные типы
-  и табличные части. Ограниченные read-only менеджеры, ссылки и выборки
-  перечислены отдельно в [поддерживаемом профиле](docs/linked-catalog-cards-next.md).
+- `Справочники`: менеджеры, ссылки, объекты, выборки и табличные части справочников.
 - `Документы`: менеджеры, ссылки, объекты, выборки, табличные части,
   запись и проведение документов.
 - Регистры сведений, накопления, бухгалтерии и расчета: менеджеры,
@@ -314,3 +312,13 @@ wildcard deletion, remote URL schemes, permission setters and exotic codecs
 remain unsupported; `!todo` marks deferred corners. TextReader currently takes
 a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
 are not provided. [Full scope](docs/file-io-family.md).
+
+### XML reader/writer boundary after the ordinary workflow block
+
+The broad legacy XML exclusion does not include the ordinary reader/writer subset
+listed in [docs/xml-workflow-family.md](docs/xml-workflow-family.md). DOM, XDTO,
+XSD/schema validation, DTD/entity declarations and external resolution, streams,
+XML 1.1, `XMLAttributeType`, full Unicode-name ranges and unchecked malformed
+WriteRaw fragments remain unsupported (`!todo`). Internal serialization is
+explicitly rejected. The ordinary subset has a source-bound native XML33 capture and exact corrected
+replay. This does not imply parity outside those scenarios; final CI is pending.

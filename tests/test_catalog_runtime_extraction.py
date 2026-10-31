@@ -75,8 +75,7 @@ class RuntimeExtractionTests(unittest.TestCase):
         left, right = fixture.source(), fixture.source()
         expected = self.runtime.read_catalog_binding(left.read_at, left.size,
                                                      catalog_name='NativeOracleItems')
-        def old(handle, *, profile, linked=False):
-            self.assertTrue(linked)  # New coordinator; this fixture stays old S/N.
+        def old(handle, *, profile):
             return historical._observe_catalog_attributes_from_graph(handle,
                 profile=historical.ConfigCatalogAttributeProfile(historical.DECLARATIONS, '0', 0))
         with mock.patch.object(self.transport, '_observe_catalog_attributes_from_graph', old):

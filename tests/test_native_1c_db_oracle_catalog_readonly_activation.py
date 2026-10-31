@@ -15,10 +15,10 @@ PREVIOUS_WORKFLOW = '1d104a9155553f3e7b6f2dbcc3fd6fb782056bb615b7b2c4931c6713aa1
 # evidence bound to its public-reader lane (standalone measurement is not parity). Historical hashes remain in
 # docs/catalog-description-rows.md; retain direct current LF/CRLF/drift checks.
 SOURCE_PINS = {
-    'yadinassi/storage/catalog_reader.py': '4a972c13cfe5e2b19eadcd1bfa27564624b24739d566025e9bbe6e262dd69e54',
-    'yadinassi/storage/config_catalog_transport.py': 'f9a2287e920dadbb58e480f525aa6e2abdc52a16c65a543685ab1ac5416453f3',
-    'yadinassi/storage/config_catalog_binding.py': '57ec4cebf05d927069015f3d243fd896fcf14e97a8c939e2944563236618cea9',
-    'yadinassi/storage/config_catalog_records.py': '4669e1fc39f2e1df35b934b0597523c33d3680bafbff249b62e74a1a53c5a0e1',
+    'yadinassi/storage/catalog_reader.py': 'b0312a19545a957235171c7920efc83f22c130452caa68a6811735711d7d1d2a',
+    'yadinassi/storage/config_catalog_transport.py': 'b526877c583900b263779c00f8db5c74cb40ff423b1df0e16f866cc4abca01ff',
+    'yadinassi/storage/config_catalog_binding.py': 'd054f485f5fe077bf50cb7636966edd9b31c8c7911596285d1d831bbc2040636',
+    'yadinassi/storage/config_catalog_records.py': '5136872277288c133df5b3bb37539472021a936bf41cf4101672114fa5407b2d',
     'scripts/native_1c_db_oracle/catalog_binding_reader.py': '18d3729d2dc6bd8b198ade1188eb79cd8c48ad75001399e79975b7eb6c8f81b9',
     'scripts/native_1c_db_oracle/catalog_readonly_binding.py': '47b661c13fcdd515fdfdde76130ab4b3f2bb9f781965cbd505b429cb5bd6bedb',
 }

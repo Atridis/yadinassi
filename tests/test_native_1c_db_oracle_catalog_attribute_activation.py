@@ -16,7 +16,7 @@ class CatalogAttributeActivationTests(unittest.TestCase):
         self.assertNotIn(b'--config-catalog-field-matrix', raw)
 
     def test_exact_reviewed_current_pins_and_unchanged_matrix_policy(self):
-        pins = {'yadinassi/storage/config_catalog_attributes.py': '8b6ecc0d0952b7ed4c1ebe0032b386a7283717744b3089ed37b3f02d954e98d1', 'scripts/native_1c_db_oracle/config_catalog_attribute_binding.py': '44d44998b4a54732c8aa232034cfd84ace5e2dd3ff841dfe9f22bfb8ae75bf22', 'scripts/native_1c_db_oracle/config_framing_reader.py': '5590051c5f0e9548c777be908cbd4d0f3dff293b44c14dbaabc3ed80e1a9f43e', 'scripts/native_1c_db_oracle/config_catalog_field_matrix.py': '16236e0e5617c27827a662512b7e88d7f8a1c84e3e97afa1d219de3190a4ba92'}
+        pins = {'yadinassi/storage/config_catalog_attributes.py': 'e3be535c317911d0bfc634f69d4640e9592f906b93aca3aef3f4f1e4a4cdf3d9', 'scripts/native_1c_db_oracle/config_catalog_attribute_binding.py': '44d44998b4a54732c8aa232034cfd84ace5e2dd3ff841dfe9f22bfb8ae75bf22', 'scripts/native_1c_db_oracle/config_framing_reader.py': '5590051c5f0e9548c777be908cbd4d0f3dff293b44c14dbaabc3ed80e1a9f43e', 'scripts/native_1c_db_oracle/config_catalog_field_matrix.py': '16236e0e5617c27827a662512b7e88d7f8a1c84e3e97afa1d219de3190a4ba92'}
         for path, expected in pins.items():
             raw = (ROOT / path).read_bytes()
             with self.subTest(path=path):

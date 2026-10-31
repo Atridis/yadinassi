@@ -1,13 +1,11 @@
 """Private, bounded Catalog attribute collection projection.
 
-The historical entry point admits single String/Number types. The linked entry
-point additionally admits measured Boolean, DateTime and single reference types.
-This is a partial CONFIG grammar, not an applied schema or physical row decoder.
+Only a single explicit String/Number type per attribute is admitted. This is a
+partial CONFIG grammar, not an applied schema, DBNames binding or row decoder.
 The independent byte walk retains no opaque AST and accepts no oracle inputs.
 See docs/config-catalog-attributes.md for pinned positional facts and limits.
 """
-from dataclasses import dataclass, field
-import re
+from dataclasses import dataclass
 
 from .config_catalog_name import (CatalogNameError, CatalogNameLimits, _Cursor,
                                   _IdentityCursor)
@@ -59,21 +57,16 @@ class CatalogAttribute:
     # S: (length, StringKind); N: (precision, scale, NumericKind).
     # Values are metadata, never fixed decoder widths or platform range claims.
     qualifiers: tuple[int, ...]
-    reference_type_uuid: str | None = field(default=None, kw_only=True)
-    reference_catalog_uuid: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
 class CatalogAttributes:
     attributes: tuple[CatalogAttribute, ...]
-    reference_type_uuid: str | None = field(default=None, kw_only=True)
 
 
 class _Walk(_Cursor):
-    def __init__(self, data, budget, limits, linked=False):
+    def __init__(self, data, budget, limits):
         super().__init__(data, budget, limits)
-        self.linked = linked
-        self.reference_type_uuid = None
         self.count = None
         self.rows = []
         self.current = {}
@@ -101,8 +94,6 @@ class _Walk(_Cursor):
 
     def kind(self, path):
         """Classify only fixed routes; unknown subtrees are syntax-only."""
-        if self.linked and path == (1, 3):
-            return "catalog_ref_type"
         if path == (6,):
             return 'object'
         if path == (6, 0):
@@ -127,25 +118,14 @@ class _Walk(_Cursor):
             if len(tail) == 1 and tail[0] == 1:
                 return 'object'
             if len(tail) == 2 and tail[0] == 1 and tail[1] in (1, 2, 3):
-                return ('ref_type' if self.linked and self.current.get('token') == '#' and tail[1] == 1 else 'qualifier')
+                return 'qualifier'
             raise CatalogAttributeError('type_shape')
         if any(route[:len(relative)] == relative for route in (UUID_PATH, NAME_PATH, TYPE_PATH)):
             return 'object'
         return 'opaque'
 
     def value(self, path, kind):
-        if kind == 'catalog_ref_type':
-            # Earlier primitive profiles intentionally ignore this header field.
-            # A reference-bearing graph requires a nonzero UUID candidate below;
-            # opaque legacy headers never become a guessed target identity.
-            candidate = self.data[self.position:self.position + 36]
-            if re.fullmatch(rb'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', candidate) and candidate != b'00000000-0000-0000-0000-000000000000':
-                self.reference_type_uuid = _IdentityCursor.uuid(self)
-            else:
-                self.scalar(False)
-        elif kind == 'ref_type':
-            self.current['reference_type_uuid'] = _IdentityCursor.uuid(self)
-        elif kind in ('collection_uuid', 'uuid'):
+        if kind in ('collection_uuid', 'uuid'):
             value = _IdentityCursor.uuid(self)
             if kind == 'collection_uuid':
                 if value != COLLECTION_UUID:
@@ -190,22 +170,17 @@ class _Walk(_Cursor):
             raise CatalogAttributeError('type_shape')
         if relative == TYPE_PATH + (1,):
             token = self.current.get('token')
-            if token not in (('S', 'N', 'B', 'D', '#') if self.linked else ('S', 'N')):
+            if token not in ('S', 'N'):
                 raise CatalogAttributeError('type_unsupported')
-            qualifiers = self.current.setdefault('qualifiers', [])
-            expected = {'S': 3, 'N': 4, 'B': 1, 'D': 1, '#': 2}[token]
-            if children != expected or len(qualifiers) != (expected - 1 if token != '#' else 0):
+            qualifiers = self.current.get('qualifiers', [])
+            if children != (3 if token == 'S' else 4) or len(qualifiers) != children - 1:
                 raise CatalogAttributeError('type_shape')
-            if token in ('S', 'N') and qualifiers[-1] not in (0, 1):
+            if qualifiers[-1] not in (0, 1):
                 raise CatalogAttributeError('qualifier_kind')
             if token == 'N' and (qualifiers[0] == 0 or qualifiers[1] > qualifiers[0]):
                 raise CatalogAttributeError('numeric_qualifiers')
-            if token == '#' and 'reference_type_uuid' not in self.current:
-                raise CatalogAttributeError('missing_field')
         if not relative:
-            expected = {'uuid', 'name', 'token', 'qualifiers'}
-            if self.current.get('token') == '#': expected.add('reference_type_uuid')
-            if set(self.current) != expected:
+            if set(self.current) != {'uuid', 'name', 'token', 'qualifiers'}:
                 raise CatalogAttributeError('missing_field')
             uuid, name = self.current['uuid'], self.current['name']
             if uuid in self.uuids:
@@ -216,8 +191,7 @@ class _Walk(_Cursor):
             self.uuids.add(uuid)
             self.names.add(name)
             self.rows.append(CatalogAttribute(uuid, name, self.current['token'],
-                                              tuple(self.current['qualifiers']),
-                                              reference_type_uuid=self.current.get('reference_type_uuid')))
+                                              tuple(self.current['qualifiers'])))
             self.current = {}
         return False
 
@@ -244,7 +218,7 @@ class _Walk(_Cursor):
                     self.spaces()
                     if self.peek() not in (44, 125):
                         raise CatalogAttributeError('syntax')
-                    return CatalogAttributes(tuple(self.rows), reference_type_uuid=self.reference_type_uuid)
+                    return CatalogAttributes(tuple(self.rows))
                 stack.pop()
                 continue
             if frame[2]:
@@ -274,15 +248,13 @@ class _Walk(_Cursor):
         raise CatalogAttributeError('missing_collection')
 
 
-def _project_catalog_attributes(data, *, budget, limits=None, linked=False):
+def project_catalog_attributes(data, *, budget, limits=None):
     """Parse through the complete [6] collection; do not validate its suffix.
 
     Expected metadata, physical names and fixture values are deliberately not
     parameters. Every allocation is preceded by cumulative budget reservation;
     failure retains charges, and no per-attribute budget is created or reset.
     """
-    if type(linked) is not bool:
-        raise CatalogAttributeError('input_type')
     if type(data) is not bytes:
         raise CatalogAttributeError('input_type')
     limits = CatalogAttributeLimits() if limits is None else limits
@@ -294,20 +266,6 @@ def _project_catalog_attributes(data, *, budget, limits=None, linked=False):
     budget.charge('bytes_processed', 8 * len(data))
     budget.charge('output_bytes', OUTPUT_RESERVATION)
     try:
-        return _Walk(data, budget, limits, linked).run()
+        return _Walk(data, budget, limits).run()
     except CatalogNameError as error:
         raise CatalogAttributeError(error.code) from None
-
-
-def project_catalog_attributes(data, *, budget, limits=None):
-    """Historical single String/Number projection; no widened admission."""
-    return _project_catalog_attributes(data, budget=budget, limits=limits)
-
-
-def project_linked_catalog_attributes(data, *, budget, limits=None):
-    """Measured scalar/fixed-reference CONFIG profile (native 41227322065).
-
-    # !todo Composite/date-only/time-only types remain closed until measured.
-    Reference type identity is retained separately from catalog metadata UUID.
-    """
-    return _project_catalog_attributes(data, budget=budget, limits=limits, linked=True)

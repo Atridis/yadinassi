@@ -6,15 +6,10 @@ Measured zero-code logical shapes are rechecked independently before read;
 the absent physical code field does not create a synthetic Code API value.
 """
 from decimal import Decimal
-from datetime import datetime
-from types import SimpleNamespace
 import re
 
 from .config_catalog_binding import (CatalogBinding, BoundCatalogAttribute,
-                                    BoundFieldPlacement, _uuid, _name, CatalogBindingError,
-                                    LINKED_PROFILE_IDENTIFIER, PROFILE_IDENTIFIER,
-                                    NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER,
-                                    CatalogBindingLimits, _linked_layout)
+                                    BoundFieldPlacement, _uuid, _name, CatalogBindingError)
 from .filedb_catalog import (CatalogReader, PhysicalCatalog, _BindingHandle,
                             _CatalogBindingGraph, InvalidStructure, ResourceLimit,
                             UnsupportedLayout)
@@ -55,11 +50,6 @@ def _validate_binding(binding, budget):
         _name(binding.name)
     except CatalogBindingError:
         _bad_binding()
-    if binding.profile_identifier == LINKED_PROFILE_IDENTIFIER:
-        _validate_linked_binding(binding)
-        return
-    if type(binding.profile_identifier) is not str or binding.profile_identifier not in (PROFILE_IDENTIFIER, NUMERIC_PROFILE_IDENTIFIER, ZERO_PROFILE_IDENTIFIER):
-        _bad_binding()
     if (type(binding.code_type) is not int or binding.code_type not in (0, 1)
             or type(binding.description_length) is not int or not 0 <= binding.description_length <= 2047
             or type(binding.code_length) is not int or not 0 <= binding.code_length <= (38 if binding.code_type == 0 else 2047)
@@ -71,8 +61,7 @@ def _validate_binding(binding, budget):
     for item in (a, b):
         if (type(item) is not BoundCatalogAttribute or not _uuid(item.metadata_uuid)
                 or type(item.type_token) is not str or type(item.qualifiers) is not tuple
-                or len(item.qualifiers) > 3 or any(type(q) is not int for q in item.qualifiers)
-                or item.reference_type_uuid is not None or item.reference_catalog_uuid is not None):
+                or len(item.qualifiers) > 3 or any(type(q) is not int for q in item.qualifiers)):
             _bad_binding()
         try:
             _name(item.name)
@@ -132,43 +121,10 @@ def _validate_binding(binding, budget):
             _bad_binding()
 
 
-def _validate_linked_binding(binding):
-    if (type(binding.profile_identifier) is not str or type(binding.recordlock) is not str
-            or binding.recordlock!='0' or type(binding.format_item) is not int or binding.format_item!=0):
-        _bad_binding()
-    table_id=_identifier(binding.table_name,'Reference')
-    identity=SimpleNamespace(metadata_uuid=binding.metadata_uuid,name=binding.name,
-        code_type=binding.code_type,code_length=binding.code_length,description_length=binding.description_length)
-    try:expected,placements,size=_linked_layout(identity,binding.attributes,CatalogBindingLimits())
-    except CatalogBindingError:_bad_binding()
-    if any(int(re.fullmatch(r'_FLD([1-9][0-9]*)(?:RREF)?',a.physical_name)[1])==table_id for a in binding.attributes):_bad_binding()
-    if (type(binding.record_size) is not int or binding.record_size!=size
-            or type(binding.declarations) is not tuple or len(binding.declarations)!=len(expected)
-            or type(binding.placements) is not tuple or len(binding.placements)!=len(placements)):_bad_binding()
-    for actual,wanted in zip(binding.declarations,expected):
-        if (type(actual) is not tuple or len(actual)!=6 or actual!=wanted
-                or any(type(v) is not t for v,t in zip(actual,(str,str,int,int,int,str)))):_bad_binding()
-    for actual,wanted in zip(binding.placements,placements):
-        if (type(actual) is not BoundFieldPlacement or type(actual.offset) is not int
-                or type(actual.width) is not int or actual!=wanted
-                or type(actual.declaration) is not tuple or len(actual.declaration)!=6
-                or any(type(v) is not t for v,t in zip(actual.declaration,(str,str,int,int,int,str)))):_bad_binding()
-
-
 def _decode(raw, declaration):
     kind, precision, scale = declaration[1], declaration[3], declaration[4]
     if kind in ('B', 'RV'):
         return raw
-    if kind == 'DT':
-        # Native41227322065: seven packed decimal bytes YYYYMMDDhhmmss;
-        # the empty date is seven zero bytes, not calendar year zero.
-        if len(raw)!=7: raise UnsupportedLayout('date_encoding')
-        if raw==b'\0'*7: return datetime(1,1,1)
-        if any((b>>4)>9 or (b&15)>9 for b in raw):
-            raise UnsupportedLayout('date_encoding')
-        numbers=[10*(b>>4)+(b&15) for b in raw]
-        try:return datetime(numbers[0]*100+numbers[1],*numbers[2:])
-        except ValueError:raise UnsupportedLayout('date_encoding') from None
     if kind == 'L':
         if raw not in (b'\0', b'\1'):
             raise UnsupportedLayout('boolean_encoding')

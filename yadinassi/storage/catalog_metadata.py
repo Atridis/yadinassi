@@ -41,7 +41,7 @@ def read_catalog_metadata(read_at, file_size, *, limits=None):
     try:
         with graph.stage('config') as handle:
             observation = core._observe_catalog_attributes_from_graph(handle,
-                profile=core.ConfigCatalogAttributeProfile(core.DECLARATIONS, '0', 0), linked=True)
+                profile=core.ConfigCatalogAttributeProfile(core.DECLARATIONS, '0', 0))
             if (observation.catalog_declared_count != observation.catalog_resolved_count
                     or observation.catalog_resolved_count != observation.catalog_positive_count
                     or observation.catalog_positive_count != len(observation.private_fields)):

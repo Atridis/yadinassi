@@ -58,9 +58,6 @@ _RUNTIME_DIAGNOSTICS = {
         'transport_plain_bytes', 'transport_inflate_input_bytes',
         'transport_blob_visits', 'transport_inflate_calls')),
     'unsupported_layout': frozenset((
-        # config_catalog_records._decode rejects invalid BCD/calendar bytes for
-        # measured DT7 (native41227322065); classify this one literal only.
-        'date_encoding',
         'binding_table_count', 'compiled_binding_invalid', 'dbnames_filename_encoding',
         'catalog_slot_policy', 'catalog_multiple_free_slots', 'catalog_slot_marker',
         'dbnames_nonreserved_slot', 'dbnames_numeric_digit', 'dbnames_numeric_padding',

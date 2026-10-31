@@ -8,7 +8,7 @@ Zero-code physical rows omit _CODE; no logical Code value is synthesized.
 Typed projection admits bounded multi-row records and the measured single-free-slot profile.
 Raw and typed routes share this physical admission.
 """
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from uuid import UUID
 from . import config_catalog_transport as core
 from . import filedb_catalog as catalog_module
@@ -86,7 +86,7 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
     try:
         with graph.stage('config') as handle:
             observation = core._observe_catalog_attributes_from_graph(handle,
-                profile=core.ConfigCatalogAttributeProfile(core.DECLARATIONS, '0', 0), linked=True)
+                profile=core.ConfigCatalogAttributeProfile(core.DECLARATIONS, '0', 0))
             # Complete projection is already bounded to 256 Catalogs. Reserve
             # additional retained result references/selector comparisons before
             # any collection scan, including failure paths.
@@ -105,25 +105,6 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
             if selected is None:
                 raise catalog_module.UnsupportedLayout('binding_catalog_missing')
             identity, attributes = selected
-            # Native 41227322065: single-reference Pattern carries the target
-            # generated Ref TypeId, not its catalog or record UUID. Resolve only
-            # through this complete same-source CONFIG identity snapshot.
-            reference_types = {}
-            has_references = any(a.type_token == '#' for _, _, collection in observation.private_fields
-                                 for a in collection.attributes)
-            if has_references:
-                for _, owner, collection in observation.private_fields:
-                    ref_type = collection.reference_type_uuid
-                    if ref_type is None or ref_type in reference_types or ref_type in uuids:
-                        raise catalog_module.InvalidStructure('binding_catalog_identity')
-                    reference_types[ref_type] = owner.metadata_uuid
-                for _, _, collection in observation.private_fields:
-                    if any(a.type_token == '#' and a.reference_type_uuid not in reference_types
-                           for a in collection.attributes):
-                        raise catalog_module.UnsupportedLayout('binding_metadata_profile')
-                attributes = replace(attributes, attributes=tuple(
-                    replace(a, reference_catalog_uuid=reference_types[a.reference_type_uuid])
-                    if a.type_token == '#' else a for a in attributes.attributes))
         with graph.stage('params') as handle:
             extracted = named._read_dbnames_from_catalog(reader, physical_catalog,
                 profile=named.DBNamesProfile(core.DECLARATIONS, '0', 0,
@@ -143,10 +124,7 @@ def _read_catalog(read_at, file_size, *, catalog_name, limits, project_rows):
             # validates all qualifiers and rejects other zero/positive combinations.
             zero_code = (type(identity.code_type) is int and identity.code_type == 1
                          and type(identity.code_length) is int and identity.code_length == 0)
-            profile_id = (compiler.ZERO_PROFILE_IDENTIFIER if zero_code else
-                          compiler.LINKED_PROFILE_IDENTIFIER if identity.code_type == 1 and
-                          tuple(a.type_token for a in attributes.attributes) != ("S", "N") else
-                          compiler.NUMERIC_PROFILE_IDENTIFIER)
+            profile_id = compiler.ZERO_PROFILE_IDENTIFIER if zero_code else compiler.NUMERIC_PROFILE_IDENTIFIER
             binding = compiler.compile_catalog_binding(identity, attributes, parsed,
                 profile=compiler.CatalogBindingProfile(profile_id), budget=reader._budget)
             del parsed, extracted, reservation
@@ -200,7 +178,7 @@ def _project_rows(graph, identity, binding, records):
     zero_code = binding.code_length == 0
     if zero_code and (binding.code_type != 1 or binding.description_length not in (0, 8)):
         raise catalog_module.InvalidStructure('binding_reference_identity')
-    field_count = (4 if zero_code else 5) + int(binding.description_length > 0) + len(binding.attributes)
+    field_count = (6 if zero_code else 7) + int(binding.description_length > 0)
     expected = ('_IDRREF', 'B', 0, 16, 0, 'CS')
     # Positive-code shapes have seven/eight declarations; zero-code has six/seven.
     # Check shape and unique role before indexing malformed private intermediate data.

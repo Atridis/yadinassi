@@ -8,7 +8,6 @@ import unittest
 from yadinassi.runtime import Interpreter
 from yadinassi.catalogs import BSLCatalogSelection
 from yadinassi.storage.catalog_metadata import CatalogMetadataIdentity
-from yadinassi.storage.config_catalog_binding import BoundCatalogAttribute
 
 A = '11111111-1111-4111-8111-111111111111'
 B = '22222222-2222-4222-8222-222222222222'
@@ -23,8 +22,8 @@ def result(rows=(), metadata=A):
         return NS(reference_uuid=UUID(uid), physical_record=NS(fields=tuple(
             NS(declaration=NS(name=name), value=value) for name, value in values.items())))
     return NS(identity=NS(name='Products', metadata_uuid=metadata),
-              binding=NS(code_type=1, attributes=(BoundCatalogAttribute(A, 'TextValue', '_FLD7', 'S', (32,1)),
-                                     BoundCatalogAttribute(B, 'Amount', '_FLD8', 'N', (9,2,0)))),
+              binding=NS(code_type=1, attributes=(NS(name='TextValue', physical_name='_FLD7', type_token='S'),
+                                     NS(name='Amount', physical_name='_FLD8', type_token='N'))),
               rows=tuple(row(*values) for values in rows))
 
 

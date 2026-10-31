@@ -16,22 +16,6 @@
 Catalog не добавляют BSL `Метаданные` или `Справочники` в этот список.
 [Границы проверки имени](docs/config-catalog-name-prefix.md).
 
-## Ограниченное offline-чтение справочников
-
-С `FileDBContext` / `--f` доступны read-only `Метаданные` и `Справочники` для
-распознанного ограниченного профиля файловой базы: менеджер, `ПустаяСсылка`,
-`ПолучитьСсылку`, поиск по коду/наименованию, `Выбрать`/`Следующий`, чтение
-стандартных полей и реквизитов, типы/UUID и переход по одиночной ссылке на другой
-справочник. Это чтение согласованной offline-копии, не сеанс живой 1С.
-
-Связанные карточки поддерживают String/Number/Boolean/DateTime и ссылку на один
-фиксированный справочник, включая пустую ссылку и отсутствующий объект.
-Измеренный сценарий: каталог без реквизитов и каталог с пятью смешанными
-реквизитами, строковый код длины 2, наименование длины 8, два порядка реквизитов.
-Остальные структурные обобщения и ограничения отделены от native evidence в
-[контракте связанных карточек](docs/linked-catalog-cards-next.md).
-Запись, составные типы, иерархия и табличные части сюда не входят.
-
 ## Профиль условной компиляции
 
 Публичный профиль `standalone` применяется по умолчанию и явно
@@ -979,3 +963,15 @@ acceptance and precise scope: [JSON family](docs/json-family.md).
 `ДвоичныеДанные/BinaryData`, `КодировкаТекста/TextEncoding`, local file helpers,
 Base64 and text/binary conversions are implemented as one bounded family.
 Native33 client/server/interpreter parity accepted. [Exact methods and limits](docs/file-io-family.md).
+
+### XML document workflows (native XML33 acquired)
+
+`ЧтениеXML/XMLReader`, `ЗаписьXML/XMLWriter`, basic reader/writer settings,
+`ТипУзлаXML/XMLNodeType`, `ПробельныеСимволыXML/XMLSpace`, and
+`ТипПроверкиXML/XMLValidationType.NoValidate`: ordinary string/file workflows,
+namespace-aware nodes/attributes, Read/Skip/MoveToContent, escaping/CDATA/comments/
+PI, WriteCurrent, close/reuse. Only explicit bounded XML 1.0 methods are covered;
+this is not DOM/XDTO/schema/DTD support. See
+[scope and safety limits](docs/xml-workflow-family.md). Real client/server XML33
+captures agree; the corrected runtime replays all33 exactly. The original failed
+runtime provenance is preserved; final corrected-head CI remains pending.

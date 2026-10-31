@@ -649,7 +649,7 @@ def load_catalog_attribute_projector():
 
 def _observe_catalog_attributes_from_graph(handle, *, profile,
         limits=None, chain_limits=None, content_limits=None,
-        reference_limits=None, identity_limits=None, linked=False):
+        reference_limits=None, identity_limits=None):
     """Read complete bounded attributes inside the caller's CONFIG graph stage.
 
     No native/XML oracle values enter this same-reader path.
@@ -664,13 +664,13 @@ def _observe_catalog_attributes_from_graph(handle, *, profile,
             profile=profile, limits=limits, chain_limits=chain_limits,
             content_limits=content_limits, catalog_limits=reader._budget.limits,
             reference_limits=reference_limits, name_limits=identity_limits,
-            standard=True, identity=True, attributes=True, _binding_handle=handle, linked=linked)
+            standard=True, identity=True, attributes=True, _binding_handle=handle)
     except BaseException:
         handle._graph.failed = True
         raise
 
 def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
-                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False, _binding_handle=None, linked=False):
+                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False, _binding_handle=None):
     """Resolve partial Catalog declarations on one private CONFIG resource graph.
 
     Every selected entry is validated and decoded exactly once before return.
@@ -907,9 +907,8 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
                     if attributes:
                         attribute_projector = load_catalog_attribute_projector()
                         try:
-                            attribute_project = (attribute_projector.project_linked_catalog_attributes if linked
-                                                 else attribute_projector.project_catalog_attributes)
-                            projected_attributes = attribute_project(content, budget=reader._budget)
+                            projected_attributes = attribute_projector.project_catalog_attributes(
+                                content, budget=reader._budget)
                         except attribute_projector.CatalogAttributeError as error:
                             if error.code in ('input_bytes', 'tokens', 'depth', 'name_bytes',
                                               'name_chars', 'attribute_limit', 'integer_bound'):
