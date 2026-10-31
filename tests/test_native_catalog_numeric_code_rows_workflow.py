@@ -24,7 +24,7 @@ class NumericCodeRowsWorkflowTests(unittest.TestCase):
 
     def test_fixed_case_artifacts_and_authenticated_precredential_handoff(self):
         a, b = (old.workflow_job(job) for job in ('native_codec_a', 'native_codec_b'))
-        self.assertIn('NATIVE_DB_ROUTE: catalog-read-batch-v1', old.workflow_job('eligibility'))
+        self.assertIn('NATIVE_DB_ROUTE: linked-catalog-cards-v1', old.workflow_job('eligibility'))
         self.assertIn('numeric_code_rows_sha256: ${{ steps.native.outputs.numeric_code_rows_sha256 }}', a)
         self.assertIn('needs: [eligibility, native_codec_a]', b)
         self.assertLess(b.index('--validate-numeric-code-rows3'), b.index('GHCR_TOKEN:'))

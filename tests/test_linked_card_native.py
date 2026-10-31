@@ -25,7 +25,7 @@ from inject_metadata import _module,inject
 from snapshots import OracleError
 from protocol import IMAGE
 from test_metadata_catalog_runtime_inputs import static_bundle_bytes
-from test_catalog_read_native import container_metadata_paths
+from test_catalog_read_native import container_metadata_paths, static_container_bytes, WindowsContainerOS
 NONCE='a'*32
 
 
@@ -140,10 +140,13 @@ class LinkedFixtureTests(unittest.TestCase):
     def test_forced_windows_complete_redump_contract(self):
         import inject_metadata
         from pathlib import PureWindowsPath
-        with mock.patch.object(inject_metadata,'Path',PureWindowsPath):
+        with mock.patch.object(inject_metadata,'Path',PureWindowsPath),mock.patch.object(runner.lifecycle,'os',WindowsContainerOS()):
             with self.assertRaisesRegex(inject_metadata.DraftError,'Unexpected metadata directory'):
                 self._full_redump_existing_rights_and_actual_mapping()
-            with container_metadata_paths():
+            with mock.patch.object(inject_metadata,'Path',PurePosixPath):
+                with self.assertRaisesRegex(AttributeError,'O_NOFOLLOW'):
+                    self._full_redump_existing_rights_and_actual_mapping()
+            with container_metadata_paths(static_reader=True):
                 self._full_redump_existing_rights_and_actual_mapping()
             self.assertIs(inject_metadata.Path,PureWindowsPath)
 
@@ -213,8 +216,17 @@ print('closed-linked')
         # Same Windows static fixture bridge used by reviewed staging tests.
         if os.name=='nt':
             code=code.replace('import linked_card_inputs as inputs','import linked_card_inputs as inputs\n'+inspect.getsource(static_bundle_bytes)+'\ninputs.runtime._read=static_bundle_bytes')
-        result=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(self.staged),str(ROOT/'tests/fixtures/native_bootstrap/Configuration.xml')],capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),'closed-linked')
+        # Exercise the complete cold installer under an explicit missing-Unix-
+        # flags contract too; the ordinary POSIX pass keeps its strict reader.
+        bridge='import os\nfrom snapshots import OracleError\n'+inspect.getsource(static_bundle_bytes)+"\n"+inspect.getsource(static_container_bytes)+"\n"+inspect.getsource(WindowsContainerOS)+"\n"
+        code=code.replace("source=root.parent/'cold-source';source.mkdir()",bridge+"if os.name=='nt' or sys.argv[3]=='windows-contract':\n    linked_card_run.lifecycle.os=WindowsContainerOS()\n    linked_card_run.lifecycle.regular_bytes=static_container_bytes\nsource=root.parent/('cold-source-'+sys.argv[3]);source.mkdir()")
+        code=code.replace("v1=root.parent/'cold-v1'","v1=root.parent/('cold-v1-'+sys.argv[3])")
+        for mode in ('native-platform','windows-contract'):
+            result=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(self.staged),str(ROOT/'tests/fixtures/native_bootstrap/Configuration.xml'),mode],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),'closed-linked')
+            # Separate owned native-source clone namespace for the next child.
+            shutil.rmtree(self.staged.parent/'catalog-source-1')
+
 
 
 class LinkedAcquisitionTests(unittest.TestCase):

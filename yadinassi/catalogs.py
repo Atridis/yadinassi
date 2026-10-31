@@ -5,9 +5,10 @@ No live session or writes exist; advanced ordering/collation remain restricted.
 """
 from dataclasses import dataclass
 from decimal import Decimal
+from datetime import datetime
 from uuid import UUID
 
-from .dates import BSLDate
+from .dates import BSLDate, _date_from_datetime
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .unique_identifiers import BSLUUID
 from .values import BSLObject, HostFunction
@@ -20,9 +21,9 @@ _ZERO = UUID(int=0)
 class CatalogCardField:
     """Logical adapter seam, NOT a CONFIG token or physical declaration.
 
-    !todo Bind these descriptors only after mixed-field native evidence proves
-    CONFIG type/target mapping and exact physical decoding. The current storage
-    compiler never creates this type, so public file admission stays unchanged.
+    Native 41227322065 establishes the measured mixed-field bridge. Storage
+    retains physical values; only this adapter constructs logical BSL values.
+    # !todo Composite types, hierarchy and tabular parts remain unsupported.
     """
     name: str
     physical_name: str
@@ -60,6 +61,36 @@ class CatalogCardField:
             return catalogs._manager_by_metadata_uuid(self.target_metadata_uuid).empty_ref()
         return {'string': '', 'number': Decimal(0), 'boolean': False,
                 'datetime': BSLDate(0)}[self.kind]
+
+
+def _bound_card(attribute):
+    from .storage.config_catalog_binding import BoundCatalogAttribute
+    if type(attribute) is CatalogCardField:
+        return attribute
+    if type(attribute) is not BoundCatalogAttribute:
+        raise TypeError('invalid bound catalog attribute')
+    kinds = {'S': 'string', 'N': 'number', 'B': 'boolean', 'D': 'datetime', '#': 'catalog_ref'}
+    if attribute.type_token not in kinds:
+        raise ValueError('unsupported bound catalog attribute')
+    target = UUID(attribute.reference_catalog_uuid) if attribute.type_token == '#' else None
+    return CatalogCardField(attribute.name, attribute.physical_name, kinds[attribute.type_token], target)
+
+
+def _bound_value(attribute, value):
+    # Storage returns explicit physical datetime/bytes, never Python types to BSL.
+    # Only measured fixed-reference fields invoke the record UUID byte mapping.
+    if type(attribute) is CatalogCardField:
+        return value
+    if attribute.type_token == 'D':
+        if type(value) is not datetime or value.tzinfo is not None or value.microsecond:
+            raise TypeError('invalid physical catalog date')
+        return _date_from_datetime(value)
+    if attribute.type_token == '#':
+        from .storage.catalog_reference_uuid import decode_catalog_reference_uuid
+        if type(value) is not bytes or len(value) != 16:
+            raise TypeError('invalid physical catalog reference')
+        return decode_catalog_reference_uuid(value)
+    return value
 
 
 class BSLCatalogs(BSLObject):
@@ -158,8 +189,7 @@ class BSLCatalogManager(BSLObject):
             if key in logical or key in ('код', 'наименование', 'ссылка', 'пометкаудаления'):
                 raise ValueError('ambiguous catalog field name')
             value = fields[attribute.physical_name]
-            logical[key] = (attribute.project(value, self._catalogs)
-                            if type(attribute) is CatalogCardField else value)
+            logical[key] = _bound_card(attribute).project(_bound_value(attribute, value), self._catalogs)
         return logical
 
     def _read_member(self, ref, name):
@@ -177,8 +207,7 @@ class BSLCatalogManager(BSLObject):
             key = attribute.name.casefold()
             if key in logical or key in ('код', 'наименование', 'ссылка', 'пометкаудаления'):
                 raise ValueError('ambiguous catalog field name')
-            logical[key] = (attribute.default(self._catalogs) if type(attribute) is CatalogCardField
-                            else '' if attribute.type_token == 'S' else Decimal(0))
+            logical[key] = _bound_card(attribute).default(self._catalogs)
         return logical
 
     # !todo Add hierarchy/filter/order options after native batch verification.

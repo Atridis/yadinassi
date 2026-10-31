@@ -486,6 +486,10 @@ class WorkflowTests(unittest.TestCase):
         headers['native_metadata']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C Metadata Catalogs applied-view measurement').replace('    if: >-\n', "    if: >-\n      needs.eligibility.outputs.route == 'metadata-catalog-applied-view-v1' &&\n")
         headers['native_metadata_runtime']=headers['native_metadata'].replace('applied-view measurement', 'public runtime readback').replace('metadata-catalog-applied-view-v1', 'metadata-catalog-public-runtime-v1')
         headers['native_catalog_read']=headers['native_metadata_runtime'].replace('Native 1C Metadata Catalogs public runtime readback','Native 1C batched Catalog read scenario').replace('metadata-catalog-public-runtime-v1','catalog-read-batch-v1')
+        # Reviewed linked lane shares this job; retain the complete exact guard.
+        headers['native_catalog_read']=headers['native_catalog_read'].replace(
+            "needs.eligibility.outputs.route == 'catalog-read-batch-v1' &&",
+            "(needs.eligibility.outputs.route == 'catalog-read-batch-v1' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1') &&")
         headers['native_reference_a']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C reference identity case A')+"""    outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       reference_sha256: ${{ steps.native.outputs.reference_sha256 }}

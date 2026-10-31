@@ -15,9 +15,9 @@
 Работа с таблицами, конфигурацией и пользовательским интерфейсом не входит
 в текущий автономный объектный API интерпретатора.
 
-Отдельный ограниченный контекст `--f` поддерживает только
-`СтрокаСоединенияИнформационнойБазы()` / `InfoBaseConnectionString()` и read-only
-проверку распознаваемой геометрии заголовка `1Cv8.1CD`. Это не сеанс 1С,
+Отдельный ограниченный контекст `--f` поддерживает
+`СтрокаСоединенияИнформационнойБазы()` / `InfoBaseConnectionString()`, проверку
+заголовка и [ограниченное offline-чтение справочников](docs/linked-catalog-cards-next.md). Это не сеанс 1С,
 аутентификация или подтверждение валидности базы. `--user` и `--psw` явно
 отклоняются, а не игнорируются. Загрузка/выгрузка CF/DT и соответствующие
 подкоманды пока не реализованы. Произвольная нативная канонизация путей,
@@ -54,7 +54,9 @@ source-bound native-прогон подтвердил только собств�
 цикл информационной базы; строковое/типовое представление и сериализация самого
 приемника также не поддержаны.
 
-- `Справочники`: менеджеры, ссылки, объекты, выборки и табличные части справочников.
+- `Справочники`: запись/изменение объектов, иерархия, владельцы, составные типы
+  и табличные части. Ограниченные read-only менеджеры, ссылки и выборки
+  перечислены отдельно в [поддерживаемом профиле](docs/linked-catalog-cards-next.md).
 - `Документы`: менеджеры, ссылки, объекты, выборки, табличные части,
   запись и проведение документов.
 - Регистры сведений, накопления, бухгалтерии и расчета: менеджеры,
@@ -304,3 +306,11 @@ Advanced date conversion and revival callbacks, XDTO/application objects,
 Stream objects, advanced quote/escape settings, comments/non-standard input,
 reader CurrentLine/CurrentPosition and exact malformed-input diagnostics remain unsupported. The ordinary
 reader/writer and collection workflows are described in [JSON family](docs/json-family.md).
+
+### File I/O remaining scope
+
+Streams/async overloads, sharing locks, recursive searches and deletions,
+wildcard deletion, remote URL schemes, permission setters and exotic codecs
+remain unsupported; `!todo` marks deferred corners. TextReader currently takes
+a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
+are not provided. [Full scope](docs/file-io-family.md).
