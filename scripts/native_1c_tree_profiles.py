@@ -82,9 +82,15 @@ FORMAT_DATES = Profile('format-dates-v1', 'native-1c-format-dates-v1', 'native-1
     'format_dates', '7fbdcca1257bc6d754fd8a640f3ed4790196db12b8c61be2a8a88f93ee5adccb',
     58, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
 
+JSON_FAMILY = Profile('json-family-v1', 'native-1c-json-family-v1', 'native-1c-json-family-stage-v1',
+    'json_family', 'ac6acd4a5af2b93c3d6b3b2e7ffdc95f8024e3fbd52482cd4c814b3f2020b00b',
+    33, 'native_1c_json_family_contract', '\nСообщить("JF-C1: [" + JFEncode("") + "]");\n', 5, 'json-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
+    if name == JSON_FAMILY.name:
+        return JSON_FAMILY
     if name == FILL.name:
         return FILL
     if name == COPY.name:

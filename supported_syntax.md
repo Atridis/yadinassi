@@ -948,3 +948,11 @@ Boolean/Undefined и нечисловые преобразования инде�
 наблюдения Linux 8.3.27.1508, но завершился ожидаемым semantic mismatch старого
 runtime. **Свежая native-приёмка реализации требуется отдельно.**
 [Полный scope, provenance и различие наблюдений/обобщений](docs/text-document-native-alignment.md).
+
+## JSON
+
+`ЧтениеJSON/JSONReader`, `ЗаписьJSON/JSONWriter`, `ПрочитатьJSON/ReadJSON`,
+`ЗаписатьJSON/WriteJSON`: bounded string/file workflows, nested primitives and
+mutable/fixed arrays, structures and string-keyed maps. Token Read/Skip and
+basic JSONWriterSettings newline/indent options are implemented. Native
+acceptance and precise scope: [JSON family](docs/json-family.md).

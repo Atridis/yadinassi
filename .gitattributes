@@ -54,3 +54,9 @@ tests/fixtures/format_dates/*.out -text
 tests/fixtures/format_dates/*.bsl text eol=lf
 tests/fixtures/format_dates/*provenance.json -text
 tests/fixtures/format_dates/*mapping.json -text
+
+# JSON family source/captures are byte-bound across checkout platforms.
+integrational_tests/measurements/json_family.bsl text eol=lf
+tests/fixtures/json_family/*.out -text
+tests/fixtures/json_family/*.bsl text eol=lf
+tests/fixtures/json_family/*provenance.json -text

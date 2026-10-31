@@ -431,9 +431,9 @@ class Parser:
                     self.fail("Недопустимое обращение к свойству или методу "
                               "непосредственно после конструктора")
                 token = self.expect(".")
-                # Execute is a statement keyword, but existing object members
-                # with this spelling remain member names after a dot.
-                member = self.accept("EXECUTE") or self.expect("IDENT")
+                # Execute and the documented JSONValueType.Null are member
+                # names after a dot, without changing their standalone tokens.
+                member = self.accept("EXECUTE") or self.accept("NULL") or self.expect("IDENT")
                 value = ast.Attribute(token, value, member.value)
             elif token := self.accept("["):
                 index = self.expression()
