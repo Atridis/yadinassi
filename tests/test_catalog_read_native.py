@@ -58,13 +58,32 @@ def error_wire(count=24):
     return (scalar_wire.C1+scalar_wire.C2+b''.join(f'CR-{i:02}: [action-error]\n'.encode() for i in range(1,count+1))).decode()
 
 
+def static_container_bytes(path, limit):
+    # Existing bounded static-fixture adapter, not native descriptor security.
+    raw=static_bundle_bytes(path,limit)
+    if not raw:raise OracleError('artifact_limit')
+    return raw
+
+
 @contextmanager
-def container_metadata_paths():
-    # The production injector runs only inside Linux. Its two Path constructors
-    # derive lexical parent names from POSIX inventories; roots/files retain
-    # real host Path instances for I/O. Never patch pathlib or filesystem guards.
-    with mock.patch.object(inject_metadata, 'Path', PurePosixPath):
+def container_metadata_paths(*, static_reader=None):
+    # Complete mocked container boundary: lexical POSIX metadata paths plus its
+    # Linux-only descriptor reader. Real host paths still perform fixture I/O.
+    # On POSIX the ordinary test retains the actual strict reader; Windows uses
+    # only the already reviewed bounded static-fixture adapter, with no os flags
+    # or production source modified. Native process/admin methods are mocked by
+    # the caller; remaining install operations are portable pathlib/XML/shutil.
+    if static_reader is None:static_reader=os.name=='nt'
+    reader=mock.patch.object(runner.lifecycle,'regular_bytes',static_container_bytes) if static_reader else nullcontext()
+    with mock.patch.object(inject_metadata,'Path',PurePosixPath),reader:
         yield
+
+
+class WindowsContainerOS:
+    """Only the container module sees missing Unix-only flags, not global os."""
+    def __getattr__(self,name):
+        if name in ('O_NOFOLLOW','O_DIRECTORY','O_NONBLOCK'):raise AttributeError(name)
+        return getattr(os,name)
 
 
 class CatalogBatchTests(unittest.TestCase):
@@ -125,16 +144,35 @@ class CatalogBatchTests(unittest.TestCase):
             self._install_complete_redump_and_existing_roles()
 
     def test_forced_windows_lexical_paths_cover_complete_install_redump(self):
-        original=inject_metadata.Path
-        # Reproduce the real Windows mismatch even on POSIX CI, then exercise
-        # the entire corrected fixture, not only the first validation boundary.
-        with mock.patch.object(inject_metadata, 'Path', PureWindowsPath):
-            with self.assertRaisesRegex(inject_metadata.DraftError, 'Unexpected metadata directory'):
+        original=inject_metadata.Path;reader=runner.lifecycle.regular_bytes
+        with mock.patch.object(inject_metadata,'Path',PureWindowsPath),mock.patch.object(runner.lifecycle,'os',WindowsContainerOS()):
+            with self.assertRaisesRegex(inject_metadata.DraftError,'Unexpected metadata directory'):
                 self._install_complete_redump_and_existing_roles()
-            with container_metadata_paths():
+            with mock.patch.object(inject_metadata,'Path',PurePosixPath):
+                with self.assertRaisesRegex(AttributeError,'O_NOFOLLOW'):
+                    self._install_complete_redump_and_existing_roles()
+            with container_metadata_paths(static_reader=True):
                 self._install_complete_redump_and_existing_roles()
             self.assertIs(inject_metadata.Path,PureWindowsPath)
+            self.assertIs(runner.lifecycle.regular_bytes,reader)
         self.assertIs(inject_metadata.Path,original)
+        self.assertIs(runner.lifecycle.os,os)
+
+    def test_static_container_reader_keeps_bounds_and_restores_after_error(self):
+        reader=runner.lifecycle.regular_bytes
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp).resolve()/'owned';path.write_bytes(b'abc')
+            with container_metadata_paths(static_reader=True):
+                self.assertEqual(runner.lifecycle.regular_bytes(path,3),b'abc')
+                with self.assertRaises(OracleError):runner.lifecycle.regular_bytes(path,2)
+                path.write_bytes(b'')
+                with self.assertRaises(OracleError):runner.lifecycle.regular_bytes(path,3)
+            self.assertIs(runner.lifecycle.regular_bytes,reader)
+            with self.assertRaisesRegex(RuntimeError,'synthetic'):
+                with container_metadata_paths(static_reader=True):raise RuntimeError('synthetic')
+            self.assertIs(runner.lifecycle.regular_bytes,reader)
+        if os.name!='nt':
+            with container_metadata_paths():self.assertIs(runner.lifecycle.regular_bytes,reader)
 
     def _install_complete_redump_and_existing_roles(self):
         with tempfile.TemporaryDirectory() as tmp:

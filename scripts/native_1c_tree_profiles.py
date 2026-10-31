@@ -86,9 +86,15 @@ JSON_FAMILY = Profile('json-family-v1', 'native-1c-json-family-v1', 'native-1c-j
     'json_family', 'ac6acd4a5af2b93c3d6b3b2e7ffdc95f8024e3fbd52482cd4c814b3f2020b00b',
     33, 'native_1c_json_family_contract', '\nСообщить("JF-C1: [" + JFEncode("") + "]");\n', 5, 'json-family')
 
+FILE_IO_FAMILY = Profile('file-io-family-v1', 'native-1c-file-io-family-v1', 'native-1c-file-io-family-stage-v1',
+    'file_io_family', '338249c25f36779b6c3f8869c96a7dac7c1ac6e2a3bca9767c7b7e180f81939b',
+    35, 'native_1c_file_io_family_contract', '\nСообщить("FI-C1: [" + FIEncode("") + "]");\n', 5, 'file-io-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
+    if name == FILE_IO_FAMILY.name:
+        return FILE_IO_FAMILY
     if name == JSON_FAMILY.name:
         return JSON_FAMILY
     if name == FILL.name:

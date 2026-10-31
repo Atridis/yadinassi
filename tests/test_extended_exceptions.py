@@ -169,7 +169,9 @@ Except saved=ErrorInfo(); EndTry;''', 'division.bsl')
                          {BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE,
                           BSLType.TEXT_DOCUMENT, BSLType.JSON_READER, BSLType.JSON_WRITER,
                           BSLType.JSON_WRITER_SETTINGS, BSLType.JSON_VALUE_TYPE, BSLType.JSON_LINE_BREAK,
-                          BSLType.CATALOGS_MANAGER}
+                          BSLType.CATALOGS_MANAGER,
+                          BSLType.FILE, BSLType.TEXT_READER, BSLType.TEXT_WRITER,
+                          BSLType.BINARY_DATA, BSLType.TEXT_ENCODING}
                          | serialization._TREE_CODEC_TYPES)
         self.vm.execute('Try Raise "x"; Except saved=ErrorInfo(); EndTry;')
         for expression in ['saved', 'ErrorCategory.ConfigurationError',

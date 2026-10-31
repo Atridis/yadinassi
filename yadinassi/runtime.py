@@ -3,6 +3,8 @@
 from decimal import Decimal, localcontext
 from types import GeneratorType
 
+from . import file_io
+from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
 from .text_documents import BSLTextDocument
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
 from .unique_identifiers import BSLUUID
@@ -212,6 +214,13 @@ class Interpreter:
         self.register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
         self.register_function("ПрочитатьJSON", read_json, "ReadJSON")
         self.register_function("ЗаписатьJSON", write_json, "WriteJSON", returns_value=False)
+        for ru, factory, en in (("Файл", BSLFile, "File"),
+                                ("ЧтениеТекста", BSLTextReader, "TextReader"),
+                                ("ЗаписьТекста", BSLTextWriter, "TextWriter"),
+                                ("ДвоичныеДанные", BSLBinaryData, "BinaryData")):
+            self.register_type(ru, factory, en)
+        for ru, function, en, returns_value in file_io.FUNCTIONS:
+            self.register_function(ru, function, en, returns_value=returns_value)
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
@@ -615,6 +624,8 @@ class Interpreter:
             return ROUND_MODES
         if name in ("переносстрокjson", "jsonlinebreak"):
             return JSON_LINE_BREAKS
+        if name in ("кодировкатекста", "textencoding"):
+            return TEXT_ENCODINGS
         if name in ("типзначенияjson", "jsonvaluetype"):
             return JSON_VALUE_TYPES
         if name in ("обработкастрокиxml", "xmlstringprocessing"):
@@ -787,7 +798,8 @@ class Interpreter:
                       if isinstance(callee, ast.Name) else None)
         if table_optional is None and (registered is None or
                 (registered.function is not fill_property_values
-                 and registered.function is not strings.str_find)):
+                 and registered.function is not strings.str_find
+                 and not any(registered.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)))):
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
             receiver = table_receiver if table_optional is not None else (yield from self.receiver(callee.object))
@@ -801,7 +813,9 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
-        if function.function is fill_property_values:
+        if any(function.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)):
+            self.reject_host_omissions(node.arguments[:1])
+        elif function.function is fill_property_values:
             if not 2 <= len(node.arguments) <= 4:
                 raise TypeError("ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов")
             self.reject_host_omissions(node.arguments[:2])
@@ -864,7 +878,8 @@ class Interpreter:
         # classifier as the single existing hook for known optional receivers.
         value = self.known_receiver(node)
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
-                                       BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter) else None
+                                       BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter,
+                                       BSLTextReader, BSLTextWriter) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -881,6 +896,10 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        if type(receiver) in (BSLTextReader, BSLTextWriter):
+            if key in {"open", "открыть"}: return frozenset({1, 2, 3, 4})
+            if key in {"read", "прочитать", "readline", "прочитатьстроку"}: return frozenset({0})
+            if key in {"writeline", "записатьстроку"}: return frozenset({1})
         if type(receiver) is BSLJSONWriter:
             if key in {"openfile", "открытьфайл"}:
                 return frozenset({1, 2, 3})
@@ -1209,7 +1228,11 @@ class Interpreter:
     def visit_New(self, node: ast.New) -> object:
         factory = self.types.get(node.name.casefold())
         if factory is not None and (factory.function is BSLTypeDescription
-                                    or factory.function is BSLJSONWriterSettings):
+                                    or factory.function is BSLJSONWriterSettings
+                                    or factory.function is BSLTextReader
+                                    or factory.function is BSLTextWriter):
+            if factory.function is BSLTextReader or factory.function is BSLTextWriter:
+                self.reject_host_omissions(node.arguments[:1])
             # The observed descriptor overloads use positional qualifier holes.
             # Other host constructors retain their explicit omission rejection.
             values = []

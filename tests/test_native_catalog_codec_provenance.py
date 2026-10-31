@@ -39,14 +39,15 @@ def provenance():
 
 
 class CodecProvenanceTests(SyntheticFilesystemCase):
-    def test_actual_84_source_inventory_includes_format_and_metadata_and_recomputes_digest(self):
+    def test_actual_85_source_inventory_includes_format_and_metadata_and_recomputes_digest(self):
         hashes = independent_hashes()
-        self.assertEqual(len(hashes),84)
+        self.assertEqual(len(hashes),85)
         self.assertIn(CODEC,hashes)
         self.assertIn('yadinassi/json_processing.py', hashes)
+        self.assertIn('yadinassi/file_io.py', hashes)
         self.assertIn('yadinassi/catalogs.py', hashes)
         self.assertIn('yadinassi/catalog_types.py', hashes)
-        # Current tree: reviewed 81 plus catalog managers, dynamic catalog types and JSON. This is an
+        # Current tree: reviewed 81 plus catalog managers, dynamic catalog types, JSON and files. This is an
         # exact source expectation, not the unchanged 512-file protocol cap.
         self.assertIn('yadinassi/value_tree_sort.py',hashes)
         self.assertIn('yadinassi/formatting.py',hashes)
@@ -54,7 +55,7 @@ class CodecProvenanceTests(SyntheticFilesystemCase):
             self.assertIn(name, hashes)
         value = provenance()
         expected = hashlib.sha256(json.dumps(hashes,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-        self.assertEqual(value['source_file_count'],84)
+        self.assertEqual(value['source_file_count'],85)
         self.assertEqual(value['source_sha256'],expected)
         self.assertEqual(value['comparison_driver_sha256'],hashes[DRIVERS[1]])
         self.assertEqual(value['map_contract_sha256'],hashes['scripts/native_1c_map_contract.py'])
@@ -63,7 +64,7 @@ class CodecProvenanceTests(SyntheticFilesystemCase):
     def test_codec_byte_drift_changes_only_aggregate_not_driver_identity(self):
         before = provenance()
         original = full.read_regular
-        for source in (CODEC, 'yadinassi/formatting.py', *METADATA):
+        for source in (CODEC, 'yadinassi/formatting.py', 'yadinassi/json_processing.py', 'yadinassi/file_io.py', 'yadinassi/catalogs.py', 'yadinassi/catalog_types.py', *METADATA):
             def changed(path, *args, **kwargs):
                 raw = original(path,*args,**kwargs)
                 return raw+b'\n' if path == ROOT/source else raw
@@ -93,7 +94,7 @@ class CodecProvenanceFixtureScopeTests(unittest.TestCase):
 
     def test_posix_setup_keeps_production_reader_unchanged(self):
         original = full.read_regular
-        case = CodecProvenanceTests('test_actual_84_source_inventory_includes_format_and_metadata_and_recomputes_digest')
+        case = CodecProvenanceTests('test_actual_85_source_inventory_includes_format_and_metadata_and_recomputes_digest')
         with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', False):
             try:
                 case.setUp()
@@ -104,7 +105,7 @@ class CodecProvenanceFixtureScopeTests(unittest.TestCase):
 
     def test_windows_adapter_rejection_is_not_swallowed_and_cleanup_restores_reader(self):
         original = full.read_regular
-        case = CodecProvenanceTests('test_actual_84_source_inventory_includes_format_and_metadata_and_recomputes_digest')
+        case = CodecProvenanceTests('test_actual_85_source_inventory_includes_format_and_metadata_and_recomputes_digest')
         with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', True), \
                 mock.patch.object(host_tests, 'read_synthetic_file',
                                   side_effect=full.FullError('invalid_private_file')) as rejected:
