@@ -91,7 +91,7 @@ class JSONFamilyTests(unittest.TestCase):
 
     def test_tokens_and_skip(self):
         r = BSLJSONReader(); r.set_string('[{"a":[1,2]},true,null]')
-        self.assertIsNone(r.get_member('CurrentValueType'))
+        self.assertIs(r.get_member('CurrentValueType'), T.NONE)
         with self.assertRaises(ValueError): r.get_member('CurrentValue')
         self.assertTrue(r.read()); self.assertIs(r.get_member('CurrentValueType'), T.START_ARRAY)
         with self.assertRaises(ValueError): r.get_member('CurrentValue')
@@ -104,11 +104,24 @@ class JSONFamilyTests(unittest.TestCase):
         with self.assertRaises(ValueError): r.read()
 
     def test_read_subtree_and_continue(self):
-        r = BSLJSONReader(); r.set_string('[{"a":1},2]'); r.read(); r.read()
+        r = BSLJSONReader(); r.set_string('[{"a":1},2]'); r.read()
         self.assertEqual(self.write(read_json(r)), '{"a":1}')
         self.assertIs(r._current[0], T.END_OBJECT)
-        r.read(); self.assertEqual(read_json(r), D(2))
+        self.assertEqual(read_json(r), D(2))
         r.read(); self.assertIs(r._current[0], T.END_ARRAY)
+
+    def test_native_cursor_and_replacement(self):
+        r = BSLJSONReader(); r.set_string('[1,2]'); r.read(); r.read()
+        self.assertEqual(read_json(r), D(2))
+        self.assertIsNone(read_json(r))
+        r.close(); r.set_string('[1]'); r.read(); r.set_string('{"b":2}')
+        self.assertEqual(read_json(r), D(1))
+        r.close(); r.set_string('{"b":2}')
+        self.assertEqual(self.write(read_json(r)), '{"b":2}')
+        self.assertEqual(self.write(self.read('[1,]')), '[1]')
+        self.assertEqual(self.write(self.read('["comma,]",[],]')), '["comma,]",[]]')
+        for text in ('[,]', '[1,,]', '[,1,]', '{"a":1,}'):
+            with self.subTest(text=text), self.assertRaises(ValueError): self.read(text)
 
     def test_manual_writer_mixed_with_global(self):
         w = BSLJSONWriter(); w.set_string(BSLJSONWriterSettings(BSLJSONLineBreak.NONE))
@@ -164,7 +177,7 @@ class JSONFamilyTests(unittest.TestCase):
                 self.vm.execute('ValueToStringInternal(' + expression + ')')
 
     def test_invalid_documents_and_types(self):
-        for text in ('', '{', '[1,]', '{"a":}', 'NaN', 'Infinity', '1 2', '"bad\nline"'):
+        for text in ('', '{', '[1,,]', '{"a":}', 'NaN', 'Infinity', '1 2', '"bad\nline"'):
             with self.subTest(text=text), self.assertRaises(ValueError): self.read(text)
         for value in (NULL, object(), D('NaN'), D('Infinity')):
             with self.subTest(value=type(value)), self.assertRaises((TypeError, ValueError)): self.write(value)

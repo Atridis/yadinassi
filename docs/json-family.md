@@ -45,15 +45,24 @@ Read as a ZIP archive, not executed. Relevant members under `nl/en/html/` and
 ## Verification status
 
 Focused local workflow tests are in `tests/test_json_processing.py`.
-Native acceptance is pending; source documentation is not native evidence.
-Default formatting and reader cursor transitions must be checked in the same
-whole-family native batch as the ordinary workflows, before claiming parity.
+Native acquisition from [run41207470266](https://github.com/Atridis/yadinassi/actions/runs/41207470266)
+is authenticated for the fixed 31-case batch. Both contexts produced identical
+bytes; the original runtime mismatched six cases. Those bytes and the rejected
+runtime status remain archived, not overwritten. Corrected offline replay now
+matches all31 observations; fresh exact-head runtime acceptance remains pending.
+
+The measured reader global advances **before** reading a value. To read the
+entire document, call ReadJSON directly after SetString/OpenFile, without an
+extra Read. Initial/EOF CurrentValueType is JSONValueType.None (presentation
+`Нет`). Mid-document SetString retains buffered tokens; Close before changing
+the input when a fresh document is intended. The native array trailing comma
+extension is accepted, without rewriting commas inside strings.
 
 ## Deliberate remaining scope
 
 Search `# !todo` in `yadinassi/json_processing.py` for deferred work:
 advanced escaping/quote modes, date restoration and serialization options,
-conversion/revival callbacks, non-standard comments, reader CurrentLine/CurrentPosition, and exact malformed-input
+conversion/revival callbacks, other non-standard JSON/comments, reader CurrentLine/CurrentPosition, and exact malformed-input
 error diagnostics. XDTO serialization, external Stream objects and
 arbitrary application types are not included. No silent stringification of
 unsupported types or non-string map keys is permitted.

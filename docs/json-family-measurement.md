@@ -1,8 +1,11 @@
 # Whole-family JSON native measurement
 
-This is one feature-family batch, not an edge-only supplement. Native execution
-has **not** yet been performed. Local captures and synthetic runner envelopes
-are test inputs, never platform evidence.
+This is one feature-family batch, not an edge-only supplement. The first native acquisition is [run41207470266](https://github.com/Atridis/yadinassi/actions/runs/41207470266)
+on head49ea54e1859367aa10a7edac205b72b27b346482/tree9f4433a0ab1637b847fa041391f0629038291391.
+Acquisition was accepted; its original runtime parity was rejected and remains
+recorded. Native client/server capture is1897 identical bytes,24 successful
+actions and7 deliberate action-error observations, with no observer failures.
+Local captures and synthetic runner envelopes are never platform evidence.
 
 ## Fixed input and wire
 
@@ -72,3 +75,13 @@ profile driver is `scripts/native_1c_tree_profile.py --profile json-family-v1`
 with the same existing explicit image-execution option. A valid measurement is
 not runtime acceptance: final acceptance additionally requires available APIs,
 matching exact outputs and all unchanged envelope/lifecycle gates.
+
+## Original acquisition and correction
+
+`tests/fixtures/json_family/original31.*` retain the exact source, native bytes
+and finite provenance. Independent audit checked43 source/module/artifact and
+lifecycle properties. Six original differences were cases9/10(initial/EOF),
+13/14(global advance),18(array trailing comma),21(buffered replacement).
+Layout, exponent and both file/BOM paths already matched. Generic corrections
+now replay all31 observations offline; fresh current-head native acceptance
+is still required. No case was removed, reclassified or weakened to pass.

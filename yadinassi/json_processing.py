@@ -56,7 +56,7 @@ class BSLJSONValueType(Enum):
     COMMENT = ("Комментарий", "Comment")
 
     def __str__(self):
-        return self.value[0]
+        return "Нет" if self is BSLJSONValueType.NONE else self.value[0]
 
 
 class BSLJSONValueTypes(BSLObject):
@@ -75,9 +75,32 @@ class _Pairs(list):
     pass
 
 
+def _without_array_trailing_commas(text):
+    # Native case18 accepts a trailing array comma. Scan string/escape state so
+    # punctuation inside strings is never rewritten; malformed empty/double
+    # commas remain errors. Object trailing commas remain outside this slice.
+    result, quoted, escaped, previous = [], False, False, ""
+    for index, char in enumerate(text):
+        if quoted:
+            if escaped: escaped = False
+            elif char == "\\": escaped = True
+            elif char == '"': quoted = False
+        elif char == '"': quoted = True
+        elif char == "," and previous not in ("", "[", "{", ":", ","):
+            following = index + 1
+            while following < len(text) and text[following] in " \t\r\n":
+                following += 1
+            if following < len(text) and text[following] == "]":
+                continue
+        result.append(char)
+        if char not in " \t\r\n": previous = char
+    return "".join(result)
+
+
 def _load(text):
     # !todo Comment/non-standard JSON extensions and exact malformed-input
-    # cursor locations require later native calibration; strict JSON is supported.
+    # cursor locations require later native calibration; the measured trailing
+    # array comma is the one currently supported non-standard extension.
     def bad_constant(value):
         raise ValueError("JSON: недопустимое число")
     def parse_number(value):
@@ -88,7 +111,7 @@ def _load(text):
             raise ValueError("JSON: превышен предел числа Yadinassi")
         return number
     try:
-        return json.loads(text, parse_int=parse_number, parse_float=parse_number,
+        return json.loads(_without_array_trailing_commas(text), parse_int=parse_number, parse_float=parse_number,
                           parse_constant=bad_constant, object_pairs_hook=_Pairs)
     except (json.JSONDecodeError, RecursionError) as error:
         raise ValueError("JSON: некорректный документ") from error
@@ -121,7 +144,15 @@ class BSLJSONReader(BSLObject):
         return "ЧтениеJSON"
 
     def set_string(self, value):
-        self._source = _text(value)
+        value = _text(value)
+        # Native JSON31 case21 retains already buffered unread tokens when a
+        # string is replaced mid-document. Close explicitly starts a fresh reader.
+        # !todo Calibrate switching beyond that retained document (and large
+        # native input-buffer boundaries); this bounded reader caches one document.
+        if self._tokens is not None and self._position < len(self._tokens) - 1:
+            self._source = value
+            return
+        self._source = value
         self._tokens = None
         self._position = -1
         self._current = (T.NONE, None)
@@ -183,7 +214,7 @@ class BSLJSONReader(BSLObject):
         # ordinary nor malformed-input positions are currently exposed.
         key = name.casefold()
         if key in ("типтекущегозначения", "currentvaluetype"):
-            return None if self._current[0] is T.NONE else self._current[0]
+            return self._current[0]
         if key in ("текущеезначение", "currentvalue"):
             if self._current[0] in (T.NONE, T.START_OBJECT, T.END_OBJECT, T.START_ARRAY, T.END_ARRAY):
                 raise ValueError("JSON: текущее значение недоступно")
@@ -204,8 +235,10 @@ def read_json(reader, read_to_map=False):
     # maximum nesting are not part of the current ordinary collection API.
     if type(reader) is not BSLJSONReader or type(read_to_map) is not bool:
         raise TypeError("ПрочитатьJSON: ожидаются ЧтениеJSON и Булево")
-    if reader._current[0] is T.NONE and not reader.read():
-        raise ValueError("JSON: ожидалось значение")
+    # The global method advances first, even if the caller already read a token.
+    # Native cases13/14 distinguish it from consuming the current token.
+    if not reader.read() or reader._current[0] in (T.END_ARRAY, T.END_OBJECT):
+        return None
 
     def consume(depth):
         if depth > MAX_DEPTH:
