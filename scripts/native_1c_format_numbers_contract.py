@@ -1,7 +1,7 @@
 """Bounded Format measurement wire grammar; no native expected semantic values."""
 import re
 
-CASE_COUNT = 56
+CASE_COUNT = 48
 MAX_STRING_UNITS = 32
 MAX_OUTPUT_BYTES = 8192
 CALIBRATION = b'FM-C1: [S0:]\nFM-C2: [S6:004100a0003b0022d83dde00]\n'

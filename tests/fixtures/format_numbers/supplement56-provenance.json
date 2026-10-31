@@ -1,0 +1,25 @@
+{
+  "run": 41185012239,
+  "job": 124490085594,
+  "head": "b0808e2731fd936dcdfe9cd45b00c14b58249c5c",
+  "tree": "a0f7c0815b6af5c59dec17f79916f182fbceb2df",
+  "checkout": "4e86b820a9dd46149ce381934eb08f4f3651d5bc",
+  "native_source_sha256": "604a647404ee84b5e98a07b9bad646b568ce6e8645d063b176459294377b8344",
+  "native_capture_sha256": "c73b57a240afa1e27852369d88d7a6d92d3be125f2888456d960f40808c67d0d",
+  "native_capture_bytes": 2162,
+  "cases": 56,
+  "artifact_metadata": [
+    {
+      "id": 13036826989,
+      "name": "native-1c-format-numbers-summary",
+      "digest": "sha256:37073389ea6757a98787fd1bc6921c0cd415d36ca2d320075b342c9e53aa6964"
+    },
+    {
+      "id": 13036722455,
+      "name": "native-1c-format-numbers-outputs",
+      "digest": "sha256:a7f24b5aa664aae481c6493df17a58b37bbcaef5b052166c9d7a6d67509a9413"
+    }
+  ],
+  "scope": "56 source-bound native cases; original 48 prefix unchanged. Runtime deliberately rejects wider native ND/DF controls52/53.",
+  "url": "https://github.com/Atridis/yadinassi/actions/runs/41185012239"
+}
