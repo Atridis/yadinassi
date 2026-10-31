@@ -5,7 +5,7 @@ import hashlib
 import inspect
 import os
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import sys
@@ -119,8 +119,11 @@ class CatalogBatchTests(unittest.TestCase):
             import re
             (source/'Configuration.xml').write_text(re.sub(r'<!--.*?-->','',raw))
             (source/'ConfigDumpInfo.xml').write_text('fixture')
-            v1=root/'v1';inject(source,v1,nonce=NONCE,evidence=Path('/tmp/onec-db-oracle/evidence'))
-            backend=object.__new__(runner.Native);backend.v1=v1;backend.root=root;backend.nonce=NONCE;backend.evidence=Path('/tmp/onec-db-oracle/evidence')
+            # This path names the Linux container fixture, not a host filesystem path.
+            evidence=PurePosixPath('/tmp/onec-db-oracle/evidence')
+            self.assertEqual(str(evidence), '/tmp/onec-db-oracle/evidence')
+            v1=root/'v1';inject(source,v1,nonce=NONCE,evidence=evidence)
+            backend=object.__new__(runner.Native);backend.v1=v1;backend.root=root;backend.nonce=NONCE;backend.evidence=evidence
             calls=[]
             def command(db,args,label):
                 calls.append(label)
