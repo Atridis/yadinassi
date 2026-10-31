@@ -5,7 +5,7 @@ import hashlib
 import inspect
 import os
 import json
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import shutil
 import subprocess
 import sys
@@ -20,6 +20,7 @@ import catalog_read_run as runner
 import catalog_read_inputs as inputs
 import catalog_read_report as policy
 from catalog_read_packet import batch,scalar_wire
+import inject_metadata
 from inject_metadata import _module,inject
 from protocol import IMAGE
 from snapshots import OracleError
@@ -55,6 +56,15 @@ def setup_wire(b,state):
 
 def error_wire(count=24):
     return (scalar_wire.C1+scalar_wire.C2+b''.join(f'CR-{i:02}: [action-error]\n'.encode() for i in range(1,count+1))).decode()
+
+
+@contextmanager
+def container_metadata_paths():
+    # The production injector runs only inside Linux. Its two Path constructors
+    # derive lexical parent names from POSIX inventories; roots/files retain
+    # real host Path instances for I/O. Never patch pathlib or filesystem guards.
+    with mock.patch.object(inject_metadata, 'Path', PurePosixPath):
+        yield
 
 
 class CatalogBatchTests(unittest.TestCase):
@@ -111,13 +121,29 @@ class CatalogBatchTests(unittest.TestCase):
         for outputs in ({},dict(value['outputs'],extra='x'),dict(value['outputs'],cursor='x'*8193)):
             with self.assertRaises(OracleError):runner.validate_marker(json.dumps(dict(value,outputs=outputs)).encode(),nonce=NONCE,token='b'*32,operation='catalog_read_client',b=b)
     def test_install_complete_redump_and_existing_roles(self):
+        with container_metadata_paths():
+            self._install_complete_redump_and_existing_roles()
+
+    def test_forced_windows_lexical_paths_cover_complete_install_redump(self):
+        original=inject_metadata.Path
+        # Reproduce the real Windows mismatch even on POSIX CI, then exercise
+        # the entire corrected fixture, not only the first validation boundary.
+        with mock.patch.object(inject_metadata, 'Path', PureWindowsPath):
+            with self.assertRaisesRegex(inject_metadata.DraftError, 'Unexpected metadata directory'):
+                self._install_complete_redump_and_existing_roles()
+            with container_metadata_paths():
+                self._install_complete_redump_and_existing_roles()
+            self.assertIs(inject_metadata.Path,PureWindowsPath)
+        self.assertIs(inject_metadata.Path,original)
+
+    def _install_complete_redump_and_existing_roles(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve();source=root/'source';source.mkdir()
-            raw=(ROOT/'tests/fixtures/native_bootstrap/Configuration.xml').read_text()
+            raw=(ROOT/'tests/fixtures/native_bootstrap/Configuration.xml').read_text(encoding='utf-8')
             # The synthetic fixture's warning comment is outside the packet's
             # closed comment-free config profile; no production parser is widened.
             import re
-            (source/'Configuration.xml').write_text(re.sub(r'<!--.*?-->','',raw))
+            (source/'Configuration.xml').write_text(re.sub(r'<!--.*?-->','',raw),encoding='utf-8')
             (source/'ConfigDumpInfo.xml').write_text('fixture')
             # This path names the Linux container fixture, not a host filesystem path.
             evidence=PurePosixPath('/tmp/onec-db-oracle/evidence')
@@ -134,7 +160,7 @@ class CatalogBatchTests(unittest.TestCase):
             self.assertEqual(audit,admin_audit())
             self.assertEqual(calls,['seed-import','seed-apply','redump'])
             self.assertEqual(len(helpers),2)
-            rights=(root/'catalog-source-1/Roles/NativeOracleCatalogCRUD/Ext/Rights.xml').read_text()
+            rights=(root/'catalog-source-1/Roles/NativeOracleCatalogCRUD/Ext/Rights.xml').read_text(encoding='utf-8')
             for name in b.setup.names:self.assertIn('Catalog.'+name,rights)
             self.assertEqual((root/'catalog-source-1/Roles/NativeOracleSetupAdministrator/Ext/Rights.xml').read_bytes(),(v1/'Roles/NativeOracleSetupAdministrator/Ext/Rights.xml').read_bytes())
 
