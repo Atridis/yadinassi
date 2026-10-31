@@ -126,7 +126,7 @@ def _template(name: str, values: dict[str, str], *, description_case=None, numer
     return re.sub(r"@@([A-Z_]+)@@", replace, raw).encode("utf-8-sig")
 
 
-def _module(name: str, nonce: str, evidence: str, *, reference_case=None, description_case=None, description_rows=False, numeric_case=None, zero_case=None) -> bytes:
+def _module(name: str, nonce: str, evidence: str, *, metadata_catalog_probe=False, reference_case=None, description_case=None, description_rows=False, numeric_case=None, zero_case=None) -> bytes:
     values = {"NONCE": nonce, "EVIDENCE": evidence, "SETUP_USER": SETUP_USER,
               "CRUD_USER": CRUD_USER, "SETUP_ROLE": SETUP_ROLE, "CRUD_ROLE": CRUD_ROLE}
     if zero_case is not None and name in ('NativeOracleServer.bsl', 'ManagedApplicationModule.bsl'):
@@ -147,6 +147,13 @@ def _module(name: str, nonce: str, evidence: str, *, reference_case=None, descri
         raw = transform(source, name="modules/" + name, case=description_case, rows=description_rows).decode("utf-8-sig")
     else:
         raw = (ROOT / "modules" / name).read_text(encoding="utf-8-sig")
+    if metadata_catalog_probe:
+        if any((reference_case is not None, description_case is not None, numeric_case is not None, zero_case is not None)):
+            raise DraftError("Incompatible metadata probe")
+        if name in ('NativeOracleServer.bsl', 'ManagedApplicationModule.bsl'):
+            from metadata_catalog_instrument import instrument
+            raw = instrument(raw.encode('utf-8'), name=name,
+                probe=(ROOT / 'modules' / 'MetadataCatalogProbe.bsl').read_bytes()).decode('utf-8')
     if reference_case is not None:
         from catalog_reference_native import render_template
         if name == "NativeOracleServer.bsl":
@@ -328,7 +335,7 @@ def inspect(root: Path, version: int, *, catalog_field_matrix=False, description
             "nonprivileged_module": True}
 
 
-def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catalog_field_matrix=False, reference_case=None, description_case=None, description_rows=False, numeric_case=None, zero_case=None) -> dict:
+def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, metadata_catalog_probe=False, catalog_field_matrix=False, reference_case=None, description_case=None, description_rows=False, numeric_case=None, zero_case=None) -> dict:
     matrix = _matrix(catalog_field_matrix)
     if type(description_rows) is not bool or description_rows and description_case is None:
         raise DraftError('Invalid closed Description rows mode')
@@ -366,7 +373,9 @@ def inject(native_dump: Path, target: Path, *, nonce: str, evidence: Path, catal
         values.update(ROLE_NAME=role, ROLE_UUID=str(uuid.uuid4()))
         added[f"Roles/{role}.xml"] = _template("Role.xml", values)
         added[f"Roles/{role}/Ext/Rights.xml"] = _template(template, values)
-    added.update({path: _module(name, nonce, ep, reference_case=reference_case, description_case=description_case, description_rows=description_rows, numeric_case=numeric_case, zero_case=zero_case) for name, path in MODULE_FILES.items()})
+    if type(metadata_catalog_probe) is not bool or (metadata_catalog_probe and catalog_field_matrix):
+        raise DraftError("Incompatible metadata probe")
+    added.update({path: _module(name, nonce, ep, metadata_catalog_probe=metadata_catalog_probe, reference_case=reference_case, description_case=description_case, description_rows=description_rows, numeric_case=numeric_case, zero_case=zero_case) for name, path in MODULE_FILES.items()})
     if matrix:
         for extra_name, kind in matrix.VARIANTS:
             extra_values = dict(values)

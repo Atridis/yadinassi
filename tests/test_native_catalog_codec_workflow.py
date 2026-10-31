@@ -121,7 +121,7 @@ class CodecWorkflowTests(unittest.TestCase):
     def test_fixed_selector_disjoint_jobs_and_exact_dependencies(self):
         eligibility = old.workflow_job('eligibility')
         self.assertIn('    outputs:\n      route: ${{ steps.admission.outputs.route }}\n', eligibility)
-        self.assertIn('          NATIVE_DB_ROUTE: catalog-zero-code-rows-v1\n', eligibility)
+        self.assertIn('          NATIVE_DB_ROUTE: metadata-catalog-applied-view-v1\n', eligibility)
         for name in ('native_reference_a', 'native_oracle'):
             self.assertIn("needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&", old.workflow_job(name))
         for name in ('native_codec_a', 'native_codec_b'):
@@ -129,7 +129,7 @@ class CodecWorkflowTests(unittest.TestCase):
         self.assertIn('needs: eligibility', old.workflow_job('native_codec_a'))
         self.assertIn('needs: [eligibility, native_codec_a]', old.workflow_job('native_codec_b'))
         self.assertIn("needs.native_codec_a.result == 'success' &&", old.workflow_job('native_codec_b'))
-        self.assertIn('needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b]', old.workflow_job('verdict'))
+        self.assertIn('needs: [eligibility, native_reference_a, native_oracle, native_codec_a, native_codec_b, native_metadata]', old.workflow_job('verdict'))
 
     def test_codec_jobs_preserve_all_security_and_change_only_route_outputs(self):
         pairs = (('native_reference_a','native_codec_a'), ('native_oracle','native_codec_b'))

@@ -973,6 +973,7 @@ class Native:
             self.batch(database,['/DumpConfigToFiles',str(native),'-Format','Hierarchical'],'dump-empty',None)
         try:
             inject(native,self.v1,nonce=self.nonce,evidence=self.evidence,
+                   **({'metadata_catalog_probe': True} if getattr(self, 'metadata_catalog_probe', False) else {}),
                    **({'description_rows': True} if getattr(self, 'description_rows', False) else {}),
                    **({'reference_case': self.reference_case} if getattr(self, 'reference_case', None) is not None else {}),
                    **({'catalog_field_matrix': True} if getattr(self, 'catalog_field_matrix', False) else {}),
