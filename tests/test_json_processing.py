@@ -6,6 +6,7 @@ import os
 import json
 import random
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
@@ -217,6 +218,22 @@ class JSONFamilyTests(unittest.TestCase):
             with self.subTest(code=code), self.assertRaises(BSLError): self.vm.execute(code)
         self.vm.execute('WriteJSON(w,1);')
         self.assertEqual(self.vm.execute('w.Close()'), '1')
+
+    def test_auto_layout_preserves_host_separator_and_quoted_newlines(self):
+        import os
+        from unittest import mock
+        import yadinassi.json_processing as json_processing
+        for separator in ('\n', '\r\n'):
+            with self.subTest(separator=repr(separator)):
+                host_os = SimpleNamespace(**vars(os))
+                host_os.linesep = separator
+                with mock.patch.object(json_processing, 'os', host_os):
+                    w = BSLJSONWriter()
+                    w.set_string()
+                    write_json(w, self.read('{"text":"a\\r\\nb\\nc"}'))
+                    actual = w.close()
+                self.assertEqual(actual, '{' + separator + '"text": "a\\r\\nb\\nc"' + separator + '}')
+                self.assertEqual(self.read(actual).get('text'), 'a\r\nb\nc')
 
     def test_layout_and_settings_types(self):
         w = BSLJSONWriter(); w.set_string(BSLJSONWriterSettings(BSLJSONLineBreak.WINDOWS, '  '))

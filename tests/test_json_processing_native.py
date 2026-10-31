@@ -1,8 +1,13 @@
 """Exact authenticated JSON31 replay; historical rejected gate stays rejected."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import unittest
+from types import SimpleNamespace
+from unittest import mock
+
+import yadinassi.json_processing as json_processing
 
 from test_native_json_family_measurement import emit
 from native_1c_json_family_contract import require_available
@@ -24,7 +29,13 @@ class NativeJSONFamilyTests(unittest.TestCase):
 
     def test_all_observations_replay_exactly_without_exclusions(self):
         source = (FIXTURE/'original31.bsl').read_text(encoding='utf-8')
-        self.assertEqual(emit(source=source), (FIXTURE/'original31.out').read_bytes())
+        # The immutable capture was acquired on Linux. Auto uses the host's
+        # separator; select that acquisition context before execution, never
+        # normalize output (which could corrupt quoted JSON string contents).
+        linux_os = SimpleNamespace(**vars(os))
+        linux_os.linesep = '\n'
+        with mock.patch.object(json_processing, 'os', linux_os):
+            self.assertEqual(emit(source=source), (FIXTURE/'original31.out').read_bytes())
 
     def test_original_mismatch_and_native_attribution_are_preserved(self):
         value = json.loads((FIXTURE/'original31-provenance.json').read_text(encoding='utf-8'))

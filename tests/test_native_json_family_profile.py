@@ -82,6 +82,19 @@ class JSONFamilyProfileTests(unittest.TestCase):
             bad=json.loads(encoded);bad['report']['stage3']['client_tree']['quiet']=False
             with self.assertRaises(host.TreeError):host.validate_envelope(budget.wire(bad),NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
 
+    def test_portable_replay_adapter_matches_its_own_local_observation(self):
+        # Exercise the actual source-bound adapter on every OS. This portable
+        # subprocess is not evidence for the Linux host's process containment.
+        import native_1c_json_family_replay as replay
+        result = subprocess.run(
+            [sys.executable, '-I', '-B', '-c', replay.execution_script(host.FULL.EXECUTE_SCRIPT),
+             str(ROOT), str(ROOT / spec().source)],
+            capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, b'')
+        self.assertEqual(result.stdout, emit())
+
+    @unittest.skipUnless(os.name == 'posix', 'Native host containment requires POSIX pipes/process groups')
     def test_real_isolated_replay_adapter_matches_its_own_local_observation(self):
         raw = emit()
         hashes = {spec().source: spec().source_sha256}
