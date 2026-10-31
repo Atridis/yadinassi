@@ -6018,5 +6018,4 @@ preserved; actual native acquisition is pending. See
   string/file workflows and basic layout settings. See [scope and verification](docs/json-family.md).
 
 - Ordinary local file/text/binary I/O family: metadata, owned-file workflows,
-  TextReader/TextWriter, encodings, BinaryData and conversions. Native acceptance
-  pending; [implemented scope and limits](docs/file-io-family.md).
+  TextReader/TextWriter, encodings, BinaryData and conversions. Native33 accepted; [implemented scope and limits](docs/file-io-family.md).

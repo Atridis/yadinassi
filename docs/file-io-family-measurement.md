@@ -56,3 +56,15 @@ wildcard corner cases. These are not a reason to skip ordinary failures.
 Local synthetic contract tests and local interpreter replay are **not native
 1C evidence**. A real native run, its immutable source capture and independent
 artifact audit must be recorded before claiming native equivalence.
+
+
+Accepted acquisition: run41215463048, feature head361298f483188c48091ca944d0158a190c6d51a3,
+merge9c4d93a6a2fe0a2bda4e2c913e5e65359529d95b,
+tree70ff16047d1a48538555a962684a1e2930c806aa. All33 cases matched without
+exclusions or probe changes; capture1952 bytes SHA256
+`5a5096c2c9c4f2ef1c2190580be2679858a2b513e691c09b7f1f6933cd69b2a4`.
+The50-check independent audit bound22 native inputs,9 host inputs,runtime83,
+regenerated modules, both ZIP digests, lifecycle/cleanup and isolated replay.
+Original transport bytes were not retained; strict validation used a reconstructed
+envelope from the byte-verified archived report/provenance/capture. Immutable
+output/provenance are retained under `tests/fixtures/file_io_family`.

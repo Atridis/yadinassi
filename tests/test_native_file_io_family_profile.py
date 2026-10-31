@@ -81,6 +81,18 @@ class FileIOFamilyProfileTests(unittest.TestCase):
             bad=json.loads(encoded);bad['report']['stage3']['client_tree']['quiet']=False
             with self.assertRaises(host.TreeError):host.validate_envelope(budget.wire(bad),NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
 
+    def test_portable_child_replay_matches_its_own_local_observation(self):
+        # Real source-bound child replay on every OS; process containment below
+        # is the separate POSIX-native-host contract, not a portable claim.
+        result = subprocess.run(
+            [sys.executable, '-I', '-B', '-c', host.FULL.EXECUTE_SCRIPT,
+             str(ROOT), str(ROOT / spec().source), host.FULL.LINUX_TARGET],
+            capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, b'')
+        self.assertEqual(result.stdout, emit())
+
+    @unittest.skipUnless(os.name == 'posix', 'Native host containment requires POSIX pipes/process groups')
     def test_real_isolated_replay_adapter_matches_its_own_local_observation(self):
         raw = emit()
         hashes = {spec().source: spec().source_sha256}

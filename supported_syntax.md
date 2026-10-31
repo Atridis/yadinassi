@@ -962,4 +962,4 @@ acceptance and precise scope: [JSON family](docs/json-family.md).
 `Файл/File`, `ЧтениеТекста/TextReader`, `ЗаписьТекста/TextWriter`,
 `ДвоичныеДанные/BinaryData`, `КодировкаТекста/TextEncoding`, local file helpers,
 Base64 and text/binary conversions are implemented as one bounded family.
-Native acceptance is pending. [Exact methods and limits](docs/file-io-family.md).
+Native33 client/server/interpreter parity accepted. [Exact methods and limits](docs/file-io-family.md).
