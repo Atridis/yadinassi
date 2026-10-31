@@ -140,7 +140,8 @@ class ColumnsMovePolicyTests(unittest.TestCase):
         tree = self.fixture(); tree.rows.add()
         with target_context(WINDOWS_8_3_27_2342), self.assertRaises(ValueError): tree.columns.clear()
         tree.columns.delete(tree.columns.items[-1]); tree.columns.delete(tree.columns.items[-1])
-        with self.assertRaises(ValueError): tree.columns.delete(tree.columns.items[-1])
+        tree.columns.delete(tree.columns.items[-1])
+        self.assertEqual(tree.rows.count(), D(0))
 
 
 if __name__ == '__main__':

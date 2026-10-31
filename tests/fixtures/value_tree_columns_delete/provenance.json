@@ -1,0 +1,66 @@
+{
+  "captures": [
+    {
+      "profile": "tree-columns-delete-v1",
+      "fixture": "linux-8.3.27.1508.out",
+      "source": "integrational_tests/measurements/tree_columns_delete.bsl",
+      "source_sha256": "250c6a8026b3a88c803de7e06565f6c50add4c67cd91a65ffe6c2fceb0d77f2d",
+      "native_sha256": "ca1d13d6b1ae5c038221392b65cc9e112378c7d9b350d640828cc878c68dcd2f",
+      "native_size": 2492,
+      "run_id": 41135287284,
+      "head_sha": "ef3de20d75ad33260e542f96be78481b3beb1d03",
+      "outputs_artifact_id": 13016360944,
+      "summary_artifact_id": 13017000673,
+      "native_acquisition_accepted": true,
+      "runtime_parity_accepted": false,
+      "cleanup_verified": true,
+      "platform": "linux/amd64",
+      "image": "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728",
+      "case_count": 14,
+      "tested_merge": "bb5e125ac83f356e826c9fb3f373b8ff0f7b4ede",
+      "tree": "36c2141714bfbf25fc9ebbe53bd92b039ba02441",
+      "source_count": 911,
+      "server_client_equal": true,
+      "server_client_modules": {
+        "server": "af202cb4f52ed9c11183c57959ebc8fdee75f3707e8252d6a15ffc3e9569b407",
+        "client": "fc6695bffac8d300bd3675121e7d59cf1b3aee6c9afd1a64073a04e636d86ff9"
+      },
+      "artifact_sha256": {
+        "13017000673": "5f6950a711e1952427fd5e3c769fd41e4fd5acf159e39a0d6a271e1929366a91",
+        "13016360944": "c5da79f3e6fbe8134f955583c81b583bb6d402444e1545d8680d2419a55338f3"
+      },
+      "raw_provenance_sha256": "3f72c20d2ee1525cf6a9a942928baf33ec3131fe57d5cd27ba62dacc6d58f120"
+    },
+    {
+      "profile": "tree-columns-delete-string-v1",
+      "fixture": "named-string-linux-8.3.27.1508.out",
+      "source": "integrational_tests/measurements/tree_columns_delete_string.bsl",
+      "source_sha256": "ebb9728d4f4e42fbabbc8975be160989f669540cfbfc200994570e3aeb1beaaf",
+      "native_sha256": "7e84a6608e4eca5c86c7ce7b54ab6856ebadfbed812c26293ad71777421df860",
+      "native_size": 1399,
+      "run_id": 41140659293,
+      "head_sha": "bf1ce25ac3d5bbc8fcc72c1ba93488e00fe733c6",
+      "outputs_artifact_id": 13018353247,
+      "summary_artifact_id": 13018408289,
+      "native_acquisition_accepted": true,
+      "runtime_parity_accepted": false,
+      "cleanup_verified": true,
+      "platform": "linux/amd64",
+      "image": "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728",
+      "case_count": 6,
+      "tested_merge": "ec770c376f94b16419827f2f41a03a6a73269282",
+      "tree": "5edcd109e8880b131ad68d63009cf2ef83b293bd",
+      "source_count": 917,
+      "server_client_equal": true,
+      "server_client_modules": {
+        "server": "51882fd93b88aa88d53da51e6134bc25fc33f7a803399b74e1e4d56fdc08a014",
+        "client": "88e1c22c2dbc0dc5e095f543533d4f522099d79ecf23bb7c0ce59c36d11c3322"
+      },
+      "artifact_sha256": {
+        "13018408289": "15b877514af3d2f31a06722b7ea760e308b51f960b1cb1cdb8d3707aa10a6955",
+        "13018353247": "de50b46e4372872cafb0bd384f1fa4670232b63eca395fb55330648a49203002"
+      },
+      "raw_provenance_sha256": "fb000dfafc6bd92f6841e353a688297501706e918e8a2f9a12d0038606d9bdf2"
+    }
+  ]
+}
