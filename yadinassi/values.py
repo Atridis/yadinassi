@@ -19,6 +19,11 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    FILE = "Файл"
+    TEXT_READER = "ЧтениеТекста"
+    TEXT_WRITER = "ЗаписьТекста"
+    BINARY_DATA = "ДвоичныеДанные"
+    TEXT_ENCODING = "КодировкаТекста"
     JSON_WRITER_SETTINGS = "ПараметрыЗаписиJSON"
     JSON_LINE_BREAK = "ПереносСтрокJSON"
     JSON_READER = "ЧтениеJSON"

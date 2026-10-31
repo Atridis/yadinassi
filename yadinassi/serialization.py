@@ -89,7 +89,9 @@ _TYPE_IDS = {
 # their types. Keep an explicit refusal policy instead of inventing native GUIDs.
 _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
-_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.JSON_READER, BSLType.JSON_WRITER,
+_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.FILE, BSLType.TEXT_READER, BSLType.TEXT_WRITER,
+                                         BSLType.BINARY_DATA, BSLType.TEXT_ENCODING,
+                                         BSLType.JSON_READER, BSLType.JSON_WRITER,
     BSLType.JSON_WRITER_SETTINGS, BSLType.JSON_VALUE_TYPE, BSLType.JSON_LINE_BREAK,
     BSLType.TEXT_DOCUMENT, BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE}) | _TREE_CODEC_TYPES
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
