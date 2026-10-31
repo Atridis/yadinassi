@@ -73,11 +73,15 @@ class Native(lifecycle.Native):
                     require(a.read_text(encoding='utf-8-sig') == c.read_text(encoding='utf-8-sig'), 'metadata_rejected')
         finally:
             shutil.rmtree(redump)
-        return b, helpers
+        audit = self.enterprise(database, 'audit')
+        require(audit['role_verified'] is True and audit['users_verified'] is True
+                and audit['nonprivileged'] is True and audit['user'] == lifecycle.SETUP_USER, 'permission_mismatch')
+        return b, helpers, {key:audit[key] for key in ('token','actual_version','user','role_verified','users_verified','nonprivileged')}
 
     def launch(self, database, *, operation, b):
         require(operation in ('catalog_read_client', 'catalog_read_server',
                 *('catalog_read_setup_' + s for s in fixture.STATES)), 'invalid_input')
+        self.catalog_native_failure = None
         token = secrets.token_hex(16)
         control = self.evidence / 'control.json'; result = self.evidence / 'result.json'
         completion = self.evidence / 'completion.json'; pending = self.evidence / 'completion.pending.json'
@@ -86,19 +90,31 @@ class Native(lifecycle.Native):
         control.write_bytes(encode(dict(schema=1, nonce=self.nonce, token=token, operation=operation)))
         try:
             log = self.evidence / f'{self.counter+1:03}-{operation}.log'; lifecycle.absent(log)
-            self.process(self.command('ENTERPRISE', database, lifecycle.SETUP_USER) +
+            self.process(self.command('ENTERPRISE', database, lifecycle.CRUD_USER) +
                          ['/RunModeManagedApplication', '/C', token, '/Out', str(log)], operation)
             lifecycle.absent(pending)
             completed = decode(lifecycle.regular_bytes(completion, 4096))
             exact(completed, ('schema', 'nonce', 'token', 'operation', 'phase', 'status'))
             require(type(completed['schema']) is int and completed['schema'] == 1 and completed['nonce'] == self.nonce
-                    and completed['token'] == token and completed['operation'] == operation
-                    and completed['phase'] == 'complete' and completed['status'] == 'ok', 'invalid_marker')
+                    and completed['token'] == token, 'invalid_marker')
+            phases = ('authorize','identity','metadata','observe','setup','serialize','complete')
+            require(completed['phase'] in phases and completed['status'] in ('ok','error'), 'invalid_marker')
+            self.catalog_native_failure = dict(site='completion', phase=completed['phase'],
+                status=completed['status'], operation_matches=completed['operation'] == operation)
+            require(completed['operation'] == operation and completed['phase'] == 'complete'
+                    and completed['status'] == 'ok', 'invalid_marker')
             raw = lifecycle.regular_bytes(result, MAX_MARKER)
+            self.catalog_native_failure = dict(site='output',phase='complete',status='ok',operation_matches=True)
             outputs = validate_marker(raw, nonce=self.nonce, token=token, operation=operation, b=b)
             assessment = ({'setup':'query_witnesses_validated'} if operation.startswith('catalog_read_setup_') else
                           {block:fixture.validate_capture(text.encode('ascii'),b,block) for block,text in outputs.items()})
+            self.catalog_native_failure = None
             return dict(token=token, marker_sha256=hashlib.sha256(raw).hexdigest(), outputs=outputs, assessment=assessment)
+        except BaseException:
+            from catalog_read_diagnostics import collect
+            try:self.catalog_native_failure=collect(self,database,self.catalog_native_failure)
+            except BaseException:self.catalog_native_failure=None
+            raise
         finally:
             for path in (control, result, completion, pending): path.unlink(missing_ok=True)
 
@@ -121,10 +137,10 @@ def acquire(backend, *, readback):
         b, _, _ = fixture.load(repeat)
         backend.catalog_attempt = dict(repeat=repeat,state=None,context=None,phase='install')
         with backend.temporary_clone('catalog_baseline', 'catalog_install') as installed:
-            b, helpers = backend.install(installed, repeat)
+            b, helpers, audit = backend.install(installed, repeat)
             applied = 'catalog_applied_' + str(repeat)
             applied_summary = backend.freeze(installed, applied)
-        installations.append(dict(repeat=repeat, helpers=helpers,
+        installations.append(dict(repeat=repeat, helpers=helpers, audit=audit,
                                   applied={k: applied_summary[k] for k in ('bytes', 'sha256')}))
         for state in fixture.STATES:
             backend.catalog_attempt = dict(repeat=repeat,state=state,context=None,phase='setup')
@@ -189,6 +205,7 @@ def main():
             report['states'] = getattr(backend,'catalog_captures',[])
             report['installations'] = getattr(backend,'catalog_installations',[])
             report['failure_context'] = getattr(backend,'catalog_attempt',None)
+            report['native_failure'] = getattr(backend,'catalog_native_failure',None)
             report['lifecycle']['failure_kind'] = error.kind if isinstance(error, lifecycle.OracleError) else 'unexpected_failure'
         finally:
             stopped, removed = backend.cleanup()

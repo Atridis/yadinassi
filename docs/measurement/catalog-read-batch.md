@@ -47,7 +47,8 @@ Setup performs writes and independently queries total/U/V counts (12 scalar
 witnesses across two catalogs). Frozen setup images seed independent client and
 server clones. Eight bounded blocks run in **one session per context/state**:
 identity, types, errors, fresh, cursor, fields, lookup, fourth row/reference fields.
-This is 30 measurement sessions (10 setup + 20 context), plus existing bootstrap
+This is 30 measurement sessions (10 setup + 20 context), plus two installation
+admin audits and existing bootstrap
 and Designer lifecycle commands—not 160 separate observation launches.
 
 There are 180 observation rows per context/state, 3,600 across the complete matrix.
@@ -69,7 +70,12 @@ No external expression is evaluated. Cursor variables remain local; source vs
 wrapped probes are compared on the synthetic public runtime.
 
 The native server authorizes the exact nonce/token/closed operation and verifies
-the existing user/role/nonprivileged invariants before client-local execution.
+the existing CRUD user/role/nonprivileged invariants before client-local execution.
+All setup Query/writes and observations use the existing CRUD identity, which
+already holds the closed object grants; the administrative identity does not.
+A separate existing admin audit after each installation verifies both users and
+roles. No rights are added, and CRUD sessions do not enumerate the user list.
+Fixed completion/server phases diagnose failed sessions without native error text.
 Native setup Query/writes remain server-only and are not runtime features.
 
 Fresh GetRef uses exactly two calls per capture. Original UUID strings and wire

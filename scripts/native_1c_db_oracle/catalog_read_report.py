@@ -26,7 +26,7 @@ def empty_report(nonce, provenance):
         lifecycle=dict(status='failed', failure_kind='unexpected_failure', accepted=False,
             cleanup=dict(native_processes_stopped=False,raw_files_removed=False,
                          container_removed=False,private_staging_removed=False)),
-        installations=[], states=[], failure_context=None, verdict='measurement_only_not_production_admission')
+        installations=[], states=[], failure_context=None, native_failure=None, verdict='measurement_only_not_production_admission')
 
 
 def digest_summary(value):
@@ -55,7 +55,7 @@ def validate_report(raw, *, nonce, provenance, final=False):
     require(type(raw) is bytes and 0 < len(raw) <= MAX_REPORT_BYTES, 'artifact_limit')
     try: value = json.loads(raw.decode('ascii'),object_pairs_hook=protocol.unique,parse_constant=lambda _:require(False))
     except (ValueError,UnicodeError,RecursionError): raise protocol.OracleError('transport_invalid') from None
-    exact(value, ('schema','lane','nonce','provenance','lifecycle','installations','states','failure_context','verdict'))
+    exact(value, ('schema','lane','nonce','provenance','lifecycle','installations','states','failure_context','native_failure','verdict'))
     require(type(value['schema']) is int and value['schema'] == 1 and value['lane'] == LANE
             and value['nonce'] == nonce and type(nonce) is str and re.fullmatch('[0-9a-f]{32}',nonce) is not None and value['verdict'] == 'measurement_only_not_production_admission')
     protocol.validate_provenance(value['provenance'], provenance)
@@ -73,10 +73,20 @@ def validate_report(raw, *, nonce, provenance, final=False):
                 and type(failure['repeat']) in (int,type(None)) and failure['state'] in (None,*fixture.STATES)
                 and failure['context'] in (None,'client','server')
                 and failure['phase'] in ('seed','install','setup','native','freeze','offline'))
+    native_failure = value['native_failure']
+    if native_failure is not None:
+        require(life['status'] == 'failed' and failure is not None)
+        from catalog_read_diagnostics import validate
+        validate(native_failure)
     installs = value['installations']; states = value['states']
     require(type(installs) is list and len(installs) <= 2 and type(states) is list and len(states) <= 20)
     for repeat, installation in enumerate(installs,1):
-        exact(installation, ('repeat','helpers','applied'))
+        exact(installation, ('repeat','helpers','applied','audit'))
+        audit=installation['audit']
+        exact(audit,('token','actual_version','user','role_verified','users_verified','nonprivileged'))
+        require(type(audit['token']) is str and re.fullmatch('[0-9a-f]{32}',audit['token']) is not None
+                and audit['actual_version'] == protocol.VERSION and audit['user'] == 'NativeOracleSetup'
+                and all(audit[k] is True for k in ('role_verified','users_verified','nonprivileged')), 'permission_mismatch')
         require(type(installation['repeat']) is int and installation['repeat'] == repeat)
         digest_summary(installation['applied'])
         exact(installation['helpers'], ('NativeOracleServer.bsl','ManagedApplicationModule.bsl'))
@@ -88,7 +98,9 @@ def validate_report(raw, *, nonce, provenance, final=False):
             expected = instrument(source,name,b,files,nonce=nonce,evidence='/tmp/onec-db-oracle/evidence')
             require(digest == hashlib.sha256(expected).hexdigest(), 'provenance_mismatch')
     expected = [(r,s,c) for r in (1,2) for s in fixture.STATES for c in ('client','server')]
-    native_tokens = set(); setup_tokens = {}; origins = {}
+    native_tokens = {item['audit']['token'] for item in installs}
+    require(len(native_tokens)==len(installs),'stale_evidence')
+    setup_tokens = {}; origins = {}
     for index, state in enumerate(states):
         exact(state, ('repeat','state','context','setup','origin','postimage','native','offline'))
         require(type(state['repeat']) is int and (state['repeat'],state['state'],state['context']) == expected[index])

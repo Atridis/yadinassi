@@ -39,28 +39,54 @@ SERVER = '''
     Возврат СтрНайти(",catalog_read_client,catalog_read_server,catalog_read_setup_empty,catalog_read_setup_one,catalog_read_setup_several,catalog_read_setup_deleted,catalog_read_setup_reused,", "," + Control.operation + ",") > 0;
 КонецФункции
 Функция CBAuthorized(Token) Экспорт
-    Если Не CBSelected(Token) Или ПривилегированныйРежим() Тогда ВызватьИсключение "invalid_control"; КонецЕсли;
+    Если Не CBSelected(Token) Тогда ВызватьИсключение "invalid_control"; КонецЕсли;
     Control = NativeПрочитатьJSON(@@EVIDENCE@@ + "/control.json");
-    NativeПроверитьПользователя(ПользователиИнформационнойБазы.ТекущийПользователь(), @@SETUP_USER@@, Метаданные.Роли.NativeOracleSetupAdministrator);
-    NativeПроверитьВсехПользователей();
-    Result = NativeНовыйРезультат(Control);
-    NativeПроверитьМетаданные(Result);
-    Output = Новый Структура;
-    Если Control.operation = "catalog_read_server" Тогда Output = CBAll(); КонецЕсли;
-    @@SETUP_DISPATCH@@
-    Возврат Новый Структура("operation,outputs", Control.operation, Output);
+    Response = Новый Структура("operation,outputs,status,phase", Control.operation, Новый Структура, "error", "identity");
+    Попытка
+        Если ПривилегированныйРежим() Тогда ВызватьИсключение "permission_mismatch"; КонецЕсли;
+        Current = ПользователиИнформационнойБазы.ТекущийПользователь();
+        NativeПроверитьПользователя(Current, @@CRUD_USER@@, Метаданные.Роли.NativeOracleCatalogCRUD);
+        Если Current.Роли.Содержит(Метаданные.Роли.NativeOracleSetupAdministrator)
+            Или ПравоДоступа("Администрирование", Метаданные)
+            Или ПравоДоступа("АдминистрированиеДанных", Метаданные) Тогда
+            ВызватьИсключение "permission_mismatch";
+        КонецЕсли;
+        // The separate existing admin audit verifies the complete user list.
+        // Never enumerate it from this nonprivileged CRUD identity.
+        Response.phase = "metadata";
+        Result = NativeНовыйРезультат(Control);
+        NativeПроверитьМетаданные(Result);
+        Output = Новый Структура;
+        Response.phase = "observe";
+        Если Control.operation = "catalog_read_server" Тогда Output = CBAll(); КонецЕсли;
+        Response.phase = "setup";
+        @@SETUP_DISPATCH@@
+        Response.outputs = Output;
+        Response.status = "ok";
+        Response.phase = "complete";
+    Исключение
+        // Only a fixed phase is returned; never exception text or partial data.
+    КонецПопытки;
+    Возврат Response;
 КонецФункции
 '''
 CLIENT = '''
 Процедура CBDispatch(Token)
     Operation = "catalog_read_client";
-    Completion = Новый Структура("schema,nonce,token,operation,phase,status", 1, @@NONCE@@, Token, Operation, "probe", "error");
+    Completion = Новый Структура("schema,nonce,token,operation,phase,status", 1, @@NONCE@@, Token, Operation, "authorize", "error");
     Попытка
         Response = NativeOracleServer.CBAuthorized(Token);
         Operation = Response.operation;
         Completion.operation = Operation;
+        Completion.phase = Response.phase;
+        Если Response.status <> "ok" Тогда
+            NativeЗаписатьЗавершение(Completion);
+            Возврат;
+        КонецЕсли;
+        Completion.phase = "observe";
         Outputs = Response.outputs;
         Если Operation = "catalog_read_client" Тогда Outputs = CBAll(); КонецЕсли;
+        Completion.phase = "serialize";
         Result = Новый Структура("schema,nonce,token,operation,status,outputs", 1, @@NONCE@@, Token, Operation, "ok", Outputs);
         Target = Новый Файл(@@EVIDENCE@@ + "/result.json");
         Если Target.Существует() Тогда ВызватьИсключение "stale_evidence"; КонецЕсли;
@@ -109,7 +135,7 @@ def instrument(raw, name, b, files, *, nonce, evidence):
         text += CLIENT
     else: raise ValueError('module-name')
     text += blocks + all_function
-    for key, value in {'NONCE':nonce, 'EVIDENCE':str(evidence), 'SETUP_USER':'NativeOracleSetup'}.items():
+    for key, value in {'NONCE':nonce, 'EVIDENCE':str(evidence), 'SETUP_USER':'NativeOracleSetup', 'CRUD_USER':'NativeOracleCRUD'}.items():
         text = text.replace('@@' + key + '@@', bsl_string(value))
     if '@@' in text: raise ValueError('unexpanded')
     return text.encode('utf-8-sig')

@@ -10,7 +10,7 @@ LANE = 'owned_catalog_read_batch_v1'
 PREFIX = 'scripts/native_1c_db_oracle/'
 LOCAL = ('catalog_read_fixture.py', 'catalog_read_instrument.py', 'catalog_read_run.py',
          'catalog_read_inputs.py', 'catalog_read_report.py', 'catalog_read_readback.py',
-         'catalog_read_physical.py')
+         'catalog_read_physical.py', 'catalog_read_diagnostics.py', 'catalog_zero_code_measurement.py')
 PACKET = ('__init__.py', 'batch.py', 'probe.py', 'setup_adapter.py', 'scalar_wire.py',
           'observer.bsl', 'Catalog.xml', 'CRUDRights.xml')
 GENERATED = tuple(f'generated/repeat-{r}/{n}' for r, names in (

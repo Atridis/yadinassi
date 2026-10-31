@@ -29,6 +29,11 @@ def provenance():
         platform='linux/amd64',actual_version=None,locale='ru_RU.UTF-8',timezone='Etc/UTC')
 
 
+def admin_audit(token='f'*32):
+    return dict(token=token,actual_version='8.3.27.1508',user='NativeOracleSetup',
+                role_verified=True,users_verified=True,nonprivileged=True)
+
+
 def scalar(value):
     if type(value) is str:
         raw=value.encode('utf-16-be');return 'S'+str(len(raw)//2)+':'+raw.hex()
@@ -116,7 +121,9 @@ class CatalogBatchTests(unittest.TestCase):
                 calls.append(label)
                 if label=='redump':shutil.copytree(root/'catalog-source-1',Path(args[1]))
             backend.batch=command
-            b,helpers=backend.install(root/'db',1)
+            backend.enterprise=lambda database,operation:admin_audit()
+            b,helpers,audit=backend.install(root/'db',1)
+            self.assertEqual(audit,admin_audit())
             self.assertEqual(calls,['seed-import','seed-apply','redump'])
             self.assertEqual(len(helpers),2)
             rights=(root/'catalog-source-1/Roles/NativeOracleCatalogCRUD/Ext/Rights.xml').read_text()
@@ -162,7 +169,6 @@ print('closed')
         self.assertIn('/oracle/catalog_read_run.py',command)
         self.assertNotIn('/oracle/metadata_catalog_run.py',command)
 
-if __name__=='__main__':unittest.main()
 
 class CatalogAcquisitionTests(unittest.TestCase):
     def test_thirty_sessions_fresh_clones_same_postimage_and_cleanup(self):
@@ -176,7 +182,7 @@ class CatalogAcquisitionTests(unittest.TestCase):
             def temporary_clone(self,origin,name):
                 self.clones.append((origin,name));yield self.artifacts/name
                 self.removed.append(name)
-            def install(self,database,repeat):return fixture.load(repeat)[0],{}
+            def install(self,database,repeat):return fixture.load(repeat)[0],{},admin_audit(f'{repeat:032x}')
             def physical_summary(self,path):return dict(bytes=123,sha256='a'*64)
             def launch(self,database,*,operation,b):
                 self.launches.append((database.name,operation))
@@ -249,7 +255,7 @@ class CatalogReportTests(unittest.TestCase):
         for repeat in (1,2):
             b,_,files=fixture.load(repeat)
             helpers={name:hashlib.sha256(instrument.instrument(_module(name,NONCE,'/tmp/onec-db-oracle/evidence'),name,b,files,nonce=NONCE,evidence='/tmp/onec-db-oracle/evidence')).hexdigest() for name in ('NativeOracleServer.bsl','ManagedApplicationModule.bsl')}
-            value['installations'].append(dict(repeat=repeat,helpers=helpers,applied=dict(bytes=123,sha256='c'*64)))
+            value['installations'].append(dict(repeat=repeat,helpers=helpers,applied=dict(bytes=123,sha256='c'*64),audit=admin_audit(f'{100+repeat:032x}')))
             raw_physical=copy.deepcopy(physical)
             for item,name,uid in zip(raw_physical['catalogs'],b.setup.names,b.setup.metadata_ids):item.update(name=name,metadata_uuid=uid)
             outputs={block:error_wire(12 if block=='fresh' else 24) for block in fixture.BLOCKS}
@@ -281,3 +287,27 @@ class CatalogReportTests(unittest.TestCase):
         value['lifecycle']['cleanup'].update(container_removed=True,private_staging_removed=True)
         value['lifecycle']['accepted']=True
         policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=identity,final=True)
+
+
+class CatalogRecoveryTests(unittest.TestCase):
+    def test_data_sessions_use_existing_crud_identity_not_admin(self):
+        import inspect
+        source=inspect.getsource(runner.Native.launch)
+        self.assertIn("self.command('ENTERPRISE', database, lifecycle.CRUD_USER)",source)
+        self.assertNotIn('lifecycle.SETUP_USER',source)
+        self.assertIn('@@CRUD_USER@@',instrument.SERVER)
+        self.assertIn('Метаданные.Роли.NativeOracleCatalogCRUD',instrument.SERVER)
+        self.assertNotIn('NativeПроверитьВсехПользователей()',instrument.SERVER)
+        self.assertIn('ПравоДоступа("АдминистрированиеДанных", Метаданные)',instrument.SERVER)
+        self.assertIn('ПривилегированныйРежим()',instrument.SERVER)
+        self.assertIn("self.enterprise(database, 'audit')",inspect.getsource(runner.Native.install))
+    def test_fixed_native_failure_diagnostic_not_exception_text(self):
+        identity=provenance();value=policy.empty_report(NONCE,identity)
+        value['failure_context']=dict(repeat=1,state='empty',context=None,phase='setup')
+        value['native_failure']=dict(site='completion',phase='setup',status='error',operation_matches=True,markers={n:'nonempty' for n in ('control','result','completion','completion.pending')},compile=dict(state='completed',result_code=0,log_state='empty',issues=[],truncated=False))
+        policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=identity)
+        for key,bad in [('site','unknown'),('phase','secret error text'),('status','secret'),('operation_matches',1)]:
+            changed=copy.deepcopy(value);changed['native_failure'][key]=bad
+            with self.assertRaises(OracleError):policy.validate_report(policy.encode_report(changed),nonce=NONCE,provenance=identity)
+
+if __name__=='__main__':unittest.main()
