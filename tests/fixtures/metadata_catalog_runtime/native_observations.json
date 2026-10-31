@@ -1,0 +1,1052 @@
+[
+  {
+    "snapshot": "updated",
+    "context": "client",
+    "config": {
+      "count": 1,
+      "name": "NativeOracleItems",
+      "payload_length": 32,
+      "applied_state": "not_observed"
+    },
+    "comparison": {
+      "count_matches": true,
+      "name_matches": true,
+      "payload_matches": true,
+      "fullname_alias_matches": true,
+      "observer_complete": true
+    },
+    "rows": [
+      {
+        "id": 1,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 2,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 3,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 4,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 5,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 6,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 7,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 8,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 9,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 10,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 11,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 12,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 13,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 14,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 15,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 16,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 17,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 18,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 19,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 20,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 21,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 22,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 23,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 24,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 25,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 26,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      }
+    ]
+  },
+  {
+    "snapshot": "updated",
+    "context": "server",
+    "config": {
+      "count": 1,
+      "name": "NativeOracleItems",
+      "payload_length": 32,
+      "applied_state": "not_observed"
+    },
+    "comparison": {
+      "count_matches": true,
+      "name_matches": true,
+      "payload_matches": true,
+      "fullname_alias_matches": true,
+      "observer_complete": true
+    },
+    "rows": [
+      {
+        "id": 1,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 2,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 3,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 4,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 5,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 6,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 7,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 8,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 9,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 10,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 11,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 12,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 13,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 14,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 15,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 16,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 17,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 18,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 19,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 20,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 21,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 22,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 23,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 24,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 25,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 26,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      }
+    ]
+  },
+  {
+    "snapshot": "loaded",
+    "context": "client",
+    "config": {
+      "count": 1,
+      "name": "NativeOracleItems",
+      "payload_length": 32,
+      "applied_state": "not_observed"
+    },
+    "comparison": {
+      "count_matches": true,
+      "name_matches": true,
+      "payload_matches": true,
+      "fullname_alias_matches": true,
+      "observer_complete": true
+    },
+    "rows": [
+      {
+        "id": 1,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 2,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 3,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 4,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 5,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 6,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 7,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 8,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 9,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 10,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 11,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 12,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 13,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 14,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 15,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 16,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 17,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 18,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 19,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 20,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 21,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 22,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 23,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 24,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 25,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 26,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      }
+    ]
+  },
+  {
+    "snapshot": "loaded",
+    "context": "server",
+    "config": {
+      "count": 1,
+      "name": "NativeOracleItems",
+      "payload_length": 32,
+      "applied_state": "not_observed"
+    },
+    "comparison": {
+      "count_matches": true,
+      "name_matches": true,
+      "payload_matches": true,
+      "fullname_alias_matches": true,
+      "observer_complete": true
+    },
+    "rows": [
+      {
+        "id": 1,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 2,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 3,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 4,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 5,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 6,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 7,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 8,
+        "status": "ok",
+        "kind": "number",
+        "value": 32
+      },
+      {
+        "id": 9,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 10,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 11,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 12,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 13,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 14,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 15,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 16,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 17,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 18,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 19,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 20,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 21,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 22,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 23,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 24,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 25,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 26,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      }
+    ]
+  },
+  {
+    "snapshot": "applied",
+    "context": "client",
+    "config": {
+      "count": 1,
+      "name": "NativeOracleItems",
+      "payload_length": 64,
+      "applied_state": "not_observed"
+    },
+    "comparison": {
+      "count_matches": true,
+      "name_matches": true,
+      "payload_matches": true,
+      "fullname_alias_matches": true,
+      "observer_complete": true
+    },
+    "rows": [
+      {
+        "id": 1,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 2,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 3,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 4,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 5,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 6,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 7,
+        "status": "ok",
+        "kind": "number",
+        "value": 64
+      },
+      {
+        "id": 8,
+        "status": "ok",
+        "kind": "number",
+        "value": 64
+      },
+      {
+        "id": 9,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 10,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 11,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 12,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 13,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 14,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 15,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 16,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 17,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 18,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 19,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 20,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 21,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 22,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 23,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 24,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 25,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 26,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      }
+    ]
+  },
+  {
+    "snapshot": "applied",
+    "context": "server",
+    "config": {
+      "count": 1,
+      "name": "NativeOracleItems",
+      "payload_length": 64,
+      "applied_state": "not_observed"
+    },
+    "comparison": {
+      "count_matches": true,
+      "name_matches": true,
+      "payload_matches": true,
+      "fullname_alias_matches": true,
+      "observer_complete": true
+    },
+    "rows": [
+      {
+        "id": 1,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 2,
+        "status": "ok",
+        "kind": "number",
+        "value": 1
+      },
+      {
+        "id": 3,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 4,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 5,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 6,
+        "status": "ok",
+        "kind": "string",
+        "value": "Справочник.NativeOracleItems"
+      },
+      {
+        "id": 7,
+        "status": "ok",
+        "kind": "number",
+        "value": 64
+      },
+      {
+        "id": 8,
+        "status": "ok",
+        "kind": "number",
+        "value": 64
+      },
+      {
+        "id": 9,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 10,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 11,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 12,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 13,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 14,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 15,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      },
+      {
+        "id": 16,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 17,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 18,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 19,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 20,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 21,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 22,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 23,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 24,
+        "status": "ok",
+        "kind": "boolean",
+        "value": true
+      },
+      {
+        "id": 25,
+        "status": "action-error",
+        "kind": null,
+        "value": null
+      },
+      {
+        "id": 26,
+        "status": "ok",
+        "kind": "string",
+        "value": "NativeOracleItems"
+      }
+    ]
+  }
+]

@@ -13,6 +13,7 @@ from .syntax import ast
 from .numeric import bits, elementary, numbers
 from . import clocks, date_time_conversions, dates, formatting, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
+from .metadata import BSLMetadata, BSLCatalogMetadataCollection
 from .database_context import FileDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
@@ -145,6 +146,7 @@ class Interpreter:
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         self._database_context = database_context
+        self._metadata = BSLMetadata(database_context)
         self._scheduler = Scheduler(self._native_target)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
@@ -588,6 +590,8 @@ class Interpreter:
             if not self._has_module_context:
                 raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
             return self._self_module
+        if name in ("метаданные", "metadata"):
+            return self._metadata
         if name in ("символы", "chars"):
             return CHARS
         if name in ("допустимыйзнак", "allowedsign"):
@@ -694,7 +698,7 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
-        if type(value) is BSLChars:
+        if type(value) in (BSLChars, BSLCatalogMetadataCollection):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -1157,6 +1161,11 @@ class Interpreter:
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
             owner = (yield from self._visit(node.object))
+            if type(owner) is BSLCatalogMetadataCollection:
+                index = (yield from self._visit(node.index))
+                owner.get_index(index)
+                return _Reference(lambda: owner.get_index(index),
+                                  lambda value: owner.set_index(index, value))
             if not isinstance(owner, _COLLECTIONS):
                 raise TypeError("Индексирование поддерживается только для коллекций")
             index = (yield from self._visit(node.index))
@@ -1222,7 +1231,7 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, (yield from self._visit(node.value)))
             else:
-                if type(value) is BSLChars:
+                if type(value) in (BSLChars, BSLCatalogMetadataCollection):
                     value.set_index((yield from self._visit(node.target.index)), (yield from self._visit(node.value)))
                     return
                 if not isinstance(value, _COLLECTIONS):
