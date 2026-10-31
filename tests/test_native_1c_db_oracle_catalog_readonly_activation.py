@@ -15,7 +15,7 @@ PREVIOUS_WORKFLOW = '1d104a9155553f3e7b6f2dbcc3fd6fb782056bb615b7b2c4931c6713aa1
 # evidence bound to its public-reader lane (standalone measurement is not parity). Historical hashes remain in
 # docs/catalog-description-rows.md; retain direct current LF/CRLF/drift checks.
 SOURCE_PINS = {
-    'yadinassi/storage/catalog_reader.py': '67e3c081d5980955992349d815a55617a9fff6cfa9946238dd041d2297027132',
+    'yadinassi/storage/catalog_reader.py': 'f7a7bdb40c4ccaaae822cdd5b5c5c13e65dac19662b86ee4d4a1cca34bb25e75',
     'yadinassi/storage/config_catalog_transport.py': 'b526877c583900b263779c00f8db5c74cb40ff423b1df0e16f866cc4abca01ff',
     'yadinassi/storage/config_catalog_binding.py': 'd054f485f5fe077bf50cb7636966edd9b31c8c7911596285d1d831bbc2040636',
     'yadinassi/storage/config_catalog_records.py': '5a797947ff465656d34d9d83b73f0a31319fa979bb9ab093d134d4946e230f1f',

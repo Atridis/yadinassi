@@ -52,9 +52,16 @@ class CatalogReadDiagnosticsTests(unittest.TestCase):
         _,_,files=fixture.load(1)
         for i,state in enumerate(fixture.STATES):
             text=instrument.wrap(files['setup-'+state+'.bsl'],'S'+str(i))
-            self.assertLess(text.index(f'Функция S{i}CRCount('),text.index(f'Функция S{i}CRRun()'))
+            self.assertLess(text.index(f'Функция S{i}CRCount('),text.index(f'Функция S{i}CRRun(Diagnostic)'))
             self.assertNotRegex(text,r'(?m)^\s*Выполнить\(')
-            body=text.split(f'Функция S{i}CRRun()',1)[1]
+            body=text.split(f'Функция S{i}CRRun(Diagnostic)',1)[1]
             self.assertNotIn('Функция ',body)
+            self.assertIn(f'S{i}CRCount(Diagnostic, ', body)
+            self.assertIn('Diagnostic.phase = "setup-calibration-two";', body)
+            self.assertIn('Diagnostic.phase = "setup-query-execute";', text)
+            for line in text.splitlines():
+                if 'Diagnostic.phase = ' in line:
+                    self.assertIn(line.split('"')[1], subject.PHASES)
+            self.assertNotIn('ОписаниеОшибки', text)
 
 if __name__=='__main__':unittest.main()

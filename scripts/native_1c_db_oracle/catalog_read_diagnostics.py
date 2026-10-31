@@ -10,7 +10,10 @@ from metadata_catalog_runtime_inputs import _read
 from catalog_zero_code_measurement import compile_log_projection, COMPILE_CATEGORIES, COMPILE_MODULES, COMPILE_STATES
 
 MARKERS=('control','result','completion','completion.pending')
-PHASES=('authorize','identity','metadata','observe','setup','serialize','complete')
+PHASES=('authorize','identity','metadata','observe','setup','serialize','complete',
+        'setup-calibration-one','setup-calibration-two','setup-query-build',
+        'setup-query-execute','setup-query-row','setup-manager','setup-mutate',
+        *(f'setup-witness-{i:02}' for i in range(1,13)))
 
 
 def read(path, maximum):

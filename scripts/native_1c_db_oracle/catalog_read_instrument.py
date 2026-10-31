@@ -25,6 +25,24 @@ def wrap(raw, name):
     # Explicit output accumulator parameters, not module globals.
     text = head + 'Функция CRRun()\nLines = Новый Массив;\n' + body
     text += '\nВозврат СтрСоединить(Lines, Символ(10)) + Символ(10);\nКонецФункции\n'
+    if name.startswith('S'):
+        # Fixed source-owned breadcrumbs only; no exception text or caller data.
+        text = text.replace('CRRun()', 'CRRun(Diagnostic)')
+        text = text.replace('CRCount(', 'CRCount(Diagnostic, ')
+        text = text.replace('    Q = Новый Запрос;', '    Diagnostic.phase = "setup-query-build";\n    Q = Новый Запрос;')
+        text = text.replace('    Row = Q.Выполнить().Выбрать();', '    Diagnostic.phase = "setup-query-execute";\n    Row = Q.Выполнить().Выбрать();')
+        text = text.replace('    Если Не Row.Следующий()', '    Diagnostic.phase = "setup-query-row";\n    Если Не Row.Следующий()')
+        lines = []
+        for line in text.splitlines():
+            phase = None
+            if line.startswith('Сообщить("CR-C1:'): phase = 'setup-calibration-one'
+            elif line.startswith('Сообщить("CR-C2:'): phase = 'setup-calibration-two'
+            elif line.startswith('Manager = '): phase = 'setup-manager'
+            elif line.startswith('CREmit("'): phase = 'setup-witness-' + line.split('"')[1]
+            elif line.startswith(('Object = ', 'Ghost = ', 'Object.', 'Ghost.')): phase = 'setup-mutate'
+            if phase is not None: lines.append('Diagnostic.phase = "' + phase + '";')
+            lines.append(line)
+        text = '\n'.join(lines) + '\n'
     text = text.replace('CREmit(', 'CREmit(Lines, ').replace('CRObserve(', 'CRObserve(Lines, ')
     text = text.replace('Сообщить(', 'Lines.Добавить(')
     return re.sub(r'\b(CRText|CRScalar|CREmit|CRObserve|CRCount|CRRun)\b', lambda m:name + m[0], text)
@@ -123,7 +141,7 @@ def instrument(raw, name, b, files, *, nonce, evidence):
         dispatch = ''
         for i, state in enumerate(STATES):
             blocks += wrap(files['setup-' + state + '.bsl'], 'S' + str(i))
-            dispatch += f'Если Control.operation = "catalog_read_setup_{state}" Тогда Output.Вставить("setup", S{i}CRRun()); КонецЕсли;\n'
+            dispatch += f'Если Control.operation = "catalog_read_setup_{state}" Тогда Output.Вставить("setup", S{i}CRRun(Response)); КонецЕсли;\n'
         text += SERVER.replace('@@SETUP_DISPATCH@@', dispatch)
     elif name == 'ManagedApplicationModule.bsl':
         text = once(text, '        Завершение = Новый Структура(', '''        Если NativeOracleServer.CBSelected(ПараметрЗапуска) Тогда

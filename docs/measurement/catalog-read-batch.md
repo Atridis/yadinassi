@@ -111,3 +111,11 @@ then resolve measured cursor ordering/reset/end-field differences as one coheren
 runtime update. These guards are intentionally not relaxed in this measurement
 commit. Broader catalog schemas, hierarchy, runtime writes/transactions/Query and
 cross-catalog full allocation analysis are not claimed by this finite fixture.
+
+Setup failure localization retains only closed source-owned phase labels for the
+two calibration calls, Query build/execute/row, manager access, mutation and the
+12 setup witnesses. These breadcrumbs share the authenticated completion marker;
+no exception text, private values or additional rights are exported. A phase
+locates an operation, not its cause. The preceding recovery run established a
+setup-phase runtime error despite successful identity, metadata and CheckConfig
+controls; it supplied no catalog liveness or ordering evidence.

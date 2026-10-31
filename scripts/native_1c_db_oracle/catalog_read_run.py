@@ -97,7 +97,7 @@ class Native(lifecycle.Native):
             exact(completed, ('schema', 'nonce', 'token', 'operation', 'phase', 'status'))
             require(type(completed['schema']) is int and completed['schema'] == 1 and completed['nonce'] == self.nonce
                     and completed['token'] == token, 'invalid_marker')
-            phases = ('authorize','identity','metadata','observe','setup','serialize','complete')
+            from catalog_read_diagnostics import PHASES as phases
             require(completed['phase'] in phases and completed['status'] in ('ok','error'), 'invalid_marker')
             self.catalog_native_failure = dict(site='completion', phase=completed['phase'],
                 status=completed['status'], operation_matches=completed['operation'] == operation)
