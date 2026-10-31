@@ -463,6 +463,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: json-family-v1
             artifact: json-family
             case: json_family
+          - profile: file-io-family-v1
+            artifact: file-io-family
+            case: file_io_family
 """
         for job, expected in expected_headers.items():
             with self.subTest(job=job):

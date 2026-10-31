@@ -60,3 +60,9 @@ integrational_tests/measurements/json_family.bsl text eol=lf
 tests/fixtures/json_family/*.out -text
 tests/fixtures/json_family/*.bsl text eol=lf
 tests/fixtures/json_family/*provenance.json -text
+
+# File family sources and future native captures remain byte-bound.
+integrational_tests/measurements/file_io_family.bsl text eol=lf
+tests/fixtures/file_io_family/*.out -text
+tests/fixtures/file_io_family/*.bsl text eol=lf
+tests/fixtures/file_io_family/*provenance.json -text

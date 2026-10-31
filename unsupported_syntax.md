@@ -304,3 +304,11 @@ Advanced date conversion and revival callbacks, XDTO/application objects,
 Stream objects, advanced quote/escape settings, comments/non-standard input,
 reader CurrentLine/CurrentPosition and exact malformed-input diagnostics remain unsupported. The ordinary
 reader/writer and collection workflows are described in [JSON family](docs/json-family.md).
+
+### File I/O remaining scope
+
+Streams/async overloads, sharing locks, recursive searches and deletions,
+wildcard deletion, remote URL schemes, permission setters and exotic codecs
+remain unsupported; `!todo` marks deferred corners. TextReader currently takes
+a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
+are not provided. [Full scope](docs/file-io-family.md).

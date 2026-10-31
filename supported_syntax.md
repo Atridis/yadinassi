@@ -956,3 +956,10 @@ runtime. **Свежая native-приёмка реализации требуе�
 mutable/fixed arrays, structures and string-keyed maps. Token Read/Skip and
 basic JSONWriterSettings newline/indent options are implemented. Native
 acceptance and precise scope: [JSON family](docs/json-family.md).
+
+## Local file, text and binary I/O
+
+`Файл/File`, `ЧтениеТекста/TextReader`, `ЗаписьТекста/TextWriter`,
+`ДвоичныеДанные/BinaryData`, `КодировкаТекста/TextEncoding`, local file helpers,
+Base64 and text/binary conversions are implemented as one bounded family.
+Native33 client/server/interpreter parity accepted. [Exact methods and limits](docs/file-io-family.md).
