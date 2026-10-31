@@ -1,11 +1,11 @@
-"""Bounded numeric Format; native witnesses and local limits are documented.
+"""Bounded numeric and numeric-mask Date Format; native witnesses are documented.
 
-No host locale, binary float, Decimal context, or Python numeric formatting is
+No host locale, binary float, Decimal context, or host Decimal formatting is
 used. This is not the complete native date/Boolean/numeric format language.
 """
 from decimal import Decimal
 
-from .dates import BSLDate
+from .dates import BSLDate, _parts as date_parts
 from .values import NULL, to_string
 
 _MAX_TEXT = 4096
@@ -15,9 +15,9 @@ _ALIASES = {"NFD": "NFD", "ЧДЦ": "NFD", "NDS": "NDS", "ЧРД": "NDS",
             "NG": "NG", "ЧГ": "NG", "NGS": "NGS", "ЧРГ": "NGS",
             "NZ": "NZ", "ЧН": "NZ", "L": "L", "Л": "L"}
 
-# Native directives outside this numeric slice must never become no-ops.
+# Recognized native families outside this bounded slice must not become no-ops.
 _UNIMPLEMENTED = frozenset(("ND", "ЧЦ", "NS", "ЧС", "NLZ", "ЧВН", "NN", "ЧО", "NF", "ЧФ",
-                            "DF", "ДФ", "DLF", "ДЛФ", "DE", "ДП",
+                            "DLF", "ДЛФ",
                             "BF", "БЛ", "BT", "БИ"))
 
 def _unsupported():
@@ -30,9 +30,10 @@ def _bound(text):
 
 
 def _parameters(text):
-    """Whole-input, quote-aware scanner; last canonical duplicate wins."""
+    """Whole-input scanner with separate numeric and Date selection rules."""
     _bound(text)
     result = {}
+    date_entries = {}
     i = 0
     while i < len(text):
         if text[i] in " ;\t":
@@ -48,22 +49,25 @@ def _parameters(text):
                                      or "А" <= c <= "Я" or "а" <= c <= "я"
                                      or c in "Ёё") for c in raw_name)):
             _unsupported()
-        name = raw_name.upper()
-        if name in _UNIMPLEMENTED:
+        folded = raw_name.upper()
+        if folded in _UNIMPLEMENTED:
             _unsupported()
-        key = _ALIASES.get(name, name)
+        # Numeric/locale names are exact-case; Date aliases are case-insensitive.
+        date_key = folded if folded in {"DF", "ДФ", "DE", "ДП"} else None
+        key = _ALIASES.get(raw_name)
         i += 1
         while i < len(text) and text[i] in " \t":
             i += 1
-        if i < len(text) and text[i] == "'":
+        quote = text[i] if i < len(text) and text[i] in "'\"" else None
+        if quote is not None:
             i += 1
             parts = []
             while i < len(text):
-                if text[i] != "'":
+                if text[i] != quote:
                     parts.append(text[i])
                     i += 1
-                elif i + 1 < len(text) and text[i + 1] == "'":
-                    parts.append("'")
+                elif i + 1 < len(text) and text[i + 1] == quote:
+                    parts.append(quote)
                     i += 2
                 else:
                     i += 1
@@ -94,10 +98,81 @@ def _parameters(text):
             _unsupported()
         elif key == "NDS" and not value:
             _unsupported()
-        result[key] = value
+        if date_key is not None:
+            if date_key in {"DF", "ДФ"}:
+                if not value:
+                    _unsupported()
+                tokens = _date_tokens(value)
+                # Native bare multiword Date masks fall back to the default.
+                value = None if quote is None and any(c in " \t" for c in value) else tokens
+            date_entries.setdefault(date_key, value)
+        elif key is not None:
+            result[key] = value
         if i < len(text):
             i += 1
+    # First duplicate within an alias; Russian alias precedes English alias.
+    for canonical, russian in (("DF", "ДФ"), ("DE", "ДП")):
+        if russian in date_entries:
+            result[canonical] = date_entries[russian]
+        elif canonical in date_entries:
+            result[canonical] = date_entries[canonical]
     return result
+
+
+def _date_tokens(mask):
+    """Bounded numeric date tokens and quoted literals; not strftime grammar."""
+    tokens = []
+    allowed = {"d", "dd", "M", "MM", "yy", "yyyy", "H", "HH", "m", "mm", "s", "ss"}
+    i = 0
+    while i < len(mask):
+        if mask[i] == "'":
+            end = mask.find("'", i + 1)
+            if end < 0:
+                _unsupported()
+            tokens.append((False, mask[i + 1:end]))
+            i = end + 1
+        elif mask[i].isalpha():
+            end = i + 1
+            while end < len(mask) and mask[end] == mask[i]:
+                end += 1
+            token = mask[i:end]
+            if token not in allowed:
+                _unsupported()
+            tokens.append((True, token))
+            i = end
+        else:
+            tokens.append((False, mask[i]))
+            i += 1
+    return tuple(tokens)
+
+
+def _format_date(value, parameters):
+    parts = date_parts(value)  # Validates known state, including empty-date boundary.
+    if value.ticks == 0:
+        if "DE" not in parameters:
+            return ""
+        if parameters["DE"]:
+            return parameters["DE"]
+    tokens = parameters.get("DF")
+    if tokens is None:
+        return str(value)
+    components = {"d": parts.day, "M": parts.month, "y": parts.year,
+                  "H": parts.hour, "m": parts.minute, "s": parts.second}
+    output = []
+    size = 0
+    for numeric, token in tokens:
+        if numeric:
+            number = components[token[0]]
+            if token == "yy":
+                number %= 100
+            text = str(number).zfill(len(token))
+        else:
+            text = token
+        size += len(text) + sum(ord(c) > 0xffff for c in text)
+        if size > _MAX_TEXT:
+            raise ValueError("Формат: превышен предел текста Yadinassi")
+        output.append(text)
+    return "".join(output)
 
 
 def _grouping(value):
@@ -171,11 +246,7 @@ def format_value(value, specification=""):
     else:
         raise TypeError("Формат: формат должен быть строкой или числом")
     if kind is not Decimal:
-        # Empty native dates have a special Format presentation; that family
-        # was not measured here, so do not silently substitute String(date).
-        if kind is BSLDate and value.ticks == 0:
-            _unsupported()
-        result = to_string(value)
+        result = _format_date(value, parameters) if kind is BSLDate else to_string(value)
         _bound(result)
         return result
     places = int(parameters["NFD"]) if "NFD" in parameters else None

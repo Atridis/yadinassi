@@ -46,9 +46,9 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
         self.assertEqual(len(lines), 58)
         output = []
         Interpreter(output.append).execute(source.decode('utf-8'))
-        # Two native-supported directive families are deliberately unsupported
-        # locally. Assert this gap explicitly, never label all56 native parity.
-        for case in (52, 53):
+        # ND remains an explicit policy gap. The formerly unsupported DF witness
+        # is now admitted by independently acquired numeric-mask Date support.
+        for case in (52,):
             self.assertTrue(lines[case + 1].startswith(f'FM-{case}: [ok|'))
             lines[case + 1] = f'FM-{case}: [action-error]'
         self.assertEqual(output, lines)
@@ -135,8 +135,8 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
 
     def test_unsupported_or_malformed_is_not_plausible_fallback(self):
         for mask in ('ND=5', 'ЧЦ=5', 'NS=2', "NF='$N / Hour'", "ЧФ='$Ч / Час'",
-                     "nf='N'", "чф='Ч'", 'NLZ=', 'NN=0', 'DF=yyyy', 'ДФ=yyyy',
-                     'DLF=D', 'DE=none', 'BT=yes', 'BF=no', 'L=en', 'Л=ru_RU',
+                     "nf='N'", "чф='Ч'", 'NLZ=', 'NN=0',
+                     'DLF=D', 'BT=yes', 'BF=no', 'L=en', 'Л=ru_RU',
                      'NFD=-1', 'NFD=1.5', 'NFD=325', 'NFD=9999999', 'NFD=²',
                      'NDS=', 'NG=0,3', 'NG=3,2,1', 'NG=33', 'NG=-1',
                      "NZ='unterminated", "NZ='valid'junk", 'NFD', 'NFD=2;bad',
@@ -165,14 +165,14 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
                 format_value(Decimal(1), value)
 
     def test_existing_string_conversion_untouched(self):
-        with self.assertRaises(ValueError):
-            format_value(BSLDate(0))
+        self.assertEqual(format_value(BSLDate(0)), '')
+        self.assertEqual(to_string(BSLDate(0)), '01.01.0001 0:00:00')
         self.assertEqual(to_string(Decimal(0)), '0')
         self.assertEqual(to_string(Decimal('1234567.89')), '1\u00a0234\u00a0567,89')
         for value in (True, False, 'abc', None, NULL, BSLDate(100000)):
             self.assertEqual(format_value(value, 'NFD=2;NG=0'), to_string(value))
-            with self.assertRaises(ValueError):
-                format_value(value, 'DF=yyyy')
+            self.assertEqual(format_value(value, 'DF=yyyy'),
+                             '0001' if type(value) is BSLDate else to_string(value))
 
 
 if __name__ == '__main__':
