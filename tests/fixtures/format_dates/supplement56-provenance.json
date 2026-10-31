@@ -1,0 +1,45 @@
+{
+  "acquisition_accepted": true,
+  "runtime_parity_accepted": false,
+  "native_format_available": true,
+  "run": 41197666432,
+  "job": 124527030286,
+  "head": "13d06c4e603a02fcde0358bc33617bb29a67adfb",
+  "tree": "d5d6d47375ab62ed88ad2df0eaf18b24ec716bd6",
+  "checkout": "18866dedd8e7f0053865f7b4979af985da9adf55",
+  "source_files": 975,
+  "staged_sources": 22,
+  "runtime_source_count": 79,
+  "native_source_sha256": "7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb",
+  "native_capture_sha256": "fe558102e1e7f6cf879243b10ec377906d908a784fe2ed497c19826a4359fa8f",
+  "native_capture_bytes": 2737,
+  "cases": 56,
+  "calibration_records": 2,
+  "observed_successes": 56,
+  "observed_action_errors": 0,
+  "observed_observer_errors": 0,
+  "fresh_local_replay_equals_reported_runtime_parity": true,
+  "client_and_server_outputs_match": true,
+  "source_and_generated_modules_match": true,
+  "cleanup_verified": true,
+  "limits": [
+    "Measurement only; existing interpreter mismatch is retained. No date runtime implemented or parity claimed.",
+    "Native Linux1C8.3.27.1508, configured UTC; no Windows native claim.",
+    "Other native and cross-platform CI jobs are separate gates."
+  ],
+  "artifact_metadata": [
+    {
+      "id": 13041406600,
+      "name": "native-1c-format-dates-outputs",
+      "digest": "sha256:93d02125f8454e57add5c65e3ba54e989682514cf37895aa73b0a862c30fd632"
+    },
+    {
+      "id": 13041048225,
+      "name": "native-1c-format-dates-summary",
+      "digest": "sha256:3325ac96f2141be207d9f98b522c5c756f3dcd4ffbcb248555622e7755796e6f"
+    }
+  ],
+  "original40_native_output_prefix_unchanged": true,
+  "scope": "Supplement56 acquisition only. Interpreter mismatch retained; parser28 is not yet acquired.",
+  "url": "https://github.com/Atridis/yadinassi/actions/runs/41197666432"
+}

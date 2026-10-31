@@ -6011,3 +6011,5 @@ preserved; actual native acquisition is pending. See
 сохранены без изменения атрибуции. [Границы поддержки](docs/value-tree-columns-delete.md).
 
 - Bounded numeric `Формат / Format`: [scope, native evidence and explicit limits](docs/format-numbers-runtime.md).
+
+- Bounded numeric-mask Date `Формат / Format`: [scope, authenticated parser-family evidence and explicit controls](docs/format-dates-runtime.md).
