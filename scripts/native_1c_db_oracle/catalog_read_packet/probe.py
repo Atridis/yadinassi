@@ -87,7 +87,7 @@ def cases(s):
 
 def render(s,block):
     selected=cases(s)[block]
-    text=Path(__file__).with_name('observer.bsl').read_text()
+    text=Path(__file__).with_name('observer.bsl').read_text(encoding='utf-8')
     for i,(name,expr) in enumerate(selected,1):
         if expr.startswith('!'):
             text+=f'Попытка\n    {expr[1:]}\n    CREmit("{i:02}", Истина);\nИсключение\n    Сообщить("CR-{i:02}: [action-error]");\nКонецПопытки; // {name}\n'
@@ -140,7 +140,7 @@ def catalog_artifacts(s):
 
 def render_fresh(s):
     s.validate(); a=s.names[0];u=s.record_ids[0]
-    text=Path(__file__).with_name('observer.bsl').read_text()
+    text=Path(__file__).with_name('observer.bsl').read_text(encoding='utf-8')
     # Capture exactly twice. Failure remains visible in dependent records.
     for v in ('FreshA','FreshB'):
         text+=f'{v} = Неопределено;\nПопытка\n    {v} = Catalogs.{a}.GetRef();\nИсключение\nКонецПопытки;\n'

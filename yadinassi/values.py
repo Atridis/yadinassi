@@ -20,6 +20,11 @@ NULL = BSLNull.VALUE
 
 class BSLType(Enum):
     CATALOGS_MANAGER = "Справочники менеджер"
+    JSON_WRITER_SETTINGS = "ПараметрыЗаписиJSON"
+    JSON_LINE_BREAK = "ПереносСтрокJSON"
+    JSON_READER = "ЧтениеJSON"
+    JSON_WRITER = "ЗаписьJSON"
+    JSON_VALUE_TYPE = "ТипЗначенияJSON"
     TEXT_DOCUMENT = "ТекстовыйДокумент"
     UUID = "УникальныйИдентификатор"
     PROMISE = "Обещание"

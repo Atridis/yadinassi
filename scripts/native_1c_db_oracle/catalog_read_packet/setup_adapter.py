@@ -126,7 +126,7 @@ def verify_redump(s,saved_fragments,saved_ids,redumped_fragments):
 def render_setup(s):
     """Setup-only native Query/Write; NOT part of proposed public runtime scope."""
     s.validate();u,v=s.record_ids
-    observer=Path(probe.__file__).with_name('observer.bsl').read_text()
+    observer=Path(probe.__file__).with_name('observer.bsl').read_text(encoding='utf-8')
     split=observer.index('Сообщить("CR-C1:')
     text=observer[:split]
     text+='''

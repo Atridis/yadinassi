@@ -1,7 +1,9 @@
 """Local batch/lifecycle tests; no target native observations are fabricated."""
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import hashlib
+import inspect
+import os
 import json
 from pathlib import Path
 import shutil
@@ -21,12 +23,15 @@ from catalog_read_packet import batch,scalar_wire
 from inject_metadata import _module,inject
 from protocol import IMAGE
 from snapshots import OracleError
+from test_metadata_catalog_runtime_inputs import static_bundle_bytes
 NONCE='a'*32
 
 
 def provenance():
-    return dict(commit='b'*40,tree='c'*40,sources=inputs.source_hashes(ROOT),image=IMAGE,
-        platform='linux/amd64',actual_version=None,locale='ru_RU.UTF-8',timezone='Etc/UTC')
+    # Static cross-platform fixtures do not certify Linux descriptor security.
+    with mock.patch.object(inputs.runtime, '_read', new=static_bundle_bytes) if os.name == 'nt' else nullcontext():
+        return dict(commit='b'*40,tree='c'*40,sources=inputs.source_hashes(ROOT),image=IMAGE,
+            platform='linux/amd64',actual_version=None,locale='ru_RU.UTF-8',timezone='Etc/UTC')
 
 
 def admin_audit(token='f'*32):
@@ -107,7 +112,7 @@ class CatalogBatchTests(unittest.TestCase):
             with self.assertRaises(OracleError):runner.validate_marker(json.dumps(dict(value,outputs=outputs)).encode(),nonce=NONCE,token='b'*32,operation='catalog_read_client',b=b)
     def test_install_complete_redump_and_existing_roles(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);source=root/'source';source.mkdir()
+            root=Path(tmp).resolve();source=root/'source';source.mkdir()
             raw=(ROOT/'tests/fixtures/native_bootstrap/Configuration.xml').read_text()
             # The synthetic fixture's warning comment is outside the packet's
             # closed comment-free config profile; no production parser is widened.
@@ -134,7 +139,11 @@ class CatalogBatchTests(unittest.TestCase):
 class CatalogStagingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp=tempfile.TemporaryDirectory();cls.staged=Path(cls.temp.name)/'staged';cls.identity=provenance()
+        if os.name == 'nt':
+            patcher = mock.patch.object(inputs.runtime, '_read', new=static_bundle_bytes)
+            patcher.start(); cls.addClassCleanup(patcher.stop)
+        cls.temp=tempfile.TemporaryDirectory();cls.addClassCleanup(cls.temp.cleanup)
+        cls.staged=Path(cls.temp.name).resolve()/'staged';cls.identity=provenance()
         inputs.stage_inputs(ROOT,cls.staged,NONCE,cls.identity)
     @classmethod
     def tearDownClass(cls):cls.temp.cleanup()
@@ -155,6 +164,10 @@ from catalog_read_fixture import load
 assert load(1)[0].setup.names[0].startswith('C')
 print('closed')
 '''
+        if os.name == 'nt':
+            code = code.replace('import catalog_read_inputs as inputs',
+                'import catalog_read_inputs as inputs\n' + inspect.getsource(static_bundle_bytes) +
+                '\ninputs.runtime._read=static_bundle_bytes')
         result=subprocess.run([sys.executable,'-I','-S','-B','-c',code,str(self.staged)],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),'closed')
     def test_failed_report_and_no_false_acceptance(self):

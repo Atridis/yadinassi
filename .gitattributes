@@ -57,3 +57,11 @@ tests/fixtures/format_dates/*mapping.json -text
 
 # Native catalog batch captures preserve exact bytes across checkouts.
 tests/fixtures/catalog_read_slots/*.json -text
+# JSON family source/captures are byte-bound across checkout platforms.
+integrational_tests/measurements/json_family.bsl text eol=lf
+tests/fixtures/json_family/*.out -text
+tests/fixtures/json_family/*.bsl text eol=lf
+tests/fixtures/json_family/*provenance.json -text
+
+# Byte-bound catalog packet templates/generated sources; manifests hash raw bytes.
+scripts/native_1c_db_oracle/catalog_read_packet/** -text

@@ -1,6 +1,8 @@
 """Invented bounded failure logs; never native compiler evidence."""
 from pathlib import Path
-import sys,tempfile,unittest
+import sys,tempfile,unittest,os
+from unittest import mock
+from test_metadata_catalog_runtime_inputs import static_bundle_bytes
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'scripts/native_1c_db_oracle'),str(ROOT/'yadinassi/storage')]
 import catalog_read_diagnostics as subject
@@ -10,6 +12,11 @@ from snapshots import OracleError
 
 
 class CatalogReadDiagnosticsTests(unittest.TestCase):
+    def setUp(self):
+        if os.name == "nt":
+            patcher = mock.patch.object(subject, "_read", new=static_bundle_bytes)
+            patcher.start(); self.addCleanup(patcher.stop)
+
     def test_one_readonly_compile_and_finite_projection(self):
         class Backend:
             counter=9
@@ -20,11 +27,11 @@ class CatalogReadDiagnosticsTests(unittest.TestCase):
             def command(self,*args):self.calls.append(args);return ['fixed']
             def process(self,args,label):
                 self.calls.append((args,label))
-                Path(args[args.index('/Out')+1]).write_text('{ОбщийМодуль.NativeOracleServer.Модуль(123,4)}: Переменная не определена (PRIVATE)\n{PrivateModule(9,1)}: PRIVATE')
-                Path(args[args.index('/DumpResult')+1]).write_text('1')
+                Path(args[args.index('/Out')+1]).write_text('{ОбщийМодуль.NativeOracleServer.Модуль(123,4)}: Переменная не определена (PRIVATE)\n{PrivateModule(9,1)}: PRIVATE', encoding='utf-8')
+                Path(args[args.index('/DumpResult')+1]).write_text('1', encoding='utf-8')
                 raise OracleError('process_failed')
         with tempfile.TemporaryDirectory() as tmp:
-            p=Path(tmp);(p/'control.json').write_text('private');(p/'completion.json').write_text('private')
+            p=Path(tmp).resolve();(p/'control.json').write_text('private');(p/'completion.json').write_text('private')
             backend=Backend(p);v=subject.collect(backend,p,None)
             self.assertEqual(len(backend.calls),2)
             args=backend.calls[1][0]
@@ -42,7 +49,7 @@ class CatalogReadDiagnosticsTests(unittest.TestCase):
             b.process.assert_not_called();self.assertEqual(value['compile']['state'],'unavailable')
     def test_marker_read_rejects_indirect_and_oversized_without_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
-            p=Path(tmp);target=p/'file';target.write_bytes(b'x'*65)
+            p=Path(tmp).resolve();target=p/'file';target.write_bytes(b'x'*65)
             self.assertEqual(subject.read(target,64),('unavailable',None))
             link=p/'link'
             try:link.symlink_to(target)

@@ -6013,3 +6013,6 @@ preserved; actual native acquisition is pending. See
 - Bounded numeric `Формат / Format`: [scope, native evidence and explicit limits](docs/format-numbers-runtime.md).
 
 - Bounded numeric-mask Date `Формат / Format`: [scope, authenticated parser-family evidence and explicit controls](docs/format-dates-runtime.md).
+
+- JSON family: bilingual reader/writer, token traversal, nested collection conversion,
+  string/file workflows and basic layout settings. See [scope and verification](docs/json-family.md).
