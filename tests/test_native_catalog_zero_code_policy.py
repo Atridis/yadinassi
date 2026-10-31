@@ -185,4 +185,70 @@ class ZeroPolicyTests(unittest.TestCase):
   reports[1]['nonce']=reports[0]['nonce']
   with self.assertRaises(OracleError):p.build_aggregate(reports,hashes,run_id=123,run_attempt=1)
 
+
+def bootstrap_diagnostic():
+ return dict(schema=1,nonce=NONCE,token='e'*32,bootstrap='absent',result='invalid',completion='valid_error',pending='valid_error',
+  **{k:dict(state='nonempty',module_error=True,undefined_symbol=False,syntax_error=False)for k in ('out','console')})
+
+def bootstrap_failure(final=True):
+ r,_=lifecycle.fixture_report('seed_v1');base=p.empty_report(NONCE,provenance(),zero_case='zero0')
+ for key in ('schema','lane','nonce','provenance',*p.EXTRA_KEYS):r[key]=base[key]
+ r['failure_kind']='seed_bootstrap_timeout'
+ r['failure_context']=dict(operation='enterprise_bootstrap',site='poll',bsl_phase=None,region=None,reason=None)
+ r['zero_code_measurement']=None
+ if final:r['cleanup'].update(container_removed=True,private_staging_removed=True)
+ return r
+
+class ZeroBootstrapDiagnosticTests(unittest.TestCase):
+ def test_optional_failure_cleanup_and_detached_copy(self):
+  for final in (False,True):
+   r=bootstrap_failure(final);d=bootstrap_diagnostic();saved=copy.deepcopy(d)
+   self.assertTrue(p.set_bootstrap_failure(r,d,final=final));validate(r,final)
+   d['out']['state']='changed';self.assertEqual(r['zero_bootstrap_failure'],saved)
+   self.assertFalse(r['accepted']);self.assertIsNone(r['zero_code_measurement'])
+   p.discard_capture(r,final=final);self.assertNotIn('zero_bootstrap_failure',r);validate(r,final)
+  r=bootstrap_failure(False);self.assertFalse(p.set_bootstrap_failure(r,bootstrap_diagnostic(),final=True))
+
+ def test_finite_states_and_flags(self):
+  import itertools
+  for marker in ('bootstrap','result','completion','pending'):
+   for state in ('absent','invalid','valid_ok')+(('valid_error',)if marker in ('completion','pending')else()):
+    d=bootstrap_diagnostic();d[marker]=state;p.validate_bootstrap_failure(d)
+  for name in ('out','console'):
+   for state in p.BOOTSTRAP_LOG_STATES:
+    for flags in itertools.product((False,True),repeat=3):
+     d=bootstrap_diagnostic();d[name]=dict(zip(('state','module_error','undefined_symbol','syntax_error'),(state,*flags)))
+     if state=='nonempty' or not any(flags):p.validate_bootstrap_failure(d)
+     else:
+      with self.assertRaises(OracleError):p.validate_bootstrap_failure(d)
+
+ def test_bad_shapes_types_private_fields_and_binding(self):
+  for path,value in [(('schema',),True),(('schema',),1.0),(('nonce',),'bad'),(('token',),'bad'),(('bootstrap',),'valid_error'),(('result',),'valid_error'),(('completion',),'private'),(('private_path',),'/private'),(('out','raw'),'secret'),(('console','module_error'),1),(('pending',),None)]:
+   d=bootstrap_diagnostic();node=d
+   for key in path[:-1]:node=node[key]
+   node[path[-1]]=value
+   with self.subTest(path=path),self.assertRaises(OracleError):p.validate_bootstrap_failure(d)
+   self.assertFalse(p.set_bootstrap_failure(bootstrap_failure(),d,final=True))
+  mutations=[(('nonce',),'b'*32),(('schema',),59),(('status',),'ok'),(('accepted',),True),(('failed_stage',),'create'),(('failure_kind',),'process_failed'),(('failure_context','operation'),'enterprise'),(('failure_context','site'),'launch'),(('snapshots',),[{}]),(('zero_code_measurement',),{})]
+  mutations += [(('cleanup',key),v) for key in bootstrap_failure()['cleanup'] for v in (False,1,1.0)]
+  for path,value in mutations:
+   r=bootstrap_failure();node=r
+   for key in path[:-1]:node=node[key]
+   node[path[-1]]=value
+   self.assertFalse(p.set_bootstrap_failure(r,bootstrap_diagnostic(),final=True))
+   r['zero_bootstrap_failure']=bootstrap_diagnostic()
+   with self.subTest(path=path),self.assertRaises(OracleError):validate(r,True)
+  r=fixture();r['zero_bootstrap_failure']=bootstrap_diagnostic()
+  with self.assertRaises(OracleError):validate(r)
+
+ def test_foreign_mapping_keys_never_invoke_hooks(self):
+  class Key:
+   def __hash__(self):return hash('schema')
+   def __eq__(self,other):raise AssertionError('equality hook')
+  class Mapping(dict):
+   def __iter__(self):raise AssertionError('iteration hook')
+  bad=bootstrap_diagnostic();bad.pop('schema');bad[Key()]=1
+  for d in (bad,Mapping(bootstrap_diagnostic())):
+   with self.assertRaises(OracleError):p.validate_bootstrap_failure(d)
+
 if __name__=='__main__':unittest.main()

@@ -38,6 +38,11 @@ def capture_envelope():
     return {'schema':p.CAPTURE_SCHEMA,'profile_id':p.PROFILE_ID,'profile_sha256':p.PROFILE_SHA256,
         'runtime_support':'not_claimed','states':[copy.deepcopy(state)for _ in p.TARGETS]}
 
+def diagnostic_envelope():
+    # Rectangular maxima; need not describe one simultaneously valid execution.
+    return dict(schema=1,nonce='f'*32,token='f'*32,bootstrap='valid_ok',result='valid_ok',completion='valid_error',pending='valid_error',
+        **{name:dict(state='unavailable',module_error=False,undefined_symbol=False,syntax_error=False)for name in ('out','console')})
+
 def report_envelope():
     report=p.empty_report('f'*32,fixtures.provenance(),zero_case=longest(p.CASES))
     report.update(status='failed',failed_stage=longest(protocol.STAGES),
@@ -73,6 +78,7 @@ def report_envelope():
     report['failure_context']={'operation':longest(protocol.COMMAND_STAGES),'site':longest(protocol.CONTEXT_SITES),
         'bsl_phase':longest(protocol.BSL_PHASES),'region':longest(protocol.INVENTORY_REGIONS),
         'reason':longest(protocol.INVENTORY_REASONS),'entry_class':longest(snapshots.ENTRY_CLASSES),'entry_shape':longest(snapshots.ENTRY_SHAPES)}
+    report['zero_bootstrap_failure']=diagnostic_envelope()
     return report
 
 
@@ -83,7 +89,7 @@ def aggregate_envelope():
 
 def proof_results():
     shell=len(wire(report_envelope()))
-    return {'sources':len(inputs.CATALOG_ZERO_CODE_SOURCE_FILES),'comparison':len(wire(comparison_envelope())),
+    return {'diagnostic':len(wire(diagnostic_envelope())),'sources':len(inputs.CATALOG_ZERO_CODE_SOURCE_FILES),'comparison':len(wire(comparison_envelope())),
         'capture_plus_newline':len(wire(capture_envelope()))+1,'capture_cap':p.MAX_CAPTURE_BYTES,
         'report_without_capture':shell,'report_full_capture_plus_newline':shell-4+p.MAX_CAPTURE_BYTES+1,
         'report_cap':protocol.MAX_REPORT_BYTES,'aggregate_plus_newline':len(wire(aggregate_envelope()))+1,
@@ -117,5 +123,5 @@ class ZeroIntegrationBudgetTests(unittest.TestCase):
         import ast
         self.assertFalse(any(isinstance(node,ast.Assert)for node in ast.walk(ast.parse(Path(__file__).read_text(encoding='utf-8')))))
 
-EXPECTED = {'sources': 42, 'comparison': 620, 'capture_plus_newline': 5285, 'capture_cap': 8192, 'report_without_capture': 20354, 'report_full_capture_plus_newline': 28543, 'report_cap': 32768, 'aggregate_plus_newline': 612, 'aggregate_cap': 2048, 'private_witness_plus_bom': 1921}
+EXPECTED = {'diagnostic': 390, 'sources': 42, 'comparison': 620, 'capture_plus_newline': 5285, 'capture_cap': 8192, 'report_without_capture': 20770, 'report_full_capture_plus_newline': 28959, 'report_cap': 32768, 'aggregate_plus_newline': 612, 'aggregate_cap': 2048, 'private_witness_plus_bom': 1921}
 if __name__=='__main__':unittest.main()

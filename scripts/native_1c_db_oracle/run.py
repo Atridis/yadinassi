@@ -460,6 +460,7 @@ class Native:
         self.v1=ROOT/'metadata-v1'; self.v2=ROOT/'metadata-v2'
         self.stage='preflight'; self.seed_pending=None; self.seed_launched=None
         self.home_anchor=None; self.reader_attempted=False
+        self.zero_bootstrap_failure=None
 
     def begin_stage(self, stage):
         require(type(stage) is str and stage in STAGES, 'invalid_input')
@@ -674,6 +675,87 @@ class Native:
         zero_result(result); self.physical_summary(database/'1Cv8.1CD')
         return database
 
+    def _zero_bootstrap_diagnostic(self, token):
+        """Failure-only finite observations; never native error text or cause inference."""
+        if getattr(self, 'zero_case', None) is None:
+            return None
+        try:
+            require(self.stage == 'seed_v1' and self.seed_pending == self.seed_launched == 'bootstrap'
+                    and type(token) is str and re.fullmatch('[0-9a-f]{32}', token) is not None,
+                    'invalid_input')
+            require(type(self.counter) is int and 1 <= self.counter <= 128, 'invalid_input')
+            log = self.evidence / f'{self.counter:03}-bootstrap.log'
+            console = self.evidence / f'{self.counter:03}-bootstrap-console.log'
+            require(self.quiescent(), 'snapshot_not_quiescent')
+            self.budgets()
+
+            def read(path, limit):
+                try:
+                    before = path.lstat()
+                except FileNotFoundError:
+                    return 'absent', None
+                require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                        and 0 <= before.st_size <= limit, 'artifact_limit')
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                with os.fdopen(fd, 'rb') as stream:
+                    opened = os.fstat(stream.fileno())
+                    require((opened.st_dev, opened.st_ino, opened.st_size) ==
+                            (before.st_dev, before.st_ino, before.st_size), 'stale_evidence')
+                    raw = stream.read(limit + 1)
+                    after = os.fstat(stream.fileno())
+                current = path.lstat()
+                identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns,
+                                          item.st_ctime_ns, item.st_nlink, item.st_mode)
+                require(len(raw) == before.st_size and identity(before) == identity(after)
+                        == identity(current), 'stale_evidence')
+                return ('nonempty' if raw else 'empty'), raw
+
+            def marker_state(name, completion=False):
+                try:
+                    state, raw = read(self.evidence / name, 4096 if completion else MAX_REPORT_BYTES)
+                    if state == 'absent':
+                        return state
+                    if completion:
+                        data = completion_marker(raw, nonce=self.nonce, token=token, operation='bootstrap')
+                        return 'valid_' + data['status']
+                    self.description_policy.marker(raw, nonce=self.nonce, token=token,
+                                                   operation='bootstrap', contract_version=comparison.SCHEMA)
+                    return 'valid_ok'
+                except BaseException:
+                    return 'invalid'
+
+            def log_state(path):
+                result = {'state': 'unavailable', 'module_error': False,
+                          'undefined_symbol': False, 'syntax_error': False}
+                try:
+                    state, raw = read(path, 32768)
+                    result['state'] = state
+                    if state != 'nonempty':
+                        return result
+                    # Phrase presence is NOT an authenticated compiler classification.
+                    phrases = {'module_error': ('Ошибка инициализации модуля', 'Module initialization error'),
+                               'undefined_symbol': ('Переменная не определена', 'Variable is not defined'),
+                               'syntax_error': ('Синтаксическая ошибка', 'Syntax error')}
+                    for key, variants in phrases.items():
+                        result[key] = any(phrase.encode(encoding) in raw for phrase in variants
+                                          for encoding in ('utf-8', 'utf-16-le', 'utf-16-be'))
+                    return result
+                except BaseException:
+                    return result
+
+            result = {'schema': 1, 'nonce': self.nonce, 'token': token,
+                      'bootstrap': marker_state('bootstrap.json'),
+                      'result': marker_state('result.json'),
+                      'completion': marker_state('completion.json', True),
+                      'pending': marker_state('completion.pending.json', True),
+                      'out': log_state(log), 'console': log_state(console)}
+            self.budgets()
+            require(self.quiescent(), 'snapshot_not_quiescent')
+            self.description_policy.validate_bootstrap_failure(result)
+            return result
+        except BaseException:
+            return None
+
     def enterprise(self, database, operation, *, token=None):
         require(type(operation) is str and 'enterprise_'+operation in self.command_stages(),'invalid_input')
         if operation in ('audit_contract', 'audit_record_metadata'):
@@ -687,6 +769,8 @@ class Native:
         control=self.evidence/'control.json'; result=self.evidence/'result.json'
         completion=self.evidence/'completion.json'; pending=self.evidence/'completion.pending.json'
         zero_mode = getattr(self, 'zero_case', None) is not None
+        if zero_mode:
+            self.zero_bootstrap_failure = None
         numeric_mode = getattr(self, 'numeric_case', None) is not None
         description_path = self.evidence / ('zero-code-observation.json' if zero_mode else 'numeric-code-observation.json' if numeric_mode else 'description-observation.json')
         description_mode = zero_mode or numeric_mode or getattr(self, 'description_case', None) is not None
@@ -765,6 +849,19 @@ class Native:
                     require(witness.after_present and not witness.before_present, 'invalid_marker')
                     self.reference_installation = reference_observation
             return data
+        except BaseException as error:
+            # process() kills/reaps before raising; collector also checks the owned census.
+            if zero_mode and operation == 'bootstrap' and type(error) is OracleError:
+                try:
+                    fields = object.__getattribute__(error, '__dict__')
+                    if (type(fields) is dict and len(fields) <= 8
+                            and all(type(key) is str for key in dict.__iter__(fields))
+                            and type(dict.get(fields, 'kind')) is str and dict.get(fields, 'kind') == 'timeout'
+                            and type(dict.get(fields, 'oracle_site')) is str and dict.get(fields, 'oracle_site') == 'poll'):
+                        self.zero_bootstrap_failure = self._zero_bootstrap_diagnostic(token)
+                except BaseException:
+                    self.zero_bootstrap_failure = None
+            raise
         finally:
             control.unlink(missing_ok=True); result.unlink(missing_ok=True)
             completion.unlink(missing_ok=True); pending.unlink(missing_ok=True)
@@ -1563,6 +1660,7 @@ class Controller:
         readback_failure = None
         params_failure = None
         description_failure = None
+        zero_bootstrap_failure = None
         try:
             for stage in STAGES[:-1]:
                 self.stage=stage
@@ -1666,6 +1764,8 @@ class Controller:
             if kind in SEED_FAILURES | BOOTSTRAP_INVENTORY_FAILURES and self.stage!='seed_v1': kind='unexpected_failure'
             if kind in BASELINE_FAILURES and self.stage!='baseline': kind='unexpected_failure'
             self.report.update(status='failed',failed_stage=self.stage,failure_kind=kind)
+            if self.report.get('schema') == 65 and kind == 'seed_bootstrap_timeout':
+                zero_bootstrap_failure = getattr(self.backend, 'zero_bootstrap_failure', None)
             context=(getattr(error,'failure_context',None)
                      if getattr(error,'failure_context_stage',None)==self.stage else None)
             if context is None and isinstance(error,SandboxInventoryError) and kind!='unexpected_failure':
@@ -1697,6 +1797,8 @@ class Controller:
                     self.description_policy.discard_capture(self.report)
                     if description_failure is not None and processes and files:
                         self.description_policy.set_failure(self.report, description_failure)
+                    if zero_bootstrap_failure is not None and processes and files:
+                        self.description_policy.set_bootstrap_failure(self.report, zero_bootstrap_failure)
                 elif self.params_policy is not None:
                     if self.report.get('reader_validation') == 'not_run' and getattr(self.backend, 'reader_attempted', False):
                         self.report['reader_validation'] = 'failed'

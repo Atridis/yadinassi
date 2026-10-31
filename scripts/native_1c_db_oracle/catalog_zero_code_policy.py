@@ -67,7 +67,52 @@ def empty_report(nonce,provenance,*,zero_case):
  return r
 
 def discard_capture(report,final=False):
+ report.pop('zero_bootstrap_failure',None)
  if report.get('schema')==SCHEMA:report['zero_code_measurement']=None
+
+BOOTSTRAP_FAILURE_KEY='zero_bootstrap_failure'
+BOOTSTRAP_LOG_STATES=('absent','empty','nonempty','unavailable')
+
+def _diagnostic_keys(value,keys):
+ require(type(value)is dict and len(value)==len(keys))
+ require(all(type(key)is str for key in value))
+ require(set(value)==set(keys))
+
+def validate_bootstrap_failure(value):
+ _diagnostic_keys(value,{'schema','nonce','token','bootstrap','result','completion','pending','out','console'})
+ require(type(value['schema'])is int and value['schema']==1 and _token(value['nonce']) and _token(value['token']))
+ for name in ('bootstrap','result','completion','pending'):
+  allowed=('absent','invalid','valid_ok','valid_error')if name in ('completion','pending')else('absent','invalid','valid_ok')
+  require(type(value[name])is str and value[name]in allowed)
+ for name in ('out','console'):
+  log=value[name];_diagnostic_keys(log,{'state','module_error','undefined_symbol','syntax_error'})
+  require(type(log['state'])is str and log['state']in BOOTSTRAP_LOG_STATES)
+  for key in ('module_error','undefined_symbol','syntax_error'):
+   require(type(log[key])is bool and (log['state']=='nonempty' or log[key]is False))
+ return value
+
+def _bootstrap_failure_bound(report,value,final):
+ require(value['nonce']==report.get('nonce'))
+ require(report.get('schema')==SCHEMA and report.get('lane')==LANE and report.get('status')=='failed'
+  and report.get('accepted')is False and report.get('failed_stage')=='seed_v1'
+  and report.get('failure_kind')=='seed_bootstrap_timeout' and report.get('zero_code_measurement')is None
+  and type(report.get('snapshots'))is list and report['snapshots']==[])
+ context=report.get('failure_context')
+ _diagnostic_keys(context,{'operation','site','bsl_phase','region','reason'})
+ require(context=={'operation':'enterprise_bootstrap','site':'poll','bsl_phase':None,'region':None,'reason':None})
+ cleanup=report.get('cleanup');require(type(cleanup)is dict)
+ names=('native_processes_stopped','raw_files_removed','container_removed','private_staging_removed')if final else('native_processes_stopped','raw_files_removed')
+ require(all(cleanup.get(k)is True for k in names))
+
+def set_bootstrap_failure(report,value,final=False):
+ """Retain bounded evidence only after cleanup; never change acceptance."""
+ report.pop(BOOTSTRAP_FAILURE_KEY,None)
+ try:
+  validate_bootstrap_failure(value);_bootstrap_failure_bound(report,value,final)
+ except core.OracleError:
+  return False
+ report[BOOTSTRAP_FAILURE_KEY]=copy.deepcopy(value)
+ return True
 
 def _image(value):
  exact(value,{'bytes','sha256'});require(integer(value['bytes'],MAX_FILE_BYTES,1)and digest(value['sha256']))
@@ -168,7 +213,10 @@ def validate_report(raw,*,nonce,provenance,final=False):
  report=decode(raw);require(type(report)is dict and EXTRA_KEYS<=set(report))
  require(type(report.get('schema'))is int and report['schema']==SCHEMA and report.get('lane')==LANE)
  _case(report['zero_case']);_sources(provenance)
+ if BOOTSTRAP_FAILURE_KEY in report:
+  validate_bootstrap_failure(report[BOOTSTRAP_FAILURE_KEY]);_bootstrap_failure_bound(report,report[BOOTSTRAP_FAILURE_KEY],final)
  view=copy.deepcopy(report)
+ view.pop(BOOTSTRAP_FAILURE_KEY,None)
  for k in EXTRA_KEYS:del view[k]
  view.update(schema=core.SCHEMA,lane=core.LANE)
  require(type(report.get('snapshots'))is list)

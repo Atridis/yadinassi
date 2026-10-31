@@ -101,3 +101,32 @@ Each UTF16 unit reserves up to six ASCII escape bytes; supplementary pairs, quot
 slash and control escaping cannot exceed it. Original shared writer is unchanged.
 Official SyntaxHelper entries OpenFile4895, ctor245, NewLines10554 and
 JSONLineBreak/None10566 in the pinned archive document these explicit settings.
+
+## Failed bootstrap and bounded diagnostic
+
+The original native attempt, run `41140251545` at commit
+`3a90e037aaae5713f821074c744a54a0c516ae4f`, timed out at
+`seed_v1 / enterprise_bootstrap / poll` before producing measurement evidence.
+DescriptionLength8 was not executed. This does not establish Code availability,
+physical layout, or the reason for the timeout.
+
+The failure-only diagnostic leaves commands, privileges, deadlines and budgets
+unchanged. After the process is killed and reaped, the collector requires a
+quiescent owned process census and unchanged sandbox budgets. Existing private
+bootstrap/result/completion files yield only nonce/token-bound validity states.
+Existing fixed `/Out` and console files yield only presence states and three fixed
+phrase-presence booleans. UTF-8 and UTF-16 phrase matches are observations, not
+proof of a compiler error or its cause. No raw log, exception text, path, symbol,
+or database value is exported. Missing, malformed, linked, oversized or raced
+files cannot become successful evidence. The log bound is 32768 bytes per file;
+oversized files are not read partially.
+
+The optional projection is accepted only on an unsuccessful bootstrap timeout,
+with empty snapshots, null measurement and verified cleanup. It cannot change a
+failed report into a pass. No production CodeLength0 support is added. Fresh
+native execution is required to obtain the actual diagnostic.
+
+The conservative full-report bound including this diagnostic is 28959 bytes,
+below the unchanged 32768-byte cap. Capture, aggregate and private witness bounds
+remain 5285, 612 and 1921 bytes respectively. These are synthetic size proofs, not
+native observations.
