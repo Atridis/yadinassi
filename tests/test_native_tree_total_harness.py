@@ -76,7 +76,7 @@ class TotalHostBoundaryTests(host_fixtures.SyntheticFilesystemCase):
                     with mock.patch.object(host,'validate_semantic_context'), mock.patch.object(host,'map_contract',return_value=module), \
                             mock.patch.object(module,'compare_collections',side_effect=AssertionError('semantic equality reached')) as equality:
                         result=host.compare_outputs(root,capture,report,inputs,
-                            runner=lambda args,cwd:(0,actual if Path(args[-2]).stem=='collections' else payload,b''),
+                            runner=lambda args,cwd,**limits:(0,actual if Path(args[-2]).stem=='collections' else payload,b''),
                             native_target=host.LINUX_TARGET,comparison_mode=host.MAP_MODE,runtime_evidence=context)
                     equality.assert_not_called()
                     self.assertEqual(result['cases'][0]['failure_kind'],'tree_total_observation_invalid')

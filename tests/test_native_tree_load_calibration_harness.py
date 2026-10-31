@@ -76,7 +76,7 @@ class CalibrationHarnessTests(host_tests.SyntheticFilesystemCase):
                         (capture / (name + '.out')).write_bytes(output)
                         cases.append({'name': name, 'status': 'ok', 'source_sha256': inputs[key],
                                       'output_sha256': full.digest(output), 'output_size': len(output)})
-                    def runner(command, cwd):
+                    def runner(command, cwd, **limits):
                         return 0, payload if Path(command[-2]).stem == 'collections' else b'ok\n', b''
                     compared = full.compare_outputs(root, capture, {'status': 'ok', 'cases': cases}, inputs, runner=runner)
                     collection = compared['cases'][0]

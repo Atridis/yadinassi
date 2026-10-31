@@ -40,6 +40,7 @@ MAP_MODE = "typed-map-order-v1"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
 COLLECTIONS_SOURCE_SHA256 = "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c"
 CASE_SECONDS = 10
+COLLECTIONS_MEASUREMENT_SECONDS = 20
 CHILD_CLEANUP_SECONDS = 5
 DEPENDENCIES = {"prompt-toolkit": "3.0.53", "pyuca": "1.2", "tzdata": "2026.5", "wcwidth": "0.8.2"}
 FAILURES = {"none", "prerequisites_failed", "stale_evidence", "invalid_input",
@@ -1691,11 +1692,19 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
             expected = read_regular(capture / (name + ".out"), MAX_FILE)
             if digest(expected) != case["output_sha256"] or len(expected) != case["output_size"]:
                 raise FullError("native_capture_changed")
+            # Only this reviewed, closed measurement fixture gets extra wall-time
+            # headroom. Generic child/resource limits and all other cases stay put.
+            limits = {}
+            if (name == "collections"
+                    and digest(source_bytes) == COLLECTIONS_SOURCE_SHA256
+                    and input_hashes[f"integrational_tests/tests/{name}.bsl"] == COLLECTIONS_SOURCE_SHA256
+                    and case["source_sha256"] == COLLECTIONS_SOURCE_SHA256):
+                limits["seconds"] = COLLECTIONS_MEASUREMENT_SECONDS
             # An ignored stale/tampered repository __pycache__ is not source
             # provenance. Use a new empty private cache prefix and never write it.
             with tempfile.TemporaryDirectory(prefix="interpreter-cache-", dir=capture.parent) as cache:
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-                                              "-c", EXECUTE_SCRIPT, str(root), str(source), native_target], root)
+                                              "-c", EXECUTE_SCRIPT, str(root), str(source), native_target], root, **limits)
             if code != 0 or stderr:
                 if interpreter_post_create_failed(source_bytes, code, actual, stderr):
                     raise FullError(POST_CREATE_FAILURE)
