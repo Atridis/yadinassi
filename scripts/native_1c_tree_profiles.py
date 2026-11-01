@@ -95,7 +95,7 @@ XML_WORKFLOW_FAMILY = Profile('xml-workflow-family-v1', 'native-1c-xml-workflow-
     35, 'native_1c_xml_workflow_family_contract', '\nСообщить("XF-C1: [" + XFEncode("") + "]");\n', 5, 'xml-workflow-family')
 
 BINARY_STREAM_FAMILY = Profile('binary-stream-family-v1', 'native-1c-binary-stream-family-v1', 'native-1c-binary-stream-family-stage-v1',
-    'binary_stream_family', 'ad3cd0f8ded26e1aa142cfad09c0854ae3214aaf837fdf07dbef5e774d2aff82',
+    'binary_stream_family', '6f608fb87fe94ad11fd14326e2f3a4795bc46e8286ed540695b7b53cddb1eb1b',
     42, 'native_1c_binary_stream_family_contract', '\nСообщить("BF-C1: ["+BFEncode("")+"]");\n', 5, 'binary-stream-family')
 
 def select(name='tree-v1'):

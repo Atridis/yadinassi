@@ -3,9 +3,11 @@
 ## Status and primary source
 
 Implementation checkpoint on main `f1549f9a53fb12d5d6ceca02d3bc78e5d17e2955`.
-The single `binary-stream-family-v1` native batch is prepared, **not yet measured**.
-Local tests are not evidence of native parity; ordinary defaults/alias lifecycle
-observations will be calibrated in this same feature before acceptance.
+The single `binary-stream-family-v1` native batch has an initial incomplete
+acquisition (28 available cases, 12 action errors); see the immutable evidence
+below. Explicit-origin remeasurement and final parity remain pending. Local
+tests are not evidence of native parity; ordinary observations are calibrated
+in this same feature before acceptance.
 
 Primary reference: official EDT documentation archive SHA256
 `a8cf9c3cd5d7828958dcf69d8864cf6664180260e4d50cbff338921304c7e642`,
@@ -70,3 +72,29 @@ TextWriter/JSON/XML stream overloads, fixed-buffer SetSize changes, exact
 cross-process sharing locks, OS-specific errors and sparse-file behavior.
 Native calibration of shared-view close propagation and ordinary constructor/
 seek defaults remains a required gate, not a claim hidden under `!todo`.
+
+## First real native acquisition and explicit-origin calibration
+
+[Run 41254621539](https://github.com/Atridis/yadinassi/actions/runs/41254621539)
+on PR173 head `3e22a0d8dad8674df789edb561854a44c515dbb2`, tree
+`852ca6c22214b4ee7b469ac8e91e648ccb3b68b3`, acquired matching client/server
+captures: 1565 bytes, SHA256
+`05b6753fb5625ac273e048fddcd84b276d16cbf8a1afea18168f8f8a9d15747b`.
+The 40-case source is SHA256
+`ad3cd0f8ded26e1aa142cfad09c0854ae3214aaf837fdf07dbef5e774d2aff82`.
+**Only 28 cases were available; cases16/17/18/19/21/22/23/24/26/30/33/39
+reported action-error. Runtime parity was rejected.** All failed paths invoked
+Seek with omitted initialPosition. This common factor motivates, but does not
+by itself prove, the default-argument diagnosis.
+
+The original source, capture and failed acquisition provenance remain immutable
+under `tests/fixtures/binary_stream_family/original40*`. Availability checks still
+reject that capture. The revised broad batch uses explicit Begin in ordinary
+workflows and retains case17 as an isolated omitted-origin observation. Runtime
+omission behavior is not changed before that native observation is obtained.
+No raw exception text, native permissions, or resource caps are changed.
+
+The archived outer transport was not retained. Offline validation reconstructs
+its envelope from exact archived report/provenance/capture bytes; it is not a
+claim to possess the original envelope. Cleanup and source/runtime identities
+were checked independently. These are acquisition facts, not final acceptance.
