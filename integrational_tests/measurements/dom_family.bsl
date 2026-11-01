@@ -1,5 +1,5 @@
-// !todo DTD/entities, XPath, HTML, exotic configuration deferred.
-Function DMEncode(T)
+// !todo Advanced DOM deferred.
+Функция DMEncode(T)
 If TypeOf(T)<>Type("String") Or StrLen(T)>40 Then Raise "dom-bound";EndIf;
 R="S"+String(StrLen(T))+":";
 For P=1 To StrLen(T) Do
@@ -8,13 +8,13 @@ For D=1 To 4 Do Q=Int(C/16);H=Mid("0123456789abcdef",C-Q*16+1,1)+H;C=Q;EndDo;
 R=R+H;
 EndDo;Return R;
 EndFunction
-Function DMRead(T)
+Функция DMRead(T)
 X=New XMLReader;X.SetString(T);B=New DOMBuilder;D=B.Read(X);X.Close();Return D;
 EndFunction
-Function DMWrite(D)
+Функция DMWrite(D)
 X=New XMLWriter;X.SetString();W=New DOMWriter;W.Write(D,X);Return X.Close();
 EndFunction
-Function DMFile()
+Функция DMFile()
 Root=GetTempFileName("dom");F=New File(Root);If F.Exists() Then Raise "collision";EndIf;
 CreateDirectory(Root);Path=Root+"/a.xml";X=Undefined;Y=Undefined;
 Try
@@ -29,7 +29,7 @@ Try DeleteFiles(Path);Except EndTry;
 Try L=FindFiles(Root,"*");If L.Count()=0 Then DeleteFiles(Root);EndIf;Except EndTry;Raise;
 EndTry;
 EndFunction
-Function DMCase(N)
+Функция DMCase(N)
 D=New DOMDocument("","r");R=D.DocumentElement;
 If N=1 Then Return R.NodeName+":"+String(R.OwnerDocument.IsSameNode(D));
 ElsIf N=2 Then Return String(R.HasChildNodes())+":"+String(R.HasAttributes())+":"+String(R.NodeValue=Undefined);
@@ -73,7 +73,7 @@ ElsIf N=39 Then R.AppendChild(D.CreateTextNode("sub"));E=DMRead(DMWrite(R));Retu
 ElsIf N=40 Then Return DMFile();
 EndIf;
 EndFunction
-Procedure DMObserve(N)
+Процедура DMObserve(N)
 L=Right("0"+String(N),2);
 Try V=DMCase(N);Except Сообщить("DM-"+L+": [action-error]");Return;EndTry;
 Try R=DMEncode(V);Except Сообщить("DM-"+L+": [observer-error]");Return;EndTry;

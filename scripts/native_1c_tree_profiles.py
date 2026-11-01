@@ -111,7 +111,7 @@ DATA_IO_FAMILY = Profile('data-io-family-v1', 'native-1c-data-io-family-v1', 'na
     42, 'native_1c_data_io_family_contract', '\nСообщить("DF-C1: ["+DFEncode("")+"]");\n', 5, 'data-io-family')
 
 DOM_FAMILY = Profile('dom-family-v1', 'native-1c-dom-family-v1', 'native-1c-dom-family-stage-v1',
-    'dom_family', '8d4afe77fc2691bcd4673bd2f80f1e7f1576935a4685feff23d5b94ac97c5afb',
+    'dom_family', 'ca117f2f0cd72a8803c8c2b323aecfdb70e8b471103ed9f77a83859c7a131dfd',
     42, 'native_1c_dom_family_contract', '\nСообщить("DM-C1: ["+DMEncode("")+"]");\n', 5, 'dom-family')
 
 DATA_HASHING_FAMILY = Profile('data-hashing-family-v1', 'native-1c-data-hashing-family-v1', 'native-1c-data-hashing-family-stage-v1',

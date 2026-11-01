@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -56,6 +57,12 @@ class DOMFamilyProfileTests(unittest.TestCase):
     def test_generated_client_captures_helpers_and_utf16(self):
         source=(ROOT/spec().source).read_text(encoding='utf-8').encode()
         module=tree.client_module(source,(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode(),profile=PROFILE)
+        # Managed-form helpers must be client-side, not default server context.
+        declarations = re.findall(r'(?m)^(?:Функция|Процедура) (DM\w+)\(', source.decode())
+        self.assertEqual(len(declarations), 6)
+        generated = module.decode('utf-8-sig')
+        for name in declarations:
+            self.assertRegex(generated, r'&НаКлиенте\n(?:Функция|Процедура) ' + name + r'\(')
         vm=Interpreter(native_target=LINUX_8_3_27_1508)
         with tempfile.TemporaryDirectory(prefix='dom-client-') as tmp, mock.patch('tempfile.gettempdir', return_value=tmp):
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')

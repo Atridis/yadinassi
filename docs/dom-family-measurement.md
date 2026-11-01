@@ -43,8 +43,8 @@ into boolean expected answers. No intentional invalid native workflow is invoked
 ## Closed wire and cleanup
 
 Source SHA256:
-`8d4afe77fc2691bcd4673bd2f80f1e7f1576935a4685feff23d5b94ac97c5afb`.
-Source is 8180 UTF-8 bytes under the unchanged 8192-byte source bound.
+`ca117f2f0cd72a8803c8c2b323aecfdb70e8b471103ed9f77a83859c7a131dfd`.
+Source is 8184 UTF-8 bytes under the unchanged 8192-byte source bound.
 Two calibration lines exercise empty and six-UTF16-unit text including NBSP,
 semicolon, quote and an astral surrogate pair. Forty ordered `DM-01`–`DM-40`
 records encode at most 40 UTF-16 units each as four lowercase hexadecimal digits.
@@ -70,3 +70,7 @@ are introduced. Shared profile/workflow wiring is coordinated by the owner.
 The closed profile, host/producer dispatch, shell stage flag and one existing
 native workflow matrix row are now integrated. No new trigger, secret, permission
 or resource cap was introduced. Local40 availability is not native parity.
+
+## Initial acquisition boundary
+
+The original source (SHA256 `8d4afe77fc2691bcd4673bd2f80f1e7f1576935a4685feff23d5b94ac97c5afb`) reached a client ENTERPRISE timeout after the server case completed its validation. No raw forty-case capture was exported; this is not native parity evidence. Its English helper declaration keywords did not match the existing Russian-keyword client-context injector. The revised packet uses the same declaration spelling as the previously validated profiles; a generated-module regression requires all six helpers to receive explicit client context. Runtime, observations, process limits and acceptance rules are unchanged. The timeout's exact internal platform cause remains unavailable without new evidence.
