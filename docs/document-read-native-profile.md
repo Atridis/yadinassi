@@ -18,7 +18,8 @@ sequence declarations, and false privileged flags are exact source invariants.
 Only owned row 30 is posted; two others are ordinary writes. No Delete, Interactive
 or UndoPosting grant is added. Public runtime remains readonly and unexpanded.
 
-The saved XML is schema-backed, **not yet native apply/redump accepted**. Complete
+The saved XML is schema-backed and corrected from the first owned native redump;
+**the corrected two-identity batch is not yet native accepted**. Complete
 semantic used-QName/tree equality remains required; no defaults are stripped.
 On failure, only the two UUID+Name+kind-verified synthetic redumps may be captured,
 up to 64 KiB each, with exact bytes/hash/identity/tag bounds. No private logs or
@@ -58,3 +59,21 @@ omitted/Undefined yields fresh references. Manager/selection availability is
 server/thick/external, references additionally thin/web. Baseline controls and
 late-bound expressions therefore measure actual context availability rather than
 conflating an unavailable global with an observer compilation failure.
+
+## First native redump correction
+
+Run `41255615774`, source `48622aa3f257e339d193bf57dc5c849bbbca94f4`,
+failed at exact fragment equality before setup, with zero observations and all four
+cleanup proofs true. Its bounded report SHA256 is
+`388c35d9d6dba1bedff803e480ff499d248f08bd86c13c84ee607e908115070c`.
+The target Catalog redump was already semantically identical. The owned Document
+retained all generated UUID/type and mixed-attribute identities, omitted five
+nonserialized properties and catalog-only attribute `Use`, and supplied five
+standard attribute descriptions (Posted, Ref, DeletionMark, Date, Number).
+
+The generated input now includes those exact identity-independent standard
+attribute defaults and omits only those measured absent nodes. This is not a
+redump acceptance exception: the complete semantic equality guard is unchanged.
+Date has FillChecking=ShowError; the other four have DontCheck. The original
+failed report and exact owned redumps remain separately source-bound; repeat two
+and actual CONFIG/physical/runtime parity still require the corrected batch.

@@ -320,7 +320,7 @@ class DocumentInstallDiagnosticsTests(DocumentSourceFixtureCase):
         import document_read_diagnostics as d
         _,_,files=fixture.load(1);saved={n:v for n,v in files.items() if n.endswith('.xml')}
         name=next(n for n in saved if n.startswith('Documents/'))
-        actual=dict(saved);actual[name]=saved[name].replace(b'<StandardAttributes></StandardAttributes>',b'<StandardAttributes><Synthetic/></StandardAttributes>')
+        actual=dict(saved);actual[name]=saved[name].replace(b'<StandardAttributes>',b'<StandardAttributes><Synthetic/>',1)
         with self.assertRaises(ValueError):fixture.verify_redump(fixture.load(1)[0],fixture.load(1)[1]['profile'],saved,actual)
         value=d.install_failure('fragments',ValueError('document-redump-profile'),saved,actual)
         row=next(x for x in value['objects'] if x['owned_xml']['identity']['kind']=='Document')

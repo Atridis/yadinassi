@@ -136,12 +136,37 @@ class PacketTests(unittest.TestCase):
             with self.assertRaises(ValueError):p.validate_rights(self.s,self.request,baseline,actual.replace(old,new))
         with self.assertRaises(ValueError):p.extend_rights(self.s,self.request,baseline.replace(b'<name>ThickClient</name>',b'<name>Administration</name>'))
         xml=p.document_xml(self.s,self.request);name=next(iter(xml))
-        for old,new in ((b'<ObjectModule></ObjectModule>',b'<ObjectModule>handler.bsl</ObjectModule>'),
-                        (b'<ManagerModule></ManagerModule>',b'<ManagerModule>manager.bsl</ManagerModule>'),
+        for old,new in ((b'</Properties>',b'<ObjectModule>handler.bsl</ObjectModule></Properties>'),
+                        (b'</Properties>',b'<ManagerModule>manager.bsl</ManagerModule></Properties>'),
                         (b'<RegisterRecords></RegisterRecords>',b'<RegisterRecords><xr:Item>Register.X</xr:Item></RegisterRecords>'),
                         (b'<PostInPrivilegedMode>false',b'<PostInPrivilegedMode>true'),
                         (b'<RealTimePosting>Deny',b'<RealTimePosting>Allow')):
+            self.assertIn(old,xml[name])
             changed=dict(xml);changed[name]=changed[name].replace(old,new)
+            self.assertNotEqual(changed[name],xml[name])
+            with self.assertRaises(ValueError):p.validate_xml(self.s,self.request,changed)
+
+    def test_measured_native_standard_attributes_and_omitted_catalog_only_inputs(self):
+        # Owned native redump41255615774, not guessed from Designer defaults.
+        self.assertEqual(hashlib.sha256(p.DOCUMENT_STANDARD_ATTRIBUTES.encode()).hexdigest(),
+            'ec28e4a88df41269c39955d19eefadca34696069851f52190682b393e0fc9d1a')
+        artifacts=p.document_xml(self.s,self.request)
+        raw=artifacts['Documents/'+self.request['document_name']+'.xml']
+        doc=ET.fromstring(raw).find(p.MD+'Document');props=doc.find(p.MD+'Properties')
+        for name in ('ObjectBelonging','ObjectModule','ManagerModule','Help','AdditionalIndexes'):
+            self.assertIsNone(props.find(p.MD+name))
+        xr='{http://v8.1c.ru/8.3/xcf/readable}'
+        attrs=props.find(p.MD+'StandardAttributes')
+        self.assertEqual([a.get('name') for a in attrs],['Posted','Ref','DeletionMark','Date','Number'])
+        self.assertEqual([a.findtext(xr+'FillChecking') for a in attrs],
+            ['DontCheck','DontCheck','DontCheck','ShowError','DontCheck'])
+        for attr in doc.findall(p.MD+'ChildObjects/'+p.MD+'Attribute'):
+            self.assertIsNone(attr.find(p.MD+'Properties/'+p.MD+'Use'))
+        for old,new in ((b'<xr:FillChecking>ShowError',b'<xr:FillChecking>DontCheck'),
+                        (b'<StandardAttributes>',b'<StandardAttributes><Extra/>')):
+            changed=dict(artifacts);name='Documents/'+self.request['document_name']+'.xml'
+            self.assertIn(old,raw);changed[name]=raw.replace(old,new)
+            self.assertNotEqual(changed[name],raw)
             with self.assertRaises(ValueError):p.validate_xml(self.s,self.request,changed)
 
     def test_saved_artifacts_match_sources_without_identity_regeneration(self):

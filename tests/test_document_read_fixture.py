@@ -64,12 +64,13 @@ class DocumentFixtureTests(unittest.TestCase):
         for old, new in ((b'http://www.w3.org/2001/XMLSchema"', b'urn:wrong"'),
                 (b'<Posting>Allow', b'<Posting>Deny'),
                 (b'<RealTimePosting>Deny', b'<RealTimePosting>Allow'),
-                (b'<ObjectModule></ObjectModule>', b'<ObjectModule>unsafe</ObjectModule>'),
-                (b'<StandardAttributes></StandardAttributes>', b'<StandardAttributes><Added/></StandardAttributes>'),
+                (b'</Properties>', b'<ObjectModule>unsafe</ObjectModule></Properties>'),
+                (b'<StandardAttributes>', b'<StandardAttributes><Added/>'),
                 (b'<RegisterRecords></RegisterRecords>', b'<RegisterRecords><Register>Other</Register></RegisterRecords>')):
             changed = dict(actual)
             self.assertIn(old, changed[doc])
             changed[doc] = changed[doc].replace(old, new)
+            self.assertNotEqual(changed[doc], actual[doc])
             with self.assertRaises(ValueError): fixture.verify_redump(self.s, self.request, self.saved, changed)
         with self.assertRaises(ValueError): fixture.verify_redump(self.s, self.request, self.saved, {})
 

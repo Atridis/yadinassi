@@ -14,6 +14,15 @@ SOURCE='f1549f9a53fb12d5d6ceca02d3bc78e5d17e2955'
 SCHEMA_SHA='8569cd5d718b4009e09c2fa43a21e0bac6811d78018da0e8ec234b2a38101827'
 PROFILE_SHA='20463712c9ba91dccbe4098e103437144947b27e4fd81187020162fea91b36d5'
 
+# Native 41255615774, exact source-owned Document redump (report SHA256
+# 388c35d9d6dba1bedff803e480ff499d248f08bd86c13c84ee607e908115070c).
+# Identity-independent complete StandardAttributes subtree. This corrects the
+# generated INPUT; redump validation still compares the complete semantic tree.
+DOCUMENT_STANDARD_ATTRIBUTES = '<StandardAttributes><xr:StandardAttribute name="Posted"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Ref"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="DeletionMark"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Date"><xr:LinkByType/><xr:FillChecking>ShowError</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Number"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute></StandardAttributes>'
+DOCUMENT_STANDARD_ATTRIBUTES_SHA256 = 'ec28e4a88df41269c39955d19eefadca34696069851f52190682b393e0fc9d1a'
+DOCUMENT_OMITTED_PROPERTIES = frozenset((
+    'ObjectBelonging', 'ObjectModule', 'ManagerModule', 'Help', 'AdditionalIndexes'))
+
 def profile(s, catalog_request):
     # Saved linked identities are reused only as input identity containers.
     # Document metadata/Ref TypeId remain independent from record and target IDs.
@@ -52,18 +61,24 @@ def document_xml(s, request):
     source=rendered['Catalogs/'+s.base.names[0]+'.xml'].decode()
     root=ET.fromstring(source);props=root.find(MD+'Catalog/'+MD+'Properties')
     original={n.tag.removeprefix(MD):n for n in props}
-    overrides=dict(Name=request['document_name'],ObjectBelonging='Native',Numerator='',
+    overrides=dict(Name=request['document_name'],Numerator='',
         NumberType='String',NumberLength='8',NumberAllowedLength='Variable',
         NumberPeriodicity='Nonperiodical',CheckUnique='true',Autonumbering='false',
-        StandardAttributes='',InputByString='',Posting='Allow',RealTimePosting='Deny',
+        InputByString='',Posting='Allow',RealTimePosting='Deny',
         RegisterRecordsDeletion='AutoDeleteOff',RegisterRecordsWritingOnPost='WriteSelected',
         SequenceFilling='AutoFillOff',RegisterRecords='',PostInPrivilegedMode='false',
-        UnpostInPrivilegedMode='false',ObjectModule='',ManagerModule='',Help='',AdditionalIndexes='')
+        UnpostInPrivilegedMode='false')
     definition=json.loads(schema)['required_properties']
     # Exact schema ordering, shared catalog properties keep their existing shapes.
     parts=[]
+    if hashlib.sha256(DOCUMENT_STANDARD_ATTRIBUTES.encode()).hexdigest()!=DOCUMENT_STANDARD_ATTRIBUTES_SHA256:
+        raise ValueError('document-standard-attributes-provenance')
     for name in definition:
-        if name in overrides:
+        if name in DOCUMENT_OMITTED_PROPERTIES:
+            continue
+        if name == 'StandardAttributes':
+            parts.append(DOCUMENT_STANDARD_ATTRIBUTES)
+        elif name in overrides:
             value=overrides[name];parts.append(f'<{name}>{value}</{name}>')
         elif name in original:
             # Shared simple/empty property only; no QName-bearing subtree rewrite.
@@ -74,12 +89,15 @@ def document_xml(s, request):
     internal=source[source.index('<InternalInfo>'):source.index('</InternalInfo>')+len('</InternalInfo>')]
     internal=internal.replace('Catalog', 'Document').replace(s.base.names[0],request['document_name'])
     children=source[source.index('<ChildObjects>'):source.index('</ChildObjects>')+len('</ChildObjects>')]
+    # Native Document attributes omit Catalog-only Use=ForItem; exact five inputs.
+    if children.count('<Use>ForItem</Use>') != 5:raise ValueError('document-attribute-use-profile')
+    children=children.replace('<Use>ForItem</Use>', '')
     opening=source[:source.index('<Catalog ')]
     xml=opening+f'<Document uuid="{request["document_uuid"]}">'+internal+'<Properties>'+''.join(parts)+'</Properties>'+children+'</Document></MetaDataObject>'
     raw=xml.encode()
     if len(raw)>65536:raise ValueError('document-xml-budget')
-    # !todo Native apply/redump must establish accepted default StandardAttributes
-    # and GeneratedType inventory; schema conformance is not Designer acceptance.
+    # !todo Second identity apply/redump and full native card/CONFIG/physical
+    # capture remain pending; this one native XML result does not admit rows.
     return {'Documents/'+request['document_name']+'.xml':raw,
             'Catalogs/'+s.base.names[1]+'.xml':rendered['Catalogs/'+s.base.names[1]+'.xml']}
 
