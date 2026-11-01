@@ -102,11 +102,17 @@ ZIP_FAMILY = Profile('zip-family-v1', 'native-1c-zip-family-v1', 'native-1c-zip-
     'zip_family', '87da2769c9d1f32b021211793d8dae6a0058556440c950edd877eb393a2f7b8e',
     34, 'native_1c_zip_family_contract', '\nСообщить("ZF-C1: ["+ZFEncode("")+"]");\n', 5, 'zip-family')
 
+REGEX_FAMILY = Profile('regex-family-v1', 'native-1c-regex-family-v1', 'native-1c-regex-family-stage-v1',
+    'regex_family', '28deb10f2d1b0f6e072388a92070c360208601bc9082042a853e1367e12fbb6e',
+    42, 'native_1c_regex_family_contract', '\nСообщить("RF-C1: ["+RFEncode("")+"]");\n', 5, 'regex-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
     if name == ZIP_FAMILY.name:
         return ZIP_FAMILY
+    if name == REGEX_FAMILY.name:
+        return REGEX_FAMILY
     if name == BINARY_STREAM_FAMILY.name:
         return BINARY_STREAM_FAMILY
     if name == XML_WORKFLOW_FAMILY.name:

@@ -1,3 +1,4 @@
+from .regex_functions import BSLRegexResult, BSLRegexGroup
 from .zip_archives import (BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntry, BSLZipFileEntries, BSLZIPCompressionMethod, BSLZIPCompressionLevel, BSLZIPStorePathMode, BSLZIPSubDirProcessingMode, BSLZIPRestoreFilePathsMode, BSLZIPEncryptionMethod, BSLFileNamesEncodingInZipFile)
 from .binary_streams import (BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLByteOrder, BSLFileOpenMode, BSLFileAccess, BSLPositionInStream)
 """Type/TypeOf for the explicit standalone BSL value model, not Python reflection."""
@@ -45,6 +46,8 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLRegexResult, BSLType.REGEX_RESULT, "ResultOfSearchByRegularExpression"),
+    (BSLRegexGroup, BSLType.REGEX_GROUP, "ResultOfSearchByRegularExpressionGroup"),
     (BSLZipFileReader, BSLType.ZIP_READER, "ZipFileReader"),
     (BSLZipFileWriter, BSLType.ZIP_WRITER, "ZipFileWriter"),
     (BSLZipFileEntry, BSLType.ZIP_ENTRY, "ZipFileEntry"),

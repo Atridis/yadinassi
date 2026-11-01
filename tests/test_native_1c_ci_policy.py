@@ -472,6 +472,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: zip-family-v1
             artifact: zip-family
             case: zip_family
+          - profile: regex-family-v1
+            artifact: regex-family
+            case: regex_family
           - profile: binary-stream-family-v1
             artifact: binary-stream-family
             case: binary_stream_family

@@ -1001,6 +1001,13 @@ integers, read/write/seek/copy/size/close workflows, file opening/access enums,
 read-only views and BinaryData bridges. Bounded local regular-file I/O only.
 [Methods, limits and evidence status](docs/binary-stream-family.md).
 
+## Ограниченный поиск по регулярным выражениям
+
+Четыре `Стр*ПоРегулярномуВыражению` / `Str*ByRegularExpression`, readonly результаты
+и группы, поиск одного/всех вхождений и замена реализованы для явно ограниченного
+обычного синтаксиса. Это local checkpoint; native40 calibration пока не получена.
+Границы, доступные конструкции и предварительные Unicode/position правила:
+[regex-family](docs/regex-family.md). Новых файловых/сетевых возможностей нет.
 ## ZIP archives — bounded ordinary family
 
 `ЧтениеZipФайла / ZipFileReader`, `ЗаписьZipФайла / ZipFileWriter`,
