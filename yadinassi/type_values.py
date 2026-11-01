@@ -1,3 +1,4 @@
+from .zip_archives import (BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntry, BSLZipFileEntries, BSLZIPCompressionMethod, BSLZIPCompressionLevel, BSLZIPStorePathMode, BSLZIPSubDirProcessingMode, BSLZIPRestoreFilePathsMode, BSLZIPEncryptionMethod, BSLFileNamesEncodingInZipFile)
 from .binary_streams import (BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLByteOrder, BSLFileOpenMode, BSLFileAccess, BSLPositionInStream)
 """Type/TypeOf for the explicit standalone BSL value model, not Python reflection."""
 
@@ -42,6 +43,18 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLZipFileReader, BSLType.ZIP_READER, "ZipFileReader"),
+    (BSLZipFileWriter, BSLType.ZIP_WRITER, "ZipFileWriter"),
+    (BSLZipFileEntry, BSLType.ZIP_ENTRY, "ZipFileEntry"),
+    (BSLZipFileEntries, BSLType.ZIP_ENTRIES, "ZipFileEntries"),
+    (BSLZIPCompressionMethod, BSLType.ZIP_COMPRESSION_METHOD, "ZIPCompressionMethod"),
+    (BSLZIPCompressionLevel, BSLType.ZIP_COMPRESSION_LEVEL, "ZIPCompressionLevel"),
+    (BSLZIPStorePathMode, BSLType.ZIP_STORE_PATH_MODE, "ZIPStorePathMode"),
+    (BSLZIPSubDirProcessingMode, BSLType.ZIP_SUBDIR_MODE, "ZIPSubDirProcessingMode"),
+    (BSLZIPRestoreFilePathsMode, BSLType.ZIP_RESTORE_MODE, "ZIPRestoreFilePathsMode"),
+    (BSLZIPEncryptionMethod, BSLType.ZIP_ENCRYPTION_METHOD, "ZIPEncryptionMethod"),
+    (BSLFileNamesEncodingInZipFile, BSLType.ZIP_NAMES_ENCODING, "FileNamesEncodingInZipFile"),
+
     (BSLBinaryDataBuffer, BSLType.BINARY_DATA_BUFFER, "BinaryDataBuffer"),
     (BSLMemoryStream, BSLType.MEMORY_STREAM, "MemoryStream"),
     (BSLFileStream, BSLType.FILE_STREAM, "FileStream"),

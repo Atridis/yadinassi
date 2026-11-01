@@ -335,3 +335,12 @@ buffer-conversion APIs remain unsupported. Fixed-buffer stream SetSize changes,
 cross-process file-sharing/locking semantics, exact OS errors and sparse-file
 behavior are deferred with `!todo`. Internal serialization is explicitly rejected.
 See [binary stream scope](docs/binary-stream-family.md).
+
+## ZIP family boundaries
+
+The [new ordinary ZIP family](docs/zip-family.md) does not support passwords or
+encryption, multipart/overbudget ZIP64, BZIP2, exotic filename encoding, native
+unsafe/duplicate-name normalization, or restoring permissions/attributes.
+Windows extraction is temporarily unsupported rather than using an unanchored
+pathname fallback. Native ordinary semantics and independent safety readiness
+remain pending; this is not complete cross-platform ZIP compatibility.
