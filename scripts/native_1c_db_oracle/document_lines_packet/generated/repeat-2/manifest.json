@@ -1,0 +1,576 @@
+{
+  "profile": {
+    "source": "9be9d601e4598de21c87098161928e827341973c",
+    "base": {
+      "source": "f1549f9a53fb12d5d6ceca02d3bc78e5d17e2955",
+      "status": "schema-backed-not-native-applied",
+      "document_name": "De777997a",
+      "catalog_name": "Cb27de61e",
+      "document_uuid": "e529a8a7-d68a-46e3-96db-08aa0e5851a4",
+      "catalog_uuid": "c5bb29e0-500c-4d5e-855f-b405722d7763",
+      "posting": "Allow",
+      "number_type": "String",
+      "number_length": 8,
+      "number_periodicity": "Nonperiodical",
+      "attributes": 5,
+      "linked_schema": {
+        "status": "schema-backed-Designer-input-not-native-applied",
+        "generated_ids": {
+          "Ce777997a": {
+            "CATALOG_UUID": "e529a8a7-d68a-46e3-96db-08aa0e5851a4",
+            "OBJECT_TYPE_UUID": "61bbd681-6db1-4230-8263-7a73928f2207",
+            "OBJECT_VALUE_UUID": "9e6f8762-90ef-4c31-b2a0-cdc5cf2f3684",
+            "REF_TYPE_UUID": "58087fa9-707c-463c-a5f6-e29c72577e6c",
+            "REF_VALUE_UUID": "8cb3c3f1-9748-4a37-9b4a-021e47c2d6ba",
+            "SELECTION_TYPE_UUID": "b462079d-786d-4f4d-9978-6316a36f8508",
+            "SELECTION_VALUE_UUID": "cbb59bd9-82ef-4ae8-96a4-c8d7f6a9ae8a",
+            "LIST_TYPE_UUID": "435c09d8-1fd2-417d-a2cf-c09d410b1bdb",
+            "LIST_VALUE_UUID": "7ba67e8c-a09e-41b3-85cd-036617f25c7d",
+            "MANAGER_TYPE_UUID": "e9052e7c-4aee-4787-afbc-371b3ded9ac1",
+            "MANAGER_VALUE_UUID": "9e6f7f84-02db-40df-8668-7803ba998886"
+          },
+          "Cb27de61e": {
+            "CATALOG_UUID": "c5bb29e0-500c-4d5e-855f-b405722d7763",
+            "OBJECT_TYPE_UUID": "ec3b6ab1-2871-45f8-9ade-b9dc909984de",
+            "OBJECT_VALUE_UUID": "3dfbee38-398b-40bd-9549-09441817f236",
+            "REF_TYPE_UUID": "4f68443f-e835-44cf-aebd-3eb22af2d4fa",
+            "REF_VALUE_UUID": "68e89654-dce6-4e5d-a464-1ec559e8657e",
+            "SELECTION_TYPE_UUID": "30cdb7bc-f4d3-4323-bba3-566a68598071",
+            "SELECTION_VALUE_UUID": "3f837baa-a077-4f28-8f9f-623c5cf22ea9",
+            "LIST_TYPE_UUID": "d51b3338-83eb-4b8b-98bc-4c9e86d3bda6",
+            "LIST_VALUE_UUID": "ebcd4ca3-5988-476a-898d-1920d3a99eb5",
+            "MANAGER_TYPE_UUID": "97465741-bec0-4a21-b40d-9dd5d0749223",
+            "MANAGER_VALUE_UUID": "238baa51-c58c-4726-a3a4-02b9d9fe987a"
+          }
+        },
+        "catalogs": [
+          {
+            "name": "Ce777997a",
+            "metadata_uuid": "e529a8a7-d68a-46e3-96db-08aa0e5851a4",
+            "code_length": 2,
+            "code_type": "String",
+            "description_length": 8,
+            "hierarchical": false,
+            "attributes": [
+              {
+                "name": "A3d883acc",
+                "metadata_uuid": "0a9acf3f-ff31-4c3e-a417-9b12f9e0fb33",
+                "type": "SingleCatalogRef",
+                "target_name": "Cb27de61e",
+                "target_metadata_uuid": "c5bb29e0-500c-4d5e-855f-b405722d7763",
+                "target_requested_ref_type_uuid": "4f68443f-e835-44cf-aebd-3eb22af2d4fa"
+              },
+              {
+                "name": "A0df9bb43",
+                "metadata_uuid": "6c07253d-1c05-4fb5-9951-8cbd073977ef",
+                "type": "Date",
+                "date_fractions": "DateTime"
+              },
+              {
+                "name": "A88ab03bf",
+                "metadata_uuid": "5c95dc76-625e-4e60-8997-1e4bcd4898d7",
+                "type": "Boolean"
+              },
+              {
+                "name": "Addc26edd",
+                "metadata_uuid": "dd089e95-a5c3-4298-b127-d2bdf0f65634",
+                "type": "Number",
+                "digits": 9,
+                "fraction_digits": 2,
+                "allowed_sign": "Any"
+              },
+              {
+                "name": "A226daa8e",
+                "metadata_uuid": "dfb56aba-2ffc-4255-a0cb-571f41da580f",
+                "type": "String",
+                "length": 32,
+                "allowed_length": "Variable"
+              }
+            ]
+          },
+          {
+            "name": "Cb27de61e",
+            "metadata_uuid": "c5bb29e0-500c-4d5e-855f-b405722d7763",
+            "code_length": 2,
+            "code_type": "String",
+            "description_length": 8,
+            "hierarchical": false,
+            "attributes": []
+          }
+        ],
+        "pending": [
+          "schema-defined Designer inputs require native apply and saved-identity redump",
+          "saved-identity applied configuration and redump",
+          "CONFIG descriptors and target typeUUID-to-metadataUUID mapping",
+          "DBNames and physical declarations/slot bytes on same frozen postimage"
+        ]
+      }
+    },
+    "section": "Items",
+    "columns": [
+      "Note",
+      "Amount",
+      "Price",
+      "Quantity",
+      "Product"
+    ],
+    "ids": {
+      "section": "2d02658c-4e2b-4a75-8545-64c8bde42bbe",
+      "Product": "6a38699c-500b-42fb-a71d-29975a805d9a",
+      "Quantity": "1e00701c-0421-4205-8a90-154547208042",
+      "Price": "294ba2c2-1f33-47d1-9bec-1dda5bda9777",
+      "Amount": "67559764-9a3c-47e6-9b8c-2685ee8d4d02",
+      "Note": "e700cb99-0615-4e7a-8421-12b6a378d46e",
+      "section_type": "bf7b6938-5f24-494a-8535-8b2d542dad08",
+      "section_value": "e39ec9e1-896f-4071-86ec-c96344628580",
+      "row_type": "e3ebe334-24f3-43ee-ae85-2629c5411c51",
+      "row_value": "8c743adc-ab83-43bf-a15e-2258edbe858b",
+      "product2": "8022f1c5-9afb-4ea4-9509-4603397bd058",
+      "lookup_absent": "c98e2ffe-2a0e-4004-847d-d66047e28034"
+    }
+  },
+  "names": [
+    "Ce777997a",
+    "Cb27de61e"
+  ],
+  "metadata_ids": [
+    "e529a8a7-d68a-46e3-96db-08aa0e5851a4",
+    "c5bb29e0-500c-4d5e-855f-b405722d7763"
+  ],
+  "record_ids": [
+    "07de414c-becc-4dd0-ae38-6095e6769360",
+    "73d042f4-e669-4dbd-b881-741e8786f697"
+  ],
+  "product_rows": [
+    "4debce57-983f-4d87-88aa-393d70f469b3",
+    "01239298-c4c6-48fc-b24f-7a3c3ba6926b"
+  ],
+  "attribute_names": [
+    "A226daa8e",
+    "Addc26edd",
+    "A88ab03bf",
+    "A0df9bb43",
+    "A3d883acc"
+  ],
+  "attribute_ids": [
+    "dfb56aba-2ffc-4255-a0cb-571f41da580f",
+    "dd089e95-a5c3-4298-b127-d2bdf0f65634",
+    "5c95dc76-625e-4e60-8997-1e4bcd4898d7",
+    "6c07253d-1c05-4fb5-9951-8cbd073977ef",
+    "0a9acf3f-ff31-4c3e-a417-9b12f9e0fb33"
+  ],
+  "order": [
+    "reference",
+    "datetime",
+    "boolean",
+    "number",
+    "text"
+  ],
+  "cases": {
+    "identity": [
+      [
+        "control.document",
+        "Documents.De777997a.EmptyRef().Metadata().Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cb27de61e.EmptyRef().Metadata().Name"
+      ],
+      [
+        "zero",
+        "Documents.De777997a.FindByNumber(\"30\").Items.Count()"
+      ],
+      [
+        "one",
+        "Documents.De777997a.FindByNumber(\"10\").Items.Count()"
+      ],
+      [
+        "three",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Count()"
+      ],
+      [
+        "section.type",
+        "String(TypeOf(Documents.De777997a.FindByNumber(\"20\").Items))"
+      ],
+      [
+        "row.type",
+        "String(TypeOf(Documents.De777997a.FindByNumber(\"20\").Items.Get(0)))"
+      ],
+      [
+        "section.type.identity",
+        "TypeOf(Documents.De777997a.FindByNumber(\"20\").Items) = Type(\"DocumentTabularSection.De777997a.Items\")"
+      ],
+      [
+        "row.type.identity",
+        "TypeOf(Documents.De777997a.FindByNumber(\"20\").Items.Get(0)) = Type(\"DocumentTabularSectionRow.De777997a.Items\")"
+      ],
+      [
+        "first.line",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(0).LineNumber"
+      ],
+      [
+        "other.owner.line",
+        "Documents.De777997a.FindByNumber(\"10\").Items.Get(0).LineNumber"
+      ],
+      [
+        "index.get",
+        "Documents.De777997a.FindByNumber(\"20\").Items[0] = Documents.De777997a.FindByNumber(\"20\").Items.Get(0)"
+      ],
+      [
+        "cross.owner.row",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(0) = Documents.De777997a.FindByNumber(\"10\").Items.Get(0)"
+      ],
+      [
+        "product.type",
+        "TypeOf(Documents.De777997a.FindByNumber(\"20\").Items.Get(0).Product) = Type(\"CatalogRef.Cb27de61e\")"
+      ],
+      [
+        "product.description",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(0).Product.Description"
+      ],
+      [
+        "second.product.description",
+        "Documents.De777997a.FindByNumber(\"10\").Items.Get(0).Product.Description"
+      ],
+      [
+        "repeat.section.identity",
+        "Documents.De777997a.FindByNumber(\"20\").Items = Documents.De777997a.FindByNumber(\"20\").Items"
+      ],
+      [
+        "repeat.row.identity",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(0) = Documents.De777997a.FindByNumber(\"20\").Items.Get(0)"
+      ],
+      [
+        "empty.ref.count",
+        "Documents.De777997a.EmptyRef().Items.Count()"
+      ],
+      [
+        "missing.ref.count",
+        "Documents.De777997a.GetRef(New UUID(\"73d042f4-e669-4dbd-b881-741e8786f697\")).Items.Count()"
+      ],
+      [
+        "control.pad20",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad21",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad22",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad23",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ]
+    ],
+    "rows": [
+      [
+        "control.document",
+        "Documents.De777997a.EmptyRef().Metadata().Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cb27de61e.EmptyRef().Metadata().Name"
+      ],
+      [
+        "0.line",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(0).LineNumber"
+      ],
+      [
+        "0.product",
+        "String(Documents.De777997a.FindByNumber(\"20\").Items.Get(0).Product.UUID())"
+      ],
+      [
+        "0.quantity",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(0).Quantity)"
+      ],
+      [
+        "0.price",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(0).Price)"
+      ],
+      [
+        "0.amount",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(0).Amount)"
+      ],
+      [
+        "0.note",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(0).Note"
+      ],
+      [
+        "1.line",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(1).LineNumber"
+      ],
+      [
+        "1.product",
+        "String(Documents.De777997a.FindByNumber(\"20\").Items.Get(1).Product.UUID())"
+      ],
+      [
+        "1.quantity",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(1).Quantity)"
+      ],
+      [
+        "1.price",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(1).Price)"
+      ],
+      [
+        "1.amount",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(1).Amount)"
+      ],
+      [
+        "1.note",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(1).Note"
+      ],
+      [
+        "2.line",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(2).LineNumber"
+      ],
+      [
+        "2.product",
+        "String(Documents.De777997a.FindByNumber(\"20\").Items.Get(2).Product.UUID())"
+      ],
+      [
+        "2.quantity",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(2).Quantity)"
+      ],
+      [
+        "2.price",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(2).Price)"
+      ],
+      [
+        "2.amount",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Get(2).Amount)"
+      ],
+      [
+        "2.note",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Get(2).Note"
+      ],
+      [
+        "control.pad20",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad21",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad22",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad23",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ]
+    ],
+    "find_total": [
+      [
+        "control.document",
+        "Documents.De777997a.EmptyRef().Metadata().Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cb27de61e.EmptyRef().Metadata().Name"
+      ],
+      [
+        "find.first",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Find(Catalogs.Cb27de61e.GetRef(New UUID(\"07de414c-becc-4dd0-ae38-6095e6769360\")),\"Product\").LineNumber"
+      ],
+      [
+        "find.index",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.IndexOf(Documents.De777997a.FindByNumber(\"20\").Items.Find(Catalogs.Cb27de61e.GetRef(New UUID(\"07de414c-becc-4dd0-ae38-6095e6769360\")),\"Product\")))"
+      ],
+      [
+        "find.missing",
+        "Documents.De777997a.FindByNumber(\"20\").Items.Find(Catalogs.Cb27de61e.GetRef(New UUID(\"c98e2ffe-2a0e-4004-847d-d66047e28034\")),\"Product\") = Undefined"
+      ],
+      [
+        "row.index",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.IndexOf(Documents.De777997a.FindByNumber(\"20\").Items.Get(2)))"
+      ],
+      [
+        "foreign.index",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.IndexOf(Documents.De777997a.FindByNumber(\"10\").Items.Get(0)))"
+      ],
+      [
+        "total",
+        "XMLString(Documents.De777997a.FindByNumber(\"20\").Items.Total(\"Amount\"))"
+      ],
+      [
+        "empty.total",
+        "XMLString(Documents.De777997a.FindByNumber(\"30\").Items.Total(\"Amount\"))"
+      ],
+      [
+        "one.total",
+        "XMLString(Documents.De777997a.FindByNumber(\"10\").Items.Total(\"Amount\"))"
+      ],
+      [
+        "foreach.count",
+        "IterCount"
+      ],
+      [
+        "foreach.amount",
+        "XMLString(IterAmount)"
+      ],
+      [
+        "foreach.lines",
+        "IterLines"
+      ],
+      [
+        "control.pad13",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad14",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad15",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad16",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad17",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad18",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad19",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad20",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad21",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad22",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad23",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ]
+    ],
+    "selection": [
+      [
+        "control.document",
+        "Documents.De777997a.EmptyRef().Metadata().Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cb27de61e.EmptyRef().Metadata().Name"
+      ],
+      [
+        "next20",
+        "S.Next()"
+      ],
+      [
+        "owner20",
+        "S.Number"
+      ],
+      [
+        "count20",
+        "S.Items.Count()"
+      ],
+      [
+        "selection.section.type",
+        "String(TypeOf(S.Items))"
+      ],
+      [
+        "selection.row.type",
+        "String(TypeOf(S.Items.Get(0)))"
+      ],
+      [
+        "first20",
+        "S.Items.Get(0).LineNumber"
+      ],
+      [
+        "next30",
+        "S.Next()"
+      ],
+      [
+        "owner30",
+        "S.Number"
+      ],
+      [
+        "count30",
+        "S.Items.Count()"
+      ],
+      [
+        "next10",
+        "S.Next()"
+      ],
+      [
+        "owner10",
+        "S.Number"
+      ],
+      [
+        "count10",
+        "S.Items.Count()"
+      ],
+      [
+        "first10",
+        "S.Items.Get(0).LineNumber"
+      ],
+      [
+        "exhaust",
+        "S.Next()"
+      ],
+      [
+        "control.pad16",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad17",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad18",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad19",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad20",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad21",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad22",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ],
+      [
+        "control.pad23",
+        "Documents.De777997a.EmptyRef().IsEmpty()"
+      ]
+    ]
+  },
+  "native_status": "not-applied",
+  "files": {
+    "find_total.bsl": "33d2b84bd21d879bfc58b109ea2c5168b2dad633f8cb2cd5eb4d0c38f2b24fed",
+    "rows.bsl": "28485f9293e9aabbcd02533f3fcb0155ee63de1644d9755088819392ad93b352",
+    "witness-initial.bsl": "3fc79fb7a621ed2fc65894974d47302191141cdff80446b25f55938f608db2c6",
+    "setup-initial.bsl": "0fae579a6822571bddafe2c85b127370d3da773451891839d0e11928b75b4f03",
+    "identity.bsl": "34bd3d43db087e9e3a4a77732c81dfa0758b3aaf3a8cf6364b471f077b5e5f02",
+    "setup-rewritten.bsl": "e7843efb94c2b98b84cb97251e61739e5175b13cac51e2a52b71669c7d67a867",
+    "selection.bsl": "63cf9cf9f68dfbf761182807d712ce3229f7382bff8a3e5581c3e373ef871d4c",
+    "witness-rewritten.bsl": "3fc79fb7a621ed2fc65894974d47302191141cdff80446b25f55938f608db2c6",
+    "Documents/De777997a.xml": "5beaa2a1bef636fe934b71155b89f4e34ebb2c0f8ec5b5d50d743dd2fd26df3e",
+    "Catalogs/Cb27de61e.xml": "2a15abe60acbbc46b4b570a63a699b07aea312a6c77f241797f9527662b6226c"
+  }
+}

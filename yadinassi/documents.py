@@ -8,6 +8,7 @@ from .unique_identifiers import BSLUUID
 from .dates import BSLDate, _date_from_datetime
 from .document_types import BSLDocumentType, BSLDocumentReference
 from .catalogs import _bound_card, _bound_value
+from .document_lines import (BSLDocumentLinesType, BSLDocumentLines, DocumentLineScope, DocumentLineValues)
 
 _ZERO = UUID(int=0)
 _OMITTED = object()
@@ -49,6 +50,16 @@ class BSLDocuments(BSLObject):
     def type_by_name(self, name):
         if type(name) is str:
             prefix, separator, item = name.partition('.')
+            section_families={'documenttabularsection':'section','документтабличнаячасть':'section',
+                              'documenttabularsectionrow':'row','документтабличнаячастьстрока':'row'}
+            if separator and prefix.casefold() in section_families:
+                document, dot, section = item.partition('.')
+                if not dot or '.' in section:
+                    raise ValueError('invalid document tabular-section type name')
+                manager=self.get_index(document)
+                definition=manager._section_definition(section)
+                if definition is None:raise ValueError('document tabular section not found')
+                return manager._section_types(definition)[0 if section_families[prefix.casefold()]=='section' else 1]
             families = {'документссылка':'_value_type','documentref':'_value_type',
                         'документменеджер':'_manager_type','documentmanager':'_manager_type',
                         'документвыборка':'_selection_type','documentselection':'_selection_type'}
@@ -64,8 +75,52 @@ class BSLDocumentManager(BSLObject):
     def __init__(self, documents, metadata):
         self._documents, self._metadata = documents, metadata
         self._catalogs = documents._catalogs
+        self._line_cache = {}
+        self._line_types = {}
         for family, key in (('ref','_value_type'),('manager','_manager_type'),('selection','_selection_type')):
             setattr(self,key,BSLDocumentType(UUID(metadata._metadata_uuid),metadata._name,documents._metadata,family))
+
+    def _section_definition(self,name):
+        snapshot=self._documents._metadata._config_snapshot
+        identity=next(identity for key,identity,_ in snapshot.document_fields if key==self._metadata._metadata_uuid)
+        key=name.casefold()
+        found=[section for section in identity.sections if section.name.casefold()==key]
+        return found[0] if len(found)==1 else None
+
+    def _section_types(self,section):
+        if section.metadata_uuid not in self._line_types:
+            common=(UUID(self._metadata._metadata_uuid),UUID(section.metadata_uuid))
+            self._line_types[section.metadata_uuid]=tuple(BSLDocumentLinesType(*common,UUID(uid),
+                self._metadata._name,section.name,self._documents._metadata,family)
+                for uid,family in ((section.type_uuid,'section'),(section.row_type_uuid,'row')))
+        return self._line_types[section.metadata_uuid]
+
+    def _section(self,result,owner,definition):
+        selected=[entry for entry in result.sections if entry[0].metadata_uuid==definition.metadata_uuid]
+        if len(selected)!=1:raise ValueError('document section binding unavailable')
+        section,binding,physical=selected[0]
+        columns=tuple(_bound_card(attribute) for attribute in binding.attributes)
+        rows=[];signature=[]
+        from .storage.catalog_reference_uuid import decode_catalog_reference_uuid
+        for row in physical.rows:
+            if decode_catalog_reference_uuid(row.fields[0].raw)!=owner:continue
+            values=tuple(_bound_value(attribute,field.value) for attribute,field in zip(binding.attributes,row.fields[3:]))
+            rows.append(DocumentLineValues(owner,int(row.fields[2].value),values))
+            signature.append(row.raw)
+        pairs=sorted(zip(rows,signature),key=lambda pair:pair[0].line_number)
+        rows=tuple(pair[0] for pair in pairs);signature=tuple(pair[1] for pair in pairs)
+        key=(definition.metadata_uuid,owner)
+        previous=self._line_cache.get(key)
+        if previous is not None and previous[0]==signature:return previous[1]
+        # Bounded cache stabilizes repeated retrieval identity within this metadata
+        # namespace; changed physical values produce a new immutable collection.
+        if len(self._line_cache)>=4098 and key not in self._line_cache:
+            raise ValueError('document section cache budget')
+        scope=DocumentLineScope(UUID(self._metadata._metadata_uuid),UUID(definition.metadata_uuid),owner,self._documents._metadata)
+        section_type,row_type=self._section_types(definition)
+        value=BSLDocumentLines(scope,columns,rows,self._catalogs,value_type=section_type,row_type=row_type)
+        self._line_cache[key]=(signature,value)
+        return value
 
     def _ref(self, uuid):
         return BSLDocumentReference(self._value_type, uuid, self._metadata, self._read_member)
@@ -121,6 +176,8 @@ class BSLDocumentManager(BSLObject):
 
     def _read_member(self, ref, name):
         result = self._rows()
+        section=self._section_definition(name)
+        if section is not None:return self._section(result,ref.reference_uuid,section)
         for row in result.rows:
             if row.reference_uuid == ref.reference_uuid:
                 return _field(self._fields(result,row),name)
@@ -199,6 +256,10 @@ class BSLDocumentSelection(BSLObject):
         return super().get_method(name)
 
     def get_member(self,name):
+        section=self._manager._section_definition(name)
+        if section is not None:
+            if self._position<0:raise ValueError("document selection is not positioned")
+            return self._manager._section(self._result,self._rows[self._position].reference_uuid,section)
         if self._position<0:
             _field(self._manager._default_fields(self._result),name)
             return None

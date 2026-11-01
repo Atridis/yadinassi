@@ -97,3 +97,10 @@ scripts/native_1c_db_oracle/document_read_packet/** -text
 
 tests/fixtures/document_records.json -text
 tests/fixtures/document_native.json -text
+
+# Saved source-owned Document Items identities and packet bytes.
+scripts/native_1c_db_oracle/document_lines_packet/generated/** -text
+
+# Native selected Items fixture bytes (no session/authentication metadata).
+tests/fixtures/document_items_native.json -text
+tests/fixtures/document_lines_records.json -text

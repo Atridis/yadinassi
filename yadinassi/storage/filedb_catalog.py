@@ -694,7 +694,7 @@ class _BindingHandle:
 
     def _open_table_blob(self, table):
         self._check()
-        if (table is not self.table or self.role == "records"
+        if (table is not self.table or self.role in ("records", "document_lines")
                 or not self._data_complete or self._blob_attempted):
             self._graph.failed = True
             raise ValueError("binding BLOB opening requires its completed data handle")
@@ -729,6 +729,7 @@ class _CatalogBindingGraph:
         self.reader, self.catalog = reader, catalog
         self.failed, self._next, self._active = False, 0, None
         self._tables = []
+        self._document_binding = None
         reader._binding_graph = self
         reader._table_opened = reader._table_blob_opened = True
 
@@ -739,23 +740,40 @@ class _CatalogBindingGraph:
         def scope():
             try:
                 if (self.failed or self.reader._binding_graph is not self
-                        or self._active is not None or self._next >= 3
-                        or role != ("config", "params", "records")[self._next]):
+                        or self._active is not None or self._next >= 4
+                        or role != ("config", "params", "records", "document_lines")[self._next]):
                     raise ValueError("binding stage order or lifetime")
                 self.reader._budget.charge("bytes_processed", 257 * len(self.catalog.tables))
                 self.reader._budget.charge("output_bytes", 1024)
-                if role == "records":
+                if role in ("records", "document_lines"):
                     # The graph admits only a bounded Reference table name;
                     # the row entrypoint separately validates the exact compiled
                     # binding and all declarations before opening its data.
                     target = getattr(binding, "table_name", None)
-                    document = False
+                    document = False; document_lines = False
                     if type(target) is str and target.startswith("_Document"):
                         from .config_document_binding import DocumentBinding, PROFILE_IDENTIFIER as DOCUMENT_PROFILE
                         document = (type(binding) is DocumentBinding
                                     and type(binding.profile_identifier) is str
                                     and binding.profile_identifier == DOCUMENT_PROFILE)
-                    if document:
+                        from .config_document_lines_binding import DocumentLinesBinding, PROFILE_IDENTIFIER as LINES_PROFILE
+                        document_lines = (type(binding) is DocumentLinesBinding
+                                          and type(binding.profile_identifier) is str
+                                          and binding.profile_identifier == LINES_PROFILE)
+                    if role == "document_lines":
+                        previous = self._document_binding
+                        if (not document_lines or previous is None
+                                or binding.owner_metadata_uuid != previous.metadata_uuid
+                                or '_Document'+str(binding.document_id) != previous.table_name):
+                            raise ValueError("section requires its completed identical document binding")
+                    elif document_lines:
+                        raise ValueError("section requires the fourth binding stage")
+                    if document_lines:
+                        import re
+                        match = re.fullmatch(r'_Document([1-9][0-9]{0,9})_VT([1-9][0-9]{0,9})', target)
+                        if match is None or any(int(n)>2147483647 for n in match.groups()):
+                            raise ValueError("invalid compiled document section table name")
+                    elif document:
                         if (type(target) is not str or not target.startswith("_Document")
                                 or not 1 <= len(target[9:]) <= 10 or target[9] == "0"
                                 or not target[9:].isascii() or not target[9:].isdigit()
@@ -773,7 +791,7 @@ class _CatalogBindingGraph:
                 table = None
                 for candidate in self.catalog.tables:
                     name = candidate.name
-                    matched = (name == target if role == "records" else
+                    matched = (name == target if role in ("records", "document_lines") else
                                len(name) == len(target) and all(
                                    actual == expected or actual == chr(ord(expected) + 32)
                                    for actual, expected in zip(name, target)))
@@ -790,8 +808,10 @@ class _CatalogBindingGraph:
                 self._tables.append(table)
                 yield handle
                 handle._check()
-                if not handle._data_complete or (role != "records" and not handle._blob_complete):
+                if not handle._data_complete or (role not in ("records", "document_lines") and not handle._blob_complete):
                     raise ValueError("incomplete binding stage")
+                if role == "records" and document:
+                    self._document_binding = binding
                 self._next += 1
             except BaseException:
                 self.failed = True

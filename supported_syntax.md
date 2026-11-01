@@ -1009,3 +1009,12 @@ provide ordinary file/memory creation, Items enumeration/find, metadata and
 bounded extraction on anchored-directory platforms. Local tests are not native
 parity. Windows extraction currently fails explicitly pending a reviewed backend;
 see [complete scope and gates](docs/zip-family.md).
+
+## Read-only Document → Items → Product workflow
+
+Bounded offline document tabular sections support `Count`, `Get`/indexing,
+`For Each`, `LineNumber`, fixed-reference `Find`, `IndexOf`, numeric `Total`, and
+section/row `Type`/`TypeOf`. Two metadata identities, both column orders and
+initial/rewritten native fixtures replay through the public interpreter; final
+source-composed actual `.1CD` parity is pending. No writes are exposed.
+[Measured profile and limits](docs/document-items-read-runtime.md).

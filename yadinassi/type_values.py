@@ -11,6 +11,7 @@ from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from .catalogs import BSLCatalogs
 from .documents import BSLDocuments
 from .document_types import BSLDocumentReference, BSLDocumentType
+from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
@@ -162,6 +163,13 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
+    if type(value) is BSLDocumentLinesType:
+        return BSLType.TYPE
+    if type(value) is BSLDocumentLines or type(value) is BSLDocumentLine:
+        descriptor = value._value_type if type(value) is BSLDocumentLines else value._section._row_type
+        if type(descriptor) is not BSLDocumentLinesType:
+            raise TypeError('document line type is unavailable')
+        return descriptor
     if (type(value) is BSLCatalogReference or type(value) is BSLDocumentReference):
         return value.value_type
     if (type(value) is BSLCatalogType or type(value) is BSLDocumentType):
