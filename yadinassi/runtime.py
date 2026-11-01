@@ -1,3 +1,5 @@
+from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
+from .dom_io import BSLDOMBuilder, BSLDOMWriter
 from .data_hashing import BSLDataHashing, HASH_FUNCTIONS
 from .data_io import BSLDataReader, BSLDataWriter
 from . import zip_archives
@@ -64,7 +66,7 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
@@ -228,6 +230,9 @@ class Interpreter:
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        self.register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
+        self.register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
+        self.register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
         self.register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
         self.register_type("ЧтениеДанных", BSLDataReader, "DataReader")
         self.register_type("ЗаписьДанных", BSLDataWriter, "DataWriter")
@@ -659,6 +664,7 @@ class Interpreter:
             return TEXT_ENCODINGS
         for ru, en, namespace in zip_archives.NAMESPACES:
             if name in (ru.casefold(), en.casefold()): return namespace
+        if name in ("типузлаdom", "domnodetype"): return DOM_NODE_TYPES
         if name in ("хешфункция", "hashfunction"): return HASH_FUNCTIONS
         if name in ("порядокбайтов", "byteorder"): return binary_streams.BYTE_ORDERS
         if name in ("режимоткрытияфайла", "fileopenmode"): return binary_streams.FILE_OPEN_MODES

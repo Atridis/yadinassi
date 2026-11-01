@@ -1,3 +1,5 @@
+from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
+from .dom_io import BSLDOMBuilder, BSLDOMWriter
 from .data_hashing import BSLDataHashing, BSLHashFunction
 from .data_io import BSLDataReader, BSLDataWriter, BSLReadDataResult
 from .regex_functions import BSLRegexResult, BSLRegexGroup
@@ -49,6 +51,21 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLDOMDocument, BSLType.DOM_DOCUMENT, "DOMDocument"),
+    (BSLDOMElement, BSLType.DOM_ELEMENT, "DOMElement"),
+    (BSLDOMAttribute, BSLType.DOM_ATTRIBUTE, "DOMAttribute"),
+    (BSLDOMText, BSLType.DOM_TEXT, "DOMText"),
+    (BSLDOMCDATASection, BSLType.DOM_CDATA, "DOMCDATASection"),
+    (BSLDOMComment, BSLType.DOM_COMMENT, "DOMComment"),
+    (BSLDOMProcessingInstruction, BSLType.DOM_PI, "DOMProcessingInstruction"),
+    (BSLDOMDocumentFragment, BSLType.DOM_FRAGMENT, "DOMDocumentFragment"),
+    (BSLDOMNodeList, BSLType.DOM_NODE_LIST, "DOMNodeList"),
+    (BSLDOMElementList, BSLType.DOM_ELEMENT_LIST, "DOMElementList"),
+    (BSLDOMAttributeMap, BSLType.DOM_ATTRIBUTE_MAP, "DOMAttributeMap"),
+    (BSLDOMNodeType, BSLType.DOM_NODE_TYPE, "DOMNodeType"),
+    (BSLDOMBuilder, BSLType.DOM_BUILDER, "DOMBuilder"),
+    (BSLDOMWriter, BSLType.DOM_WRITER, "DOMWriter"),
+
     (BSLDataHashing, BSLType.DATA_HASHING, "DataHashing"),
     (BSLHashFunction, BSLType.HASH_FUNCTION, "HashFunction"),
     (BSLDataReader, BSLType.DATA_READER, "DataReader"),

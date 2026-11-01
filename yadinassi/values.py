@@ -19,6 +19,20 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    DOM_DOCUMENT = "ДокументDOM"
+    DOM_ELEMENT = "ЭлементDOM"
+    DOM_ATTRIBUTE = "АтрибутDOM"
+    DOM_TEXT = "ТекстDOM"
+    DOM_CDATA = "СекцияCDATADOM"
+    DOM_COMMENT = "КомментарийDOM"
+    DOM_PI = "ИнструкцияОбработкиDOM"
+    DOM_FRAGMENT = "ФрагментДокументаDOM"
+    DOM_NODE_LIST = "СписокУзловDOM"
+    DOM_ELEMENT_LIST = "СписокЭлементовDOM"
+    DOM_ATTRIBUTE_MAP = "КоллекцияАтрибутовDOM"
+    DOM_NODE_TYPE = "ТипУзлаDOM"
+    DOM_BUILDER = "ПостроительDOM"
+    DOM_WRITER = "ЗаписьDOM"
     DATA_HASHING = "ХешированиеДанных"
     HASH_FUNCTION = "ХешФункция"
     REGEX_RESULT = "РезультатПоискаПоРегулярномуВыражению"

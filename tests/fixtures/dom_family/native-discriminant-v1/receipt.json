@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "source_sha256": "0b4defe51038890513cc778e8616153649faf676423c92fdb637d34de7b96db3",
+  "output_sha256": "891d01af306286ee7630877b4d000c37c0fd454d7330c273abaae011645bb774",
+  "case_count": 40,
+  "native_version": "8.3.27.1508",
+  "contexts": [
+    "server",
+    "managed-thick-file"
+  ],
+  "scope": "40 bounded ordinary observations; private audit reconstructed transport envelope."
+}
