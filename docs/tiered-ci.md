@@ -39,7 +39,7 @@ job-index ties). No manually maintained shard membership lists exist. Other
 platforms use one heavy job. Each matrix job has its own runner/workspace/temp;
 no concurrent shard shares a fixed `/tmp/onec-smoke` fixture directory.
 
-A plan-only discovery on this candidate found **7866 IDs**: 5403 light,
+A plan-only discovery on the initial split candidate `63499ae1` found **7866 IDs**: 5403 light,
 1085 Intel-heavy-0 and1378 Intel-heavy-1, with exact disjoint union. The26 new
 instrumentation tests are unknown/light. Recorded historical Intel weights are
 275.134 seconds light and1400.880/1401.016 seconds heavy; known light weights on
@@ -104,3 +104,16 @@ history. Zero weights for skipped cases never authorize skipping future tests.
 
 Local verification is synthetic normal/-O plus plan-only real discovery, not a
 second full benchmark. Actual Windows/macOS and Python3.10 behavior must pass CI.
+
+## First Ready-run cleanup regression
+
+The first Ready run41342376001 exposed an existing Windows floating-point edge
+in the synthetic native-host child cleanup tests: `(255.1 + 5) - 255.1` is
+`5.000000000000028`. `_finish_child` now caps its final reap wait at the unchanged
+`CHILD_CLEANUP_SECONDS=5`, while preserving the existing remaining-deadline and
+minimum-wait behavior. The normal interpreter execution timeout is unchanged.
+A deterministic clock regression checks the exact cap, elapsed time and expired
+floor; original failed CI evidence is retained. This is a one-line native HOST
+change, not an interpreter/runtime change, so the corrected Ready head requires
+fresh automatic native and complete CI gates. Earlier green evidence is not
+reused as acceptance of the corrected source.
