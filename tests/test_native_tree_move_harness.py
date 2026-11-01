@@ -3,7 +3,10 @@ import hashlib
 from pathlib import Path
 import unittest
 from scripts import native_historical_replay as history
-from scripts import native_1c_full_host as host
+import test_native_1c_full_host as host_fixtures
+
+# Bind the exact module covered by the Windows static-fixture reader.
+host = host_fixtures.full
 import test_native_async_fixture as fixtures
 import test_native_1c_full_stage as stage
 from test_native_tree_total_contract import synthetic_output
@@ -13,7 +16,7 @@ SOURCE_SHA = '55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c'
 BASE_SHA = 'ca23e52041022f2085c6cb7d4393a84834e75c69856c756b92e8531ad35c7c3e'
 
 
-class MoveHarnessTests(unittest.TestCase):
+class MoveHarnessTests(host_fixtures.SyntheticFilesystemCase):
     def source(self):
         data = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(hashlib.sha256(data).hexdigest(), SOURCE_SHA)

@@ -112,24 +112,47 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
             self.assertNotEqual(full.digest(raw), full.COLLECTIONS_SOURCE_SHA256)
             with mock.patch.object(calibration, 'ROOT', checkout), \
                     mock.patch.object(artifact.smoke, 'ROOT', checkout):
-                names = unittest.defaultTestLoader.getTestCaseNames(type(self))
-                suite = unittest.TestSuite(type(self)(name) for name in names
-                    if name != 'test_real_crlf_checkout_fixtures_keep_source_binding')
-                suite.addTest(calibration.CalibrationHarnessTests(
-                    'test_all_stages_reject_identical_host_native_and_artifact'))
+                # Semantic vocabulary/fault matrices remain exhaustive in their
+                # ordinary tests. Here the changed dimension is disk CRLF only:
+                # each diagnostic family, endpoint/interior token, both summary
+                # modes, plus malformed and mixed packets must cross real main.
                 import test_native_tree_rows_failure as rows
-                suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(rows.RowsFailureTests))
                 import test_native_tree_columns_failure as columns
-                suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(columns.ColumnsFailureTests))
-                result = unittest.TestResult()
+                cases = [(calibration.diagnostic_output(code),
+                          'tree_load_calibration_' + code) for code in ('0', 'A', 'R')]
+                for module, prefix in ((rows, 'tree_rows_'), (columns, 'tree_cols_')):
+                    cases.extend((module.output(vector), prefix + vector)
+                                 for vector in ('TTTT', 'TFTT', 'EEEE'))
+                original = calibration.diagnostic_output('A')
+                cases.extend((data, 'tree_load_observation_invalid') for data in (
+                    original.replace(b'1?C0A-', b'1?C0B-', 1),
+                    original.replace(b'1?C0A-!', b'1?C0A-?', 1)))
+                self.assertEqual(len(cases), 11)
                 with mock.patch.object(artifact.smoke, 'main', wraps=artifact.smoke.main) as actual_main:
-                    suite.run(result)
-                self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
-                self.assertEqual(result.skipped, [])
-                self.assertEqual(result.testsRun, len(names) + len(
-                    unittest.defaultTestLoader.getTestCaseNames(rows.RowsFailureTests)) + len(
-                    unittest.defaultTestLoader.getTestCaseNames(columns.ColumnsFailureTests)))
-                self.assertEqual(actual_main.call_count, 28 * 2 + 2 + 81 * 2 + 81 * 2)
+                    for (data, failure), mode in itertools.product(
+                            cases, (full.BYTE_EXACT, full.MAP_MODE)):
+                        with self.subTest(failure=failure, mode=mode):
+                            result, exported, retained = self.invoke(
+                                through_main=True, comparison_mode=mode,
+                                collections_payload=data,
+                                post_create=(artifact.PAYLOAD, (0, artifact.PAYLOAD, b'')))
+                            self.assertNotEqual(result['exit_code'], 0)
+                            self.assertEqual(exported, [])
+                            self.assertNotIn('native_output_artifact_ready=true', result['ready'])
+                            report = result['summary']
+                            self.assertFalse(report['native_evidence_accepted'])
+                            self.assertEqual(report['error'], 'native_artifact_evidence_invalid')
+                            compared = report['probe']['comparison']
+                            case = compared['cases'][0]
+                            self.assertEqual(case['failure_kind'], failure)
+                            self.assertEqual((case['status'], case['acceptance_status']),
+                                             ('error', 'rejected'))
+                            for field in ('interpreter_size', 'interpreter_sha256',
+                                          'mismatch', 'semantic'):
+                                self.assertIsNone(case[field])
+                            target = full.LINUX_TARGET if mode == full.MAP_MODE else full.WINDOWS_TARGET
+                            full.validate_comparison(compared, report['probe']['stage3'], target, mode)
+                self.assertEqual(actual_main.call_count, 22)
 
     def test_orchestration_fixture_rejects_unreviewed_checkout_bytes(self):
         source = artifact.smoke.ROOT / 'integrational_tests/tests/collections.bsl'

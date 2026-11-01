@@ -166,7 +166,7 @@ Except saved=ErrorInfo(); EndTry;''', 'division.bsl')
         from yadinassi import serialization
         from yadinassi.values import BSLType
         self.assertEqual(serialization._UNSUPPORTED_CODEC_TYPES,
-                         {BSLType.REGEX_RESULT, BSLType.REGEX_GROUP, BSLType.ZIP_READER, BSLType.ZIP_WRITER, BSLType.ZIP_ENTRY, BSLType.ZIP_ENTRIES,
+                         {BSLType.DATA_HASHING, BSLType.HASH_FUNCTION, BSLType.DATA_READER, BSLType.DATA_WRITER, BSLType.READ_DATA_RESULT, BSLType.REGEX_RESULT, BSLType.REGEX_GROUP, BSLType.ZIP_READER, BSLType.ZIP_WRITER, BSLType.ZIP_ENTRY, BSLType.ZIP_ENTRIES,
                           BSLType.ZIP_COMPRESSION_METHOD, BSLType.ZIP_COMPRESSION_LEVEL, BSLType.ZIP_STORE_PATH_MODE,
                           BSLType.ZIP_SUBDIR_MODE, BSLType.ZIP_RESTORE_MODE, BSLType.ZIP_ENCRYPTION_METHOD, BSLType.ZIP_NAMES_ENCODING,
                           BSLType.BINARY_DATA_BUFFER, BSLType.MEMORY_STREAM, BSLType.FILE_STREAM, BSLType.STREAM,

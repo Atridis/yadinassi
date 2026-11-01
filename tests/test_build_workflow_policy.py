@@ -53,12 +53,12 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
         # ** preserves every tag, including non-v and slash-containing names.
         # PR/manual remain unfiltered; non-main branch pushes are intentionally
         # absent, even before a PR is opened.
-        self.assertEqual(events, "  push:\n    branches: [main]\n    tags: ['**']\n  pull_request:\n  workflow_dispatch:\n")
+        self.assertEqual(events, "  push:\n    branches: [main]\n    tags: ['**']\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n  workflow_dispatch:\n")
 
     def test_every_route_keeps_all_four_platforms(self):
         build = self.source.split('\n  build:\n', 1)[1].split('\n  release:\n', 1)[0]
         header, steps = build.split('    steps:\n', 1)
-        self.assertIn('    name: ${{ matrix.target }}\n', header)
+        self.assertIn('    name: Package (${{ matrix.target }})\n', header)
         self.assertIn('    runs-on: ${{ matrix.os }}\n', header)
         self.assertIn('      fail-fast: false\n', header)
         self.assertNotRegex(header, r'(?m)^\s*exclude\s*:')
@@ -67,7 +67,7 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
                                      ('linux', 'ubuntu-22.04', 'x64'),
                                      ('mac-x86', 'macos-15-intel', 'x64'),
                                      ('mac-arm', 'macos-15', 'arm64')])
-        self.assertNotIn('if:', header)
+        self.assertIn("    if: needs.admission.outputs.heavy == 'true'\n", header)
         self.assertNotIn('        if:', steps)
 
     def test_no_skip_paths_or_error_bypass(self):
@@ -145,16 +145,13 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
 
     def test_launcher_unit_binary_and_artifact_steps_remain(self):
         commands = re.findall(r'^        run: (.+)$', self.source, re.M)
-        self.assertEqual(commands, [
-            'python -m pip install -e . wcwidth==0.8.2',
-            'python -c "import sys; print(sys.version); raise SystemExit(0 if sys.implementation.name == \'cpython\' and sys.version_info[:2] == (3, 10) else 1)"',
-            'python -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v',
-            'python -O -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v',
-            'python -m pip install -e ".[build]" wcwidth==0.8.2',
-            'python integrational_tests/check_launcher.py',
-            'python -m unittest discover -s tests -v',
-            'python scripts/build.py --target ${{ matrix.target }}',
-            'sha256sum yadinassi-* > SHA256SUMS', '|'])
+        self.assertEqual(commands.count('python integrational_tests/check_launcher.py'), 1)
+        self.assertEqual(commands.count('python scripts/build.py --target ${{ matrix.target }}'), 1)
+        self.assertIn('python -m scripts.test_partition --tier light --report test-results/partition.json', commands)
+        self.assertIn('python -m scripts.test_partition --tier heavy --shard-count ${{ matrix.shard_count }} --shard-index ${{ matrix.shard_index }} --report test-results/partition.json', commands)
+        self.assertNotIn('python -m scripts.run_tests discover -s tests -v', commands)
+        self.assertEqual(commands.count('python -m pip install -e ".[build]" wcwidth==0.8.2'), 1)
+        self.assertIn('sha256sum yadinassi-* > SHA256SUMS', commands)
         self.assertIn('          persist-credentials: false\n', self.source)
         self.assertIn('\npermissions:\n  contents: read\n', self.source)
         self.assertIn('      - uses: actions/upload-artifact@v7\n', self.source)
@@ -163,7 +160,7 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
 
     def test_release_still_needs_successful_matrix_and_v_tag_push(self):
         release = self.source.split('\n  release:\n', 1)[1]
-        self.assertIn("    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'\n    needs: [build, regex-python310]\n", release)
+        self.assertIn("    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'\n    needs: [build, regex-python310, verdict]\n", release)
         self.assertIn('    permissions:\n      contents: write\n', release)
         self.assertIn('gh release create "$RELEASE_TAG" --verify-tag', release)
         self.assertIn('gh release upload "$RELEASE_TAG" artifacts/* --clobber', release)

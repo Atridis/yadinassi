@@ -18,7 +18,7 @@ SOURCE_SHA = '55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c'
 BASE_SHA = 'a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574'
 
 
-class TotalHarnessTests(unittest.TestCase):
+class TotalHarnessTests(host_fixtures.SyntheticFilesystemCase):
     def source(self):
         value = (ROOT/'integrational_tests/tests/collections.bsl').read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(hashlib.sha256(value).hexdigest(), SOURCE_SHA)
@@ -105,6 +105,43 @@ class TotalHostBoundaryTests(host_fixtures.SyntheticFilesystemCase):
 
 
 class TotalWindowsFixtureWiringTests(unittest.TestCase):
+    def test_all_synthetic_observation_cases_use_scoped_windows_reader(self):
+        # Exercise real positive/negative grammar checks, not NTFS descriptor
+        # identity parity. An unavailable real reader must not leak into these
+        # Windows-only static fixtures; POSIX must keep that real reader.
+        from test_native_tree_load_contract import TreeLoadContractTests
+        from test_native_tree_move_harness import MoveHarnessTests, host as move_host
+        self.assertIs(move_host, host_fixtures.full)
+        cases = (
+            (TreeLoadContractTests, 'test_all_failure_forms_rejected_even_when_bytes_equal'),
+            (MoveHarnessTests, 'test_complete_load_prefix_and_move_required_independently'),
+            (TotalHarnessTests, 'test_each_prefix_and_sole_final_total_are_required'),
+        )
+        original = host.read_regular
+        for enabled in (False, True):
+            for cls, method in cases:
+                with self.subTest(windows_fixture=enabled, case=method), \
+                        mock.patch.object(host_fixtures, '_USE_SYNTHETIC_FILE_READER', enabled), \
+                        mock.patch.object(host, 'read_regular', side_effect=host.FullError('invalid_private_file')) as real, \
+                        mock.patch.object(host_fixtures, 'read_synthetic_file', wraps=host_fixtures.read_synthetic_file) as reader:
+                    case = cls(method)
+                    if enabled:
+                        result = unittest.TestResult()
+                        case.run(result)
+                        self.assertEqual(result.errors, [])
+                        self.assertEqual(result.failures, [])
+                        self.assertGreater(reader.call_count, 0)
+                        real.assert_not_called()
+                    else:
+                        case.setUp()
+                        try:
+                            self.assertIs(host.read_regular, real)
+                            reader.assert_not_called()
+                        finally:
+                            case.doCleanups()
+                    self.assertIs(host.read_regular, real)
+                self.assertIs(host.read_regular, original)
+
     def test_host_module_identity_and_windows_reader_coverage(self):
         self.assertIs(host, host_fixtures.full)
         with tempfile.TemporaryDirectory() as directory, \

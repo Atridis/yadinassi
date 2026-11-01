@@ -26,6 +26,20 @@ class Tests(unittest.TestCase):
         dim={n.findtext(md+'Properties/'+md+'Name'):n for n in children.findall(md+'Dimension')}
         self.assertEqual(dim['Product'].findtext(md+'Properties/'+md+'Indexing'),'Index')
         self.assertTrue(all(len(x)<=65536 for x in raw.values()))
+    def test_measured_owned_defaults_are_explicit_not_stripped(self):
+        md='{'+p.linked.setup_adapter.MD+'}';xr='{http://v8.1c.ru/8.3/xcf/readable}';xsi='{http://www.w3.org/2001/XMLSchema-instance}'
+        obj=ET.fromstring(next(iter(p.xml(self.s,self.p).values()))).find(md+'InformationRegister')
+        self.assertEqual([n.get('category') for n in obj.find(md+'InternalInfo')],list(p.NATIVE_FAMILIES))
+        props=obj.find(md+'Properties')
+        for name in ('ObjectBelonging','Help','RecordSetModule','ManagerModule','AdditionalIndexes'):self.assertIsNone(props.find(md+name))
+        standards=props.find(md+'StandardAttributes')
+        self.assertEqual([n.get('name') for n in standards],['Active','LineNumber','Recorder','Period'])
+        self.assertEqual([n.findtext(xr+'FillChecking') for n in standards],['DontCheck']*3+['ShowError'])
+        for field in obj.find(md+'ChildObjects'):
+            values=field.find(md+'Properties');name=values.findtext(md+'Name');fill=values.find(md+'FillValue')
+            self.assertEqual(fill.attrib,{xsi+'type':'xs:string'} if name=='Note' else {xsi+'nil':'true'})
+            self.assertEqual(values.findtext(md+'FillFromFillingValue'),'false')
+            if field.tag==md+'Dimension':self.assertEqual(values.findtext(md+'DenyIncompleteValues'),'false')
     def test_closed_names_modes_and_identities(self):
         for key,value in (('register','Injected";Raise'),('catalog','Wrong'),('write_mode','RecorderSubordinate'),('periodicity','Day'),('extra',1),('columns',list(p.FIELDS)[:-1])):
             bad=copy.deepcopy(self.p);bad[key]=value
@@ -39,13 +53,13 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):p.render(self.s,bad,'get')
     def test_modules_namespaces_and_index_closed(self):
         saved=p.xml(self.s,self.p);name=next(iter(saved))
-        for old,new in ((b'<RecordSetModule></RecordSetModule>',b'<RecordSetModule>handler.bsl</RecordSetModule>'),
-            (b'<ManagerModule></ManagerModule>',b'<ManagerModule>handler.bsl</ManagerModule>'),
+        for old,new in ((b'</Properties>',b'<RecordSetModule>handler.bsl</RecordSetModule></Properties>'),
+            (b'</Properties>',b'<ManagerModule>handler.bsl</ManagerModule></Properties>'),
             (b'<WriteMode>Independent',b'<WriteMode>RecorderSubordinate'),
             (b'<InformationRegisterPeriodicity>Nonperiodical',b'<InformationRegisterPeriodicity>Day'),
             (b'xmlns:cfg="'+p.linked.CFG.encode()+b'"',b'xmlns:cfg="urn:wrong"'),
             (b'<Indexing>Index</Indexing>',b'<Indexing>DontIndex</Indexing>')):
-            actual=dict(saved);actual[name]=actual[name].replace(old,new)
+            self.assertIn(old,saved[name]);actual=dict(saved);actual[name]=actual[name].replace(old,new);self.assertNotEqual(actual[name],saved[name])
             with self.assertRaises(ValueError):p.validate_xml(self.s,self.p,actual)
     def test_exact_scoped_read_update_rights(self):
         baseline=(ROOT/'scripts/native_1c_db_oracle/linked_card_packet/base/CRUDRights.xml').read_bytes().replace(b'@@CONFIGURATION_NAME@@',b'Owned')

@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import test_native_1c_full_host as host_fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('tree_load_contract_test', ROOT / 'scripts/native_1c_tree_load_contract.py')
@@ -49,7 +50,7 @@ def synthetic_output(size=None):
     return raw
 
 
-class TreeLoadContractTests(unittest.TestCase):
+class TreeLoadContractTests(host_fixtures.SyntheticFilesystemCase):
     def reject(self, data, case=1):
         with self.assertRaisesRegex(contract.ObservationError, '^tree_load_observation_invalid$'):
             contract.validate_payload(data, case)
@@ -85,7 +86,7 @@ class TreeLoadContractTests(unittest.TestCase):
             self.reject(good[:2] + bytes([status]) + good[3:])
         self.reject(b'1?S0--' + b'!' + b'.'*58)
         self.reject(good[:6] + b'!' + b'.'*58)
-        from scripts import native_1c_full_host as host
+        host = host_fixtures.full
         records = synthetic_records()
         whole = b''.join(record[1] for record in records) + __import__('test_native_tree_move_contract').synthetic_record()[1] + __import__('test_native_tree_total_contract').synthetic_record()[1]
         self.assertEqual(host.validate_tree_load_observations(whole)['records'], 45)

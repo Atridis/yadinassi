@@ -1,0 +1,13 @@
+{
+  "schema": "native-data-hashing-public-fixture-v1",
+  "source_sha256": "7a126ea8f2dc1b94b9926b2a12d25554933c32fd7dbca7534ac84104c1027ab6",
+  "output_sha256": "f3460e71937c9d6dc29fce76181350845e66456b77d11c8d13ed11ab3882c8ed",
+  "platform": "8.3.27.1508",
+  "case_count": 40,
+  "available_count": 40,
+  "runtime_mismatch_cases": [
+    5,
+    10
+  ],
+  "scope": "ordinary inputs only; SHA512 Base64 vector comparison mismatch, not yet hash algorithm evidence"
+}

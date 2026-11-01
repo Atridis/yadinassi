@@ -366,13 +366,28 @@ def render_summary(value, *, error=False, artifact_error=False):
         return path.read_text(encoding='utf-8').encode('utf-8'), code
 
 
+class _StageWireSink:
+    """Test-only binary destination; production encoder and cap run unchanged."""
+    def __init__(self):
+        self.data = None
+        self.opens = 0
+
+    @contextlib.contextmanager
+    def open(self, mode):
+        if mode != 'xb' or self.opens:
+            raise AssertionError('stage writer must open one exclusive binary destination')
+        self.opens += 1
+        with io.BytesIO() as stream:
+            yield stream
+            self.data = stream.getvalue()
+
+
 def render_stage(value):
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / 'stage.json'
-        suite.write_report(path, value)
-        # This production writer uses binary xb/write, so its wire bytes must
-        # remain exact on every OS; never normalize or reserialize the wire.
-        return path.read_bytes()
+    sink = _StageWireSink()
+    suite.write_report(sink, value)
+    if sink.opens != 1 or type(sink.data) is not bytes:
+        raise AssertionError('stage writer did not produce binary wire')
+    return sink.data
 
 
 def render_provenance(record, *, async_result=None, accepted=False):
@@ -421,6 +436,39 @@ def proof_results():
 
 
 class AsyncBudgetTests(SyntheticFilesystemCase):
+    def test_memory_wire_matches_real_exclusive_binary_file(self):
+        # The finite matrices vary report values, not filesystem behavior.
+        # Keep actual disk/exclusive-open coverage here, with the same writer.
+        for value in (majorant(), majorant(early=True)):
+            stage_value = value['stage3']
+            expected = render_stage(stage_value)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'stage.json'
+                suite.write_report(path, stage_value)
+                self.assertEqual(path.read_bytes(), expected)
+                with self.assertRaises(FileExistsError):
+                    suite.write_report(path, stage_value)
+                self.assertEqual(path.read_bytes(), expected)
+
+    def test_memory_wire_keeps_production_cap_before_open(self):
+        value = majorant()['stage3']
+        wire = render_stage(value)
+        sink = _StageWireSink()
+        with mock.patch.object(suite, 'MAX_STAGE_REPORT', len(wire) - 1):
+            # The production encoder's round-trip decoder rejects this cap
+            # before the writer can open either destination.
+            with self.assertRaisesRegex(suite.FullError, '^invalid_result$'):
+                suite.write_report(sink, value)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'stage.json'
+                with self.assertRaisesRegex(suite.FullError, '^invalid_result$'):
+                    suite.write_report(path, value)
+                self.assertFalse(path.exists())
+        self.assertEqual(sink.opens, 0)
+        self.assertIsNone(sink.data)
+        with mock.patch.object(suite, 'MAX_STAGE_REPORT', len(wire)):
+            self.assertEqual(render_stage(value), wire)
+
     def test_linux_serializer_bound_is_independent_of_crlf_text_transport(self):
         value = majorant()
         expected, expected_code = render_summary(value, error=True)

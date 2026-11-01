@@ -67,7 +67,7 @@ class InformationRegisterFixtureTests(unittest.TestCase):
                 (b'<WriteMode>Independent', b'<WriteMode>RecorderSubordinate'),
                 (b'<InformationRegisterPeriodicity>Nonperiodical', b'<InformationRegisterPeriodicity>Second'),
                 (b'</Properties>', b'<UnexpectedDefault>false</UnexpectedDefault></Properties>'),
-                (b'<RecordSetModule></RecordSetModule>', b'<RecordSetModule>unsafe</RecordSetModule>')):
+                (b'</Properties>', b'<RecordSetModule>unsafe</RecordSetModule></Properties>')):
             changed = dict(actual)
             self.assertIn(old, changed[doc])
             changed[doc] = changed[doc].replace(old, new)

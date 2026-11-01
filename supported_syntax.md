@@ -1025,3 +1025,19 @@ section/row `Type`/`TypeOf`. Two metadata identities, both column orders and
 initial/rewritten native fixtures replay through the public interpreter; final
 source-composed actual `.1CD` parity is pending. No writes are exposed.
 [Measured profile and limits](docs/document-items-read-runtime.md).
+
+### Ordinary DataReader / DataWriter (calibration pending)
+
+`Новый ЧтениеДанных / New DataReader` accepts a filename, BinaryData or an existing
+admitted stream; `Новый ЗаписьДанных / New DataWriter` accepts filename or stream.
+Read/ReadIntoBinaryDataBuffer, unsigned ReadByte/ReadInt16/32/64,
+ReadChars/ReadLine, ReadTo/SkipTo/Skip, Split/SplitInPartsOf/CopyTo and corresponding
+writer methods support the bounded ordinary workflows described in
+[the family contract](docs/data-io-family.md). ReadDataResult has readonly
+Size/MarkerFound/MarkerIndex and three binary/buffer/read-stream conversion
+methods, with Type/TypeOf but no public constructor or internal codec.
+All normal/optimized local tests remain distinct from pending native40 parity.
+
+## DataHashing ordinary workflow (native calibration pending)
+
+`ХешированиеДанных / DataHashing`: CRC32/MD5/SHA1/SHA256/SHA512, incremental UTF-8 String, BinaryData, Stream with optional positive Count (explicit zero unsupported), AppendFile and readonly HashSum/HashFunction. [Scope and resource limits](docs/data-hashing-family.md).

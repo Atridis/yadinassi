@@ -12,6 +12,15 @@ SCHEMA=Path(__file__).with_name('schema_facts.json')
 SCHEMA_SHA='a0a717e7950e281beaee0ade31f3e1aa1785913f28326ffcf4bdabe262795d0a'
 ID_KEYS={*FIELDS,'product2',*(f'{f}.{k}' for f in FAMILIES for k in ('TypeId','ValueId'))}
 
+# Exact identity-free Designer output observed in owned run 41310112812.
+# Report SHA256 50fe46b8311a365ff46ee1067334654075cfa8d798fb12971cdd70293848fb94.
+# These are generated INPUT literals, not a redump normalizer or storage proof.
+NATIVE_FAMILIES=('Record','Manager','Selection','List','RecordSet','RecordKey','RecordManager')
+REGISTER_PROPERTIES='<Name>@@REGISTER@@</Name><Synonym/><Comment/><UseStandardCommands>false</UseStandardCommands><EditType>InList</EditType><DefaultRecordForm/><DefaultListForm/><AuxiliaryRecordForm/><AuxiliaryListForm/><StandardAttributes><xr:StandardAttribute name="Active"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="LineNumber"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Recorder"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Period"><xr:LinkByType/><xr:FillChecking>ShowError</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute></StandardAttributes><InformationRegisterPeriodicity>Nonperiodical</InformationRegisterPeriodicity><WriteMode>Independent</WriteMode><MainFilterOnPeriod>false</MainFilterOnPeriod><IncludeHelpInContents>false</IncludeHelpInContents><DataLockControlMode>Automatic</DataLockControlMode><FullTextSearch>DontUse</FullTextSearch><EnableTotalsSliceFirst>false</EnableTotalsSliceFirst><EnableTotalsSliceLast>false</EnableTotalsSliceLast><RecordPresentation/><ExtendedRecordPresentation/><ListPresentation/><ExtendedListPresentation/><Explanation/><DataHistory>DontUse</DataHistory><UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite><ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>'
+RESOURCE_DEFAULTS='<PasswordMode>false</PasswordMode><Format/><EditFormat/><ToolTip/><MarkNegatives>false</MarkNegatives><Mask/><MultiLine>false</MultiLine><ExtendedEdit>false</ExtendedEdit><MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/><FillFromFillingValue>false</FillFromFillingValue><FillValue xsi:nil="true"/><FillChecking>DontCheck</FillChecking><ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems><ChoiceParameterLinks/><ChoiceParameters/><QuickChoice>Auto</QuickChoice><CreateOnInput>Auto</CreateOnInput><ChoiceForm/><LinkByType/><ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput><Indexing>DontIndex</Indexing><FullTextSearch>Use</FullTextSearch><DataHistory>Use</DataHistory>'
+ATTRIBUTE_DEFAULTS='<PasswordMode>false</PasswordMode><Format/><EditFormat/><ToolTip/><MarkNegatives>false</MarkNegatives><Mask/><MultiLine>false</MultiLine><ExtendedEdit>false</ExtendedEdit><MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/><FillFromFillingValue>false</FillFromFillingValue><FillValue xsi:type="xs:string"/><FillChecking>DontCheck</FillChecking><ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems><ChoiceParameterLinks/><ChoiceParameters/><QuickChoice>Auto</QuickChoice><CreateOnInput>Auto</CreateOnInput><ChoiceForm/><LinkByType/><ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput><Indexing>DontIndex</Indexing><FullTextSearch>Use</FullTextSearch><DataHistory>Use</DataHistory>'
+DIMENSION_DEFAULTS='<PasswordMode>false</PasswordMode><Format/><EditFormat/><ToolTip/><MarkNegatives>false</MarkNegatives><Mask/><MultiLine>false</MultiLine><ExtendedEdit>false</ExtendedEdit><MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/><FillFromFillingValue>false</FillFromFillingValue><FillValue xsi:nil="true"/><FillChecking>DontCheck</FillChecking><ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems><ChoiceParameterLinks/><ChoiceParameters/><QuickChoice>Auto</QuickChoice><CreateOnInput>Auto</CreateOnInput><ChoiceForm/><LinkByType/><ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput><Master>false</Master><MainFilter>false</MainFilter><DenyIncompleteValues>false</DenyIncompleteValues><Indexing>DontIndex</Indexing><FullTextSearch>Use</FullTextSearch><DataHistory>Use</DataHistory><TypeReductionMode>TransformValues</TypeReductionMode>'
+
 def fresh(reverse=False):
     s=linked.fresh(reverse)
     return s,dict(register='I'+s.base.names[0][1:],catalog=s.base.names[1],
@@ -43,17 +52,11 @@ def validate(s,p):
 def xml(s,p):
     validate(s,p);facts=SCHEMA.read_bytes()
     if hashlib.sha256(facts).hexdigest()!=SCHEMA_SHA:raise ValueError('schema-provenance')
-    required=json.loads(facts)['required_register_properties'];values=dict.fromkeys(required,'')
-    values.update(Name=p['register'],ObjectBelonging='Native',UseStandardCommands='false',EditType='InList',
-        InformationRegisterPeriodicity='Nonperiodical',WriteMode='Independent',MainFilterOnPeriod='false',
-        IncludeHelpInContents='false',DataLockControlMode='Automatic',FullTextSearch='DontUse',
-        EnableTotalsSliceFirst='false',EnableTotalsSliceLast='false',DataHistory='DontUse',
-        UpdateDataHistoryImmediatelyAfterWrite='false',ExecuteAfterWriteDataHistoryVersionProcessing='false')
     ns=' '.join(('xmlns' if not k else 'xmlns:'+k)+'="'+v+'"' for k,v in linked.NAMESPACES.items())
     text='<?xml version="1.0" encoding="UTF-8"?>'+f'<MetaDataObject {ns} version="2.20"><InformationRegister uuid="{p["metadata_uuid"]}"><InternalInfo>'
-    for family in FAMILIES:
+    for family in NATIVE_FAMILIES:
         text+=f'<xr:GeneratedType name="InformationRegister{family}.{p["register"]}" category="{family}"><xr:TypeId>{p["ids"][family+".TypeId"]}</xr:TypeId><xr:ValueId>{p["ids"][family+".ValueId"]}</xr:ValueId></xr:GeneratedType>'
-    text+='</InternalInfo><Properties>'+''.join(f'<{k}>{values[k]}</{k}>' for k in required)+'</Properties><ChildObjects>'
+    text+='</InternalInfo><Properties>'+REGISTER_PROPERTIES.replace('@@REGISTER@@',p['register'])+'</Properties><ChildObjects>'
     number='<v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>9</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers>'
     types={'Product':'<v8:Type>cfg:CatalogRef.'+p['catalog']+'</v8:Type>',
         'Variant':number.replace('<v8:FractionDigits>2','<v8:FractionDigits>0'),'Price':number,
@@ -63,14 +66,16 @@ def xml(s,p):
     for family,names in (('Resource',('Price','Available','ValidUntil')),('Attribute',('Note',)),('Dimension',('Product','Variant'))):
         for name in p['columns']:
             if name not in names:continue
-            text+=f'<{family} uuid="{p["ids"][name]}"><Properties><Name>{name}</Name><Synonym/><Comment/><Type>{types[name]}</Type><FillChecking>DontCheck</FillChecking>'
-            if family=='Dimension':text+='<Indexing>'+('Index' if name=='Product' else 'DontIndex')+'</Indexing><Master>false</Master><MainFilter>false</MainFilter>'
+            text+=f'<{family} uuid="{p["ids"][name]}"><Properties><Name>{name}</Name><Synonym/><Comment/><Type>{types[name]}</Type>'
+            defaults={'Resource':RESOURCE_DEFAULTS,'Attribute':ATTRIBUTE_DEFAULTS,'Dimension':DIMENSION_DEFAULTS}[family]
+            if name=='Product':defaults=defaults.replace('<Indexing>DontIndex</Indexing>','<Indexing>Index</Indexing>')
+            text+=defaults
             text+='</Properties></'+family+'>'
     text+='</ChildObjects></InformationRegister></MetaDataObject>'
     target=linked.render_catalog_xml(s,p['catalog_schema'])['Catalogs/'+p['catalog']+'.xml']
     result={'InformationRegisters/'+p['register']+'.xml':text.encode(),'Catalogs/'+p['catalog']+'.xml':target}
     if any(len(v)>65536 for v in result.values()):raise ValueError('register-xml-budget')
-    # !todo Native XML defaults/GeneratedType inventory must be measured. No
+    # !todo Repeat2 reordered input still requires native apply/redump. No
     # CONFIG collection UUID, descriptor position or physical key is inferred.
     return result
 

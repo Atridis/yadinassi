@@ -475,6 +475,12 @@ class WorkflowTests(unittest.TestCase):
           - profile: regex-family-v1
             artifact: regex-family
             case: regex_family
+          - profile: data-io-family-v1
+            artifact: data-io-family
+            case: data_io_family
+          - profile: data-hashing-family-v1
+            artifact: data-hashing-family
+            case: data_hashing_family
           - profile: binary-stream-family-v1
             artifact: binary-stream-family
             case: binary_stream_family
