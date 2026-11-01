@@ -137,3 +137,8 @@ control1/control2 presence, and a case-record presence boolean; no raw messages.
 The complete projection is less than1KiB and remains source-bound and failed-only.
 Synthetic canary tests cover credentials/user/path/URI/quoted known identifiers,
 unknown fields/types, all fixed bounds and attempted success/payload admission.
+
+A later failed-only phase revision adds a 40-bit valid-case bitmap and an
+ordered prefix length0..40 after the two exact controls. Gaps, duplicates,
+out-of-order or malformed records cannot extend the prefix; no record content
+is exported. This identifies a completion boundary, not the native error cause.

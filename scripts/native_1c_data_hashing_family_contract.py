@@ -141,15 +141,25 @@ def failure_projection(error, messages, kind):
         add(error[i:end].strip('.,;:!?'))
         i = end
     controls = CALIBRATION.decode('ascii').splitlines()
-    frame = re.compile(r'HF-(?:0[1-9]|[1-3][0-9]|40): \[(?:action-error|observer-error|ok\|S(0|[1-9]|[1-3][0-9]|40):([0-9a-f]{0,160}))\]')
+    frame = re.compile(r'HF-(0[1-9]|[1-3][0-9]|40): \[(?:action-error|observer-error|ok\|S(0|[1-9]|[1-3][0-9]|40):([0-9a-f]{0,160}))\]')
     def case_record(item):
-        if len(item) > MAX_RECORD_BYTES: return False
+        if len(item) > MAX_RECORD_BYTES: return None
         match = frame.fullmatch(item)
-        return match is not None and (match[1] is None or len(match[2]) == 4 * int(match[1]))
+        if match is None or (match[2] is not None and len(match[3]) != 4 * int(match[2])): return None
+        return int(match[1])
+    ids = [case_record(item) for item in inspected]
+    bitmap = 0
+    for case in ids:
+        if case is not None: bitmap |= 1 << (case - 1)
+    prefix = 0
+    if inspected[:2] == controls:
+        for case in ids[2:]:
+            if case != prefix + 1: break
+            prefix += 1
     result = {'kind': kind, 'tokens': tokens,
               'phase': {'messages': len(messages) if len(messages) <= CASE_COUNT + 2 else None,
                         'c1': controls[0] in inspected, 'c2': controls[1] in inspected,
-                        'case': any(case_record(item) for item in inspected)}}
+                        'case': bitmap != 0, 'case_bitmap': bitmap, 'ordered_prefix': prefix}}
     validate_failure_projection(result)
     return result
 
@@ -161,8 +171,15 @@ def validate_failure_projection(value):
             or any(type(item) is not int or not 0 <= item <= len(FAILURE_TOKEN_WORDS) for item in value['tokens'])):
         raise ObservationError('data_hashing_diagnostic_invalid')
     phase = value['phase']
-    if (type(phase) is not dict or set(phase) != {'messages', 'c1', 'c2', 'case'}
+    if (type(phase) is not dict or set(phase) != {'messages', 'c1', 'c2', 'case', 'case_bitmap', 'ordered_prefix'}
             or any(type(phase[key]) is not bool for key in ('c1', 'c2', 'case'))
+            or type(phase['case_bitmap']) is not int or not 0 <= phase['case_bitmap'] < (1 << CASE_COUNT)
+            or type(phase['ordered_prefix']) is not int or not 0 <= phase['ordered_prefix'] <= CASE_COUNT
+            or phase['case'] != bool(phase['case_bitmap'])
+            or (phase['ordered_prefix'] > 0 and (not phase['c1'] or not phase['c2']
+                or phase['messages'] is None or type(phase['messages']) is not int
+                or phase['messages'] < phase['ordered_prefix'] + 2))
+            or (phase['case_bitmap'] & ((1 << phase['ordered_prefix']) - 1)) != (1 << phase['ordered_prefix']) - 1
             or not (phase['messages'] is None or type(phase['messages']) is int and 0 <= phase['messages'] <= CASE_COUNT + 2)):
         raise ObservationError('data_hashing_diagnostic_invalid')
 

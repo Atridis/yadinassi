@@ -120,11 +120,11 @@ class HashingFailureTests(unittest.TestCase):
     def test_projection_phase_and_fixed_bounds(self):
         c1,c2=contract.CALIBRATION.decode('ascii').splitlines()
         value=contract.failure_projection('error',[c1,c2,'HF-01: [ok|S0:]'],'other')
-        self.assertEqual(value['phase'],dict(messages=3,c1=True,c2=True,case=True))
+        self.assertEqual(value['phase'],dict(messages=3,c1=True,c2=True,case=True,case_bitmap=1,ordered_prefix=1))
         value=contract.failure_projection('error',['HF-C1: [private]','HF-00: [ok|S0:]','HF-01: [ok|S1:]'],'other')
-        self.assertEqual(value['phase'],dict(messages=3,c1=False,c2=False,case=False))
+        self.assertEqual(value['phase'],dict(messages=3,c1=False,c2=False,case=False,case_bitmap=0,ordered_prefix=0))
         value=contract.failure_projection('error',['']*43,'other')
-        self.assertEqual(value['phase'],dict(messages=None,c1=False,c2=False,case=False))
+        self.assertEqual(value['phase'],dict(messages=None,c1=False,c2=False,case=False,case_bitmap=0,ordered_prefix=0))
         long=contract.failure_projection('HashFunction '*200,[],'other')
         self.assertEqual(len(long['tokens']),64)
         self.assertLess(len(json.dumps(long).encode()),1024)
@@ -132,14 +132,34 @@ class HashingFailureTests(unittest.TestCase):
             with self.assertRaises(contract.ObservationError):contract.failure_projection(text,[],'other')
         with self.assertRaises(contract.ObservationError):contract.failure_projection('error',['x'*16385],'other')
         worst=dict(kind='identifier',tokens=[len(contract.FAILURE_TOKEN_WORDS)]*64,
-                   phase=dict(messages=42,c1=False,c2=False,case=False))
+                   phase=dict(messages=42,c1=True,c2=True,case=True,case_bitmap=(1<<40)-1,ordered_prefix=40))
         self.assertLess(len(json.dumps(worst).encode()),1024)
         for mutate in (lambda v:v['tokens'].append(0),lambda v:v.update(tokens=['private']),
                 lambda v:v.update(tokens=[True]),lambda v:v.update(tokens=[len(contract.FAILURE_TOKEN_WORDS)+1]),
                 lambda v:v.update(extra='private'),lambda v:v['phase'].update(extra='private'),
-                lambda v:v['phase'].update(messages=43),lambda v:v['phase'].update(c1=1)):
+                lambda v:v['phase'].update(messages=43),lambda v:v['phase'].update(c1=1),
+                lambda v:v['phase'].update(case_bitmap=1<<40),lambda v:v['phase'].update(case_bitmap=True),
+                lambda v:v['phase'].update(ordered_prefix=41),lambda v:v['phase'].update(ordered_prefix=True),
+                lambda v:v['phase'].update(case_bitmap=0),lambda v:v['phase'].update(c1=False),
+                lambda v:v['phase'].update(messages=1)):
             bad=json.loads(json.dumps(worst));mutate(bad)
             with self.assertRaises(contract.ObservationError):contract.validate_failure_projection(bad)
+
+    def test_failed_phase_bitmap_and_order_are_exact_bounded_frames(self):
+        controls=contract.CALIBRATION.decode('ascii').splitlines()
+        record=lambda n:f'HF-{n:02}: [ok|S0:]'
+        for ids,bitmap,prefix in (([1,2,3],7,3),([1,3],5,1),([1,1,2],3,1),
+                                  ([2,1],3,0),([40],1<<39,0)):
+            phase=contract.failure_projection('error',controls+[record(n) for n in ids],'other')['phase']
+            self.assertEqual((phase['case_bitmap'],phase['ordered_prefix']),(bitmap,prefix))
+        invalid=['HF-00: [ok|S0:]','HF-41: [ok|S0:]','HF-01: [ok|S1:]',
+                 'HF-01: [ok|S0:]private','HF-01: [unknown]']
+        phase=contract.failure_projection('error',controls+invalid,'other')['phase']
+        self.assertEqual((phase['case_bitmap'],phase['ordered_prefix']),(0,0))
+        phase=contract.failure_projection('error',[record(1)]+controls,'other')['phase']
+        self.assertEqual((phase['case_bitmap'],phase['ordered_prefix']),(1,0))
+        phase=contract.failure_projection('error',controls+[record(n) for n in range(1,41)],'other')['phase']
+        self.assertEqual((phase['case_bitmap'],phase['ordered_prefix']),((1<<40)-1,40))
 
     def test_identifier_dictionary_is_only_exact_public_source_tokens(self):
         import re
