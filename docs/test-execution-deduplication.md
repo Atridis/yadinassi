@@ -83,3 +83,42 @@ smoke helper passed all six exact-output checks: file 3.569 s, stdin 3.718 s,
 console 1.119 s, and command aliases 0.281 / 0.281 / 0.314 s respectively.
 These are individual interpreter timings, not a before/after benchmark, a
 whole-suite pass or frozen Mac binary validation.
+
+## CRLF transport and finite-budget filesystem deduplication (2026-11)
+
+This test-only follow-up keeps all production serializers, validators, source
+hashes, native fixtures and limits unchanged. It does not cache source inventories
+or interpreter results. CLI semantic × transport coverage is deliberately left
+unchanged in this checkpoint.
+
+| Previous execution | Retained coverage / explicit tradeoff |
+| --- | --- |
+| CRLF checkout test recursively rediscovers whole Load/Rows/Columns suites, including 382 `smoke.main` calls | Real full staged CRLF checkout, actual `smoke.main`, both byte-exact and typed-map summary modes, three diagnostic families, endpoint/interior tokens, malformed/mixed packets: 22 explicit calls. Complete 28 Load and 81 + 81 Rows/Columns vocabularies, every semantic mutation, source tamper and all original normal-checkout orchestration tests remain unchanged. The exhaustive vocabulary × CRLF cross-product is no longer repeated. |
+| Every finite async wire sample creates a directory and binary report file | Each sample still calls the unchanged production `write_report`, encoder, validation and cap; only its binary destination is an in-memory test sink. The complete finite enumeration remains. Dedicated tests compare disk bytes with sink bytes, exclusive-create collision behavior and cap-before-open at exact boundary. Public-summary CLI text writes and CRLF newline simulation remain real filesystem operations. |
+
+The sink accepts exactly one `xb` open and retains exact bytes; it neither
+reserializes JSON nor normalizes line endings. Production checks execute before
+its destination is opened. No production function or validator is patched out.
+The explicit cap boundary test temporarily lowers the real cap in its own scope
+and verifies rejection before open, then exact-boundary success.
+
+Tests use scoped temporary directories and the existing synthetic filesystem
+adapter. Measurements are sequential, not a parallel full-suite experiment.
+Do not infer safe parallelism for other tests using shared `/tmp/onec-smoke` paths.
+
+Paired local Linux / CPython 3.12.14 timings, same pinned environment and source
+base tree `537a62c66adebf180b79b5f48d7a1a9957a8308c` (merged main
+`273d40ab0abb3fad2a4489ba2cefa100c189dfc8`):
+
+| Two affected modules | Before (22 tests) | After (24 tests) |
+| --- | ---: | ---: |
+| Normal Python, subprocess wall time | 76.394 s | 53.706 s |
+| `python -O`, subprocess wall time | 72.434 s | 47.274 s |
+
+These are single sequential before/after observations (about 30% / 35% less time
+in this subset), not a CPU profile, whole-suite estimate or cross-platform
+speedup guarantee. Two new transport/cap tests are included in the after timing.
+The separate unchanged Load calibration / Rows / Columns suites are also checked
+in both modes; no full aggregate or native capture is part of these local timings.
+Full platform CI remains required. No native input or production runtime changed,
+so this test-only change does not require new real-1C evidence.

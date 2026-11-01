@@ -1,0 +1,91 @@
+// !todo Async/exotic encodings.
+Функция DFEncode(Val T)
+If TypeOf(T)<>Type("String") Or StrLen(T)>40 Then Raise "data-observer-bound";EndIf;
+R="S"+String(StrLen(T))+":";
+For P=1 To StrLen(T) Do
+C=CharCode(T,P);H="";If C<0 Or C>65535 Then Raise "data-unit-bound";EndIf;
+For D=1 To 4 Do Q=Int(C/16);H=Mid("0123456789abcdef",C-Q*16+1,1)+H;C=Q;EndDo;
+R=R+H;
+EndDo;Return R;
+EndFunction
+Функция DR(Val T)
+Return New DataReader(GetBinaryDataFromString(T));
+EndFunction
+Функция DT(Val X)
+Return GetStringFromBinaryData(X.GetBinaryData());
+EndFunction
+Функция DFFile(Val N)
+T=GetTempFileName("data-io");F=New File(T);
+If F.Exists() Then Raise "data-fixture-collision";EndIf;
+CreateDirectory(T);Q=T+"/a.bin";W=Undefined;R=Undefined;
+Try
+W=New DataWriter(Q);W.WriteChars("ab");W.Close();
+If N=36 Then
+R=New DataReader(Q);V=R.ReadChars()+":"+String(R.ReadCompleted);R.Close();
+ElsIf N=37 Then
+W=New DataWriter(Q,,,,True);W.WriteChars("я");W.Close();R=New DataReader(Q);V=R.ReadChars();R.Close();
+ElsIf N=38 Then
+W=New DataWriter(Q,"UTF-16",,,, ,True);W.WriteChars("я");W.Close();R=New DataReader(Q,"UTF-16");V=R.ReadChars();R.Close();
+ElsIf N=39 Then
+R=New DataReader(Q);S=R.SourceStream();R.Close();Try S.Size();V="unexpected";Except V="owned-closed";EndTry;
+ElsIf N=40 Then
+W=New DataWriter(Q);S=W.TargetStream();W.WriteChars("x");W.Close();Try S.Size();V="unexpected";Except V="owned-closed";EndTry;R=New DataReader(Q);V=V+":"+R.ReadChars();R.Close();
+EndIf;
+DeleteFiles(Q);Left=FindFiles(T,"*");If Left.Count()<>0 Then Raise "data-fixture-not-empty";EndIf;
+DeleteFiles(T);If F.Exists() Then Raise "data-fixture-cleanup";EndIf;
+Except
+Try W.Close();Except EndTry;Try R.Close();Except EndTry;
+Try DeleteFiles(Q);Except EndTry;
+Try Left=FindFiles(T,"*");If Left.Count()=0 Then DeleteFiles(T);EndIf;Except EndTry;
+Raise;
+EndTry;Return V;
+EndFunction
+Функция DFCase(Val N)
+S=New MemoryStream;W=New DataWriter(S);P=PositionInStream.Begin;
+If N=1 Then W.WriteByte(255);W.Close();S.Seek(0,P);R=New DataReader(S);Return String(R.ReadByte())+":"+String(R.ReadByte()=Undefined);
+ElsIf N=2 Then W.WriteInt16(258);W.WriteInt16(258,ByteOrder.BigEndian);W.Close();S.Seek(0,P);R=New DataReader(S);A=R.ReadInt16();R.ByteOrder=ByteOrder.BigEndian;B=R.ReadInt16();C=R.ByteOrder=ByteOrder.BigEndian;S.Seek(2,P);Return String(A)+":"+String(B)+":"+String(C)+":"+String(R.ReadInt16(ByteOrder.BigEndian));
+ElsIf N=3 Then W.WriteInt32(4294967295);W.Close();S.Seek(0,P);R=New DataReader(S);Return String(R.ReadInt32()=4294967295);
+ElsIf N=4 Then W.WriteInt64(18446744073709551615,ByteOrder.BigEndian);W.Close();S.Seek(0,P);R=New DataReader(S);Return String(R.ReadInt64(ByteOrder.BigEndian)=18446744073709551615);
+ElsIf N=5 Then W.Close();W=New DataWriter(S,,ByteOrder.BigEndian);W.WriteInt16(258);W.Close();S.Seek(0,P);R=New DataReader(S);Return String(R.ReadByte())+":"+String(R.ReadByte());
+ElsIf N=6 Then W.WriteByte(7);W.Close();S.Seek(0,P);R=New DataReader(S);A=R.ReadInt16();Return String(A=Undefined)+":"+String(S.CurrentPosition())+":"+String(R.ReadCompleted);
+ElsIf N=7 Then B=New BinaryDataBuffer(3);B.Set(0,65);B.Set(1,66);B.Set(2,67);W.WriteBinaryDataBuffer(B);W.WriteBinaryDataBuffer(B,1,1);W.Close();S.Seek(0,P);R=New DataReader(S);C=R.ReadIntoBinaryDataBuffer();Return String(C.Size)+":"+String(C.Get(3));
+ElsIf N=8 Then R=DR("ab");B=New BinaryDataBuffer(4);K=R.ReadIntoBinaryDataBuffer(B,1,3);Return String(K)+":"+String(B.Get(1))+":"+String(B.Get(2));
+ElsIf N=9 Then R=DR("abc");X=R.Read(2);Return DT(X)+":"+String(X.Size)+":"+String(X.MarkerFound)+":"+String(X.MarkerIndex);
+ElsIf N=10 Then R=DR("a");A=R.ReadCompleted;X=R.Read(1);B=R.ReadCompleted;X=R.Read(1);Return String(A)+":"+String(B)+":"+String(R.ReadCompleted)+":"+String(X.Size);
+ElsIf N=11 Then R=DR("ab");X=R.Read();B=X.GetBinaryDataBuffer();B.Set(0,90);Return DT(X)+":"+String(X.GetBinaryDataBuffer().Get(0));
+ElsIf N=12 Then R=DR("ab");X=R.Read();A=X.OpenStreamForRead();B=X.OpenStreamForRead();A.Seek(1,P);V=String(A.CurrentPosition())+":"+String(B.CurrentPosition())+":"+String(A.CanWrite);A.Close();B.Close();Return V;
+ElsIf N=13 Then R=DR("bc");W.Write(GetBinaryDataFromString("a"));W.Write(R.Read());W.Close();S.Seek(0,P);R=New DataReader(S);Return R.ReadChars();
+ElsIf N=14 Then R=DR("abc");K=R.CopyTo(S,2);S.Seek(0,P);T=New DataReader(S);Return String(K)+":"+T.ReadChars()+":"+R.ReadChars();
+ElsIf N=15 Then R=DR("abc");K=R.CopyTo(W);W.Close();S.Seek(0,P);R=New DataReader(S);Return String(K)+":"+R.ReadChars();
+ElsIf N=16 Then R=DR("abc");A=R.Skip(1);B=R.Skip(1);C=R.Skip(9);Return String(A)+":"+String(B)+":"+String(C)+":"+String(R.SourceStream().CurrentPosition())+":"+String(R.ReadCompleted);
+ElsIf N=17 Then R=DR("яab");A=R.ReadChars(2);Return A+":"+R.ReadChars();
+ElsIf N=18 Then R=DR("😀x");A=R.ReadChars(1);B=R.ReadChars(1);C=R.ReadChars();R=DR("😀x");Return A+":"+B+":"+C+":"+R.ReadChars(2)+":"+R.ReadChars();
+ElsIf N=19 Then R=DR("a"+Chars.CR+Chars.LF+"b"+Chars.LF);Return R.ReadLine()+":"+R.ReadLine()+":"+String(R.ReadLine()=Undefined);
+ElsIf N=20 Then R=DR("a||b||");R.LineSplitter="||";Return R.ReadLine()+":"+R.ReadLine()+":"+String(R.ReadLine()=Undefined);
+ElsIf N=21 Then W.LineSplitter="!";W.WriteLine("я");W.WriteLine("x",,"?");W.Close();S.Seek(0,P);R=New DataReader(S);Return R.ReadChars();
+ElsIf N=22 Then W.TextEncoding="UTF-16LE";W.WriteChars("я");W.WriteChars("x","UTF-8");W.Close();S.Seek(0,P);R=New DataReader(S,"UTF-16LE");A=R.ReadChars(1);Return A+":"+R.ReadChars(1,"UTF-8");
+ElsIf N=23 Then W.Close();W=New DataWriter(S,"UTF-8",,,,True);W.WriteChars("a");W.Close();S.Seek(0,P);R=New DataReader(S);Return String(R.ReadByte())+":"+String(R.ReadByte())+":"+String(R.ReadByte())+":"+String(R.ReadByte());
+ElsIf N=24 Then K=1;Try W.ConvertibleSplitterOfLines="<>";K=2;W.WriteChars("a"+Chars.LF+"b");W.Close();S.Seek(0,P);R=New DataReader(S);K=3;R.ConvertedLineDelimiter="<>";K=4;Return R.ReadChars();Except Return "phase:"+String(K);EndTry;
+ElsIf N=25 Then W.WriteByte(65);W.Close();A=S.Size();S.Seek(0,P);R=New DataReader(S);R.Close();Return String(A)+":"+String(S.Size());
+ElsIf N=26 Then R=New DataReader(S);A=R.SourceStream();B=W.TargetStream();W.WriteByte(65);C=A.CurrentPosition();A.Seek(0,P);D=R.ReadByte();A.Close();Try V=String(S.Size());Except V="closed";EndTry;Return String(A=S)+":"+String(B=S)+":"+String(C)+":"+String(D)+":"+V;
+ElsIf N=27 Then R=DR("ab::cd");X=R.ReadTo("::");Return DT(X)+":"+String(X.MarkerFound)+":"+String(X.MarkerIndex)+":"+R.ReadChars();
+ElsIf N=28 Then R=DR("a|b");B=New BinaryDataBuffer(1);B.Set(0,124);X=R.ReadTo(B);Return DT(X)+":"+String(X.MarkerIndex)+":"+R.ReadChars();
+ElsIf N=29 Then R=DR("a::b");M=New Array;M.Add(":");M.Add("::");X=R.ReadTo(M);Return DT(X)+":"+String(X.MarkerIndex)+":"+R.ReadChars();
+ElsIf N=30 Then R=DR("abc");X=R.ReadTo("!");Return DT(X)+":"+String(X.MarkerFound)+":"+String(X.MarkerIndex);
+ElsIf N=31 Then R=DR("a::b");M=New Array;M.Add("!");M.Add("::");A=R.SkipTo(M);B=R.ReadChars();Return String(A)+":"+B+":"+String(R.SkipTo("!"));
+ElsIf N=32 Then R=DR("a||b|");A=R.Split("|");V=String(A.Count())+":";For Each X In A Do V=V+DT(X)+",";EndDo;Return V;
+ElsIf N=33 Then R=DR("a:b|c");M=New Array;M.Add(":");B=New BinaryDataBuffer(1);B.Set(0,124);M.Add(B);A=R.Split(M);V="";For Each X In A Do V=V+DT(X)+":"+String(X.MarkerIndex)+",";EndDo;Return V;
+ElsIf N=34 Then R=DR("abcde");A=R.SplitInPartsOf(2);V="";For Each X In A Do V=V+DT(X)+":"+String(X.Size)+",";EndDo;Return V;
+ElsIf N=35 Then R=DR("a");X=R.Read();Return String(TypeOf(R)=Type("DataReader"))+":"+String(TypeOf(W)=Type("DataWriter"))+":"+String(TypeOf(X)=Type("ReadDataResult"));
+Else W.Close();S.Close();Return DFFile(N);
+EndIf;
+EndFunction
+Процедура DFObserve(Val N)
+L=Right("0"+String(N),2);
+Try V=DFCase(N);Except Сообщить("DF-"+L+": [action-error]");Return;EndTry;
+Try R=DFEncode(V);Except Сообщить("DF-"+L+": [observer-error]");Return;EndTry;
+Сообщить("DF-"+L+": [ok|"+R+"]");
+EndProcedure
+Сообщить("DF-C1: ["+DFEncode("")+"]");
+Сообщить("DF-C2: ["+DFEncode("A ;""😀")+"]");
+For N=1 To 40 Do DFObserve(N);EndDo;

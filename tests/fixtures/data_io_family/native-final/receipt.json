@@ -1,0 +1,13 @@
+{
+  "platform": "8.3.27.1508 Linux",
+  "run": 41313017525,
+  "head": "2549a6fb3cc66b010b3219405fdd11f60bdba5aa",
+  "source_sha256": "18f636ec1cca0fb2839787f6c0764619c6dacae86c96df5dd14e4ab16c97fdd9",
+  "output_sha256": "c9f371a2074b07629146d3230710fa6ac7192b0c41af986390c295fdf0eecdfa",
+  "source_bound_checks": 53,
+  "client_server_equal": true,
+  "cleanup_verified": true,
+  "available_cases": 40,
+  "parity_accepted": true,
+  "limit": "Parity only for closed40 ordinary cases; out-of-band reader reposition remains unsupported with native-v3 exception retained. Original transport envelope absent; reconstructed from audited archived report and exact capture. Public fixture excludes installation/session/authentication metadata."
+}

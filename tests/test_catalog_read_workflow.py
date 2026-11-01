@@ -26,7 +26,7 @@ class CatalogReadWorkflowTests(unittest.TestCase):
         block=existing.workflow_job('native_catalog_read')
         reference=existing.workflow_job('native_metadata_runtime')
         expected=reference.split('    steps:\n')[0].replace('Native 1C Metadata Catalogs public runtime readback','Native 1C batched Catalog read scenario').replace('metadata-catalog-public-runtime-v1',ROUTE)
-        expected=expected.replace("needs.eligibility.outputs.route == 'catalog-read-batch-v1' &&", "(needs.eligibility.outputs.route == 'catalog-read-batch-v1' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' || needs.eligibility.outputs.route == 'document-read-v1' || needs.eligibility.outputs.route == 'document-lines-v1' || needs.eligibility.outputs.route == 'information-register-read-v2') &&")
+        expected=expected.replace("needs.eligibility.outputs.route == 'catalog-read-batch-v1' &&", "(needs.eligibility.outputs.route == 'catalog-read-batch-v1' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' || needs.eligibility.outputs.route == 'document-read-v1' || needs.eligibility.outputs.route == 'document-lines-v1') &&")
         self.assertEqual(block.split('    steps:\n')[0],expected)
         self.assertLess(block.index('scripts/native_1c_db_oracle_ci_policy.py bind'),block.index('GHCR_TOKEN:'))
         self.assertLess(block.index('pip install'),block.index('GHCR_TOKEN:'))
@@ -34,7 +34,7 @@ class CatalogReadWorkflowTests(unittest.TestCase):
         self.assertEqual(block.count('GHCR_USER:'),1)
         self.assertIn('scripts/native_1c_catalog_read_oracle.py --run --ci-report',block)
         self.assertIn("if: always() && steps.native.outputs.report_ready == 'true'",block)
-        self.assertEqual(re.findall(r'^          path: (.*)$',block,re.M),["${{ needs.eligibility.outputs.route == 'information-register-read-v2' && 'native-information-register/information-register.json' || needs.eligibility.outputs.route == 'document-lines-v1' && 'native-document-lines/document-lines.json' || needs.eligibility.outputs.route == 'document-read-v1' && 'native-document-read/document-read.json' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' && 'native-linked-catalog/linked-card.json' || 'native-catalog-read/catalog-read.json' }}"])
+        self.assertEqual(re.findall(r'^          path: (.*)$',block,re.M),["${{ needs.eligibility.outputs.route == 'document-lines-v1' && 'native-document-lines/document-lines.json' || needs.eligibility.outputs.route == 'document-read-v1' && 'native-document-read/document-read.json' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' && 'native-linked-catalog/linked-card.json' || 'native-catalog-read/catalog-read.json' }}"])
         for forbidden in ('workflow_dispatch','pull_request_target','secrets.','download-artifact','*.json','*.log',': write'):
             self.assertNotIn(forbidden,block)
         self.assertIn('native_catalog_read]',existing.workflow_job('verdict'))

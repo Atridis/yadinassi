@@ -21,6 +21,9 @@ NULL = BSLNull.VALUE
 class BSLType(Enum):
     REGEX_RESULT = "РезультатПоискаПоРегулярномуВыражению"
     REGEX_GROUP = "ГруппаРезультатаПоискаПоРегулярномуВыражению"
+    DATA_READER = "ЧтениеДанных"
+    DATA_WRITER = "ЗаписьДанных"
+    READ_DATA_RESULT = "РезультатЧтенияДанных"
     ZIP_READER = "ЧтениеZipФайла"
     ZIP_WRITER = "ЗаписьZipФайла"
     ZIP_ENTRY = "ЭлементZipФайла"

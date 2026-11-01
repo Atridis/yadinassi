@@ -109,5 +109,8 @@ scripts/native_1c_db_oracle/document_lines_packet/generated/** -text
 tests/fixtures/document_items_native.json -text
 tests/fixtures/document_lines_records.json -text
 
-# Saved InfoReg v2 identities and source-derived bytes.
-scripts/native_1c_db_oracle/information_register_packet/** -text
+integrational_tests/measurements/data_io_family.bsl text eol=lf
+tests/fixtures/data_io_family/*.bsl text eol=lf
+tests/fixtures/data_io_family/*.out -text
+tests/fixtures/data_io_family/**/*.bsl text eol=lf
+tests/fixtures/data_io_family/**/*.out -text
