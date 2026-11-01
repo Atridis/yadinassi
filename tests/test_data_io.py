@@ -116,6 +116,25 @@ class DataIOTests(unittest.TestCase):
         self.assertEqual(source.read_line(), 'hello')
         self.assertEqual(source.read_byte(), 255)
 
+    def test_measured_partial_integer_longest_marker_and_text_completion(self):
+        source = reader(b'x')
+        self.assertIsNone(source.read16())
+        self.assertEqual(source.source_stream().current_position(), 0)
+        self.assertTrue(source.get_member('ReadCompleted'))
+        self.assertEqual(source.read_byte(), 120)
+        source = reader(b'a::b')
+        result = source.read_to(array(':', '::'))
+        self.assertEqual((result._data, result._marker, source.read_chars()), (b'a', 1, 'b'))
+        source = reader(b'ab')
+        self.assertEqual(source.read_chars(), 'ab')
+        self.assertFalse(source.get_member('ReadCompleted'))
+
+    def test_measured_file_writer_preserves_unwritten_suffix(self):
+        with tempfile.TemporaryDirectory(prefix='data-io-owned-') as tmp:
+            path = Path(tmp)/'packet.bin'; path.write_bytes(b'ab')
+            writer = Writer(str(path)); writer.write_chars('x'); writer.close()
+            self.assertEqual(path.read_bytes(), b'xb')
+
     def test_settings_mutability(self):
         source = reader(b'\x01\x02')
         source.set_member('ByteOrder',Order.BIG); self.assertEqual(source.read16(),258)

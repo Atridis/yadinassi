@@ -1,7 +1,8 @@
 # Data reader/writer workflow measurement plan
 
-Status: **local packet only; real 1C answers have not been acquired**. Local
-interpreter output is not a golden or proof of native parity. This is one coherent
+Status: **first native capture retained (39 successful cases plus one action error);
+revised packet and complete parity pending**. Local interpreter output alone is not
+a golden or proof of native parity. This is one coherent
 ordinary-workflow batch, not individual API or corner-case measurement requests.
 
 ## Primary source and target
@@ -21,14 +22,14 @@ WriteBOM, while stream construction has no Append parameter. Writer ByteOrder
 is read-only; reader ByteOrder is mutable. Close must distinguish owned streams
 from borrowed streams. These facts inform the implementation, but observed
 positions, BOM/text behavior, EOF transitions, and result independence remain
-native-calibration questions until the batch is run.
+native-calibration questions where the first capture does not discriminate behavior.
 
 ## Closed packet and wire
 
 - Source: `integrational_tests/measurements/data_io_family.bsl`.
 - Source SHA-256:
-  `ce3cc485dec511c85fdb65dbc0acadb2f6fbf1407cba7022c8c04eae79af4198`.
-- Source size: 8,022 UTF-8 bytes, within the additional 8,192-byte packet bound.
+  `e67d1932d1adaa0b53dc79dcc3995a6c906c5c752364a333fbd25675cacb6e2e`.
+- Source size: 8,123 UTF-8 bytes, within the additional 8,192-byte packet bound.
 - Forty cases plus two observer controls: 42 emitted messages, five print sites.
 - Each successful case encodes at most 40 UTF-16 units as fixed-width hex.
   Exact maximum output rectangle: 7,130 bytes, below the existing 8,192-byte cap.
@@ -75,3 +76,20 @@ or credentials are used.
 remain outside this packet. No environment-dependent raw paths or undefined gap
 bytes are compared. Native output, original envelopes, cleanup receipts, and
 source/module provenance must be acquired and audited before claiming parity.
+
+## First native acquisition and bounded followthrough
+
+Run41310612604 on8.3.27.1508 captured39 ordinary successful cases and one action error
+(case24), with identical client/server output, source/module identity and cleanup checked.
+The immutable `tests/fixtures/data_io_family/native-v1` capture preserves all40 records;
+it is not a40-case availability/parity claim. The earlier run41309615838 failed input
+inventory because of a missing final shell dispatch mapping and obtained no DataIO observations.
+
+Established corrections: incomplete integer reads preserve the byte position; the longest
+marker at the earliest matching position wins; ReadChars(all) does not set ReadCompleted;
+and a non-appending file writer overwrites from the beginning without truncating the suffix.
+The revised same40 packet isolates ByteOrder getter/explicit read, repeated Skip/current
+position, one/two UTF16-unit text reads, delimiter error phase, and returned stream
+identity/cursor/close behavior. These remain provisional until measured; readonly/lifetime
+semantics are not inferred from wrapper identity alone. Cosmetic source compaction keeps
+all probes within the unchanged8192-byte input cap; encoded output cap remains7130bytes.

@@ -1,6 +1,6 @@
 # Bounded ordinary data-reader/writer workflows
 
-**Local implementation checkpoint; native calibration is pending.** This is one
+**Native calibration in progress; complete family parity is not yet accepted.** This is one
 coherent new family, not additional general stream permissions. The primary
 reference is the official EDT2026.2 archive
 `com._1c.g5.v8.dt.platform.doc_3.0.1.v202610261959.jar`, SHA256
@@ -16,7 +16,7 @@ The documented integers are **unsigned**, with no floating-point API in this fam
   16/32/64-bit integer reads, ReadChars/ReadLine, Skip/SkipTo/ReadTo, Split,
   SplitInPartsOf, CopyTo, SourceStream and Close.
 - `ЗаписьДанных / DataWriter`: construct from a local filename or admitted stream;
-  file append, explicit BOM, encoding/endian/line settings; Write(BinaryData or
+  file append or prefix overwrite without truncating the unwritten suffix, explicit BOM, encoding/endian/line settings; Write(BinaryData or
   ReadDataResult), WriteBinaryDataBuffer, byte and 16/32/64-bit writes,
   WriteChars/WriteLine, Flush, TargetStream and Close.
 - `РезультатЧтенияДанных / ReadDataResult`: readonly Size/MarkerFound/MarkerIndex,
@@ -54,13 +54,16 @@ other host calls retain their existing side-effect guard.
 `!todo`: Async/Begin methods, exotic/stateful ICU codecs, malformed-byte replacement,
 read-result codecs/typed cells, arbitrary third-party/nonseekable streams and
 unmeasured overlapping-marker/Unicode-split edge behavior. No fallback into a
-host network stream or unbounded parser is provided. Integer partial-read cursor,
-BOM defaults, Unicode ReadChars units, marker ordering, empty split results and
-EOF/lifecycle details are provisional until the single closed native40 batch.
+host network stream or unbounded parser is provided. The first native40 capture establishes preserved cursor on incomplete integer reads,
+longest marker at the earliest position, no ReadCompleted flag on ReadChars(all),
+and prefix-overwrite file mode. ByteOrder mutation effects, Skip return values,
+Unicode ReadChars units, delimiter errors and returned-stream identity/lifetime
+remain under bounded followthrough measurement. Equal-length duplicate marker
+ties and other unmeasured edge combinations remain !todo.
 
 The packet uses short fixed data and verified owned temporary paths, exposes only
 bounded relation/value observations, and preserves unexpected fixture children.
-Public capture fixtures will contain only fixed measurement source, bounded raw
+Public capture fixtures contain only fixed measurement source, bounded raw
 observations and minimal source/platform identity; private installation/session/
 audit/authentication reports will not be published. See
 [data-io-family-measurement.md](data-io-family-measurement.md).

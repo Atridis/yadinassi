@@ -111,9 +111,9 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
             self.assertTrue(all(records[i]['status'] == 'action-error' for i in range(35, 40)))
 
     def test_owned_fixture_scope(self):
-        self.assertIn('Root=GetTempFileName("data-io");', SOURCE)
+        self.assertIn('T=GetTempFileName("data-io");', SOURCE)
         self.assertIn('If F.Exists() Then', SOURCE)
-        self.assertIn('Left.Count()=0 Then DeleteFiles(Root)', SOURCE)
+        self.assertIn('Left.Count()=0 Then DeleteFiles(T)', SOURCE)
         self.assertNotIn('SetHidden', SOURCE)
         self.assertNotIn('DeleteFiles(TempFilesDir', SOURCE)
         self.assertNotIn('DOCTYPE', SOURCE)

@@ -158,10 +158,10 @@ class BSLDataReader(_DataIO):
         return self.read(buffer_or_count).get_buffer()
     def _integer(self, width, order=None):
         codec = 'little' if _order(order, self._order) is BSLByteOrder.LITTLE else 'big'; self._open()
-        data = self._stream._read_bytes(width)
-        self._completed = len(data) < width
-        # !todo: the closed native batch calibrates partial-value consumption.
-        return Decimal(int.from_bytes(data, codec)) if len(data) == width else None
+        # Native41310612604 DF06: incomplete integer does not consume bytes.
+        self._completed = self._available() < width
+        if self._completed: return None
+        return Decimal(int.from_bytes(self._stream._read_bytes(width), codec))
     def read_byte(self): return self._integer(1)
     def read16(self, order=None): return self._integer(2, order)
     def read32(self, order=None): return self._integer(4, order)
@@ -191,7 +191,7 @@ class BSLDataReader(_DataIO):
         best = None
         for index, marker in enumerate(markers):
             position = data.find(marker, start)
-            if position >= 0 and (best is None or position < best[0]): best = (position, index, len(marker))
+            if position >= 0 and (best is None or position < best[0] or (position == best[0] and len(marker) > best[2])): best = (position, index, len(marker))
         return best, budget - cost
     def read_to(self, marker, encoding=None):
         markers = self._markers(marker, encoding); data = self._peek()
@@ -247,7 +247,7 @@ class BSLDataReader(_DataIO):
         chosen = data[:size].decode(codec)
         result = _converted(chosen, self._convert, '\n')
         self._consume(size + prefix)
-        self._completed = count is None or len(chosen) < count
+        self._completed = count is not None and len(chosen) < count
         return result
     def read_line(self, encoding=None, splitter=None):
         data, codec, prefix = self._text_bytes(encoding)
@@ -284,7 +284,7 @@ class BSLDataWriter(_DataIO):
         self._settings(encoding, order, splitter, convert, writing=True)
         mark = next((mark for mark, enc in _BOMS if enc == self._codec), b'') if bom else b''
         if file:
-            target = BSLFileStream(target, BSLFileOpenMode.APPEND if append else BSLFileOpenMode.CREATE, BSLFileAccess.WRITE)
+            target = BSLFileStream(target, BSLFileOpenMode.APPEND if append else BSLFileOpenMode.OPEN_OR_CREATE, BSLFileAccess.WRITE)
             self._owned = True
         elif type(target) not in _STREAMS: raise TypeError('Ожидается имя файла или Поток')
         try:

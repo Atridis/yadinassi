@@ -112,3 +112,5 @@ tests/fixtures/document_lines_records.json -text
 integrational_tests/measurements/data_io_family.bsl text eol=lf
 tests/fixtures/data_io_family/*.bsl text eol=lf
 tests/fixtures/data_io_family/*.out -text
+tests/fixtures/data_io_family/**/*.bsl text eol=lf
+tests/fixtures/data_io_family/**/*.out -text
