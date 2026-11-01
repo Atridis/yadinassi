@@ -69,3 +69,8 @@ All observations were available, but parity differed at18,21,32,33. The original
 report and transport metadata stay private. Empty FindAll/literal dollar fixes
 are established; revised RF33 separately observes reference fallback, a genuine
 tenth capture and a missing reference, within the same40record and8192byte limits.
+
+The revised RF33 capture is retained as minimal `references40` fixtures: native
+value `a0|j:a|` distinguishes fallback, group10 and missing-group empty output.
+Original acquisition parity failures remain historical evidence; local exact
+replay after the measured parser correction is not a fresh native acquisition.

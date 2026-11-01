@@ -183,11 +183,15 @@ def _replacement(value, group_count, budget):
         if c != '$' or index == len(value): literal.append(c); continue
         if not ('0' <= value[index] <= '9'): literal.append('$'); continue
         if literal: tokens.append(('literal', ''.join(literal))); literal = []
-        group = 0
+        budget.tick(); group = ord(value[index]) - 48; index += 1
+        # Native RF33: $10 falls back to $1 + '0' with two groups, but uses
+        # group ten when present; a missing single-digit group contributes ''.
+        # !todo: calibrate unusual leading-zero/long numeric reference spellings.
         while index < len(value) and '0' <= value[index] <= '9':
-            budget.tick(); group = group * 10 + ord(value[index]) - 48; index += 1
-            if group > group_count: raise ValueError('Регулярное выражение: неизвестная группа замены')
-        tokens.append(('group', group))
+            budget.tick(); extended = group * 10 + ord(value[index]) - 48
+            if extended > group_count: break
+            group = extended; index += 1
+        if group <= group_count: tokens.append(('group', group))
     if literal: tokens.append(('literal', ''.join(literal)))
     budget.tick(len(value))
     return [(kind, item, len(item) + sum(ord(c) > 0xffff for c in item) if kind == 'literal' else 0)

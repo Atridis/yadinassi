@@ -102,7 +102,10 @@ Try New ResultOfSearchByRegularExpression; Except Message("not-constructible"); 
         self.assertEqual(api.str_replace('a', '(a)', '$$-$1'), '$$-a')
         self.assertEqual(api.str_replace('b', '(a)?b', '$1x'), 'x')
         self.assertEqual(api.str_replace('abc', '[0-9]', 'x'), 'abc')
-        with self.assertRaises(ValueError): api.str_replace('a', '(a)', '$2')
+        self.assertEqual(api.str_replace('a', '(a)', '$2'), '')
+        self.assertEqual(api.str_replace('ab', '(a)(b)', '$10'), 'a0')
+        self.assertEqual(api.str_replace('abcdefghij', '(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)', '$10:$1'), 'j:a')
+        self.assertEqual(api.str_replace('ab', '(a)(b)', '$9'), '')
 
     def test_unsupported_extensions_reject_instead_of_reinterpretation(self):
         for pattern in (r'(a)\1', '(?=a)', '(?!a)', '(?<=a)', '(?P<n>a)', '(?<n>a)', '(?i)a', r'\p{L}', 'a++', '(?>a)', r'\Qabc\E', r'\k<n>'):

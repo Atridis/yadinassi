@@ -93,8 +93,12 @@ The first source-bound40 observations are available from native8.3.27.1508;
 original bytes and source are retained unchanged. Full parity is not accepted.
 Measured corrections: FindAll with an empty pattern returns an empty Array, while
 Replace still visits zero-width boundaries; literal `$$` is not collapsed.
-`$10` with two groups produced group1 plus literal0; a revised same40case packet
-now distinguishes a real group10 and a missing group before implementation guesses.
+`$10` with two groups produces group1 plus literal0; with ten groups it selects
+group10. A missing single-digit reference contributes an empty string. These
+three RF33 observations are now implemented and both immutable captures replay
+exactly locally; fresh exact-head native parity remains required.
+`!todo`: unusual leading-zero and long multi-digit replacement spellings have not
+been independently calibrated; no full replacement-dialect compatibility claim.
 Strict numeric-string/Boolean refusal, fractional start, reverse greedy behavior,
 scalar matching with UTF-16 positions and ordinary group structure were observed.
 No claim is made for unmeasured Unicode classes or advanced syntax.
