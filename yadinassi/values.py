@@ -19,6 +19,8 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    DATA_HASHING = "ХешированиеДанных"
+    HASH_FUNCTION = "ХешФункция"
     REGEX_RESULT = "РезультатПоискаПоРегулярномуВыражению"
     REGEX_GROUP = "ГруппаРезультатаПоискаПоРегулярномуВыражению"
     DATA_READER = "ЧтениеДанных"

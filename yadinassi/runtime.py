@@ -1,3 +1,4 @@
+from .data_hashing import BSLDataHashing, HASH_FUNCTIONS
 from .data_io import BSLDataReader, BSLDataWriter
 from . import zip_archives
 from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
@@ -227,6 +228,7 @@ class Interpreter:
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        self.register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
         self.register_type("ЧтениеДанных", BSLDataReader, "DataReader")
         self.register_type("ЗаписьДанных", BSLDataWriter, "DataWriter")
         self.register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
@@ -657,6 +659,7 @@ class Interpreter:
             return TEXT_ENCODINGS
         for ru, en, namespace in zip_archives.NAMESPACES:
             if name in (ru.casefold(), en.casefold()): return namespace
+        if name in ("хешфункция", "hashfunction"): return HASH_FUNCTIONS
         if name in ("порядокбайтов", "byteorder"): return binary_streams.BYTE_ORDERS
         if name in ("режимоткрытияфайла", "fileopenmode"): return binary_streams.FILE_OPEN_MODES
         if name in ("доступкфайлу", "fileaccess"): return binary_streams.FILE_ACCESSES
@@ -926,7 +929,7 @@ class Interpreter:
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
                                        BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter,
                                        BSLTextReader, BSLTextWriter, BSLXMLReader, BSLXMLWriter,
-                                       BSLDataReader, BSLDataWriter) else None
+                                       BSLDataReader, BSLDataWriter, BSLDataHashing) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -943,6 +946,8 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        if type(receiver) is BSLDataHashing and key in {"append", "добавить"}:
+            return frozenset({1})
         if type(receiver) is BSLDataReader:
             if key in {"read", "прочитать", "readint16", "прочитатьцелое16", "readint32", "прочитатьцелое32", "readint64", "прочитатьцелое64"}: return frozenset({0})
             if key in {"readchars", "прочитатьсимволы", "readline", "прочитатьстроку", "split", "разделить"}: return frozenset({0, 1})

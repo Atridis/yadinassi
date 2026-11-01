@@ -372,3 +372,11 @@ arbitrary host/nonseekable streams remain unsupported (`!todo`). Floating-point
 read/write methods are not in the pinned official family API. Existing local
 file authority is not a filesystem sandbox; no new network/device access is
 provided. See [exact scope](docs/data-io-family.md).
+
+## DataHashing remaining scope
+
+!todo Explicit zero-count stream Append is unsupported pending native semantics; the original native workflow terminated before case27 emitted a record. Omitted Count on an empty stream is a separate ordinary supported workflow.
+
+No custom/async streams, internal hash-state codec, authentication/password-storage API, thin/web compatibility claim, or arbitrary provider fallback. Per-append16MiB and total64MiB implementation caps are explicit; native ordinary40 calibration pending. `!todo` unmeasured coercions and rare platform behavior. [Details](docs/data-hashing-family.md).
+
+!todo Base64String line folding: native SHA512 capture shows CRLF after64 encoded characters, while the current general Base64String API emits unwrapped text. Hashing measurements normalize only that exact observed separator for digest comparison; general line-folding parity is not claimed.
