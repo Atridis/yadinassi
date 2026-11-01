@@ -110,6 +110,10 @@ DATA_IO_FAMILY = Profile('data-io-family-v1', 'native-1c-data-io-family-v1', 'na
     'data_io_family', '18f636ec1cca0fb2839787f6c0764619c6dacae86c96df5dd14e4ab16c97fdd9',
     42, 'native_1c_data_io_family_contract', '\nСообщить("DF-C1: ["+DFEncode("")+"]");\n', 5, 'data-io-family')
 
+DOM_FAMILY = Profile('dom-family-v1', 'native-1c-dom-family-v1', 'native-1c-dom-family-stage-v1',
+    'dom_family', '8d4afe77fc2691bcd4673bd2f80f1e7f1576935a4685feff23d5b94ac97c5afb',
+    42, 'native_1c_dom_family_contract', '\nСообщить("DM-C1: ["+DMEncode("")+"]");\n', 5, 'dom-family')
+
 DATA_HASHING_FAMILY = Profile('data-hashing-family-v1', 'native-1c-data-hashing-family-v1', 'native-1c-data-hashing-family-stage-v1',
     'data_hashing_family', 'cdc0e9ea099a9b967bb2e30e599f22f7008fb7f1565b62916c08b717f06e3983',
     42, 'native_1c_data_hashing_family_contract', '\nСообщить("HF-C1: ["+HFEncode("")+"]");\n', 5, 'data-hashing-family')
@@ -119,6 +123,8 @@ def select(name='tree-v1'):
         raise ValueError('invalid_tree_profile')
     if name == ZIP_FAMILY.name:
         return ZIP_FAMILY
+    if name == DOM_FAMILY.name:
+        return DOM_FAMILY
     if name == DATA_IO_FAMILY.name:
         return DATA_IO_FAMILY
     if name == DATA_HASHING_FAMILY.name:

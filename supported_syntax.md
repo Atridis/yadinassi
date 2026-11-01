@@ -1041,3 +1041,8 @@ All normal/optimized local tests remain distinct from pending native40 parity.
 ## DataHashing ordinary workflow (native calibration pending)
 
 `ХешированиеДанных / DataHashing`: CRC32/MD5/SHA1/SHA256/SHA512, incremental UTF-8 String, BinaryData, Stream with optional positive Count (explicit zero unsupported), AppendFile and readonly HashSum/HashFunction. [Scope and resource limits](docs/data-hashing-family.md).
+
+
+## DOM XML (локальный bounded-профиль, native-калибровка ожидается)
+
+`ДокументDOM`, `ПостроительDOM`, `ЗаписьDOM`, узлы XML, коллекции дочерних узлов/элементов/атрибутов: создание, чтение существующим `ЧтениеXML`, навигация/изменение, clone/import, запись существующим `ЗаписьXML`. [Точный API и границы](docs/dom-family.md). Это не поддержка полного DOM/XPath/XDTO.

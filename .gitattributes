@@ -119,3 +119,8 @@ tests/fixtures/data_io_family/**/*.out -text
 integrational_tests/measurements/data_hashing_family.bsl text eol=lf
 tests/fixtures/data_hashing_family/**/*.bsl text eol=lf
 tests/fixtures/data_hashing_family/**/*.out -text
+
+# Closed DOM packet and immutable bounded observations.
+integrational_tests/measurements/dom_family.bsl text eol=lf
+tests/fixtures/dom_family/**/*.bsl text eol=lf
+tests/fixtures/dom_family/**/*.out -text

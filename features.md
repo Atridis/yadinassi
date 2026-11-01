@@ -6109,3 +6109,8 @@ managed-client/server/local replay equality. Historical partial captures remain
 immutable; out-of-band reader repositioning is explicitly unsupported. Existing file/stream authority and caps are reused; no network,
 permissions or general host stream adapter was added. Scope and `!todo` limits:
 [docs/data-io-family.md](docs/data-io-family.md).
+
+
+## XML DOM: ordinary mutable document workflows
+
+Added bounded DOMDocument/Builder/Writer, element/attribute/character nodes and live collections: create/read, navigate/edit, clone/import, namespace-aware string/file roundtrips. Exact integrity/resource guards and unsupported features: [DOM family](docs/dom-family.md). Native40 calibration is pending; no full DOM/XPath/XDTO or external entity support is claimed.
