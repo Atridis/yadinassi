@@ -489,7 +489,7 @@ class WorkflowTests(unittest.TestCase):
         # Reviewed linked lane shares this job; retain the complete exact guard.
         headers['native_catalog_read']=headers['native_catalog_read'].replace(
             "needs.eligibility.outputs.route == 'catalog-read-batch-v1' &&",
-            "(needs.eligibility.outputs.route == 'catalog-read-batch-v1' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' || needs.eligibility.outputs.route == 'document-read-v1') &&")
+            "(needs.eligibility.outputs.route == 'catalog-read-batch-v1' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' || needs.eligibility.outputs.route == 'document-read-v1' || needs.eligibility.outputs.route == 'document-lines-v1') &&")
         headers['native_reference_a']=old_native.replace('name: Native 1C file-DB oracle', 'name: Native 1C reference identity case A')+"""    outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       reference_sha256: ${{ steps.native.outputs.reference_sha256 }}

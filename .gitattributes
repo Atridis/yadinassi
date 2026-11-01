@@ -101,3 +101,10 @@ integrational_tests/measurements/regex_family.bsl text eol=lf
 tests/fixtures/regex_family/*.out -text
 tests/fixtures/regex_family/*.bsl text eol=lf
 tests/fixtures/regex_family/*provenance.json -text
+
+# Saved source-owned Document Items identities and packet bytes.
+scripts/native_1c_db_oracle/document_lines_packet/generated/** -text
+
+# Native selected Items fixture bytes (no session/authentication metadata).
+tests/fixtures/document_items_native.json -text
+tests/fixtures/document_lines_records.json -text

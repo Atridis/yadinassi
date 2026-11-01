@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT/'scripts')]
 from test_native_regex_family_measurement import emit, wire
@@ -13,7 +14,7 @@ class RegexNativeAcquisitionTests(unittest.TestCase):
     def test_original_capture_and_minimal_projection_are_immutable(self):
         source = (FIXTURE/'original40.bsl').read_bytes()
         raw = (FIXTURE/'original40.out').read_bytes()
-        meta = json.loads((FIXTURE/'original40.json').read_text())
+        meta = json.loads((FIXTURE/'original40.json').read_text(encoding='utf-8'))
         self.assertEqual(set(meta), {'schema','platform_version','source_sha256','output_sha256','cases','status'})
         self.assertEqual(meta['schema'], 'regex-family-observations-v1')
         self.assertEqual(meta['platform_version'], '8.3.27.1508')
@@ -27,14 +28,14 @@ class RegexNativeAcquisitionTests(unittest.TestCase):
 
     def test_original_capture_replays_after_measured_corrections(self):
         native = wire.require_available((FIXTURE/'original40.out').read_bytes())
-        local = wire.require_available(emit(source=(FIXTURE/'original40.bsl').read_text()))
+        local = wire.require_available(emit(source=(FIXTURE/'original40.bsl').read_text(encoding='utf-8')))
         self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b], [])
 
     def test_reference_discriminant_capture_and_exact_replay(self):
         source = (FIXTURE/'references40.bsl').read_bytes()
         raw = (FIXTURE/'references40.out').read_bytes()
-        meta = json.loads((FIXTURE/'references40.json').read_text())
-        original = json.loads((FIXTURE/'original40.json').read_text())
+        meta = json.loads((FIXTURE/'references40.json').read_text(encoding='utf-8'))
+        original = json.loads((FIXTURE/'original40.json').read_text(encoding='utf-8'))
         self.assertEqual(set(meta), set(original))
         self.assertEqual(meta['schema'], original['schema'])
         self.assertEqual(meta['platform_version'], original['platform_version'])
@@ -44,6 +45,19 @@ class RegexNativeAcquisitionTests(unittest.TestCase):
         self.assertEqual(meta['output_sha256'], 'f29009bf8ade447ab95250e77bf004c7191cdea3fa363d4032a7e5e7d486dd76')
         self.assertEqual(hashlib.sha256(source).hexdigest(), meta['source_sha256'])
         self.assertEqual(hashlib.sha256(raw).hexdigest(), meta['output_sha256'])
-        self.assertEqual(wire.require_available(emit(source=source.decode())), wire.require_available(raw))
+        self.assertEqual(wire.require_available(emit(source=source.decode('utf-8'))), wire.require_available(raw))
+
+    def test_owned_text_fixtures_ignore_non_utf_default(self):
+        read_text = Path.read_text
+        encodings = []
+        def windows_default(path, encoding=None, errors=None):
+            if path.parent == FIXTURE:
+                encodings.append(encoding)
+            return read_text(path, encoding=encoding or 'cp1252', errors=errors)
+        with mock.patch.object(Path, 'read_text', windows_default):
+            self.test_original_capture_and_minimal_projection_are_immutable()
+            self.test_original_capture_replays_after_measured_corrections()
+            self.test_reference_discriminant_capture_and_exact_replay()
+        self.assertEqual(encodings, ['utf-8'] * 4)
 
 if __name__ == '__main__': unittest.main()

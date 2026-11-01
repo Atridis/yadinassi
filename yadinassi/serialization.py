@@ -28,6 +28,7 @@ from .value_lists import BSLValueList, BSLValueListItem
 from .type_values import type_of
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .document_types import BSLDocumentReference, BSLDocumentType
+from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine
 from .values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
 
@@ -244,7 +245,7 @@ class _Writer:
 
     def value(self, value, depth=0):
         # !todo: measure native catalog reference/type codecs; metadata UUID is not a type GUID.
-        if ((type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType)
+        if ((type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType or type(value) is BSLDocumentLinesType or type(value) is BSLDocumentLines or type(value) is BSLDocumentLine)
                 or value is BSLType.CATALOGS_MANAGER or value is BSLType.DOCUMENTS_MANAGER):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов и ссылок справочников пока не поддерживается")
         self.nodes += 1

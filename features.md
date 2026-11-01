@@ -6077,3 +6077,14 @@ UTF-16 позиции, группы, обратный поиск, zero-width и 
 listing/find, Store/Deflate and bounded content extraction are implemented as one
 family. Exact API/bounds, temporary Windows extraction restriction and pending
 independent/native gates: [docs/zip-family.md](docs/zip-family.md).
+
+## Чтение Документ → Items → ссылка на товар
+
+Единый readonly-сценарий добавляет табличную часть документа: строки разных
+владельцев, индексацию и обход, `НомерСтроки`, поиск фиксированной ссылки,
+`Индекс`, числовой `Итог` и динамические типы коллекции/строки. CONFIG, DBNames,
+владелец и порядок проверяются по реальным измерениям двух схем и состояния
+после контролируемой перезаписи. Captured-byte replay совпал по всем 32 блокам;
+финальный actual `.1CD` прогон составного исходника ещё ожидается. Запись и
+неизмеренные layout/free-chain варианты не открываются.
+[Точный профиль и границы](docs/document-items-read-runtime.md).

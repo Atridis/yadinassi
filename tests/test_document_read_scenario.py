@@ -16,7 +16,7 @@ V='44444444-4444-4444-8444-444444444444'
 
 class DocumentScenarioTests(unittest.TestCase):
     def runtime(self, filled=True):
-        identity=NS(name='Orders',metadata_uuid=A)
+        identity=NS(name='Orders',metadata_uuid=A,sections=())
         snapshot=DocumentConfigSnapshot(((A,identity,()),),((B,NS(name='Categories'),()),))
         def row(uid,number,date,posted):
             values={'_NUMBER':number,'_DATE_TIME':date,'_POSTED':posted,'_MARKED':False}

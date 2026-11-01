@@ -353,3 +353,12 @@ unsafe/duplicate-name normalization, or restoring permissions/attributes.
 Windows extraction is temporarily unsupported rather than using an unanchored
 pathname fallback. Native ordinary semantics and independent safety readiness
 remain pending; this is not complete cross-platform ZIP compatibility.
+
+## Document tabular-section remaining scope
+
+The [bounded readonly Items workflow](docs/document-items-read-runtime.md) does
+not admit mutation, writable objects/rows, posting, query execution, Add/Clear/
+Sort/Unload, multiple sections, composite columns, arbitrary qualifier/layout
+profiles, deletion/free chains or unmeasured row/section presentation. Dynamic
+section/row types explicitly refuse internal codecs, TypeDescription and dynamic
+construction. These `!todo` boundaries do not fall back to guessed storage.

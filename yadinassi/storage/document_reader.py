@@ -8,6 +8,9 @@ from . import filedb_dbnames as dbnames
 from . import config_document_binding as compiler
 from . import config_document_records as records
 from .config_document_metadata import DocumentConfigSnapshot
+from .config_catalog_attributes import CatalogAttributes
+from . import config_document_lines_binding as line_compiler
+from . import config_document_lines_records as line_records
 from .catalog_reference_uuid import decode_catalog_reference_uuid
 from .filedb_records import RecordLimits
 
@@ -27,6 +30,7 @@ class DocumentRowsReadResult:
     records: object
     rows: tuple[DocumentRow, ...]
     usage: object
+    sections: tuple = ()
 
 
 def _reader(read_at, size, limits):
@@ -68,6 +72,9 @@ def _snapshot(graph):
         if metadata.intersection(reference_types):
             raise c.InvalidStructure('document_reference_type_identity')
         catalog_ids = {key for key, _, _ in result.catalog_fields}
+        section_ids = set(metadata) | set(reference_types)
+        section_ids.update(attribute.metadata_uuid for _,_,collection in all_fields
+                           for attribute in collection.attributes)
         documents = []
         for key, identity, attributes in result.document_fields:
             bound = []
@@ -80,6 +87,32 @@ def _snapshot(graph):
                         raise c.UnsupportedLayout('document_reference_target')
                     attribute = replace(attribute, reference_catalog_uuid=target)
                 bound.append(attribute)
+            sections = []
+            section_names = set()
+            for section in identity.sections:
+                identities = (section.metadata_uuid, section.type_uuid, section.value_uuid,
+                              section.row_type_uuid, section.row_value_uuid,
+                              *(attribute.metadata_uuid for attribute in section.attributes))
+                if len(set(identities)) != len(identities) or section_ids.intersection(identities):
+                    raise c.InvalidStructure('document_metadata_identity')
+                section_ids.update(identities)
+                names = {attribute.name.casefold() for attribute in attributes.attributes}
+                names.update(('number','номер','date','дата','posted','проведен','ref','ссылка',
+                              'deletionmark','пометкаудаления','uuid','уникальныйидентификатор',
+                              'isempty','пустая','metadata','метаданные'))
+                if section.name.casefold() in names or section.name.casefold() in section_names:
+                    raise c.InvalidStructure('document_metadata_identity')
+                section_names.add(section.name.casefold())
+                columns = []
+                for attribute in section.attributes:
+                    if attribute.type_token == '#':
+                        target = reference_types.get(attribute.reference_type_uuid)
+                        if target not in catalog_ids:
+                            raise c.UnsupportedLayout('document_reference_target')
+                        attribute = replace(attribute, reference_catalog_uuid=target)
+                    columns.append(attribute)
+                sections.append(replace(section, attributes=tuple(columns)))
+            identity = replace(identity, sections=tuple(sections))
             documents.append((key, identity, replace(attributes, attributes=tuple(bound))))
         return DocumentConfigSnapshot(tuple(documents), result.catalog_fields)
 
@@ -117,6 +150,9 @@ def read_document_rows(read_at, file_size, *, document_name, limits=None):
             reader._budget.charge('tokens', min(len(extracted.data), limits.max_tokens+1))
             parsed = dbnames.parse_dbnames(extracted.data, profile=profile, limits=limits)
             binding = compiler.compile_document_binding(identity, attributes, parsed, budget=reader._budget)
+            line_bindings = tuple((section,line_compiler.compile_document_lines_binding(identity,
+                section.metadata_uuid,section.name,CatalogAttributes(section.attributes),parsed,budget=reader._budget))
+                for section in identity.sections)
         with graph.stage('records', binding=binding) as handle:
             physical = records.read_bound_document_records(reader, catalog, binding,
                 handle=handle, limits=RecordLimits(max_active_records=4096))
@@ -133,7 +169,18 @@ def read_document_rows(read_at, file_size, *, document_name, limits=None):
                     or value.value != value.raw or row.raw[value.offset:value.offset+16] != value.raw):
                 raise c.InvalidStructure('document_reference_role')
             rows.append(DocumentRow(row, decode_catalog_reference_uuid(value.raw)))
-        return DocumentRowsReadResult(snapshot, identity, attributes, binding, physical, tuple(rows), reader.usage)
+        owners={row.reference_uuid for row in rows}
+        sections=[]
+        for section,line_binding in line_bindings:
+            with graph.stage('document_lines',binding=line_binding) as handle:
+                line_physical=line_records.read_bound_document_lines_records(reader,catalog,line_binding,
+                    handle=handle,limits=RecordLimits(max_active_records=4096))
+            for row in line_physical.rows:
+                owner=decode_catalog_reference_uuid(row.fields[0].raw)
+                if owner.int==0 or owner not in owners:
+                    raise c.InvalidStructure('document_lines_owner')
+            sections.append((section,line_binding,line_physical))
+        return DocumentRowsReadResult(snapshot, identity, attributes, binding, physical, tuple(rows), reader.usage,tuple(sections))
     except BaseException as error:
         graph.failed = True
         if isinstance(error, dbnames.DBNamesParseResourceLimit):
