@@ -15,6 +15,7 @@ from decimal import Decimal, InvalidOperation, localcontext
 from .unique_identifiers import BSLUUID
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .document_types import BSLDocumentReference, BSLDocumentType
+from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine
 from .dates import BSLDate, TICKS_PER_SECOND, date
 from .numeric.numbers import round_number
 from .type_qualifiers import (
@@ -71,7 +72,7 @@ def _type_set(value):
     result = set()
     for kind in kinds:
         # Validate before hashing: host objects must never supply equality/hash.
-        if (type(kind) is BSLCatalogType or type(kind) is BSLDocumentType):
+        if (type(kind) is BSLCatalogType or type(kind) is BSLDocumentType or type(kind) is BSLDocumentLinesType):
             _unsupported("тип ссылки справочника")
         if type(kind) is not BSLType:
             raise TypeError("ОписаниеТипов: элементы массива должны иметь тип Тип")
@@ -276,14 +277,14 @@ class BSLTypeDescription(BSLObject):
         return result
 
     def contains_type(self, kind):
-        if (type(kind) is BSLCatalogType or type(kind) is BSLDocumentType):
+        if (type(kind) is BSLCatalogType or type(kind) is BSLDocumentType or type(kind) is BSLDocumentLinesType):
             _unsupported("тип ссылки справочника")
         if type(kind) is not BSLType:
             raise TypeError("СодержитТип: ожидается значение Тип")
         return kind in self.types
 
     def adjust_value(self, value=_OMITTED):
-        if ((type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType)):
+        if ((type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType or type(value) is BSLDocumentLinesType or type(value) is BSLDocumentLines or type(value) is BSLDocumentLine)):
             _unsupported("приведение ссылки или типа справочника")
         if self.types == (BSLType.UUID,):
             # Native PR112 observations418..422: omitted/Undefined/canonical

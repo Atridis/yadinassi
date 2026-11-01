@@ -991,3 +991,30 @@ this is not DOM/XDTO/schema/DTD support. See
 [scope and safety limits](docs/xml-workflow-family.md). Real client/server XML33
 captures agree; the corrected runtime replays all33 exactly. The original failed
 runtime provenance is preserved; final corrected-head CI remains pending.
+
+
+## Binary buffers and streams (native calibration pending)
+
+`БуферДвоичныхДанных/BinaryDataBuffer`, `ПотокВПамяти/MemoryStream`,
+`ФайловыйПоток/FileStream`: ordinary indexed/shared/copy buffers, endian unsigned
+integers, read/write/seek/copy/size/close workflows, file opening/access enums,
+read-only views and BinaryData bridges. Bounded local regular-file I/O only.
+[Methods, limits and evidence status](docs/binary-stream-family.md).
+
+## ZIP archives — bounded ordinary family
+
+`ЧтениеZipФайла / ZipFileReader`, `ЗаписьZipФайла / ZipFileWriter`,
+`ЭлементыZipФайла / ZipFileEntries`, `ЭлементZipФайла / ZipFileEntry` and ZIP enums
+provide ordinary file/memory creation, Items enumeration/find, metadata and
+bounded extraction on anchored-directory platforms. Local tests are not native
+parity. Windows extraction currently fails explicitly pending a reviewed backend;
+see [complete scope and gates](docs/zip-family.md).
+
+## Read-only Document → Items → Product workflow
+
+Bounded offline document tabular sections support `Count`, `Get`/indexing,
+`For Each`, `LineNumber`, fixed-reference `Find`, `IndexOf`, numeric `Total`, and
+section/row `Type`/`TypeOf`. Two metadata identities, both column orders and
+initial/rewritten native fixtures replay through the public interpreter; final
+source-composed actual `.1CD` parity is pending. No writes are exposed.
+[Measured profile and limits](docs/document-items-read-runtime.md).

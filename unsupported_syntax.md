@@ -309,7 +309,7 @@ reader/writer and collection workflows are described in [JSON family](docs/json-
 
 ### File I/O remaining scope
 
-Streams/async overloads, sharing locks, recursive searches and deletions,
+TextReader/TextWriter/JSON/XML stream overloads and async methods, sharing locks, recursive searches and deletions,
 wildcard deletion, remote URL schemes, permission setters and exotic codecs
 remain unsupported; `!todo` marks deferred corners. TextReader currently takes
 a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
@@ -324,3 +324,32 @@ XML 1.1, `XMLAttributeType`, full Unicode-name ranges and unchecked malformed
 WriteRaw fragments remain unsupported (`!todo`). Internal serialization is
 explicitly rejected. The ordinary subset has a source-bound native XML33 capture and exact corrected
 replay. This does not imply parity outside those scenarios; final CI is pending.
+
+
+### Binary stream workflow remaining scope
+
+The ordinary BinaryDataBuffer/MemoryStream/FileStream workflow is implemented
+locally; native calibration is pending. Async/Begin methods, DataReader/DataWriter,
+FileStreamsManager, buffer Split/bitwise operations and broad string/hex/base64
+buffer-conversion APIs remain unsupported. Fixed-buffer stream SetSize changes,
+cross-process file-sharing/locking semantics, exact OS errors and sparse-file
+behavior are deferred with `!todo`. Internal serialization is explicitly rejected.
+See [binary stream scope](docs/binary-stream-family.md).
+
+## ZIP family boundaries
+
+The [new ordinary ZIP family](docs/zip-family.md) does not support passwords or
+encryption, multipart/overbudget ZIP64, BZIP2, exotic filename encoding, native
+unsafe/duplicate-name normalization, or restoring permissions/attributes.
+Windows extraction is temporarily unsupported rather than using an unanchored
+pathname fallback. Native ordinary semantics and independent safety readiness
+remain pending; this is not complete cross-platform ZIP compatibility.
+
+## Document tabular-section remaining scope
+
+The [bounded readonly Items workflow](docs/document-items-read-runtime.md) does
+not admit mutation, writable objects/rows, posting, query execution, Add/Clear/
+Sort/Unload, multiple sections, composite columns, arbitrary qualifier/layout
+profiles, deletion/free chains or unmeasured row/section presentation. Dynamic
+section/row types explicitly refuse internal codecs, TypeDescription and dynamic
+construction. These `!todo` boundaries do not fall back to guessed storage.

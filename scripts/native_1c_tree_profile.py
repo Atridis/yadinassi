@@ -61,6 +61,10 @@ def selected_contract(profile):
         return sibling('native_1c_tree_columns_move_tail_contract')
     if profile == 'tree-columns-delete-v1':
         return sibling('native_1c_tree_columns_delete_contract')
+    if profile == 'zip-family-v1':
+        return sibling('native_1c_zip_family_contract')
+    if profile == 'binary-stream-family-v1':
+        return sibling('native_1c_binary_stream_family_contract')
     if profile == 'xml-workflow-family-v1':
         return sibling('native_1c_xml_workflow_family_contract')
     if profile == 'file-io-family-v1':
@@ -98,7 +102,7 @@ def validate_diagnostic(value, *, profile='tree-v1'):
             return COPY_DIAGNOSTICS.validate_diagnostic(value)
         except COPY_DIAGNOSTICS.DiagnosticError:
             raise TreeError('tree_report_invalid') from None
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'zip-family-v1'):
         require(value is None or type(value) is dict and value == {
             'site': value.get('site'), 'case': None, 'category': 'record_count', 'calibration': None}
             and type(value['site']) is str and value['site'] in ('server', 'client'))
@@ -336,7 +340,7 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
                      else all(observations[index]['status'] == 'S' for index in (0, 1)))
     if profile in ('tree-columns-clear-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1'):
         available = contract.controls_valid(observations)
-    if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1'):
+    if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'zip-family-v1'):
         try:
             contract.require_available(native_main)
             available = True
@@ -373,6 +377,8 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
             **({'native_columns_delete_available': available} if profile == 'tree-columns-delete-v1' else {}),
             **({'native_columns_delete_string_available': available} if profile == 'tree-columns-delete-string-v1' else {}),
             **({'native_format_numbers_available': available} if profile == 'format-numbers-v1' else {}),
+            **({'native_zip_family_available': available} if profile == 'zip-family-v1' else {}),
+            **({'native_binary_stream_family_available': available} if profile == 'binary-stream-family-v1' else {}),
             **({'native_xml_workflow_family_available': available} if profile == 'xml-workflow-family-v1' else {}),
             **({'native_file_io_family_available': available} if profile == 'file-io-family-v1' else {}),
             **({'native_json_family_available': available} if profile == 'json-family-v1' else {}),
@@ -494,7 +500,7 @@ def container_command(staged, hashes, name, nonce, smoke, *, profile='tree-v1'):
             'HOME=/tmp/home', 'XDG_RUNTIME_DIR=/tmp/runtime', 'DISPLAY=:99',
             'LANG=ru_RU.UTF-8', 'LC_ALL=ru_RU.UTF-8', 'TZ=Etc/UTC',
             '/bin/bash', '--noprofile', '--norc', '/smoke/probe.sh',
-            {'tree-v1': '--tree-suite', 'tree-copy-v1': '--tree-copy-suite', 'tree-sort-v1': '--tree-sort-suite', 'tree-columns-move-v1': '--tree-columns-move-suite', 'tree-columns-move-boundary-v1': '--tree-columns-move-boundary-suite', 'tree-columns-move-tail-v1': '--tree-columns-move-tail-suite', 'tree-columns-clear-v1': '--tree-columns-clear-suite', 'tree-columns-clear-lifetime-v1': '--tree-columns-clear-lifetime-suite', 'tree-columns-clear-metadata-v1': '--tree-columns-clear-metadata-suite', 'tree-columns-delete-v1': '--tree-columns-delete-suite', 'tree-columns-delete-string-v1': '--tree-columns-delete-string-suite', 'format-numbers-v1': '--format-numbers-suite', 'format-dates-v1': '--format-dates-suite', 'json-family-v1': '--json-family-suite', 'file-io-family-v1': '--file-io-family-suite', 'xml-workflow-family-v1': '--xml-workflow-family-suite'}[profile], '--invocation-nonce', nonce]
+            {'tree-v1': '--tree-suite', 'tree-copy-v1': '--tree-copy-suite', 'tree-sort-v1': '--tree-sort-suite', 'tree-columns-move-v1': '--tree-columns-move-suite', 'tree-columns-move-boundary-v1': '--tree-columns-move-boundary-suite', 'tree-columns-move-tail-v1': '--tree-columns-move-tail-suite', 'tree-columns-clear-v1': '--tree-columns-clear-suite', 'tree-columns-clear-lifetime-v1': '--tree-columns-clear-lifetime-suite', 'tree-columns-clear-metadata-v1': '--tree-columns-clear-metadata-suite', 'tree-columns-delete-v1': '--tree-columns-delete-suite', 'tree-columns-delete-string-v1': '--tree-columns-delete-string-suite', 'format-numbers-v1': '--format-numbers-suite', 'format-dates-v1': '--format-dates-suite', 'json-family-v1': '--json-family-suite', 'file-io-family-v1': '--file-io-family-suite', 'xml-workflow-family-v1': '--xml-workflow-family-suite', 'zip-family-v1': '--zip-family-suite', 'binary-stream-family-v1': '--binary-stream-family-suite'}[profile], '--invocation-nonce', nonce]
 
 
 @contextlib.contextmanager
@@ -536,6 +542,8 @@ def run(root, temp_root, *, export_native_outputs=False, failure_state=None, pro
         'format-dates-v1': ('scripts/native_1c_format_dates_contract.py',),
         'file-io-family-v1': ('scripts/native_1c_file_io_family_contract.py',),
         'xml-workflow-family-v1': ('scripts/native_1c_xml_workflow_family_contract.py',),
+        'zip-family-v1': ('scripts/native_1c_zip_family_contract.py',),
+        'binary-stream-family-v1': ('scripts/native_1c_binary_stream_family_contract.py',),
         'json-family-v1': ('scripts/native_1c_json_family_contract.py', 'scripts/native_1c_json_family_replay.py'),
     }[profile]
     host_identity = {p: FULL.digest(FULL.read_regular(root / p, FULL.MAX_FILE, nonempty=True)) for p in ('scripts/native_1c_tree_profile.py', 'scripts/native_1c_tree_fill_contract.py', 'scripts/native_1c_tree_copy_contract.py', 'scripts/native_1c_tree_copy_diagnostics.py', 'scripts/native_1c_tree_access_probe.py', 'scripts/native_1c_tree_profiles.py', 'scripts/native_1c_smoke.py', 'scripts/native_1c_full_host.py') + contract_paths}
@@ -774,7 +782,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute-approved-image', action='store_true', required=True)
     parser.add_argument('--export-native-outputs', action='store_true')
-    parser.add_argument('--profile', choices=('tree-v1', 'tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1'), action='append')
+    parser.add_argument('--profile', choices=('tree-v1', 'tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'zip-family-v1'), action='append')
     args = parser.parse_args()
     if args.profile is not None and len(args.profile) != 1:
         parser.error('profile must be selected once')

@@ -19,6 +19,27 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    ZIP_READER = "ЧтениеZipФайла"
+    ZIP_WRITER = "ЗаписьZipФайла"
+    ZIP_ENTRY = "ЭлементZipФайла"
+    ZIP_ENTRIES = "ЭлементыZipФайла"
+    ZIP_COMPRESSION_METHOD = "МетодСжатияZIP"
+    ZIP_COMPRESSION_LEVEL = "УровеньСжатияZIP"
+    ZIP_STORE_PATH_MODE = "РежимСохраненияПутейZIP"
+    ZIP_SUBDIR_MODE = "РежимОбработкиПодкаталоговZIP"
+    ZIP_RESTORE_MODE = "РежимВосстановленияПутейФайловZIP"
+    ZIP_ENCRYPTION_METHOD = "МетодШифрованияZIP"
+    ZIP_NAMES_ENCODING = "КодировкаИменФайловВZipФайле"
+
+    BINARY_DATA_BUFFER = "БуферДвоичныхДанных"
+    MEMORY_STREAM = "ПотокВПамяти"
+    FILE_STREAM = "ФайловыйПоток"
+    STREAM = "Поток"
+    BYTE_ORDER = "ПорядокБайтов"
+    FILE_OPEN_MODE = "РежимОткрытияФайла"
+    FILE_ACCESS = "ДоступКФайлу"
+    POSITION_IN_STREAM = "ПозицияВПотоке"
+
     DOCUMENTS_MANAGER = "Документы менеджер"
     CATALOGS_MANAGER = "Справочники менеджер"
     XML_READER = "ЧтениеXML"

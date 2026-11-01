@@ -3,7 +3,7 @@
 No fixture identities, XML, physical offsets or host observations are inputs.
 Document collection and attribute routes are separate from Catalog routes.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import config_catalog_attributes as attrs
 from . import config_catalog_references as refs
@@ -20,6 +20,7 @@ class DocumentIdentityPrefix:
     number_type: int = 1
     number_length: int = 8
     number_periodicity: int = 0
+    sections: tuple = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +125,8 @@ def project_document_metadata(data, *, budget):
             raise attrs.CatalogAttributeError('missing_field')
         # !todo Numeric/periodic numbering and other Document headers require
         # their own native layout/API evidence; no Catalog header fallback.
-        return DocumentIdentityPrefix(**walk.identity), collection
+        from .config_document_sections import project_document_sections
+        sections = project_document_sections(data, budget=budget)
+        return DocumentIdentityPrefix(**walk.identity, sections=sections), collection
     except CatalogNameError as error:
         raise attrs.CatalogAttributeError(error.code) from None

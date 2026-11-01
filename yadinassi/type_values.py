@@ -1,3 +1,5 @@
+from .zip_archives import (BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntry, BSLZipFileEntries, BSLZIPCompressionMethod, BSLZIPCompressionLevel, BSLZIPStorePathMode, BSLZIPSubDirProcessingMode, BSLZIPRestoreFilePathsMode, BSLZIPEncryptionMethod, BSLFileNamesEncodingInZipFile)
+from .binary_streams import (BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLByteOrder, BSLFileOpenMode, BSLFileAccess, BSLPositionInStream)
 """Type/TypeOf for the explicit standalone BSL value model, not Python reflection."""
 
 from decimal import Decimal
@@ -9,6 +11,7 @@ from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from .catalogs import BSLCatalogs
 from .documents import BSLDocuments
 from .document_types import BSLDocumentReference, BSLDocumentType
+from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
@@ -43,6 +46,27 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLZipFileReader, BSLType.ZIP_READER, "ZipFileReader"),
+    (BSLZipFileWriter, BSLType.ZIP_WRITER, "ZipFileWriter"),
+    (BSLZipFileEntry, BSLType.ZIP_ENTRY, "ZipFileEntry"),
+    (BSLZipFileEntries, BSLType.ZIP_ENTRIES, "ZipFileEntries"),
+    (BSLZIPCompressionMethod, BSLType.ZIP_COMPRESSION_METHOD, "ZIPCompressionMethod"),
+    (BSLZIPCompressionLevel, BSLType.ZIP_COMPRESSION_LEVEL, "ZIPCompressionLevel"),
+    (BSLZIPStorePathMode, BSLType.ZIP_STORE_PATH_MODE, "ZIPStorePathMode"),
+    (BSLZIPSubDirProcessingMode, BSLType.ZIP_SUBDIR_MODE, "ZIPSubDirProcessingMode"),
+    (BSLZIPRestoreFilePathsMode, BSLType.ZIP_RESTORE_MODE, "ZIPRestoreFilePathsMode"),
+    (BSLZIPEncryptionMethod, BSLType.ZIP_ENCRYPTION_METHOD, "ZIPEncryptionMethod"),
+    (BSLFileNamesEncodingInZipFile, BSLType.ZIP_NAMES_ENCODING, "FileNamesEncodingInZipFile"),
+
+    (BSLBinaryDataBuffer, BSLType.BINARY_DATA_BUFFER, "BinaryDataBuffer"),
+    (BSLMemoryStream, BSLType.MEMORY_STREAM, "MemoryStream"),
+    (BSLFileStream, BSLType.FILE_STREAM, "FileStream"),
+    (BSLStream, BSLType.STREAM, "Stream"),
+    (BSLByteOrder, BSLType.BYTE_ORDER, "ByteOrder"),
+    (BSLFileOpenMode, BSLType.FILE_OPEN_MODE, "FileOpenMode"),
+    (BSLFileAccess, BSLType.FILE_ACCESS, "FileAccess"),
+    (BSLPositionInStream, BSLType.POSITION_IN_STREAM, "PositionInStream"),
+
     (BSLDocuments, BSLType.DOCUMENTS_MANAGER, None),
     (BSLCatalogs, BSLType.CATALOGS_MANAGER, None),
     (BSLXMLReader, BSLType.XML_READER, "XMLReader"),
@@ -139,6 +163,13 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
+    if type(value) is BSLDocumentLinesType:
+        return BSLType.TYPE
+    if type(value) is BSLDocumentLines or type(value) is BSLDocumentLine:
+        descriptor = value._value_type if type(value) is BSLDocumentLines else value._section._row_type
+        if type(descriptor) is not BSLDocumentLinesType:
+            raise TypeError('document line type is unavailable')
+        return descriptor
     if (type(value) is BSLCatalogReference or type(value) is BSLDocumentReference):
         return value.value_type
     if (type(value) is BSLCatalogType or type(value) is BSLDocumentType):

@@ -396,6 +396,12 @@ jobs:
           - profile: xml-workflow-family-v1
             artifact: xml-workflow-family
             case: xml_workflow_family
+          - profile: zip-family-v1
+            artifact: zip-family
+            case: zip_family
+          - profile: binary-stream-family-v1
+            artifact: binary-stream-family
+            case: binary_stream_family
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

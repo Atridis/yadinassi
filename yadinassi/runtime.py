@@ -1,3 +1,5 @@
+from . import zip_archives
+from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
 """Tree-walking interpreter with persistent state and injectable builtins."""
 
 from decimal import Decimal, localcontext
@@ -7,6 +9,8 @@ from . import file_io
 from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
                      BSLXMLValidationType, BSLXMLNamespaceContext, XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES)
 from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
+from . import binary_streams
+from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
 from .text_documents import BSLTextDocument
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
@@ -23,6 +27,7 @@ from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMeta
 from .catalogs import BSLCatalogs
 from .documents import BSLDocuments
 from .document_types import BSLDocumentType
+from .document_lines import BSLDocumentLines, BSLDocumentLinesType
 from .catalog_types import BSLCatalogType
 from .database_context import FileDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
@@ -56,11 +61,11 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
-_TABLE_COLLECTIONS = (BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+_TABLE_COLLECTIONS = (BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
                       BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                       BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
@@ -220,6 +225,8 @@ class Interpreter:
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        self.register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
+        self.register_type("ЗаписьZipФайла", BSLZipFileWriter, "ZipFileWriter")
         self.register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
         self.register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
         self.register_function("ПрочитатьJSON", read_json, "ReadJSON")
@@ -229,6 +236,12 @@ class Interpreter:
                                 ("ЗаписьТекста", BSLTextWriter, "TextWriter"),
                                 ("ДвоичныеДанные", BSLBinaryData, "BinaryData")):
             self.register_type(ru, factory, en)
+        for ru, factory, en in (("БуферДвоичныхДанных", BSLBinaryDataBuffer, "BinaryDataBuffer"),
+                                ("ПотокВПамяти", BSLMemoryStream, "MemoryStream"),
+                                ("ФайловыйПоток", BSLFileStream, "FileStream")):
+            self.register_type(ru, factory, en)
+        for ru, function, en in binary_streams.FUNCTIONS:
+            self.register_function(ru, function, en)
         for ru, function, en, returns_value in file_io.FUNCTIONS:
             self.register_function(ru, function, en, returns_value=returns_value)
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
@@ -638,6 +651,12 @@ class Interpreter:
             return JSON_LINE_BREAKS
         if name in ("кодировкатекста", "textencoding"):
             return TEXT_ENCODINGS
+        for ru, en, namespace in zip_archives.NAMESPACES:
+            if name in (ru.casefold(), en.casefold()): return namespace
+        if name in ("порядокбайтов", "byteorder"): return binary_streams.BYTE_ORDERS
+        if name in ("режимоткрытияфайла", "fileopenmode"): return binary_streams.FILE_OPEN_MODES
+        if name in ("доступкфайлу", "fileaccess"): return binary_streams.FILE_ACCESSES
+        if name in ("позициявпотоке", "positioninstream"): return binary_streams.POSITIONS_IN_STREAM
         if name in ("типузлаxml", "xmlnodetype"): return XML_NODE_TYPES
         if name in ("пробельныесимволыxml", "xmlspace"): return XML_SPACES
         if name in ("типпроверкиxml", "xmlvalidationtype"): return XML_VALIDATION_TYPES
@@ -1276,7 +1295,7 @@ class Interpreter:
         # EDT root_New explicitly says to ignore a non-array second value.
         value_type = (yield from self._visit(node.type_expression))
         parameters = (yield from self._visit(node.parameters)) if node.parameters is not None else None
-        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType):
+        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or type(value_type) is BSLDocumentLinesType):
             raise ValueError("catalog reference type construction is unsupported")
         if type(value_type) is BSLType:
             name = value_type.value
