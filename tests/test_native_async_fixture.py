@@ -358,8 +358,30 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_child_cleanup_rounding(source):
+    """Exact test-only cap-rounding inverse; historical pins remain unchanged."""
+    contract = json.loads((REPOSITORY / 'tests/child_cleanup_rounding_source_inverse.json').read_text(encoding='utf-8'))
+    if (contract.get('base_sha256') != '9249cca10b29455d12bb4ab806b33f572a9f462890d2a2940e4e93aac4c9beb9'
+            or contract.get('candidate_sha256') != '785dd4f696ee0c0a9b52f2bfbc183404c6a9980d62ee508e165b0a09ee19478b'):
+        raise AssertionError('cleanup rounding inverse identity')
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == contract['base_sha256']:
+        return source
+    if digest != contract['candidate_sha256']:
+        raise AssertionError('cleanup rounding outer source identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('cleanup rounding inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != contract['base_sha256']:
+        raise AssertionError('cleanup rounding inner source identity')
+    return source
+
+
 def without_collections_measurement_budget(source):
     """Exact test-only budget inverse; never runtime admission or cap fallback."""
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != '09ff03dcbf91f0bc6bbfa72ee437d5f39b542051357a48822a90a6c628dde2f8':
+        source = without_child_cleanup_rounding(source)
     contract = json.loads((REPOSITORY / 'tests/collections_measurement_budget_source_inverse.json').read_text(encoding='utf-8'))
     if (contract.get('base_sha256') != '09ff03dcbf91f0bc6bbfa72ee437d5f39b542051357a48822a90a6c628dde2f8'
             or contract.get('candidate_sha256') != '9249cca10b29455d12bb4ab806b33f572a9f462890d2a2940e4e93aac4c9beb9'):
