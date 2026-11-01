@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "source_sha256": "ca117f2f0cd72a8803c8c2b323aecfdb70e8b471103ed9f77a83859c7a131dfd",
+  "output_sha256": "97d4f9a76de58fe5e6aa37c00fc6e3133c90e12fd162e5a85d69504e0a5d25a9",
+  "case_count": 40,
+  "native_version": "8.3.27.1508",
+  "contexts": [
+    "server",
+    "managed-thick-file"
+  ],
+  "scope": "37 ordinary values and three action-error observations; not parity. Transport envelope reconstructed during private source audit."
+}

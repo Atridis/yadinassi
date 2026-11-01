@@ -67,3 +67,10 @@ private. No proprietary primary archives are included in the published sources.
 
 # !todo Periodic/recorder-driven registers, slices, composite dimension types,
 # advanced filters/order, writable APIs and unmeasured free chains are deferred.
+
+## DOM main composition
+
+The current candidate combines the register family with main `fa089d70` (DOM).
+The runtime inventory is 111 (106 plus five register modules), with unchanged caps.
+The earlier actual register parity run `41356947535` remains evidence for its
+original source; fresh actual file-DB parity and tiered CI are required for this union.
