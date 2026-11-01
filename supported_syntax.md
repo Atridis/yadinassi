@@ -991,3 +991,12 @@ this is not DOM/XDTO/schema/DTD support. See
 [scope and safety limits](docs/xml-workflow-family.md). Real client/server XML33
 captures agree; the corrected runtime replays all33 exactly. The original failed
 runtime provenance is preserved; final corrected-head CI remains pending.
+
+
+## Binary buffers and streams (native calibration pending)
+
+`БуферДвоичныхДанных/BinaryDataBuffer`, `ПотокВПамяти/MemoryStream`,
+`ФайловыйПоток/FileStream`: ordinary indexed/shared/copy buffers, endian unsigned
+integers, read/write/seek/copy/size/close workflows, file opening/access enums,
+read-only views and BinaryData bridges. Bounded local regular-file I/O only.
+[Methods, limits and evidence status](docs/binary-stream-family.md).

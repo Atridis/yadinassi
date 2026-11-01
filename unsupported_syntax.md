@@ -309,7 +309,7 @@ reader/writer and collection workflows are described in [JSON family](docs/json-
 
 ### File I/O remaining scope
 
-Streams/async overloads, sharing locks, recursive searches and deletions,
+TextReader/TextWriter/JSON/XML stream overloads and async methods, sharing locks, recursive searches and deletions,
 wildcard deletion, remote URL schemes, permission setters and exotic codecs
 remain unsupported; `!todo` marks deferred corners. TextReader currently takes
 a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
@@ -324,3 +324,14 @@ XML 1.1, `XMLAttributeType`, full Unicode-name ranges and unchecked malformed
 WriteRaw fragments remain unsupported (`!todo`). Internal serialization is
 explicitly rejected. The ordinary subset has a source-bound native XML33 capture and exact corrected
 replay. This does not imply parity outside those scenarios; final CI is pending.
+
+
+### Binary stream workflow remaining scope
+
+The ordinary BinaryDataBuffer/MemoryStream/FileStream workflow is implemented
+locally; native calibration is pending. Async/Begin methods, DataReader/DataWriter,
+FileStreamsManager, buffer Split/bitwise operations and broad string/hex/base64
+buffer-conversion APIs remain unsupported. Fixed-buffer stream SetSize changes,
+cross-process file-sharing/locking semantics, exact OS errors and sparse-file
+behavior are deferred with `!todo`. Internal serialization is explicitly rejected.
+See [binary stream scope](docs/binary-stream-family.md).

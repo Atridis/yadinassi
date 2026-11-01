@@ -221,9 +221,17 @@ class BSLBinaryData(_FileMethods):
     @_file_errors
     def size(self): return Decimal(len(self._data))
     @_file_errors
-    def write(self, filename): _write_bytes(filename, self._data)
-    # !todo Stream overloads and OpenStreamForRead are not implemented.
-    _methods = _methods(('size', True, 'Size Размер'), ('write', False, 'Write Записать'))
+    def write(self, filename):
+        from .binary_streams import BSLStream, BSLMemoryStream, BSLFileStream
+        if type(filename) in (BSLStream, BSLMemoryStream, BSLFileStream):
+            filename._write_bytes(self._data)
+        else:
+            _write_bytes(filename, self._data)
+    def open_stream_for_read(self):
+        from .binary_streams import binary_data_stream
+        return binary_data_stream(self)
+    _methods = _methods(('size', True, 'Size Размер'), ('write', False, 'Write Записать'),
+                        ('open_stream_for_read', True, 'OpenStreamForRead ОткрытьПотокДляЧтения'))
 
 
 def _binary(value):

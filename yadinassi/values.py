@@ -19,6 +19,15 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    BINARY_DATA_BUFFER = "БуферДвоичныхДанных"
+    MEMORY_STREAM = "ПотокВПамяти"
+    FILE_STREAM = "ФайловыйПоток"
+    STREAM = "Поток"
+    BYTE_ORDER = "ПорядокБайтов"
+    FILE_OPEN_MODE = "РежимОткрытияФайла"
+    FILE_ACCESS = "ДоступКФайлу"
+    POSITION_IN_STREAM = "ПозицияВПотоке"
+
     DOCUMENTS_MANAGER = "Документы менеджер"
     CATALOGS_MANAGER = "Справочники менеджер"
     XML_READER = "ЧтениеXML"

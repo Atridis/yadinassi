@@ -24,7 +24,7 @@ MODES={'true':'tree-v1','copy':'tree-copy-v1','sort':'tree-sort-v1',
        'columns-clear-lifetime':'tree-columns-clear-lifetime-v1',
        'columns-clear-metadata':'tree-columns-clear-metadata-v1',
        'columns-delete':'tree-columns-delete-v1',
-       'format-numbers':'format-numbers-v1', 'format-dates':'format-dates-v1', 'json-family':'json-family-v1', 'file-io-family':'file-io-family-v1', 'xml-workflow-family':'xml-workflow-family-v1'}
+       'format-numbers':'format-numbers-v1', 'format-dates':'format-dates-v1', 'json-family':'json-family-v1', 'file-io-family':'file-io-family-v1', 'xml-workflow-family':'xml-workflow-family-v1', 'binary-stream-family':'binary-stream-family-v1'}
 NONCE='f'*32
 
 
@@ -35,7 +35,7 @@ def arguments(mode):
 
 
 def previous_emitter():
-    return EMITTER.replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
+    return EMITTER.replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
                            '{"false", "true", "copy", "sort"}').replace(
         '{"true", "copy", "sort", "columns-move"}', '{"true", "copy", "sort"}')
 
@@ -133,7 +133,7 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                 host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile='tree-sort-v1')
 
     def test_boundary_mode_both_sets_required_and_prior_modes_unchanged(self):
-        old=EMITTER.replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}')
+        old=EMITTER.replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}')
         only_allowlist=old.replace('if tree_mode not in {"false", "true", "copy", "sort", "columns-move"}:',
             'if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary"}:')
         only_dispatch=old.replace('if tree_mode in {"true", "copy", "sort", "columns-move"}:',
@@ -176,7 +176,7 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                     host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
 
     def test_tail_mode_both_sets_required_and_prior_modes_unchanged(self):
-        old=EMITTER.replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}')
+        old=EMITTER.replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}')
         only_allowlist=old.replace('if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary"}:',
             'if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail"}:')
         only_dispatch=old.replace('if tree_mode in {"true", "copy", "sort", "columns-move", "columns-move-boundary"}:',
@@ -219,9 +219,9 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                     host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
 
     def test_clear_mode_requires_both_closed_sets_and_preserves_all_prior_routes(self):
-        old=EMITTER.replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}')
-        admission=next(line for line in EMITTER.replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode not in '))
-        dispatch=next(line for line in EMITTER.replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode in '))
+        old=EMITTER.replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}')
+        admission=next(line for line in EMITTER.replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode not in '))
+        dispatch=next(line for line in EMITTER.replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').splitlines() if line.startswith('if tree_mode in '))
         only_admission=old.replace(admission.replace(', "columns-clear"}', '}'),admission)
         only_dispatch=old.replace(dispatch.replace(', "columns-clear"}', '}'),dispatch)
         for code in (old,only_admission,only_dispatch):

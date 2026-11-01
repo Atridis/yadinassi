@@ -469,6 +469,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: xml-workflow-family-v1
             artifact: xml-workflow-family
             case: xml_workflow_family
+          - profile: binary-stream-family-v1
+            artifact: binary-stream-family
+            case: binary_stream_family
 """
         for job, expected in expected_headers.items():
             with self.subTest(job=job):
