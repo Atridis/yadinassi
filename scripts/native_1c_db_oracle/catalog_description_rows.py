@@ -47,6 +47,7 @@ DIAGNOSTICS = {k:frozenset(v) for k,v in _binding_diagnostics.DIAGNOSTICS.items(
 # Explicit reviewed public runtime reader additions; no prefixes or inferred codes.
 _RUNTIME_DIAGNOSTICS = {
     'structural_rejection': frozenset((
+        'config_document_identity_overlap', 'config_document_prefix',
         'binding_reference_identity', 'binding_reference_role', 'binding_typed_rows',
         'catalog_free_head_range', 'catalog_free_head_active', 'catalog_unlinked_free_slot',
         'blob_declared_length', 'dbnames_duplicate', 'dbnames_filename_length',
@@ -54,10 +55,12 @@ _RUNTIME_DIAGNOSTICS = {
         'dbnames_size', 'dbnames_size_mismatch', 'deflate_invalid',
         'deflate_nonprogress', 'deflate_trailing', 'deflate_truncated')),
     'resource_limit': frozenset((
+        'config_document_limits',
         'dbnames_record_bytes', 'dbnames_slots', 'transport_blob_bytes',
         'transport_plain_bytes', 'transport_inflate_input_bytes',
         'transport_blob_visits', 'transport_inflate_calls')),
     'unsupported_layout': frozenset((
+        'config_document_profile',
         # config_catalog_records._decode rejects invalid BCD/calendar bytes for
         # measured DT7 (native41227322065); classify this one literal only.
         'date_encoding',

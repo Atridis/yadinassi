@@ -27,6 +27,7 @@ from .value_tables import (BSLValueTable, BSLValueTableColumn,
 from .value_lists import BSLValueList, BSLValueListItem
 from .type_values import type_of
 from .catalog_types import BSLCatalogReference, BSLCatalogType
+from .document_types import BSLDocumentReference, BSLDocumentType
 from .values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
 
@@ -90,7 +91,7 @@ _TYPE_IDS = {
 # their types. Keep an explicit refusal policy instead of inventing native GUIDs.
 _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
-_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.CATALOGS_MANAGER, BSLType.XML_READER,BSLType.XML_WRITER,BSLType.XML_READER_SETTINGS,BSLType.XML_WRITER_SETTINGS,BSLType.XML_NODE_TYPE,BSLType.XML_SPACE,BSLType.XML_VALIDATION_TYPE,BSLType.XML_NAMESPACE_CONTEXT,
+_UNSUPPORTED_CODEC_TYPES = frozenset({BSLType.DOCUMENTS_MANAGER, BSLType.CATALOGS_MANAGER, BSLType.XML_READER,BSLType.XML_WRITER,BSLType.XML_READER_SETTINGS,BSLType.XML_WRITER_SETTINGS,BSLType.XML_NODE_TYPE,BSLType.XML_SPACE,BSLType.XML_VALIDATION_TYPE,BSLType.XML_NAMESPACE_CONTEXT,
     BSLType.FILE, BSLType.TEXT_READER, BSLType.TEXT_WRITER,
                                          BSLType.BINARY_DATA, BSLType.TEXT_ENCODING,
                                          BSLType.JSON_READER, BSLType.JSON_WRITER,
@@ -239,8 +240,8 @@ class _Writer:
 
     def value(self, value, depth=0):
         # !todo: measure native catalog reference/type codecs; metadata UUID is not a type GUID.
-        if (type(value) is BSLCatalogReference or type(value) is BSLCatalogType
-                or value is BSLType.CATALOGS_MANAGER):
+        if ((type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType)
+                or value is BSLType.CATALOGS_MANAGER or value is BSLType.DOCUMENTS_MANAGER):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов и ссылок справочников пока не поддерживается")
         self.nodes += 1
         if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
@@ -249,7 +250,7 @@ class _Writer:
             kind = type_of(value)
         except TypeError:
             raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
-        if kind is BSLType.CATALOGS_MANAGER:
+        if kind in (BSLType.CATALOGS_MANAGER, BSLType.DOCUMENTS_MANAGER):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация менеджера справочников пока не поддерживается")
         if kind in _TREE_CODEC_TYPES or (kind is BSLType.TYPE and value in _TREE_CODEC_TYPES):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация ДеревоЗначений пока не поддерживается")
