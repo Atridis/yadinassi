@@ -41,6 +41,7 @@ class HashingFailureTests(unittest.TestCase):
         for text,line in (('private path/token not exported',None),
                 ('{ВнешняяОбработка.TestModule.МодульОбъекта(38,3)}: private error',38),
                 ('{ExternalDataProcessor.TestModule.ObjectModule(89,12)}: private',89),
+                ('{ВнешняяОбработка.TestModule.МодульОбъекта(38)}: private error',38),
                 ('{ExternalDataProcessor.TestModule.ObjectModule(90,12)}: private',None),
                 ('{ExternalDataProcessor.Other.ObjectModule(1,1)}: private',None),
                 ('file:///private/TestModule.ObjectModule(1,1) private',None)):
@@ -48,7 +49,8 @@ class HashingFailureTests(unittest.TestCase):
         for raw,category,line in cases:
             with self.subTest(category=category,line=line):
                 result=self.observed(raw)
-                self.assertEqual(result,dict(site='server',case=line,category=category,calibration=None))
+                self.assertEqual(result,dict(site='server',case=line,category=category,
+                    calibration='other' if category=='result_error' else None))
                 self.assertNotIn('private',json.dumps(result));self.assertNotIn('token',json.dumps(result))
 
     def test_secondary_inspection_bound_before_decode(self):
@@ -58,6 +60,24 @@ class HashingFailureTests(unittest.TestCase):
             result=self.observed(raw)
             self.assertEqual(parse.call_count,1)  # Only the unchanged first parser.
         self.assertEqual(result['category'],'result_limit');self.assertIsNone(result['case'])
+
+    def test_fixed_error_kind_only_and_owned_launcher_details(self):
+        launcher=(ROOT/'integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl').read_text(encoding='utf-8')
+        self.assertIn('ОшибкаТеста = ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());',launcher)
+        for phrase,kind in (
+                ('Ошибка инициализации модуля: Переменная не определена (private)', 'identifier'),
+                ('Процедура или функция с указанным именем не определена (private)', 'function'),
+                ('Тип не определен (private)', 'type'),
+                ('Метод объекта не обнаружен (private)', 'method'),
+                ('Ожидается имя private', 'syntax'),
+                ('Module initialization error private', 'module'),
+                ('Expected token private', 'syntax'),
+                ('unexpected error private', 'other'),
+                ('arbitrary private path/token', 'other')):
+            value=self.observed(json.dumps(dict(messages=[],error=phrase)).encode())
+            self.assertEqual(value['calibration'],kind);self.assertIsNone(value['case'])
+            self.assertNotIn('private',json.dumps(value))
+            host.validate_diagnostic(value,profile=PROFILE)
 
     def test_closed_validator_and_profile_isolation(self):
         valid=dict(site='server',case=1,category='result_error',calibration=None)

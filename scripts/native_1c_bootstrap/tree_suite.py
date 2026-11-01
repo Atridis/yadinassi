@@ -336,7 +336,7 @@ def read_hashing_native_result(path, source_sha256):
     try: return full.parse_native_result(raw)
     except full.FullError as error:
         if error.kind not in ('invalid_result', 'output_limit'): raise
-    category, line = 'result_limit', None
+    category, line, kind = 'result_limit', None, None
     # Secondary inspection is strictly smaller than the unchanged parser cap;
     # oversized rejected input is classified before another decode/JSON parse.
     if len(raw) <= contract.MAX_FAILURE_DIAGNOSTIC_BYTES:
@@ -350,9 +350,24 @@ def read_hashing_native_result(path, source_sha256):
                     and type(value['error']) is str):
                 if value['error']:
                     category = 'result_error'
+                    # The owned launcher uses DetailedErrorDescription, not
+                    # Description alone. Wrapped errors may therefore include
+                    # a module frame and a more specific fixed cause phrase.
+                    text = value['error'].casefold()
+                    kind = 'other'
+                    for code, phrases in (
+                        ('identifier', ('переменная не определена', 'variable is not defined')),
+                        ('function', ('процедура или функция с указанным именем не определена', 'procedure or function with specified name is not defined')),
+                        ('type', ('тип не определен', 'type is not defined')),
+                        ('method', ('метод объекта не обнаружен', 'object method not found')),
+                        ('syntax', ('ожидается', 'синтаксическая ошибка', 'syntax error')),
+                        ('module', ('ошибка инициализации модуля', 'module initialization error'))):
+                        if any(phrase in text for phrase in phrases) or (code == 'syntax' and re.search(r'\bexpected\b', text) is not None):
+                            kind = code
+                            break
                     # Only the literal generated TestModule object-module frame.
                     # No pathname, other module, arbitrary number or error text.
-                    match = re.search(r'\{(?:ВнешняяОбработка\.TestModule\.МодульОбъекта|ExternalDataProcessor\.TestModule\.ObjectModule)\(([1-9][0-9]{0,2}),[0-9]{1,3}\)\}', value['error'])
+                    match = re.search(r'\{(?:ВнешняяОбработка\.TestModule\.МодульОбъекта|ExternalDataProcessor\.TestModule\.ObjectModule)\(([1-9][0-9]{0,2})(?:,[0-9]{1,3})?\)\}', value['error'])
                     if match is not None:
                         candidate = int(match[1])
                         if candidate <= contract.SOURCE_LINE_COUNT: line = candidate
@@ -360,7 +375,7 @@ def read_hashing_native_result(path, source_sha256):
                     category = 'result_limit'
                     try: ''.join(value['messages']).encode('utf-8')
                     except UnicodeError: category = 'result_encoding'
-    diagnostic = {'site': 'server', 'case': line, 'category': category, 'calibration': None}
+    diagnostic = {'site': 'server', 'case': line, 'category': category, 'calibration': kind}
     contract.validate_failure_diagnostic(diagnostic)
     raise ObservationFailure(diagnostic)
 

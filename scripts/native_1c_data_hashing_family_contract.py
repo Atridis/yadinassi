@@ -13,6 +13,8 @@ SOURCE_LINE_COUNT = 89
 MAX_FAILURE_DIAGNOSTIC_BYTES = 16384
 RESULT_FAILURE_CATEGORIES = frozenset(('result_json', 'result_shape', 'result_error',
                                      'result_encoding', 'result_limit'))
+RESULT_ERROR_KINDS = frozenset(('identifier', 'function', 'type', 'method',
+                                'syntax', 'module', 'other'))
 
 class ObservationError(ValueError):
     pass
@@ -25,7 +27,11 @@ def validate_failure_diagnostic(value):
     """Finite failed-only witness; case holds an owned source line, never text."""
     if value is None: return
     if (type(value) is not dict or set(value) != {'site', 'case', 'category', 'calibration'}
-            or value['calibration'] is not None or type(value['category']) is not str):
+            or type(value['category']) is not str):
+        raise ObservationError('data_hashing_diagnostic_invalid')
+    kind = value['calibration']
+    if kind is not None and (value['category'] != 'result_error'
+            or type(kind) is not str or kind not in RESULT_ERROR_KINDS):
         raise ObservationError('data_hashing_diagnostic_invalid')
     if value['category'] == 'record_count':
         if type(value['site']) is str and value['site'] in ('server', 'client') and value['case'] is None: return

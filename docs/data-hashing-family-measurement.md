@@ -108,3 +108,14 @@ exported. Secondary inspection is bounded to16KiB before decode; larger rejected
 results emit only `result_limit`. The existing failed-only envelope requires no
 outputs, incomplete native tests and failed stage/source identity. This is not an
 acceptance fallback and does not change parser, payload, process or security caps.
+
+The first diagnostic run41323358848 on `d150654` established `result_error`
+with no matched owned line: the bounded result had a nonempty launcher error.
+No raw observation was exported. Its summary ZIP SHA-256 is
+`cf286038af9ab9053fca246b8ebdd4afdf3bd68441e4a0f740163c882383d361`.
+The owned launcher uses DetailedErrorDescription. The next diagnostic admits
+the same literal owned frame with an optional column, and only the closed kind
+labels identifier/function/type/method/syntax/module/other from fixed phrases.
+The existing calibration field carries that enum (or null for older witnesses);
+this is a bounded hint, not raw error text or independent proof of the cause.
+Failure-only admission and all source/resource guards are unchanged.
