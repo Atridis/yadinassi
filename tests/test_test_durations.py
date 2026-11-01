@@ -260,7 +260,8 @@ class TestDurationRunnerTests(unittest.TestCase):
 
     def test_workflow_only_main_full_step_uses_runner(self):
         source = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
-        self.assertEqual(source.count('python -m scripts.run_tests discover -s tests -v'), 1)
+        self.assertIn('python -m scripts.test_partition --tier light', source)
+        self.assertIn('python -m scripts.test_partition --tier heavy', source)
         self.assertIn('python -m unittest test_regex_family ', source)
         self.assertIn('python -O -m unittest test_regex_family ', source)
 

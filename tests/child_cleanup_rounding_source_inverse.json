@@ -1,0 +1,11 @@
+{
+  "path": "scripts/native_1c_full_host.py",
+  "base_sha256": "9249cca10b29455d12bb4ab806b33f572a9f462890d2a2940e4e93aac4c9beb9",
+  "candidate_sha256": "785dd4f696ee0c0a9b52f2bfbc183404c6a9980d62ee508e165b0a09ee19478b",
+  "edits": [
+    {
+      "old": "        process.wait(timeout=max(0.001, deadline - time.monotonic()))\n",
+      "new": "        process.wait(timeout=min(CHILD_CLEANUP_SECONDS, max(0.001, deadline - time.monotonic())))\n"
+    }
+  ]
+}

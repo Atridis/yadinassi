@@ -1236,7 +1236,7 @@ def _finish_child(process):
             pass
         except PermissionError as error:
             denied = error
-        process.wait(timeout=max(0.001, deadline - time.monotonic()))
+        process.wait(timeout=min(CHILD_CLEANUP_SECONDS, max(0.001, deadline - time.monotonic())))
         if denied is not None:
             try:
                 os.killpg(process.pid, 0)
