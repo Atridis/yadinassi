@@ -130,14 +130,44 @@ class BSLDocumentMetadataCollection(BSLCatalogMetadataCollection):
         return self._items
 
 
+class BSLInformationRegisterMetadata(BSLCatalogMetadata):
+    def full_name(self):
+        # !todo FullName is not part of this measured InfoReg API block.
+        raise ValueError('information-register metadata FullName is unsupported')
+
+
+class BSLInformationRegisterMetadataCollection(BSLDocumentMetadataCollection):
+    def _snapshot(self):
+        if self._items is None:
+            if self._context is None:
+                require_database_context()
+            snapshot = self._context.information_register_metadata()
+            catalogs = {identity.name.casefold(): BSLCatalogMetadata(identity.name, key)
+                        for key, identity, _ in snapshot.catalog_fields}
+            if self._catalogs._items is not None:
+                previous = self._catalogs._items
+                if ({k: (v._name, v._metadata_uuid) for k,v in previous.items()} !=
+                        {k: (v._name, v._metadata_uuid) for k,v in catalogs.items()}):
+                    raise ValueError('metadata identity changed')
+            else:
+                self._catalogs._items = catalogs
+            self._items = {identity.name.casefold(): BSLInformationRegisterMetadata(identity.name, key)
+                           for key, identity, *rest in snapshot.register_fields}
+            self._config_snapshot = snapshot
+        return self._items
+
+
 class BSLMetadata(_MetadataObject):
     def __init__(self, context: FileDBContext | None):
         self._catalogs = BSLCatalogMetadataCollection(context)
         self._documents = BSLDocumentMetadataCollection(context, self._catalogs)
+        self._information_registers = BSLInformationRegisterMetadataCollection(context, self._catalogs)
 
     def get_member(self, name: str) -> object:
         if name.casefold() in ('catalogs', 'справочники'):
             return self._catalogs
         if name.casefold() in ('documents', 'документы'):
             return self._documents
+        if name.casefold() in ('informationregisters', 'регистрысведений'):
+            return self._information_registers
         return super().get_member(name)

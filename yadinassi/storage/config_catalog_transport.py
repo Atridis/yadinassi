@@ -649,7 +649,7 @@ def load_catalog_attribute_projector():
 
 def _observe_catalog_attributes_from_graph(handle, *, profile,
         limits=None, chain_limits=None, content_limits=None,
-        reference_limits=None, identity_limits=None, linked=False, documents=False):
+        reference_limits=None, identity_limits=None, linked=False, documents=False, information_registers=False):
     """Read complete bounded attributes inside the caller's CONFIG graph stage.
 
     No native/XML oracle values enter this same-reader path.
@@ -664,13 +664,13 @@ def _observe_catalog_attributes_from_graph(handle, *, profile,
             profile=profile, limits=limits, chain_limits=chain_limits,
             content_limits=content_limits, catalog_limits=reader._budget.limits,
             reference_limits=reference_limits, name_limits=identity_limits,
-            standard=True, identity=True, attributes=True, _binding_handle=handle, linked=linked, documents=documents)
+            standard=True, identity=True, attributes=True, _binding_handle=handle, linked=linked, documents=documents, information_registers=information_registers)
     except BaseException:
         handle._graph.failed = True
         raise
 
 def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
-                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False, _binding_handle=None, linked=False, documents=False):
+                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False, _binding_handle=None, linked=False, documents=False, information_registers=False):
     """Resolve partial Catalog declarations on one private CONFIG resource graph.
 
     Every selected entry is validated and decoded exactly once before return.
@@ -678,6 +678,9 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
     Identity mode additionally projects an unverified internal UUID; all private
     results require the separate independent comparator.
     """
+    if (type(information_registers) is not bool or information_registers and
+            (documents or not (attributes and identity and linked))):
+        raise ValueError('information-register projection requires separate linked identity profile')
     if type(documents) is not bool or documents and not (attributes and identity and linked):
         raise ValueError('document projection requires the linked identity profile')
     expected_profile = (ConfigCatalogAttributeProfile if attributes else ConfigCatalogIdentityProfile if identity else
@@ -876,6 +879,7 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
             raise InvalidStructure('config_catalog_prefix') from None
         candidate_keys = set(candidates.references)
         document_keys = set()
+        register_keys = set()
         catalog_collections = candidates.collection_count
         if documents:
             from . import config_document_metadata as document_projector
@@ -892,6 +896,21 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
             candidate_keys.update(document_keys)
             if len(candidate_keys) > (reference_limits or catalog_projector.CatalogReferenceLimits()).max_references:
                 raise ResourceLimit('config_document_limits')
+        if information_registers:
+            from . import config_information_register_metadata as register_projector
+            try:
+                register_refs = register_projector.project_information_register_references(
+                    target_content, budget=reader._budget, limits=reference_limits)
+            except catalog_projector.CatalogReferenceError as error:
+                if error.code in catalog_projector.RESOURCE_CODES:
+                    raise ResourceLimit('config_information_register_limits') from None
+                raise InvalidStructure('config_information_register_prefix') from None
+            register_keys = set(register_refs.references)
+            if candidate_keys.intersection(register_keys):
+                raise InvalidStructure('config_information_register_identity_overlap')
+            candidate_keys.update(register_keys)
+            if len(candidate_keys) > (reference_limits or catalog_projector.CatalogReferenceLimits()).max_references:
+                raise ResourceLimit('config_information_register_limits')
         del target_content
         catalog_declared = len(candidate_keys)
         del candidates
@@ -912,6 +931,19 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
                 if key in candidate_keys:
                     if not content:
                         raise UnsupportedLayout('config_catalog_content_empty')
+                    if information_registers and key in register_keys:
+                        try:
+                            projected_register = register_projector.project_information_register_metadata(
+                                content, budget=reader._budget)
+                        except register_projector.a.CatalogAttributeError as error:
+                            if error.code in ('input_bytes', 'tokens', 'depth', 'name_bytes', 'name_chars', 'attribute_limit', 'integer_bound'):
+                                raise ResourceLimit('config_information_register_limits') from None
+                            raise UnsupportedLayout('config_information_register_profile') from None
+                        private_names.append((key, *projected_register))
+                        catalog_resolved += 1
+                        catalog_positive += 1
+                        del projected_register, content
+                        continue
                     if documents and key in document_keys:
                         from . import config_document_metadata as document_projector
                         try:
@@ -969,6 +1001,10 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
         if not positive_count:
             raise UnsupportedLayout('config_content_no_positive_witness')
         reader._budget.charge('output_bytes', 4096)
+        if information_registers:
+            return register_projector.InformationRegisterConfigSnapshot(
+                tuple(row for row in private_names if row[0] in register_keys),
+                tuple(row for row in private_names if row[0] not in register_keys))
         if documents:
             return document_projector.DocumentConfigSnapshot(
                 tuple(row for row in private_names if row[0] in document_keys),

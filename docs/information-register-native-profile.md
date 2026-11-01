@@ -2,9 +2,15 @@
 
 Local source preparation on main `273d40ab0abb3fad2a4489ba2cefa100c189dfc8`.
 This is a new reconstruction after an environment reset, not recovery of v1 bytes.
-The public InformationRegisters runtime is not admitted by this host preparation.
-Actual Designer normalization, native Get defaults, cursor order/end state and
-physical composite-key encoding remain pending measurement.
+The corrected input preparation was composed with main `6c4da390` without
+changing its production runtime. Native run `41353896285`, source `03e18b8c`
+(tree `d7407d9d`, identical to feature `c0ee2060`), accepted both strict redumps
+and captured all 32 blocks across eight contexts. The 16 client/server block
+pairs agree; cleanup is complete. Original authenticated reports stay private.
+
+The completed read-only runtime is described in [InformationRegister reads](information-register-readonly.md).
+Its captured-byte replay is not actual database parity: a fresh final-source
+frozen `.1CD` comparison and full/CI gates remain pending.
 
 The closed `information-register-read-v2` selector reuses the existing reviewed
 file-DB workflow/job, owner/exact-ref/source checks, image, credentials, process

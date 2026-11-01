@@ -746,11 +746,12 @@ class _CatalogBindingGraph:
                 self.reader._budget.charge("bytes_processed", 257 * len(self.catalog.tables))
                 self.reader._budget.charge("output_bytes", 1024)
                 if role in ("records", "document_lines"):
-                    # The graph admits only a bounded Reference table name;
-                    # the row entrypoint separately validates the exact compiled
+                    # Existing Reference admission plus explicitly typed measured
+                    # Document/Items/InfoRg bindings only; the row entrypoint
+                    # separately validates the exact compiled
                     # binding and all declarations before opening its data.
                     target = getattr(binding, "table_name", None)
-                    document = False; document_lines = False
+                    document = False; document_lines = False; information_register = False
                     if type(target) is str and target.startswith("_Document"):
                         from .config_document_binding import DocumentBinding, PROFILE_IDENTIFIER as DOCUMENT_PROFILE
                         document = (type(binding) is DocumentBinding
@@ -760,6 +761,11 @@ class _CatalogBindingGraph:
                         document_lines = (type(binding) is DocumentLinesBinding
                                           and type(binding.profile_identifier) is str
                                           and binding.profile_identifier == LINES_PROFILE)
+                    if type(target) is str and target.startswith("_InfoRg"):
+                        from .config_information_register_binding import InformationRegisterBinding, PROFILE_IDENTIFIER as REGISTER_PROFILE
+                        information_register = (type(binding) is InformationRegisterBinding
+                                                and type(binding.profile_identifier) is str
+                                                and binding.profile_identifier == REGISTER_PROFILE)
                     if role == "document_lines":
                         previous = self._document_binding
                         if (not document_lines or previous is None
@@ -779,6 +785,11 @@ class _CatalogBindingGraph:
                                 or not target[9:].isascii() or not target[9:].isdigit()
                                 or int(target[9:]) > 2147483647):
                             raise ValueError("invalid compiled document table name")
+                    elif information_register:
+                        if (not 1 <= len(target[7:]) <= 10 or target[7] == "0"
+                                or not target[7:].isascii() or not target[7:].isdigit()
+                                or int(target[7:]) > 2147483647):
+                            raise ValueError("invalid compiled information register table name")
                     elif (type(target) is not str or not target.startswith("_Reference")
                             or not 1 <= len(target[10:]) <= 10
                             or target[10] == "0" or not target[10:].isascii()
