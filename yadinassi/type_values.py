@@ -1,3 +1,4 @@
+from .data_hashing import BSLDataHashing, BSLHashFunction
 from .data_io import BSLDataReader, BSLDataWriter, BSLReadDataResult
 from .regex_functions import BSLRegexResult, BSLRegexGroup
 from .zip_archives import (BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntry, BSLZipFileEntries, BSLZIPCompressionMethod, BSLZIPCompressionLevel, BSLZIPStorePathMode, BSLZIPSubDirProcessingMode, BSLZIPRestoreFilePathsMode, BSLZIPEncryptionMethod, BSLFileNamesEncodingInZipFile)
@@ -48,6 +49,8 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLDataHashing, BSLType.DATA_HASHING, "DataHashing"),
+    (BSLHashFunction, BSLType.HASH_FUNCTION, "HashFunction"),
     (BSLDataReader, BSLType.DATA_READER, "DataReader"),
     (BSLDataWriter, BSLType.DATA_WRITER, "DataWriter"),
     (BSLReadDataResult, BSLType.READ_DATA_RESULT, "ReadDataResult"),

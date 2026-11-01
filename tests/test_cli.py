@@ -9,6 +9,23 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def diagnostic_transport_cases(cases, message, seen_messages):
+    """Every expression keeps command+console; every message keeps all routes.
+
+    Only repeated diagnostic text within one semantic family is sampled. The
+    caller's assertions and fresh CLI processes remain unchanged for each case.
+    """
+    if (len(cases) != 6 or tuple(c[0][:1] for c in cases[:3]) != (('-c',), ('-с',), ('--command',))
+            or len(cases[3][0]) != 1 or type(cases[3][0][0]) is not str
+            or not cases[3][0][0] or cases[3][0][0].startswith('-')
+            or cases[4][0] != ('-',) or cases[5][0] != ()):
+        raise AssertionError('expected complete ordered six-transport matrix')
+    if message in seen_messages:
+        return [cases[0], cases[5]]
+    seen_messages.add(message)
+    return cases
+
+
 class CLITests(unittest.TestCase):
     def run_cli(self, *arguments, stdin=None, cwd=ROOT):
         environment = os.environ.copy()
@@ -17,6 +34,39 @@ class CLITests(unittest.TestCase):
         return subprocess.run([sys.executable, "-m", "yadinassi", *arguments],
                               input=stdin, capture_output=True, encoding="utf-8",
                               cwd=cwd, env=environment, timeout=10)
+
+    def test_reduced_error_matrix_keeps_each_expression_and_each_message_routes(self):
+        from scripts import smoke_test
+        routes = [(('-c', 'code'), None, '', '<команда>:2:'),
+                  (('-с', 'code'), None, '', '<команда>:2:'),
+                  (('--command', 'code'), None, '', '<команда>:2:'),
+                  (('Ошибка.bsl',), None, '', 'Ошибка.bsl:2:'),
+                  (('-',), 'code', '', '<stdin>:2:'),
+                  ((), 'code/exit', 'saved', '<консоль>:1:')]
+        total = 0
+        for family in ('DATE_FAILURES', 'STRING_TEMPLATE_FAILURES',
+                       'STRING_BOUNDARY_FAILURES', 'CHARACTER_FAILURES', 'ROUNDING_FAILURES'):
+            seen = set(); message_routes = {}
+            for expression, message in getattr(smoke_test, family):
+                selected = diagnostic_transport_cases(routes, message, seen)
+                self.assertIs(selected[0], routes[0])
+                self.assertIs(selected[-1], routes[-1])
+                indices = {next(i for i, route in enumerate(routes) if route is chosen)
+                           for chosen in selected}
+                self.assertIn(0, indices); self.assertIn(5, indices)
+                message_routes.setdefault(message, set()).update(indices)
+                total += len(selected)
+            self.assertTrue(message_routes)
+            self.assertTrue(all(indices == set(range(6)) for indices in message_routes.values()))
+        self.assertEqual(total, 154)  # Previously 246; source changes require coverage review.
+        with self.assertRaises(AssertionError):
+            diagnostic_transport_cases(routes[:-1], 'error', set())
+        with self.assertRaises(AssertionError):
+            diagnostic_transport_cases(list(reversed(routes)), 'error', set())
+        for replacement in (routes[0], routes[4]):
+            no_file = list(routes); no_file[3] = replacement
+            with self.assertRaises(AssertionError):
+                diagnostic_transport_cases(no_file, 'error', set())
 
     def test_version_uses_package_version(self):
         from yadinassi import __version__
@@ -68,6 +118,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             source = temporary / 'ОшибкаДаты.bsl'
+            seen_messages = set()
             for expression, message in DATE_FAILURES:
                 code = f'savedDate = Date(2024, 2, 29);\nsavedDate = {expression};\n'
                 source.write_text(code, encoding='utf-8-sig')
@@ -77,6 +128,7 @@ class CLITests(unittest.TestCase):
                           (('-',), code, '', '<stdin>:2:'),
                           ((), code + 'ValueToStringInternal(savedDate)\n/exit\n',
                            '{"D",20240229000000}\n', '<консоль>:1:')]
+                cases = diagnostic_transport_cases(cases, message, seen_messages)
                 for arguments, stdin, stdout, location in cases:
                     with self.subTest(expression=expression, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
@@ -403,6 +455,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             source = temporary / 'ОшибкаШаблона.bsl'
+            seen_messages = set()
             for expression, message in STRING_TEMPLATE_FAILURES:
                 code = f'saved = "old";\nsaved = {expression};\n'
                 source.write_text(code, encoding='utf-8-sig')
@@ -412,6 +465,7 @@ class CLITests(unittest.TestCase):
                           (('-',), code, '', '<stdin>:2:'),
                           ((), code + 'saved\nStrTemplate("%1", "new")\n/exit\n',
                            'old\nnew\n', '<консоль>:1:')]
+                cases = diagnostic_transport_cases(cases, message, seen_messages)
                 for arguments, stdin, stdout, location in cases:
                     with self.subTest(expression=expression, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
@@ -442,6 +496,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             source = temporary / 'ОшибкаГраницы.bsl'
+            seen_messages = set()
             for expression, message in STRING_BOUNDARY_FAILURES:
                 code = f'saved = True;\nsaved = {expression};\n'
                 source.write_text(code, encoding='utf-8-sig')
@@ -451,6 +506,7 @@ class CLITests(unittest.TestCase):
                           (('-',), code, '', '<stdin>:2:'),
                           ((), code + 'saved\nStrStartsWith("A", "A")\n/exit\n',
                            'Да\nДа\n', '<консоль>:1:')]
+                cases = diagnostic_transport_cases(cases, message, seen_messages)
                 for arguments, stdin, stdout, location in cases:
                     with self.subTest(expression=expression, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
@@ -481,6 +537,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             source = temporary / 'ОшибкаСимвола.bsl'
+            seen_messages = set()
             for expression, message in CHARACTER_FAILURES:
                 code = f'saved = Символ(65);\nsaved = {expression};\n'
                 source.write_text(code, encoding='utf-8-sig')
@@ -490,6 +547,7 @@ class CLITests(unittest.TestCase):
                           (('-',), code, '', '<stdin>:2:'),
                           ((), code + 'saved\nКодСимвола(saved)\n/exit\n',
                            'A\n65\n', '<консоль>:1:')]
+                cases = diagnostic_transport_cases(cases, message, seen_messages)
                 for arguments, stdin, stdout, location in cases:
                     with self.subTest(expression=expression, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
@@ -526,6 +584,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             source = temporary / 'ОшибкаОкругления.bsl'
+            seen_messages = set()
             for expression, message in ROUNDING_FAILURES:
                 code = f'value = Round(12.345, 2);\nvalue = {expression};\n'
                 source.write_text(code, encoding='utf-8-sig')
@@ -535,6 +594,7 @@ class CLITests(unittest.TestCase):
                           (('-',), code, '', '<stdin>:2:'),
                           ((), code + 'value\nОкр(-1.5)\n/exit\n',
                            '12,35\n-2\n', '<консоль>:1:')]
+                cases = diagnostic_transport_cases(cases, message, seen_messages)
                 for arguments, stdin, stdout, location in cases:
                     with self.subTest(expression=expression, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)

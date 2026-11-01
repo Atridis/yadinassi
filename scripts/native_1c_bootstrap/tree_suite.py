@@ -72,11 +72,13 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
         except probe.ProbeError:
             return {'site':site,'case':None,'category':'access_probe','calibration':None}
         return diagnostic.observation_diagnostic(main, site, contract.validate_payload, contract.ObservationError)
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'zip-family-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):
         if profile == 'zip-family-v1':
             import native_1c_zip_family_contract as contract
         elif profile == 'data-io-family-v1':
             import native_1c_data_io_family_contract as contract
+        elif profile == 'data-hashing-family-v1':
+            import native_1c_data_hashing_family_contract as contract
         elif profile == 'regex-family-v1':
             import native_1c_regex_family_contract as contract
         elif profile == 'binary-stream-family-v1':
@@ -146,13 +148,17 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
 
 def validate_diagnostic(value, *, profile='tree-v1'):
     spec = profiles.select(profile)
+    if profile == 'data-hashing-family-v1':
+        import native_1c_data_hashing_family_contract as contract
+        try: return contract.validate_failure_diagnostic(value)
+        except contract.ObservationError: raise full.FullError('invalid_result') from None
     if profile == 'tree-copy-v1':
         import native_1c_tree_copy_diagnostics as diagnostic
         try:
             return diagnostic.validate_diagnostic(value)
         except diagnostic.DiagnosticError:
             raise full.FullError('invalid_result') from None
-    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'zip-family-v1'):
+    if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):
         if value is not None and (type(value) is not dict or value != {
                 'site':value.get('site'),'case':None,'category':'record_count','calibration':None}
                 or type(value['site']) is not str or value['site'] not in ('server','client')):
@@ -181,6 +187,8 @@ def validate_observations(raw, site='server', *, profile='tree-v1'):
         from native_1c_zip_family_contract import validate_output, ObservationError
     elif profile == 'data-io-family-v1':
         from native_1c_data_io_family_contract import validate_output, ObservationError
+    elif profile == 'data-hashing-family-v1':
+        from native_1c_data_hashing_family_contract import validate_output, ObservationError
     elif profile == 'regex-family-v1':
         from native_1c_regex_family_contract import validate_output, ObservationError
     elif profile == 'binary-stream-family-v1':
@@ -250,7 +258,7 @@ def client_module(source, template, *, profile='tree-v1'):
     if inverse!=original: raise full.FullError('invalid_input')
     # Format's bounded observer emits inside a helper procedure. Capture those
     # calls too; the exact source pin and inverse above still bind all inputs.
-    if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'zip-family-v1'):
+    if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):
         declarations = declarations.replace('Сообщить(', 'TreeLaneCapture(')
     harness=full.client_parity_template(template).decode('utf-8')
     # The historical template inverse restores a legacy default writer. This
@@ -300,7 +308,7 @@ def client_module(source, template, *, profile='tree-v1'):
     prefix='&НаКлиенте\nПерем TreeLaneMessages;\n&НаКлиенте\nПерем TreeLaneCharacters;\n'
     if profile in ('tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1'):
         wrapper = wrapper.replace('Или Code = 95;', 'Или Code = 95 Или Code = 47;')
-    if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'zip-family-v1'):
+    if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):
         wrapper = wrapper.replace('Или Code = 95;', 'Или Code = 95 Или Code = 124;')
     if profile == 'tree-columns-clear-lifetime-v1':
         wrapper = wrapper.replace('Или Code = 47;', 'Или Code = 47 Или Code = 126;')
@@ -318,6 +326,59 @@ def client_marker(path, nonce, phase, *, profile='tree-v1'):
             or any(type(v) is not str for v in value['values'])): raise full.FullError('invalid_result')
     if phase=='completed': validate_observations(full.serialize_messages(value['values']), 'client', profile=profile)
     return value
+
+
+def read_hashing_native_result(path, source_sha256):
+    """Preserve the ordinary parser; classify only its rejected owned result."""
+    import native_1c_data_hashing_family_contract as contract
+    if source_sha256 != contract.SOURCE_SHA256: raise full.FullError('invalid_input')
+    raw = full.secure_bytes(path, full.MAX_RESULT)
+    try: return full.parse_native_result(raw)
+    except full.FullError as error:
+        if error.kind not in ('invalid_result', 'output_limit'): raise
+    category, line, kind = 'result_limit', None, None
+    # Secondary inspection is strictly smaller than the unchanged parser cap;
+    # oversized rejected input is classified before another decode/JSON parse.
+    if len(raw) <= contract.MAX_FAILURE_DIAGNOSTIC_BYTES:
+        try: value = full.strict_json(raw, max_depth=3)
+        except full.FullError: category = 'result_json'
+        else:
+            category = 'result_shape'
+            if (type(value) is dict and set(value) == {'messages', 'error'}
+                    and type(value['messages']) is list
+                    and all(type(item) is str for item in value['messages'])
+                    and type(value['error']) is str):
+                if value['error']:
+                    category = 'result_error'
+                    # The owned launcher uses DetailedErrorDescription, not
+                    # Description alone. Wrapped errors may therefore include
+                    # a module frame and a more specific fixed cause phrase.
+                    text = value['error'].casefold()
+                    kind = 'other'
+                    for code, phrases in (
+                        ('identifier', ('переменная не определена', 'variable is not defined')),
+                        ('function', ('процедура или функция с указанным именем не определена', 'procedure or function with specified name is not defined')),
+                        ('type', ('тип не определен', 'type is not defined')),
+                        ('method', ('метод объекта не обнаружен', 'object method not found')),
+                        ('syntax', ('ожидается', 'синтаксическая ошибка', 'syntax error')),
+                        ('module', ('ошибка инициализации модуля', 'module initialization error'))):
+                        if any(phrase in text for phrase in phrases) or (code == 'syntax' and re.search(r'\bexpected\b', text) is not None):
+                            kind = code
+                            break
+                    # Only the literal generated TestModule object-module frame.
+                    # No pathname, other module, arbitrary number or error text.
+                    match = re.search(r'\{(?:ВнешняяОбработка\.TestModule\.МодульОбъекта|ExternalDataProcessor\.TestModule\.ObjectModule)\(([1-9][0-9]{0,2})(?:,[0-9]{1,3})?\)\}', value['error'])
+                    if match is not None:
+                        candidate = int(match[1])
+                        if candidate <= contract.SOURCE_LINE_COUNT: line = candidate
+                    kind = contract.failure_projection(value['error'], value['messages'], kind)
+                else:
+                    category = 'result_limit'
+                    try: ''.join(value['messages']).encode('utf-8')
+                    except UnicodeError: category = 'result_encoding'
+    diagnostic = {'site': 'server', 'case': line, 'category': category, 'calibration': kind}
+    contract.validate_failure_diagnostic(diagnostic)
+    raise ObservationFailure(diagnostic)
 
 
 def run_suite(launcher, platform, launcher_epf, root, inputs, nonce, *, profile='tree-v1'):
@@ -347,7 +408,8 @@ def run_suite(launcher, platform, launcher_epf, root, inputs, nonce, *, profile=
             if full.secure_bytes(source_xml.parent/'TestModule/Ext/ObjectModule.bsl',full.MAX_OUTPUT+3)!=expected:
                 raise full.FullError('module_mismatch')
             old[2](platform_argument,source_xml,destination)
-        launcher.read_result,launcher.run_process,launcher.build_epf=full.read_native_result,process,build
+        reader = (lambda path: read_hashing_native_result(path, spec.source_sha256)) if profile == 'data-hashing-family-v1' else full.read_native_result
+        launcher.read_result,launcher.run_process,launcher.build_epf=reader,process,build
         full.absent(directory,output,root/(spec.case+'.err'),output.with_suffix('.out.tmp'))
         launcher.run_case(platform,inputs/spec.target,launcher_epf,directory,output)
         full.require_zero_result(directory/'TestModule.build-result.txt',0)

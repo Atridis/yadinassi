@@ -114,3 +114,8 @@ tests/fixtures/data_io_family/*.bsl text eol=lf
 tests/fixtures/data_io_family/*.out -text
 tests/fixtures/data_io_family/**/*.bsl text eol=lf
 tests/fixtures/data_io_family/**/*.out -text
+
+# Closed ordinary DataHashing packet and future immutable observations.
+integrational_tests/measurements/data_hashing_family.bsl text eol=lf
+tests/fixtures/data_hashing_family/**/*.bsl text eol=lf
+tests/fixtures/data_hashing_family/**/*.out -text
