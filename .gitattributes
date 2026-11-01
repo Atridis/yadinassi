@@ -108,3 +108,6 @@ scripts/native_1c_db_oracle/document_lines_packet/generated/** -text
 # Native selected Items fixture bytes (no session/authentication metadata).
 tests/fixtures/document_items_native.json -text
 tests/fixtures/document_lines_records.json -text
+
+# Saved InfoReg v2 identities and source-derived bytes.
+scripts/native_1c_db_oracle/information_register_packet/** -text
