@@ -94,9 +94,15 @@ XML_WORKFLOW_FAMILY = Profile('xml-workflow-family-v1', 'native-1c-xml-workflow-
     'xml_workflow_family', '403ae0f300e5a07fe3c78dff32148f96f7de667ed3b3e0720b8fad3afe454f92',
     35, 'native_1c_xml_workflow_family_contract', '\nСообщить("XF-C1: [" + XFEncode("") + "]");\n', 5, 'xml-workflow-family')
 
+BINARY_STREAM_FAMILY = Profile('binary-stream-family-v1', 'native-1c-binary-stream-family-v1', 'native-1c-binary-stream-family-stage-v1',
+    'binary_stream_family', '0a3e3614d6b43534faddf4c911b203233fd76e75770642d96190ed4802138059',
+    42, 'native_1c_binary_stream_family_contract', '\nСообщить("BF-C1: ["+BFEncode("")+"]");\n', 5, 'binary-stream-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
+    if name == BINARY_STREAM_FAMILY.name:
+        return BINARY_STREAM_FAMILY
     if name == XML_WORKFLOW_FAMILY.name:
         return XML_WORKFLOW_FAMILY
     if name == FILE_IO_FAMILY.name:

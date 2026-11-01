@@ -29,7 +29,7 @@ client_async=false
 client_args=()
 preprocessor_measurement=false
 tree_suite=false
-if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] || [ "$1" = --tree-sort-suite ] || [ "$1" = --tree-columns-move-suite ] || [ "$1" = --tree-columns-move-boundary-suite ] || [ "$1" = --tree-columns-move-tail-suite ] || [ "$1" = --tree-columns-clear-suite ] || [ "$1" = --tree-columns-clear-lifetime-suite ] || [ "$1" = --tree-columns-clear-metadata-suite ] || [ "$1" = --tree-columns-delete-suite ] || [ "$1" = --tree-columns-delete-string-suite ] || [ "$1" = --format-numbers-suite ] || [ "$1" = --format-dates-suite ] || [ "$1" = --json-family-suite ] || [ "$1" = --file-io-family-suite ] || [ "$1" = --xml-workflow-family-suite ]; }; then
+if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] || [ "$1" = --tree-sort-suite ] || [ "$1" = --tree-columns-move-suite ] || [ "$1" = --tree-columns-move-boundary-suite ] || [ "$1" = --tree-columns-move-tail-suite ] || [ "$1" = --tree-columns-clear-suite ] || [ "$1" = --tree-columns-clear-lifetime-suite ] || [ "$1" = --tree-columns-clear-metadata-suite ] || [ "$1" = --tree-columns-delete-suite ] || [ "$1" = --tree-columns-delete-string-suite ] || [ "$1" = --format-numbers-suite ] || [ "$1" = --format-dates-suite ] || [ "$1" = --json-family-suite ] || [ "$1" = --file-io-family-suite ] || [ "$1" = --xml-workflow-family-suite ] || [ "$1" = --binary-stream-family-suite ]; }; then
     tree_suite=true
     if [ "$1" = --tree-copy-suite ]; then tree_suite=copy; fi
     if [ "$1" = --tree-sort-suite ]; then tree_suite=sort; fi
@@ -46,6 +46,7 @@ if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] |
     if [ "$1" = --json-family-suite ]; then tree_suite=json-family; fi
     if [ "$1" = --file-io-family-suite ]; then tree_suite=file-io-family; fi
     if [ "$1" = --xml-workflow-family-suite ]; then tree_suite=xml-workflow-family; fi
+    if [ "$1" = --binary-stream-family-suite ]; then tree_suite=binary-stream-family; fi
     set -- --full-suite "$2" "$3" --client-probe
 fi
 if [ "$#" -ge 5 ] && [ "$#" -le 10 ] && [ "${!#}" = --client-preprocessor-measurement ] && [ "${4}" = --client-probe ]; then
@@ -153,7 +154,7 @@ import xml.etree.ElementTree as ET
 
 emitter_args = sys.argv[1:]
 tree_mode = emitter_args.pop() if len(emitter_args) == 19 else "false"
-if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family"}:
+if tree_mode not in {"false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family", "binary-stream-family"}:
     raise ValueError("tree mode")
 preprocessor_mode = emitter_args.pop() if len(emitter_args) == 18 else "false"
 if preprocessor_mode not in {"false", "true"}:
@@ -245,13 +246,13 @@ if bootstrap == "true":
         # Even a simultaneous native-format failure cannot imply no mutation
         # after stage two may have begun. The host rejects this to unknown.
         report["status"] = "stage2_failed"
-if tree_mode in {"true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family"}:
+if tree_mode in {"true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family", "binary-stream-family"}:
     sys.path.insert(0, "/smoke/bootstrap")
     import tree_suite as tree_lane
     import full_suite
     raw = tree_lane.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
         quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
-        bus_cleanup_failed=bus_cleanup_failed == "true", profile={"copy":"tree-copy-v1", "sort":"tree-sort-v1", "columns-move":"tree-columns-move-v1", "columns-move-boundary":"tree-columns-move-boundary-v1", "columns-move-tail":"tree-columns-move-tail-v1", "columns-clear":"tree-columns-clear-v1", "columns-clear-lifetime":"tree-columns-clear-lifetime-v1", "columns-clear-metadata":"tree-columns-clear-metadata-v1", "columns-delete":"tree-columns-delete-v1", "columns-delete-string":"tree-columns-delete-string-v1", "format-numbers":"format-numbers-v1", "format-dates":"format-dates-v1", "json-family":"json-family-v1", "file-io-family":"file-io-family-v1", "xml-workflow-family":"xml-workflow-family-v1", "true":"tree-v1"}[tree_mode])
+        bus_cleanup_failed=bus_cleanup_failed == "true", profile={"copy":"tree-copy-v1", "sort":"tree-sort-v1", "columns-move":"tree-columns-move-v1", "columns-move-boundary":"tree-columns-move-boundary-v1", "columns-move-tail":"tree-columns-move-tail-v1", "columns-clear":"tree-columns-clear-v1", "columns-clear-lifetime":"tree-columns-clear-lifetime-v1", "columns-clear-metadata":"tree-columns-clear-metadata-v1", "columns-delete":"tree-columns-delete-v1", "columns-delete-string":"tree-columns-delete-string-v1", "format-numbers":"format-numbers-v1", "format-dates":"format-dates-v1", "json-family":"json-family-v1", "file-io-family":"file-io-family-v1", "xml-workflow-family":"xml-workflow-family-v1", "binary-stream-family":"binary-stream-family-v1", "true":"tree-v1"}[tree_mode])
     sys.stdout.buffer.write(raw)
     raise SystemExit(0)
 if full_mode == "true":
@@ -459,6 +460,7 @@ if [ "$bootstrap" = true ]; then
         if [ "$tree_suite" = json-family ]; then tree_flag=--json-family-suite; fi
         if [ "$tree_suite" = file-io-family ]; then tree_flag=--file-io-family-suite; fi
         if [ "$tree_suite" = xml-workflow-family ]; then tree_flag=--xml-workflow-family-suite; fi
+        if [ "$tree_suite" = binary-stream-family ]; then tree_flag=--binary-stream-family-suite; fi
         python3 /smoke/bootstrap/run_stage.py "$tree_flag" --invocation-nonce "$invocation_nonce" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     elif [ "$full_suite" = true ]; then

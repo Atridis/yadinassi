@@ -6041,3 +6041,15 @@ I/O reuses the ordinary regular-file boundary. One broad 33-case native batch is
 measured on real 1C; five ordinary differences corrected, all33 captured cases
 replay exactly. Final corrected-head CI remains pending. Scope and explicit `!todo`
 exclusions: [docs/xml-workflow-family.md](docs/xml-workflow-family.md).
+
+
+## Binary buffer and stream workflow — implementation checkpoint
+
+A coherent new family adds `BinaryDataBuffer`, `MemoryStream`, `FileStream`,
+`ByteOrder`, `FileOpenMode`, `FileAccess`, `PositionInStream`, two binary-buffer
+conversion globals, and BinaryData stream read/write bridges. Ordinary byte and
+unsigned integer operations, shared slices versus copies, seek/read/write/size,
+copy/flush/close and six file opening modes share bounded explicit type checks.
+No unrelated runtime refactor. Rare/external/async corners are marked `!todo`.
+One source-bound native40 batch is prepared; native parity remains pending.
+[Exact supported scope and safety](docs/binary-stream-family.md).

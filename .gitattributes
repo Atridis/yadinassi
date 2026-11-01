@@ -83,11 +83,13 @@ tests/fixtures/xml_workflow_family/*.out -text
 tests/fixtures/xml_workflow_family/*.bsl text eol=lf
 tests/fixtures/xml_workflow_family/*provenance.json -text
 
+# Binary stream source/captures are byte-bound across platforms.
+integrational_tests/measurements/binary_stream_family.bsl text eol=lf
+tests/fixtures/binary_stream_family/*.out -text
+tests/fixtures/binary_stream_family/*.bsl text eol=lf
+tests/fixtures/binary_stream_family/*provenance.json -text
 # Saved document probe bytes are source-bound native inputs, not host newlines.
 scripts/native_1c_db_oracle/document_read_packet/** -text
 
 tests/fixtures/document_records.json -text
 tests/fixtures/document_native.json -text
-
-# Saved source-owned Document Items identities and packet bytes.
-scripts/native_1c_db_oracle/document_lines_packet/generated/** -text
