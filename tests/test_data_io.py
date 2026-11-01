@@ -102,7 +102,7 @@ class DataIOTests(unittest.TestCase):
     def test_utf8_chars_and_default_line_splitters(self):
         source = reader('Ж😀X'.encode())
         self.assertEqual(source.read_chars(1),'Ж')
-        self.assertEqual(source.read_chars(1),'😀')
+        self.assertEqual(source.read_chars(1),'\ud83d')
         self.assertEqual(source.read_chars(),'X')
         source = reader(b'a\r\nb\nc\rd')
         self.assertEqual([source.read_line() for _ in range(4)],['a','b','c','d'])
@@ -134,6 +134,37 @@ class DataIOTests(unittest.TestCase):
             path = Path(tmp)/'packet.bin'; path.write_bytes(b'ab')
             writer = Writer(str(path)); writer.write_chars('x'); writer.close()
             self.assertEqual(path.read_bytes(), b'xb')
+
+    def test_measured_skip_absolute_position_and_utf16_count(self):
+        source = reader(b'abc')
+        self.assertEqual([source.skip(1), source.skip(1), source.skip(9)], [1,2,3])
+        self.assertFalse(source.get_member('ReadCompleted'))
+        for encoding in ('utf-8', 'utf-16-le', 'utf-16-be'):
+            source = Reader(Binary.from_bytes('😀x'.encode(encoding)), encoding)
+            self.assertEqual(source.read_chars(2), '😀')
+            self.assertEqual(source.read_chars(), 'x')
+            source = Reader(Binary.from_bytes('😀x'.encode(encoding)), encoding)
+            self.assertEqual(source.read_chars(1), '\ud83d')
+            self.assertEqual(source.read_chars(1), 'x')
+
+    def test_measured_stream_alias_shares_cursor_close_and_readonly_authority(self):
+        stream = Memory(); writer = Writer(stream); source = Reader(stream)
+        alias = source.source_stream(); target = writer.target_stream()
+        self.assertIsNot(alias, stream); self.assertIsNot(target, stream)
+        writer.write_byte(65); self.assertEqual(alias.current_position(), 1)
+        alias.seek(0, Origin.BEGIN); self.assertEqual(source.read_byte(), 65)
+        alias.close()
+        for obj in (stream, target):
+            with self.assertRaises(ValueError): obj.current_position()
+        stream = Memory(Buffer.from_bytes(b'a')); readonly = stream.get_readonly_stream()
+        alias = Reader(readonly).source_stream()
+        alias = Reader(Reader(alias).source_stream()).source_stream()
+        self.assertIs(alias._data_io_source, readonly)
+        with self.assertRaises(ValueError): alias._write_bytes(b'b')
+        with self.assertRaises(ValueError): Writer(alias)
+        self.assertEqual(stream._state.data, b'a')
+        readonly.close()
+        with self.assertRaises(ValueError): alias.current_position()
 
     def test_settings_mutability(self):
         source = reader(b'\x01\x02')

@@ -28,8 +28,8 @@ native-calibration questions where the first capture does not discriminate behav
 
 - Source: `integrational_tests/measurements/data_io_family.bsl`.
 - Source SHA-256:
-  `e67d1932d1adaa0b53dc79dcc3995a6c906c5c752364a333fbd25675cacb6e2e`.
-- Source size: 8,123 UTF-8 bytes, within the additional 8,192-byte packet bound.
+  `e292172fa74ecf940781093229f49e58c97ca8706ba983676fc20bfea6d4ff06`.
+- Source size: 8,086 UTF-8 bytes, within the additional 8,192-byte packet bound.
 - Forty cases plus two observer controls: 42 emitted messages, five print sites.
 - Each successful case encodes at most 40 UTF-16 units as fixed-width hex.
   Exact maximum output rectangle: 7,130 bytes, below the existing 8,192-byte cap.
@@ -93,3 +93,17 @@ position, one/two UTF16-unit text reads, delimiter error phase, and returned str
 identity/cursor/close behavior. These remain provisional until measured; readonly/lifetime
 semantics are not inferred from wrapper identity alone. Cosmetic source compaction keeps
 all probes within the unchanged8192-byte input cap; encoded output cap remains7130bytes.
+
+## Second discriminant capture
+
+Run41311554296 is retained separately as native-v2:39successful cases and one action
+error in the extended ByteOrder case2. Measured Skip returns absolute position;
+ReadChars counts UTF16 units and, for a split supplementary scalar, consumes its
+encoded bytes but returns only the high unit; SourceStream/TargetStream return
+separate identities sharing the cursor and underlying close lifetime. These are
+narrowly corrected without broadening stream admission or readonly authority.
+Case24 isolates the error to assigning the reader delimiter. The next unchanged40
+case batch separates ByteOrder set/get/reposition/explicit-read outcomes and tests
+known CRLF after the delimiter error before guessing its cause. Neither original
+capture is called full availability or parity. One fixed helper factors repeated
+borrowed writer-close/seek/reader setup to retain the unchanged8192-byte source cap.

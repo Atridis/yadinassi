@@ -58,6 +58,8 @@ host network stream or unbounded parser is provided. The first native40 capture 
 longest marker at the earliest position, no ReadCompleted flag on ReadChars(all),
 and prefix-overwrite file mode. ByteOrder mutation effects, Skip return values,
 Unicode ReadChars units, delimiter errors and returned-stream identity/lifetime
+were isolated by the second capture. Skip, UTF16 counting and shared-close stream
+aliases are now corrected; ByteOrder/default effects and delimiter setter validity
 remain under bounded followthrough measurement. Equal-length duplicate marker
 ties and other unmeasured edge combinations remain !todo.
 

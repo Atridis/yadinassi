@@ -47,6 +47,16 @@ def _converted(value, source, target):
     return value.replace(source, target)
 
 
+def _stream_alias(source):
+    # Native DF26: distinct Stream identity, shared cursor/storage/close lifetime.
+    # Flatten only this internal link so repeated wrappers cannot build recursion.
+    source._open()
+    result = BSLStream.__new__(BSLStream)
+    result._state, result._readonly, result._closed = source._state, source._readonly, False
+    result._data_io_source = getattr(source, '_data_io_source', source)
+    return result
+
+
 class BSLReadDataResult(_FileMethods):
     def __init__(self): raise TypeError('РезультатЧтенияДанных не имеет конструктора')
     @classmethod
@@ -136,7 +146,7 @@ class BSLDataReader(_DataIO):
         try: return stream._read_bytes(count)
         finally: stream._state.position = position
     def _consume(self, count): self._stream._state.position += count
-    def source_stream(self): return self._open()
+    def source_stream(self): return _stream_alias(self._open())
     def get_member(self, name):
         if name.casefold() in ('readcompleted', 'чтениезавершено'):
             self._open(); return self._completed
@@ -167,7 +177,8 @@ class BSLDataReader(_DataIO):
     def read32(self, order=None): return self._integer(4, order)
     def read64(self, order=None): return self._integer(8, order)
     def skip(self, count):
-        count = min(_number(count), self._available()); self._consume(count); return Decimal(count)
+        count = min(_number(count), self._available()); self._consume(count)
+        return self._stream.current_position()
     def _markers(self, value, encoding=None):
         codec = self._codec_for(encoding)
         if type(value) in (BSLArray, BSLFixedArray):
@@ -236,7 +247,7 @@ class BSLDataReader(_DataIO):
             else:
                 unit = int.from_bytes(data[position:position+2], 'little' if codec.endswith('le') else 'big')
                 width = 4 if 0xd800 <= unit <= 0xdbff else 2
-            position = min(position + width, len(data)); characters += 1
+            position = min(position + width, len(data)); characters += 2 if width == 4 else 1
         return position
     def read_chars(self, count=None, encoding=None):
         count = None if count is None else _number(count)
@@ -245,9 +256,14 @@ class BSLDataReader(_DataIO):
         # Decode only the selected prefix: later fields may use another encoding
         # or contain binary data. Strict errors leave the cursor unchanged.
         chosen = data[:size].decode(codec)
+        units = sum(1 + (ord(char) > 65535) for char in chosen)
+        # Native DF18: a one-unit boundary consumes the whole encoded scalar
+        # but returns only its high surrogate; no pending low unit is retained.
+        if count is not None and units > count:
+            chosen = chosen[:-1] + chr(0xd800 + ((ord(chosen[-1]) - 0x10000) >> 10))
         result = _converted(chosen, self._convert, '\n')
         self._consume(size + prefix)
-        self._completed = count is not None and len(chosen) < count
+        self._completed = count is not None and units < count
         return result
     def read_line(self, encoding=None, splitter=None):
         data, codec, prefix = self._text_bytes(encoding)
@@ -295,7 +311,7 @@ class BSLDataWriter(_DataIO):
             raise
         self._stream, self._closed = target, False
     def __str__(self): return 'ЗаписьДанных'
-    def target_stream(self): return self._open()
+    def target_stream(self): return _stream_alias(self._open())
     def flush(self): self._open().flush()
     def _integer(self, value, width, order=None):
         codec = 'little' if _order(order, self._order) is BSLByteOrder.LITTLE else 'big'; value = _number(value, (1 << (8 * width)) - 1)
