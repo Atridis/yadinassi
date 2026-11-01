@@ -121,7 +121,7 @@ class CodecWorkflowTests(unittest.TestCase):
     def test_fixed_selector_disjoint_jobs_and_exact_dependencies(self):
         eligibility = old.workflow_job('eligibility')
         self.assertIn('    outputs:\n      route: ${{ steps.admission.outputs.route }}\n', eligibility)
-        self.assertIn('          NATIVE_DB_ROUTE: linked-catalog-cards-v1\n', eligibility)
+        self.assertIn('          NATIVE_DB_ROUTE: document-read-v1\n', eligibility)
         for name in ('native_reference_a', 'native_oracle'):
             self.assertIn("needs.eligibility.outputs.route == 'catalog-reference-identity-v1' &&", old.workflow_job(name))
         for name in ('native_codec_a', 'native_codec_b'):

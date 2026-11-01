@@ -40,6 +40,7 @@ class BSLType(Enum):
     FILE_ACCESS = "ДоступКФайлу"
     POSITION_IN_STREAM = "ПозицияВПотоке"
 
+    DOCUMENTS_MANAGER = "Документы менеджер"
     CATALOGS_MANAGER = "Справочники менеджер"
     XML_READER = "ЧтениеXML"
     XML_WRITER = "ЗаписьXML"

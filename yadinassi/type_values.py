@@ -9,6 +9,8 @@ from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 
 
 from .catalogs import BSLCatalogs
+from .documents import BSLDocuments
+from .document_types import BSLDocumentReference, BSLDocumentType
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
@@ -64,6 +66,7 @@ _VALUE_TYPES = (
     (BSLFileAccess, BSLType.FILE_ACCESS, "FileAccess"),
     (BSLPositionInStream, BSLType.POSITION_IN_STREAM, "PositionInStream"),
 
+    (BSLDocuments, BSLType.DOCUMENTS_MANAGER, None),
     (BSLCatalogs, BSLType.CATALOGS_MANAGER, None),
     (BSLXMLReader, BSLType.XML_READER, "XMLReader"),
     (BSLXMLWriter, BSLType.XML_WRITER, "XMLWriter"),
@@ -159,9 +162,9 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
-    if type(value) is BSLCatalogReference:
+    if (type(value) is BSLCatalogReference or type(value) is BSLDocumentReference):
         return value.value_type
-    if type(value) is BSLCatalogType:
+    if (type(value) is BSLCatalogType or type(value) is BSLDocumentType):
         return BSLType.TYPE
     # Lazy import avoids the catalog adapter/type registry import cycle.
     from .catalogs import BSLCatalogManager, BSLCatalogSelection, BSLCatalogs
@@ -170,6 +173,11 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
     if type(value) is BSLCatalogManager:
         return value._manager_type
     if type(value) is BSLCatalogSelection:
+        return value._selection_type
+    from .documents import BSLDocumentManager, BSLDocumentSelection
+    if type(value) is BSLDocumentManager:
+        return value._manager_type
+    if type(value) is BSLDocumentSelection:
         return value._selection_type
     # Exact identity keeps bool distinct from numbers and rejects arbitrary host
     # objects/subclasses without invoking their metaclass equality or hash hooks.
