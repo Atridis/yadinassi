@@ -11,6 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT/'scripts')]
 import test_native_data_hashing_family_profile as profile
+import test_native_tree_profile_host as fixture_reader
 import native_1c_data_hashing_family_contract as contract
 
 tree, host, full = profile.tree, profile.host, profile.full
@@ -22,7 +23,10 @@ class HashingFailureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='hash-failure-unit-') as tmp:
             # Canonicalize only this newly-created owned fixture, not producer inputs.
             path=Path(tmp).resolve(strict=True)/'owned.json'; path.write_bytes(raw)
-            return tree.read_hashing_native_result(path,sha)
+            # Windows static fixture metadata is not Linux descriptor-race evidence.
+            # Reuse the existing exact-module adapter; POSIX keeps the real reader.
+            with fixture_reader.synthetic_producer_reader(tree.full):
+                return tree.read_hashing_native_result(path,sha)
 
     def observed(self, raw):
         with self.assertRaises(tree.ObservationFailure) as failure: self.read(raw)
@@ -43,6 +47,17 @@ class HashingFailureTests(unittest.TestCase):
             # The production boundary must still reject the noncanonical alias.
             with self.assertRaises(tree.full.FullError):
                 tree.full.secure_bytes(alias/'owned.json',tree.full.MAX_RESULT)
+
+    def test_windows_static_fixture_adapter_keeps_parser_and_restores_reader(self):
+        original=tree.full.secure_bytes
+        with mock.patch.object(fixture_reader,'_USE_SYNTHETIC_PRODUCER_READER',True):
+            with mock.patch.object(tree.full,'secure_bytes',side_effect=AssertionError('native descriptor reader reached')) as native:
+                self.assertEqual(self.read(b'{"messages":["fixed"],"error":""}'),(['fixed'],''))
+                self.assertEqual(self.observed(b'{')['category'],'result_json')
+                with self.assertRaises(tree.full.FullError): self.read(b'{}','0'*64)
+                self.assertIs(tree.full.secure_bytes,native)
+                native.assert_not_called()
+        self.assertIs(tree.full.secure_bytes,original)
 
     def test_ordinary_parser_unchanged_and_first(self):
         raw=b'{"messages":["fixed"],"error":""}'
