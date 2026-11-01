@@ -749,7 +749,19 @@ class _CatalogBindingGraph:
                     # the row entrypoint separately validates the exact compiled
                     # binding and all declarations before opening its data.
                     target = getattr(binding, "table_name", None)
-                    if (type(target) is not str or not target.startswith("_Reference")
+                    document = False
+                    if type(target) is str and target.startswith("_Document"):
+                        from .config_document_binding import DocumentBinding, PROFILE_IDENTIFIER as DOCUMENT_PROFILE
+                        document = (type(binding) is DocumentBinding
+                                    and type(binding.profile_identifier) is str
+                                    and binding.profile_identifier == DOCUMENT_PROFILE)
+                    if document:
+                        if (type(target) is not str or not target.startswith("_Document")
+                                or not 1 <= len(target[9:]) <= 10 or target[9] == "0"
+                                or not target[9:].isascii() or not target[9:].isdigit()
+                                or int(target[9:]) > 2147483647):
+                            raise ValueError("invalid compiled document table name")
+                    elif (type(target) is not str or not target.startswith("_Reference")
                             or not 1 <= len(target[10:]) <= 10
                             or target[10] == "0" or not target[10:].isascii()
                             or not target[10:].isdigit() or int(target[10:]) > 2147483647):

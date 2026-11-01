@@ -1,0 +1,807 @@
+{
+  "run_id": 41256261065,
+  "commit": "d5a6284b6542f306002cf9cb7f86221d057b55b0",
+  "report_sha256": "a879485a6ae04dccc62e59faf84c41704a71a1c890578a1b48246769ed6331e0",
+  "cases": [
+    {
+      "repeat": 1,
+      "state": "empty",
+      "logical": {
+        "name": "Dad0328ac",
+        "metadata_uuid": "46b86ba9-beb6-4293-b616-295c32e0f89a",
+        "code_length": 2,
+        "code_type": "String",
+        "description_length": 8,
+        "hierarchical": false,
+        "attributes": [
+          {
+            "name": "A7d6294c3",
+            "metadata_uuid": "aeb8f31c-8cf1-44a0-98b2-f330948ed8e3",
+            "type": "String",
+            "length": 32,
+            "allowed_length": "Variable"
+          },
+          {
+            "name": "Aeea091ef",
+            "metadata_uuid": "4b5bc3ae-1481-4a83-9688-7676432299b9",
+            "type": "Number",
+            "digits": 9,
+            "fraction_digits": 2,
+            "allowed_sign": "Any"
+          },
+          {
+            "name": "Ac27bdff6",
+            "metadata_uuid": "f5fc26ef-723c-4177-90a0-0d22f785d1f3",
+            "type": "Boolean"
+          },
+          {
+            "name": "A4f92e66d",
+            "metadata_uuid": "3a7aae55-a366-46ba-9f4b-2816be7d63e9",
+            "type": "Date",
+            "date_fractions": "DateTime"
+          },
+          {
+            "name": "A5449af58",
+            "metadata_uuid": "d27a45df-a4f7-4613-a5de-cc5cbf940c05",
+            "type": "SingleCatalogRef",
+            "target_name": "C95217507",
+            "target_metadata_uuid": "ea2f0177-69aa-4aae-8937-8768aeea8d36",
+            "target_requested_ref_type_uuid": "db9b98df-3295-4d37-b584-8c789229ec73"
+          }
+        ]
+      },
+      "dbnames": {
+        "entries": [
+          {
+            "uuid": "46b86ba9-beb6-4293-b616-295c32e0f89a",
+            "raw_uuid": "46b86ba9-beb6-4293-b616-295c32e0f89a",
+            "kind": "Document",
+            "raw_kind": "\"Document\"",
+            "id": 60,
+            "raw_id": "60",
+            "ordinal": 58
+          },
+          {
+            "uuid": "aeb8f31c-8cf1-44a0-98b2-f330948ed8e3",
+            "raw_uuid": "aeb8f31c-8cf1-44a0-98b2-f330948ed8e3",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 61,
+            "raw_id": "61",
+            "ordinal": 59
+          },
+          {
+            "uuid": "4b5bc3ae-1481-4a83-9688-7676432299b9",
+            "raw_uuid": "4b5bc3ae-1481-4a83-9688-7676432299b9",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 62,
+            "raw_id": "62",
+            "ordinal": 60
+          },
+          {
+            "uuid": "f5fc26ef-723c-4177-90a0-0d22f785d1f3",
+            "raw_uuid": "f5fc26ef-723c-4177-90a0-0d22f785d1f3",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 63,
+            "raw_id": "63",
+            "ordinal": 61
+          },
+          {
+            "uuid": "3a7aae55-a366-46ba-9f4b-2816be7d63e9",
+            "raw_uuid": "3a7aae55-a366-46ba-9f4b-2816be7d63e9",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 64,
+            "raw_id": "64",
+            "ordinal": 62
+          },
+          {
+            "uuid": "d27a45df-a4f7-4613-a5de-cc5cbf940c05",
+            "raw_uuid": "d27a45df-a4f7-4613-a5de-cc5cbf940c05",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 65,
+            "raw_id": "65",
+            "ordinal": 63
+          }
+        ],
+        "missing": []
+      },
+      "physical": {
+        "declarations": [
+          [
+            "_IDRREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ],
+          [
+            "_VERSION",
+            "RV",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_MARKED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_DATE_TIME",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_NUMBER",
+            "NVC",
+            0,
+            8,
+            0,
+            "CI"
+          ],
+          [
+            "_POSTED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD61",
+            "NVC",
+            0,
+            32,
+            0,
+            "CI"
+          ],
+          [
+            "_FLD62",
+            "N",
+            0,
+            9,
+            2,
+            "CS"
+          ],
+          [
+            "_FLD63",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD64",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD65RREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ]
+        ],
+        "raw_hex": ""
+      }
+    },
+    {
+      "repeat": 1,
+      "state": "filled",
+      "logical": {
+        "name": "Dad0328ac",
+        "metadata_uuid": "46b86ba9-beb6-4293-b616-295c32e0f89a",
+        "code_length": 2,
+        "code_type": "String",
+        "description_length": 8,
+        "hierarchical": false,
+        "attributes": [
+          {
+            "name": "A7d6294c3",
+            "metadata_uuid": "aeb8f31c-8cf1-44a0-98b2-f330948ed8e3",
+            "type": "String",
+            "length": 32,
+            "allowed_length": "Variable"
+          },
+          {
+            "name": "Aeea091ef",
+            "metadata_uuid": "4b5bc3ae-1481-4a83-9688-7676432299b9",
+            "type": "Number",
+            "digits": 9,
+            "fraction_digits": 2,
+            "allowed_sign": "Any"
+          },
+          {
+            "name": "Ac27bdff6",
+            "metadata_uuid": "f5fc26ef-723c-4177-90a0-0d22f785d1f3",
+            "type": "Boolean"
+          },
+          {
+            "name": "A4f92e66d",
+            "metadata_uuid": "3a7aae55-a366-46ba-9f4b-2816be7d63e9",
+            "type": "Date",
+            "date_fractions": "DateTime"
+          },
+          {
+            "name": "A5449af58",
+            "metadata_uuid": "d27a45df-a4f7-4613-a5de-cc5cbf940c05",
+            "type": "SingleCatalogRef",
+            "target_name": "C95217507",
+            "target_metadata_uuid": "ea2f0177-69aa-4aae-8937-8768aeea8d36",
+            "target_requested_ref_type_uuid": "db9b98df-3295-4d37-b584-8c789229ec73"
+          }
+        ]
+      },
+      "dbnames": {
+        "entries": [
+          {
+            "uuid": "46b86ba9-beb6-4293-b616-295c32e0f89a",
+            "raw_uuid": "46b86ba9-beb6-4293-b616-295c32e0f89a",
+            "kind": "Document",
+            "raw_kind": "\"Document\"",
+            "id": 60,
+            "raw_id": "60",
+            "ordinal": 58
+          },
+          {
+            "uuid": "aeb8f31c-8cf1-44a0-98b2-f330948ed8e3",
+            "raw_uuid": "aeb8f31c-8cf1-44a0-98b2-f330948ed8e3",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 61,
+            "raw_id": "61",
+            "ordinal": 59
+          },
+          {
+            "uuid": "4b5bc3ae-1481-4a83-9688-7676432299b9",
+            "raw_uuid": "4b5bc3ae-1481-4a83-9688-7676432299b9",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 62,
+            "raw_id": "62",
+            "ordinal": 60
+          },
+          {
+            "uuid": "f5fc26ef-723c-4177-90a0-0d22f785d1f3",
+            "raw_uuid": "f5fc26ef-723c-4177-90a0-0d22f785d1f3",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 63,
+            "raw_id": "63",
+            "ordinal": 61
+          },
+          {
+            "uuid": "3a7aae55-a366-46ba-9f4b-2816be7d63e9",
+            "raw_uuid": "3a7aae55-a366-46ba-9f4b-2816be7d63e9",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 64,
+            "raw_id": "64",
+            "ordinal": 62
+          },
+          {
+            "uuid": "d27a45df-a4f7-4613-a5de-cc5cbf940c05",
+            "raw_uuid": "d27a45df-a4f7-4613-a5de-cc5cbf940c05",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 65,
+            "raw_id": "65",
+            "ordinal": 63
+          }
+        ],
+        "missing": []
+      },
+      "physical": {
+        "declarations": [
+          [
+            "_IDRREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ],
+          [
+            "_VERSION",
+            "RV",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_MARKED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_DATE_TIME",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_NUMBER",
+            "NVC",
+            0,
+            8,
+            0,
+            "CI"
+          ],
+          [
+            "_POSTED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD61",
+            "NVC",
+            0,
+            32,
+            0,
+            "CI"
+          ],
+          [
+            "_FLD62",
+            "N",
+            0,
+            9,
+            2,
+            "CS"
+          ],
+          [
+            "_FLD63",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD64",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD65RREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ]
+        ],
+        "raw_hex": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000200020002000200020002000200020000000002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200010000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000bf699172632d2611430bbd3591153f8f00202402291234560200330030002000200020002000200020000105007400680069007200640020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200010000012500120240229123456bf699172632d2611430bbd3591153f8f0002000000000000000200000000000000916366a7934c32fc4b96dfa72f548d2e002024030101020302003100300020002000200020002000200000000020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000100000000000202403010102030000000000000000000000000000000000030000000000000003000000000000008560f5e00cc00aa74169c6e7f004c11c00200101010000010200320030002000200020002000200020000005006600690072007300740020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200000000007250120010101000001901d1601b198cfb64bbb60b73247a168"
+      }
+    },
+    {
+      "repeat": 2,
+      "state": "empty",
+      "logical": {
+        "name": "D8e1d8e38",
+        "metadata_uuid": "51183196-6fe7-4883-bbd4-04ce9ec3be39",
+        "code_length": 2,
+        "code_type": "String",
+        "description_length": 8,
+        "hierarchical": false,
+        "attributes": [
+          {
+            "name": "Aa02f337c",
+            "metadata_uuid": "d33ee6c7-67da-4f4b-a1a5-fb8901d5e7bc",
+            "type": "SingleCatalogRef",
+            "target_name": "C8730e849",
+            "target_metadata_uuid": "698e783b-f162-43c2-9b5d-00aff8ded6f1",
+            "target_requested_ref_type_uuid": "ce3b2923-32b9-42f0-ba75-68fc40309def"
+          },
+          {
+            "name": "A47fccf59",
+            "metadata_uuid": "b27c48b8-cb7b-417f-9d8a-240982732834",
+            "type": "Date",
+            "date_fractions": "DateTime"
+          },
+          {
+            "name": "Acf18520d",
+            "metadata_uuid": "73818838-57a3-4df9-8c67-b7b1d83265d2",
+            "type": "Boolean"
+          },
+          {
+            "name": "Ac0e7cd57",
+            "metadata_uuid": "a6435918-4cdd-413c-8b72-4fe82f874433",
+            "type": "Number",
+            "digits": 9,
+            "fraction_digits": 2,
+            "allowed_sign": "Any"
+          },
+          {
+            "name": "A1bd27738",
+            "metadata_uuid": "8382f1b4-9339-441b-b850-644f1872b2a7",
+            "type": "String",
+            "length": 32,
+            "allowed_length": "Variable"
+          }
+        ]
+      },
+      "dbnames": {
+        "entries": [
+          {
+            "uuid": "51183196-6fe7-4883-bbd4-04ce9ec3be39",
+            "raw_uuid": "51183196-6fe7-4883-bbd4-04ce9ec3be39",
+            "kind": "Document",
+            "raw_kind": "\"Document\"",
+            "id": 60,
+            "raw_id": "60",
+            "ordinal": 58
+          },
+          {
+            "uuid": "d33ee6c7-67da-4f4b-a1a5-fb8901d5e7bc",
+            "raw_uuid": "d33ee6c7-67da-4f4b-a1a5-fb8901d5e7bc",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 61,
+            "raw_id": "61",
+            "ordinal": 59
+          },
+          {
+            "uuid": "b27c48b8-cb7b-417f-9d8a-240982732834",
+            "raw_uuid": "b27c48b8-cb7b-417f-9d8a-240982732834",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 62,
+            "raw_id": "62",
+            "ordinal": 60
+          },
+          {
+            "uuid": "73818838-57a3-4df9-8c67-b7b1d83265d2",
+            "raw_uuid": "73818838-57a3-4df9-8c67-b7b1d83265d2",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 63,
+            "raw_id": "63",
+            "ordinal": 61
+          },
+          {
+            "uuid": "a6435918-4cdd-413c-8b72-4fe82f874433",
+            "raw_uuid": "a6435918-4cdd-413c-8b72-4fe82f874433",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 64,
+            "raw_id": "64",
+            "ordinal": 62
+          },
+          {
+            "uuid": "8382f1b4-9339-441b-b850-644f1872b2a7",
+            "raw_uuid": "8382f1b4-9339-441b-b850-644f1872b2a7",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 65,
+            "raw_id": "65",
+            "ordinal": 63
+          }
+        ],
+        "missing": []
+      },
+      "physical": {
+        "declarations": [
+          [
+            "_IDRREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ],
+          [
+            "_VERSION",
+            "RV",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_MARKED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_DATE_TIME",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_NUMBER",
+            "NVC",
+            0,
+            8,
+            0,
+            "CI"
+          ],
+          [
+            "_POSTED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD61RREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD62",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD63",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD64",
+            "N",
+            0,
+            9,
+            2,
+            "CS"
+          ],
+          [
+            "_FLD65",
+            "NVC",
+            0,
+            32,
+            0,
+            "CI"
+          ]
+        ],
+        "raw_hex": ""
+      }
+    },
+    {
+      "repeat": 2,
+      "state": "filled",
+      "logical": {
+        "name": "D8e1d8e38",
+        "metadata_uuid": "51183196-6fe7-4883-bbd4-04ce9ec3be39",
+        "code_length": 2,
+        "code_type": "String",
+        "description_length": 8,
+        "hierarchical": false,
+        "attributes": [
+          {
+            "name": "Aa02f337c",
+            "metadata_uuid": "d33ee6c7-67da-4f4b-a1a5-fb8901d5e7bc",
+            "type": "SingleCatalogRef",
+            "target_name": "C8730e849",
+            "target_metadata_uuid": "698e783b-f162-43c2-9b5d-00aff8ded6f1",
+            "target_requested_ref_type_uuid": "ce3b2923-32b9-42f0-ba75-68fc40309def"
+          },
+          {
+            "name": "A47fccf59",
+            "metadata_uuid": "b27c48b8-cb7b-417f-9d8a-240982732834",
+            "type": "Date",
+            "date_fractions": "DateTime"
+          },
+          {
+            "name": "Acf18520d",
+            "metadata_uuid": "73818838-57a3-4df9-8c67-b7b1d83265d2",
+            "type": "Boolean"
+          },
+          {
+            "name": "Ac0e7cd57",
+            "metadata_uuid": "a6435918-4cdd-413c-8b72-4fe82f874433",
+            "type": "Number",
+            "digits": 9,
+            "fraction_digits": 2,
+            "allowed_sign": "Any"
+          },
+          {
+            "name": "A1bd27738",
+            "metadata_uuid": "8382f1b4-9339-441b-b850-644f1872b2a7",
+            "type": "String",
+            "length": 32,
+            "allowed_length": "Variable"
+          }
+        ]
+      },
+      "dbnames": {
+        "entries": [
+          {
+            "uuid": "51183196-6fe7-4883-bbd4-04ce9ec3be39",
+            "raw_uuid": "51183196-6fe7-4883-bbd4-04ce9ec3be39",
+            "kind": "Document",
+            "raw_kind": "\"Document\"",
+            "id": 60,
+            "raw_id": "60",
+            "ordinal": 58
+          },
+          {
+            "uuid": "d33ee6c7-67da-4f4b-a1a5-fb8901d5e7bc",
+            "raw_uuid": "d33ee6c7-67da-4f4b-a1a5-fb8901d5e7bc",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 61,
+            "raw_id": "61",
+            "ordinal": 59
+          },
+          {
+            "uuid": "b27c48b8-cb7b-417f-9d8a-240982732834",
+            "raw_uuid": "b27c48b8-cb7b-417f-9d8a-240982732834",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 62,
+            "raw_id": "62",
+            "ordinal": 60
+          },
+          {
+            "uuid": "73818838-57a3-4df9-8c67-b7b1d83265d2",
+            "raw_uuid": "73818838-57a3-4df9-8c67-b7b1d83265d2",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 63,
+            "raw_id": "63",
+            "ordinal": 61
+          },
+          {
+            "uuid": "a6435918-4cdd-413c-8b72-4fe82f874433",
+            "raw_uuid": "a6435918-4cdd-413c-8b72-4fe82f874433",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 64,
+            "raw_id": "64",
+            "ordinal": 62
+          },
+          {
+            "uuid": "8382f1b4-9339-441b-b850-644f1872b2a7",
+            "raw_uuid": "8382f1b4-9339-441b-b850-644f1872b2a7",
+            "kind": "Fld",
+            "raw_kind": "\"Fld\"",
+            "id": 65,
+            "raw_id": "65",
+            "ordinal": 63
+          }
+        ],
+        "missing": []
+      },
+      "physical": {
+        "declarations": [
+          [
+            "_IDRREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ],
+          [
+            "_VERSION",
+            "RV",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_MARKED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_DATE_TIME",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_NUMBER",
+            "NVC",
+            0,
+            8,
+            0,
+            "CI"
+          ],
+          [
+            "_POSTED",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD61RREF",
+            "B",
+            0,
+            16,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD62",
+            "DT",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD63",
+            "L",
+            0,
+            0,
+            0,
+            "CS"
+          ],
+          [
+            "_FLD64",
+            "N",
+            0,
+            9,
+            2,
+            "CS"
+          ],
+          [
+            "_FLD65",
+            "NVC",
+            0,
+            32,
+            0,
+            "CI"
+          ]
+        ],
+        "raw_hex": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000200020002000200020002000200020000000000000000000000000000000000000000000000000000010000000000000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020000001000000000000000100000000000000b890d087eeef341e404722920c19a161002024022912345602003300300020002000200020002000200001b890d087eeef341e404722920c19a161202402291234560110000012500500740068006900720064002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020000002000000000000000200000000000000a61435d83c93b7b54624192a35b44bdb002024030101020302003100300020002000200020002000200000000000000000000000000000000000002024030101020300100000000000002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200000030000000000000003000000000000009e3e6b02d710943e409ecb2833183d1c00200101010000010200320030002000200020002000200020000082ec3a76dc9d8a224b30522794c21fbb20010101000001010000000725050066006900720073007400200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000"
+      }
+    }
+  ]
+}

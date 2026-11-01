@@ -64,6 +64,8 @@ class _Frame:
 
 
 class _Walk:
+    collection_type = CATALOG_TYPE
+
     __slots__ = ('data', 'pos', 'budget', 'limits', 'depth', 'tokens', 'stack',
                  'components_left', 'collections_left', 'collection_total',
                  'catalog_count', 'refs', 'seen', 'kinds', 'component', 'container')
@@ -253,7 +255,7 @@ class _Walk:
         elif role == 'collection':
             if i == 0:
                 frame.kind = self.guid(text)
-                if frame.kind != CATALOG_TYPE:
+                if frame.kind != self.collection_type:
                     self.collection_done(frame)
                 else:
                     self.catalog_count += 1

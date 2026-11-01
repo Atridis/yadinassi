@@ -99,11 +99,45 @@ class BSLCatalogMetadataCollection(_MetadataObject):
         raise ValueError('catalog metadata is read-only')
 
 
+class BSLDocumentMetadata(BSLCatalogMetadata):
+    def full_name(self):
+        return 'Документ.' + self._name
+
+
+class BSLDocumentMetadataCollection(BSLCatalogMetadataCollection):
+    def __init__(self, context, catalogs):
+        super().__init__(context)
+        self._catalogs = catalogs
+        self._config_snapshot = None
+
+    def _snapshot(self):
+        if self._items is None:
+            if self._context is None:
+                require_database_context()
+            snapshot = self._context.document_metadata()
+            catalogs = {identity.name.casefold(): BSLCatalogMetadata(identity.name, key)
+                        for key, identity, _ in snapshot.catalog_fields}
+            if self._catalogs._items is not None:
+                previous = self._catalogs._items
+                if ({k: (v._name, v._metadata_uuid) for k,v in previous.items()} !=
+                        {k: (v._name, v._metadata_uuid) for k,v in catalogs.items()}):
+                    raise ValueError('metadata identity changed')
+            else:
+                self._catalogs._items = catalogs
+            self._items = {identity.name.casefold(): BSLDocumentMetadata(identity.name, key)
+                           for key, identity, _ in snapshot.document_fields}
+            self._config_snapshot = snapshot
+        return self._items
+
+
 class BSLMetadata(_MetadataObject):
     def __init__(self, context: FileDBContext | None):
         self._catalogs = BSLCatalogMetadataCollection(context)
+        self._documents = BSLDocumentMetadataCollection(context, self._catalogs)
 
     def get_member(self, name: str) -> object:
         if name.casefold() in ('catalogs', 'справочники'):
             return self._catalogs
+        if name.casefold() in ('documents', 'документы'):
+            return self._documents
         return super().get_member(name)

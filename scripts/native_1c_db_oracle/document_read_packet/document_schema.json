@@ -1,0 +1,85 @@
+{
+  "source_sha256": "8569cd5d718b4009e09c2fa43a21e0bac6811d78018da0e8ec234b2a38101827",
+  "required_properties": [
+    "Name",
+    "Synonym",
+    "Comment",
+    "ObjectBelonging",
+    "UseStandardCommands",
+    "Numerator",
+    "NumberType",
+    "NumberLength",
+    "NumberAllowedLength",
+    "NumberPeriodicity",
+    "CheckUnique",
+    "Autonumbering",
+    "StandardAttributes",
+    "Characteristics",
+    "BasedOn",
+    "InputByString",
+    "CreateOnInput",
+    "SearchStringModeOnInputByString",
+    "FullTextSearchOnInputByString",
+    "ChoiceDataGetModeOnInputByString",
+    "DefaultObjectForm",
+    "DefaultListForm",
+    "DefaultChoiceForm",
+    "AuxiliaryObjectForm",
+    "AuxiliaryListForm",
+    "AuxiliaryChoiceForm",
+    "ObjectModule",
+    "ManagerModule",
+    "Posting",
+    "RealTimePosting",
+    "RegisterRecordsDeletion",
+    "RegisterRecordsWritingOnPost",
+    "SequenceFilling",
+    "RegisterRecords",
+    "PostInPrivilegedMode",
+    "UnpostInPrivilegedMode",
+    "IncludeHelpInContents",
+    "Help",
+    "DataLockFields",
+    "DataLockControlMode",
+    "FullTextSearch",
+    "ObjectPresentation",
+    "ExtendedObjectPresentation",
+    "ListPresentation",
+    "ExtendedListPresentation",
+    "Explanation",
+    "ChoiceHistoryOnInput",
+    "DataHistory",
+    "UpdateDataHistoryImmediatelyAfterWrite",
+    "ExecuteAfterWriteDataHistoryVersionProcessing",
+    "AdditionalIndexes"
+  ],
+  "enums": {
+    "Posting": [
+      "Allow",
+      "Deny"
+    ],
+    "DocumentNumberType": [
+      "Number",
+      "String"
+    ],
+    "DocumentNumberPeriodicity": [
+      "Nonperiodical",
+      "Year",
+      "Quarter",
+      "Month",
+      "Day"
+    ]
+  },
+  "attribute_cardinality": [
+    0,
+    "unbounded"
+  ],
+  "standard_attribute_cardinality": [
+    0,
+    "unbounded"
+  ],
+  "generated_identity_members": [
+    "TypeId",
+    "ValueId"
+  ]
+}

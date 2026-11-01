@@ -649,7 +649,7 @@ def load_catalog_attribute_projector():
 
 def _observe_catalog_attributes_from_graph(handle, *, profile,
         limits=None, chain_limits=None, content_limits=None,
-        reference_limits=None, identity_limits=None, linked=False):
+        reference_limits=None, identity_limits=None, linked=False, documents=False):
     """Read complete bounded attributes inside the caller's CONFIG graph stage.
 
     No native/XML oracle values enter this same-reader path.
@@ -664,13 +664,13 @@ def _observe_catalog_attributes_from_graph(handle, *, profile,
             profile=profile, limits=limits, chain_limits=chain_limits,
             content_limits=content_limits, catalog_limits=reader._budget.limits,
             reference_limits=reference_limits, name_limits=identity_limits,
-            standard=True, identity=True, attributes=True, _binding_handle=handle, linked=linked)
+            standard=True, identity=True, attributes=True, _binding_handle=handle, linked=linked, documents=documents)
     except BaseException:
         handle._graph.failed = True
         raise
 
 def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
-                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False, _binding_handle=None, linked=False):
+                            chain_limits, content_limits, catalog_limits, reference_limits, name_limits, standard, identity=False, attributes=False, _binding_handle=None, linked=False, documents=False):
     """Resolve partial Catalog declarations on one private CONFIG resource graph.
 
     Every selected entry is validated and decoded exactly once before return.
@@ -678,6 +678,8 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
     Identity mode additionally projects an unverified internal UUID; all private
     results require the separate independent comparator.
     """
+    if type(documents) is not bool or documents and not (attributes and identity and linked):
+        raise ValueError('document projection requires the linked identity profile')
     expected_profile = (ConfigCatalogAttributeProfile if attributes else ConfigCatalogIdentityProfile if identity else
                         ConfigCatalogStandardProfile if standard else ConfigCatalogNameProfile)
     if type(profile) is not expected_profile:
@@ -872,9 +874,25 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
             if error.code in catalog_projector.RESOURCE_CODES:
                 raise ResourceLimit('config_catalog_limits') from None
             raise InvalidStructure('config_catalog_prefix') from None
-        del target_content
         candidate_keys = set(candidates.references)
+        document_keys = set()
         catalog_collections = candidates.collection_count
+        if documents:
+            from . import config_document_metadata as document_projector
+            try:
+                document_refs = document_projector.project_document_references(
+                    target_content, budget=reader._budget, limits=reference_limits)
+            except catalog_projector.CatalogReferenceError as error:
+                if error.code in catalog_projector.RESOURCE_CODES:
+                    raise ResourceLimit('config_document_limits') from None
+                raise InvalidStructure('config_document_prefix') from None
+            document_keys = set(document_refs.references)
+            if candidate_keys.intersection(document_keys):
+                raise InvalidStructure('config_document_identity_overlap')
+            candidate_keys.update(document_keys)
+            if len(candidate_keys) > (reference_limits or catalog_projector.CatalogReferenceLimits()).max_references:
+                raise ResourceLimit('config_document_limits')
+        del target_content
         catalog_declared = len(candidate_keys)
         del candidates
         if not catalog_declared:
@@ -894,6 +912,20 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
                 if key in candidate_keys:
                     if not content:
                         raise UnsupportedLayout('config_catalog_content_empty')
+                    if documents and key in document_keys:
+                        from . import config_document_metadata as document_projector
+                        try:
+                            named, projected_attributes = document_projector.project_document_metadata(
+                                content, budget=reader._budget)
+                        except document_projector.attrs.CatalogAttributeError as error:
+                            if error.code in ('input_bytes', 'tokens', 'depth', 'name_bytes', 'name_chars', 'attribute_limit', 'integer_bound'):
+                                raise ResourceLimit('config_document_limits') from None
+                            raise UnsupportedLayout('config_document_profile') from None
+                        private_names.append((key, named, projected_attributes))
+                        catalog_resolved += 1
+                        catalog_positive += 1
+                        del named, projected_attributes, content
+                        continue
                     from . import config_catalog_name as name_projector
                     try:
                         project = (name_projector.project_catalog_identity_prefix if identity else
@@ -937,6 +969,10 @@ def _observe_catalog_prefix(read_at, file_size, *, profile, limits,
         if not positive_count:
             raise UnsupportedLayout('config_content_no_positive_witness')
         reader._budget.charge('output_bytes', 4096)
+        if documents:
+            return document_projector.DocumentConfigSnapshot(
+                tuple(row for row in private_names if row[0] in document_keys),
+                tuple(row for row in private_names if row[0] not in document_keys))
         observation = (ConfigCatalogAttributeObservation if attributes else ConfigCatalogIdentityObservation if identity else
                        ConfigCatalogStandardObservation if standard else ConfigCatalogNameObservation)
         return observation(profile.identifier, profile.recipe_sha256,
