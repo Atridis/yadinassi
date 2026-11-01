@@ -1,7 +1,8 @@
 # Ordinary DOM workflow measurement
 
 One closed packet (`dom-family-v1`, case `dom_family`) covers 40 ordinary
-workflows. Native answers are pending: local observations and synthetic wire
+workflows. The first completed native capture is retained below; five ordinary
+semantic discriminants remain pending. Local observations and synthetic wire
 fixtures are not platform evidence or expected native semantic values.
 
 ## Primary source and boundaries
@@ -29,7 +30,7 @@ ordinary defaults, without changing configuration/security settings.
 | 9–13 | Unicode including astral text, text replacement, character-data editing, split/whole text, normalization |
 | 14–17 | CDATA, comment, processing instruction, fragment transfer |
 | 18–24 | Attributes, replacement/removal, specified/ID flags, owner, live map and named/indexed access |
-| 25–30 | Qualified element/attribute, namespace lookup, document/element tag search and live lists, namespace/wildcard filtering |
+| 25–30 | Qualified element/attribute, namespace lookup, document/element tag search, list liveness and namespace-filter discriminants |
 | 31–34 | Shallow/deep clone and import, identity/equality/ownership distinctions |
 | 35–39 | XMLReader/DOMBuilder string parsing; CDATA/comment/PI defaults; DOMWriter/XMLWriter escaping, namespaces and element-only roundtrip |
 | 40 | Owned XML file write/read/close/delete workflow |
@@ -43,8 +44,8 @@ into boolean expected answers. No intentional invalid native workflow is invoked
 ## Closed wire and cleanup
 
 Source SHA256:
-`ca117f2f0cd72a8803c8c2b323aecfdb70e8b471103ed9f77a83859c7a131dfd`.
-Source is 8184 UTF-8 bytes under the unchanged 8192-byte source bound.
+`0b4defe51038890513cc778e8616153649faf676423c92fdb637d34de7b96db3`.
+Source is 8185 UTF-8 bytes under the unchanged 8192-byte source bound.
 Two calibration lines exercise empty and six-UTF16-unit text including NBSP,
 semicolon, quote and an astral surrogate pair. Forty ordered `DM-01`–`DM-40`
 records encode at most 40 UTF-16 units each as four lowercase hexadecimal digits.
@@ -74,3 +75,9 @@ or resource cap was introduced. Local40 availability is not native parity.
 ## Initial acquisition boundary
 
 The original source (SHA256 `8d4afe77fc2691bcd4673bd2f80f1e7f1576935a4685feff23d5b94ac97c5afb`) reached a client ENTERPRISE timeout after the server case completed its validation. No raw forty-case capture was exported; this is not native parity evidence. Its English helper declaration keywords did not match the existing Russian-keyword client-context injector. The revised packet uses the same declaration spelling as the previously validated profiles; a generated-module regression requires all six helpers to receive explicit client context. Runtime, observations, process limits and acceptance rules are unchanged. The timeout's exact internal platform cause remains unavailable without new evidence.
+
+## First completed native capture and bounded discriminants
+
+The corrected client-context packet completed server and managed-thick-file execution with identical forty records and verified cleanup. Minimal immutable source/output/receipt are retained in `tests/fixtures/dom_family/native-initial-v1`; private installation/session/provenance metadata are not included. Its 37 `ok` and three `action-error` records are not full parity: cases 12, 29, 30, 31 and 36 differ from the provisional runtime. The private audit validated 53 source/provenance conditions using a reconstructed transport envelope, not a retained original envelope.
+
+The current packet retains 40 IDs and bounded output, with phase-isolated ordinary observations in those five slots: SplitText versus WholeText; query counts before/after mutation versus item access; one/two-argument query discrimination; cloning versus reading the returned node; and parsed node kinds. Short pure conversion/element-construction helpers make room without raising the source bound. All helpers require explicit generated client context. No runtime semantics, global XMLReader settings, native timeout or acceptance criteria were changed speculatively. The original thirty-five matching observations remain covered by immutable replay.

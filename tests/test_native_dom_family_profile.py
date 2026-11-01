@@ -58,8 +58,8 @@ class DOMFamilyProfileTests(unittest.TestCase):
         source=(ROOT/spec().source).read_text(encoding='utf-8').encode()
         module=tree.client_module(source,(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode(),profile=PROFILE)
         # Managed-form helpers must be client-side, not default server context.
-        declarations = re.findall(r'(?m)^(?:Функция|Процедура) (DM\w+)\(', source.decode())
-        self.assertEqual(len(declarations), 6)
+        declarations = re.findall(r'(?m)^(?:Функция|Процедура) ((?:DM\w+|S|Z))\(', source.decode())
+        self.assertEqual(len(declarations), 8)
         generated = module.decode('utf-8-sig')
         for name in declarations:
             self.assertRegex(generated, r'&НаКлиенте\n(?:Функция|Процедура) ' + name + r'\(')

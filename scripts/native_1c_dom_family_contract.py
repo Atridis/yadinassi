@@ -1,7 +1,7 @@
 """Bounded DOM family measurement wire grammar; no native expected semantic values."""
 import re
 
-SOURCE_SHA256 = 'ca117f2f0cd72a8803c8c2b323aecfdb70e8b471103ed9f77a83859c7a131dfd'
+SOURCE_SHA256 = '0b4defe51038890513cc778e8616153649faf676423c92fdb637d34de7b96db3'
 CASE_COUNT = 40
 MAX_STRING_UNITS = 40
 MAX_OUTPUT_BYTES = 8192
