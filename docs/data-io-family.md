@@ -22,8 +22,11 @@ The documented integers are **unsigned**, with no floating-point API in this fam
 - `РезультатЧтенияДанных / ReadDataResult`: readonly Size/MarkerFound/MarkerIndex,
   GetBinaryData/GetBinaryDataBuffer and OpenStreamForRead. It has no public
   constructor; independent result bytes survive closing their original reader.
-- TextEncoding and line settings are mutable; Reader.ByteOrder is mutable and
-  Writer.ByteOrder readonly. Reader.ReadCompleted initially False follows short
+- TextEncoding, LineSplitter and writer conversion settings are mutable. On
+  measured8.3.27, Reader.ConvertedLineDelimiter assignment is rejected even for
+  CRLF; constructor settings remain separate. Reader.ByteOrder assignment changes
+  its reported property but not the established default integer decoder; an
+  explicit method byte order overrides that decoder. Writer.ByteOrder is readonly. Reader.ReadCompleted initially False follows short
   read detection, rather than simply checking the physical cursor at end.
 - Close releases owned file/binary streams, not caller-owned streams. Readonly
   mutation and existing buffer capacity checks remain authoritative.
@@ -60,7 +63,10 @@ and prefix-overwrite file mode. ByteOrder mutation effects, Skip return values,
 Unicode ReadChars units, delimiter errors and returned-stream identity/lifetime
 were isolated by the second capture. Skip, UTF16 counting and shared-close stream
 aliases are now corrected; ByteOrder/default effects and delimiter setter validity
-remain under bounded followthrough measurement. Equal-length duplicate marker
+are calibrated to the measured target, with an ordinary explicit-order read
+confirmation still pending. Out-of-band repositioning of a stream after reader
+consumption is explicitly unsupported: the retained native probe throws, and the
+implementation does not infer a general buffering/invalidation model from it. Equal-length duplicate marker
 ties and other unmeasured edge combinations remain !todo.
 
 The packet uses short fixed data and verified owned temporary paths, exposes only

@@ -46,7 +46,7 @@ EndFunction
 Функция DFCase(Val N)
 S=New MemoryStream;W=New DataWriter(S);P=PositionInStream.Begin;
 If N=1 Then W.WriteByte(255);R=DRS(S,W);Return String(R.ReadByte())+":"+String(R.ReadByte()=Undefined);
-ElsIf N=2 Then W.WriteInt16(258);W.WriteInt16(258,ByteOrder.BigEndian);R=DRS(S,W);A=R.ReadInt16();Try R.ByteOrder=ByteOrder.BigEndian;T="S";Except T="s";EndTry;B=R.ReadInt16();Try C=R.ByteOrder;T=T+":"+String(C=ByteOrder.BigEndian);Except T=T+":g";EndTry;Try S.Seek(2,P);T=T+":P";Except T=T+":p";EndTry;Try V=String(R.ReadInt16(ByteOrder.BigEndian));Except V="e";EndTry;Return String(A)+":"+String(B)+":"+T+":"+V;
+ElsIf N=2 Then W.WriteInt16(258);W.WriteInt16(258,ByteOrder.BigEndian);W.WriteInt16(258,ByteOrder.BigEndian);R=DRS(S,W);A=R.ReadInt16();R.ByteOrder=ByteOrder.BigEndian;B=R.ReadInt16();C=R.ByteOrder=ByteOrder.BigEndian;V=R.ReadInt16(ByteOrder.BigEndian);Return String(A)+":"+String(B)+":"+String(C)+":"+String(V);
 ElsIf N=3 Then W.WriteInt32(4294967295);R=DRS(S,W);Return String(R.ReadInt32()=4294967295);
 ElsIf N=4 Then W.WriteInt64(18446744073709551615,ByteOrder.BigEndian);R=DRS(S,W);Return String(R.ReadInt64(ByteOrder.BigEndian)=18446744073709551615);
 ElsIf N=5 Then W.Close();W=New DataWriter(S,,ByteOrder.BigEndian);W.WriteInt16(258);R=DRS(S,W);Return String(R.ReadByte())+":"+String(R.ReadByte());

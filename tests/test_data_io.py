@@ -168,13 +168,26 @@ class DataIOTests(unittest.TestCase):
 
     def test_settings_mutability(self):
         source = reader(b'\x01\x02')
-        source.set_member('ByteOrder',Order.BIG); self.assertEqual(source.read16(),258)
+        source.set_member('ByteOrder',Order.BIG)
+        self.assertIs(source.get_member('ByteOrder'),Order.BIG)
+        self.assertEqual(source.read16(),513)
         source.set_member('TextEncoding','cp1251'); self.assertEqual(source.get_member('TextEncoding'),'cp1251')
-        source.set_member('LineSplitter','!'); source.set_member('ConvertedLineDelimiter','~')
+        source.set_member('LineSplitter','!')
+        for value in ('<>', '\r\n'):
+            with self.assertRaises(ValueError): source.set_member('ConvertedLineDelimiter',value)
+        self.assertEqual(source.get_member('ConvertedLineDelimiter'),'\r\n')
         writer = Writer(Memory())
         with self.assertRaises((ValueError,TypeError)): writer.set_member('ByteOrder',Order.BIG)
         with self.assertRaises(ValueError): source.set_member('TextEncoding','unknown-codec')
         self.assertEqual(source.get_member('TextEncoding'),'cp1251')
+
+    def test_measured_byte_order_property_and_explicit_override(self):
+        source=reader(b'\x02\x01\x01\x02\x01\x02')
+        self.assertEqual(source.read16(),258)
+        source.set_member('ByteOrder',Order.BIG)
+        self.assertIs(source.get_member('ByteOrder'),Order.BIG)
+        self.assertEqual(source.read16(),513)
+        self.assertEqual(source.read16(Order.BIG),258)
 
     def test_owned_file_create_append_close_and_binary_transfer(self):
         with tempfile.TemporaryDirectory(prefix='data-io-owned-') as tmp:

@@ -118,6 +118,9 @@ class _DataIO(_FileMethods):
         if key in ('linesplitter', 'разделительстрок'):
             self._splitter = _string(value, MAX_MARKER_BYTES); return
         if key in ('convertedlinedelimiter', 'convertiblesplitteroflines', 'конвертируемыйразделительстрок'):
+            # Native DF24 rejects reader assignment for custom and CRLF values.
+            # !todo Other platform versions/constructor combinations need evidence.
+            if type(self) is BSLDataReader: raise ValueError('Изменение разделителя чтения не поддерживается')
             self._convert = _string(value, MAX_MARKER_BYTES); return
         return super().set_member(name, value)
 
@@ -137,6 +140,9 @@ class BSLDataReader(_DataIO):
             raise
         self._stream, self._closed = source, False
         self._completed = False
+        # Native DF02: assigning ByteOrder changes the property, not the
+        # established default decoder. Explicit method order still overrides it.
+        self._read_order = self._order
     def __str__(self): return 'ЧтениеДанных'
     def _available(self):
         stream = self._open(); stream._readable()
@@ -146,6 +152,8 @@ class BSLDataReader(_DataIO):
         try: return stream._read_bytes(count)
         finally: stream._state.position = position
     def _consume(self, count): self._stream._state.position += count
+    # !todo Native DF02 rejects a read after out-of-band stream repositioning;
+    # reader buffering/reposition coherence is not supported or inferred here.
     def source_stream(self): return _stream_alias(self._open())
     def get_member(self, name):
         if name.casefold() in ('readcompleted', 'чтениезавершено'):
@@ -167,7 +175,7 @@ class BSLDataReader(_DataIO):
         if position is not _MISSING or count is not _MISSING: raise TypeError('Неверные параметры чтения буфера')
         return self.read(buffer_or_count).get_buffer()
     def _integer(self, width, order=None):
-        codec = 'little' if _order(order, self._order) is BSLByteOrder.LITTLE else 'big'; self._open()
+        codec = 'little' if _order(order, self._read_order) is BSLByteOrder.LITTLE else 'big'; self._open()
         # Native41310612604 DF06: incomplete integer does not consume bytes.
         self._completed = self._available() < width
         if self._completed: return None

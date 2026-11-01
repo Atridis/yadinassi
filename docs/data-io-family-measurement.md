@@ -28,8 +28,8 @@ native-calibration questions where the first capture does not discriminate behav
 
 - Source: `integrational_tests/measurements/data_io_family.bsl`.
 - Source SHA-256:
-  `e292172fa74ecf940781093229f49e58c97ca8706ba983676fc20bfea6d4ff06`.
-- Source size: 8,086 UTF-8 bytes, within the additional 8,192-byte packet bound.
+  `18f636ec1cca0fb2839787f6c0764619c6dacae86c96df5dd14e4ab16c97fdd9`.
+- Source size: 7,985 UTF-8 bytes, within the additional 8,192-byte packet bound.
 - Forty cases plus two observer controls: 42 emitted messages, five print sites.
 - Each successful case encodes at most 40 UTF-16 units as fixed-width hex.
   Exact maximum output rectangle: 7,130 bytes, below the existing 8,192-byte cap.
@@ -107,3 +107,16 @@ case batch separates ByteOrder set/get/reposition/explicit-read outcomes and tes
 known CRLF after the delimiter error before guessing its cause. Neither original
 capture is called full availability or parity. One fixed helper factors repeated
 borrowed writer-close/seek/reader setup to retain the unchanged8192-byte source cap.
+
+## Third phase capture and final ordinary read
+
+Run41312362325 produced40 bounded available observation records. Case2 confirms
+successful ByteOrder assignment/getter while the established default read stays
+little-endian; the subsequent read after external stream repositioning throws.
+Case24 rejects reader delimiter assignment for both a custom separator and CRLF.
+The former property/default-decoder behavior and latter catchable setter rejection
+are calibrated. The old external-reposition exception remains immutable native-v3
+and an explicit unsupported !todo boundary, not silently erased or generalized.
+The final case2 instead reads a third prewritten integer with explicit byte order,
+without moving an active reader's external stream. All other39 cases are unchanged;
+the final ordinary explicit-order result still requires fresh native confirmation.

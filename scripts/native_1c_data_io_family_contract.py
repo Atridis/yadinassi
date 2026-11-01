@@ -1,7 +1,7 @@
 """Bounded Data I/O family measurement wire grammar; no native expected semantic values."""
 import re
 
-SOURCE_SHA256 = 'e292172fa74ecf940781093229f49e58c97ca8706ba983676fc20bfea6d4ff06'
+SOURCE_SHA256 = '18f636ec1cca0fb2839787f6c0764619c6dacae86c96df5dd14e4ab16c97fdd9'
 CASE_COUNT = 40
 MAX_STRING_UNITS = 40
 MAX_OUTPUT_BYTES = 8192

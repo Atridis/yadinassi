@@ -107,7 +107,7 @@ REGEX_FAMILY = Profile('regex-family-v1', 'native-1c-regex-family-v1', 'native-1
     42, 'native_1c_regex_family_contract', '\nСообщить("RF-C1: ["+RFEncode("")+"]");\n', 5, 'regex-family')
 
 DATA_IO_FAMILY = Profile('data-io-family-v1', 'native-1c-data-io-family-v1', 'native-1c-data-io-family-stage-v1',
-    'data_io_family', 'e292172fa74ecf940781093229f49e58c97ca8706ba983676fc20bfea6d4ff06',
+    'data_io_family', '18f636ec1cca0fb2839787f6c0764619c6dacae86c96df5dd14e4ab16c97fdd9',
     42, 'native_1c_data_io_family_contract', '\nСообщить("DF-C1: ["+DFEncode("")+"]");\n', 5, 'data-io-family')
 
 def select(name='tree-v1'):

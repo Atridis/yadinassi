@@ -24,7 +24,7 @@ class DataIONativeAcquisitionTests(unittest.TestCase):
     def test_measured_corrections_and_remaining_discriminants(self):
         native=validate_output((FIXTURE/'original40.out').read_bytes())
         local=validate_output(emit(source=(FIXTURE/'original40.bsl').read_text(encoding='utf-8')))
-        self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[2,24])
+        self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[])
         for case in (6,29,36,40): self.assertEqual(native[case-1],local[case-1])
     def test_second_capture_and_measured_skip_unicode_alias_corrections(self):
         fixture=FIXTURE.parent/'native-v2'
@@ -33,8 +33,20 @@ class DataIONativeAcquisitionTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(raw).hexdigest(), 'ab449ba7fc1f42ef55039106fec2acb15d16149e0a5913dd0af3edf20cd96552')
         native=validate_output(raw);local=validate_output(emit(source=source.decode('utf-8')))
         self.assertEqual([r['case'] for r in native if r['status']!='ok'],[2])
-        self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[2,24])
+        self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[2])
         for case in (16,18,26):self.assertEqual(native[case-1],local[case-1])
         with self.assertRaises(AvailabilityError):require_available(raw)
+
+    def test_third_capture_retains_unsupported_out_of_band_reposition(self):
+        fixture=FIXTURE.parent/'native-v3'
+        source=(fixture/'original40.bsl').read_bytes();raw=(fixture/'original40.out').read_bytes()
+        self.assertEqual(hashlib.sha256(source).hexdigest(), 'e292172fa74ecf940781093229f49e58c97ca8706ba983676fc20bfea6d4ff06')
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), '1a31dfa8a7535ab97ef70009982be3d628600d3fb6a50740681889cff6b43df9')
+        native=require_available(raw);local=validate_output(emit(source=source.decode('utf-8')))
+        # This old probe moves the external stream after reader consumption.
+        # Its captured native exception remains an explicit unsupported boundary,
+        # not a reason to invent broad buffer invalidation for all stream users.
+        self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[2])
+        self.assertEqual(native[23],local[23])
 
 if __name__=='__main__':unittest.main()
