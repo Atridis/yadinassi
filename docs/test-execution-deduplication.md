@@ -122,3 +122,60 @@ The separate unchanged Load calibration / Rows / Columns suites are also checked
 in both modes; no full aggregate or native capture is part of these local timings.
 Full platform CI remains required. No native input or production runtime changed,
 so this test-only change does not require new real-1C evidence.
+
+## CLI diagnostic-message transport matrix (2026-11)
+
+Five error families previously reran every expression through all six routes.
+Each expression still runs in a fresh process through `-c` and through the
+stateful console, preserving its exact diagnostic/location, nonzero exit,
+stdout, absence of traceback, and console-state recovery assertions. For each
+**distinct expected diagnostic text within each family**, its first expression
+still runs through all six routes: `-c`, Cyrillic `-с`, `--command`, BOM file,
+stdin, console. The selector is reset for every family and stores only diagnostic
+text, never execution results, source hashes or interpreter state.
+
+| Error family | Expressions / distinct diagnostics | Previous calls | Retained calls |
+| --- | ---: | ---: | ---: |
+| Date | 20 / 12 | 120 | 88 |
+| String template | 4 / 2 | 24 | 16 |
+| String boundary | 8 / 1 | 48 | 20 |
+| Character | 4 / 1 | 24 | 12 |
+| Rounding | 5 / 2 | 30 | 18 |
+| Total | 41 / 18 | 246 | 154 |
+
+Explicit tradeoff: **expression × six transports is no longer exhaustive** in
+these five methods. Expression × command/console and diagnostic text × six
+transports remain exhaustive. This does not claim that identical messages prove
+identical language semantics; both command and console still execute every
+semantic case independently. The coverage guard checks these two products and
+the exact 154-call matrix, and rejects truncated/reordered route lists.
+
+All success programs still run through all their original routes. Command alias,
+escaping/Unicode, BOM/cp1251/file-path, stdin, lexical/parse errors, imports,
+argument conflicts, missing files/encodings, EOF and interactive console/history
+checks are unchanged. So are all other error families and every original fault
+assertion. No interpreter, subprocess timeout, smoke script, native fixture or
+production validator changes; no process sharing or subprocess-output cache.
+
+Sequential local Linux / CPython 3.12.14 measurements on main
+`72833c952433a258033d8c95bf94a62577542275` (tree `1c68bc87…`), same environment:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Whole `test_cli`, normal runner wall time | 74.906 s / 88 tests | 68.802 s / 89 tests |
+| Whole `test_cli`, `-O` runner wall time | 75.735 s / 88 tests | 64.549 s / 89 tests |
+| Five changed methods, normal per-test time sum | 25.752 s | 17.279 s |
+| Five changed methods, `-O` per-test time sum | 26.294 s | 15.843 s |
+| Whole-module `run_cli` calls | 628 | 536 |
+
+Both final 89-test runs passed without skips. `-O` applies to the unittest
+runner; the unchanged helper launches CLI subprocesses normally. The extra test
+is the pure coverage guard. All original 89 methods (including `run_cli`) were
+also structurally compared with the base: after removing only the new local
+`seen_messages` initialization and route-selection assignment, their ASTs are
+identical. No original assertion or subprocess option was altered.
+
+These single paired observations show about 8% / 15% less whole-module wall time,
+not a whole-suite or all-OS guarantee. Unchanged tests also varied in duration;
+the deterministic reduction is 92 fresh CLI launches. Full platform CI remains
+required. No native evidence needs reacquisition for this test-only change.
