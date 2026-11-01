@@ -49,4 +49,13 @@ class DataIONativeAcquisitionTests(unittest.TestCase):
         self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[2])
         self.assertEqual(native[23],local[23])
 
+    def test_final_closed_40_native_parity_and_current_source(self):
+        fixture=FIXTURE.parent/'native-final'
+        source=(fixture/'original40.bsl').read_bytes();raw=(fixture/'original40.out').read_bytes()
+        self.assertEqual(hashlib.sha256(source).hexdigest(), '18f636ec1cca0fb2839787f6c0764619c6dacae86c96df5dd14e4ab16c97fdd9')
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), 'c9f371a2074b07629146d3230710fa6ac7192b0c41af986390c295fdf0eecdfa')
+        self.assertEqual(source, (ROOT/'integrational_tests/measurements/data_io_family.bsl').read_text(encoding='utf-8').encode('utf-8'))
+        self.assertEqual(len(require_available(raw)),40)
+        self.assertEqual(emit(source=source.decode('utf-8')),raw)
+
 if __name__=='__main__':unittest.main()

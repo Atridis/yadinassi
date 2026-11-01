@@ -1,6 +1,6 @@
 # Bounded ordinary data-reader/writer workflows
 
-**Native calibration in progress; complete family parity is not yet accepted.** This is one
+**Closed40 ordinary native parity accepted on8.3.27.1508; limits below remain explicit.** This is one
 coherent new family, not additional general stream permissions. The primary
 reference is the official EDT2026.2 archive
 `com._1c.g5.v8.dt.platform.doc_3.0.1.v202610261959.jar`, SHA256
@@ -63,8 +63,8 @@ and prefix-overwrite file mode. ByteOrder mutation effects, Skip return values,
 Unicode ReadChars units, delimiter errors and returned-stream identity/lifetime
 were isolated by the second capture. Skip, UTF16 counting and shared-close stream
 aliases are now corrected; ByteOrder/default effects and delimiter setter validity
-are calibrated to the measured target, with an ordinary explicit-order read
-confirmation still pending. Out-of-band repositioning of a stream after reader
+are calibrated to the measured target, including the final ordinary explicit-order
+read confirmation. Out-of-band repositioning of a stream after reader
 consumption is explicitly unsupported: the retained native probe throws, and the
 implementation does not infer a general buffering/invalidation model from it. Equal-length duplicate marker
 ties and other unmeasured edge combinations remain !todo.

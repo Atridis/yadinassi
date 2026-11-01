@@ -1,7 +1,7 @@
 # Data reader/writer workflow measurement plan
 
-Status: **first native capture retained (39 successful cases plus one action error);
-revised packet and complete parity pending**. Local interpreter output alone is not
+Status: **final closed40 native acquisition and ordinary parity accepted**. Historical
+partial captures and the unsupported out-of-band reposition observation remain retained. Local interpreter output alone is not
 a golden or proof of native parity. This is one coherent
 ordinary-workflow batch, not individual API or corner-case measurement requests.
 
@@ -119,4 +119,17 @@ are calibrated. The old external-reposition exception remains immutable native-v
 and an explicit unsupported !todo boundary, not silently erased or generalized.
 The final case2 instead reads a third prewritten integer with explicit byte order,
 without moving an active reader's external stream. All other39 cases are unchanged;
-the final ordinary explicit-order result still requires fresh native confirmation.
+the final ordinary explicit-order result is confirmed by run41313017525.
+
+## Final source-bound ordinary parity
+
+Run41313017525 on exact2549a6f/treec2b5af5 accepted40/40 ordinary observations,
+with identical managed-client/server and local replay bytes.53 independently
+recomputed source/module/runtime103/provenance/cleanup checks passed; native output
+SHA256 is `c9f371a2074b07629146d3230710fa6ac7192b0c41af986390c295fdf0eecdfa`.
+The minimal native-final fixture and exact-source parity test retain the new case2
+regression without publishing installation/session/authentication metadata. The
+original transport envelope was not archived: its validator was rerun against a
+reconstruction from the authenticated archived report and exact captured bytes.
+This is bounded ordinary parity, not a claim about Async, all ICU encodings,
+out-of-band reader repositioning, or every unmeasured lifecycle combination.
