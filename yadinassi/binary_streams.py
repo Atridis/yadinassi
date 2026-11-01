@@ -212,7 +212,8 @@ class BSLStream(_FileMethods):
     def current_position(self): return Decimal(self._open().position)
     def seek(self, offset, origin=None):
         state = self._open(); offset = _number(offset, MAX_BYTES, -MAX_BYTES)
-        if origin is None: origin = BSLPositionInStream.BEGIN
+        # Native41255849371 case17: omitted origin raises despite EDT optional marker.
+        if origin is None: raise TypeError('Перейти: требуется ПозицияВПотоке')
         if type(origin) is not BSLPositionInStream: raise TypeError('Ожидается ПозицияВПотоке')
         start = 0 if origin is BSLPositionInStream.BEGIN else (state.position if origin is BSLPositionInStream.CURRENT else self._size())
         position = _number(start + offset)

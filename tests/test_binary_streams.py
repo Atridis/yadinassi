@@ -86,13 +86,21 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(bytes(result._view), b'..de...')
         self.assertEqual(m.read(result, 0, 1), 0)
         self.assertEqual(m.seek(-1, Origin.CURRENT), 3)
-        self.assertEqual(m.seek(1), 1)
+        self.assertEqual(m.seek(1, Origin.BEGIN), 1)
+
+    def test_omitted_seek_origin_is_catchable_and_preserves_position(self):
+        m = Memory(); m.seek(3, Origin.BEGIN)
+        with self.assertRaises(TypeError): m.seek(1)
+        self.assertEqual(m.current_position(), 3)
+        out = []
+        Interpreter(output=out.append).execute('s=New MemoryStream; Try s.Seek(1); Except Message("caught"); EndTry; s.Close();')
+        self.assertEqual(out, ['caught'])
 
     def test_buffer_stream_shares_storage_and_is_fixed_capacity(self):
         b = Buffer.from_bytes(b'abcd'); m = Memory(b)
         m.write(Buffer.from_bytes(b'Z'), 0, 1)
         self.assertEqual(b.get(0), ord('Z'))
-        b.set(1, ord('Q')); m.seek(0)
+        b.set(1, ord('Q')); m.seek(0, Origin.BEGIN)
         out = Buffer(4); m.read(out, 0, 4)
         self.assertEqual(bytes(out._view), b'ZQcd')
         with self.assertRaises(ValueError): m.write(out, 0, 1)
@@ -105,7 +113,7 @@ class MemoryTests(unittest.TestCase):
         m = Memory(Buffer.from_bytes(b'abcd')); view = m.get_readonly_stream()
         self.assertIs(type(view), BSLStream)
         self.assertFalse(view.get_member('CanWrite'))
-        view.seek(2); self.assertEqual(m.current_position(), 2)
+        view.seek(2, Origin.BEGIN); self.assertEqual(m.current_position(), 2)
         out = Buffer(1); view.read(out, 0, 1)
         self.assertEqual(m.current_position(), 3)
         self.assertEqual(out.get(0), ord('c'))
@@ -113,7 +121,7 @@ class MemoryTests(unittest.TestCase):
         with self.assertRaises(ValueError): view.set_size(0)
 
     def test_copy_consumes_remaining_and_prevalidates_destination(self):
-        m = Memory(Buffer.from_bytes(b'abcde')); m.seek(1)
+        m = Memory(Buffer.from_bytes(b'abcde')); m.seek(1, Origin.BEGIN)
         dest = Memory(); self.assertEqual(m.copy_to(dest, 3), 3)
         self.assertEqual(dest.close_and_get_binary_data()._data, b'bcd')
         self.assertEqual(m.current_position(), 4)
@@ -124,14 +132,14 @@ class MemoryTests(unittest.TestCase):
 
     def test_size_gaps_and_limits_are_bounded(self):
         m = Memory(); m.set_size(4); self.assertEqual(m.size(), 4)
-        m.seek(7); m.write(Buffer.from_bytes(b'Q'), 0, 1)
+        m.seek(7, Origin.BEGIN); m.write(Buffer.from_bytes(b'Q'), 0, 1)
         self.assertEqual(m.size(), 8)
         m.set_size(2); self.assertEqual(m.size(), 2)
         # Gap bytes are unspecified by 1C: deliberately assert no byte values.
-        with self.assertRaises(ValueError): m.seek(MAX_BYTES+1)
+        with self.assertRaises(ValueError): m.seek(MAX_BYTES+1, Origin.BEGIN)
         with self.assertRaises(ValueError): m.set_size(MAX_BYTES+1)
-        with self.assertRaises(ValueError): m.seek(-1)
-        m.seek(MAX_BYTES)
+        with self.assertRaises(ValueError): m.seek(-1, Origin.BEGIN)
+        m.seek(MAX_BYTES, Origin.BEGIN)
         with self.assertRaises(ValueError): m.write(Buffer(1), 0, 1)
         self.assertEqual(m.size(), 2)
 
@@ -141,7 +149,7 @@ class MemoryTests(unittest.TestCase):
         b2 = binary_data_to_buffer(data); b2.set(0, 1)
         self.assertEqual(data._data, b'abc')
         a, other = data.open_stream_for_read(), data.open_stream_for_read()
-        a.seek(2); self.assertEqual(other.current_position(), 0)
+        a.seek(2, Origin.BEGIN); self.assertEqual(other.current_position(), 0)
         m = Memory(); data.write(m)
         self.assertEqual(m.close_and_get_binary_data()._data, b'abc')
         m.close()
@@ -172,7 +180,7 @@ class FileTests(unittest.TestCase):
     def test_create_write_read_copy_flush_reopen(self):
         f = self.stream(Mode.CREATE); f.write(Buffer.from_bytes(b'abcdef'), 0, 6)
         f.flush(); self.assertEqual(self.path.read_bytes(), b'abcdef')
-        f.seek(1); m = Memory(); self.assertEqual(f.copy_to(m, 3), 3)
+        f.seek(1, Origin.BEGIN); m = Memory(); self.assertEqual(f.copy_to(m, 3), 3)
         self.assertEqual(m.close_and_get_binary_data()._data, b'bcd')
         f.close(); f.close()
         r = self.stream(access=Access.READ); b = Buffer(8)

@@ -43,11 +43,35 @@ class BinaryStreamAcquisitionTests(unittest.TestCase):
                 with self.subTest(case=expected['case']): self.assertEqual(observed, expected)
         # No assertion promotes the unavailable original cases to native parity.
 
+    def test_explicit_origin_acquisition_is_available_but_originally_mismatched(self):
+        source = (FIXTURE/'explicit40.bsl').read_bytes()
+        raw = (FIXTURE/'explicit40.out').read_bytes()
+        provenance = (FIXTURE/'explicit40-provenance.json').read_bytes()
+        digest = lambda data: hashlib.sha256(data).hexdigest()
+        self.assertEqual(digest(source), '6f608fb87fe94ad11fd14326e2f3a4795bc46e8286ed540695b7b53cddb1eb1b')
+        self.assertEqual(digest(raw), '095b8a975ba50a6ba308247c08f639775896333c6dde0e4863f240a4877e6566')
+        self.assertEqual(digest(provenance), '497ef13ab1a815f57addd20f235f51fcc12bf2f6ac0350581a53c39d12184fa4')
+        p = json.loads(provenance)
+        self.assertEqual(p['repository']['github_run_id'], '41255849371')
+        self.assertEqual(p['comparison']['acceptance_status'], 'rejected')
+        self.assertTrue(p['comparison']['native_binary_stream_family_available'])
+        self.assertEqual(p['trusted_input_sha256']['integrational_tests/measurements/binary_stream_family.bsl'], digest(source))
+        records = wire.require_available(raw)
+        self.assertEqual(''.join(map(chr, records[16]['units'])), 'omitted-error')
+        self.assertEqual(''.join(map(chr, records[25]['units'])), '0:Да')
+
+    def test_explicit_origin_39_measured_cases_replay_while_alias_calibration_pending(self):
+        native = wire.require_available((FIXTURE/'explicit40.out').read_bytes())
+        actual = wire.require_available(emit(source=(FIXTURE/'explicit40.bsl').read_text(encoding='utf-8')))
+        for expected, observed in zip(native, actual):
+            if expected['case'] != 26:
+                with self.subTest(case=expected['case']): self.assertEqual(observed, expected)
+
     def test_revised_batch_has_one_isolated_omitted_origin_probe(self):
         self.assertEqual(SOURCE.count('S.Seek(2)'), 1)
-        self.assertIn('Try R="omitted:"+String(S.Seek(2)); Except R="omitted-error";', SOURCE)
+        self.assertIn('Try R="omitted:"+String(S.Seek(2));Except R="omitted-error";', SOURCE)
         self.assertEqual(SOURCE.count('P=PositionInStream.Begin;'), 2)
-        self.assertIn('S.Seek(5,P); Try R="omitted:', SOURCE)
+        self.assertIn('S.Seek(5,P);Try R="omitted:', SOURCE)
 
 
 if __name__ == '__main__': unittest.main()

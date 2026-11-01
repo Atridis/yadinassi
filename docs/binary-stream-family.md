@@ -98,3 +98,24 @@ The archived outer transport was not retained. Offline validation reconstructs
 its envelope from exact archived report/provenance/capture bytes; it is not a
 claim to possess the original envelope. Cleanup and source/runtime identities
 were checked independently. These are acquisition facts, not final acceptance.
+
+
+## Explicit-origin native40 acquisition
+
+[Run 41255849371](https://github.com/Atridis/yadinassi/actions/runs/41255849371),
+head `f56bb97704b0ed95c3ba65fc574bbd80a711493d`, tree
+`0d8280e2cf37224b0a82c8318df61e2d73433fba`, acquired all40 available observations
+with matching client/server output: 1824 bytes, SHA256
+`095b8a975ba50a6ba308247c08f639775896333c6dde0e4863f240a4877e6566`.
+The original comparison still failed cases17 and26; its `explicit40*` fixtures
+retain that failed runtime provenance without editing its acceptance fields.
+
+Case17 isolates an omitted-origin error despite the EDT optional marker.
+Seek now requires an explicit valid PositionInStream and leaves position unchanged
+on an omitted/invalid origin. Case26 observes an independent cursor and CanWrite
+True from MemoryStream.GetReadonlyStream, contrary to the documentation wording.
+That capability property alone is **not** proof that writes are permitted or that
+storage is shared. The same40 batch extends only case26 with actual write outcome,
+parent/view byte relations in both directions and returned MemoryStream type
+identity. Read-only enforcement is not globally relaxed before those facts exist.
+Native parity remains pending; all subprocess/resource/transport caps stay fixed.

@@ -40,7 +40,7 @@ class BinaryStreamFamilyMeasurementTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(SOURCE.encode()).hexdigest(), profiles.BINARY_STREAM_FAMILY.source_sha256)
         parse(SOURCE)
         self.assertLessEqual(len(SOURCE.encode()), 8192)
-        self.assertIn('For N=1 To 40 Do BFObserve(N); EndDo;', SOURCE)
+        self.assertIn('For N=1 To 40 Do BFObserve(N);EndDo;', SOURCE)
         for number in range(1, 41): self.assertEqual(SOURCE.count(f'N={number} Then'), 1)
         self.assertNotIn('Вычислить(', SOURCE)
         self.assertNotIn('ОписаниеОшибки', SOURCE)
