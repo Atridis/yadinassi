@@ -1,5 +1,7 @@
 """Finite source-bound producer rejection diagnostics, never native success."""
+import contextlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -18,12 +20,29 @@ PROFILE = 'data-hashing-family-v1'
 class HashingFailureTests(unittest.TestCase):
     def read(self, raw, sha=contract.SOURCE_SHA256):
         with tempfile.TemporaryDirectory(prefix='hash-failure-unit-') as tmp:
-            path=Path(tmp)/'owned.json'; path.write_bytes(raw)
+            # Canonicalize only this newly-created owned fixture, not producer inputs.
+            path=Path(tmp).resolve(strict=True)/'owned.json'; path.write_bytes(raw)
             return tree.read_hashing_native_result(path,sha)
 
     def observed(self, raw):
         with self.assertRaises(tree.ObservationFailure) as failure: self.read(raw)
         return failure.exception.diagnostic
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX temporary-root alias regression')
+    def test_owned_temporary_alias_is_canonicalized_without_relaxing_reader(self):
+        raw=b'{"messages":["fixed"],"error":""}'
+        with tempfile.TemporaryDirectory(prefix='hash-temp-alias-') as tmp:
+            root=Path(tmp).resolve(strict=True)
+            actual=root/'actual';actual.mkdir()
+            alias=root/'system-temp-alias';alias.symlink_to(actual,target_is_directory=True)
+            self.assertTrue(alias.samefile(actual))
+            with mock.patch.object(tempfile,'TemporaryDirectory',return_value=contextlib.nullcontext(str(alias))), \
+                    mock.patch.object(tree,'read_hashing_native_result',wraps=tree.read_hashing_native_result) as reader:
+                self.assertEqual(self.read(raw),(['fixed'],''))
+            self.assertEqual(reader.call_args.args[0],actual/'owned.json')
+            # The production boundary must still reject the noncanonical alias.
+            with self.assertRaises(tree.full.FullError):
+                tree.full.secure_bytes(alias/'owned.json',tree.full.MAX_RESULT)
 
     def test_ordinary_parser_unchanged_and_first(self):
         raw=b'{"messages":["fixed"],"error":""}'
