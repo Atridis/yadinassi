@@ -89,7 +89,7 @@ Try CREmit("21", XMLString(Documents.D8e1d8e38.GetRef(New UUID("94c21fbb-5227-4b
 // absent.date
 Try CREmit("22", Documents.D8e1d8e38.GetRef(New UUID("94c21fbb-5227-4b30-82ec-3a76dc9d8a22")).Posted); Except Message("CR-22: [action-error]"); EndTry;
 // absent.posted
-Try CREmit("23", Documents.D8e1d8e38.EmptyRef().IsEmpty()); Except Message("CR-23: [action-error]"); EndTry;
-// control.pad22
-Try CREmit("24", Documents.D8e1d8e38.EmptyRef().IsEmpty()); Except Message("CR-24: [action-error]"); EndTry;
-// control.pad23
+Try CREmit("23", String(TypeOf(Documents.D8e1d8e38.FindByNumber("")))); Except Message("CR-23: [action-error]"); EndTry;
+// empty.number.type
+Try CREmit("24", String(Documents.D8e1d8e38.FindByNumber("").UUID())); Except Message("CR-24: [action-error]"); EndTry;
+// empty.number.uuid

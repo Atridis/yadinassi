@@ -62,6 +62,13 @@ class PacketTests(unittest.TestCase):
         self.assertIn('.Select(Date(2024,2,29,12,34,56),Date(2024,2,29,12,34,56))',cursor)
         self.assertIn('// empty.range',cursor)
 
+    def test_empty_number_discriminants_replace_only_header_padding(self):
+        cases=p.cases(self.s,self.request,'header')
+        self.assertEqual(len(cases),24)
+        self.assertEqual([label for label,_ in cases[-2:]],['empty.number.type','empty.number.uuid'])
+        self.assertIn('TypeOf(',cases[-2][1]);self.assertIn('.UUID()',cases[-1][1])
+        self.assertTrue(all('FindByNumber("")' in expression for _,expression in cases[-2:]))
+
     def test_fresh_reference_observations_are_raw_and_relational(self):
         cases=dict(p.cases(self.s,self.request,'identity'))
         self.assertEqual(cases['fresh.omitted.uuid'],'String(F.UUID())')

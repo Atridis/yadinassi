@@ -330,12 +330,12 @@
         "Documents.Dad0328ac.GetRef(New UUID(\"3247a168-60b7-4bbb-901d-1601b198cfb6\")).Posted"
       ],
       [
-        "control.pad22",
-        "Documents.Dad0328ac.EmptyRef().IsEmpty()"
+        "empty.number.type",
+        "String(TypeOf(Documents.Dad0328ac.FindByNumber(\"\")))"
       ],
       [
-        "control.pad23",
-        "Documents.Dad0328ac.EmptyRef().IsEmpty()"
+        "empty.number.uuid",
+        "String(Documents.Dad0328ac.FindByNumber(\"\").UUID())"
       ]
     ],
     "fields": [
@@ -539,7 +539,7 @@
     "setup-empty.bsl": "b12162c646574c3f6ecab9eee2c7af19d2004c49415faefd8b27eb5ef1ea8eef",
     "cursor.bsl": "4827b1e584784c9dcdfa8f3acdc02246754509b03eb1d88b51c18295aece1bf0",
     "identity.bsl": "8cad76bf5160b2979ed26aba68c16eae1be61c9ee886a86bed2f07d8de2617ce",
-    "header.bsl": "2db796d4954b7e44d2617a0a0010259aa10c716ac8c73d771e1ba24d1d68003b",
+    "header.bsl": "91b7789d76a236465b447185e9468d1c17187cd57d48868da17f752e9e64cea7",
     "setup-filled.bsl": "73fd559504c2cb8faee2151ccf926be5c29ea07fffbae34543f0ae4c6b6aa605",
     "fields.bsl": "c1c8b1ce55dd59e8d470a43ce83ad2a7f2e831fa180ff0736d123219549bf286",
     "Documents/Dad0328ac.xml": "ecdafda2b107dd8ed5175ababa4c6ebd409624ec6bc98daeeb086d752e32de04",

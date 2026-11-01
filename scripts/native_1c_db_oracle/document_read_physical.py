@@ -13,6 +13,9 @@ from yadinassi.storage import config_catalog_transport as config
 from yadinassi.storage import config_root_projection as root_projection
 from yadinassi.storage import filedb_named_file as named
 from yadinassi.storage import filedb_dbnames as dbnames
+from yadinassi.storage import config_catalog_references as catalog_refs
+from yadinassi.storage import config_catalog_name as catalog_name
+from yadinassi.storage import config_catalog_attributes as catalog_attributes
 import linked_card_physical as common
 
 MAX_READ_BYTES=64*1024*1024
@@ -25,6 +28,27 @@ _exact=common._exact
 _integer=common._integer
 _hex=common._hex
 _json=common._json
+
+
+def _baseline_key(raw,specs,target,budget):
+    refs=catalog_refs.project_catalog_references(raw,budget=budget).references
+    owned=specs[1]['metadata_uuid']
+    _check(len(refs)==2 and len(set(refs))==2 and owned in refs)
+    key=next(x for x in refs if x!=owned)
+    _check(key not in ('root',target,specs[0]['metadata_uuid']))
+    return key
+
+
+def _baseline_profile(raw,key,budget):
+    identity=catalog_name.project_catalog_identity_prefix(raw,budget=budget)
+    attrs=catalog_attributes.project_catalog_attributes(raw,budget=budget)
+    _check(identity.metadata_uuid==key and identity.name=='NativeOracleItems'
+        and identity.code_type==1 and identity.code_length==2 and identity.description_length==0)
+    _check(tuple((a.name,a.type_token,a.qualifiers) for a in attrs.attributes)==
+        (('Payload','S',(32,1)),('Amount','N',(9,2,0))))
+    _check(len({key,*(a.metadata_uuid for a in attrs.attributes)})==3)
+    return dict(metadata_uuid=key,name=identity.name,code_type=1,code_length=2,description_length=0,
+        attributes=[dict(metadata_uuid=a.metadata_uuid,name=a.name,type_token=a.type_token,qualifiers=list(a.qualifiers)) for a in attrs.attributes])
 
 
 def _request(request,mapping):
@@ -97,13 +121,19 @@ def _config_payloads(handle, specs):
     target = root_projection.project_root_reference_prefix(raw_root, profile=rp, limits=rl).reference
     if target in ('root', *(s['metadata_uuid'] for s in specs)):
         raise c.InvalidStructure('document_config_self_reference')
+    target_raw=decode(target)
+    if len(target_raw)>MAX_CONFIG_BYTES: raise c.ResourceLimit('document_config_payload')
+    baseline_uuid=_baseline_key(target_raw,specs,target,budget)
+    baseline_raw=decode(baseline_uuid)
+    if len(baseline_raw)>MAX_CONFIG_BYTES: raise c.ResourceLimit('document_config_payload')
+    baseline=_baseline_profile(baseline_raw,baseline_uuid,budget)
     result=[]
-    for key in ('root',target,*(s['metadata_uuid'] for s in specs)):
-        raw=raw_root if key=='root' else decode(key)
+    for key in ('root',target,*(s['metadata_uuid'] for s in specs),baseline_uuid):
+        raw=raw_root if key=='root' else target_raw if key==target else baseline_raw if key==baseline_uuid else decode(key)
         if len(raw)>MAX_CONFIG_BYTES: raise c.ResourceLimit('document_config_payload')
         budget.charge('output_bytes',4*len(raw));budget.charge('bytes_processed',len(raw))
         result.append(dict(filename=key,raw_hex=raw.hex(),sha256=hashlib.sha256(raw).hexdigest()))
-    return dict(root_target=target,document_membership='unresolved',files=result)
+    return dict(root_target=target,document_membership='unresolved',baseline=baseline,files=result)
 
 def _dbnames(handle,specs):
     reader=handle._graph.reader
@@ -220,16 +250,23 @@ def validate_observation(value,request,actual_mapping):
     _exact(value,('schema','capability','request_sha256','actual_mapping','config','dbnames','objects','reader_usage','source_reads'))
     _check(type(value['schema']) is int and value['schema']==1 and value['capability']=='owned_document_raw_measurement_only'
         and value['request_sha256']==request_sha and value['actual_mapping']==actual_mapping)
-    config_value=value['config'];_exact(config_value,('root_target','document_membership','files'))
+    config_value=value['config'];_exact(config_value,('root_target','document_membership','baseline','files'))
     _check(config_value['document_membership']=='unresolved');common._uuid(config_value['root_target'])
-    names=['root',config_value['root_target'],*(s['metadata_uuid'] for s in specs)];_check(len(set(names))==4)
-    files=config_value['files'];_check(type(files) is list and len(files)==4)
+    baseline=config_value['baseline']
+    _exact(baseline,('metadata_uuid','name','code_type','code_length','description_length','attributes'))
+    common._uuid(baseline['metadata_uuid'])
+    names=['root',config_value['root_target'],*(s['metadata_uuid'] for s in specs),baseline['metadata_uuid']];_check(len(set(names))==5)
+    files=config_value['files'];_check(type(files) is list and len(files)==5)
     for item,name in zip(files,names):
         _exact(item,('filename','raw_hex','sha256'));_check(item['filename']==name)
         raw=_hex(item['raw_hex'],MAX_CONFIG_BYTES);_check(bool(raw))
         _check(hashlib.sha256(raw).hexdigest()==item['sha256'])
     rp=root_projection.RootProjectionProfile(root_projection.PROFILE_IDENTIFIER);rl=root_projection.RootProjectionLimits()
     _check(root_projection.project_root_reference_prefix(bytes.fromhex(files[0]['raw_hex']),profile=rp,limits=rl).reference==config_value['root_target'])
+    validation_budget=c._Budget(c.CatalogLimits())
+    _check(_baseline_key(bytes.fromhex(files[1]['raw_hex']),specs,config_value['root_target'],validation_budget)==baseline['metadata_uuid'])
+    expected_baseline=_baseline_profile(bytes.fromhex(files[4]['raw_hex']),baseline['metadata_uuid'],validation_budget)
+    _check(_json(baseline)==_json(expected_baseline))
     db=value['dbnames'];_exact(db,('bytes','sha256','groups'));_integer(db['bytes'],dbnames.DBNamesParseLimits().max_input_bytes);common._digest(db['sha256'])
     _check(type(db['groups']) is list and len(db['groups'])==2)
     physical_ids=set()

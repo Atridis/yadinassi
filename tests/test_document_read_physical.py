@@ -21,10 +21,24 @@ def request():
     return p,mapping
 
 
-def image(p,kind='Document',table=True):
+def image(p,kind='Document',table=True,*,baseline_name='NativeOracleItems',baseline_code='2',baseline_missing=False,extra_ref=False,baseline_uuid='77777777-7777-4777-8777-777777777777'):
     # The opaque UUID filename contains an invented catalog-shaped descriptor.
     # Document interpretation MUST NOT use that shape to claim collection membership.
-    schema=p['linked_schema'];value=linked.image(schema);u32=linked.base.u32;P=linked.base.P
+    schema=p['linked_schema'];u32=linked.base.u32;P=linked.base.P
+    cf=linked.base.config_fixture;original=cf.content_source
+    baseline=baseline_uuid # Invented input, not a routing constant.
+    prefix=cf.matrix.names.document(name='"'+baseline_name+'"',code=baseline_code,kind='1',description='0',metadata_uuid=baseline)
+    attributes=[cf.constructed.attribute('88888888-8888-4888-8888-888888888888','"Payload"','{"Pattern",{"S",32,1}}'),
+                cf.constructed.attribute('99999999-9999-4999-8999-999999999999','"Amount"','{"Pattern",{"N",9,2,0}}')]
+    collection=cf.constructed.node('cf4abea7-37b2-11d4-940f-008048da11f9','2',*attributes)
+    payload=cf.stored_literal(prefix[:-1]+b',0,0,0,0,'+collection.encode()+b'}')
+    def complete(entries):
+        refs=[schema['catalogs'][1]['metadata_uuid'],baseline]
+        if extra_ref:refs.append('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+        entries=list(entries);entries[2]=cf.entries(refs=refs)[2]
+        if not baseline_missing:entries.append((baseline,payload,0))
+        return original(entries)
+    with mock.patch.object(cf,'content_source',side_effect=complete):value=linked.image(schema)
     triples=[]
     for i,s in enumerate(schema['catalogs']):
         triples.append('{'+s['metadata_uuid']+',"'+(kind if i==0 else 'Reference')+'",'+str(19+i)+'}')
@@ -50,10 +64,10 @@ def image(p,kind='Document',table=True):
 class DocumentReadPhysicalTests(unittest.TestCase):
     def test_complete_raw_capture_root_target_and_both_uuid_files(self):
         p,m=request();v=image(p)
-        with mock.patch.object(linked.subject.catalog_refs,'project_catalog_references',side_effect=AssertionError('catalog membership forbidden')):
-            result=subject.observe(v.read_at,v.size,p,m)
-        self.assertEqual(len(result['config']['files']),4)
+        result=subject.observe(v.read_at,v.size,p,m)
+        self.assertEqual(len(result['config']['files']),5)
         self.assertEqual(result['config']['document_membership'],'unresolved')
+        self.assertEqual(result['config']['baseline']['name'],'NativeOracleItems')
         self.assertEqual([x['physical']['candidate'] for x in result['objects']],['_Document19','_Reference20'])
         for obj in result['objects']:
             q=obj['physical'];self.assertEqual(q['status'],'captured');self.assertEqual(q['layout'],'unresolved')
@@ -64,7 +78,7 @@ class DocumentReadPhysicalTests(unittest.TestCase):
         for kind,table,reason in [('Other',True,'dbnames_kind'),('Document',False,'table_missing')]:
             p,m=request();v=image(p,kind,table);result=subject.observe(v.read_at,v.size,p,m)
             self.assertEqual(result['objects'][0]['physical']['reason'],reason)
-            self.assertEqual(len(result['config']['files']),4)
+            self.assertEqual(len(result['config']['files']),5)
             self.assertEqual(result['dbnames']['groups'][0]['entries'][0]['kind'],kind)
             self.assertEqual(result['objects'][1]['physical']['status'],'captured')
 
@@ -101,6 +115,26 @@ class DocumentReadPhysicalTests(unittest.TestCase):
             lambda x:x['objects'][0]['physical'].update(raw_hex='00'),lambda x:x['objects'][0]['physical'].update(candidate='_Reference19'),
             lambda x:x['dbnames']['groups'][0]['entries'][0].update(id=True),lambda x:x['source_reads'].update(bytes=1)):
             bad=copy.deepcopy(result);mutate(bad)
+            with self.assertRaises(ValueError):subject.validate_observation(bad,p,m)
+
+    def test_baseline_membership_identity_and_profile_are_closed(self):
+        p,m=request()
+        for kwargs in (dict(baseline_name='Other'),dict(baseline_code='3'),dict(baseline_missing=True),dict(extra_ref=True)):
+            v=image(p,**kwargs)
+            with self.subTest(kwargs=kwargs),self.assertRaises((ValueError,subject.c.CatalogError)):
+                subject.observe(v.read_at,v.size,p,m)
+        dynamic='66666666-6666-4666-8666-666666666666'
+        v=image(p,baseline_uuid=dynamic);out=subject.observe(v.read_at,v.size,p,m)
+        self.assertEqual(out['config']['baseline']['metadata_uuid'],dynamic)
+        bad=copy.deepcopy(out);item=bad['config']['files'][4]
+        raw=bytes.fromhex(item['raw_hex']).replace(b'Amount',b'OtherX')
+        item.update(raw_hex=raw.hex(),sha256=hashlib.sha256(raw).hexdigest())
+        with self.assertRaises(ValueError):subject.validate_observation(bad,p,m)
+        for mutate in (lambda x:x['config']['baseline'].update(code_type=True),
+                       lambda x:x['config']['baseline'].update(name='Other'),
+                       lambda x:x['config']['baseline'].update(metadata_uuid=p['catalog_uuid']),
+                       lambda x:x['config']['files'].pop()):
+            bad=copy.deepcopy(out);mutate(bad)
             with self.assertRaises(ValueError):subject.validate_observation(bad,p,m)
 
 if __name__=='__main__':unittest.main()

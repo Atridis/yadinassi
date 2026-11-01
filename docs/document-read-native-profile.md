@@ -1,4 +1,4 @@
-# Owned Document read experiment (measurement pending)
+# Owned Document read experiment (runtime parity pending)
 
 This next block prepares readonly Documents manager/reference/selection behavior:
 Number, Date, Posted, DeletionMark, mixed scalar attributes and a Catalog reference,
@@ -16,10 +16,11 @@ The disposable generated Document alone receives Read/Insert/Update/Posting in t
 existing CRUD role. Posting=Allow, RealTimePosting=Deny, empty modules, register and
 sequence declarations, and false privileged flags are exact source invariants.
 Only owned row 30 is posted; two others are ordinary writes. No Delete, Interactive
-or UndoPosting grant is added. Public runtime remains readonly and unexpanded.
+or UndoPosting grant is added. Public runtime remains readonly; the completed bounded implementation is described
+in [Document runtime](document-read-runtime.md). Its actual `.1CD` parity gate is pending.
 
 The saved XML is schema-backed and corrected from the first owned native redump;
-**the corrected two-identity batch is not yet native accepted**. Complete
+the corrected two-identity batch is native accepted by run `41256261065`. Complete
 semantic used-QName/tree equality remains required; no defaults are stripped.
 On failure, only the two UUID+Name+kind-verified synthetic redumps may be captured,
 up to 64 KiB each, with exact bytes/hash/identity/tag bounds. No private logs or
@@ -27,15 +28,21 @@ other metadata are exported. Their measured native defaults can correct inputs
 without guessing optional values.
 
 Raw observation retains CONFIG root/root-target and UUID-selected Document/Catalog
-payloads, selected DBNames and bounded physical declarations/data. A DBNames
+payloads, plus the per-run root-declared `NativeOracleItems` baseline descriptor,
+selected DBNames and bounded physical declarations/data. The baseline must be the
+sole additional Catalog reference and match its exact known identity/schema; its
+UUID is never a routing constant. A DBNames
 Document id → `_Document<id>` name is an explicit measurement hypothesis only;
 unknown kind or absent table remains unresolved while native observations survive.
-There is no assumed Document collection membership, stride, field offset or value
-decoder. Existing production graph admission is unchanged. Cross-reader claimed
+The observer itself does not infer Document membership, stride or field offsets.
+The separate production reader admits only the CONFIG and all-active physical
+profile established by the successful measurement; unsupported profiles stay closed. Cross-reader claimed
 pages are checked against CONFIG/PARAMS and the other target before payload reads.
 
-Completed native runtime `.1CD` parity, public Documents admission and full/platform
-acceptance are pending. `!todo` Broader Document metadata profiles, arbitrary table
+Completed native runtime `.1CD` parity and full/platform acceptance are pending.
+Historical replay uses captured owned CONFIG/rows with an explicitly synthetic
+auxiliary baseline descriptor; the final batch captures that fifth actual descriptor
+and exercises the real frozen `.1CD`, not synthetic transport. `!todo` Broader Document metadata profiles, arbitrary table
 parts, reference unions and unmeasured storage layouts remain closed until measured.
 
 ## Primary-source preparation
@@ -75,5 +82,24 @@ The generated input now includes those exact identity-independent standard
 attribute defaults and omits only those measured absent nodes. This is not a
 redump acceptance exception: the complete semantic equality guard is unchanged.
 Date has FillChecking=ShowError; the other four have DontCheck. The original
-failed report and exact owned redumps remain separately source-bound; repeat two
-and actual CONFIG/physical/runtime parity still require the corrected batch.
+failed report and exact owned redumps remain separately source-bound. At that
+checkpoint, repeat two and actual CONFIG/physical/runtime parity were still pending;
+the subsequent measurement below resolves acquisition, not runtime parity.
+
+## Successful bounded measurement and remaining discriminator
+
+Corrected source `d5a6284b6542f306002cf9cb7f86221d057b55b0` completed run
+`41256261065`: both identities, two states, eight contexts and 32 available native
+blocks; strict 159-source binding and all cleanup proofs passed. This is measurement
+success, **not runtime parity** (Documents remains unregistered in that source).
+Report SHA256: `a879485a6ae04dccc62e59faf84c41704a71a1c890578a1b48246769ed6331e0`.
+
+Actual selection order is 20,30,10 by Date; exhaustion retains the last Number but
+further Next remains false, unlike the measured Catalog restart. Exact equal
+start/end timestamps include row30. Posted is true only for the setup-posted row.
+`FindByNumber("") = Undefined` was false in both states, contrary to the initial
+API-doc interpretation. Two formerly padded header slots now observe its type and
+UUID in the final batch, without another session or invented expected value.
+Historical replay must retain its original source-bound header program, not treat
+old padding booleans as answers to these new probes. Fresh UUID bytes remain raw;
+version-specific generation details are `!todo` and not a bitwise parity promise.

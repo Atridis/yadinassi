@@ -162,7 +162,9 @@ def cases(s,p,block):
             ('dated.lookup',f'{d}.FindByNumber("30", Date(2024,2,29)) = {ref}')]
         absent_ref=f'{d}.GetRef(New UUID("{absent}"))'
         result += [('absent.number',absent_ref+'.Number'),('absent.date',f'XMLString({absent_ref}.Date)'),
-            ('absent.posted',absent_ref+'.Posted')]
+            ('absent.posted',absent_ref+'.Posted'),
+            ('empty.number.type',f'String(TypeOf({d}.FindByNumber("")))'),
+            ('empty.number.uuid',f'String({d}.FindByNumber("").UUID())')]
 
     elif block=='fields':
         for number in ('30','10','20'):
