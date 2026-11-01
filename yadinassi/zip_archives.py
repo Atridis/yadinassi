@@ -252,7 +252,7 @@ class BSLZipFileEntry(_FileMethods):
         values = {
             'name имя originalname исходноеимя': leaf,
             'basename имябезрасширения originalbasename исходноеимябезрасширения': stem,
-            'extension расширение originalextension исходноерасширение': extension,
+            'extension расширение originalextension исходноерасширение': extension[1:],
             'fullname полноеимя originalfullname исходноеполноеимя': full,
             'path путь originalpath исходныйпуть': path,
             'compressedsize размерсжатого': Decimal(info.compress_size),

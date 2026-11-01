@@ -77,3 +77,26 @@ encoding and native duplicate-name renaming; OS attributes/permissions;
 source-close/borrowed-stream lifetime and unmeasured cursor/default semantics;
 Windows anchored extraction backend. Unsupported options are errors, not silent
 fallbacks. These limits do not replace the pending ordinary native calibration.
+
+## First real-1C acquisition (preserved, not accepted parity)
+
+Run41261334010 / job124715075898 on head `ee82a3e4bd588df95aa24475275c475d9fc9fd7e`,
+tree `4c4c3c36567d834e41ca16e20eaf40e9357e786b`, acquired 30 available observations
+and action errors in24/28, with matching client/server capture and verified
+container/private-payload cleanup. Capture1408 bytes SHA256
+`170a2bc0b1b48939b0f1330a9bf30c2bc9881b741fd8dd71474036f412de15aa`.
+The immutable original32 source/output/provenance retain the rejected comparison.
+The archived outer transport was not retained: offline envelope validation is a
+reconstruction from authenticated report/provenance/capture, not possession of
+the original envelope.
+
+Extension is now calibrated without a leading dot. Native recursive archive
+count3 versus local2 requires entry-layout evidence; directory support is not
+inferred from count alone. The same32 batch now observes bounded entry names/
+zero-size markers and a caught Extract outcome in24, and isolates repeated Close
+plus subsequent Items access in28. Exact known-owned empty Out/out cleanup is
+allowed only after an emptiness check; unexpected children are preserved.
+Reserved `!cleanup` records preserve the fixture-failure phase and are explicitly
+rejected by require_available, never treated as native parity success. No raw
+exception text or random/external full paths are exported. Native32 recalibration
+and final exact-head gates remain pending.

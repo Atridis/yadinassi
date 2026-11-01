@@ -61,7 +61,7 @@ class ZIPTests(unittest.TestCase):
         self.assertEqual(items.count(), 1); entry = items.get(0)
         self.assertIs(items.find('a.bin'), entry); self.assertIsNone(items.find('missing'))
         self.assertEqual(entry.get_member('Name'), 'a.bin'); self.assertEqual(entry.get_member('BaseName'), 'a')
-        self.assertEqual(entry.get_member('Extension'), '.bin'); self.assertEqual(entry.get_member('UncompressedSize'), 3)
+        self.assertEqual(entry.get_member('Extension'), 'bin'); self.assertEqual(entry.get_member('UncompressedSize'), 3)
         self.assertFalse(entry.get_member('Encrypted')); self.assertEqual(r.get_member('Comment'), 'комментарий')
         out = self.root/'extract'
         if not ANCHORED:
@@ -186,6 +186,15 @@ class ZIPTests(unittest.TestCase):
         stream=BSLMemoryStream().get_readonly_stream()
         self.assertTrue(stream.get_member('CanWrite'))
         with self.assertRaises(ValueError):Writer(stream)
+    def test_unavailable_anchoring_refuses_extraction_before_any_write(self):
+        r=reader_bytes(raw_zip([('ordinary.txt',b'data')]))
+        out=self.root/'unsupported'
+        with mock.patch.object(module.os,'supports_dir_fd',set()), mock.patch.object(module,'_write_file') as write:
+            with self.assertRaises(ValueError):r.extract_all(str(out))
+            write.assert_not_called()
+        self.assertFalse(out.exists())
+        self.assertEqual(r.get_member('Items').count(),1)  # Reader remains usable.
+
     def test_archive_library_errors_are_normalized(self):
         # Controlled library fault, not an external or adversarial archive.
         w = Writer()

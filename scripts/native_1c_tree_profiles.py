@@ -99,7 +99,7 @@ BINARY_STREAM_FAMILY = Profile('binary-stream-family-v1', 'native-1c-binary-stre
     42, 'native_1c_binary_stream_family_contract', '\nСообщить("BF-C1: ["+BFEncode("")+"]");\n', 5, 'binary-stream-family')
 
 ZIP_FAMILY = Profile('zip-family-v1', 'native-1c-zip-family-v1', 'native-1c-zip-family-stage-v1',
-    'zip_family', '18fb206d8750451f387156cefba5ef6c0deae854b541f3cca279d34c7b4700d0',
+    'zip_family', '87da2769c9d1f32b021211793d8dae6a0058556440c950edd877eb393a2f7b8e',
     34, 'native_1c_zip_family_contract', '\nСообщить("ZF-C1: ["+ZFEncode("")+"]");\n', 5, 'zip-family')
 
 def select(name='tree-v1'):

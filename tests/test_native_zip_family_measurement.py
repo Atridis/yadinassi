@@ -63,6 +63,16 @@ class ZipFamilyMeasurementTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError): wire.require_available(synthetic_output(unavailable=True))
         with self.assertRaises(wire.AvailabilityError): wire.require_available(synthetic_output(observer=True))
 
+    def test_cleanup_sentinel_is_never_available_with_other_positive_controls(self):
+        raw = synthetic_output()
+        for number in (1, 24, 32):
+            lines = raw.splitlines(keepends=True)
+            encoded = ''.join(f'{u:04x}' for u in wire.CLEANUP_FAILURE_UNITS)
+            lines[number+1] = f'ZF-{number:02d}: [ok|S8:{encoded}]\n'.encode()
+            capture = b''.join(lines)
+            self.assertEqual(len(wire.validate_output(capture)), 32)
+            with self.assertRaises(wire.AvailabilityError): wire.require_available(capture)
+
     def test_local_runtime_observation_is_not_native_evidence(self):
         raw = emit()
         records = wire.validate_output(raw)
@@ -71,7 +81,7 @@ class ZipFamilyMeasurementTests(unittest.TestCase):
         else:
             # Temporary explicit Windows extraction gap, not native parity.
             self.assertEqual([r['case'] for r in records if r['status'] != 'ok'],
-                             [6,7,8,9,10,11,12,21,22,24,25,26])
+                             [6,7,8,9,10,11,12,21,22,25,26])
             with self.assertRaises(wire.AvailabilityError): wire.require_available(raw)
         self.assertFalse(any(row['status'] == 'observer-error' for row in wire.validate_output(raw)))
         with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
@@ -99,7 +109,9 @@ class ZipFamilyMeasurementTests(unittest.TestCase):
                 self.assertEqual(list(root.iterdir()), [root / 'keep.sentinel'])
                 self.assertEqual((root / 'keep.sentinel').read_bytes(), b'owned-test-sentinel')
             records = wire.validate_output(('\n'.join(output) + '\n').encode())
-            self.assertTrue(all(records[i]['status'] == 'action-error' for i in range(32)))
+            self.assertTrue(all(records[i]['status'] == 'action-error' for i in range(32) if i != 23))
+            self.assertEqual(records[23]['units'], wire.CLEANUP_FAILURE_UNITS)
+            with self.assertRaises(wire.AvailabilityError): wire.require_available(('\n'.join(output)+'\n').encode())
 
     def test_owned_fixture_scope(self):
         self.assertIn('Root=GetTempFileName("zip-family");', SOURCE)

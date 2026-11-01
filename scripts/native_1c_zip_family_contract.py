@@ -1,6 +1,7 @@
 """Bounded ZIP archive family measurement wire grammar; no native expected semantic values."""
 import re
 
+CLEANUP_FAILURE_UNITS = tuple(map(ord, "!cleanup"))
 CASE_COUNT = 32
 MAX_STRING_UNITS = 40
 MAX_OUTPUT_BYTES = 8192
@@ -49,6 +50,8 @@ def require_available(raw):
     records = validate_output(raw)
     if any(record['status'] != 'ok' for record in (records[index] for index in range(CASE_COUNT))):
         raise AvailabilityError('zip_family_positive_controls_failed')
+    if any(record['units'] == CLEANUP_FAILURE_UNITS for record in records):
+        raise AvailabilityError('zip_family_fixture_cleanup_failed')
     if any(record['status'] == 'observer-error' for record in records):
         raise AvailabilityError('zip_family_observer_failed')
     return records

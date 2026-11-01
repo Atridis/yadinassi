@@ -17,7 +17,7 @@ EndFunction
 For Each P In StrSplit("/out/sub/b.bin;/out/a.bin;/out/b.bin;/sub/b.bin;/a.bin;/x.zip",";") Do
 F=New File(Root+P);If F.Exists() And F.IsFile() Then DeleteFiles(Root+P);EndIf;
 EndDo;
-For Each P In StrSplit("/out/sub;/out;/sub;",";",True) Do
+For Each P In StrSplit("/out/out;/out/sub;/out;/sub;",";",True) Do
 D=Root+P;F=New File(D);If F.Exists() Then A=FindFiles(D,"*");If A.Count()=0 Then DeleteFiles(D);EndIf;EndIf;
 EndDo;
 EndProcedure
@@ -66,16 +66,21 @@ ElsIf N=20 Then E=Z.Items.Get(0);R=String(E.UncompressedSize)+":"+String(E.Compr
 ElsIf N=21 Then Z.Extract(Z.Items.Get(0),Out);R=ZFBytes(Out+"/a.bin");
 ElsIf N=22 Then Z.ExtractAll(Out);R=ZFBytes(Out+"/a.bin")+":"+ZFBytes(Out+"/b.bin");
 ElsIf N=23 Then R=String(Z.Items.Count());
-ElsIf N=24 Then Z.ExtractAll(Out);R=String(Z.Items.Count())+":"+ZFBytes(Out+"/sub/b.bin");
+ElsIf N=24 Then
+R=String(Z.Items.Count());For Each E In Z.Items Do K=E.FullName;
+If StrLen(K)>10 Then K="L"+String(StrLen(K))+"r"+String(StrFind(K,Root)>0);EndIf;
+R=R+"|"+K;If E.UncompressedSize=0 Then R=R+"~";EndIf;EndDo;
+Try Z.ExtractAll(Out);R=R+"|X";Except R=R+"|E";EndTry;
 ElsIf N=25 Or N=26 Then Z.ExtractAll(Out,ZIPRestoreFilePathsMode.DontRestore);R=String(Z.Items.Count())+":"+ZFBytes(Out+"/b.bin");
 ElsIf N=27 Then R=String(Z.Items.Count());
-ElsIf N=28 Then Z.Close();Z.Close();Try K=Z.Items.Count();R="items:"+String(K);Except R="closed-error";EndTry;
+ElsIf N=28 Then Z.Close();Try Z.Close();R="close-ok";Except R="close-error";EndTry;
+Try K=Z.Items.Count();R=R+":items"+String(K);Except R=R+":items-error";EndTry;Z=Undefined;
 ElsIf N=29 Then R=String(Z.Items.Count())+":"+String(Z.Items.Find("b.bin")=Undefined);
 ElsIf N=30 Then W=New ZipFileWriter;Try W.Add(Root+"/missing.bin");D=W.GetBinaryData();R="accepted";Except R="missing-error";EndTry;
 ElsIf N=31 Then Try T=New ZipFileReader(Root+"/missing.zip");T.Close();R="unexpected";Except R="missing-error";EndTry;
 ElsIf N=32 Then R=String(TypeOf(Z)=Type("ZipFileReader"))+":"+String(TypeOf(Z.Items)=Type("ZipFileEntries"))+":"+String(TypeOf(Z.Items.Get(0))=Type("ZipFileEntry"));
 EndIf;
-Z.Close();If S<>Undefined Then S.Close();EndIf;ZFClean(Root);If F.Exists() Then Raise "zip-fixture-cleanup";EndIf;
+If Z<>Undefined Then Z.Close();EndIf;If S<>Undefined Then S.Close();EndIf;ZFClean(Root);If F.Exists() Then If N=24 Then Return "!cleanup";Else Raise "zip-fixture-cleanup";EndIf;EndIf;
 Except
 Try Z.Close();Except EndTry;Try S.Close();Except EndTry;Try ZFClean(Root);Except EndTry;Raise;
 EndTry;
