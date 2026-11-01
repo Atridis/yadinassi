@@ -372,3 +372,7 @@ arbitrary host/nonseekable streams remain unsupported (`!todo`). Floating-point
 read/write methods are not in the pinned official family API. Existing local
 file authority is not a filesystem sandbox; no new network/device access is
 provided. See [exact scope](docs/data-io-family.md).
+
+## DataHashing remaining scope
+
+No custom/async streams, internal hash-state codec, authentication/password-storage API, thin/web compatibility claim, or arbitrary provider fallback. Per-append16MiB and total64MiB implementation caps are explicit; native ordinary40 calibration pending. `!todo` unmeasured coercions and rare platform behavior. [Details](docs/data-hashing-family.md).

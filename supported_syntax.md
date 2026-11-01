@@ -1037,3 +1037,7 @@ writer methods support the bounded ordinary workflows described in
 Size/MarkerFound/MarkerIndex and three binary/buffer/read-stream conversion
 methods, with Type/TypeOf but no public constructor or internal codec.
 All normal/optimized local tests remain distinct from pending native40 parity.
+
+## DataHashing ordinary workflow (native calibration pending)
+
+`ХешированиеДанных / DataHashing`: CRC32/MD5/SHA1/SHA256/SHA512, incremental UTF-8 String, BinaryData, Stream with optional Count, AppendFile and readonly HashSum/HashFunction. [Scope and resource limits](docs/data-hashing-family.md).
