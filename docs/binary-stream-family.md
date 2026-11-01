@@ -31,7 +31,9 @@ The archive is reference material, not newly redistributed in this change.
   is validated; the implementation uses an unbuffered descriptor.
 * Common streams: CanRead/CanWrite/CanSeek, CurrentPosition, Size, Seek with
   Begin/Current/End, Read/Write, SetSize, CopyTo, Flush and idempotent Close.
-  GetReadonlyStream shares storage and cursor but blocks writes.
+  MemoryStream.GetReadonlyStream shares storage with an independent cursor and
+  blocks writes despite native CanWrite=True; other stream views retain their
+  existing behavior pending separate calibration.
 * MemoryStream.CloseAndGetBinaryData, BinaryData.OpenStreamForRead (independent
   read cursors), BinaryData.Write(stream), and the exact one-argument globals
   GetBinaryDataFromBinaryDataBuffer/GetBinaryDataBufferFromBinaryData.
@@ -119,3 +121,23 @@ storage is shared. The same40 batch extends only case26 with actual write outcom
 parent/view byte relations in both directions and returned MemoryStream type
 identity. Read-only enforcement is not globally relaxed before those facts exist.
 Native parity remains pending; all subprocess/resource/transport caps stay fixed.
+
+
+## Memory-view data calibration
+
+[Run 41256517386](https://github.com/Atridis/yadinassi/actions/runs/41256517386)
+(head `44e06a2ba529a3b9fa434d859f2a4d14e72fbe1b`, tree
+`0ce577506de2abc4d0797f75b7b6f4abbb531e2a`) acquired all40 observations with
+matching client/server output and verified cleanup. The immutable `view40*`
+source/capture/provenance preserve the original single BF26 mismatch, not a
+rewritten acceptance result. Capture SHA256:
+`37ea62dd423b4b88c188e2d818782d5edb0dd8f55531cea7778f18293b4b4778`.
+
+The returned MemoryStream read-only view is a generic Stream with its own cursor
+and shared data. Native reports CanWrite=True, but an actual write is rejected;
+parent bytes remain unchanged. The implementation reproduces only that measured
+property quirk while keeping all write/resize/copy-target checks read-only.
+FileStream and immutable BinaryData stream capability checks are not changed.
+Child close leaves its parent usable; source-close/view lifetime remains !todo.
+All40 captured observations now replay locally; fresh exact-head native/CI gates
+remain required. The reconstructed-envelope evidence limit above still applies.

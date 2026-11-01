@@ -109,16 +109,26 @@ class MemoryTests(unittest.TestCase):
         self.assertFalse(m.get_member('CanWrite'))
         with self.assertRaises(ValueError): m.write(out, 0, 0)
 
-    def test_readonly_view_shares_cursor_and_rejects_mutations(self):
-        m = Memory(Buffer.from_bytes(b'abcd')); view = m.get_readonly_stream()
+    def test_memory_readonly_view_has_independent_cursor_but_shared_storage(self):
+        b = Buffer.from_bytes(b'abcd'); m = Memory(b); view = m.get_readonly_stream()
         self.assertIs(type(view), BSLStream)
-        self.assertFalse(view.get_member('CanWrite'))
-        view.seek(2, Origin.BEGIN); self.assertEqual(m.current_position(), 2)
+        self.assertTrue(view.get_member('CanWrite'))  # Native reporting quirk, not permission.
+        b.set(2, ord('Z'))
+        view.seek(2, Origin.BEGIN); self.assertEqual(m.current_position(), 0)
         out = Buffer(1); view.read(out, 0, 1)
-        self.assertEqual(m.current_position(), 3)
-        self.assertEqual(out.get(0), ord('c'))
+        self.assertEqual(m.current_position(), 0)
+        self.assertEqual(view.current_position(), 3)
+        self.assertEqual(out.get(0), ord('Z'))
+        before = bytes(b._view)
         with self.assertRaises(ValueError): view.write(out, 0, 1)
         with self.assertRaises(ValueError): view.set_size(0)
+        source = Memory(Buffer.from_bytes(b'x'))
+        with self.assertRaises(ValueError): source.copy_to(view)
+        self.assertEqual(source.current_position(), 0)
+        self.assertEqual(bytes(b._view), before)
+        view.close(); self.assertEqual(m.size(), 4)
+        m.seek(0, Origin.BEGIN); m.write(out, 0, 1)
+        self.assertEqual(b.get(0), ord('Z'))
 
     def test_copy_consumes_remaining_and_prevalidates_destination(self):
         m = Memory(Buffer.from_bytes(b'abcde')); m.seek(1, Origin.BEGIN)

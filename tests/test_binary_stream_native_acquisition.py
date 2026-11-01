@@ -60,12 +60,24 @@ class BinaryStreamAcquisitionTests(unittest.TestCase):
         self.assertEqual(''.join(map(chr, records[16]['units'])), 'omitted-error')
         self.assertEqual(''.join(map(chr, records[25]['units'])), '0:Да')
 
-    def test_explicit_origin_39_measured_cases_replay_while_alias_calibration_pending(self):
+    def test_explicit_origin_40_measured_cases_replay_after_calibration(self):
         native = wire.require_available((FIXTURE/'explicit40.out').read_bytes())
         actual = wire.require_available(emit(source=(FIXTURE/'explicit40.bsl').read_text(encoding='utf-8')))
-        for expected, observed in zip(native, actual):
-            if expected['case'] != 26:
-                with self.subTest(case=expected['case']): self.assertEqual(observed, expected)
+        self.assertEqual(native, actual)
+
+    def test_view_acquisition_is_immutable_and_all_40_cases_replay(self):
+        source = (FIXTURE/'view40.bsl').read_bytes()
+        raw = (FIXTURE/'view40.out').read_bytes()
+        provenance = (FIXTURE/'view40-provenance.json').read_bytes()
+        for data, expected in ((source, '0a3e3614d6b43534faddf4c911b203233fd76e75770642d96190ed4802138059'),
+                               (raw, '37ea62dd423b4b88c188e2d818782d5edb0dd8f55531cea7778f18293b4b4778'),
+                               (provenance, 'af2ddfd2305158c13f37280880c60cee1e2be125a5dfb4f29e42a6d81fd83469')):
+            self.assertEqual(hashlib.sha256(data).hexdigest(), expected)
+        p = json.loads(provenance)
+        self.assertEqual(p['repository']['github_run_id'], '41256517386')
+        self.assertEqual(p['comparison']['acceptance_status'], 'rejected')
+        self.assertTrue(p['comparison']['native_binary_stream_family_available'])
+        self.assertEqual(wire.require_available(raw), wire.require_available(emit(source=source.decode('utf-8'))))
 
     def test_revised_batch_has_one_isolated_omitted_origin_probe(self):
         self.assertEqual(SOURCE.count('S.Seek(2)'), 1)

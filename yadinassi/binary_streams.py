@@ -201,7 +201,9 @@ class BSLStream(_FileMethods):
     def get_member(self, name):
         key = name.casefold()
         if key in ('canread', 'доступночтение'): return self._open().read
-        if key in ('canwrite', 'доступназапись'): return self._canwrite()
+        if key in ('canwrite', 'доступназапись'):
+            self._open()
+            return True if getattr(self, '_reported_writable_view', False) else self._canwrite()
         if key in ('canseek', 'доступноизменениепозиции'): self._open(); return True
         return super().get_member(name)
     def close(self):
@@ -304,6 +306,19 @@ class BSLMemoryStream(BSLStream):
         else:
             if source is not None: _number(source)
             self._state = _State()
+    def get_readonly_stream(self):
+        self._readable()
+        result = BSLStream.__new__(BSLStream)
+        result._state = _State(self._state.data)
+        result._state.capacity, result._state.buffer = self._state.capacity, self._state.buffer
+        result._readonly, result._closed = True, False
+        # Native41256517386 BF26: independent cursor, shared data, generic Stream;
+        # CanWrite reports True but actual writes are rejected. Never use this
+        # presentation quirk for _writable checks or any mutation authorization.
+        result._reported_writable_view = True
+        # !todo Source-close/view lifetime needs native calibration; child close
+        # leaves the parent usable, as observed by BF27.
+        return result
     def __str__(self): return 'ПотокВПамяти'
     def close_and_get_binary_data(self):
         self._open()
