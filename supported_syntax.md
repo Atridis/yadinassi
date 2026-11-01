@@ -1000,3 +1000,12 @@ runtime provenance is preserved; final corrected-head CI remains pending.
 integers, read/write/seek/copy/size/close workflows, file opening/access enums,
 read-only views and BinaryData bridges. Bounded local regular-file I/O only.
 [Methods, limits and evidence status](docs/binary-stream-family.md).
+
+## ZIP archives — bounded ordinary family
+
+`ЧтениеZipФайла / ZipFileReader`, `ЗаписьZipФайла / ZipFileWriter`,
+`ЭлементыZipФайла / ZipFileEntries`, `ЭлементZipФайла / ZipFileEntry` and ZIP enums
+provide ordinary file/memory creation, Items enumeration/find, metadata and
+bounded extraction on anchored-directory platforms. Local tests are not native
+parity. Windows extraction currently fails explicitly pending a reviewed backend;
+see [complete scope and gates](docs/zip-family.md).

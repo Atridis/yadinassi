@@ -39,13 +39,14 @@ def provenance():
 
 
 class CodecProvenanceTests(SyntheticFilesystemCase):
-    def test_actual_94_source_inventory_includes_format_and_metadata_and_recomputes_digest(self):
+    def test_actual_95_source_inventory_includes_format_and_metadata_and_recomputes_digest(self):
         hashes = independent_hashes()
-        self.assertEqual(len(hashes),94)
+        self.assertEqual(len(hashes),95)
         self.assertIn(CODEC,hashes)
         self.assertIn('yadinassi/json_processing.py', hashes)
         self.assertIn('yadinassi/file_io.py', hashes)
         self.assertIn('yadinassi/binary_streams.py', hashes)
+        self.assertIn('yadinassi/zip_archives.py', hashes)
         self.assertIn('yadinassi/catalogs.py', hashes)
         self.assertIn('yadinassi/catalog_types.py', hashes)
         self.assertIn('yadinassi/xml_io.py', hashes)
@@ -53,7 +54,7 @@ class CodecProvenanceTests(SyntheticFilesystemCase):
         for name in ("documents.py", "document_types.py", "storage/config_document_binding.py",
                      "storage/config_document_metadata.py", "storage/config_document_records.py", "storage/document_reader.py"):
             self.assertIn("yadinassi/" + name, hashes)
-        # Current union adds binary_streams and six Document modules to reviewed 87. This is an
+        # Current union adds binary_streams, zip_archives and six Document modules to reviewed 87. This is an
         # exact source expectation, not the unchanged 512-file protocol cap.
         self.assertIn('yadinassi/value_tree_sort.py',hashes)
         self.assertIn('yadinassi/formatting.py',hashes)
@@ -61,7 +62,7 @@ class CodecProvenanceTests(SyntheticFilesystemCase):
             self.assertIn(name, hashes)
         value = provenance()
         expected = hashlib.sha256(json.dumps(hashes,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-        self.assertEqual(value['source_file_count'],94)
+        self.assertEqual(value['source_file_count'],95)
         self.assertEqual(value['source_sha256'],expected)
         self.assertEqual(value['comparison_driver_sha256'],hashes[DRIVERS[1]])
         self.assertEqual(value['map_contract_sha256'],hashes['scripts/native_1c_map_contract.py'])
@@ -100,7 +101,7 @@ class CodecProvenanceFixtureScopeTests(unittest.TestCase):
 
     def test_posix_setup_keeps_production_reader_unchanged(self):
         original = full.read_regular
-        case = CodecProvenanceTests('test_actual_94_source_inventory_includes_format_and_metadata_and_recomputes_digest')
+        case = CodecProvenanceTests('test_actual_95_source_inventory_includes_format_and_metadata_and_recomputes_digest')
         with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', False):
             try:
                 case.setUp()
@@ -111,7 +112,7 @@ class CodecProvenanceFixtureScopeTests(unittest.TestCase):
 
     def test_windows_adapter_rejection_is_not_swallowed_and_cleanup_restores_reader(self):
         original = full.read_regular
-        case = CodecProvenanceTests('test_actual_94_source_inventory_includes_format_and_metadata_and_recomputes_digest')
+        case = CodecProvenanceTests('test_actual_95_source_inventory_includes_format_and_metadata_and_recomputes_digest')
         with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', True), \
                 mock.patch.object(host_tests, 'read_synthetic_file',
                                   side_effect=full.FullError('invalid_private_file')) as rejected:
