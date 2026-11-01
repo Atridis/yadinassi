@@ -58,3 +58,7 @@ Count/EOF, UTF-8, снимки, положения и lifetime проверяю�
 и стандартные checksum-векторы не заменяют доказательство native parity.
 
 !todo Явный `Append(Stream, 0)` пока отвергается как неподдержанный: native workflow остановился без результата этого случая. Это не доказательство no-op/all-data семантики. Пустой поток с пропущенным Count остаётся обычным сценарием.
+
+Проверки закрытого потока и отрицательного Count — локальные integrity guards; native-семантика этих ошибок не подтверждена. Обычная native-порция не повторяет остановивший module-init закрытый поток.
+
+Native parity здесь ограничена обычными корректными входами; wrong-type, readonly assignment, missing-file и другие negative guards проверены локально, но их native exception semantics не заявляются.

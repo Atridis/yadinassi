@@ -55,6 +55,15 @@ class DataHashingFamilyMeasurementTests(unittest.TestCase):
         self.assertIn('GetBinaryDataFromString("")',case27)
         self.assertIn('H.Append(S);',case27)
         self.assertNotIn('H.Append(S,0)',case27)
+        case30=SOURCE.split('ElsIf N=30 Then',1)[1].split('ElsIf N=31 Then',1)[0]
+        self.assertIn('H=New DataHashing(HashFunction.SHA256)',case30)
+        self.assertNotIn('S.Close()',case30)
+        case34=SOURCE.split('ElsIf N=34 Then',1)[1].split('ElsIf N=35 Then',1)[0]
+        self.assertIn('H.Append(S,3)',case34)
+        self.assertNotIn('H.Append(S,-1)',SOURCE)
+        for rejected in ('H.Append(5)','H.HashSum=0','H.HashFunction=HashFunction.MD5',
+                         'New DataHashing("SHA256")','Try H.AppendFile(Path)'):
+            self.assertNotIn(rejected,SOURCE)
 
     def test_rectangular_wire_budget_and_rejections(self):
         raw = synthetic_output()

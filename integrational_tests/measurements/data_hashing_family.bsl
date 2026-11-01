@@ -33,7 +33,7 @@ EndFunction
   H=New DataHashing(HFAlgorithm(N));H.Append("[");H.AppendFile(Path);H.Append("]");
   C=New DataHashing(HFAlgorithm(N));C.Append("[abc]");V=String(HFKey(H.HashSum)=HFKey(C.HashSum));
   Before=HFKey(H.HashSum);DeleteFiles(Path);
-  Try H.AppendFile(Path);V=V+":unexpected";Except V=V+":missing";EndTry;
+  F2=New File(Path);V=V+":"+String(Not F2.Exists());
   V=V+":"+String(Before=HFKey(H.HashSum));
   Left=FindFiles(Root,"*");If Left.Count()<>0 Then Raise "hash-fixture-not-empty";EndIf;
   DeleteFiles(Root);If F.Exists() Then Raise "hash-fixture-cleanup";EndIf;
@@ -70,12 +70,12 @@ EndFunction
  ElsIf N=27 Then S=GetBinaryDataFromString("").OpenStreamForRead();Before=HFKey(H.HashSum);H.Append(S);V=String(Before=HFKey(H.HashSum))+":"+String(S.CurrentPosition());S.Close();Return V;
  ElsIf N=28 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();H.Append(S,9);C.Append("abc");V=String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(S.CurrentPosition());H.Append(S);V=V+":"+String(HFKey(H.HashSum)=HFKey(C.HashSum));S.Close();Return V;
  ElsIf N=29 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();S.Seek(1,P);H.Append(S);C.Append("bc");V=String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(S.CurrentPosition());S.Close();Return V;
- ElsIf N=30 Then S=New MemoryStream;S.Close();Before=HFKey(H.HashSum);Try H.Append(S);Return "unexpected";Except Return "closed:"+String(Before=HFKey(H.HashSum));EndTry;
+ ElsIf N=30 Then H.Append("old");H=New DataHashing(HashFunction.SHA256);H.Append("abc");C.Append("abc");Return String(HFKey(H.HashSum)=HFKey(C.HashSum));
  ElsIf N=31 Then S=New MemoryStream;GetBinaryDataFromString("abc").Write(S);S.Seek(0,P);T=S.GetReadonlyStream();H.Append(T,1);V=String(S.CurrentPosition())+":"+String(T.CurrentPosition())+":"+String(S.Size());T.Close();S.Close();Return V;
- ElsIf N=32 Then V="";Try H.HashFunction=HashFunction.MD5;V="unexpected";Except V="readonly";EndTry;Try H.HashSum=0;V=V+":unexpected";Except V=V+":readonly";EndTry;Return V;
- ElsIf N=33 Then Before=HFKey(H.HashSum);Try H.Append(5);Return "unexpected";Except Return "input:"+String(Before=HFKey(H.HashSum));EndTry;
- ElsIf N=34 Then S=New MemoryStream;Before=HFKey(H.HashSum);Try H.Append(S,-1);V="unexpected";Except V="count:"+String(Before=HFKey(H.HashSum));EndTry;S.Close();Return V;
- ElsIf N=35 Then V=String(TypeOf(H)=Type("DataHashing"))+":"+String(TypeOf(H.HashFunction)=Type("HashFunction"))+":"+String(H.HashFunction=HashFunction.SHA256);Try X=New DataHashing("SHA256");Return V+":unexpected";Except Return V+":constructor";EndTry;
+ ElsIf N=32 Then Return String(H.HashFunction=HashFunction.SHA256)+":"+String(TypeOf(H.HashSum)=Type("BinaryData"))+":"+String(H.HashSum.Size());
+ ElsIf N=33 Then D=GetBinaryDataFromString("abc");H.Append(D);H.Append(D);C.Append("abcabc");Return String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(D.Size());
+ ElsIf N=34 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();H.Append(S,3);C.Append("abc");V=String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(S.CurrentPosition());S.Close();Return V;
+ ElsIf N=35 Then V=String(TypeOf(H)=Type("DataHashing"))+":"+String(TypeOf(H.HashFunction)=Type("HashFunction"))+":"+String(H.HashFunction=HashFunction.SHA256);Return V;
  Else Return HFFile(N);EndIf;
 EndFunction
 Процедура HFObserve(Val N)

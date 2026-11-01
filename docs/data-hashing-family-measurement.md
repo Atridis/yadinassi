@@ -28,8 +28,8 @@ web-client, or browser support from this packet.
 ## Bound packet
 
 - `integrational_tests/measurements/data_hashing_family.bsl`
-- SHA-256 `f43a6793a6ca4b3c0e3ba347c40559c0175fdd78f71069276601eb7e33a9c523`
-- 6,984 UTF-8 source bytes; additional packet bound 8,192 bytes.
+- SHA-256 `7a126ea8f2dc1b94b9926b2a12d25554933c32fd7dbca7534ac84104c1027ab6`
+- 6,885 UTF-8 source bytes; additional packet bound 8,192 bytes.
 - 40 cases plus 2 observer controls; 42 messages and 5 print sites.
 - At most 40 UTF-16 units per successful case; exact output rectangle 7,130 bytes,
   below the unchanged 8,192-byte output cap.
@@ -56,9 +56,9 @@ semantic answers or a cryptographic security property.
 | 16–20 | Empty and intermediate HashSum snapshots remain independent after appends |
 | 21–24 | UTF-8 Cyrillic/accented/astral text, embedded zero/255 binary bytes, mixed text/BinaryData |
 | 25–29 | Stream count omitted, partial, empty omitted-count, over-EOF/at-EOF, nonzero source position and resulting cursor |
-| 30–31 | Closed-stream rejection/state preservation; borrowed read-only view/shared cursor remains usable |
-| 32–35 | Read-only properties, invalid Append/count/constructor arguments, type/enum identity |
-| 36–40 | Each algorithm: mixed prefix + owned AppendFile + suffix, missing-file rejection/state preservation |
+| 30–31 | Fresh-instance state reset; borrowed read-only view/shared cursor remains usable |
+| 32–35 | Property reads, repeated BinaryData Append, exact positive stream count, type/enum identity |
+| 36–40 | Each algorithm: mixed prefix + owned AppendFile + suffix, owned deletion and post-deletion hash preservation |
 
 ## Owned-file discipline
 
@@ -156,3 +156,20 @@ all-data, nor that the26 records passed. Original40 parity was never accepted.
 it must not be re-run as an allegedly ordinary supported operation.
 The revised packet keeps40 IDs but replaces slot27 with an empty stream and
 omitted Count. All other cases and resource/cleanup guards are unchanged.
+
+The next original-error boundary is also retained: revised source
+`f43a6793a6ca4b3c0e3ba347c40559c0175fdd78f71069276601eb7e33a9c523`,
+run41327349124/head8697f087, emitted exact ordered records1..29 and then a launcher
+error before slot30 (closed-stream Append). Summary ZIP SHA-256
+`051ab053b7be56eb32bccce4397661fe1c0a9deaf95ff23d334db97c40dd5ba3`.
+This still provides no accepted raw40 or passed-record claim.
+The ordinary packet now replaces30 with fresh-instance state reset and34 with
+exact positive-count stream input. Closed-stream and negative-count rejection
+remain local integrity guards, not measured native exception semantics.
+
+This single revision also makes32/33/35 and36–40 strictly ordinary: property/type
+reads, repeated valid BinaryData appends and owned file/hash observations replace
+intentional property assignment, wrong-type construction/Append and missing-file
+Append. Those error semantics are not native verified; local negative guards and
+tests remain unchanged. This prevents serial execution of unmeasured rejection
+paths while retaining all five algorithm/file workflows and cleanup checks.
