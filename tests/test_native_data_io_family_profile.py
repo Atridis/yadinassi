@@ -126,6 +126,28 @@ class DataIOFamilyProfileTests(unittest.TestCase):
             with mock.patch.object(host,'run') as run,mock.patch.object(sys,'argv',['host','--execute-approved-image']+flags),contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit) as error:host.main()
             self.assertEqual(error.exception.code,2);run.assert_not_called()
 
+    @unittest.skipUnless(os.name == 'posix', 'Native shell dispatch requires POSIX bash')
+    def test_actual_shell_stage_flag_selection(self):
+        # Execute only the closed assignment fragment, never the native launcher.
+        source = (ROOT/'scripts/native_1c_smoke_probe.sh').read_text(encoding='utf-8')
+        begin = source.index('        tree_flag=--tree-suite\n')
+        end = source.index('        python3 /smoke/bootstrap/run_stage.py ', begin)
+        fragment = source[begin:end]
+        self.assertNotIn('python3', fragment)
+        for mode in ('true', 'copy', 'sort', 'columns-move', 'columns-move-boundary',
+                     'columns-move-tail', 'columns-clear', 'columns-clear-lifetime',
+                     'columns-clear-metadata', 'columns-delete', 'columns-delete-string',
+                     'format-numbers', 'format-dates', 'json-family', 'file-io-family',
+                     'xml-workflow-family', 'binary-stream-family', 'regex-family',
+                     'zip-family', 'data-io-family'):
+            prefix = 'tree-' if mode in ('copy', 'sort') or mode.startswith('columns-') else ''
+            expected = '--tree-suite' if mode == 'true' else '--' + prefix + mode + '-suite'
+            result = subprocess.run(['bash', '-eu', '-c',
+                'tree_suite="$1"\n' + fragment + '\nprintf "%s" "$tree_flag"', 'dispatch', mode],
+                capture_output=True, timeout=5)
+            self.assertEqual((result.returncode, result.stdout, result.stderr),
+                             (0, expected.encode('ascii'), b''))
+
     def test_complete_rectangular_budgets_and_workflow(self):
         s=spec();stage=budget.stage_majorant();stage.update(schema=s.stage_schema,profile=PROFILE,failed_case=s.case,input_sha256=dict.fromkeys(tree.input_files(profile=PROFILE),budget.H));stage['cases'][0]['name']=s.case
         native=budget.native_majorant();native['stage3']=stage

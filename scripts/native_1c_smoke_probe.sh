@@ -464,6 +464,7 @@ if [ "$bootstrap" = true ]; then
         if [ "$tree_suite" = file-io-family ]; then tree_flag=--file-io-family-suite; fi
         if [ "$tree_suite" = xml-workflow-family ]; then tree_flag=--xml-workflow-family-suite; fi
         if [ "$tree_suite" = zip-family ]; then tree_flag=--zip-family-suite; fi
+        if [ "$tree_suite" = data-io-family ]; then tree_flag=--data-io-family-suite; fi
         if [ "$tree_suite" = regex-family ]; then tree_flag=--regex-family-suite; fi
         if [ "$tree_suite" = binary-stream-family ]; then tree_flag=--binary-stream-family-suite; fi
         python3 /smoke/bootstrap/run_stage.py "$tree_flag" --invocation-nonce "$invocation_nonce" \
