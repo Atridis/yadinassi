@@ -424,8 +424,24 @@ class BSLZipFileWriter(_FileMethods):
         self._open(); filename = _text(filename)
         mode = _enum(mode, BSLZIPStorePathMode.FLAT)
         recursive = _enum(recursive, BSLZIPSubDirProcessingMode.NO)
-        pattern_path = _host_path(filename)
-        base, pattern = pattern_path.parent, pattern_path.name
+        filename = _stream_path(filename)
+        if len(filename) > MAX_NAME: raise ValueError('ZIP: слишком длинный путь')
+        pattern_path = Path(filename)
+        pattern = pattern_path.name
+        if '*' in filename or '?' in filename:
+            # A mask is not a filesystem leaf: Windows rejects lstat('*.bin').
+            # Only the bounded filename component may contain wildcards; the
+            # actual parent and every enumerated match retain _host_path checks.
+            if (any(c in str(pattern_path.parent) for c in '*?')
+                    or '..' in filename.replace('\\', '/').split('/')
+                    or '\\' in pattern):
+                raise ValueError('ZIP: маска допустима только в имени файла')
+            _name(pattern.replace('*', 'x').replace('?', 'x'))
+            base = _host_path(str(pattern_path.parent))
+            pattern_path = base / pattern
+        else:
+            pattern_path = _host_path(filename)
+            base = pattern_path.parent
         matches = []
         if '*' not in pattern and '?' not in pattern:
             if not pattern_path.exists(): raise ValueError('ZIP: исходный файл не найден')
