@@ -6054,6 +6054,23 @@ No unrelated runtime refactor. Rare/external/async corners are marked `!todo`.
 One source-bound native40 batch is prepared; native parity remains pending.
 [Exact supported scope and safety](docs/binary-stream-family.md).
 
+## Ограниченный regex-поиск, результаты и замена
+
+Добавлен цельный workflow: `СтрПодобнаПоРегулярномуВыражению`,
+`СтрНайтиПоРегулярномуВыражению`, `СтрНайтиВсеПоРегулярномуВыражению`,
+`СтрЗаменитьПоРегулярномуВыражению` и английские aliases. Результат/группа readonly
+с `Значение`, `Длина`, `НачальнаяПозиция`; `ПолучитьГруппы()` возвращает отдельный
+массив. Используются существующие `НаправлениеПоиска` и Array, не новые адаптеры.
+
+Чистый Python parser/iterative VM ограничивает всю операцию (включая capture copies,
+class checks, перебор начал поиска и output growth), а не только длину входа.
+Nullable loops имеют progress guard. Пределы и явно отклоняемые расширения описаны
+в [regex-family](docs/regex-family.md). Нет stdlib `re` fallback/compiled wheel/
+новой worker-process архитектуры; source-bound manifest растёт ровно на3модуля.
+
+**Native calibration pending:** 40 коротких string-only сценариев подготовлены,
+но локальные наблюдения не объявлены native evidence. Unicode matching units,
+UTF-16 позиции, группы, обратный поиск, zero-width и `$0/$n` требуют замера.
 ## ZIP archive ordinary workflow (local implementation; native calibration pending)
 
 `ZipFileReader/ZipFileWriter`, entries/collection, file and memory archive creation,

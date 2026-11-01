@@ -21,6 +21,7 @@ from typing import Callable
 
 from .syntax import ast
 from .numeric import bits, elementary, numbers
+from . import regex_functions
 from . import clocks, date_time_conversions, dates, formatting, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
@@ -213,7 +214,7 @@ class Interpreter:
                                "ValueToStringInternal")
         self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
-        for name, function, alias in (*strings.BUILTINS, *formatting.BUILTINS, *numbers.BUILTINS,
+        for name, function, alias in (*regex_functions.BUILTINS, *strings.BUILTINS, *formatting.BUILTINS, *numbers.BUILTINS,
                                       *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS,
                                       *dates.BUILTINS, *clocks.BUILTINS,
                                       *date_time_conversions.BUILTINS):
@@ -833,6 +834,7 @@ class Interpreter:
         if table_optional is None and (registered is None or
                 (registered.function is not fill_property_values
                  and registered.function is not strings.str_find
+                 and not any(registered.function is fn for fn in regex_functions.FUNCTIONS)
                  and not any(registered.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)))):
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
@@ -853,6 +855,12 @@ class Interpreter:
             if not 2 <= len(node.arguments) <= 4:
                 raise TypeError("ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов")
             self.reject_host_omissions(node.arguments[:2])
+        elif any(function.function is fn for fn in regex_functions.FUNCTIONS):
+            required = 3 if function.function is regex_functions.str_replace else 2
+            maximum = 7 if function.function is regex_functions.str_find else 5 if required == 3 else 4
+            if not required <= len(node.arguments) <= maximum:
+                raise TypeError("Регулярное выражение: неверное количество аргументов")
+            self.reject_host_omissions(node.arguments[:required])
         elif function.function is strings.str_find:
             if not 2 <= len(node.arguments) <= 5:
                 raise TypeError("СтрНайти ожидает от 2 до 5 аргументов")
@@ -881,7 +889,8 @@ class Interpreter:
         values = []
         for index, argument in enumerate(node.arguments):
             if isinstance(argument, ast.OmittedArgument):
-                value = (strings._OMITTED if function.function is strings.str_find else
+                value = (strings._OMITTED if (function.function is strings.str_find or
+                         any(function.function is fn for fn in regex_functions.FUNCTIONS)) else
                          defaults[index] if defaults is not None else None)
             elif index in function.reference_parameters:
                 value = (yield from self.argument(argument))

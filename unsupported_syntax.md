@@ -336,6 +336,15 @@ cross-process file-sharing/locking semantics, exact OS errors and sparse-file
 behavior are deferred with `!todo`. Internal serialization is explicitly rejected.
 See [binary stream scope](docs/binary-stream-family.md).
 
+## Ограничения regex-семейства
+
+Полная совместимость PCRE/нативного regex-движка не заявлена. `!todo`: обратные
+ссылки в шаблоне, lookaround, именованные группы, inline flags, Unicode property
+escapes, atomic/possessive/conditional/recursive расширения и XML/XDTO-сериализация
+результатов явно не поддерживаются. Они не передаются неограниченному Python `re`.
+Превышение finite-budget — catchable error без частичного результата. Native40
+для ordinary Unicode/UTF-16, групп, направления и `$`-замен пока ожидается;
+см. [точные пределы](docs/regex-family.md).
 ## ZIP family boundaries
 
 The [new ordinary ZIP family](docs/zip-family.md) does not support passwords or

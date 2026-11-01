@@ -18,6 +18,30 @@ env:
   PYTHONIOENCODING: utf-8
 
 jobs:
+  regex-python310:
+    name: Python 3.10 regex compatibility
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: tests:scripts
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+      - name: Install pinned runtime dependencies
+        run: python -m pip install -e . wcwidth==0.8.2
+      - name: Verify actual CPython 3.10
+        run: python -c "import sys; print(sys.version); raise SystemExit(0 if sys.implementation.name == 'cpython' and sys.version_info[:2] == (3, 10) else 1)"
+      - name: Test bounded regex workflows
+        run: python -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v
+      - name: Test bounded regex workflows optimized
+        run: python -O -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v
+
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -68,7 +92,7 @@ jobs:
   release:
     name: Publish tagged release
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
-    needs: build
+    needs: [build, regex-python310]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

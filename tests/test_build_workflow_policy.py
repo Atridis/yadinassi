@@ -146,6 +146,10 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
     def test_launcher_unit_binary_and_artifact_steps_remain(self):
         commands = re.findall(r'^        run: (.+)$', self.source, re.M)
         self.assertEqual(commands, [
+            'python -m pip install -e . wcwidth==0.8.2',
+            'python -c "import sys; print(sys.version); raise SystemExit(0 if sys.implementation.name == \'cpython\' and sys.version_info[:2] == (3, 10) else 1)"',
+            'python -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v',
+            'python -O -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v',
             'python -m pip install -e ".[build]" wcwidth==0.8.2',
             'python integrational_tests/check_launcher.py',
             'python -m unittest discover -s tests -v',
@@ -159,7 +163,7 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
 
     def test_release_still_needs_successful_matrix_and_v_tag_push(self):
         release = self.source.split('\n  release:\n', 1)[1]
-        self.assertIn("    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'\n    needs: build\n", release)
+        self.assertIn("    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'\n    needs: [build, regex-python310]\n", release)
         self.assertIn('    permissions:\n      contents: write\n', release)
         self.assertIn('gh release create "$RELEASE_TAG" --verify-tag', release)
         self.assertIn('gh release upload "$RELEASE_TAG" artifacts/* --clobber', release)
