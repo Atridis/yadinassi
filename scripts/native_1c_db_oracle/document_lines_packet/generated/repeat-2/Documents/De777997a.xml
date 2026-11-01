@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20">
+<Document uuid="e529a8a7-d68a-46e3-96db-08aa0e5851a4"><InternalInfo>
+<xr:GeneratedType name="DocumentObject.De777997a" category="Object"><xr:TypeId>61bbd681-6db1-4230-8263-7a73928f2207</xr:TypeId><xr:ValueId>9e6f8762-90ef-4c31-b2a0-cdc5cf2f3684</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="DocumentRef.De777997a" category="Ref"><xr:TypeId>58087fa9-707c-463c-a5f6-e29c72577e6c</xr:TypeId><xr:ValueId>8cb3c3f1-9748-4a37-9b4a-021e47c2d6ba</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="DocumentSelection.De777997a" category="Selection"><xr:TypeId>b462079d-786d-4f4d-9978-6316a36f8508</xr:TypeId><xr:ValueId>cbb59bd9-82ef-4ae8-96a4-c8d7f6a9ae8a</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="DocumentList.De777997a" category="List"><xr:TypeId>435c09d8-1fd2-417d-a2cf-c09d410b1bdb</xr:TypeId><xr:ValueId>7ba67e8c-a09e-41b3-85cd-036617f25c7d</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="DocumentManager.De777997a" category="Manager"><xr:TypeId>e9052e7c-4aee-4787-afbc-371b3ded9ac1</xr:TypeId><xr:ValueId>9e6f7f84-02db-40df-8668-7803ba998886</xr:ValueId></xr:GeneratedType>
+</InternalInfo><Properties><Name>De777997a</Name><Synonym></Synonym><Comment></Comment><UseStandardCommands>false</UseStandardCommands><Numerator></Numerator><NumberType>String</NumberType><NumberLength>8</NumberLength><NumberAllowedLength>Variable</NumberAllowedLength><NumberPeriodicity>Nonperiodical</NumberPeriodicity><CheckUnique>true</CheckUnique><Autonumbering>false</Autonumbering><StandardAttributes><xr:StandardAttribute name="Posted"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Ref"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="DeletionMark"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Date"><xr:LinkByType/><xr:FillChecking>ShowError</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute><xr:StandardAttribute name="Number"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute></StandardAttributes><Characteristics></Characteristics><BasedOn></BasedOn><InputByString></InputByString><CreateOnInput>DontUse</CreateOnInput><SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString><FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString><ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString><DefaultObjectForm></DefaultObjectForm><DefaultListForm></DefaultListForm><DefaultChoiceForm></DefaultChoiceForm><AuxiliaryObjectForm></AuxiliaryObjectForm><AuxiliaryListForm></AuxiliaryListForm><AuxiliaryChoiceForm></AuxiliaryChoiceForm><Posting>Allow</Posting><RealTimePosting>Deny</RealTimePosting><RegisterRecordsDeletion>AutoDeleteOff</RegisterRecordsDeletion><RegisterRecordsWritingOnPost>WriteSelected</RegisterRecordsWritingOnPost><SequenceFilling>AutoFillOff</SequenceFilling><RegisterRecords></RegisterRecords><PostInPrivilegedMode>false</PostInPrivilegedMode><UnpostInPrivilegedMode>false</UnpostInPrivilegedMode><IncludeHelpInContents>false</IncludeHelpInContents><DataLockFields></DataLockFields><DataLockControlMode>Managed</DataLockControlMode><FullTextSearch>DontUse</FullTextSearch><ObjectPresentation></ObjectPresentation><ExtendedObjectPresentation></ExtendedObjectPresentation><ListPresentation></ListPresentation><ExtendedListPresentation></ExtendedListPresentation><Explanation></Explanation><ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput><DataHistory>DontUse</DataHistory><UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite><ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing></Properties><ChildObjects>
+<Attribute uuid="0a9acf3f-ff31-4c3e-a417-9b12f9e0fb33"><Properties>
+<Name>A3d883acc</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>cfg:CatalogRef.Cb27de61e</v8:Type></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:nil="true"/>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute>
+<Attribute uuid="6c07253d-1c05-4fb5-9951-8cbd073977ef"><Properties>
+<Name>A0df9bb43</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions></v8:DateQualifiers></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:nil="true"/>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute>
+<Attribute uuid="5c95dc76-625e-4e60-8997-1e4bcd4898d7"><Properties>
+<Name>A88ab03bf</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:boolean</v8:Type></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:nil="true"/>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute>
+<Attribute uuid="dd089e95-a5c3-4298-b127-d2bdf0f65634"><Properties>
+<Name>Addc26edd</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>9</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:type="xs:decimal">0</FillValue>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute>
+<Attribute uuid="dfb56aba-2ffc-4255-a0cb-571f41da580f"><Properties>
+<Name>A226daa8e</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>32</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:type="xs:string"></FillValue>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute>
+<TabularSection uuid="2d02658c-4e2b-4a75-8545-64c8bde42bbe"><InternalInfo><xr:GeneratedType name="DocumentTabularSection.De777997a.Items" category="TabularSection"><xr:TypeId>bf7b6938-5f24-494a-8535-8b2d542dad08</xr:TypeId><xr:ValueId>e39ec9e1-896f-4071-86ec-c96344628580</xr:ValueId></xr:GeneratedType><xr:GeneratedType name="DocumentTabularSectionRow.De777997a.Items" category="TabularSectionRow"><xr:TypeId>e3ebe334-24f3-43ee-ae85-2629c5411c51</xr:TypeId><xr:ValueId>8c743adc-ab83-43bf-a15e-2258edbe858b</xr:ValueId></xr:GeneratedType></InternalInfo><Properties><Name>Items</Name><Synonym/><Comment/><ToolTip/><FillChecking>DontCheck</FillChecking><StandardAttributes/><LineNumberLength>5</LineNumberLength></Properties><ChildObjects><Attribute uuid="e700cb99-0615-4e7a-8421-12b6a378d46e"><Properties>
+<Name>Note</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>32</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:type="xs:string"></FillValue>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute><Attribute uuid="67559764-9a3c-47e6-9b8c-2685ee8d4d02"><Properties>
+<Name>Amount</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>9</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:type="xs:decimal">0</FillValue>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute><Attribute uuid="294ba2c2-1f33-47d1-9bec-1dda5bda9777"><Properties>
+<Name>Price</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>9</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:type="xs:decimal">0</FillValue>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute><Attribute uuid="1e00701c-0421-4205-8a90-154547208042"><Properties>
+<Name>Quantity</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>9</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:type="xs:decimal">0</FillValue>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute><Attribute uuid="6a38699c-500b-42fb-a71d-29975a805d9a"><Properties>
+<Name>Product</Name>
+<Synonym/>
+<Comment/>
+<Type><v8:Type>cfg:CatalogRef.Cb27de61e</v8:Type></Type>
+<PasswordMode>false</PasswordMode>
+<Format/>
+<EditFormat/>
+<ToolTip/>
+<MarkNegatives>false</MarkNegatives>
+<Mask/>
+<MultiLine>false</MultiLine>
+<ExtendedEdit>false</ExtendedEdit>
+<MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillFromFillingValue>false</FillFromFillingValue>
+<FillValue xsi:nil="true"/>
+<FillChecking>DontCheck</FillChecking>
+<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/>
+<ChoiceParameters/>
+<QuickChoice>Auto</QuickChoice>
+<CreateOnInput>DontUse</CreateOnInput>
+<ChoiceForm/>
+<LinkByType/>
+<ChoiceHistoryOnInput>DontUse</ChoiceHistoryOnInput>
+
+<Indexing>DontIndex</Indexing>
+<FullTextSearch>DontUse</FullTextSearch>
+<DataHistory>DontUse</DataHistory>
+</Properties></Attribute></ChildObjects></TabularSection></ChildObjects></Document></MetaDataObject>

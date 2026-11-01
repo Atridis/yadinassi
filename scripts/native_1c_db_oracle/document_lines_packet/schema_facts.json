@@ -1,0 +1,27 @@
+{
+  "source_sha256": "8569cd5d718b4009e09c2fa43a21e0bac6811d78018da0e8ec234b2a38101827",
+  "section_properties": [
+    "Name",
+    "Synonym",
+    "Comment",
+    "ObjectBelonging",
+    "ExtendedConfigurationObject",
+    "ToolTip",
+    "FillChecking",
+    "StandardAttributes",
+    "Use",
+    "LineNumberLength"
+  ],
+  "columns_cardinality": [
+    0,
+    "unbounded"
+  ],
+  "generated_categories": [
+    "TabularSection",
+    "TabularSectionRow"
+  ],
+  "generated_identity_members": [
+    "TypeId",
+    "ValueId"
+  ]
+}
