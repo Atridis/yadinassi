@@ -1,0 +1,574 @@
+{
+  "profile": {
+    "register": "I27c9f847",
+    "catalog": "C50827504",
+    "metadata_uuid": "a1d7538e-4a35-4fcf-9aba-a3f83cdf4895",
+    "periodicity": "Nonperiodical",
+    "write_mode": "Independent",
+    "columns": [
+      "Product",
+      "Variant",
+      "Price",
+      "Available",
+      "ValidUntil",
+      "Note"
+    ],
+    "catalog_schema": {
+      "status": "schema-backed-Designer-input-not-native-applied",
+      "generated_ids": {
+        "C27c9f847": {
+          "CATALOG_UUID": "a1d7538e-4a35-4fcf-9aba-a3f83cdf4895",
+          "OBJECT_TYPE_UUID": "3afa9e89-8509-40c0-b5ae-c0c579e990c7",
+          "OBJECT_VALUE_UUID": "c6f6f2f0-9b63-4a9f-9cca-95aacc1d6f99",
+          "REF_TYPE_UUID": "145bb376-d226-4a22-8d49-12edfe1ab3c2",
+          "REF_VALUE_UUID": "aa0a67f0-5beb-4171-8db4-6accf01aeebb",
+          "SELECTION_TYPE_UUID": "714aac53-1090-41b6-b85f-f1fc5ae543a6",
+          "SELECTION_VALUE_UUID": "4047de01-754f-4e1b-8a9b-bbdcd8c97588",
+          "LIST_TYPE_UUID": "95141076-0e30-443b-aa58-e0dc6bc52870",
+          "LIST_VALUE_UUID": "c8855dd4-aa9b-4b20-8c38-e89ee1355e39",
+          "MANAGER_TYPE_UUID": "8679a926-9430-4581-972b-55ddd0f4442a",
+          "MANAGER_VALUE_UUID": "2c62e810-f3cd-4900-b2fd-964c6219ff79"
+        },
+        "C50827504": {
+          "CATALOG_UUID": "1f49150f-e55f-4aca-b04b-319ee7afa299",
+          "OBJECT_TYPE_UUID": "c9c82b6a-db13-4e1d-8139-b8c292f55a78",
+          "OBJECT_VALUE_UUID": "19757896-fc23-4d24-bdcd-625239eb905b",
+          "REF_TYPE_UUID": "22cdcdbc-a86e-428b-afb8-c7eeabd67960",
+          "REF_VALUE_UUID": "2e7da9e0-9e04-419f-84de-95b9af42c2a6",
+          "SELECTION_TYPE_UUID": "bbc25ace-94c8-4f0d-bc42-332681187670",
+          "SELECTION_VALUE_UUID": "12f1014f-a37f-450a-8534-5b720294b2a6",
+          "LIST_TYPE_UUID": "88d7308f-b3a3-43c3-803d-78f7cc786138",
+          "LIST_VALUE_UUID": "070a1a00-dc66-45f4-a0c8-86b38ca45418",
+          "MANAGER_TYPE_UUID": "a5eee25a-3907-4636-8e59-61546d0fb48f",
+          "MANAGER_VALUE_UUID": "f590d5ef-b80d-41ac-9189-b3a175dcd0e1"
+        }
+      },
+      "catalogs": [
+        {
+          "name": "C27c9f847",
+          "metadata_uuid": "a1d7538e-4a35-4fcf-9aba-a3f83cdf4895",
+          "code_length": 2,
+          "code_type": "String",
+          "description_length": 8,
+          "hierarchical": false,
+          "attributes": [
+            {
+              "name": "A219c3aef",
+              "metadata_uuid": "57a913bb-8cad-4f6e-b898-0904a5ec126b",
+              "type": "String",
+              "length": 32,
+              "allowed_length": "Variable"
+            },
+            {
+              "name": "A9e3a1063",
+              "metadata_uuid": "a7e78386-62cc-4fa0-a6ff-99886bbc5db0",
+              "type": "Number",
+              "digits": 9,
+              "fraction_digits": 2,
+              "allowed_sign": "Any"
+            },
+            {
+              "name": "Aba79120c",
+              "metadata_uuid": "394cbffd-e017-498c-a28c-14dbe165979f",
+              "type": "Boolean"
+            },
+            {
+              "name": "Ac6bc885d",
+              "metadata_uuid": "778631e4-7efd-4032-aada-26e1bb8e3505",
+              "type": "Date",
+              "date_fractions": "DateTime"
+            },
+            {
+              "name": "A37b12d54",
+              "metadata_uuid": "19e8dfe5-c04e-47d9-b51c-9d5ffb10f397",
+              "type": "SingleCatalogRef",
+              "target_name": "C50827504",
+              "target_metadata_uuid": "1f49150f-e55f-4aca-b04b-319ee7afa299",
+              "target_requested_ref_type_uuid": "22cdcdbc-a86e-428b-afb8-c7eeabd67960"
+            }
+          ]
+        },
+        {
+          "name": "C50827504",
+          "metadata_uuid": "1f49150f-e55f-4aca-b04b-319ee7afa299",
+          "code_length": 2,
+          "code_type": "String",
+          "description_length": 8,
+          "hierarchical": false,
+          "attributes": []
+        }
+      ],
+      "pending": [
+        "schema-defined Designer inputs require native apply and saved-identity redump",
+        "saved-identity applied configuration and redump",
+        "CONFIG descriptors and target typeUUID-to-metadataUUID mapping",
+        "DBNames and physical declarations/slot bytes on same frozen postimage"
+      ]
+    },
+    "ids": {
+      "Available": "a52dcaa5-3141-46db-b414-caa8e4e4a4e4",
+      "List.TypeId": "49d49d5a-4556-483d-a480-a642a4aa15bb",
+      "List.ValueId": "cee31580-1e45-46df-b031-2264dfbf8d4e",
+      "Manager.TypeId": "dea59f2c-795c-4e2a-a93f-5a39ced17ae4",
+      "Manager.ValueId": "d77b9038-ed50-41fd-a5ba-f6b2324b11ff",
+      "Note": "5aa63103-d76d-4fdb-8c03-707bfe49fa79",
+      "Price": "9e762c11-0541-408f-8234-f7e685a71036",
+      "Product": "9cc16043-8e62-4c51-84f6-dc362e47c7ab",
+      "Record.TypeId": "2111aced-b486-4612-9397-f83b3efd2674",
+      "Record.ValueId": "2487787b-e14b-4402-809a-559f125b038b",
+      "RecordKey.TypeId": "0e1808a0-3ad7-4f14-9b71-97939e8c12eb",
+      "RecordKey.ValueId": "3694d316-f504-4bae-97d9-44cfb3bf03e5",
+      "RecordManager.TypeId": "3b715295-741c-4ad7-95dd-66301e1aba96",
+      "RecordManager.ValueId": "14953268-eaa6-4f58-babd-aae4af1f32e7",
+      "RecordSet.TypeId": "d3fad8f5-f72e-4963-9390-b48b98bee050",
+      "RecordSet.ValueId": "8ccda8d8-b780-494b-bd78-1e418fd9f29f",
+      "Selection.TypeId": "ec04d99c-7596-42c3-a00e-827851ad41e1",
+      "Selection.ValueId": "dbc807c6-8b75-4f41-b28d-f07ea4ae0aec",
+      "ValidUntil": "71cacda7-8dc6-49a8-8ff2-6f25b095f6b8",
+      "Variant": "c190dcf0-7128-4653-8be2-23b5e4a333c3",
+      "product2": "7b2f71d1-55b1-4812-9c0f-291a91b89f73"
+    },
+    "status": "v2-prospective-not-native-applied"
+  },
+  "names": [
+    "C27c9f847",
+    "C50827504"
+  ],
+  "metadata_ids": [
+    "a1d7538e-4a35-4fcf-9aba-a3f83cdf4895",
+    "1f49150f-e55f-4aca-b04b-319ee7afa299"
+  ],
+  "record_ids": [
+    "b1605ed5-bcdf-4193-911b-004a8bd3af18",
+    "da1a3f46-b75f-42e6-9e85-2dde635430a9"
+  ],
+  "product_rows": [
+    "bcfe1d82-34a3-429a-a12b-e7b4411fc39f",
+    "7a48e5c5-97a8-4ca0-b537-e151ba338d23"
+  ],
+  "attribute_names": [
+    "A219c3aef",
+    "A9e3a1063",
+    "Aba79120c",
+    "Ac6bc885d",
+    "A37b12d54"
+  ],
+  "attribute_ids": [
+    "57a913bb-8cad-4f6e-b898-0904a5ec126b",
+    "a7e78386-62cc-4fa0-a6ff-99886bbc5db0",
+    "394cbffd-e017-498c-a28c-14dbe165979f",
+    "778631e4-7efd-4032-aada-26e1bb8e3505",
+    "19e8dfe5-c04e-47d9-b51c-9d5ffb10f397"
+  ],
+  "order": [
+    "text",
+    "number",
+    "boolean",
+    "datetime",
+    "reference"
+  ],
+  "cases": {
+    "get": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.C50827504.EmptyRef().Metadata().Name"
+      ],
+      [
+        "a1.price",
+        "XMLString(G1.Price)"
+      ],
+      [
+        "a1.available",
+        "G1.Available"
+      ],
+      [
+        "a1.date",
+        "XMLString(G1.ValidUntil)"
+      ],
+      [
+        "a2.price",
+        "XMLString(G2.Price)"
+      ],
+      [
+        "a2.available",
+        "G2.Available"
+      ],
+      [
+        "a2.date",
+        "XMLString(G2.ValidUntil)"
+      ],
+      [
+        "b1.price",
+        "XMLString(G3.Price)"
+      ],
+      [
+        "b1.available",
+        "G3.Available"
+      ],
+      [
+        "b1.date",
+        "XMLString(G3.ValidUntil)"
+      ],
+      [
+        "missing.price",
+        "XMLString(GM.Price)"
+      ],
+      [
+        "missing.available",
+        "GM.Available"
+      ],
+      [
+        "missing.date",
+        "XMLString(GM.ValidUntil)"
+      ],
+      [
+        "type",
+        "String(TypeOf(G1))"
+      ],
+      [
+        "count",
+        "G1.Count()"
+      ],
+      [
+        "has.price",
+        "G1.Property(\"Price\")"
+      ],
+      [
+        "has.product",
+        "G1.Property(\"Product\")"
+      ],
+      [
+        "has.variant",
+        "G1.Property(\"Variant\")"
+      ],
+      [
+        "has.note",
+        "G1.Property(\"Note\")"
+      ],
+      [
+        "key.order",
+        "InformationRegisters.I27c9f847.Get(New Structure(\"Variant,Product\",1,Catalogs.C50827504.GetRef(New UUID(\"b1605ed5-bcdf-4193-911b-004a8bd3af18\")))).Price = G1.Price"
+      ],
+      [
+        "missing.variant",
+        "XMLString(GV.Price)"
+      ],
+      [
+        "missing.type",
+        "String(TypeOf(GM))"
+      ],
+      [
+        "missing.count",
+        "GM.Count()"
+      ]
+    ],
+    "cursor": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.C50827504.EmptyRef().Metadata().Name"
+      ],
+      [
+        "0.next",
+        "S.Next()"
+      ],
+      [
+        "0.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "0.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "0.price",
+        "XMLString(S.Price)"
+      ],
+      [
+        "0.available",
+        "S.Available"
+      ],
+      [
+        "0.date",
+        "XMLString(S.ValidUntil)"
+      ],
+      [
+        "0.note",
+        "S.Note"
+      ],
+      [
+        "1.next",
+        "S.Next()"
+      ],
+      [
+        "1.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "1.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "1.price",
+        "XMLString(S.Price)"
+      ],
+      [
+        "1.available",
+        "S.Available"
+      ],
+      [
+        "1.date",
+        "XMLString(S.ValidUntil)"
+      ],
+      [
+        "1.note",
+        "S.Note"
+      ],
+      [
+        "2.next",
+        "S.Next()"
+      ],
+      [
+        "2.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "2.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "2.price",
+        "XMLString(S.Price)"
+      ],
+      [
+        "2.available",
+        "S.Available"
+      ],
+      [
+        "2.date",
+        "XMLString(S.ValidUntil)"
+      ],
+      [
+        "2.note",
+        "S.Note"
+      ],
+      [
+        "exhaust",
+        "S.Next()"
+      ]
+    ],
+    "filter": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.C50827504.EmptyRef().Metadata().Name"
+      ],
+      [
+        "type",
+        "String(TypeOf(F))"
+      ],
+      [
+        "before",
+        "F.Variant"
+      ],
+      [
+        "0.next",
+        "F.Next()"
+      ],
+      [
+        "0.variant",
+        "XMLString(F.Variant)"
+      ],
+      [
+        "0.price",
+        "XMLString(F.Price)"
+      ],
+      [
+        "0.target",
+        "F.Product.Description"
+      ],
+      [
+        "1.next",
+        "F.Next()"
+      ],
+      [
+        "1.variant",
+        "XMLString(F.Variant)"
+      ],
+      [
+        "1.price",
+        "XMLString(F.Price)"
+      ],
+      [
+        "1.target",
+        "F.Product.Description"
+      ],
+      [
+        "exhaust",
+        "F.Next()"
+      ],
+      [
+        "retained",
+        "F.Variant"
+      ],
+      [
+        "restart",
+        "F.Next()"
+      ],
+      [
+        "missing",
+        "FM.Next()"
+      ],
+      [
+        "desc1",
+        "D.Next()"
+      ],
+      [
+        "desc1.variant",
+        "XMLString(D.Variant)"
+      ],
+      [
+        "desc2",
+        "D.Next()"
+      ],
+      [
+        "desc2.variant",
+        "XMLString(D.Variant)"
+      ],
+      [
+        "desc.end",
+        "D.Next()"
+      ],
+      [
+        "pad21",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ],
+      [
+        "pad22",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ],
+      [
+        "pad23",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ]
+    ],
+    "types": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.C50827504.EmptyRef().Metadata().Name"
+      ],
+      [
+        "global",
+        "String(TypeOf(InformationRegisters))"
+      ],
+      [
+        "manager",
+        "String(TypeOf(InformationRegisters.I27c9f847))"
+      ],
+      [
+        "selection",
+        "String(TypeOf(S))"
+      ],
+      [
+        "before",
+        "XMLString(S.Price)"
+      ],
+      [
+        "next",
+        "S.Next()"
+      ],
+      [
+        "Product.type",
+        "String(TypeOf(S.Product))"
+      ],
+      [
+        "Variant.type",
+        "String(TypeOf(S.Variant))"
+      ],
+      [
+        "Price.type",
+        "String(TypeOf(S.Price))"
+      ],
+      [
+        "Available.type",
+        "String(TypeOf(S.Available))"
+      ],
+      [
+        "ValidUntil.type",
+        "String(TypeOf(S.ValidUntil))"
+      ],
+      [
+        "Note.type",
+        "String(TypeOf(S.Note))"
+      ],
+      [
+        "target.type",
+        "TypeOf(S.Product) = Type(\"CatalogRef.C50827504\")"
+      ],
+      [
+        "target.description",
+        "S.Product.Description"
+      ],
+      [
+        "selection.identity",
+        "TypeOf(S) = Type(\"InformationRegisterSelection.I27c9f847\")"
+      ],
+      [
+        "partial.key",
+        "InformationRegisters.I27c9f847.Get(New Structure(\"Product\",Catalogs.C50827504.GetRef(New UUID(\"b1605ed5-bcdf-4193-911b-004a8bd3af18\")))) = Undefined"
+      ],
+      [
+        "next2",
+        "S.Next()"
+      ],
+      [
+        "next3",
+        "S.Next()"
+      ],
+      [
+        "exhaust",
+        "S.Next()"
+      ],
+      [
+        "retained",
+        "XMLString(S.Price)"
+      ],
+      [
+        "restart",
+        "S.Next()"
+      ],
+      [
+        "pad22",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ],
+      [
+        "pad23",
+        "Metadata.InformationRegisters.I27c9f847.Name"
+      ]
+    ]
+  },
+  "files": {
+    "setup-filled.bsl": "f971db7beb83a30eab48f50ab97d0f62fc25aeed66b99bd39954c80f45465c32",
+    "cursor.bsl": "f3e2069f81f75799083d88a9a899a81c4e039a5e3d82b6ebed7cf28351bcda00",
+    "get.bsl": "590cbb2b0718c9d79f6650a4047464034cfbb1d56f4bd29ed96f335a49e65e2c",
+    "setup-empty.bsl": "c1b57b88d0bf27caf71dfd699d59daa4d13920bfbf2e8d534d92b398b8bb649d",
+    "types.bsl": "d5ce74e25ba14ac60cef9aeec4c3bac3e3f1daf82cacda6ad68a7affa9cfb596",
+    "filter.bsl": "360fe99dab604f945c9f52c1b4c657489766a2bb10b007e46c26abd5205ab3a8",
+    "Catalogs/C50827504.xml": "e22240ce5489051a07d89f5626b78e0fbdbef5b620b2bb162b3b527e7ca6a153",
+    "InformationRegisters/I27c9f847.xml": "c0c3b22ab9e5214b3eff806cac05f077c4e2473f155deb7218b7f6d586c30349"
+  }
+}

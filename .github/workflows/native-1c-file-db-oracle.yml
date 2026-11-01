@@ -25,7 +25,7 @@ jobs:
       - name: Validate owner, repository, reviewed push and revision without checkout
         id: admission
         env:
-          NATIVE_DB_ROUTE: document-lines-v1
+          NATIVE_DB_ROUTE: information-register-read-v2
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         shell: bash
         run: |
@@ -143,7 +143,7 @@ jobs:
           # END NATIVE DB ORACLE CI ADMISSION
           # BEGIN NATIVE DB ORACLE ROUTE ADMISSION
           def admitted_route(value):
-              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1", "catalog-zero-code-rows-v1", "metadata-catalog-applied-view-v1", "metadata-catalog-public-runtime-v1", "catalog-read-batch-v1", "linked-catalog-cards-v1", "document-read-v1", "document-lines-v1"):
+              if value not in ("catalog-reference-identity-v1", "catalog-reference-codec-v1", "catalog-reference-rows-v1", "catalog-description-measurement-v1", "catalog-description-rows-v1", "catalog-params-slot-measurement-v1", "catalog-numeric-code-measurement-v1", "catalog-numeric-code-rows-v1", "catalog-zero-code-measurement-v1", "catalog-zero-code-rows-v1", "metadata-catalog-applied-view-v1", "metadata-catalog-public-runtime-v1", "catalog-read-batch-v1", "linked-catalog-cards-v1", "document-read-v1", "document-lines-v1", "information-register-read-v2"):
                   raise PolicyError("route_not_approved")
               return value
           # END NATIVE DB ORACLE ROUTE ADMISSION
@@ -721,7 +721,7 @@ jobs:
     name: Native 1C batched Catalog read scenario
     needs: eligibility
     if: >-
-      (needs.eligibility.outputs.route == 'catalog-read-batch-v1' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' || needs.eligibility.outputs.route == 'document-read-v1' || needs.eligibility.outputs.route == 'document-lines-v1') &&
+      (needs.eligibility.outputs.route == 'catalog-read-batch-v1' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' || needs.eligibility.outputs.route == 'document-read-v1' || needs.eligibility.outputs.route == 'document-lines-v1' || needs.eligibility.outputs.route == 'information-register-read-v2') &&
       needs.eligibility.result == 'success' &&
       github.repository == 'Atridis/yadinassi' &&
       github.repository_id == '359770628' &&
@@ -776,6 +776,7 @@ jobs:
             linked-catalog-cards-v1) python3 scripts/native_1c_linked_catalog_oracle.py --run --ci-report ;;
             document-read-v1) python3 scripts/native_1c_document_read_oracle.py --run --ci-report ;;
             document-lines-v1) python3 scripts/native_1c_document_lines_oracle.py --run --ci-report ;;
+            information-register-read-v2) python3 scripts/native_1c_information_register_oracle.py --run --ci-report ;;
             *) exit 1 ;;
           esac
       - name: Require validated report readiness on native success
@@ -791,8 +792,8 @@ jobs:
         if: always() && steps.native.outputs.report_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-1c-${{ needs.eligibility.outputs.route == 'document-lines-v1' && 'document-lines' || needs.eligibility.outputs.route == 'document-read-v1' && 'document-read' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' && 'linked-catalog' || 'catalog-read' }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ needs.eligibility.outputs.route == 'document-lines-v1' && 'native-document-lines/document-lines.json' || needs.eligibility.outputs.route == 'document-read-v1' && 'native-document-read/document-read.json' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' && 'native-linked-catalog/linked-card.json' || 'native-catalog-read/catalog-read.json' }}
+          name: native-1c-${{ needs.eligibility.outputs.route == 'information-register-read-v2' && 'information-register' || needs.eligibility.outputs.route == 'document-lines-v1' && 'document-lines' || needs.eligibility.outputs.route == 'document-read-v1' && 'document-read' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' && 'linked-catalog' || 'catalog-read' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ needs.eligibility.outputs.route == 'information-register-read-v2' && 'native-information-register/information-register.json' || needs.eligibility.outputs.route == 'document-lines-v1' && 'native-document-lines/document-lines.json' || needs.eligibility.outputs.route == 'document-read-v1' && 'native-document-read/document-read.json' || needs.eligibility.outputs.route == 'linked-catalog-cards-v1' && 'native-linked-catalog/linked-card.json' || 'native-catalog-read/catalog-read.json' }}
           if-no-files-found: error
           retention-days: 7
 
@@ -834,7 +835,7 @@ jobs:
                   passed = metadata == "success" and reference_a == reference_b == codec_a == codec_b == runtime == catalog_read == "skipped"
               elif route == "metadata-catalog-public-runtime-v1":
                   passed = runtime == "success" and reference_a == reference_b == codec_a == codec_b == metadata == catalog_read == "skipped"
-              elif route in ("catalog-read-batch-v1", "linked-catalog-cards-v1", "document-read-v1", "document-lines-v1"):
+              elif route in ("catalog-read-batch-v1", "linked-catalog-cards-v1", "document-read-v1", "document-lines-v1", "information-register-read-v2"):
                   passed = catalog_read == "success" and reference_a == reference_b == codec_a == codec_b == metadata == runtime == "skipped"
               else:
                   passed = False
