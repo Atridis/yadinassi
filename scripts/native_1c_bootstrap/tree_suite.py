@@ -371,6 +371,7 @@ def read_hashing_native_result(path, source_sha256):
                     if match is not None:
                         candidate = int(match[1])
                         if candidate <= contract.SOURCE_LINE_COUNT: line = candidate
+                    kind = contract.failure_projection(value['error'], value['messages'], kind)
                 else:
                     category = 'result_limit'
                     try: ''.join(value['messages']).encode('utf-8')

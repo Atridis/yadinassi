@@ -119,3 +119,21 @@ labels identifier/function/type/method/syntax/module/other from fixed phrases.
 The existing calibration field carries that enum (or null for older witnesses);
 this is a bounded hint, not raw error text or independent proof of the cause.
 Failure-only admission and all source/resource guards are unchanged.
+
+The second diagnostic (run41324060953, head74c9d39) returned `result_error`,
+kind`other`, no owned line. Summary ZIP SHA-256
+`9ba2f8538ec1340f8d6acf2185be04aa98db12438e0f9caafca20646d6c4b504`.
+The actual cause remains unknown. Do not infer unsupported DataHashing APIs.
+
+The next **local-only proposal, publication pending privacy review**, replaces
+unhelpful free-form inspection with a pure allowlist projection: at most64 token
+IDs, where0 means redacted, using only fixed public-source identifiers and fixed
+error vocabulary. No dictionary entry is learned from a run. Unknown values,
+quoted text, URI/path chunks and uncertain bracketed regions are redacted. A
+single exact public-source identifier in parentheses may be represented by its
+fixed ID. All emitted strings are schema/enum constants, never input text.
+The exact phase witness contains only message count0..42(or null), exact observer
+control1/control2 presence, and a case-record presence boolean; no raw messages.
+The complete projection is less than1KiB and remains source-bound and failed-only.
+Synthetic canary tests cover credentials/user/path/URI/quoted known identifiers,
+unknown fields/types, all fixed bounds and attempted success/payload admission.

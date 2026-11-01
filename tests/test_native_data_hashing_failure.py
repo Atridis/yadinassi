@@ -49,9 +49,11 @@ class HashingFailureTests(unittest.TestCase):
         for raw,category,line in cases:
             with self.subTest(category=category,line=line):
                 result=self.observed(raw)
-                self.assertEqual(result,dict(site='server',case=line,category=category,
-                    calibration='other' if category=='result_error' else None))
-                self.assertNotIn('private',json.dumps(result));self.assertNotIn('token',json.dumps(result))
+                self.assertEqual({k:v for k,v in result.items() if k!='calibration'},
+                    dict(site='server',case=line,category=category))
+                if category=='result_error': self.assertEqual(result['calibration']['kind'],'other')
+                else: self.assertIsNone(result['calibration'])
+                self.assertNotIn('private',json.dumps(result));self.assertNotIn('"token"',json.dumps(result))
 
     def test_secondary_inspection_bound_before_decode(self):
         raw=json.dumps({'messages':[],'error':'x'*contract.MAX_FAILURE_DIAGNOSTIC_BYTES}).encode()
@@ -75,7 +77,7 @@ class HashingFailureTests(unittest.TestCase):
                 ('unexpected error private', 'other'),
                 ('arbitrary private path/token', 'other')):
             value=self.observed(json.dumps(dict(messages=[],error=phrase)).encode())
-            self.assertEqual(value['calibration'],kind);self.assertIsNone(value['case'])
+            self.assertEqual(value['calibration']['kind'],kind);self.assertIsNone(value['case'])
             self.assertNotIn('private',json.dumps(value))
             host.validate_diagnostic(value,profile=PROFILE)
 
@@ -93,6 +95,61 @@ class HashingFailureTests(unittest.TestCase):
             with self.assertRaises(host.TreeError):host.validate_diagnostic(valid,profile=other)
         self.assertEqual(len((ROOT/'integrational_tests/measurements/data_hashing_family.bsl').read_text(encoding='utf-8').splitlines()),contract.SOURCE_LINE_COUNT)
 
+    def test_allowlist_projection_redacts_unknown_quoted_path_uri_regions(self):
+        canaries=('CANARY_OWNER_9381', 'CANARY_AUTH_918273', '/home/CANARY_OWNER_9381/DataHashing',
+                  r'C:\Users\CANARY_OWNER_9381\HashFunction',
+                  'https://CANARY_AUTH_918273.invalid/DataHashing',
+                  '"DataHashing CANARY_AUTH_918273"', "'HashFunction'", '`AppendFile`',
+                  '{CANARY_OWNER_9381 {inner} DataHashing}',
+                  '(CANARY_OWNER_9381 HashFunction)',
+                  '"https://x.invalid/private DataHashing"',
+                  'prefix"CANARY_AUTH_918273 HashFunction"',
+                  '« HashFunction CANARY_PRIVATE »', '“ HashFunction CANARY_PRIVATE ”',
+                  '‘ HashFunction CANARY_PRIVATE ’', '„ HashFunction CANARY_PRIVATE “',
+                  '‹ HashFunction CANARY_PRIVATE ›')
+        for text in canaries:
+            value=contract.failure_projection(text,[],'other')
+            self.assertTrue(all(item==0 for item in value['tokens']),text)
+            encoded=json.dumps(value)
+            for marker in ('CANARY_', 'DataHashing', 'HashFunction', '/home', 'https:', 'Users'):
+                self.assertNotIn(marker,encoded)
+        value=contract.failure_projection('Ошибка: Переменная не определена (HashFunction)',[],'identifier')
+        words=[contract.FAILURE_TOKEN_WORDS[item-1] if item else '*' for item in value['tokens']]
+        self.assertEqual(words,['ошибка','переменная','не','определена','hashfunction'])
+
+    def test_projection_phase_and_fixed_bounds(self):
+        c1,c2=contract.CALIBRATION.decode('ascii').splitlines()
+        value=contract.failure_projection('error',[c1,c2,'HF-01: [ok|S0:]'],'other')
+        self.assertEqual(value['phase'],dict(messages=3,c1=True,c2=True,case=True))
+        value=contract.failure_projection('error',['HF-C1: [private]','HF-00: [ok|S0:]','HF-01: [ok|S1:]'],'other')
+        self.assertEqual(value['phase'],dict(messages=3,c1=False,c2=False,case=False))
+        value=contract.failure_projection('error',['']*43,'other')
+        self.assertEqual(value['phase'],dict(messages=None,c1=False,c2=False,case=False))
+        long=contract.failure_projection('HashFunction '*200,[],'other')
+        self.assertEqual(len(long['tokens']),64)
+        self.assertLess(len(json.dumps(long).encode()),1024)
+        for text in ('x'*16385,):
+            with self.assertRaises(contract.ObservationError):contract.failure_projection(text,[],'other')
+        with self.assertRaises(contract.ObservationError):contract.failure_projection('error',['x'*16385],'other')
+        worst=dict(kind='identifier',tokens=[len(contract.FAILURE_TOKEN_WORDS)]*64,
+                   phase=dict(messages=42,c1=False,c2=False,case=False))
+        self.assertLess(len(json.dumps(worst).encode()),1024)
+        for mutate in (lambda v:v['tokens'].append(0),lambda v:v.update(tokens=['private']),
+                lambda v:v.update(tokens=[True]),lambda v:v.update(tokens=[len(contract.FAILURE_TOKEN_WORDS)+1]),
+                lambda v:v.update(extra='private'),lambda v:v['phase'].update(extra='private'),
+                lambda v:v['phase'].update(messages=43),lambda v:v['phase'].update(c1=1)):
+            bad=json.loads(json.dumps(worst));mutate(bad)
+            with self.assertRaises(contract.ObservationError):contract.validate_failure_projection(bad)
+
+    def test_identifier_dictionary_is_only_exact_public_source_tokens(self):
+        import re
+        source=(ROOT/'integrational_tests/measurements/data_hashing_family.bsl').read_text(encoding='utf-8')
+        stripped=re.sub(r'"(?:[^"]|"")*"|//[^\n]*',' ',source)
+        words={word.casefold() for word in re.findall(r'[A-Za-z_][A-Za-z0-9_]*',stripped)}
+        self.assertTrue(set(word.casefold() for word in contract.PUBLIC_SOURCE_IDENTIFIERS)<=words)
+        self.assertEqual(len(contract.FAILURE_TOKEN_WORDS),len(set(contract.FAILURE_TOKEN_WORDS)))
+        self.assertNotIn('CANARY_AUTH_918273'.casefold(),contract.FAILURE_TOKEN_WORDS)
+
     def test_failed_only_transport_rejects_success_or_outputs(self):
         encoded,hashes,modules=profile.envelope(profile.output())
         value=json.loads(encoded);report=value['report'];stage=report['stage3'];spec=profile.spec()
@@ -103,6 +160,9 @@ class HashingFailureTests(unittest.TestCase):
         stage['client_tree']=tree.full.empty_dates_report();value['outputs']=[]
         def validate(candidate):
             return host.validate_envelope(json.dumps(candidate).encode(),profile.NONCE,hashes,modules,profile.smoke.validate_report,profile=PROFILE)
+        with self.assertRaises(host.TreeError) as failure:validate(value)
+        self.assertEqual(failure.exception.observation_diagnostic,stage['observation_diagnostic'])
+        stage['observation_diagnostic']['calibration']=contract.failure_projection('error',[],'other')
         with self.assertRaises(host.TreeError) as failure:validate(value)
         self.assertEqual(failure.exception.observation_diagnostic,stage['observation_diagnostic'])
         # A diagnostic never admits a success, payload or source-identity mismatch.
