@@ -9,12 +9,30 @@ CALIBRATION = b'HF-C1: [S0:]\nHF-C2: [S6:004100a0003b0022d83dde00]\n'
 # Fixed ASCII label/framing + maximum two-digit length + four hex digits per unit.
 MAX_RECORD_BYTES = len(b'HF-00: [ok|S40:') + MAX_STRING_UNITS * 4 + len(b']\n')
 MAX_ENCODED_BYTES = len(CALIBRATION) + CASE_COUNT * MAX_RECORD_BYTES
+SOURCE_LINE_COUNT = 89
+MAX_FAILURE_DIAGNOSTIC_BYTES = 16384
+RESULT_FAILURE_CATEGORIES = frozenset(('result_json', 'result_shape', 'result_error',
+                                     'result_encoding', 'result_limit'))
 
 class ObservationError(ValueError):
     pass
 
 class AvailabilityError(ObservationError):
     pass
+
+
+def validate_failure_diagnostic(value):
+    """Finite failed-only witness; case holds an owned source line, never text."""
+    if value is None: return
+    if (type(value) is not dict or set(value) != {'site', 'case', 'category', 'calibration'}
+            or value['calibration'] is not None or type(value['category']) is not str):
+        raise ObservationError('data_hashing_diagnostic_invalid')
+    if value['category'] == 'record_count':
+        if type(value['site']) is str and value['site'] in ('server', 'client') and value['case'] is None: return
+    elif value['category'] in RESULT_FAILURE_CATEGORIES and type(value['site']) is str and value['site'] == 'server':
+        line = value['case']
+        if line is None or (value['category'] == 'result_error' and type(line) is int and 1 <= line <= SOURCE_LINE_COUNT): return
+    raise ObservationError('data_hashing_diagnostic_invalid')
 
 
 def validate_output(raw):

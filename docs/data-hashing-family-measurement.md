@@ -88,3 +88,23 @@ Actual source/module hashes, native captures, context/cleanup evidence, and exac
 parity must be audited before acceptance. Count-at-EOF, CRC32 unsigned behavior,
 and lifecycle/error semantics remain measured questions until native acquisition.
 `!todo` async, exotic streams, and rare large-input/platform corners are deferred.
+
+## Initial acquisition and finite failure diagnosis
+
+PR181 head `4e091797785287eddd1467f602ce6ba79115fa85`, native run
+41322185475/job124894576191 rejected the producer result with `invalid_result`.
+The validated summary ZIP digest is
+`cb48f80c199621007869012cb822c958805e8d084dcb1d31be79dba24b5b4e7a`.
+No raw40 output was exported; this does **not** prove that no observations ran,
+that compilation failed, or that the family is unsupported. Other native lanes
+passed. The original failure is retained; no runtime semantics were changed.
+
+The next acquisition preserves the ordinary result parser and adds only a
+failed-result diagnostic for this exact source-pinned profile. Categories are
+`result_json`, `result_shape`, `result_error`, `result_encoding`, `result_limit`.
+An optional line1..89 comes only from the literal generated TestModule object
+module frame. Other module names, paths, raw errors and free-form text are never
+exported. Secondary inspection is bounded to16KiB before decode; larger rejected
+results emit only `result_limit`. The existing failed-only envelope requires no
+outputs, incomplete native tests and failed stage/source identity. This is not an
+acceptance fallback and does not change parser, payload, process or security caps.

@@ -148,6 +148,10 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
 
 def validate_diagnostic(value, *, profile='tree-v1'):
     spec = profiles.select(profile)
+    if profile == 'data-hashing-family-v1':
+        import native_1c_data_hashing_family_contract as contract
+        try: return contract.validate_failure_diagnostic(value)
+        except contract.ObservationError: raise full.FullError('invalid_result') from None
     if profile == 'tree-copy-v1':
         import native_1c_tree_copy_diagnostics as diagnostic
         try:
@@ -324,6 +328,43 @@ def client_marker(path, nonce, phase, *, profile='tree-v1'):
     return value
 
 
+def read_hashing_native_result(path, source_sha256):
+    """Preserve the ordinary parser; classify only its rejected owned result."""
+    import native_1c_data_hashing_family_contract as contract
+    if source_sha256 != contract.SOURCE_SHA256: raise full.FullError('invalid_input')
+    raw = full.secure_bytes(path, full.MAX_RESULT)
+    try: return full.parse_native_result(raw)
+    except full.FullError as error:
+        if error.kind not in ('invalid_result', 'output_limit'): raise
+    category, line = 'result_limit', None
+    # Secondary inspection is strictly smaller than the unchanged parser cap;
+    # oversized rejected input is classified before another decode/JSON parse.
+    if len(raw) <= contract.MAX_FAILURE_DIAGNOSTIC_BYTES:
+        try: value = full.strict_json(raw, max_depth=3)
+        except full.FullError: category = 'result_json'
+        else:
+            category = 'result_shape'
+            if (type(value) is dict and set(value) == {'messages', 'error'}
+                    and type(value['messages']) is list
+                    and all(type(item) is str for item in value['messages'])
+                    and type(value['error']) is str):
+                if value['error']:
+                    category = 'result_error'
+                    # Only the literal generated TestModule object-module frame.
+                    # No pathname, other module, arbitrary number or error text.
+                    match = re.search(r'\{(?:ВнешняяОбработка\.TestModule\.МодульОбъекта|ExternalDataProcessor\.TestModule\.ObjectModule)\(([1-9][0-9]{0,2}),[0-9]{1,3}\)\}', value['error'])
+                    if match is not None:
+                        candidate = int(match[1])
+                        if candidate <= contract.SOURCE_LINE_COUNT: line = candidate
+                else:
+                    category = 'result_limit'
+                    try: ''.join(value['messages']).encode('utf-8')
+                    except UnicodeError: category = 'result_encoding'
+    diagnostic = {'site': 'server', 'case': line, 'category': category, 'calibration': None}
+    contract.validate_failure_diagnostic(diagnostic)
+    raise ObservationFailure(diagnostic)
+
+
 def run_suite(launcher, platform, launcher_epf, root, inputs, nonce, *, profile='tree-v1'):
     spec = profiles.select(profile)
     report=empty_report(nonce, profile=profile)
@@ -351,7 +392,8 @@ def run_suite(launcher, platform, launcher_epf, root, inputs, nonce, *, profile=
             if full.secure_bytes(source_xml.parent/'TestModule/Ext/ObjectModule.bsl',full.MAX_OUTPUT+3)!=expected:
                 raise full.FullError('module_mismatch')
             old[2](platform_argument,source_xml,destination)
-        launcher.read_result,launcher.run_process,launcher.build_epf=full.read_native_result,process,build
+        reader = (lambda path: read_hashing_native_result(path, spec.source_sha256)) if profile == 'data-hashing-family-v1' else full.read_native_result
+        launcher.read_result,launcher.run_process,launcher.build_epf=reader,process,build
         full.absent(directory,output,root/(spec.case+'.err'),output.with_suffix('.out.tmp'))
         launcher.run_case(platform,inputs/spec.target,launcher_epf,directory,output)
         full.require_zero_result(directory/'TestModule.build-result.txt',0)

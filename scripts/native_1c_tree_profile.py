@@ -103,6 +103,10 @@ def require(condition, reason='tree_report_invalid'):
 
 def validate_diagnostic(value, *, profile='tree-v1'):
     spec = PROFILES.select(profile)
+    if profile == 'data-hashing-family-v1':
+        contract = selected_contract(profile)
+        try: return contract.validate_failure_diagnostic(value)
+        except contract.ObservationError: raise TreeError('tree_report_invalid') from None
     if profile == 'tree-copy-v1':
         try:
             return COPY_DIAGNOSTICS.validate_diagnostic(value)
