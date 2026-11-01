@@ -1,0 +1,14 @@
+{
+  "platform": "8.3.27.1508 Linux",
+  "run": 41312362325,
+  "head": "d9a0adfd832ca89e813e4fd4bf5d74627c81d27d",
+  "source_sha256": "e292172fa74ecf940781093229f49e58c97ca8706ba983676fc20bfea6d4ff06",
+  "output_sha256": "1a31dfa8a7535ab97ef70009982be3d628600d3fb6a50740681889cff6b43df9",
+  "source_bound_checks": 52,
+  "client_server_equal": true,
+  "cleanup_verified": true,
+  "available_cases": 40,
+  "action_error_cases": [],
+  "parity_accepted": false,
+  "limit": "Caught property/out-of-band seek outcomes are explicit record observations, not support claims. Original transport envelope absent; reconstructed from audited archived report and exact capture. Public fixture excludes installation/session/authentication metadata."
+}

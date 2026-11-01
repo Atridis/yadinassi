@@ -6088,3 +6088,15 @@ independent/native gates: [docs/zip-family.md](docs/zip-family.md).
 финальный actual `.1CD` прогон составного исходника ещё ожидается. Запись и
 неизмеренные layout/free-chain варианты не открываются.
 [Точный профиль и границы](docs/document-items-read-runtime.md).
+
+## DataReader/DataWriter ordinary binary/text workflow
+
+Added the coherent `ЧтениеДанных / DataReader`, `ЗаписьДанных / DataWriter` and
+readonly `РезультатЧтенияДанных / ReadDataResult` family: owned-file/borrowed-stream
+lifecycle, endian unsigned integers, encoded text and lines, binary results and
+buffers, bounded marker search/splitting/skip/copy. Source is based on official
+EDT APIs; final closed40-case native parity is accepted on8.3.27.1508 with exact
+managed-client/server/local replay equality. Historical partial captures remain
+immutable; out-of-band reader repositioning is explicitly unsupported. Existing file/stream authority and caps are reused; no network,
+permissions or general host stream adapter was added. Scope and `!todo` limits:
+[docs/data-io-family.md](docs/data-io-family.md).

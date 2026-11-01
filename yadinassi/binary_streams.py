@@ -183,6 +183,8 @@ class BSLStream(_FileMethods):
     def __str__(self): return 'Поток'
     def _open(self):
         if self._closed: raise ValueError('Поток закрыт')
+        source = getattr(self, '_data_io_source', None)
+        if source is not None: source._open()
         if self._state.file is not None and self._state.file.closed: raise ValueError('Поток закрыт')
         return self._state
     def _canwrite(self):
@@ -209,6 +211,8 @@ class BSLStream(_FileMethods):
     def close(self):
         if self._closed: return
         self._closed = True
+        source = getattr(self, '_data_io_source', None)
+        if source is not None: source.close()
         if self._state.file is not None: self._state.file.close()
     def size(self): return Decimal(self._size())
     def current_position(self): return Decimal(self._open().position)
