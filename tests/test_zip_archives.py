@@ -68,7 +68,8 @@ class ZIPTests(unittest.TestCase):
             with self.assertRaises(ValueError): r.extract(entry, str(out))
             self.assertFalse(out.exists()); return
         r.extract(entry, str(out)); self.assertEqual((out/'a.bin').read_bytes(), b'a\x00\xff')
-        r.close(); r.close()
+        r.close()
+        with self.assertRaises(ValueError): r.close()
         with self.assertRaises(ValueError): r.get_member('Items')
     def test_recursive_relative_and_flat_extraction(self):
         w = Writer(); w.add(str(self.src/'*.bin'), Paths.RELATIVE, Recurse.RECURSIVE)
@@ -79,6 +80,35 @@ class ZIPTests(unittest.TestCase):
             return
         r.extract_all(str(self.root/'restore')); self.assertEqual((self.root/'restore/sub/b.bin').read_bytes(),b'b\x00\xff')
         r.extract_all(str(self.root/'flat'),Restore.FLAT);self.assertEqual((self.root/'flat/b.bin').read_bytes(),b'b\x00\xff')
+    def test_measured_recursive_masks_retain_empty_directories_and_reopen(self):
+        (self.src/'out').mkdir()
+        for mode in (Paths.FLAT,Paths.RELATIVE):
+            w=Writer();w.add(str(self.src/'*.bin'),mode,Recurse.RECURSIVE)
+            raw=w.get_binary_data();r=Reader(raw.open_stream_for_read())
+            expected=['a.bin','out/','b.bin' if mode is Paths.FLAT else 'sub/b.bin']
+            self.assertEqual([e.get_member('FullName') for e in r.get_member('Items')],expected)
+            self.assertEqual(r.get_member('Items').get(1).get_member('UncompressedSize'),0)
+            if ANCHORED:
+                destination=self.root/mode.name
+                r.extract_all(str(destination))
+                self.assertTrue((destination/'out').is_dir())
+                self.assertEqual((destination/expected[2]).read_bytes(),b'b\x00\xff')
+                r.extract_all(str(destination/'flat'),Restore.FLAT)
+                self.assertEqual((destination/'flat/b.bin').read_bytes(),b'b\x00\xff')
+                self.assertFalse((destination/'flat/out').exists())
+            r.close()
+            with self.assertRaises(ValueError):r.close()
+            r.open(raw.open_stream_for_read());self.assertEqual(r.get_member('Items').count(),3)
+            r.open(raw.open_stream_for_read());self.assertEqual(r.get_member('Items').count(),3)
+            r.close()
+        w=Writer();w.add(str(self.src/'*.bin'),Paths.RELATIVE,Recurse.NO)
+        self.assertEqual(Reader(w.get_binary_data().open_stream_for_read()).get_member('Items').count(),1)
+
+    def test_empty_directory_entries_obey_total_entry_budget(self):
+        (self.src/'out').mkdir()
+        with mock.patch.object(module,'MAX_ENTRIES',2):
+            with self.assertRaises(ValueError):Writer().add(str(self.src/'*.bin'),Paths.RELATIVE,Recurse.RECURSIVE)
+
     def test_memory_stream_and_binary_data_workflow(self):
         stream=BSLMemoryStream();w=Writer(stream);w.add(str(self.src/'a.bin'));w.write()
         stream.seek(0,BSLPositionInStream.BEGIN);r=Reader(stream)

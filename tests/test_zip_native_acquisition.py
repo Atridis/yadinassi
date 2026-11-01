@@ -33,13 +33,42 @@ class ZIPAcquisitionTests(unittest.TestCase):
 
     def test_measured_supported_original_cases_replay_without_promoting_failures(self):
         import os
-        native=wire.validate_output((FIXTURE/'original32.out').read_bytes())
-        actual=wire.validate_output(emit(source=(FIXTURE/'original32.bsl').read_text(encoding='utf-8')))
-        omitted={24,25,26,28}  # Original unavailability / recursive layout still pending.
+        source=(FIXTURE/'original32.bsl').read_text(encoding='utf-8')
+        raw=(FIXTURE/'original32.out').read_bytes()
+        omitted={24,28}  # Old24 cleanup did not handle the now-measured empty out/.
         if not (os.open in os.supports_dir_fd and hasattr(os,'O_NOFOLLOW') and hasattr(os,'O_DIRECTORY')):
-            omitted.update((6,7,8,9,10,11,12,21,22))  # Explicit Windows extraction gap.
-        for expected, observed in zip(native,actual):
-            if expected['case'] not in omitted:
-                with self.subTest(case=expected['case']):self.assertEqual(expected,observed)
+            omitted.update((6,7,8,9,10,11,12,21,22,25,26))  # Explicit Windows extraction gap.
+        selected=[n for n in range(1,33) if n not in omitted]
+        loop='For N=1 To 32 Do ZFObserve(N);EndDo;'
+        self.assertEqual(source.count(loop),1)
+        # Execute only available ordinary observations, with no fabricated rows.
+        # Immutable original capture/source and failed provenance remain unchanged.
+        actual=emit(source=source.replace(loop,''.join(f'ZFObserve({n});' for n in selected)))
+        lines=raw.splitlines(keepends=True)
+        self.assertEqual(actual,b''.join(lines[:2]+[lines[n+1] for n in selected]))
+
+    def test_layout_acquisition_is_immutable_and_supported_cases_replay(self):
+        import os
+        source=(FIXTURE/'layout32.bsl').read_bytes()
+        raw=(FIXTURE/'layout32.out').read_bytes()
+        provenance=(FIXTURE/'layout32-provenance.json').read_bytes()
+        for data,expected in ((source,'87da2769c9d1f32b021211793d8dae6a0058556440c950edd877eb393a2f7b8e'),
+                              (raw,'1fd77f7d971b4e7a13b8ff6d79cd0c098fe4296298a11689b60987e1b7734651'),
+                              (provenance,'4391d885febda85fd4a3ed006f943094a7ad4897d32449fc70115538b8cfa56a')):
+            self.assertEqual(hashlib.sha256(data).hexdigest(),expected)
+        p=json.loads(provenance)
+        self.assertEqual(p['repository']['github_run_id'],'41262403464')
+        self.assertTrue(p['comparison']['native_zip_family_available'])
+        self.assertEqual(p['comparison']['acceptance_status'],'rejected')
+        expected=wire.require_available(raw)
+        self.assertEqual(''.join(map(chr,expected[23]['units'])),'3|a.bin|out/~|sub/b.bin|X')
+        self.assertEqual(''.join(map(chr,expected[27]['units'])),'close-error:items-error')
+        actual=wire.validate_output(emit(source=source.decode('utf-8')))
+        if os.open in os.supports_dir_fd and hasattr(os,'O_NOFOLLOW') and hasattr(os,'O_DIRECTORY'):
+            self.assertEqual(expected,actual)  # All32 on the implemented anchored backend.
+        else:
+            for a,b in zip(expected,actual):
+                if a['case'] not in (6,7,8,9,10,11,12,21,22,24,25,26):self.assertEqual(a,b)
+            self.assertTrue(''.join(map(chr,actual[23]['units'])).endswith('|E'))
 
 if __name__=='__main__':unittest.main()

@@ -234,6 +234,9 @@ def _scan_files(base, pattern, recursive):
                 visited += 1
                 if visited > MAX_ENTRIES: raise ValueError('ZIP: превышен предел обхода')
                 child = _host_path(entry.path); children.append((entry.name, child, entry.is_dir(follow_symlinks=False)))
+        # Native41262403464: recursive file masks retain genuinely empty
+        # descendant directories; nonempty parent directories remain implicit.
+        if not children and folder != base: matches.append(folder)
         for name, child, directory in sorted(children):
             if directory:
                 if recursive: pending.append(child)
@@ -325,12 +328,15 @@ class BSLZipFileReader(_FileMethods):
                 total += info.file_size
                 if total > MAX_BYTES: raise ValueError('ZIP: превышен предел ресурсов')
             _unique_names(names)
-            self.close(); self._archive = archive
+            self._release(); self._archive = archive
             self._items = BSLZipFileEntries(BSLZipFileEntry(self, info) for info in infos)
         except Exception:
             if archive is not None: archive.close()
             raise
     def close(self):
+        self._open()  # Native repeated Close is a catchable error.
+        self._release()
+    def _release(self):
         if self._archive is not None: self._archive.close()
         self._archive = None; self._items = BSLZipFileEntries(())
     def get_member(self, name):
@@ -434,11 +440,17 @@ class BSLZipFileWriter(_FileMethods):
         for path in matches:
             if self._target is not None and type(self._target) is str and path == Path(self._target):
                 raise ValueError('ZIP: архив не может включать себя')
-            data, info = _read_file(path); total += len(data)
+            path = _host_path(str(path))
+            info = path.stat(follow_symlinks=False)
+            directory = stat.S_ISDIR(info.st_mode)
+            if directory: data = b''
+            else: data, info = _read_file(path)
+            total += len(data)
             if total > MAX_BYTES: raise ValueError('ZIP: превышен предел ресурсов')
             if mode is BSLZIPStorePathMode.FLAT: name = path.name
             elif mode is BSLZIPStorePathMode.RELATIVE: name = path.relative_to(base).as_posix()
             else: name = path.as_posix().lstrip('/').replace(':', '')
+            if directory: name += '/'
             pending.append((_name(name), data, info.st_mtime))
         if len(pending) + len(self._entries) > MAX_ENTRIES: raise ValueError('ZIP: слишком много элементов')
         _unique_names([name for name, _, _ in self._entries + pending])

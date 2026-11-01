@@ -100,3 +100,24 @@ Reserved `!cleanup` records preserve the fixture-failure phase and are explicitl
 rejected by require_available, never treated as native parity success. No raw
 exception text or random/external full paths are exported. Native32 recalibration
 and final exact-head gates remain pending.
+
+## Recursive layout and Close calibration
+
+Run41262403464 / job124718178285 on head `ba9a56084f8c08524e1755fad0564f460135ada7`,
+tree `10b819a5b18620f6f95f1a6230a78aaf00e03dfb`, acquired all32 available observations,
+client/server-identical and cleanup verified. Capture1590 bytes SHA256
+`1fd77f7d971b4e7a13b8ff6d79cd0c098fe4296298a11689b60987e1b7734651`.
+Immutable layout32 source/output/provenance retain the original four runtime
+mismatches and rejected parity status.
+
+The recursive mask retains a genuinely empty `out/` directory; nonempty `sub/`
+is implicit in `sub/b.bin`. Extract succeeded. Therefore the first case24 error
+was the fixture's omitted `Out/out` empty-directory cleanup, not an unsupported
+Extract operation. Runtime now retains measured empty descendant directories
+without relaxing path checks or entry/scan budgets. Public repeated Close raises;
+internal reopen/release uses a private cleanup method. Items after Close also
+raises. No other mask semantics or source ownership behavior is inferred.
+
+All32 layout observations replay on the anchored local backend; Windows tests
+retain the explicit extraction refusal and check the supported observations,
+not cross-platform parity. Fresh exact-head native32 and CI remain required.
