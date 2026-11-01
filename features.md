@@ -6053,3 +6053,10 @@ copy/flush/close and six file opening modes share bounded explicit type checks.
 No unrelated runtime refactor. Rare/external/async corners are marked `!todo`.
 One source-bound native40 batch is prepared; native parity remains pending.
 [Exact supported scope and safety](docs/binary-stream-family.md).
+
+## ZIP archive ordinary workflow (local implementation; native calibration pending)
+
+`ZipFileReader/ZipFileWriter`, entries/collection, file and memory archive creation,
+listing/find, Store/Deflate and bounded content extraction are implemented as one
+family. Exact API/bounds, temporary Windows extraction restriction and pending
+independent/native gates: [docs/zip-family.md](docs/zip-family.md).

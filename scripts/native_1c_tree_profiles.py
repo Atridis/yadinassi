@@ -98,9 +98,15 @@ BINARY_STREAM_FAMILY = Profile('binary-stream-family-v1', 'native-1c-binary-stre
     'binary_stream_family', '0a3e3614d6b43534faddf4c911b203233fd76e75770642d96190ed4802138059',
     42, 'native_1c_binary_stream_family_contract', '\nСообщить("BF-C1: ["+BFEncode("")+"]");\n', 5, 'binary-stream-family')
 
+ZIP_FAMILY = Profile('zip-family-v1', 'native-1c-zip-family-v1', 'native-1c-zip-family-stage-v1',
+    'zip_family', '87da2769c9d1f32b021211793d8dae6a0058556440c950edd877eb393a2f7b8e',
+    34, 'native_1c_zip_family_contract', '\nСообщить("ZF-C1: ["+ZFEncode("")+"]");\n', 5, 'zip-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
+    if name == ZIP_FAMILY.name:
+        return ZIP_FAMILY
     if name == BINARY_STREAM_FAMILY.name:
         return BINARY_STREAM_FAMILY
     if name == XML_WORKFLOW_FAMILY.name:

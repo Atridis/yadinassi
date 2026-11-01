@@ -1,3 +1,5 @@
+from . import zip_archives
+from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
 """Tree-walking interpreter with persistent state and injectable builtins."""
 
 from decimal import Decimal, localcontext
@@ -58,7 +60,7 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
@@ -222,6 +224,8 @@ class Interpreter:
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        self.register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
+        self.register_type("ЗаписьZipФайла", BSLZipFileWriter, "ZipFileWriter")
         self.register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
         self.register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
         self.register_function("ПрочитатьJSON", read_json, "ReadJSON")
@@ -646,6 +650,8 @@ class Interpreter:
             return JSON_LINE_BREAKS
         if name in ("кодировкатекста", "textencoding"):
             return TEXT_ENCODINGS
+        for ru, en, namespace in zip_archives.NAMESPACES:
+            if name in (ru.casefold(), en.casefold()): return namespace
         if name in ("порядокбайтов", "byteorder"): return binary_streams.BYTE_ORDERS
         if name in ("режимоткрытияфайла", "fileopenmode"): return binary_streams.FILE_OPEN_MODES
         if name in ("доступкфайлу", "fileaccess"): return binary_streams.FILE_ACCESSES

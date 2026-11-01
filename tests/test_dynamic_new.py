@@ -35,6 +35,7 @@ class DynamicNewTests(unittest.TestCase):
                               BSLType.UUID, BSLType.TEXT_DOCUMENT, BSLType.JSON_READER,
                               BSLType.JSON_WRITER, BSLType.JSON_WRITER_SETTINGS,
                               BSLType.TEXT_READER, BSLType.TEXT_WRITER, BSLType.MEMORY_STREAM,
+                              BSLType.ZIP_READER, BSLType.ZIP_WRITER,
                               BSLType.XML_READER, BSLType.XML_WRITER,
                               BSLType.XML_READER_SETTINGS, BSLType.XML_WRITER_SETTINGS):
                 self.assertEqual(self.vm.execute('TypeOf(New(kind))'), value_type)
