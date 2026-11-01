@@ -80,6 +80,34 @@ class ZIPTests(unittest.TestCase):
             return
         r.extract_all(str(self.root/'restore')); self.assertEqual((self.root/'restore/sub/b.bin').read_bytes(),b'b\x00\xff')
         r.extract_all(str(self.root/'flat'),Restore.FLAT);self.assertEqual((self.root/'flat/b.bin').read_bytes(),b'b\x00\xff')
+    def test_writer_masks_never_stat_wildcard_leaf_on_windows_or_posix(self):
+        original = Path.lstat
+        seen = []
+        def windows_lstat(path, *args, **kwargs):
+            seen.append(str(path))
+            if '*' in str(path) or '?' in str(path):
+                raise OSError(123, 'Windows invalid filename syntax')
+            return original(path, *args, **kwargs)
+        with mock.patch.object(Path, 'lstat', windows_lstat):
+            for mask in ('*.bin', '?.bin'):
+                for recursive, expected in ((Recurse.NO, ['a.bin']),
+                        (Recurse.RECURSIVE, ['a.bin', 'sub/b.bin'])):
+                    w = Writer(); w.add(str(self.src/mask), Paths.RELATIVE, recursive)
+                    r = Reader(w.get_binary_data().open_stream_for_read())
+                    self.assertEqual([e.get_member('FullName') for e in r.get_member('Items')], expected)
+        self.assertTrue(seen)
+        self.assertFalse(any('*' in name or '?' in name for name in seen))
+
+    def test_writer_mask_parent_and_filename_validation_precedes_scan(self):
+        masks = [str(self.src/'*'/'a.bin'), str(self.src/'..'/'*.bin'),
+                 str(self.src/'bad:*.bin'), str(self.src/'bad|*.bin'),
+                 str(self.src/'*.bin '), str(self.src/('x'*module.MAX_NAME+'*')),
+                 r'\\server\share\*.bin', r'\\.\pipe\*']
+        with mock.patch.object(module.os, 'scandir') as scan:
+            for mask in masks:
+                with self.subTest(mask=mask), self.assertRaises(ValueError): Writer().add(mask)
+            scan.assert_not_called()
+
     def test_measured_recursive_masks_retain_empty_directories_and_reopen(self):
         (self.src/'out').mkdir()
         for mode in (Paths.FLAT,Paths.RELATIVE):
