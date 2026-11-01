@@ -244,3 +244,85 @@ class FileDBContext:
         except OSError:
             raise ValueError("file database document inspection failed: file_io_failed") from None
         return result
+
+    def information_register_metadata(self):
+        """Read InformationRegister and target Catalog identities from one bounded offline CONFIG descriptor.
+
+        This creates no native session, lock or snapshot. The caller must supply
+        a consistent offline copy. Before/after descriptor metadata checks catch
+        some concurrent changes, not all; the descriptor is closed on every path.
+        """
+        from .storage.information_register_reader import read_information_register_metadata
+        from .storage.filedb_catalog import CatalogError, ChangedDuringRead, NotRegularFile, _metadata
+        if self._unsupported:
+            raise ValueError("unsupported file database directory")
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(os.path.join(self.directory, "1Cv8.1CD"), flags)
+            try:
+                before = os.fstat(fd)
+                if not stat.S_ISREG(before.st_mode):
+                    raise NotRegularFile("not_regular_file")
+
+                def read_at(offset, length):
+                    # The coordinator's source wrapper validates and budgets all
+                    # ranges. This private descriptor has no shared seek cursor.
+                    if hasattr(os, "pread"):
+                        return os.pread(fd, length, offset)
+                    os.lseek(fd, offset, os.SEEK_SET)
+                    return os.read(fd, length)
+
+                try:
+                    result = read_information_register_metadata(read_at, before.st_size)
+                finally:
+                    if _metadata(before) != _metadata(os.fstat(fd)):
+                        raise ChangedDuringRead("source_changed")
+            finally:
+                os.close(fd)
+        except CatalogError as error:
+            raise ValueError("file database metadata inspection failed: " + error.code) from None
+        except OSError:
+            raise ValueError("file database metadata inspection failed: file_io_failed") from None
+        return result
+
+
+    def information_register_rows(self, register_name: str):
+        """Read one information register from a caller-owned consistent offline image.
+
+        This descriptor lives only for this call. The existing physical/typed
+        reader retains its bounded schema and active-record admission; this
+        adapter does not turn it into a native session or an unbounded cursor.
+        Callers must bind the returned metadata identity to their own snapshot.
+        """
+        from .storage.information_register_reader import read_information_register_rows
+        from .storage.filedb_catalog import CatalogError, ChangedDuringRead, NotRegularFile, _metadata
+        if self._unsupported:
+            raise ValueError("unsupported file database directory")
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(os.path.join(self.directory, "1Cv8.1CD"), flags)
+            try:
+                before = os.fstat(fd)
+                if not stat.S_ISREG(before.st_mode):
+                    raise NotRegularFile("not_regular_file")
+
+                def read_at(offset, length):
+                    # The coordinator validates and budgets every source range.
+                    if hasattr(os, "pread"):
+                        return os.pread(fd, length, offset)
+                    os.lseek(fd, offset, os.SEEK_SET)
+                    return os.read(fd, length)
+
+                try:
+                    result = read_information_register_rows(read_at, before.st_size,
+                                               register_name=register_name)
+                finally:
+                    if _metadata(before) != _metadata(os.fstat(fd)):
+                        raise ChangedDuringRead("source_changed")
+            finally:
+                os.close(fd)
+        except CatalogError as error:
+            raise ValueError("file database information register inspection failed: " + error.code) from None
+        except OSError:
+            raise ValueError("file database information register inspection failed: file_io_failed") from None
+        return result

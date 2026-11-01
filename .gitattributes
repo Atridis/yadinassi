@@ -121,3 +121,7 @@ tests/fixtures/data_io_family/**/*.out -text
 integrational_tests/measurements/data_hashing_family.bsl text eol=lf
 tests/fixtures/data_hashing_family/**/*.bsl text eol=lf
 tests/fixtures/data_hashing_family/**/*.out -text
+
+# Minimized generated InfoReg native row/CONFIG observations, byte-pinned.
+tests/fixtures/information_register_records.json -text
+tests/fixtures/information_register_native.json -text

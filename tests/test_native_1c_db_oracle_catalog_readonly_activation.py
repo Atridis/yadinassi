@@ -16,7 +16,7 @@ PREVIOUS_WORKFLOW = '1d104a9155553f3e7b6f2dbcc3fd6fb782056bb615b7b2c4931c6713aa1
 # docs/catalog-description-rows.md; retain direct current LF/CRLF/drift checks.
 SOURCE_PINS = {
     'yadinassi/storage/catalog_reader.py': '4a972c13cfe5e2b19eadcd1bfa27564624b24739d566025e9bbe6e262dd69e54',
-    'yadinassi/storage/config_catalog_transport.py': 'ea31135fa41821ba159ace8c57c1eebfc74dd2e11895cf0fb2632d15dc8a71bc',
+    'yadinassi/storage/config_catalog_transport.py': '98adf5b23212b0faf04144acf4ad2ee84fef8b288f93d70c64e97c868c896fd9',
     'yadinassi/storage/config_catalog_binding.py': '57ec4cebf05d927069015f3d243fd896fcf14e97a8c939e2944563236618cea9',
     'yadinassi/storage/config_catalog_records.py': '4669e1fc39f2e1df35b934b0597523c33d3680bafbff249b62e74a1a53c5a0e1',
     'scripts/native_1c_db_oracle/catalog_binding_reader.py': '18d3729d2dc6bd8b198ade1188eb79cd8c48ad75001399e79975b7eb6c8f81b9',
