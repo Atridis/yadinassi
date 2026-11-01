@@ -1,7 +1,7 @@
 """Bounded Data hashing family measurement wire grammar; no native expected semantic values."""
 import re
 
-SOURCE_SHA256 = '7a126ea8f2dc1b94b9926b2a12d25554933c32fd7dbca7534ac84104c1027ab6'
+SOURCE_SHA256 = '0747e214310432fc0bc36af922d7443d15ff0c082bc9b8356403a7ca874b827d'
 CASE_COUNT = 40
 MAX_STRING_UNITS = 40
 MAX_OUTPUT_BYTES = 8192
@@ -9,7 +9,7 @@ CALIBRATION = b'HF-C1: [S0:]\nHF-C2: [S6:004100a0003b0022d83dde00]\n'
 # Fixed ASCII label/framing + maximum two-digit length + four hex digits per unit.
 MAX_RECORD_BYTES = len(b'HF-00: [ok|S40:') + MAX_STRING_UNITS * 4 + len(b']\n')
 MAX_ENCODED_BYTES = len(CALIBRATION) + CASE_COUNT * MAX_RECORD_BYTES
-SOURCE_LINE_COUNT = 89
+SOURCE_LINE_COUNT = 95
 MAX_FAILURE_DIAGNOSTIC_BYTES = 16384
 RESULT_FAILURE_CATEGORIES = frozenset(('result_json', 'result_shape', 'result_error',
                                      'result_encoding', 'result_limit'))

@@ -42,7 +42,7 @@ class HashingFailureTests(unittest.TestCase):
                 ('{ВнешняяОбработка.TestModule.МодульОбъекта(38,3)}: private error',38),
                 ('{ExternalDataProcessor.TestModule.ObjectModule(89,12)}: private',89),
                 ('{ВнешняяОбработка.TestModule.МодульОбъекта(38)}: private error',38),
-                ('{ExternalDataProcessor.TestModule.ObjectModule(90,12)}: private',None),
+                (f'{{ExternalDataProcessor.TestModule.ObjectModule({contract.SOURCE_LINE_COUNT+1},12)}}: private',None),
                 ('{ExternalDataProcessor.Other.ObjectModule(1,1)}: private',None),
                 ('file:///private/TestModule.ObjectModule(1,1) private',None)):
             cases.append((json.dumps({'messages':[],'error':text}).encode(),'result_error',line))
@@ -85,7 +85,7 @@ class HashingFailureTests(unittest.TestCase):
         valid=dict(site='server',case=1,category='result_error',calibration=None)
         for candidate in (valid,dict(valid,case=None),dict(valid,case=89)):
             tree.validate_diagnostic(candidate,profile=PROFILE);host.validate_diagnostic(candidate,profile=PROFILE)
-        for candidate in (dict(valid,case=True),dict(valid,case=0),dict(valid,case=90),
+        for candidate in (dict(valid,case=True),dict(valid,case=0),dict(valid,case=contract.SOURCE_LINE_COUNT+1),
                 dict(valid,site='client'),dict(valid,category='free text'),
                 dict(valid,calibration='private'),dict(valid,extra='private'),
                 dict(valid,category='result_json')):

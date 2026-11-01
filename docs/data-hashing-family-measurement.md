@@ -28,8 +28,8 @@ web-client, or browser support from this packet.
 ## Bound packet
 
 - `integrational_tests/measurements/data_hashing_family.bsl`
-- SHA-256 `7a126ea8f2dc1b94b9926b2a12d25554933c32fd7dbca7534ac84104c1027ab6`
-- 6,885 UTF-8 source bytes; additional packet bound 8,192 bytes.
+- SHA-256 `0747e214310432fc0bc36af922d7443d15ff0c082bc9b8356403a7ca874b827d`
+- 6,746 UTF-8 source bytes; additional packet bound 8,192 bytes.
 - 40 cases plus 2 observer controls; 42 messages and 5 print sites.
 - At most 40 UTF-16 units per successful case; exact output rectangle 7,130 bytes,
   below the unchanged 8,192-byte output cap.
@@ -59,6 +59,9 @@ semantic answers or a cryptographic security property.
 | 30–31 | Fresh-instance state reset; borrowed read-only view/shared cursor remains usable |
 | 32–35 | Property reads, repeated BinaryData Append, exact positive stream count, type/enum identity |
 | 36–40 | Each algorithm: mixed prefix + owned AppendFile + suffix, owned deletion and post-deletion hash preservation |
+
+The table above describes the retained ordinary source7a126ea8. The current
+SHA512 discriminant replaces six slots as detailed below.
 
 ## Owned-file discipline
 
@@ -173,3 +176,21 @@ intentional property assignment, wrong-type construction/Append and missing-file
 Append. Those error semantics are not native verified; local negative guards and
 tests remain unchanged. This prevents serial execution of unmeasured rejection
 paths while retaining all five algorithm/file workflows and cleanup checks.
+
+## Ordinary capture and actual SHA512 representation discriminant
+
+The previous ordinary source `7a126ea8f2dc1b94b9926b2a12d25554933c32fd7dbca7534ac84104c1027ab6`
+produced40 available records. Its minimal public source/output fixture is retained
+under `tests/fixtures/data_hashing_family/native-ordinary-v1`; only5/10 differed
+from local replay (SHA512 empty/abc Base64 vector comparisons). Both literal known
+vectors match standard SHA512; this does not yet distinguish hash bytes from
+Base64 representation, e.g. possible line breaks.
+The current40-slot packet observes actual SHA512 Base64 in three parts per input:
+empty5/15/30 and abc10/20/33. Part1 contains length plus first32 characters;
+part2 contains next32; part3 retains the complete remaining tail (bound40).
+No whitespace is normalized, so any CR/LF remains in the UTF16 wire. Runtime hash
+algorithms are unchanged. The previous ordinary coverage remains replay-tested.
+
+Capture audit limitation: the original transport envelope was not archived.
+Strict validation used a reconstructed envelope from the authenticated archived
+report and exact capture, with source/module/host/runtime identities checked.

@@ -111,7 +111,7 @@ DATA_IO_FAMILY = Profile('data-io-family-v1', 'native-1c-data-io-family-v1', 'na
     42, 'native_1c_data_io_family_contract', '\nСообщить("DF-C1: ["+DFEncode("")+"]");\n', 5, 'data-io-family')
 
 DATA_HASHING_FAMILY = Profile('data-hashing-family-v1', 'native-1c-data-hashing-family-v1', 'native-1c-data-hashing-family-stage-v1',
-    'data_hashing_family', '7a126ea8f2dc1b94b9926b2a12d25554933c32fd7dbca7534ac84104c1027ab6',
+    'data_hashing_family', '0747e214310432fc0bc36af922d7443d15ff0c082bc9b8356403a7ca874b827d',
     42, 'native_1c_data_hashing_family_contract', '\nСообщить("HF-C1: ["+HFEncode("")+"]");\n', 5, 'data-hashing-family')
 
 def select(name='tree-v1'):
