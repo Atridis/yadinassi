@@ -202,5 +202,5 @@ slowest summary; quiet mode remains quiet. Test stdout/stderr is not intercepted
 beyond unittest's existing optional `-b` buffering. The standalone standard
 `python -m unittest ...` command remains available and unchanged.
 
-The existing actual CPython 3.10 compatibility job also runs the nine small
+The existing actual CPython 3.10 compatibility job also runs the small
 runner tests normally and with `-O`; no new matrix or full-suite repeat is added.

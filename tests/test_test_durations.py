@@ -219,6 +219,45 @@ class TestDurationRunnerTests(unittest.TestCase):
         times = [float(line.split()[0]) for line in summary.splitlines()[1:]]
         self.assertEqual(times, [3.0, 2.0, 1.0])
 
+    def test_instance_id_shadowing_before_and_during_fixtures(self):
+        for stage in ('constructor', 'setUp', 'body', 'cleanup'):
+            with self.subTest(stage=stage):
+                clock = [0.0]
+                class Case(unittest.TestCase):
+                    def __init__(self):
+                        super().__init__('test_body')
+                        if stage == 'constructor':
+                            self.id = object()
+
+                    def id(self):
+                        raise AssertionError('runner must not call a user id override')
+
+                    def setUp(self):
+                        self.addCleanup(self.clean)
+                        if stage == 'setUp':
+                            self.id = object()
+
+                    def clean(self):
+                        clock[0] += 3
+                        if stage == 'cleanup':
+                            self.id = object()
+
+                    def test_body(self):
+                        clock[0] += 2
+                        if stage == 'body':
+                            self.id = object()
+
+                case = Case()
+                expected = unittest.TestCase.id(case)
+                stream = io.StringIO()
+                with patch('scripts.run_tests.perf_counter', side_effect=lambda: clock[0]):
+                    result = TimedTextTestRunner(stream=stream, verbosity=2).run(case)
+                self.assertTrue(result.wasSuccessful())
+                self.assertEqual(result.testsRun, 1)
+                self.assertEqual(result.slowest[0][2], expected)
+                self.assertIn(' ... ok ... 5.000 s', stream.getvalue())
+                self.assertIn('5.000 s  ' + expected, stream.getvalue())
+
     def test_workflow_only_main_full_step_uses_runner(self):
         source = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
         self.assertEqual(source.count('python -m scripts.run_tests discover -s tests -v'), 1)

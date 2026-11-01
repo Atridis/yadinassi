@@ -28,6 +28,16 @@ class TimedTextTestResult(unittest.TextTestResult):
 
     def startTest(self, test):
         self._active = test
+        # Test fixtures may legitimately assign self.id (e.g. a tree column).
+        # Use the standard class implementation before fixtures, never a user
+        # instance override; FunctionTestCase has its own standard identity.
+        if isinstance(test, unittest.FunctionTestCase):
+            self._test_id = unittest.FunctionTestCase.id(test)
+        elif isinstance(test, unittest.TestCase):
+            self._test_id = unittest.TestCase.id(test)
+        else:
+            self._test_id = str(test)
+        self._description = self.getDescription(test).replace('\n', ' ') if self.showAll else None
         self._statuses = []
         self._started = perf_counter()
         self._without_progress(super().startTest, test)
@@ -69,13 +79,13 @@ class TimedTextTestResult(unittest.TextTestResult):
         try:
             super().stopTest(test)
             self._sequence += 1
-            entry = (elapsed, self._sequence, test.id())
+            entry = (elapsed, self._sequence, self._test_id)
             if len(self.slowest) < 20:
                 heapq.heappush(self.slowest, entry)
             else:
                 heapq.heappushpop(self.slowest, entry)
             if self.showAll:
-                description = self.getDescription(test).replace('\n', ' ')
+                description = self._description
                 status = '; '.join(self._statuses) or 'interrupted'
                 self.stream.writeln(f'{description} ... {status} ... {elapsed:.3f} s')
                 self.stream.flush()
