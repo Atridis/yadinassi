@@ -16,7 +16,8 @@ MAX_TABLE_BYTES=base.MAX_TABLE_BYTES
 MAX_FIELDS=base.MAX_FIELDS
 _check=base._check;_exact=base._exact;_integer=base._integer;_hex=base._hex;_json=base._json
 _config_payloads=base._config_payloads
-_dbnames=base._dbnames
+MAX_OWNED_ENTRIES=128
+MAX_UUID_ENTRIES=16
 _physical=base._physical
 _baseline_key=base._baseline_key
 _baseline_profile=base._baseline_profile
@@ -44,15 +45,45 @@ def _request(request,mapping):
     return specs,hashlib.sha256(_json(request)).hexdigest()
 
 
+def _dbnames(handle,specs):
+    # Items may give a selected metadata UUID several DBNames roles. Retain
+    # evidence, never choose the first row or broaden production binding.
+    reader=handle._graph.reader
+    extracted=base.named._read_dbnames_from_catalog(reader,handle._graph.catalog,
+        profile=base.named.DBNamesProfile(base.config.DECLARATIONS,'0',0,slot_policy='closed_marker1_chain_v1'),_binding_handle=handle)
+    profile=dbnames.DBNamesParseProfile(dbnames.DBNAMES_PROFILE_IDENTIFIER);limits=dbnames.DBNamesParseLimits()
+    reserve=dbnames.reserve_dbnames_parse(extracted.data,profile=profile,limits=limits)
+    reader._budget.charge('output_bytes',reserve.output_bytes);reader._budget.charge('bytes_processed',reserve.bytes_processed)
+    reader._budget.charge('tokens',min(len(extracted.data),limits.max_tokens+1))
+    parsed=dbnames.parse_dbnames(extracted.data,profile=profile,limits=limits)
+    groups=[];total=0
+    for spec in specs:
+        entries=[];missing=[]
+        for uid in [spec['metadata_uuid']]+[a['metadata_uuid'] for a in spec['attributes']]:
+            found=[e for e in parsed.entries if e.uuid==uid]
+            total+=len(found)
+            if len(found)>MAX_UUID_ENTRIES or total>MAX_OWNED_ENTRIES:raise c.ResourceLimit('items_dbnames_entries')
+            if not found:missing.append(uid)
+            for e in found:
+                if sum(x.kind==e.kind and x.id==e.id for x in parsed.entries)!=1:
+                    raise c.UnsupportedSharing('document_dbnames_alias')
+                entries.append(asdict(e))
+        groups.append(dict(entries=entries,missing=missing))
+    return dict(bytes=len(extracted.data),sha256=hashlib.sha256(extracted.data).hexdigest(),groups=groups)
+
+
 def _candidate(group,spec,index,groups=None,specs=None):
-    if index<2:return base._candidate(group,spec,index)
-    doc,reason=base._candidate(groups[0],specs[0],0)
-    if doc is None:return None,reason
     entries=[e for e in group['entries'] if e['uuid']==spec['metadata_uuid']]
     if not entries:return None,'dbnames_missing'
-    entry=entries[0]
-    if entry['kind']!='VT':return None,'dbnames_kind'
+    expected=('Document','Reference','VT')[index]
+    matched=[e for e in entries if e['kind']==expected]
+    if not matched:return None,'dbnames_kind'
+    if len(matched)!=1:return None,'dbnames_ambiguous'
+    entry=matched[0]
     if not 1<=entry['id']<=2147483647:return None,'dbnames_id'
+    if index<2:return ('_Document' if index==0 else '_Reference')+str(entry['id']),None
+    doc,reason=_candidate(groups[0],specs[0],0)
+    if doc is None:return None,reason
     return doc+'_VT'+str(entry['id']),None
 
 def observe(read_at,size,request,actual_mapping):
@@ -121,18 +152,21 @@ def validate_observation(value,request,actual_mapping):
     _check(_json(baseline)==_json(expected_baseline))
     db=value['dbnames'];_exact(db,('bytes','sha256','groups'));_integer(db['bytes'],dbnames.DBNamesParseLimits().max_input_bytes);common._digest(db['sha256'])
     _check(type(db['groups']) is list and len(db['groups'])==3)
-    physical_ids=set()
+    physical_ids=set();ordinals=set();total_entries=0
     for spec,group in zip(specs,db['groups']):
         _exact(group,('entries','missing'));wanted=[spec['metadata_uuid']]+[a['metadata_uuid'] for a in spec['attributes']]
-        _check(type(group['entries']) is list and len(group['entries'])<=len(wanted) and type(group['missing']) is list)
-        found=[]
+        _check(type(group['entries']) is list and len(group['entries'])<=MAX_OWNED_ENTRIES and type(group['missing']) is list)
+        found=[];counts={u:0 for u in wanted};order=[]
+        total_entries+=len(group['entries']);_check(total_entries<=MAX_OWNED_ENTRIES)
         for e in group['entries']:
             _exact(e,('uuid','raw_uuid','kind','raw_kind','id','raw_id','ordinal'))
-            _check(e['uuid'] in wanted and e['uuid'] not in found and e['raw_uuid']==e['uuid']);found.append(e['uuid'])
+            _check(e['uuid'] in wanted and e['raw_uuid']==e['uuid']);found.append(e['uuid'])
+            counts[e['uuid']]+=1;_check(counts[e['uuid']]<=MAX_UUID_ENTRIES)
             _check(type(e['kind']) is str and re.fullmatch('[A-Za-z][A-Za-z0-9_]{0,31}',e['kind']) is not None and e['raw_kind']=='"'+e['kind']+'"')
             _integer(e['id'],2147483647);_check(e['raw_id']==str(e['id']));_integer(e['ordinal'],4095)
+            _check(e['ordinal'] not in ordinals);ordinals.add(e['ordinal']);order.append((wanted.index(e['uuid']),e['ordinal']))
             key=(e['kind'],e['id']);_check(key not in physical_ids);physical_ids.add(key)
-        _check(found==[u for u in wanted if u in found] and group['missing']==[u for u in wanted if u not in found])
+        _check(order==sorted(order) and group['missing']==[u for u in wanted if u not in found])
     _check(type(value['objects']) is list and len(value['objects'])==3)
     headers=set()
     for index,(spec,group,obj) in enumerate(zip(specs,db['groups'],value['objects'])):

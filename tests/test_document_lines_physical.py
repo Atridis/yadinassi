@@ -16,7 +16,7 @@ def request(repeat=1):
  return p,fixture.actual_mapping(s,p,{n:v for n,v in files.items() if n.endswith('.xml')})
 
 
-def image(p,*,kind='VT',table=True,missing=False):
+def image(p,*,kind='VT',table=True,missing=False,extra=()):
  v=previous.image(p['base']);P=previous.linked.base.P;u32=previous.linked.base.u32
  specs=p['base']['linked_schema']['catalogs'];triples=[]
  for i,s in enumerate(specs):
@@ -24,6 +24,7 @@ def image(p,*,kind='VT',table=True,missing=False):
   triples.extend('{'+a['metadata_uuid']+',"Fld",'+str(100+j)+'}' for j,a in enumerate(s['attributes']))
  if not missing:triples.append('{'+p['ids']['section']+',"'+kind+'",70}')
  triples.extend('{'+p['ids'][name]+',"Fld",'+str(200+i)+'}' for i,name in enumerate(p['columns']))
+ triples.extend('{'+uid+',"'+k+'",'+str(n)+'}' for uid,k,n in extra)
  raw=('\ufeff{0,{'+str(len(triples))+','+','.join(triples)+'}}').encode()
  packed=b'\x01'+len(raw).to_bytes(2,'little')+(65535-len(raw)).to_bytes(2,'little')+raw
  v.page(32)[301+276:301+287]=bytes.fromhex('1'+str(len(packed)).zfill(20)+'0');v.page(32)[301+287:301+295]=u32(1)+u32(len(packed))
@@ -50,6 +51,29 @@ class DocumentLinesPhysicalTests(unittest.TestCase):
    p,m=request();v=image(p,**kw);out=subject.observe(v.read_at,v.size,p,m)
    self.assertEqual(out['objects'][2]['physical']['reason'],reason);self.assertEqual(len(out['config']['files']),5)
    self.assertTrue(all(o['physical']['status']=='captured' for o in out['objects'][:2]))
+ def test_multiple_roles_retained_and_unique_expected_kind_selected(self):
+  p,m=request();doc=p['base']['linked_schema']['catalogs'][0]['metadata_uuid'];uid=p['ids']['section']
+  extra=((uid,'Other',71),(doc,'Other',72),(p['ids']['Product'],'Other',73))
+  v=image(p,extra=extra);out=subject.observe(v.read_at,v.size,p,m)
+  self.assertEqual(out['objects'][2]['physical']['candidate'],'_Document19_VT70')
+  self.assertEqual([(e['kind'],e['id']) for e in out['dbnames']['groups'][2]['entries'] if e['uuid']==uid],[('VT',70),('Other',71)])
+  self.assertEqual(subject.validate_observation(json.loads(json.dumps(out)),p,m),out)
+  for mutate in (lambda x:x['dbnames']['groups'][2]['entries'].reverse(),lambda x:x['dbnames']['groups'][2]['entries'][1].update(ordinal=x['dbnames']['groups'][2]['entries'][0]['ordinal'])):
+   bad=copy.deepcopy(out);mutate(bad)
+   with self.assertRaises(ValueError):subject.validate_observation(bad,p,m)
+ def test_ambiguous_expected_kind_retains_evidence_without_candidate(self):
+  p,m=request();uid=p['ids']['section']
+  v=image(p,extra=((uid,'VT',71),));out=subject.observe(v.read_at,v.size,p,m)
+  self.assertEqual(out['objects'][2]['physical']['reason'],'dbnames_ambiguous')
+  self.assertIsNone(out['objects'][2]['physical']['candidate']);self.assertEqual(len(out['config']['files']),5)
+  self.assertEqual(len([e for e in out['dbnames']['groups'][2]['entries'] if e['uuid']==uid]),2)
+ def test_multi_role_global_alias_and_per_uuid_cap_fail_closed(self):
+  p,m=request();uid=p['ids']['section']
+  for extra,error in ((((uid,'Reference',20),),subject.c.UnsupportedSharing),(tuple((uid,'Other',400+i) for i in range(16)),subject.c.ResourceLimit)):
+   v=image(p,extra=extra)
+   with self.assertRaises(error):subject.observe(v.read_at,v.size,p,m)
+  v=image(p)
+  with mock.patch.object(subject,'MAX_OWNED_ENTRIES',1),self.assertRaises(subject.c.ResourceLimit):subject.observe(v.read_at,v.size,p,m)
  def test_cross_reader_aliases_before_any_target_payload(self):
   for header,target in ((52,32),(52,33),(52,43),(40,55)):
    p,m=request();v=image(p);v.page(header)[24:28]=previous.linked.base.u32(target)

@@ -120,8 +120,16 @@ ownership mappings precede any target payload read, with one shared read budget.
 The first native apply/redump measured an exact LineNumber standard subtree and
 section-column default omissions; generated inputs now match that owned redump
 without validator exceptions. Corrected run 41261954939 installed successfully
-but failed in offline observation before retaining a complete capture. Its cause
-remains unlocalized; no public Items admission or runtime parity is established.
+but failed in offline observation before retaining a complete capture.
+Diagnostic run 41263035921 retained one authenticated initial/client capture
+(all four blocks available) and localized the refusal to the old measurement
+helper requiring one DBNames entry per selected UUID. The actual repeated-entry
+kinds have not yet been captured. Items-only raw measurement now preserves all
+selected UUID roles (at most 16 per UUID, 128 total), choosing a table hypothesis
+only for one expected-kind entry; ambiguous kinds remain unresolved. Global
+kind/id alias rejection and shared read/ownership bounds remain unchanged.
+No public Items admission or runtime parity
+is established.
 
 Known offline failures now retain authenticated native outputs and the frozen
 postimage digest only after the final same-descriptor integrity/quiescence checks
