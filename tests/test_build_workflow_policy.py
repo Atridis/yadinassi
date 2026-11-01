@@ -150,9 +150,11 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
             'python -c "import sys; print(sys.version); raise SystemExit(0 if sys.implementation.name == \'cpython\' and sys.version_info[:2] == (3, 10) else 1)"',
             'python -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v',
             'python -O -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v',
+            'python -m scripts.run_tests test_test_durations -v',
+            'python -O -m scripts.run_tests test_test_durations -v',
             'python -m pip install -e ".[build]" wcwidth==0.8.2',
             'python integrational_tests/check_launcher.py',
-            'python -m unittest discover -s tests -v',
+            'python -m scripts.run_tests discover -s tests -v',
             'python scripts/build.py --target ${{ matrix.target }}',
             'sha256sum yadinassi-* > SHA256SUMS', '|'])
         self.assertIn('          persist-credentials: false\n', self.source)
