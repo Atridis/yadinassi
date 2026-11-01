@@ -179,3 +179,28 @@ These single paired observations show about 8% / 15% less whole-module wall time
 not a whole-suite or all-OS guarantee. Unchanged tests also varied in duration;
 the deterministic reduction is 92 fresh CLI launches. Full platform CI remains
 required. No native evidence needs reacquisition for this test-only change.
+
+## Full CI per-test timings
+
+The main four-platform test step uses `python -m scripts.run_tests discover -s
+ tests -v` (on one line). This delegates discovery, filtering, fail-fast, buffering,
+result classification and exit status to `unittest`; it does not select a smaller
+suite or retry tests. Each completed verbose test gets one line, for example
+`test_example (test_example.Example.test_example) ... ok ... 1.234 s`.
+
+A monotonic `perf_counter` measures `startTest` through `stopTest`, including that
+case's setup, teardown and cleanups. Discovery/imports and module/class fixtures
+are outside these individual timings; a class fixture error retains the ordinary
+unittest diagnostic without an invented duration. Subtest failures/errors/skips
+are summarized on their parent test's timed line, with their original detailed
+failure diagnostics retained. Timing is not a CPU profile. Finished lines are
+emitted after cleanup, so a running/hung test has not yet printed its status line.
+
+The runner retains only the slowest 20 timing entries and prints their full test
+IDs after the ordinary summary. Default dot verbosity remains dots plus the
+slowest summary; quiet mode remains quiet. Test stdout/stderr is not intercepted
+beyond unittest's existing optional `-b` buffering. The standalone standard
+`python -m unittest ...` command remains available and unchanged.
+
+The existing actual CPython 3.10 compatibility job also runs the nine small
+runner tests normally and with `-O`; no new matrix or full-suite repeat is added.
