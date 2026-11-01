@@ -12,6 +12,13 @@ class BSLDOMBuilder(_FileMethods):
     def read(self, reader):
         if type(reader) is not BSLXMLReader: raise TypeError('DOM: ожидается ЧтениеXML')
         if reader._source is None: raise ValueError('DOM: источник не открыт')
+        original = reader
+        # Builder retains comments even when the ordinary reader default hides
+        # them. Keep its settings/failed cursor untouched; commit only at EOF.
+        reader = copy.copy(original)
+        reader._settings = copy.copy(original._settings)
+        reader._settings.ignore_comments = False
+        reader._tokens = None
         saved = (reader._position, reader._attribute, reader._current)
         doc = BSLDOMDocument._empty(); stack = [doc]; count = 0
         try:
@@ -40,6 +47,9 @@ class BSLDOMBuilder(_FileMethods):
                 elif kind is T.COMMENT: stack[-1].append_child(doc.create_comment(event['value']))
                 elif kind is T.PI: stack[-1].append_child(doc.create_processing_instruction(event['name'],event['value']))
             if len(stack) != 1 or doc.document_element() is None: raise ValueError('DOM: требуется корневой элемент')
+            original._version, original._xml_encoding = reader._version, reader._xml_encoding
+            original._tokens = reader._tokens
+            original._position, original._attribute, original._current = reader._position, reader._attribute, reader._current
             return doc
         except BaseException:
             reader._position, reader._attribute, reader._current = saved

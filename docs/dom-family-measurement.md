@@ -2,7 +2,7 @@
 
 One closed packet (`dom-family-v1`, case `dom_family`) covers 40 ordinary
 workflows. The first completed native capture is retained below; five ordinary
-semantic discriminants remain pending. Local observations and synthetic wire
+semantic discriminants are captured and locally replayed; fresh-head parity is pending. Local observations and synthetic wire
 fixtures are not platform evidence or expected native semantic values.
 
 ## Primary source and boundaries
@@ -81,3 +81,9 @@ The original source (SHA256 `8d4afe77fc2691bcd4673bd2f80f1e7f1576935a4685feff23d
 The corrected client-context packet completed server and managed-thick-file execution with identical forty records and verified cleanup. Minimal immutable source/output/receipt are retained in `tests/fixtures/dom_family/native-initial-v1`; private installation/session/provenance metadata are not included. Its 37 `ok` and three `action-error` records are not full parity: cases 12, 29, 30, 31 and 36 differ from the provisional runtime. The private audit validated 53 source/provenance conditions using a reconstructed transport envelope, not a retained original envelope.
 
 The current packet retains 40 IDs and bounded output, with phase-isolated ordinary observations in those five slots: SplitText versus WholeText; query counts before/after mutation versus item access; one/two-argument query discrimination; cloning versus reading the returned node; and parsed node kinds. Short pure conversion/element-construction helpers make room without raising the source bound. All helpers require explicit generated client context. No runtime semantics, global XMLReader settings, native timeout or acceptance criteria were changed speculatively. The original thirty-five matching observations remain covered by immutable replay.
+
+## Measured ordinary calibration
+
+The current discriminant capture has 40 available values in both contexts. SplitText mutates the adjacent text tree and returns Undefined. Document tag queries are snapshots and the measured name/URI overload selects local-name matches across the tested prefixed/empty namespaces. Element queries are not generalized from Document observations. Shallow element clone omits attributes; deep clone and ImportNode retain their prior behavior. DOMBuilder retains comments without changing ordinary XMLReader defaults or the borrowed reader settings; CDATA still follows the measured default text handling. All mutations retain their existing bounded preflight.
+
+The original capture remains byte-identical. Its shallow-clone aggregate action-error is retained and reproduced: missing attributes return Undefined (official GetAttribute contract), so the original expression beginning with that value fails rather than assuming an empty string. No blanket exception parity or unmeasured namespace-pattern behavior is claimed. The current complete fixed40 replay is retained separately, and fresh native execution on the corrected runtime is required before parity acceptance.

@@ -19,8 +19,19 @@ class DOMNativeAcquisitionTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256((FIXTURE/name).read_bytes()).hexdigest(),receipt[key])
         raw=(FIXTURE/'original40.out').read_bytes();native=validate_output(raw)
         local=validate_output(emit(source=(FIXTURE/'original40.bsl').read_text(encoding='utf-8')))
-        self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[12,29,30,31,36])
+        self.assertEqual([a['case'] for a,b in zip(native,local) if a!=b],[])
         self.assertEqual([a['case'] for a in native if a['status']=='action-error'],[12,29,31])
         with self.assertRaises(AvailabilityError):require_available(raw)
         self.assertEqual(native[29]['units'],tuple(map(ord,'2:2')))
         self.assertEqual(native[35]['units'],tuple(map(ord,'3:a<b:task')))
+
+    def test_measured_discriminants_match_complete_native_capture(self):
+        fixture=FIXTURE.parent/'native-discriminant-v1'
+        receipt=json.loads((fixture/'receipt.json').read_text(encoding='utf-8'))
+        self.assertEqual(receipt['source_sha256'], '0b4defe51038890513cc778e8616153649faf676423c92fdb637d34de7b96db3')
+        self.assertEqual(receipt['output_sha256'], '891d01af306286ee7630877b4d000c37c0fd454d7330c273abaae011645bb774')
+        for name,key in [('original40.bsl','source_sha256'),('original40.out','output_sha256')]:
+            self.assertEqual(hashlib.sha256((fixture/name).read_bytes()).hexdigest(),receipt[key])
+        native=require_available((fixture/'original40.out').read_bytes())
+        local=require_available(emit(source=(fixture/'original40.bsl').read_text(encoding='utf-8')))
+        self.assertEqual(local,native)

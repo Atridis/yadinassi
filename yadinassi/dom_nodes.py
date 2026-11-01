@@ -98,10 +98,18 @@ class BSLDOMElementList(BSLDOMNodeList):
         self._node = node
         if len(args) not in (1, 2): raise TypeError('DOM: неверные параметры поиска')
         self._query = tuple(_text(a) for a in args)
+        self._snapshot = tuple(self._select()) if node._kind is K.DOCUMENT else None
     def __str__(self): return 'СписокЭлементовDOM'
     def _items(self):
+        return self._snapshot if self._snapshot is not None else self._select()
+    def _select(self):
         q = self._query; out = []
         for n, _ in _walk(self._node, include_root=False):
+            # Measured Document queries snapshot local-name matches, including
+            # empty/prefixed namespaces. !todo Broader qualified-name patterns.
+            if self._node._kind is K.DOCUMENT:
+                if n._kind is K.ELEMENT and q[-1] in ('*', n._local, n._name): out.append(n)
+                continue
             if n._kind is K.ELEMENT and ((len(q) == 1 and q[0] in ('*', n._name)) or
                 (len(q) == 2 and q[0] in ('*', n._uri) and q[1] in ('*', n._local))): out.append(n)
         return out
@@ -269,7 +277,7 @@ class _DOMNode(_FileMethods):
         _flag(deep)
         if self._kind is K.DOCUMENT:
             target = BSLDOMDocument._empty(); _copy_into(self, target, deep, target); return target
-        return _copy_into(self, self._doc(), deep)
+        return _copy_into(self, self._doc(), deep, attributes=deep or self._kind is not K.ELEMENT)
     def normalize(self):
         plans = []; extra = 0
         for node, _ in _walk(self):
@@ -328,7 +336,7 @@ class BSLDOMElement(_DOMNode):
         args = tuple(_text(a) for a in args)
         return next((a for a in self._attrs if (a._name == args[0] if len(args)==1 else (a._uri,a._local)==args)), None)
     def get_attribute(self, *args):
-        a = self.get_attribute_node(*args); return '' if a is None else a._data
+        a = self.get_attribute_node(*args); return None if a is None else a._data
     def has_attribute(self, *args): return self.get_attribute_node(*args) is not None
     def set_attribute(self, *args):
         if len(args) not in (2,3): raise TypeError('DOM: неверные параметры атрибута')
@@ -437,7 +445,7 @@ class BSLDOMText(_CharacterData):
         new=_make(doc,K.TEXT,data=right,charge=False)
         if self._parent is not None:
             rows=self._parent._children;rows.insert(rows.index(self)+1,new);new._parent=self._parent
-        self._data=left;return new
+        self._data=left;return None
 
 class BSLDOMCDATASection(_CharacterData): pass
 class BSLDOMComment(_CharacterData): pass
@@ -502,15 +510,15 @@ def _make(doc,kind,name='',uri='',local='',prefix='',data='',*,charge=True):
     return node
 
 
-def _copy_into(source,doc,deep,existing=None):
+def _copy_into(source,doc,deep,existing=None,*,attributes=True):
     rows=list(_walk(source)) if deep else [(source,0)]
-    allnodes=[n for n,_ in rows]+[a for n,_ in rows for a in n._attrs]
+    allnodes=[n for n,_ in rows]+[a for n,_ in rows for a in (n._attrs if attributes else ())]
     doc._reserve(len(allnodes)-(1 if existing is not None else 0),sum(sum(map(len,(n._name,n._uri,n._local,n._prefix,n._data)))+sum(len(k)+len(v) for k,v in n._ns.items()) for n in allnodes))
     copies={}
     for n,_ in rows:
         copy=existing if n is source and existing is not None else _make(doc,n._kind,n._name,n._uri,n._local,n._prefix,n._data,charge=False)
         copy._ns=dict(n._ns);copies[id(n)]=copy
-        for a in n._attrs:
+        for a in (n._attrs if attributes else ()):
             attr=_make(doc,K.ATTRIBUTE,a._name,a._uri,a._local,a._prefix,a._data,charge=False);attr._owner_element=copy;copy._attrs.append(attr)
         if n is not source:
             parent=copies[id(n._parent)];parent._children.append(copy);copy._parent=parent

@@ -84,7 +84,7 @@ class DOMFamilyTests(unittest.TestCase):
     def test_text_character_data_split_normalize_unicode(self):
         d=self.doc();r=d.document_element();a=d.create_text_node('я😀xy');r.append_child(a)
         self.assertEqual(a.get_member('Length'),5);self.assertEqual(a.substring_data(1,2),'😀')
-        b=a.split_text(3);self.assertEqual((a._data,b._data),('я😀','xy'));self.assertEqual(a.get_member('WholeText'),'я😀xy')
+        self.assertIsNone(a.split_text(3));b=a._parent._children[1];self.assertEqual((a._data,b._data),('я😀','xy'));self.assertEqual(a.get_member('WholeText'),'я😀xy')
         b.insert_data(1,'z');b.delete_data(0,1);b.append_data('!');b.replace_data(0,1,'Q')
         self.assertEqual(b._data,'Qy!');r.normalize();self.assertEqual(r._children,[a]);self.assertEqual(a._data,'я😀Qy!')
         before=a._data
@@ -100,18 +100,45 @@ class DOMFamilyTests(unittest.TestCase):
     def test_clone_import_and_document_owner(self):
         d=self.doc();r=d.document_element();r.set_attribute('a','v');r.append_child(d.create_text_node('t'))
         shallow=r.clone_node(False);deep=r.clone_node(True)
-        self.assertFalse(shallow._children);self.assertEqual(shallow.get_attribute('a'),'v');self.assertTrue(deep.is_equal_node(r));self.assertIsNot(deep,r)
+        self.assertFalse(shallow._children);self.assertIsNone(shallow.get_attribute('a'));self.assertTrue(deep.is_equal_node(r));self.assertIsNot(deep,r)
         other=self.doc();copy=other.import_node(r,True);other.document_element().append_child(copy)
         self.assertIs(copy._owner,other);self.assertIs(copy._attrs[0]._owner,other);self.assertIs(copy._children[0]._owner,other)
         cloned=d.clone_node(True);self.assertIs(cloned.document_element()._owner,cloned)
         with self.assertRaises(ValueError):other.import_node(d,True)
 
-    def test_element_lists_remain_live(self):
+    def test_document_queries_snapshot_while_child_lists_remain_live(self):
         d=self.doc();r=d.document_element();view=d.get_elements('x')
         self.assertEqual(view.count(),0);a=d.create_element('x');r.append_child(a)
-        self.assertEqual(view.count(),1);self.assertIs(view.item(0),a);self.assertIsNone(view.item(1));r.remove_child(a);self.assertEqual(view.count(),0)
+        self.assertEqual(view.count(),0);self.assertIsNone(view.item(0));fresh=d.get_elements('x');self.assertIs(fresh.item(0),a);r.remove_child(a);self.assertEqual(fresh.count(),1)
         out=[];Interpreter(out.append).execute('D=New DOMDocument("","r");D.DocumentElement.AppendChild(D.CreateElement("x"));For Each N In D.DocumentElement.ChildNodes Do Сообщить(N.NodeName);EndDo;')
         self.assertEqual(out,['x'])
+
+    def test_measured_document_query_and_builder_defaults_are_local(self):
+        d=self.doc();r=d.document_element()
+        for node in (d.create_element('urn:n','p:a'), d.create_element('a'), d.create_element('b')):r.append_child(node)
+        self.assertEqual(d.get_elements('a').count(),2)
+        self.assertEqual(d.get_elements('urn:n','a').count(),2)
+        self.assertEqual(d.get_elements('missing','z').count(),0)
+        # Existing element query behavior is not generalized from Document facts.
+        self.assertEqual(r.get_elements('urn:n','a').count(),1)
+        reader=BSLXMLReader();reader.set_string('<r><![CDATA[a<b]]><!--c--><?task x?></r>')
+        settings=reader._settings;self.assertTrue(settings.ignore_comments)
+        doc=BSLDOMBuilder().read(reader)
+        self.assertEqual([x._kind for x in doc.document_element()._children],[n.K.TEXT,n.K.COMMENT,n.K.PI])
+        self.assertIs(reader._settings,settings);self.assertTrue(settings.ignore_comments);self.assertFalse(reader.read())
+        regular=BSLXMLReader();regular.set_string('<r><!--c--></r>');kinds=[]
+        while regular.read():kinds.append(regular._current['kind'])
+        from yadinassi.xml_io import T
+        self.assertNotIn(T.COMMENT,kinds)
+        declaration=BSLXMLReader();declaration.set_string('<?xml version="1.0" encoding="UTF-8"?><r/>')
+        BSLDOMBuilder().read(declaration)
+        self.assertEqual((declaration._version,declaration._xml_encoding),('1.0','UTF-8'))
+        broken=BSLXMLReader();broken.set_string('<?xml version="1.0" encoding="UTF-8"?><r>')
+        saved=(broken._version,broken._xml_encoding,broken._tokens,broken._position)
+        with self.assertRaises(ValueError):BSLDOMBuilder().read(broken)
+        self.assertEqual((broken._version,broken._xml_encoding,broken._tokens,broken._position),saved)
+        other=self.doc();r.set_attribute('k','v')
+        self.assertEqual(other.import_node(r,False).get_attribute('k'),'v')
 
     def test_budget_before_creation_clone_or_text_mutation(self):
         d=self.doc();r=d.document_element();r.append_child(d.create_text_node('a'));before=(d._allocated,d._units)

@@ -4,7 +4,8 @@ This family adds a mutable XML tree, not another streaming-XML alias. The local
 checkpoint supports constructing a document, reading through `XMLReader`,
 navigating and editing nodes/attributes, cloning/importing subtrees, and writing
 through `XMLWriter` to its existing string or explicitly opened file target.
-Native 1C calibration is **pending**; local tests are not platform observations.
+Two native captures are retained; the measured corrections replay exactly against
+the current ordinary40 packet. Fresh corrected-head native parity remains **pending**.
 
 ## Public surface
 
@@ -21,15 +22,17 @@ Native 1C calibration is **pending**; local tests are not platform observations.
   `IsSameNode`, `IsEqualNode`, `TextContent` and ordinary node/name/namespace fields.
 - Attribute get/set/remove, attribute-node attach/detach, named and indexed
   AttributeMap operations. Collections provide `Count`, `Item`, indexing and
-  iteration; queries and child/attribute collections reflect later mutations.
+  iteration. Child/attribute collections reflect later mutations; Document tag
+  queries retain a snapshot. Measured Document query overloads match local names
+  across the tested prefixed/empty namespaces; Element queries are not generalized.
 - CharacterData `Data`, `Length`, substring/append/insert/delete/replace;
-  Text `SplitText`/`WholeText`. Offsets and lengths use UTF-16 units. A boundary
+  Text `SplitText`/`WholeText`; SplitText mutates the tree and returns Undefined. Offsets and lengths use UTF-16 units. A boundary
   splitting a surrogate pair is explicitly rejected rather than repaired.
 - Explicit `SetNamespaceMapping(prefix, uri[, False])`, removal and namespace
   lookup. URI-only automatic-prefix generation and reconcile=True are rejected,
   not silently interpreted as default-namespace mapping.
 - `DOMBuilder.Read(XMLReader)` starts at the beginning of an open XML source;
-  it follows that reader's settings and does not close it. `DOMWriter.Write(node,
+  it retains comments while preserving the reader's settings and does not close it. `DOMWriter.Write(node,
   XMLWriter)` preserves node namespaces, including insertion inside an already
   opened target default namespace, and does not close the target.
 
@@ -69,6 +72,8 @@ support is not implied by a node's `TypeOf` identity.
 
 The source-bound40-case ordinary packet and exact admission/output limits are
 specified in [dom-family-measurement.md](dom-family-measurement.md). Native facts
-will calibrate defaults, return values, live lists, namespace behavior and reader
-settings before parity is claimed. No public fixture may contain raw exceptions,
+calibrate ordinary defaults, returns, query snapshots and reader behavior.
+`!todo` wider namespace-pattern semantics remain outside the calibrated scope.
+Missing attributes return Undefined, as documented by the official GetAttribute page.
+Shallow element clones omit attributes; deep clones and imports retain prior behavior. No public fixture may contain raw exceptions,
 installation identifiers, credentials or uncontrolled filesystem paths.
