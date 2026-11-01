@@ -26,6 +26,28 @@ class Tests(unittest.TestCase):
         child.remove(section)
         self.assertEqual(ET.tostring(root),ET.tostring(ET.fromstring(old[name])))
         self.assertEqual(actual['Catalogs/'+self.p['base']['catalog_name']+'.xml'],old['Catalogs/'+self.p['base']['catalog_name']+'.xml'])
+    def test_measured_section_defaults_are_closed_input_not_redump_stripping(self):
+        xr='{http://v8.1c.ru/8.3/xcf/readable}'
+        for reverse in (False,True):
+            setup,profile=p.fresh(reverse);files=p.xml(setup,profile)
+            name='Documents/'+profile['base']['document_name']+'.xml'
+            section=ET.fromstring(files[name]).find('.//'+p.base.MD+'TabularSection')
+            standard=section.find(p.base.MD+'Properties/'+p.base.MD+'StandardAttributes')
+            self.assertEqual(len(standard),1)
+            self.assertEqual(standard[0].attrib,{'name':'LineNumber'})
+            self.assertEqual(standard[0].tag,xr+'StandardAttribute')
+            self.assertEqual(len(standard[0]),25)
+            for attr in section.findall(p.base.MD+'ChildObjects/'+p.base.MD+'Attribute'):
+                props=attr.find(p.base.MD+'Properties')
+                self.assertIsNone(props.find(p.base.MD+'FillFromFillingValue'))
+                self.assertIsNone(props.find(p.base.MD+'FillValue'))
+            for old,new in ((b'<xr:DataHistory>Use',b'<xr:DataHistory>DontUse'),
+                            (b'<xr:StandardAttribute name="LineNumber">',b'<xr:StandardAttribute name="Other">'),
+                            (b'<LineNumberLength>5',b'<FillFromFillingValue>false</FillFromFillingValue><LineNumberLength>5')):
+                changed=dict(files);changed[name]=files[name].replace(old,new)
+                self.assertNotEqual(changed[name],files[name])
+                with self.assertRaises(ValueError):p.validate_xml(setup,profile,changed)
+
     def test_closed_profile_injection_and_identity_alias_refused(self):
         for key,value in (('section','Items";Raise'),('source','wrong'),('columns',['Product']),('extra','x')):
             bad=copy.deepcopy(self.p);bad[key]=value

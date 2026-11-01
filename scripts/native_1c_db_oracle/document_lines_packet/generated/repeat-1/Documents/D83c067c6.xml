@@ -157,7 +157,7 @@
 <FullTextSearch>DontUse</FullTextSearch>
 <DataHistory>DontUse</DataHistory>
 </Properties></Attribute>
-<TabularSection uuid="683aeb60-9001-4ac8-aed2-1ec91f205b77"><InternalInfo><xr:GeneratedType name="DocumentTabularSection.D83c067c6.Items" category="TabularSection"><xr:TypeId>a7697684-cbb8-4372-8a9c-7c0b2c778f8a</xr:TypeId><xr:ValueId>df635833-5abc-49f6-adb5-691ea82d06b2</xr:ValueId></xr:GeneratedType><xr:GeneratedType name="DocumentTabularSectionRow.D83c067c6.Items" category="TabularSectionRow"><xr:TypeId>d9122d44-e46f-4479-9551-04f415a5ced4</xr:TypeId><xr:ValueId>449dbcd7-d6cd-4a87-ad24-2d4b96357105</xr:ValueId></xr:GeneratedType></InternalInfo><Properties><Name>Items</Name><Synonym/><Comment/><ToolTip/><FillChecking>DontCheck</FillChecking><StandardAttributes/><LineNumberLength>5</LineNumberLength></Properties><ChildObjects><Attribute uuid="4ae8d741-aac4-4c75-9c65-da80a2cc3afc"><Properties>
+<TabularSection uuid="683aeb60-9001-4ac8-aed2-1ec91f205b77"><InternalInfo><xr:GeneratedType name="DocumentTabularSection.D83c067c6.Items" category="TabularSection"><xr:TypeId>a7697684-cbb8-4372-8a9c-7c0b2c778f8a</xr:TypeId><xr:ValueId>df635833-5abc-49f6-adb5-691ea82d06b2</xr:ValueId></xr:GeneratedType><xr:GeneratedType name="DocumentTabularSectionRow.D83c067c6.Items" category="TabularSectionRow"><xr:TypeId>d9122d44-e46f-4479-9551-04f415a5ced4</xr:TypeId><xr:ValueId>449dbcd7-d6cd-4a87-ad24-2d4b96357105</xr:ValueId></xr:GeneratedType></InternalInfo><Properties><Name>Items</Name><Synonym/><Comment/><ToolTip/><FillChecking>DontCheck</FillChecking><StandardAttributes><xr:StandardAttribute name="LineNumber"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute></StandardAttributes><LineNumberLength>5</LineNumberLength></Properties><ChildObjects><Attribute uuid="4ae8d741-aac4-4c75-9c65-da80a2cc3afc"><Properties>
 <Name>Product</Name>
 <Synonym/>
 <Comment/>
@@ -171,8 +171,6 @@
 <MultiLine>false</MultiLine>
 <ExtendedEdit>false</ExtendedEdit>
 <MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
-<FillFromFillingValue>false</FillFromFillingValue>
-<FillValue xsi:nil="true"/>
 <FillChecking>DontCheck</FillChecking>
 <ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
 <ChoiceParameterLinks/>
@@ -200,8 +198,6 @@
 <MultiLine>false</MultiLine>
 <ExtendedEdit>false</ExtendedEdit>
 <MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
-<FillFromFillingValue>false</FillFromFillingValue>
-<FillValue xsi:type="xs:decimal">0</FillValue>
 <FillChecking>DontCheck</FillChecking>
 <ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
 <ChoiceParameterLinks/>
@@ -229,8 +225,6 @@
 <MultiLine>false</MultiLine>
 <ExtendedEdit>false</ExtendedEdit>
 <MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
-<FillFromFillingValue>false</FillFromFillingValue>
-<FillValue xsi:type="xs:decimal">0</FillValue>
 <FillChecking>DontCheck</FillChecking>
 <ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
 <ChoiceParameterLinks/>
@@ -258,8 +252,6 @@
 <MultiLine>false</MultiLine>
 <ExtendedEdit>false</ExtendedEdit>
 <MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
-<FillFromFillingValue>false</FillFromFillingValue>
-<FillValue xsi:type="xs:decimal">0</FillValue>
 <FillChecking>DontCheck</FillChecking>
 <ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
 <ChoiceParameterLinks/>
@@ -287,8 +279,6 @@
 <MultiLine>false</MultiLine>
 <ExtendedEdit>false</ExtendedEdit>
 <MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
-<FillFromFillingValue>false</FillFromFillingValue>
-<FillValue xsi:type="xs:string"></FillValue>
 <FillChecking>DontCheck</FillChecking>
 <ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
 <ChoiceParameterLinks/>

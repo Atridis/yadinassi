@@ -7,6 +7,9 @@ SOURCE='9be9d601e4598de21c87098161928e827341973c'
 COLUMNS=('Product','Quantity','Price','Amount','Note')
 BLOCKS=('identity','rows','find_total','selection')
 STATES=('initial','rewritten')
+# Exact identity-free native redump subtree, run 41261482492; input only.
+# Report SHA256 2bc781dd838ee8e27a86446c0cc443ceec41f2a29cc416dc2599093416235a90.
+LINE_NUMBER_STANDARD = '<xr:StandardAttribute name="LineNumber"><xr:LinkByType/><xr:FillChecking>DontCheck</xr:FillChecking><xr:MultiLine>false</xr:MultiLine><xr:FillFromFillingValue>false</xr:FillFromFillingValue><xr:CreateOnInput>Auto</xr:CreateOnInput><xr:TypeReductionMode>TransformValues</xr:TypeReductionMode><xr:MaxValue xsi:nil="true"/><xr:ToolTip/><xr:ExtendedEdit>false</xr:ExtendedEdit><xr:Format/><xr:ChoiceForm/><xr:QuickChoice>Auto</xr:QuickChoice><xr:ChoiceHistoryOnInput>Auto</xr:ChoiceHistoryOnInput><xr:EditFormat/><xr:PasswordMode>false</xr:PasswordMode><xr:DataHistory>Use</xr:DataHistory><xr:MarkNegatives>false</xr:MarkNegatives><xr:MinValue xsi:nil="true"/><xr:Synonym/><xr:Comment/><xr:FullTextSearch>Use</xr:FullTextSearch><xr:ChoiceParameterLinks/><xr:FillValue xsi:nil="true"/><xr:Mask/><xr:ChoiceParameters/></xr:StandardAttribute>'
 
 def fresh(reverse=False):
     s=linked.fresh(reverse);p=base.profile(s,linked.schema_request(s))
@@ -36,18 +39,25 @@ def xml(s,p):
         old=byname[s.attrs[roles[column]]]
         new=re.sub(r'<Attribute uuid="[^"]+">','<Attribute uuid="'+p['ids'][column]+'">',old,count=1)
         new=new.replace('<Name>'+s.attrs[roles[column]]+'</Name>','<Name>'+column+'</Name>')
+        # Native redump omits these two properties only for section columns.
+        # Header attribute defaults remain byte-identical to the measured base.
+        new,count=re.subn(r'<FillFromFillingValue>false</FillFromFillingValue>\s*', '', new)
+        if count!=1:raise ValueError('lines-column-fill-from')
+        new,count=re.subn(r'<FillValue\b[^>]*(?:/>|>[^<]*</FillValue>)\s*', '', new)
+        if count!=1:raise ValueError('lines-column-fill-value')
         columns.append(new)
     ids=p['ids'];document=p['base']['document_name']
     info='<InternalInfo>'
     for kind,key in (('TabularSection','section'),('TabularSectionRow','row')):
         info+=f'<xr:GeneratedType name="Document{kind}.{document}.Items" category="{kind}"><xr:TypeId>{ids[key+"_type"]}</xr:TypeId><xr:ValueId>{ids[key+"_value"]}</xr:ValueId></xr:GeneratedType>'
     info+='</InternalInfo>'
-    section=f'<TabularSection uuid="{ids["section"]}">'+info+'<Properties><Name>Items</Name><Synonym/><Comment/><ToolTip/><FillChecking>DontCheck</FillChecking><StandardAttributes/><LineNumberLength>5</LineNumberLength></Properties><ChildObjects>'+''.join(columns)+'</ChildObjects></TabularSection>'
+    section=f'<TabularSection uuid="{ids["section"]}">'+info+'<Properties><Name>Items</Name><Synonym/><Comment/><ToolTip/><FillChecking>DontCheck</FillChecking><StandardAttributes>'+LINE_NUMBER_STANDARD+'</StandardAttributes><LineNumberLength>5</LineNumberLength></Properties><ChildObjects>'+''.join(columns)+'</ChildObjects></TabularSection>'
     # Append at the top-level Document ChildObjects end, never inside an attr.
     end=text.rindex('</ChildObjects>')
     out[name]=(text[:end]+section+text[end:]).encode()
     if any(len(v)>65536 for v in out.values()):raise ValueError('lines-xml-budget')
-    # !todo Native redump must confirm section GeneratedType/default inventory.
+    # !todo Repeat 2 and the full row scenario still require native apply/redump.
+    # Repeat 1 input defaults match the source-bound native redump above.
     return out
 
 def validate_xml(s,p,actual):

@@ -63,7 +63,7 @@ class DocumentLinesFixtureTests(unittest.TestCase):
                         (b'<LineNumberLength>5',b'<LineNumberLength>4'),
                         (b'http://www.w3.org/2001/XMLSchema"',b'urn:wrong"'),
                         (b'</Properties>',b'<ObjectModule>unsafe</ObjectModule></Properties>'),
-                        (b'<StandardAttributes/>',b'<StandardAttributes><Added/></StandardAttributes>')):
+                        (b'<xr:StandardAttribute name="LineNumber">',b'<xr:StandardAttribute name="LineNumber"><Added/>')):
             changed=dict(actual);self.assertIn(old,changed[self.doc]);changed[self.doc]=changed[self.doc].replace(old,new)
             with self.assertRaises(ValueError):f.actual_mapping(self.s,self.p,changed)
         with self.assertRaises(ValueError):f.verify_redump(self.s,self.p,self.saved,{})
