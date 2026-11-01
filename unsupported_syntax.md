@@ -380,3 +380,8 @@ provided. See [exact scope](docs/data-io-family.md).
 No custom/async streams, internal hash-state codec, authentication/password-storage API, thin/web compatibility claim, or arbitrary provider fallback. Per-append16MiB and total64MiB implementation caps are explicit; native ordinary40 calibration pending. `!todo` unmeasured coercions and rare platform behavior. [Details](docs/data-hashing-family.md).
 
 !todo Base64String line folding: native SHA512 capture shows CRLF after64 encoded characters, while the current general Base64String API emits unwrapped text. Hashing measurements normalize only that exact observed separator for digest comparison; general line-folding parity is not claimed.
+
+
+### DOM: границы нового обычного семейства
+
+Ограниченное обычное DOM-дерево теперь описано в [DOM family](docs/dom-family.md); его native40-паритет ещё не подтверждён. XPath/XSD/HTML/XDTO, DTD/entities, DOMConfiguration, ReadWithContext, automatic-prefix/reconcile, traversal filters, user data, attribute-child trees, codecs и XML1.1 остаются неподдержанными.

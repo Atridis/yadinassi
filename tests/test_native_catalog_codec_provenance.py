@@ -39,9 +39,9 @@ def provenance():
 
 
 class CodecProvenanceTests(SyntheticFilesystemCase):
-    def test_actual_109_source_inventory_includes_format_and_metadata_and_recomputes_digest(self):
+    def test_actual_111_source_inventory_includes_format_and_metadata_and_recomputes_digest(self):
         hashes = independent_hashes()
-        self.assertEqual(len(hashes),109)
+        self.assertEqual(len(hashes),111)
         self.assertIn(CODEC,hashes)
         self.assertIn('yadinassi/data_io.py', hashes)
         self.assertIn('yadinassi/data_hashing.py', hashes)
@@ -65,7 +65,9 @@ class CodecProvenanceTests(SyntheticFilesystemCase):
                      'storage/config_information_register_binding.py', 'storage/config_information_register_records.py',
                      'storage/information_register_reader.py'):
             self.assertIn('yadinassi/'+name,hashes)
-        # Current union adds five InformationRegister modules to reviewed runtime104. This is an
+        self.assertIn('yadinassi/dom_nodes.py',hashes)
+        self.assertIn('yadinassi/dom_io.py',hashes)
+        # Current union adds five InformationRegister modules to reviewed DOM runtime106. This is an
         # exact source expectation, not the unchanged 512-file protocol cap.
         self.assertIn('yadinassi/value_tree_sort.py',hashes)
         self.assertIn('yadinassi/formatting.py',hashes)
@@ -73,7 +75,7 @@ class CodecProvenanceTests(SyntheticFilesystemCase):
             self.assertIn(name, hashes)
         value = provenance()
         expected = hashlib.sha256(json.dumps(hashes,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-        self.assertEqual(value['source_file_count'],109)
+        self.assertEqual(value['source_file_count'],111)
         self.assertEqual(value['source_sha256'],expected)
         self.assertEqual(value['comparison_driver_sha256'],hashes[DRIVERS[1]])
         self.assertEqual(value['map_contract_sha256'],hashes['scripts/native_1c_map_contract.py'])
@@ -112,7 +114,7 @@ class CodecProvenanceFixtureScopeTests(unittest.TestCase):
 
     def test_posix_setup_keeps_production_reader_unchanged(self):
         original = full.read_regular
-        case = CodecProvenanceTests('test_actual_109_source_inventory_includes_format_and_metadata_and_recomputes_digest')
+        case = CodecProvenanceTests('test_actual_111_source_inventory_includes_format_and_metadata_and_recomputes_digest')
         with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', False):
             try:
                 case.setUp()
@@ -123,7 +125,7 @@ class CodecProvenanceFixtureScopeTests(unittest.TestCase):
 
     def test_windows_adapter_rejection_is_not_swallowed_and_cleanup_restores_reader(self):
         original = full.read_regular
-        case = CodecProvenanceTests('test_actual_109_source_inventory_includes_format_and_metadata_and_recomputes_digest')
+        case = CodecProvenanceTests('test_actual_111_source_inventory_includes_format_and_metadata_and_recomputes_digest')
         with mock.patch.object(host_tests, '_USE_SYNTHETIC_FILE_READER', True), \
                 mock.patch.object(host_tests, 'read_synthetic_file',
                                   side_effect=full.FullError('invalid_private_file')) as rejected:

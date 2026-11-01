@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest import mock
 import sys,json,hashlib,copy,tempfile,unittest,xml.etree.ElementTree as ET
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT),str(ROOT/'scripts/native_1c_db_oracle')]
@@ -98,17 +99,25 @@ class Tests(unittest.TestCase):
     def test_new_identity_generation_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)/'generated';p.generate(root)
-            m=[json.loads(f.read_text()) for f in sorted(root.glob('*/manifest.json'))]
+            m=[json.loads(f.read_text(encoding='utf-8')) for f in sorted(root.glob('*/manifest.json'))]
             self.assertNotEqual(m[0]['metadata_ids'],m[1]['metadata_ids'])
             self.assertEqual(m[0]['profile']['columns'],list(reversed(m[1]['profile']['columns'])))
             self.assertTrue(all(len(x['files'])==8 for x in m))
             with self.assertRaises(ValueError):p.generate(root)
+    def test_saved_replay_with_windows_ansi_default(self):
+        original=Path.read_text
+        def ansi_default(path,*args,**kwargs):
+            kwargs.setdefault('encoding','cp1252')
+            return original(path,*args,**kwargs)
+        with mock.patch.object(Path,'read_text',ansi_default):
+            self.test_saved_replay_no_identity_regeneration()
+        self.assertIs(Path.read_text,original)
     def test_saved_replay_no_identity_regeneration(self):
         for root in sorted((ROOT/'scripts/native_1c_db_oracle/information_register_packet/generated').iterdir()):
-            m=json.loads((root/'manifest.json').read_text());pr=m['profile']
+            m=json.loads((root/'manifest.json').read_text(encoding='utf-8'));pr=m['profile']
             s=p.linked.Setup(p.linked.probe.Setup(*(tuple(m[k]) for k in ('names','metadata_ids','record_ids'))),*(tuple(m[k]) for k in ('product_rows','attribute_names','attribute_ids','order'))).validate()
             for name,raw in p.xml(s,pr).items():self.assertEqual((root/name).read_bytes(),raw)
-            for state in p.STATES:self.assertEqual((root/f'setup-{state}.bsl').read_text(),p.setup(s,pr,state))
-            for block in p.BLOCKS:self.assertEqual((root/f'{block}.bsl').read_text(),p.render(s,pr,block))
+            for state in p.STATES:self.assertEqual((root/f'setup-{state}.bsl').read_text(encoding='utf-8'),p.setup(s,pr,state))
+            for block in p.BLOCKS:self.assertEqual((root/f'{block}.bsl').read_text(encoding='utf-8'),p.render(s,pr,block))
             for name,digest in m['files'].items():self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),digest)
 if __name__=='__main__':unittest.main()

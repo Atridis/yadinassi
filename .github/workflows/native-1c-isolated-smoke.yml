@@ -405,6 +405,9 @@ jobs:
           - profile: data-io-family-v1
             artifact: data-io-family
             case: data_io_family
+          - profile: dom-family-v1
+            artifact: dom-family
+            case: dom_family
           - profile: data-hashing-family-v1
             artifact: data-hashing-family
             case: data_hashing_family
