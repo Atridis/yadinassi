@@ -67,7 +67,7 @@ EndFunction
  ElsIf N=24 Then H.Append("a");H.Append(GetBinaryDataFromString("b"));H.Append("c");C.Append("abc");Return String(HFKey(H.HashSum)=HFKey(C.HashSum));
  ElsIf N=25 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();H.Append(S);C.Append("abc");V=String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(S.CurrentPosition())+":"+String(S.Size());S.Close();Return V;
  ElsIf N=26 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();H.Append(S,2);C.Append("ab");V=String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(S.CurrentPosition());S.Close();Return V;
- ElsIf N=27 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();Before=HFKey(H.HashSum);H.Append(S,0);V=String(Before=HFKey(H.HashSum))+":"+String(S.CurrentPosition());S.Close();Return V;
+ ElsIf N=27 Then S=GetBinaryDataFromString("").OpenStreamForRead();Before=HFKey(H.HashSum);H.Append(S);V=String(Before=HFKey(H.HashSum))+":"+String(S.CurrentPosition());S.Close();Return V;
  ElsIf N=28 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();H.Append(S,9);C.Append("abc");V=String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(S.CurrentPosition());H.Append(S);V=V+":"+String(HFKey(H.HashSum)=HFKey(C.HashSum));S.Close();Return V;
  ElsIf N=29 Then S=GetBinaryDataFromString("abc").OpenStreamForRead();S.Seek(1,P);H.Append(S);C.Append("bc");V=String(HFKey(H.HashSum)=HFKey(C.HashSum))+":"+String(S.CurrentPosition());S.Close();Return V;
  ElsIf N=30 Then S=New MemoryStream;S.Close();Before=HFKey(H.HashSum);Try H.Append(S);Return "unexpected";Except Return "closed:"+String(Before=HFKey(H.HashSum));EndTry;

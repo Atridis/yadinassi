@@ -375,4 +375,6 @@ provided. See [exact scope](docs/data-io-family.md).
 
 ## DataHashing remaining scope
 
+!todo Explicit zero-count stream Append is unsupported pending native semantics; the original native workflow terminated before case27 emitted a record. Omitted Count on an empty stream is a separate ordinary supported workflow.
+
 No custom/async streams, internal hash-state codec, authentication/password-storage API, thin/web compatibility claim, or arbitrary provider fallback. Per-append16MiB and total64MiB implementation caps are explicit; native ordinary40 calibration pending. `!todo` unmeasured coercions and rare platform behavior. [Details](docs/data-hashing-family.md).

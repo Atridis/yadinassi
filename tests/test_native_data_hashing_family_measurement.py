@@ -51,6 +51,10 @@ class DataHashingFamilyMeasurementTests(unittest.TestCase):
         self.assertNotIn('ОписаниеОшибки', SOURCE)
         self.assertEqual(SOURCE.count('Сообщить('), 5)
         self.assertIn('// !todo', SOURCE)
+        case27=SOURCE.split('ElsIf N=27 Then',1)[1].split('ElsIf N=28 Then',1)[0]
+        self.assertIn('GetBinaryDataFromString("")',case27)
+        self.assertIn('H.Append(S);',case27)
+        self.assertNotIn('H.Append(S,0)',case27)
 
     def test_rectangular_wire_budget_and_rejections(self):
         raw = synthetic_output()

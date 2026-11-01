@@ -66,6 +66,10 @@ class BSLDataHashing(_FileMethods):
         if type(value) in _STREAMS:
             value._readable()
             requested = None if count is None else _number(count)
+            # !todo Explicit zero-count stream workflow failed on native 8.3.27;
+            # its semantics are unmeasured. Do not guess a no-op or all-data read.
+            if requested == 0:
+                raise ValueError('ХешированиеДанных: нулевое количество потока пока не поддерживается')
             available = max(0, value._size() - value._state.position)
             size = available if requested is None else min(requested, available)
             self._preflight(size)

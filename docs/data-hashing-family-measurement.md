@@ -28,8 +28,8 @@ web-client, or browser support from this packet.
 ## Bound packet
 
 - `integrational_tests/measurements/data_hashing_family.bsl`
-- SHA-256 `237b2b7df6ec9a16c1e17956b4bfc57c3d8b3cf1826d695fecae1a9e288b6602`
-- 6,989 UTF-8 source bytes; additional packet bound 8,192 bytes.
+- SHA-256 `f43a6793a6ca4b3c0e3ba347c40559c0175fdd78f71069276601eb7e33a9c523`
+- 6,984 UTF-8 source bytes; additional packet bound 8,192 bytes.
 - 40 cases plus 2 observer controls; 42 messages and 5 print sites.
 - At most 40 UTF-16 units per successful case; exact output rectangle 7,130 bytes,
   below the unchanged 8,192-byte output cap.
@@ -55,7 +55,7 @@ semantic answers or a cryptographic security property.
 | 11–15 | `a` + `b` + `c` versus one append; repeated HashSum reads without reset |
 | 16–20 | Empty and intermediate HashSum snapshots remain independent after appends |
 | 21–24 | UTF-8 Cyrillic/accented/astral text, embedded zero/255 binary bytes, mixed text/BinaryData |
-| 25–29 | Stream count omitted, partial, zero, over-EOF/at-EOF, nonzero source position and resulting cursor |
+| 25–29 | Stream count omitted, partial, empty omitted-count, over-EOF/at-EOF, nonzero source position and resulting cursor |
 | 30–31 | Closed-stream rejection/state preservation; borrowed read-only view/shared cursor remains usable |
 | 32–35 | Read-only properties, invalid Append/count/constructor arguments, type/enum identity |
 | 36–40 | Each algorithm: mixed prefix + owned AppendFile + suffix, missing-file rejection/state preservation |
@@ -142,3 +142,17 @@ A later failed-only phase revision adds a 40-bit valid-case bitmap and an
 ordered prefix length0..40 after the two exact controls. Gaps, duplicates,
 out-of-order or malformed records cannot extend the prefix; no record content
 is exported. This identifies a completion boundary, not the native error cause.
+
+## Original zero-count workflow remains unavailable
+
+The original source SHA-256 `237b2b7df6ec9a16c1e17956b4bfc57c3d8b3cf1826d695fecae1a9e288b6602`
+is retained in Git history. Run41326610981/headad12fdc2 yielded both controls,
+exact ordered valid records1..26 (bitmap67108863), and a nonempty launcher error;
+no case27..40 record was exported. Summary ZIP SHA-256
+`6a10b3ae66f2fa525d80e2102d64455b1daeaa698522430ad81f6725885054b1`.
+This proves the completion boundary, not that explicit Count0 means no-op or
+all-data, nor that the26 records passed. Original40 parity was never accepted.
+!todo Explicit Count0 stream workflow is temporarily unsupported/catchably rejected;
+it must not be re-run as an allegedly ordinary supported operation.
+The revised packet keeps40 IDs but replaces slot27 with an empty stream and
+omitted Count. All other cases and resource/cleanup guards are unchanged.

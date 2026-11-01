@@ -58,11 +58,26 @@ class DataHashingTests(unittest.TestCase):
         stream=Memory(Buffer.from_bytes(b'abcde')); stream.seek(1,Origin.BEGIN)
         value=Hash(Function.SHA256); value.append(stream,2)
         self.assertEqual(stream.current_position(),3)
-        value.append(stream,0); self.assertEqual(stream.current_position(),3)
+        before=digest(value)
+        with self.assertRaisesRegex(ValueError,'пока не поддерживается'): value.append(stream,0)
+        self.assertEqual(stream.current_position(),3); self.assertEqual(digest(value),before)
         value.append(stream,9); self.assertEqual(stream.current_position(),5)
         value.append(stream); self.assertEqual(stream.current_position(),5)
         self.assertEqual(digest(value),reference(Function.SHA256,b'bcde'))
         stream.seek(0,Origin.BEGIN); self.assertEqual(stream._read_bytes(1),b'a')
+
+    def test_explicit_zero_stream_is_unsupported_but_empty_omitted_is_valid(self):
+        for data in (b'',b'abc'):
+            for function in Function:
+                value=Hash(function);value.append('prefix');before=digest(value)
+                stream=Binary.from_bytes(data).open_stream_for_read()
+                with self.assertRaisesRegex(ValueError,'пока не поддерживается'): value.append(stream,0)
+                self.assertEqual(stream.current_position(),0);self.assertEqual(digest(value),before)
+                self.assertEqual(value._total,6)
+                stream.close()
+        value=Hash(Function.SHA256);stream=Memory();before=digest(value)
+        value.append(stream)
+        self.assertEqual(digest(value),before);self.assertEqual(stream.current_position(),0)
 
     def test_readonly_stream_and_independent_returned_binary(self):
         stream=Binary.from_bytes(b'abc').open_stream_for_read()
