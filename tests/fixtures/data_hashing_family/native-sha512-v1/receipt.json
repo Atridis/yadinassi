@@ -1,0 +1,15 @@
+{
+  "schema": "native-data-hashing-public-fixture-v1",
+  "source_sha256": "0747e214310432fc0bc36af922d7443d15ff0c082bc9b8356403a7ca874b827d",
+  "output_sha256": "315983a268fae9793eb264a72d9dc836311bcd4372e6caa9fabfa2e8fc123cd3",
+  "platform": "8.3.27.1508",
+  "case_count": 40,
+  "available_count": 40,
+  "representation_mismatch_cases": [
+    5,
+    10,
+    30,
+    33
+  ],
+  "scope": "SHA512 Base64 actual full strings, CRLF after64; decoded empty/abc bytes match standard SHA512"
+}
