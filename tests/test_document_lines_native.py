@@ -185,6 +185,14 @@ root=Path(sys.argv[1]);sys.path.insert(0,str(root))
 import document_lines_inputs as inputs
 inputs.activate_runtime(root)
 import document_lines_run,document_lines_report,document_lines_readback,document_lines_physical
+def refuse():
+    from yadinassi.storage.filedb_catalog import UnsupportedLayout
+    raise UnsupportedLayout('descriptor_shape')
+try:
+    document_lines_readback._attempt('physical-observe',refuse)
+except document_lines_readback.OfflineFailure as error:
+    assert error.diagnostic==dict(stage='physical-observe',category='catalog_error',code='descriptor_shape',location=None)
+else:raise AssertionError('cold failure diagnostic missing')
 from document_lines_fixture import load
 assert load(1)[1]['profile']['base']['attributes']==5
 # Cold complete installer exercise: no unit-test ambient imports or cached module state.
@@ -271,6 +279,33 @@ class DocumentLinesAcquisitionTests(DocumentLinesSourceFixtureCase):
             self.assertEqual(backend.removed.count('catalog_postimage'),8)
             self.assertEqual(sum(backend.removed.count(n) for n in ('lines_initial','lines_rewritten')),4)
             self.assertIsNone(backend.catalog_attempt)
+            # A known offline refusal must not erase an authenticated native
+            # capture, but its postimage is retained only after final inspection.
+            from document_lines_readback import OfflineFailure
+            diagnostic = dict(stage='physical-observe', category='value_error', code=None, location=None)
+            def refused(*args):
+                raise OfflineFailure(diagnostic)
+            backend=Backend(Path(tmp));seen.clear()
+            with mock.patch.object(runner,'freeze_database',return_value=dict(bytes=123,sha256='a'*64)),mock.patch.object(runner,'inspect_frozen_catalog',side_effect=inspect):
+                with self.assertRaises(OracleError) as raised:
+                    runner.acquire(backend,readback=refused)
+            self.assertEqual(raised.exception.kind,'metadata_rejected')
+            self.assertEqual(len(backend.catalog_captures),1)
+            retained=backend.catalog_captures[0]
+            self.assertEqual(retained['offline'],{'failure':diagnostic})
+            self.assertEqual(retained['postimage'],dict(bytes=123,sha256='a'*64))
+            self.assertEqual(retained['native']['token'],'00000000000000000000000000000002')
+            self.assertEqual(backend.catalog_attempt,dict(repeat=1,state='initial',context='client',phase='offline'))
+            self.assertIn('catalog_postimage',backend.removed)
+            backend=Backend(Path(tmp))
+            def changed(directory,*,read_catalog,**kw):
+                read_catalog(lambda *_:b'',123,limits=None)
+                raise OracleError('snapshot_changed')
+            with mock.patch.object(runner,'freeze_database',return_value=dict(bytes=123,sha256='a'*64)),mock.patch.object(runner,'inspect_frozen_catalog',side_effect=changed):
+                with self.assertRaises(OracleError) as raised:
+                    runner.acquire(backend,readback=refused)
+            self.assertEqual(raised.exception.kind,'snapshot_changed')
+            self.assertEqual(backend.catalog_captures,[])
 
 
 class DocumentLinesHostTests(DocumentLinesSourceFixtureCase):
@@ -335,6 +370,19 @@ class DocumentLinesReportTests(DocumentLinesSourceFixtureCase):
         value['lifecycle']['cleanup'].update(native_processes_stopped=True,raw_files_removed=True)
         self.assertEqual(policy.validate_report(policy.encode_report(value),nonce=NONCE,provenance=identity),value)
         self.assertFalse(value['states'][0]['offline']['comparison']['rows']['matched'])
+        failed=copy.deepcopy(value);failed['states']=failed['states'][:1];failed['installations']=failed['installations'][:1]
+        failed['lifecycle'].update(status='failed',failure_kind='metadata_rejected')
+        failed['failure_context']=dict(repeat=1,state='initial',context='client',phase='offline')
+        failed['states'][0]['offline']={'failure':dict(stage='physical-observe',category='value_error',code=None,location=None)}
+        self.assertEqual(policy.validate_report(policy.encode_report(failed),nonce=NONCE,provenance=identity),failed)
+        for mutation in ('success','raw_error','wrong_state','not_last'):
+            bad=copy.deepcopy(failed)
+            if mutation=='success':bad['lifecycle'].update(status='ok',failure_kind='none')
+            elif mutation=='raw_error':bad['states'][0]['offline']['failure']['message']='private source text'
+            elif mutation=='wrong_state':bad['failure_context']['context']='server'
+            else:bad['states'].append(copy.deepcopy(value['states'][1]))
+            with self.subTest(offline_failure=mutation),self.assertRaises((OracleError,ValueError)):
+                policy.validate_report(policy.encode_report(bad),nonce=NONCE,provenance=identity)
         for change in ('mapping','origin','setup_origin','token','comparison','raw'):
             bad=copy.deepcopy(value)
             if change=='mapping':bad['installations'][0]['mapping']['objects'][0]['ref_type_uuid']=bad['installations'][0]['mapping']['objects'][0]['metadata_uuid']

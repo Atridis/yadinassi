@@ -202,7 +202,13 @@ def acquire(backend, *, readback):
                             # Both offline measurements execute under the same pinned
                             # descriptor's before/after full digest and process census.
                             def reader(read_at, size, *, limits):
-                                return readback(read_at, size, frozen, b, native['outputs'], mapping)
+                                from document_lines_readback import OfflineFailure
+                                try:
+                                    return readback(read_at, size, frozen, b, native['outputs'], mapping)
+                                except OfflineFailure as error:
+                                    # The inspector must still prove final digest and
+                                    # quiescence before retaining this native capture.
+                                    return {'failure': error.diagnostic}
                             import filedb_catalog
                             backend.catalog_attempt['phase'] = 'offline'
                             stable, offline = inspect_frozen_catalog(frozen, quiescent=backend.quiescent,
@@ -210,6 +216,8 @@ def acquire(backend, *, readback):
                             require(stable == {k: postimage[k] for k in ('bytes', 'sha256')}, 'snapshot_changed')
                             captures.append(dict(repeat=repeat, state=state, context=context, setup=setup, setup_origin=before,
                                 origin=origin, postimage=stable, native=native, offline=offline))
+                            if type(offline) is dict and set(offline) == {'failure'}:
+                                raise lifecycle.OracleError('metadata_rejected')
                         finally:
                             backend.remove(frozen)
             finally:

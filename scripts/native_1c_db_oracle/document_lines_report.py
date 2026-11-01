@@ -129,7 +129,15 @@ def validate_report(raw, *, nonce, provenance, final=False):
         token = state['native']['token']
         require(token not in native_tokens and all(token != other['token'] for other in setup_tokens.values()), 'stale_evidence')
         native_tokens.add(token)
-        offline = state['offline']; exact(offline, ('physical','outputs','comparison'))
+        offline = state['offline']
+        if type(offline) is dict and set(offline) == {'failure'}:
+            from document_lines_readback import validate_failure
+            validate_failure(offline['failure'])
+            require(life['status'] == 'failed' and life['failure_kind'] == 'metadata_rejected'
+                    and index == len(states)-1 and failure == dict(repeat=state['repeat'],
+                    state=state['state'],context=state['context'],phase='offline'), 'invalid_marker')
+            continue
+        exact(offline, ('physical','outputs','comparison'))
         # Measurement helper supplies its own closed physical validator.
         from document_lines_physical import validate_observation
         validate_observation(offline['physical'],manifest['profile'],installs[state['repeat']-1]['mapping'])

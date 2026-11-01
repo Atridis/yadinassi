@@ -117,7 +117,18 @@ binding. Missing table or unknown kind remains a finite unresolved result; no
 owner join, row order, physical stride or rewrite liveness is inferred. All table
 ownership mappings precede any target payload read, with one shared read budget.
 
-No native acquisition, public Items admission or parity has happened for this
-packet. Future public replay fixtures must contain only needed owned CONFIG, rows,
+The first native apply/redump measured an exact LineNumber standard subtree and
+section-column default omissions; generated inputs now match that owned redump
+without validator exceptions. Corrected run 41261954939 installed successfully
+but failed in offline observation before retaining a complete capture. Its cause
+remains unlocalized; no public Items admission or runtime parity is established.
+
+Known offline failures now retain authenticated native outputs and the frozen
+postimage digest only after the final same-descriptor integrity/quiescence checks
+pass. The report remains failed, contains no parity assessment for that capture,
+and exports only fixed stage/category/code and bounded source location—not raw
+exception text. Source-change/I/O/regular-file and snapshot/protocol failures
+still propagate and cannot bless a partial capture. Layout, bounded-resource and
+sharing refusals remain failed measurements, never accepted physical results. Future public replay fixtures must contain only needed owned CONFIG, rows,
 programs and observations: never installations, helpers, audit/session/token
 metadata. Complete authenticated reports remain private evidence.
