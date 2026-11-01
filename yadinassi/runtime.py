@@ -1,3 +1,4 @@
+from .data_io import BSLDataReader, BSLDataWriter
 from . import zip_archives
 from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
 """Tree-walking interpreter with persistent state and injectable builtins."""
@@ -226,6 +227,8 @@ class Interpreter:
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        self.register_type("ЧтениеДанных", BSLDataReader, "DataReader")
+        self.register_type("ЗаписьДанных", BSLDataWriter, "DataWriter")
         self.register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
         self.register_type("ЗаписьZipФайла", BSLZipFileWriter, "ZipFileWriter")
         self.register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
@@ -922,7 +925,8 @@ class Interpreter:
         value = self.known_receiver(node)
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
                                        BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter,
-                                       BSLTextReader, BSLTextWriter, BSLXMLReader, BSLXMLWriter) else None
+                                       BSLTextReader, BSLTextWriter, BSLXMLReader, BSLXMLWriter,
+                                       BSLDataReader, BSLDataWriter) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -939,6 +943,13 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        if type(receiver) is BSLDataReader:
+            if key in {"read", "прочитать", "readint16", "прочитатьцелое16", "readint32", "прочитатьцелое32", "readint64", "прочитатьцелое64"}: return frozenset({0})
+            if key in {"readchars", "прочитатьсимволы", "readline", "прочитатьстроку", "split", "разделить"}: return frozenset({0, 1})
+            if key in {"readto", "прочитатьдо", "skipto", "пропуститьдо", "copyto", "копироватьв"}: return frozenset({1})
+        if type(receiver) is BSLDataWriter:
+            if key in {"writeint16", "записатьцелое16", "writeint32", "записатьцелое32", "writeint64", "записатьцелое64", "writechars", "записатьсимволы"}: return frozenset({1})
+            if key in {"writeline", "записатьстроку"}: return frozenset({1, 2})
         if type(receiver) is BSLXMLReader:
             if key in {"openfile", "открытьфайл"}: return frozenset({1, 2, 3})
             if key in {"setstring", "установитьстроку"}: return frozenset({1, 2})
@@ -1282,8 +1293,11 @@ class Interpreter:
                                     or factory.function is BSLXMLWriterSettings
                                     or factory.function is BSLJSONWriterSettings
                                     or factory.function is BSLTextReader
-                                    or factory.function is BSLTextWriter):
-            if factory.function is BSLTextReader or factory.function is BSLTextWriter:
+                                    or factory.function is BSLTextWriter
+                                    or factory.function is BSLDataReader
+                                    or factory.function is BSLDataWriter):
+            if (factory.function is BSLTextReader or factory.function is BSLTextWriter
+                    or factory.function is BSLDataReader or factory.function is BSLDataWriter):
                 self.reject_host_omissions(node.arguments[:1])
             # The observed descriptor overloads use positional qualifier holes.
             # Other host constructors retain their explicit omission rejection.

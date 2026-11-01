@@ -1,0 +1,16 @@
+{
+  "platform": "8.3.27.1508 Linux",
+  "run": 41311554296,
+  "head": "cc13c6ba0854bc249f7c454731ab72bc238c0bea",
+  "source_sha256": "e67d1932d1adaa0b53dc79dcc3995a6c906c5c752364a333fbd25675cacb6e2e",
+  "output_sha256": "ab449ba7fc1f42ef55039106fec2acb15d16149e0a5913dd0af3edf20cd96552",
+  "source_bound_checks": 52,
+  "client_server_equal": true,
+  "cleanup_verified": true,
+  "available_cases": 39,
+  "action_error_cases": [
+    2
+  ],
+  "parity_accepted": false,
+  "limit": "Original transport envelope absent; reconstructed from audited archived report and exact capture. Public fixture excludes installation/session/authentication metadata."
+}

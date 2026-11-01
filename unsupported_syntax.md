@@ -362,3 +362,13 @@ Sort/Unload, multiple sections, composite columns, arbitrary qualifier/layout
 profiles, deletion/free chains or unmeasured row/section presentation. Dynamic
 section/row types explicitly refuse internal codecs, TypeDescription and dynamic
 construction. These `!todo` boundaries do not fall back to guessed storage.
+
+### DataReader / DataWriter boundaries
+
+The bounded ordinary data-I/O family is a local implementation checkpoint, not
+full native parity. Async/Begin, exotic/stateful ICU encodings, malformed-byte
+substitution, public ReadDataResult construction/internal codecs/typed cells and
+arbitrary host/nonseekable streams remain unsupported (`!todo`). Floating-point
+read/write methods are not in the pinned official family API. Existing local
+file authority is not a filesystem sandbox; no new network/device access is
+provided. See [exact scope](docs/data-io-family.md).

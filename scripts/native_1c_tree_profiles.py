@@ -106,11 +106,17 @@ REGEX_FAMILY = Profile('regex-family-v1', 'native-1c-regex-family-v1', 'native-1
     'regex_family', 'd332ac52d0eb8257bd41abee4494df74bc4969a7c5087c74bbcce8c6ed0309cb',
     42, 'native_1c_regex_family_contract', '\nСообщить("RF-C1: ["+RFEncode("")+"]");\n', 5, 'regex-family')
 
+DATA_IO_FAMILY = Profile('data-io-family-v1', 'native-1c-data-io-family-v1', 'native-1c-data-io-family-stage-v1',
+    'data_io_family', '18f636ec1cca0fb2839787f6c0764619c6dacae86c96df5dd14e4ab16c97fdd9',
+    42, 'native_1c_data_io_family_contract', '\nСообщить("DF-C1: ["+DFEncode("")+"]");\n', 5, 'data-io-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
     if name == ZIP_FAMILY.name:
         return ZIP_FAMILY
+    if name == DATA_IO_FAMILY.name:
+        return DATA_IO_FAMILY
     if name == REGEX_FAMILY.name:
         return REGEX_FAMILY
     if name == BINARY_STREAM_FAMILY.name:
