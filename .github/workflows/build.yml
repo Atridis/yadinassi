@@ -5,6 +5,7 @@ on:
     branches: [main]
     tags: ['**']
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -41,9 +42,42 @@ jobs:
         run: python -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v
       - name: Test bounded regex workflows optimized
         run: python -O -m unittest test_regex_family test_native_regex_family_measurement test_native_regex_family_profile -v
+      - name: Test timing runner on actual Python 3.10
+        run: python -m scripts.run_tests test_test_durations test_test_partition test_ci_test_gate test_refresh_test_durations -v
+      - name: Test timing runner optimized on actual Python 3.10
+        run: python -O -m scripts.run_tests test_test_durations test_test_partition test_ci_test_gate test_refresh_test_durations -v
 
-  build:
-    name: ${{ matrix.target }}
+  admission:
+    name: Bind exact candidate head and base
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      heavy: ${{ steps.admit.outputs.heavy }}
+      source_sha: ${{ steps.admit.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Validate live head/base and immutable PR merge parents
+        id: admit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/ci_test_gate.py admit --output ci-binding/binding.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-binding-${{ github.run_attempt }}
+          path: ci-binding/binding.json
+          if-no-files-found: error
+
+  light:
+    name: Light tests (${{ matrix.target }})
+    needs: admission
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -64,20 +98,137 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.admission.outputs.source_sha }}
           persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-binding-${{ github.run_attempt }}
+          path: ci-binding
+      - name: Verify exact admitted checkout
+        run: python scripts/ci_test_gate.py checkout --binding ci-binding/binding.json
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           architecture: ${{ matrix.architecture }}
           cache: pip
           cache-dependency-path: pyproject.toml
-      # Bundle tests and binary builds use the audited native full-host transitive pin.
-      - name: Install build dependencies
-        run: python -m pip install -e ".[build]" wcwidth==0.8.2
+      - name: Install pinned runtime dependencies
+        run: python -m pip install -e . wcwidth==0.8.2
       - name: Test native launcher without 1C
         run: python integrational_tests/check_launcher.py
-      - name: Test interpreter and CLI
-        run: python -m unittest discover -s tests -v
+      - name: Run every light module (unknown tests included)
+        run: python -m scripts.test_partition --tier light --report test-results/partition.json
+      - name: Bind partition result to admitted source
+        run: python scripts/ci_test_gate.py stamp --binding ci-binding/binding.json --report test-results/partition.json --platform ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: partition-${{ github.run_attempt }}-${{ matrix.target }}-light-0
+          path: test-results/partition.json
+          if-no-files-found: error
+
+  heavy:
+    name: Heavy tests (${{ matrix.target }}, ${{ matrix.shard_index }})
+    needs: admission
+    if: needs.admission.outputs.heavy == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            os: windows-2022
+            architecture: x64
+            shard_count: 1
+            shard_index: 0
+          - target: linux
+            os: ubuntu-22.04
+            architecture: x64
+            shard_count: 1
+            shard_index: 0
+          - target: mac-x86
+            os: macos-15-intel
+            architecture: x64
+            shard_count: 2
+            shard_index: 0
+          - target: mac-x86
+            os: macos-15-intel
+            architecture: x64
+            shard_count: 2
+            shard_index: 1
+          - target: mac-arm
+            os: macos-15
+            architecture: arm64
+            shard_count: 1
+            shard_index: 0
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.admission.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-binding-${{ github.run_attempt }}
+          path: ci-binding
+      - name: Verify exact admitted checkout
+        run: python scripts/ci_test_gate.py checkout --binding ci-binding/binding.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.architecture }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install pinned runtime dependencies
+        run: python -m pip install -e . wcwidth==0.8.2
+      - name: Run deterministic duration-balanced heavy partition
+        run: python -m scripts.test_partition --tier heavy --shard-count ${{ matrix.shard_count }} --shard-index ${{ matrix.shard_index }} --report test-results/partition.json
+      - name: Bind partition result to admitted source
+        run: python scripts/ci_test_gate.py stamp --binding ci-binding/binding.json --report test-results/partition.json --platform ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: partition-${{ github.run_attempt }}-${{ matrix.target }}-heavy-${{ matrix.shard_index }}
+          path: test-results/partition.json
+          if-no-files-found: error
+
+  build:
+    name: Package (${{ matrix.target }})
+    needs: admission
+    if: needs.admission.outputs.heavy == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            os: windows-2022
+            architecture: x64
+          - target: linux
+            os: ubuntu-22.04
+            architecture: x64
+          - target: mac-x86
+            os: macos-15-intel
+            architecture: x64
+          - target: mac-arm
+            os: macos-15
+            architecture: arm64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.admission.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-binding-${{ github.run_attempt }}
+          path: ci-binding
+      - name: Verify exact admitted checkout
+        run: python scripts/ci_test_gate.py checkout --binding ci-binding/binding.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.architecture }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install build dependencies
+        run: python -m pip install -e ".[build]" wcwidth==0.8.2
       - name: Build, test binary, and create archive
         id: package
         env:
@@ -89,10 +240,54 @@ jobs:
           archive: false
           if-no-files-found: error
 
+  verdict:
+    name: Exact-source test coverage verdict
+    needs: [admission, light, heavy, build, regex-python310]
+    if: always() && needs.admission.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.admission.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-binding-${{ github.run_attempt }}
+          path: ci-binding
+      - name: Verify exact admitted checkout
+        run: python scripts/ci_test_gate.py checkout --binding ci-binding/binding.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Require all phase-specific jobs
+        env:
+          PHASE_HEAVY: ${{ needs.admission.outputs.heavy }}
+          LIGHT_RESULT: ${{ needs.light.result }}
+          HEAVY_RESULT: ${{ needs.heavy.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          COMPAT_RESULT: ${{ needs.regex-python310.result }}
+        run: python -c "import os; e=os.environ; expected='success' if e['PHASE_HEAVY']=='true' else 'skipped'; raise SystemExit(0 if e['LIGHT_RESULT']==e['COMPAT_RESULT']=='success' and e['HEAVY_RESULT']==e['BUILD_RESULT']==expected else 'incomplete CI phase')"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: partition-${{ github.run_attempt }}-*
+          path: partitions
+      - name: Prove exact discovery coverage and recheck live PR head/main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/ci_test_gate.py verdict --binding ci-binding/binding.json --reports partitions --output ci-verdict/verdict.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: test-verdict-${{ github.run_attempt }}
+          path: ci-verdict/verdict.json
+          if-no-files-found: error
+
   release:
     name: Publish tagged release
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
-    needs: [build, regex-python310]
+    needs: [build, regex-python310, verdict]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

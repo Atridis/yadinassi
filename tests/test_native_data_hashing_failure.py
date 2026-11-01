@@ -1,5 +1,7 @@
 """Finite source-bound producer rejection diagnostics, never native success."""
+import contextlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -9,6 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT/'scripts')]
 import test_native_data_hashing_family_profile as profile
+import test_native_tree_profile_host as fixture_reader
 import native_1c_data_hashing_family_contract as contract
 
 tree, host, full = profile.tree, profile.host, profile.full
@@ -18,12 +21,43 @@ PROFILE = 'data-hashing-family-v1'
 class HashingFailureTests(unittest.TestCase):
     def read(self, raw, sha=contract.SOURCE_SHA256):
         with tempfile.TemporaryDirectory(prefix='hash-failure-unit-') as tmp:
-            path=Path(tmp)/'owned.json'; path.write_bytes(raw)
-            return tree.read_hashing_native_result(path,sha)
+            # Canonicalize only this newly-created owned fixture, not producer inputs.
+            path=Path(tmp).resolve(strict=True)/'owned.json'; path.write_bytes(raw)
+            # Windows static fixture metadata is not Linux descriptor-race evidence.
+            # Reuse the existing exact-module adapter; POSIX keeps the real reader.
+            with fixture_reader.synthetic_producer_reader(tree.full):
+                return tree.read_hashing_native_result(path,sha)
 
     def observed(self, raw):
         with self.assertRaises(tree.ObservationFailure) as failure: self.read(raw)
         return failure.exception.diagnostic
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX temporary-root alias regression')
+    def test_owned_temporary_alias_is_canonicalized_without_relaxing_reader(self):
+        raw=b'{"messages":["fixed"],"error":""}'
+        with tempfile.TemporaryDirectory(prefix='hash-temp-alias-') as tmp:
+            root=Path(tmp).resolve(strict=True)
+            actual=root/'actual';actual.mkdir()
+            alias=root/'system-temp-alias';alias.symlink_to(actual,target_is_directory=True)
+            self.assertTrue(alias.samefile(actual))
+            with mock.patch.object(tempfile,'TemporaryDirectory',return_value=contextlib.nullcontext(str(alias))), \
+                    mock.patch.object(tree,'read_hashing_native_result',wraps=tree.read_hashing_native_result) as reader:
+                self.assertEqual(self.read(raw),(['fixed'],''))
+            self.assertEqual(reader.call_args.args[0],actual/'owned.json')
+            # The production boundary must still reject the noncanonical alias.
+            with self.assertRaises(tree.full.FullError):
+                tree.full.secure_bytes(alias/'owned.json',tree.full.MAX_RESULT)
+
+    def test_windows_static_fixture_adapter_keeps_parser_and_restores_reader(self):
+        original=tree.full.secure_bytes
+        with mock.patch.object(fixture_reader,'_USE_SYNTHETIC_PRODUCER_READER',True):
+            with mock.patch.object(tree.full,'secure_bytes',side_effect=AssertionError('native descriptor reader reached')) as native:
+                self.assertEqual(self.read(b'{"messages":["fixed"],"error":""}'),(['fixed'],''))
+                self.assertEqual(self.observed(b'{')['category'],'result_json')
+                with self.assertRaises(tree.full.FullError): self.read(b'{}','0'*64)
+                self.assertIs(tree.full.secure_bytes,native)
+                native.assert_not_called()
+        self.assertIs(tree.full.secure_bytes,original)
 
     def test_ordinary_parser_unchanged_and_first(self):
         raw=b'{"messages":["fixed"],"error":""}'

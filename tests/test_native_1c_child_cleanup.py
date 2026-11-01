@@ -31,6 +31,20 @@ class ChildCleanupTests(unittest.TestCase):
         process.__enter__.assert_not_called()
         process.__exit__.assert_not_called()
 
+    def test_cleanup_deadline_rounding_never_exceeds_five_second_cap(self):
+        # A Windows monotonic tick near a binary exponent boundary can round
+        # (now + 5) - now upward, even when the clock has not advanced.
+        self.assertGreater((255.1 + 5) - 255.1, 5)
+        for readings, expected in (([255.1, 255.1], 5),
+                                   ([100.0, 101.25], 3.75),
+                                   ([100.0, 106.0], 0.001)):
+            with self.subTest(readings=readings):
+                process = self.child()
+                with mock.patch.object(full.time, 'monotonic', side_effect=readings):
+                    self.run_cleanup(process, [None])
+                process.wait.assert_called_once_with(timeout=expected)
+                self.assert_wait_bounded(process)
+
     def test_successful_group_kill_retains_termination_and_bounded_reap(self):
         process = self.child()
         kill = self.run_cleanup(process, [None])
