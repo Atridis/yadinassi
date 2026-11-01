@@ -2,15 +2,18 @@
 import hashlib
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 import native_1c_binary_stream_family_contract as wire
 import native_1c_tree_profiles as profiles
 
-ROOT = Path(__file__).resolve().parents[1]
 SOURCE_PATH = ROOT / 'integrational_tests/measurements/binary_stream_family.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 

@@ -3,15 +3,40 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
-
-from test_native_binary_stream_family_measurement import emit, wire, SOURCE
+import subprocess
+import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from test_native_binary_stream_family_measurement import emit, wire, SOURCE
 FIXTURE = ROOT / 'tests/fixtures/binary_stream_family'
 ERRORS = [16, 17, 18, 19, 21, 22, 23, 24, 26, 30, 33, 39]
 
 
 class BinaryStreamAcquisitionTests(unittest.TestCase):
+    def test_standalone_cold_import_and_replay_from_unrelated_directory(self):
+        # -I removes inherited PYTHONPATH and cwd. Only the repository runtime
+        # and test paths are supplied; each test module owns its scripts path.
+        code = """import sys, unittest, importlib
+sys.path[:0] = sys.argv[1:3]
+importlib.import_module(sys.argv[3])
+suite = unittest.defaultTestLoader.loadTestsFromNames([
+    'test_binary_stream_native_acquisition.BinaryStreamAcquisitionTests.test_view_acquisition_is_immutable_and_all_40_cases_replay',
+    'test_native_binary_stream_family_measurement.BinaryStreamFamilyMeasurementTests.test_source_pin_and_whole_family_cases',
+    'test_native_binary_stream_family_measurement.BinaryStreamFamilyMeasurementTests.test_local_runtime_observation_is_not_native_evidence'])
+result = unittest.TextTestRunner().run(suite)
+sys.exit(not result.wasSuccessful())
+"""
+        for first in ('test_binary_stream_native_acquisition', 'test_native_binary_stream_family_measurement'):
+            with self.subTest(first=first), tempfile.TemporaryDirectory(prefix='binary-stream-cold-import-') as cwd:
+                command = [sys.executable, '-I']
+                if sys.flags.optimize: command.append('-O')
+                result = subprocess.run(command + ['-c', code, str(ROOT), str(ROOT/'tests'), first],
+                                        cwd=cwd, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('Ran 3 tests', result.stderr)
+
     def test_original_source_capture_and_failed_provenance_are_immutable(self):
         source = (FIXTURE/'original40.bsl').read_bytes()
         raw = (FIXTURE/'original40.out').read_bytes()
