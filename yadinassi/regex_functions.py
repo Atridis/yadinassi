@@ -168,6 +168,9 @@ def str_find(text, pattern, direction=_OMITTED, start=_OMITTED, occurrence=_OMIT
 def str_find_all(text, pattern, ignore=_OMITTED, multiline=_OMITTED):
     op = Operation(text, pattern, ignore, multiline)
     result = BSLArray()
+    # Native original40: an empty pattern has no FindAll results, while
+    # replacement still observes zero-width boundaries (do not change the VM).
+    if pattern == "": return result
     for captures in op.matches(): result.items.append(op.result(captures))
     return result
 
@@ -178,7 +181,6 @@ def _replacement(value, group_count, budget):
     while index < len(value):
         budget.tick(); c = value[index]; index += 1
         if c != '$' or index == len(value): literal.append(c); continue
-        if value[index] == '$': literal.append('$'); index += 1; continue
         if not ('0' <= value[index] <= '9'): literal.append('$'); continue
         if literal: tokens.append(('literal', ''.join(literal))); literal = []
         group = 0

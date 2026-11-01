@@ -1,8 +1,8 @@
 # Bounded ordinary regular-expression workflows
 
-Local implementation checkpoint: **native 8.3.27 calibration is pending**. The
-current local outputs are observations, not native goldens or a PCRE compatibility
-claim. Official EDT pages document these APIs since 8.3.23 (selected descriptions
+Calibration checkpoint: **native 8.3.27 observations acquired; full parity is
+still pending**. Retained native observations are distinguished from local
+outputs; neither implies full PCRE compatibility. Official EDT pages document these APIs since 8.3.23 (selected descriptions
 updated in 8.3.24); the measured target remains 8.3.27.1508.
 
 ## Workflow
@@ -83,5 +83,23 @@ job using the repository's existing checkout/setup-python action references and
 Python `3.10`. It verifies the running CPython version, then executes the three
 focused regex/runtime/profile modules normally and with `-O`, under a ten-minute
 job limit. Release additionally depends on this job. **Defining the job is not
-proof it has run**: exact-head 3.10 execution remains pending until CI succeeds.
+proof it has run**: the initial source passed actual 3.10.22 CI; each refreshed
+source still requires its own exact-head compatibility gate.
 No native1C credentials, artifact uploads, extra triggers or permissions are added.
+
+## First native acquisition and narrow followthrough
+
+The first source-bound40 observations are available from native8.3.27.1508;
+original bytes and source are retained unchanged. Full parity is not accepted.
+Measured corrections: FindAll with an empty pattern returns an empty Array, while
+Replace still visits zero-width boundaries; literal `$$` is not collapsed.
+`$10` with two groups produced group1 plus literal0; a revised same40case packet
+now distinguishes a real group10 and a missing group before implementation guesses.
+Strict numeric-string/Boolean refusal, fractional start, reverse greedy behavior,
+scalar matching with UTF-16 positions and ordinary group structure were observed.
+No claim is made for unmeasured Unicode classes or advanced syntax.
+
+Initial actual CPython3.10.22 CI passed32 normal +32 optimized tests; the refreshed
+source must pass its own gates. Public fixtures contain only fixed source, bounded
+observations and the six-field minimal source/version projection, never original
+private acquisition/session/installation/audit reports.

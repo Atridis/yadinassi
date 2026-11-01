@@ -90,7 +90,8 @@ Try New ResultOfSearchByRegularExpression; Except Message("not-constructible"); 
         self.assertEqual(self.output('Try StrLen(,); Except Message("other"); EndTry;'), ['other'])
 
     def test_zero_width_and_nullable_loops_terminate(self):
-        self.assertEqual([r._position for r in api.str_find_all('ab', '').items], [1, 2, 3])
+        self.assertEqual(api.str_find_all('ab', '').items, [])
+        self.assertEqual(api.str_find_all('', '').items, [])
         self.assertEqual(api.str_replace('ab', '', '-'), '-a-b-')
         for pattern in ('(a?)*', '(?:)*', '(a*)*', '(a?)*?'):
             self.assertTrue(api.str_like('aa' if 'a' in pattern else '', pattern))
@@ -98,7 +99,7 @@ Try New ResultOfSearchByRegularExpression; Except Message("not-constructible"); 
 
     def test_replacement_groups_dollars_and_empty(self):
         self.assertEqual(api.str_replace('a1b2', '([a-z])([0-9])', '$2$1:$0;'), '1a:a1;2b:b2;')
-        self.assertEqual(api.str_replace('a', '(a)', '$$-$1'), '$-a')
+        self.assertEqual(api.str_replace('a', '(a)', '$$-$1'), '$$-a')
         self.assertEqual(api.str_replace('b', '(a)?b', '$1x'), 'x')
         self.assertEqual(api.str_replace('abc', '[0-9]', 'x'), 'abc')
         with self.assertRaises(ValueError): api.str_replace('a', '(a)', '$2')

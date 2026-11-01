@@ -49,7 +49,7 @@ ElsIf N=29 Then Return StrReplaceByRegularExpression("a1b22","[0-9]+","X");
 ElsIf N=30 Then Return StrReplaceByRegularExpression("ab","ab","[$0]");
 ElsIf N=31 Then Return StrReplaceByRegularExpression("ab","(a)(b)","$2-$1");
 ElsIf N=32 Then Return StrReplaceByRegularExpression("ab","(a)(b)","$$:$0:$1");
-ElsIf N=33 Then Try Return StrReplaceByRegularExpression("ab","(a)(b)","$10");Except Return "replacement-error";EndTry;
+ElsIf N=33 Then Try S=StrReplaceByRegularExpression("ab","(a)(b)","$10");Except S="short-error";EndTry;Try S=S+"|"+StrReplaceByRegularExpression("abcdefghij","(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)","$10:$1");Except S=S+"|ten-error";EndTry;Try S=S+"|"+StrReplaceByRegularExpression("ab","(a)(b)","$9");Except S=S+"|missing-error";EndTry;Return S;
 ElsIf N=34 Then Return StrReplaceByRegularExpression("ab","","_");
 ElsIf N=35 Then Return StrReplaceByRegularExpression("я"+Chars.LF+"Я","^я$","X",True,True);
 ElsIf N=36 Then Try R=StrLikeByRegularExpression("a","(");Return "unexpected";Except Return "pattern-error";EndTry;

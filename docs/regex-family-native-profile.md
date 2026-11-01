@@ -23,7 +23,7 @@ availability merely because result objects are documented there.
 | 7–15 | First/missing find; forward start/nth; reverse default/start/nth; alternative priority; forward and reverse greedy/lazy; UTF-16 positions and astral match length |
 | 16–21 | All matches/no matches; empty pattern; terminal anchor; nullable quantifier; empty text |
 | 22–28 | Group count/order/group0 inclusion; optional missing group; nested/repeated/noncapturing groups; Unicode group offsets; returned Array independence |
-| 29–35 | Replace all; `$0`; `$1`/`$2`; `$$`; `$10` with two captures; zero-width replacement; Cyrillic case+multiline flags |
+| 29–35 | Replace all; `$0`; `$1`/`$2`; `$$`; `$10` with two versus ten captures and missing `$9`; zero-width replacement; Cyrillic case+multiline flags |
 | 36–40 | Invalid pattern/start/occurrence; numeric-string and fractional start observations; result/group mutation rejection; exact result/group/Array identities |
 
 The fixture does not assume answers to these questions. The ASCII envelope
@@ -63,3 +63,9 @@ identity needed to reproduce semantics. Original acquisition envelopes/reports,
 installation paths, audit/session identifiers, credentials and private launcher
 metadata stay outside the repository. An absent original transport envelope is
 reported as a limitation, not replaced with an invented acquisition claim.
+
+The first native40 acquisition is retained in minimal `original40` fixtures.
+All observations were available, but parity differed at18,21,32,33. The original
+report and transport metadata stay private. Empty FindAll/literal dollar fixes
+are established; revised RF33 separately observes reference fallback, a genuine
+tenth capture and a missing reference, within the same40record and8192byte limits.

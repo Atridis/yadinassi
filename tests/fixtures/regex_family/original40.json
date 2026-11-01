@@ -1,0 +1,8 @@
+{
+  "schema": "regex-family-observations-v1",
+  "platform_version": "8.3.27.1508",
+  "source_sha256": "28deb10f2d1b0f6e072388a92070c360208601bc9082042a853e1367e12fbb6e",
+  "output_sha256": "9f759fc3a0e5e11edc565e4aa20047bec27791b916154eb7e530881b9c449c05",
+  "cases": 40,
+  "status": "native-acquisition-available-not-parity"
+}
