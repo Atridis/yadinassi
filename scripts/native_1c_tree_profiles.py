@@ -118,6 +118,10 @@ DATA_HASHING_FAMILY = Profile('data-hashing-family-v1', 'native-1c-data-hashing-
     'data_hashing_family', 'cdc0e9ea099a9b967bb2e30e599f22f7008fb7f1565b62916c08b717f06e3983',
     42, 'native_1c_data_hashing_family_contract', '\nСообщить("HF-C1: ["+HFEncode("")+"]");\n', 5, 'data-hashing-family')
 
+XDTO_FAMILY = Profile('xdto-family-v1', 'native-1c-xdto-family-v1', 'native-1c-xdto-family-stage-v1',
+    'xdto_family', 'c317011c5fb651fe313eed07cf9587ab14e3f474857ef54d3646a9ae52e5376a',
+    42, 'native_1c_xdto_family_contract', '\nСообщить("XF-C1: ["+XFEncode("")+"]");\n', 5, 'xdto-family')
+
 def select(name='tree-v1'):
     if type(name) is not str:
         raise ValueError('invalid_tree_profile')
@@ -125,6 +129,8 @@ def select(name='tree-v1'):
         return ZIP_FAMILY
     if name == DOM_FAMILY.name:
         return DOM_FAMILY
+    if name == XDTO_FAMILY.name:
+        return XDTO_FAMILY
     if name == DATA_IO_FAMILY.name:
         return DATA_IO_FAMILY
     if name == DATA_HASHING_FAMILY.name:

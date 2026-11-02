@@ -130,6 +130,11 @@ integrational_tests/measurements/dom_family.bsl text eol=lf
 tests/fixtures/dom_family/**/*.bsl text eol=lf
 tests/fixtures/dom_family/**/*.out -text
 
+# Closed XDTO packet and immutable bounded observations.
+integrational_tests/measurements/xdto_family.bsl text eol=lf
+tests/fixtures/xdto_family/**/*.bsl text eol=lf
+tests/fixtures/xdto_family/**/*.out -text
+
 # Closed periodic InformationRegister fixture bytes, cross-platform exact hashes.
 scripts/native_1c_db_oracle/periodic_information_register_packet/** -text
 

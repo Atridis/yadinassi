@@ -1046,3 +1046,10 @@ All normal/optimized local tests remain distinct from pending native40 parity.
 ## DOM XML (локальный bounded-профиль, native-калибровка ожидается)
 
 `ДокументDOM`, `ПостроительDOM`, `ЗаписьDOM`, узлы XML, коллекции дочерних узлов/элементов/атрибутов: создание, чтение существующим `ЧтениеXML`, навигация/изменение, clone/import, запись существующим `ЗаписьXML`. [Точный API и границы](docs/dom-family.md). Это не поддержка полного DOM/XPath/XDTO.
+
+## XDTO (bounded ordinary profile, native calibration pending)
+
+`СоздатьФабрикуXDTO`, `ФабрикаXDTO`, typed object/value/list operations, readonly
+metadata and XML/JSON roundtrip adapters are available for the
+[closed documented schema subset](docs/xdto-family.md). Local workflow tests do
+not establish native equivalence; the ordinary40 profile will calibrate it.

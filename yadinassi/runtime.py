@@ -1,3 +1,5 @@
+from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
+from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
 from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
 from .dom_io import BSLDOMBuilder, BSLDOMWriter
 from .data_hashing import BSLDataHashing, HASH_FUNCTIONS
@@ -67,7 +69,7 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
@@ -171,6 +173,7 @@ class Interpreter:
         self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
         self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
         self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
+        self._xdto_factory = BSLXDTOFactory()
         self._scheduler = Scheduler(self._native_target)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
@@ -232,6 +235,8 @@ class Interpreter:
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        self.register_type("ФабрикаXDTO", BSLXDTOFactory, "XDTOFactory")
+        self.register_function("СоздатьФабрикуXDTO", create_xdto_factory, "CreateXDTOFactory")
         self.register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
         self.register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
         self.register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
@@ -668,6 +673,8 @@ class Interpreter:
             return TEXT_ENCODINGS
         for ru, en, namespace in zip_archives.NAMESPACES:
             if name in (ru.casefold(), en.casefold()): return namespace
+        if name in ("фабрикаxdto", "xdtofactory"): return self._xdto_factory
+        if name in ("формаxml", "xmlform"): return XML_FORMS
         if name in ("типузлаdom", "domnodetype"): return DOM_NODE_TYPES
         if name in ("хешфункция", "hashfunction"): return HASH_FUNCTIONS
         if name in ("порядокбайтов", "byteorder"): return binary_streams.BYTE_ORDERS

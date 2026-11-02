@@ -481,6 +481,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: dom-family-v1
             artifact: dom-family
             case: dom_family
+          - profile: xdto-family-v1
+            artifact: xdto-family
+            case: xdto_family
           - profile: data-hashing-family-v1
             artifact: data-hashing-family
             case: data_hashing_family
