@@ -28,11 +28,11 @@ class CatalogDynamicTypesTests(unittest.TestCase):
 
     def test_catalog_families_are_distinct(self):
         kinds = [BSLCatalogType(UUID(int=10), 'Name', self.snapshot, family)
-                 for family in ('ref', 'manager', 'selection')]
-        self.assertEqual(len(set(kinds)), 3)
+                 for family in ('ref', 'manager', 'selection', 'object')]
+        self.assertEqual(len(set(kinds)), 4)
         self.assertEqual([str(k) for k in kinds],
                          ['Name', 'Справочник менеджер: Name',
-                          'Справочник выборка: Name'])
+                          'Справочник выборка: Name', 'Справочник объект: Name'])
         for kind in kinds:
             self.assertIs(type_of(kind), BSLType.TYPE)
             with self.assertRaisesRegex(ValueError, 'справочников'):
@@ -41,14 +41,15 @@ class CatalogDynamicTypesTests(unittest.TestCase):
             with self.assertRaisesRegex(TypeError, 'reference type family'):
                 BSLCatalogReference(kind, UUID(int=20))
         with self.assertRaisesRegex(ValueError, 'family'):
-            BSLCatalogType(UUID(int=10), 'Name', self.snapshot, 'object')
+            BSLCatalogType(UUID(int=10), 'Name', self.snapshot, 'unknown')
 
     def test_manager_and_selection_type_identity(self):
         from yadinassi.catalogs import BSLCatalogManager, BSLCatalogSelection
-        metadata = SimpleNamespace(_metadata_uuid=str(UUID(int=10)), _name='Name')
+        from yadinassi.catalog_backend import CatalogSchema
+        metadata = SimpleNamespace(_metadata_uuid=str(UUID(int=10)), _name='Name',_schema=CatalogSchema(UUID(int=10),'Name',8,64,()))
         catalogs = SimpleNamespace(_metadata=self.snapshot)
         manager = BSLCatalogManager(catalogs, metadata)
-        cursor = BSLCatalogSelection(manager, SimpleNamespace(rows=()))
+        cursor = BSLCatalogSelection(manager, ())
         self.assertIs(type_of(manager), manager._manager_type)
         self.assertIs(type_of(cursor), manager._selection_type)
         self.assertIs(type_of(manager.empty_ref()), manager._value_type)

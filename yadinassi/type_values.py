@@ -234,9 +234,11 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
     if (type(value) is BSLCatalogType or type(value) is BSLDocumentType):
         return BSLType.TYPE
     # Lazy import avoids the catalog adapter/type registry import cycle.
-    from .catalogs import BSLCatalogManager, BSLCatalogSelection, BSLCatalogs
+    from .catalogs import BSLCatalogManager, BSLCatalogSelection, BSLCatalogs, BSLCatalogObject
     if type(value) is BSLCatalogs:
         return BSLType.CATALOGS_MANAGER
+    if type(value) is BSLCatalogObject:
+        return value._object_type
     if type(value) is BSLCatalogManager:
         return value._manager_type
     if type(value) is BSLCatalogSelection:

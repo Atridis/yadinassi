@@ -153,3 +153,50 @@ unknown identifiers/values, paths or error text escape. Whole owned Form XML
 SHA256 is provenance only. DTD, non-UTF8, oversized/deep input and projection
 budgets fail closed. The strict original re-dump validator remains authoritative:
 a diagnostic never substitutes a source witness or allows ENTERPRISE execution.
+
+
+### Measured re-dump equivalence (not yet ENTERPRISE semantics)
+
+The failed-only native projection established all five owned files and exactly
+11 known Form nodes. The observed serializer changes were root version2.20,
+OnOpen/BeforeClose/OnCreateAtServer event order and17 root declarations instead
+of3. The raw re-dumped XML was not retained; its whole-file SHA and numeric
+projection are historical evidence, not a reconstructed-byte claim.
+
+Admission now treats only versions2.4/2.20 and the exact three unique event
+name/handler bindings as serialization-equivalent. Extra root-only namespace
+declarations must be unused; lexical tag/attribute prefix inspection rejects
+active extras. Exact default/cfg/v8 bindings and all expanded nodes, attributes,
+IDs, QName-valued text and handler names remain fixed. Nested/shadow namespaces,
+duplicate events, new behavioral nodes, changed main attribute/type and other
+versions still fail. Runtime and observer BSL are unchanged. This correction
+still requires a fresh source-bound native40 run before any parity claim.
+
+## SQLite composition and future client/server boundary
+
+This source composes the managed-form slice with the SQLite catalog backend and
+retains the separate official-XML CatalogObject behavior profile. It does not
+restore physical `.1CD`/CF/DT readers, fixtures or oracle routes. The form oracle
+uses only owned official XML/EPF operations and one native client session.
+
+The absolute CLI default remains plain BSL execution without a database or
+server. `--f <path>` explicitly selects the local SQLite/thick-client mode; it
+does not implicitly create a file or require UI/network. Future client-only and
+server-only modes require separate explicit options, not yet defined here.
+
+The current FormSession is a local logical-context implementation, not a remote
+protocol: fresh server activations still share the local form model. The agreed
+future contract is Replicated Form State with distinct logical client/server
+copies, a prebound typed InvocationPort (local direct transport by default),
+dirty-delta admission before a contextful server call and response application
+before dependent client BSL resumes. No-context calls transfer arguments only.
+Server revision, client sequence, request ID and backend record revision remain
+distinct. UI focus/cursor are local; connections/transactions are server-only.
+No renderer-selected procedure names, Python object handles, pickle, server
+routine bodies in client artifacts or implicit networking are admitted.
+
+!todo Implement and measure that detached-copy/barrier contract separately;
+current snapshots and logical activation do not prove remote synchronization,
+exactly-once writes, exception rollback or automatic native UI event parity.
+MessagePack/WebSocket, authenticated module caching and remote resume are future
+transport choices, not dependencies or capabilities added by this slice.

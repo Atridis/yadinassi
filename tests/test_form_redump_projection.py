@@ -24,7 +24,7 @@ class FormRedumpProjectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):route.validate_redump(altered)
         newer=dict(data);newer[route.DIAGNOSTIC_FILES[2]]=route.form_xml().replace(b'version="2.4"',b'version="2.20"')
         self.assertIn([1,16],route.redump_projection(newer,'form_xml')['rows'][0][2])
-        with self.assertRaises(ValueError):route.validate_redump(newer)
+        route.validate_redump(newer)  # Exact measured2.20 compatibility only.
 
     def test_unknown_namespace_attributes_text_are_always_redacted(self):
         canary='PRIVATE_CANARY_9417'

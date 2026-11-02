@@ -50,7 +50,7 @@ def environment(context):
 
 
 def inline_admission():
-    block = re.split(r"\n  [a-z_]+:\n", WORKFLOW.read_text().split("\n  eligibility:\n", 1)[1], maxsplit=1)[0]
+    block = re.search(r"(?ms)^  eligibility:\n(.*?)(?=^  [a-z_]+:|\Z)", WORKFLOW.read_text()).group(1)
     return textwrap.dedent(block.split("        run: |\n", 1)[1]).split("<<'PYTHON'\n", 1)[1].split("\nPYTHON", 1)[0]
 
 
@@ -365,18 +365,29 @@ class ManualWorkflowTests(unittest.TestCase):
     def test_manual_admission_and_binding_precede_same_scoped_auth_and_artifacts(self):
         source = WORKFLOW.read_text()
         trees = {}
-        form = re.findall(r"(?ms)^  form_smoke:\n.*?(?=^  [a-z_]+:|\Z)", source)
-        self.assertEqual(len(form), 1)
-        legacy = source.replace(form[0], "", 1)
+        legacy = re.sub(r"(?ms)^  form_smoke:\n.*?(?=^  [a-z_]+:|\Z)", "", source)
         for job in ('tree_smoke', 'tree_copy_smoke'):
             matches = re.findall(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)
             self.assertEqual(len(matches), 1)
             trees[job] = "  " + job + ":\n" + matches[0]
             legacy = legacy.replace(trees[job], '', 1)
-        self.assertEqual(legacy.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 2)
-        self.assertEqual(legacy.count("GHCR_TOKEN: ${{ github.token }}"), 2)
+        self.assertEqual(legacy.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 3)
+        self.assertEqual(legacy.count("GHCR_TOKEN: ${{ github.token }}"), 3)
         upload = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
-        self.assertEqual(legacy.count(upload), 2)
+        self.assertEqual(legacy.count(upload), 4)
+        catalog = re.search(r"(?ms)^  catalog_object_smoke:\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(1)
+        self.assertEqual(catalog.count(upload), 2)
+        self.assertEqual(catalog.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 1)
+        self.assertEqual(catalog.count("GHCR_TOKEN: ${{ github.token }}"), 1)
+        self.assertIn("github.event_name != 'workflow_dispatch' &&", catalog)
+        self.assertIn("github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", catalog)
+        self.assertIn('run: python3 scripts/native_1c_catalog_object_profile.py --execute-approved-image --export-native-outputs\n', catalog)
+        self.assertIn('path: native-smoke/catalog-object.json\n', catalog)
+        self.assertIn("if: always() && steps.catalog_object.outputs.catalog_object_outputs_ready == 'true'", catalog)
+        catalog_outputs = catalog.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
+        self.assertEqual([line.strip() for line in catalog_outputs.splitlines()], [
+            'native-smoke/catalog-object-outputs/catalog-object.out',
+            'native-smoke/catalog-object-outputs/provenance.json'])
         for job, tree in trees.items():
             self.assertEqual(tree.count(upload), 2)
             self.assertEqual(tree.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 1)
@@ -398,7 +409,7 @@ class ManualWorkflowTests(unittest.TestCase):
                                   'native-smoke/${{ matrix.artifact }}-outputs/provenance.json']
             output_paths = tree.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in output_paths.splitlines()], expected_paths)
-        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke', 'form_smoke'):
+        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke', 'catalog_object_smoke', 'form_smoke'):
             matches = re.findall(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)
             self.assertEqual(len(matches), 1)
             block = matches[0]
@@ -406,10 +417,10 @@ class ManualWorkflowTests(unittest.TestCase):
             self.assertLess(block.index("scripts/native_1c_ci_policy.py bind"), block.index("GHCR_TOKEN:"))
             self.assertIn("ref: ${{ github.sha }}", block)
             self.assertIn("persist-credentials: false", block)
-        self.assertEqual(source.count("contents: read"), 4)
-        self.assertEqual(source.count("packages: read"), 4)
+        self.assertEqual(source.count("contents: read"), 5)
+        self.assertEqual(source.count("packages: read"), 5)
         self.assertNotIn(": write", source)
-        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, form_smoke]", source)
+        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke]", source)
         self.assertIn("if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')", legacy)
 
 

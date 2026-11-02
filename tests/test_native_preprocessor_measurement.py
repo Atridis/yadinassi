@@ -129,10 +129,10 @@ class ProfileObservationSourceTests(SyntheticFilesystemCase):
             path=Path(folder).resolve()/'candidate.bsl';path.write_bytes(raw);seen=[]
             def runner(arguments,cwd):
                 self.assertEqual(Path(arguments[-2]),path);self.assertEqual(path.read_bytes(),raw)
-                self.assertIn('FileDBContext',full.CLIENT_EXECUTE_SCRIPT)
+                self.assertIn('SQLiteDBContext',full.CLIENT_EXECUTE_SCRIPT)
                 self.assertNotIn('preprocessor_shared_source',full.CLIENT_EXECUTE_SCRIPT)
                 seen.append(True)
-                return 0,json.dumps(full.CLIENT_RUNTIME_VALUES+[full.PREPROCESSOR_DEFAULT_TOKEN],ensure_ascii=False,separators=(',',':')).encode(),b''
+                return 0,json.dumps(full.CLIENT_SQLITE_RUNTIME_VALUES+[full.PREPROCESSOR_DEFAULT_TOKEN],ensure_ascii=False,separators=(',',':')).encode(),b''
             full.verify_client_interpreter(ROOT,path,full.PREPROCESSOR_SOURCE_SHA256,runner=runner,preprocessor_measurement=True)
             self.assertEqual(seen,[True])
             with self.assertRaises(full.FullError):
@@ -248,9 +248,9 @@ class ProfileObservationTransportTests(SyntheticFilesystemCase):
         self.assertEqual(len(commands),2)
         self.assertTrue(all('--client-preprocessor-measurement' not in line for line in commands))
         self.assertEqual(source.count('--client-preprocessor-measurement'),0)
-        self.assertEqual(source.count('packages: read'),4)
-        self.assertEqual(source.count('contents: read'),4)
-        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke'):
+        self.assertEqual(source.count('packages: read'),5)
+        self.assertEqual(source.count('contents: read'),5)
+        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke', 'catalog_object_smoke', 'form_smoke'):
             block = re.search(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(0)
             self.assertEqual(block.count("    permissions:\n      contents: read\n      packages: read\n"), 1)
         self.assertNotIn(': write',source)

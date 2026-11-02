@@ -9,6 +9,7 @@ import io
 import json
 import re
 import xml.etree.ElementTree as ET
+import xml.parsers.expat as expat
 from . import ROOT, SOURCE_SHA256, MAX_SOURCE, MAX_OUTPUT, source, parse_records, require_available
 
 SCHEMA = 'native-managed-form-programmatic-v1'
@@ -86,6 +87,18 @@ def _xml(raw):
 
 def _canonical_xml(raw):
     root = _xml(raw)
+    ns='{http://v8.1c.ru/8.3/xcf/logform}'
+    if root.tag!=ns+'Form' or root.attrib.get('version') not in ('2.4','2.20'):
+        raise ValueError('unsupported form XML version')
+    # Measured serialization-only changes: no other version/default is guessed.
+    root.attrib['version']='2.4'
+    events=root.findall(ns+'Events')
+    expected={('OnCreateAtServer','FormCreate'),('OnOpen','FormOpen'),('BeforeClose','FormBeforeClose')}
+    if (len(events)!=1 or len(events[0])!=3
+            or any(n.tag!=ns+'Event' or set(n.attrib)!={'name'} for n in events[0])
+            or {(n.attrib['name'],n.text) for n in events[0]}!=expected):
+        raise ValueError('invalid form event wiring')
+    events[0][:]=sorted(events[0],key=lambda node:node.attrib['name'])
     rows = []
     stack = [(root,0)]
     while stack:
@@ -100,7 +113,22 @@ def _canonical_xml(raw):
         else:
             if started:raise ValueError('nested form namespace declarations unsupported')
             bindings.append(value)
-    return tuple(sorted(bindings)),tuple(rows)
+    expected_bindings={'':'http://v8.1c.ru/8.3/xcf/logform',
+        'cfg':'http://v8.1c.ru/8.1/data/enterprise/current-config','v8':'http://v8.1c.ru/8.1/data/core'}
+    mappings=dict(bindings)
+    if len(mappings)!=len(bindings) or any(mappings.get(k)!=v for k,v in expected_bindings.items()):
+        raise ValueError('form namespace binding mismatch')
+    # Extra root declarations may be present, but must actually be unused.
+    # Expat without namespace expansion retains lexical prefixes; the strict
+    # UTF8/no-DTD guard above and the8KiB cap apply before this bounded pass.
+    def lexical_start(tag,attributes):
+        names=[tag]+[key for key in attributes if key!='xmlns' and not key.startswith('xmlns:')]
+        if any(':' in name and name.split(':',1)[0] not in expected_bindings for name in names):
+            raise ValueError('extra namespace prefix is active')
+    parser=expat.ParserCreate();parser.StartElementHandler=lexical_start
+    try:parser.Parse(raw,True)
+    except expat.ExpatError:raise ValueError('invalid form XML') from None
+    return tuple(sorted(expected_bindings.items())),tuple(rows)
 
 
 def validate_redump(files):
@@ -136,7 +164,7 @@ def validate_redump(files):
     ns='{http://v8.1c.ru/8.3/xcf/logform}'
     events=form_root.findall(ns+'Events/'+ns+'Event')
     expected_events=[('OnCreateAtServer','FormCreate'),('OnOpen','FormOpen'),('BeforeClose','FormBeforeClose')]
-    if [(n.attrib.get('name'),n.text) for n in events]!=expected_events or any(set(n.attrib)!={'name'} for n in events):
+    if sorted((n.attrib.get('name'),n.text) for n in events)!=sorted(expected_events) or any(set(n.attrib)!={'name'} for n in events):
         raise ValueError('invalid form event wiring')
     # No third-party object-module behavior accompanies the owned form module.
     object_source=files['Launcher/Ext/ObjectModule.bsl'].decode('utf-8-sig')

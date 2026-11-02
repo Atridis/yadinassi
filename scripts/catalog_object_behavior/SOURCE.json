@@ -1,0 +1,14 @@
+{
+  "source_kind": "previously source-owned official Designer XML template, not native binary data",
+  "source_commit": "84f560108a34eb207706cb1da517976024ee4a13",
+  "source_path": "scripts/native_1c_db_oracle/metadata/Catalog.xml",
+  "source_sha256": "612fa20fc7a30262c27ccb52201ce57bbbba8cbbab60ae9ac82e0358a36024c5",
+  "transformations": [
+    "ChildObjects replaced with empty element",
+    "name becomes fresh placeholder",
+    "CodeLength 2 to 8",
+    "DescriptionLength 0 to 64"
+  ],
+  "template_sha256": "810823e2481d9aa56f2526a778fc1c3df75597d183e8107e885db04ea19fc8dc",
+  "native_status": "not yet applied or observed"
+}

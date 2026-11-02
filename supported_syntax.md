@@ -12,25 +12,20 @@
 Перечислены встроенные возможности обычного интерпретатора; объекты и функции,
 добавленные приложением через Python API, в этот список не входят.
 
-Экспериментальные Python-проекции CONFIG и отдельные oracle-проверки имени
-Catalog не добавляют BSL `Метаданные` или `Справочники` в этот список.
-[Границы проверки имени](docs/config-catalog-name-prefix.md).
 
-## Ограниченное offline-чтение справочников
+## База приложения SQLite и официальный XML
 
-С `FileDBContext` / `--f` доступны read-only `Метаданные` и `Справочники` для
-распознанного ограниченного профиля файловой базы: менеджер, `ПустаяСсылка`,
-`ПолучитьСсылку`, поиск по коду/наименованию, `Выбрать`/`Следующий`, чтение
-стандартных полей и реквизитов, типы/UUID и переход по одиночной ссылке на другой
-справочник. Это чтение согласованной offline-копии, не сеанс живой 1С.
+Yadinassi использует собственный файл SQLite для конфигурации, исходников BSL
+и данных поддержанного среза справочников. Обмен конфигурацией ограничен
+официальной XML-выгрузкой Designer; исходники сохраняются отдельно от допуска
+к исполнению. Неподдержанная семантика конфигурации отклоняется явно.
 
-Связанные карточки поддерживают String/Number/Boolean/DateTime и ссылку на один
-фиксированный справочник, включая пустую ссылку и отсутствующий объект.
-Измеренный сценарий: каталог без реквизитов и каталог с пятью смешанными
-реквизитами, строковый код длины 2, наименование длины 8, два порядка реквизитов.
-Остальные структурные обобщения и ограничения отделены от native evidence в
-[контракте связанных карточек](docs/linked-catalog-cards-next.md).
-Запись, составные типы, иерархия и табличные части сюда не входят.
+Чтение форматов `.1CD`, CF/DT, CONFIG/PARAMS/DBNames и соответствующие
+экспериментальные маршруты удалены. История Git сохранена. Документы, регистры,
+запросы, проведение, иерархия и произвольные обработчики пока не портированы
+на новый backend; прежние физические профили не являются их поддержкой.
+Сравнения обычного BSL с реальной 1С продолжаются через официальный XML/BSL,
+без чтения внутреннего формата базы. [Граница SQLite](docs/file-database-context.md).
 
 ## Профиль условной компиляции
 
@@ -345,28 +340,15 @@ ValueTableRow`, обход колонок — `КолонкаТаблицыЗн�
 
 ## Глобальные функции и процедуры
 
-### Необязательный контекст файловой базы
+### Контекст базы SQLite
 
-- `СтрокаСоединенияИнформационнойБазы()` / `InfoBaseConnectionString()` —
-  нулевой по арности вызов, возвращающий `File="каталог";` для явно заданного
-  `--f DIRECTORY` или `Interpreter(database_context=FileDBContext(directory))`.
-  Относительный путь привязывается лексически к рабочему каталогу создания
-  контекста, не к каталогу BSL-файла; пробелы и Unicode сохраняются. Пустой
-  аргумент CLI `--f ""` / `--f=` отклоняется с кодом `2` до создания контекста.
-- Только фактическое исполнение вызова read-only проверяет ограниченный
-  заголовок и геометрию `1Cv8.1CD`. Без контекста ошибка
-  `db required for further code execution` перехватывается `Попытка/Исключение`.
-  Неподдержанный путь или нераспознанный заголовок также дают catchable error,
-  не запрещая остальной автономный код заранее.
-- Контекст передается импортам и поддержанным переходам client/server;
-  `AtClient` и Windows-профиль совместимости по умолчанию не изменены.
-  Это не сеанс, аутентификация, запросы, метаданные или проверка валидности базы.
-  [Границы путей, Python API и native evidence](docs/file-database-context.md).
-
-Отдельные низкоуровневые Python API хранения не расширяют этот BSL-синтаксис:
-экспериментальный `filedb_named_file.read_dbnames` извлекает только байты
-PARAMS/DBNames по явному ограниченному профилю, без чтения логических метаданных,
-запросов или подкоманд CF/DT. [Границы API](docs/file-db-named-file-transport.md).
+`--f SQLITE_FILE` и `Interpreter(database_context=SQLiteDBContext(path))`
+используют существующую собственную базу SQLite. Справочники и метаданные
+работают через backend, отдельно от BSL-семантики. Контекст передаётся
+поддержанным вызовам client/server; без него DB-вызовы отклоняются.
+`InfoBaseConnectionString()` / `СтрокаСоединенияИнформационнойБазы()` возвращает
+host-идентичность `SQLite=<абсолютный путь>`, а не строку подключения 1С.
+[Контракт и ограничения](docs/file-database-context.md).
 
 ### Типы, значения и диагностика
 
@@ -1016,15 +998,6 @@ provide ordinary file/memory creation, Items enumeration/find, metadata and
 bounded extraction on anchored-directory platforms. Local tests are not native
 parity. Windows extraction currently fails explicitly pending a reviewed backend;
 see [complete scope and gates](docs/zip-family.md).
-
-## Read-only Document → Items → Product workflow
-
-Bounded offline document tabular sections support `Count`, `Get`/indexing,
-`For Each`, `LineNumber`, fixed-reference `Find`, `IndexOf`, numeric `Total`, and
-section/row `Type`/`TypeOf`. Two metadata identities, both column orders and
-initial/rewritten native fixtures replay through the public interpreter; final
-source-composed actual `.1CD` parity is pending. No writes are exposed.
-[Measured profile and limits](docs/document-items-read-runtime.md).
 
 ### Ordinary DataReader / DataWriter (calibration pending)
 

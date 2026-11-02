@@ -1,6 +1,6 @@
 """Linux ownership/process tests using private temporary namespaces, not native proof.
 
-No test here creates the public /tmp/onec-smoke pathname. Binary fixture bytes
+No test here creates the public /tmp/onec-smoke pathname. Owned SQLite fixture bytes
 and explicit UTF-8/LF child data are synthetic, not evidence from real 1C.
 """
 import contextlib
@@ -34,7 +34,7 @@ class OwnedFixtureTests(unittest.TestCase):
         self.base = Path(self.temporary.name)
         self.root = self.base / "onec-smoke"
         self.db = self.root / "db"
-        self.file = self.db / "1Cv8.1CD"
+        self.file = self.db / "application.sqlite"
 
         def namespace():
             return (os.open(self.base.parent, fixture._directory_flags()),
@@ -51,7 +51,7 @@ class OwnedFixtureTests(unittest.TestCase):
         with mock.patch.object(fixture, "_PARENT", Path("/tmp")):
             self.assertEqual(fixture.OwnedInfobase().directory, Path("/tmp/onec-smoke/db"))
 
-    def test_exact_geometry_modes_readonly_verification_and_cleanup(self):
+    def test_exact_sqlite_bytes_modes_readonly_verification_and_cleanup(self):
         real_open = os.open
         calls = []
 
@@ -63,23 +63,20 @@ class OwnedFixtureTests(unittest.TestCase):
             with fixture.OwnedInfobase() as owned:
                 self.assertEqual(owned.directory, self.db)
                 data = self.file.read_bytes()
-                self.assertEqual(len(data), 12288)
-                self.assertEqual(data[:12], b"1CDBMSV8\x08\x03\x08\x00")
-                self.assertEqual(int.from_bytes(data[12:16], "little"), 3)
-                self.assertEqual(data[16:20], b"\0" * 4)
-                self.assertEqual(int.from_bytes(data[20:24], "little"), 4096)
-                self.assertEqual(data[24:], b"\0" * (12288 - 24))
+                self.assertEqual(owned.database_path, self.file)
+                self.assertEqual(data, fixture._FIXTURE_BYTES)
+                self.assertTrue(data.startswith(b'SQLite format 3\x00'))
                 self.assertEqual(stat.S_IMODE(self.root.stat().st_mode), 0o700)
                 self.assertEqual(stat.S_IMODE(self.db.stat().st_mode), 0o700)
                 self.assertEqual(stat.S_IMODE(self.file.stat().st_mode), 0o600)
                 self.assertEqual(self.file.stat().st_nlink, 1)
                 owned.verify()
         self.assertFalse(self.root.exists())
-        reads = [flags for path, flags in calls if path == "1Cv8.1CD" and not flags & os.O_CREAT]
+        reads = [flags for path, flags in calls if path == "application.sqlite" and not flags & os.O_CREAT]
         self.assertTrue(reads)
         self.assertTrue(all(flags & os.O_NOFOLLOW and flags & os.O_ACCMODE == os.O_RDONLY
                             for flags in reads))
-        creates = [flags for path, flags in calls if path == "1Cv8.1CD" and flags & os.O_CREAT]
+        creates = [flags for path, flags in calls if path == "application.sqlite" and flags & os.O_CREAT]
         self.assertEqual(len(creates), 1)
         self.assertTrue(creates[0] & os.O_EXCL and creates[0] & os.O_NOFOLLOW)
 
@@ -226,7 +223,7 @@ class OwnedFixtureTests(unittest.TestCase):
         real_open = os.open
 
         def fail_file(path, *args, **kwargs):
-            if path == "1Cv8.1CD":
+            if path == "application.sqlite":
                 raise OSError("create denied")
             return real_open(path, *args, **kwargs)
 
@@ -279,7 +276,7 @@ class OwnedFixtureTests(unittest.TestCase):
                 outside.mkdir()
                 root = parent / "onec-smoke"
                 db = root / "db"
-                file = db / "1Cv8.1CD"
+                file = db / "application.sqlite"
                 sentinel = outside / "sentinel"
                 sentinel.write_bytes(b"outside sentinel\n")
 
@@ -428,12 +425,12 @@ class OwnedFixtureTests(unittest.TestCase):
                 raise fixture.FixtureError("interpreter_cleanup_uncertain", cleanup_safe=False)
         self.assertTrue(self.file.exists())
 
-    def test_real_child_reads_exact_header_then_fixture_cleans(self):
+    def test_real_child_reads_exact_sqlite_then_fixture_cleans(self):
         with fixture.OwnedInfobase() as owned:
             code, out, err = owned.run_child(
                 [sys.executable, "-c", "import pathlib,sys;sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes())",
                  str(self.file)], self.base, env={"PYTHONUTF8": "1"}, seconds=2,
-                stdout_limit=16384, stderr_limit=1024)
+                stdout_limit=len(fixture._FIXTURE_BYTES), stderr_limit=1024)
             self.assertEqual((code, out, err), (0, fixture._FIXTURE_BYTES, b""))
         self.assertFalse(self.root.exists())
 
@@ -848,6 +845,34 @@ class PlatformAndErrorTests(unittest.TestCase):
             fixture.FixtureError("private executable output")
         for code in fixture._ERROR_CODES:
             self.assertEqual(str(fixture.FixtureError(code)), code)
+
+
+class OwnedSQLiteFixtureSourceTests(unittest.TestCase):
+    def test_source_owned_fixture_hash_schema_and_configuration(self):
+        import hashlib
+        from yadinassi.configuration_xml import import_configuration
+        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.database_context import SQLiteDBContext
+        self.assertEqual(hashlib.sha256(fixture._FIXTURE_BYTES).hexdigest(), fixture._FIXTURE_SHA256)
+        self.assertTrue(fixture._FIXTURE_BYTES.startswith(b'SQLite format 3\x00'))
+        configuration = import_configuration(fixture._FIXTURE_SOURCE_FILES)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'application.sqlite'
+            path.write_bytes(fixture._FIXTURE_BYTES)
+            with SQLiteDBContext(path) as context:
+                self.assertEqual(context.connection_string(), 'SQLite=' + str(path.resolve(strict=True)))
+                self.assertEqual(context.backend.export_configuration(), fixture._FIXTURE_SOURCE_FILES)
+                view = context.backend.begin_read()
+                try:
+                    self.assertEqual(view.catalogs(), configuration.catalogs)
+                    self.assertEqual(str(view.database_id), '10000000-0000-4000-8000-000000000003')
+                finally:
+                    view.close()
+            # Regeneration proves the supported constructor still admits these
+            # inputs, not byte equality across different SQLite versions.
+            generated = SQLiteCatalogBackend.create(Path(directory) / 'regenerated.sqlite', configuration)
+            self.assertEqual(generated.export_configuration(), fixture._FIXTURE_SOURCE_FILES)
+            generated.close()
 
 
 if __name__ == "__main__":

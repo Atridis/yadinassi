@@ -370,9 +370,9 @@ class WorkflowTests(unittest.TestCase):
         source = WORKFLOW_PATH.read_text()
         self.assertIn("\npermissions: {}\n", source)
         self.assertEqual(re.findall(r"^  ([a-z_]+):$", source.split("\njobs:\n")[1], re.M),
-                         ["eligibility", "form_smoke", "smoke", "tree_smoke", "tree_copy_smoke", "verdict"])
-        self.assertEqual(source.count("contents: read"), 4)
-        self.assertEqual(source.count("packages: read"), 4)
+                         ["eligibility", "form_smoke", "smoke", "tree_smoke", "tree_copy_smoke", "catalog_object_smoke", "verdict"])
+        self.assertEqual(source.count("contents: read"), 5)
+        self.assertEqual(source.count("packages: read"), 5)
         self.assertNotIn(": write", source)
         for job in ("eligibility", "verdict"):
             block = workflow_job(job)
@@ -394,7 +394,7 @@ class WorkflowTests(unittest.TestCase):
         verdict = workflow_job("verdict")
         self.assertIn("    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}", verdict)
         self.assertIn("    if: always()", verdict)
-        self.assertIn("    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, form_smoke]", verdict)
+        self.assertIn("    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke]", verdict)
 
     def test_exact_job_headers_do_not_allow_extra_bypass_conditions(self):
         expected_headers = {
@@ -424,7 +424,7 @@ class WorkflowTests(unittest.TestCase):
 """,
             "verdict": """    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}
     if: always()
-    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, form_smoke]
+    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -434,6 +434,7 @@ class WorkflowTests(unittest.TestCase):
             expected_headers["smoke"].splitlines()[0], "    name: Native 1C tree profile", 1).replace(
             "needs.eligibility.result == 'success' &&",
             "needs.eligibility.result == 'success' &&\n      github.event_name != 'workflow_dispatch' &&\n      github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", 1)
+        expected_headers["catalog_object_smoke"] = expected_headers["tree_smoke"].replace("Native 1C tree profile", "Native 1C CatalogObject behavior measurement")
         expected_headers["form_smoke"] = expected_headers["tree_smoke"].replace("Native 1C tree profile", "Native 1C managed form programmatic profile")
         expected_headers["tree_copy_smoke"] = expected_headers["tree_smoke"].replace(
             "Native 1C tree profile", "Native 1C ${{ matrix.profile }} measurement") + """    strategy:
@@ -503,6 +504,21 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r"^      - ", native, re.M)), 8)
         self.assertEqual(native.count("GHCR_TOKEN: ${{ github.token }}"), 2)
         self.assertIn("        env:\n          GHCR_USER: ${{ github.actor }}\n          GHCR_TOKEN: ${{ github.token }}\n        run: python3 scripts/native_1c_smoke.py", native)
+
+    def test_catalog_object_route_is_closed_and_required(self):
+        block = workflow_job("catalog_object_smoke")
+        self.assertEqual(block.count("GHCR_TOKEN: ${{ github.token }}"), 1)
+        command = "python3 scripts/native_1c_catalog_object_profile.py --execute-approved-image --export-native-outputs"
+        self.assertIn(command, block)
+        self.assertLess(block.index("native_1c_ci_policy.py bind"), block.index("GHCR_TOKEN:"))
+        self.assertNotIn("--profile", block)
+        self.assertIn("native-smoke/catalog-object.json", block)
+        self.assertIn("native-smoke/catalog-object-outputs/catalog-object.out", block)
+        verdict = workflow_job("verdict")
+        self.assertIn("CATALOG_OBJECT_RESULT: ${{ needs.catalog_object_smoke.result }}", verdict)
+        self.assertIn('os.environ.get("CATALOG_OBJECT_RESULT") != "success"', verdict)
+        for mutation in (" || true", "permissions: write", "--profile arbitrary"):
+            self.assertNotIn(mutation, block)
 
     def test_exact_tree_matrix_header_rejects_bypass_and_mixed_entries(self):
         original = workflow_job

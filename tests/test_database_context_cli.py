@@ -1,6 +1,6 @@
-"""Optional file context on every CLI entry point, with secret-free auth errors.
+"""SQLite file context on every CLI entry point, with secret-free auth errors.
 
-The .1CD fixture has recognized header geometry, not a real/native database.
+The SQLite fixture uses our own schema, not a native database.
 All source fixtures and subprocess input are explicitly UTF-8 with binary LF.
 """
 import os
@@ -17,7 +17,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTH_ERROR = "yadinassi: authentication options --user/--psw are not supported\n"
-EMPTY_DATABASE_ERROR = "yadinassi: --f requires a non-empty directory\n"
+EMPTY_DATABASE_ERROR = "yadinassi: --f requires a non-empty SQLite file\n"
 NO_DATABASE = "db required for further code execution"
 
 
@@ -39,14 +39,15 @@ def write_source(path, code):
     return path
 
 
-def make_header_fixture(directory):
+def make_sqlite_fixture(directory):
+    from yadinassi.configuration_xml import import_configuration
+    from yadinassi.database_context import SQLiteDBContext
+    from sqlite_catalog_fixture import configuration_files
     directory.mkdir()
-    raw = (b"1CDBMSV8" + bytes((8, 3, 8, 0)) + (3).to_bytes(4, "little")
-           + b"\0" * 4 + (4096).to_bytes(4, "little"))
-    with (directory / "1Cv8.1CD").open("wb") as stream:
-        stream.write(raw)
-        stream.truncate(3 * 4096)
-    return directory
+    path = directory / 'application.sqlite'
+    with SQLiteDBContext.create(path, import_configuration(configuration_files())):
+        pass
+    return path
 
 
 class DatabaseAuthCLITests(unittest.TestCase):
@@ -66,7 +67,7 @@ class DatabaseAuthCLITests(unittest.TestCase):
         from yadinassi import cli
         for arguments in (("--f", "", "missing.bsl"), ("--f=", "missing.bsl")):
             with self.subTest(arguments=arguments), \
-                 mock.patch.object(cli, "FileDBContext") as context, \
+                 mock.patch.object(cli, "SQLiteDBContext") as context, \
                  mock.patch.object(cli, "Interpreter") as interpreter, \
                  mock.patch.object(cli.Path, "read_text") as read_source, \
                  redirect_stdout(io.StringIO()) as stdout, redirect_stderr(io.StringIO()) as stderr:
@@ -147,7 +148,7 @@ class DatabaseContextCLITests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
-        self.database = make_header_fixture(self.root / "База с пробелами")
+        self.database = make_sqlite_fixture(self.root / "База с пробелами")
         self.source = self.root / "Код.bsl"
 
     def entry_points(self, code):
@@ -169,20 +170,20 @@ class DatabaseContextCLITests(unittest.TestCase):
         code = ('Message(InfoBaseConnectionString());\n'
                 'Message(СтрокаСоединенияИнформационнойБазы());\n'
                 '#If AtClient Then\nMessage("client");\n#Else\nMessage("wrong");\n#EndIf\n')
-        expected = (f'File="{self.database}";\n' * 2) + "client\n"
-        before = (self.database / "1Cv8.1CD").read_bytes()
+        expected = (f'SQLite={self.database}\n' * 2) + "client\n"
+        before = self.database.read_bytes()
         for arguments, stdin in self.entry_points(code):
             with self.subTest(arguments=arguments):
                 self.assert_success(("--f", str(self.database), *arguments), stdin, expected)
-        self.assertEqual((self.database / "1Cv8.1CD").read_bytes(), before)
+        self.assertEqual(self.database.read_bytes(), before)
 
     def test_relative_database_is_anchored_at_startup_cwd_not_script_directory(self):
         project = self.root / "project"
         project.mkdir()
         source = write_source(project / "main.bsl", "Message(InfoBaseConnectionString());\n")
-        result = run_cli(str(source), "--f", "./База с пробелами/../База с пробелами/.", cwd=self.root)
+        result = run_cli(str(source), "--f", "./База с пробелами/../База с пробелами/application.sqlite", cwd=self.root)
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, f'File="{self.database}";\n', ""))
+                         (0, f'SQLite={self.database}\n', ""))
 
     def test_missing_database_is_catchable_in_all_inputs_and_aliases(self):
         code = ('Try InfoBaseConnectionString(); Except Message(ErrorInfo().Description); EndTry;\n'
@@ -193,31 +194,19 @@ class DatabaseContextCLITests(unittest.TestCase):
             with self.subTest(arguments=arguments):
                 self.assert_success(arguments, stdin, (NO_DATABASE + "\n") * 2 + "42\n")
 
-    def test_bad_context_is_lazy_for_arithmetic_and_untaken_calls(self):
-        code = ('If False Then InfoBaseConnectionString(); EndIf;\n'
-                'Message(?(True, 42, СтрокаСоединенияИнформационнойБазы()));\n')
-        for path in (str(self.root / "missing"), str(self.source), 'bad"path', "bad;path", "bad\npath"):
-            for arguments, stdin in self.entry_points(code):
-                with self.subTest(path=path, arguments=arguments):
-                    self.assert_success(("--f", path, *arguments), stdin, "42\n")
 
-    def test_bad_context_does_not_replace_syntax_error(self):
-        result = run_cli("--f", 'bad"path', "-c", "@", cwd=self.root)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("Неожиданный символ", result.stderr)
-        self.assertNotIn("database", result.stderr)
-        self.assertNotIn("Traceback", result.stderr)
 
-    def test_missing_or_unrecognized_header_fails_only_on_call_and_is_catchable(self):
-        invalid = self.root / "unrecognized"
-        invalid.mkdir()
-        (invalid / "1Cv8.1CD").write_bytes(b"not a database")
-        code = ('Try InfoBaseConnectionString(); Except Message("caught"); EndTry;\n'
-                'Message(42);\n')
-        for directory in (self.root / "missing", invalid):
-            result = run_cli("--f", str(directory), "-c", code, cwd=self.root)
-            self.assertEqual((result.returncode, result.stdout, result.stderr),
-                             (0, "caught\n42\n", ""))
+
+    def test_invalid_sqlite_context_is_rejected_before_execution(self):
+        invalid = self.root / 'invalid.sqlite'
+        invalid.write_bytes(b'not a database')
+        for path in (self.root / 'missing.sqlite', invalid):
+            result = run_cli('--f', str(path), '-c', 'Message("MUST_NOT_EXECUTE");', cwd=self.root)
+            self.assertEqual((result.returncode, result.stdout), (1, ''))
+            self.assertIn('yadinassi: database ', result.stderr)
+            self.assertNotIn(str(path), result.stderr)
+            self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(invalid.read_bytes(), b'not a database')
 
     def test_uncaught_missing_database_reports_source_and_console_recovers(self):
         result = run_cli("-c", "\nInfoBaseConnectionString();", cwd=self.root)
@@ -235,7 +224,7 @@ class DatabaseContextCLITests(unittest.TestCase):
             result = run_cli("--f", 'bad"path', option, cwd=self.root)
             self.assertEqual((result.returncode, result.stderr), (0, ""))
         result = run_cli("--help")
-        self.assertIn("--f DIRECTORY", result.stdout)
+        self.assertIn("--f SQLITE_FILE", result.stdout)
 
 
 if __name__ == "__main__":

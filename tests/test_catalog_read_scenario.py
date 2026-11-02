@@ -1,122 +1,42 @@
-"""Local adapter regressions; synthetic cursor rows are not native evidence."""
-from decimal import Decimal
-from types import SimpleNamespace as NS
-from unittest.mock import Mock
-from uuid import UUID
-import unittest
-
-from yadinassi.runtime import Interpreter
-from yadinassi.catalogs import BSLCatalogSelection
-from yadinassi.storage.catalog_metadata import CatalogMetadataIdentity
-from yadinassi.storage.config_catalog_binding import BoundCatalogAttribute
-
-A = '11111111-1111-4111-8111-111111111111'
-B = '22222222-2222-4222-8222-222222222222'
-U = '33333333-3333-4333-8333-333333333333'
-V = '44444444-4444-4444-8444-444444444444'
-
-
-def result(rows=(), metadata=A):
-    def row(uid, code, description, marked=False):
-        values = {'_CODE': code, '_DESCRIPTION': description, '_MARKED': marked,
-                  '_FLD7': 'payload', '_FLD8': Decimal('1.25')}
-        return NS(reference_uuid=UUID(uid), physical_record=NS(fields=tuple(
-            NS(declaration=NS(name=name), value=value) for name, value in values.items())))
-    return NS(identity=NS(name='Products', metadata_uuid=metadata),
-              binding=NS(code_type=1, attributes=(BoundCatalogAttribute(A, 'TextValue', '_FLD7', 'S', (32,1)),
-                                     BoundCatalogAttribute(B, 'Amount', '_FLD8', 'N', (9,2,0)))),
-              rows=tuple(row(*values) for values in rows))
-
+"""Logical catalog read/write scenario on an owned SQLite application database."""
+from pathlib import Path
+import tempfile,unittest
+from yadinassi import Interpreter, BSLRuntimeError
+from yadinassi.configuration_xml import import_configuration
+from yadinassi.database_context import SQLiteDBContext
+from sqlite_catalog_fixture import configuration_files
 
 class CatalogScenarioTests(unittest.TestCase):
-    def setup_runtime(self, rows=()):
-        context = Mock()
-        context.catalog_metadata.return_value = (CatalogMetadataIdentity(A, 'Products'),
-                                                  CatalogMetadataIdentity(B, 'Other'))
-        context.catalog_rows.return_value = result(rows)
-        output = []
-        runtime = Interpreter(output.append, database_context=context)
-        return runtime, context, output
-
-    def test_one_snapshot_managers_refs_types_and_metadata(self):
-        runtime, context, output = self.setup_runtime()
-        runtime.execute('''
-M = Catalogs.Products;
-R = M.GetRef(New UUID("33333333-3333-4333-8333-333333333333"));
-Message(TypeOf(R) = Type("CatalogRef.Products"));
-Message(TypeOf(TypeOf(R)) = Type("Type"));
-Message(R.Metadata() = Metadata.Catalogs.Products);
-Message(ValueIsFilled(R));
-Message(ValueIsFilled(M.EmptyRef()));
-Message(R = Catalogs.Other.GetRef(R.UUID()));
-''')
-        self.assertEqual(output, ['Да', 'Да', 'Да', 'Да', 'Нет', 'Нет'])
-        context.catalog_metadata.assert_called_once_with()
-        context.catalog_rows.assert_not_called()
-
-    def test_actual_bsl_select_and_lookup(self):
-        runtime, context, output = self.setup_runtime(((U, '002', 'Second', True),))
-        runtime.execute('''
-M = Catalogs["Products"];
-S = M.Select();
-While S.Next() Do
- Message(S.Code); Message(S.Description); Message(S.TextValue);
- Message(S.Amount); Message(S.DeletionMark);
- Message(S.Ref = M.FindByCode(S.Code));
- Message(S.Ref = M.FindByDescription(S.Description, True));
-EndDo;
-Message(M.FindByCode("absent").IsEmpty());
-Message(S.Next());
-Message(S.Next());
-''')
-        self.assertEqual(output, ['002', 'Second', 'payload', '1,25', 'Да',
-                                  'Да', 'Да', 'Да', 'Да', 'Нет'])
-
-    def test_cursor_empty_and_synthetic_multiple_state_machine(self):
-        runtime, _, _ = self.setup_runtime()
-        manager = runtime._catalogs.get_index('Products')
-        empty = BSLCatalogSelection(manager, result())
-        self.assertFalse(empty.next()); self.assertFalse(empty.next())
-        self.assertIsNone(empty.get_member('Code'))
-        cursor = BSLCatalogSelection(manager, result(((U, '20', 'B'), (V, '10', 'A'))))
-        self.assertIsNone(cursor.get_member('Code'))
-        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '10')
-        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '20')
-        self.assertFalse(cursor.next()); self.assertEqual(cursor.get_member('Code'), '20')
-        self.assertTrue(cursor.next()); self.assertEqual(cursor.get_member('Code'), '10')
-        with self.assertRaisesRegex(ValueError, 'not found'):
-            cursor.get_method('Reset')
-
-    def test_default_fields_preserve_reserved_name_guard(self):
-        runtime, context, _ = self.setup_runtime()
-        rows = result()
-        rows.binding.attributes = (NS(name='Code', type_token='S', physical_name='_FLD7'),)
-        context.catalog_rows.return_value = rows
-        manager = runtime._catalogs.get_index('Products')
-        with self.assertRaisesRegex(ValueError, 'ambiguous catalog field'):
-            manager.empty_ref().get_member('Code')
-        with self.assertRaisesRegex(ValueError, 'ambiguous catalog field'):
-            manager.select().get_member('Code')
-
-    def test_database_is_lazy_and_untaken_branches_stay_lazy(self):
-        runtime = Interpreter(lambda value: None)
-        runtime.execute('If False Then S = Catalogs.Products.Select(); EndIf; Message(Type("String"));')
-        with self.assertRaisesRegex(Exception, 'db required'):
-            runtime.execute('S = Catalogs.Products;')
-
-    def test_changed_catalog_identity_cannot_supply_rows(self):
-        runtime, context, _ = self.setup_runtime()
-        context.catalog_rows.return_value = result(metadata=B)
-        with self.assertRaisesRegex(Exception, 'identity changed'):
-            runtime.execute('S = Catalogs.Products.Select();')
-
-    def test_unsupported_partial_lookup_and_writes(self):
-        runtime, _, _ = self.setup_runtime()
-        for source in ('Catalogs.Products.FindByDescription("a");',
-                       'Catalogs.Products.CreateItem();',
-                       'Catalogs.Products.EmptyRef().Code = "x";',
-                       'R = New (Type("CatalogRef.Products"));'):
-            with self.subTest(source=source), self.assertRaises(Exception):
-                runtime.execute(source)
-
-if __name__ == '__main__': unittest.main()
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.context=SQLiteDBContext.create(Path(self.temp.name)/'app.sqlite',import_configuration(configuration_files()))
+        self.addCleanup(self.context.close)
+        self.output=[];self.vm=Interpreter(self.output.append,database_context=self.context)
+    def test_managers_refs_types_and_metadata(self):
+        self.vm.execute('''M=Catalogs.Products;R=M.GetRef(New UUID("33333333-3333-4333-8333-333333333333"));
+Message(TypeOf(R)=Type("CatalogRef.Products"));Message(TypeOf(TypeOf(R))=Type("Type"));
+Message(R.Metadata()=Metadata.Catalogs.Products);Message(ValueIsFilled(R));
+Message(ValueIsFilled(M.EmptyRef()));Message(R=Catalogs.Categories.GetRef(R.UUID()));''')
+        self.assertEqual(self.output,['Да','Да','Да','Да','Нет','Нет'])
+    def test_select_lookup_cursor_restart_and_retained_last_row(self):
+        self.vm.execute('''M=Catalogs.Products;S=M.Select();Message(S.Code=Undefined);Message(S.Next());
+P=M.CreateItem();P.Code="20";P.Description="Second";P.Text="payload";P.Amount=1.25;P.Write();
+P=M.CreateItem();P.Code="10";P.Description="First";P.Write();
+S=M.Select();While S.Next() Do Message(S.Code);Message(S.Ref=M.FindByCode(S.Code));EndDo;
+Message(S.Code);Message(S.Next());Message(S.Code);
+Message(M.FindByDescription("Second",True)=M.FindByCode("20"));Message(M.FindByCode("absent").IsEmpty());''')
+        self.assertEqual(self.output,['Да','Нет','10','Да','20','Да','20','Да','10','Да','Да'])
+    def test_readonly_reference_and_unsupported_partial_lookup(self):
+        for source in ('Catalogs.Products.FindByDescription("a");','Catalogs.Products.EmptyRef().Code="x";',
+                       'R=New (Type("CatalogRef.Products"));'):
+            with self.subTest(source=source),self.assertRaises(BSLRuntimeError):self.vm.execute(source)
+    def test_no_database_lazy_and_unrelated_types_preserved(self):
+        vm=Interpreter()
+        vm.execute('If False Then S=Catalogs.Products.Select();EndIf;Type("String");')
+        with self.assertRaisesRegex(BSLRuntimeError,'db required'):vm.execute('Catalogs.Products;')
+    def test_foreign_database_reference_rejected(self):
+        other=SQLiteDBContext.create(Path(self.temp.name)/'other.sqlite',import_configuration(configuration_files()))
+        self.addCleanup(other.close)
+        vm=Interpreter(database_context=other);vm.execute('C=Catalogs.Categories.CreateItem();C.Code="1";C.Write();')
+        self.vm.execute('P=Catalogs.Products.CreateItem();')
+        with self.assertRaises(TypeError):self.vm.execute('P').set_member('Category',vm.execute('C.Ref'))

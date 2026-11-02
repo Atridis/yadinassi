@@ -1,6 +1,6 @@
-"""Owned synthetic header fixture for the fixed Linux native-smoke preflight.
+"""Owned SQLite fixture for the fixed Linux native-smoke preflight.
 
-This is header geometry, NOT a usable or validated 1C database. Ownership relies
+This is our own SQLite schema, NOT a native 1C database. Ownership relies
 on a trusted, single-job Linux host, / and /tmp owned by root or the effective
 UID, and no malicious same-UID/root actor. Ownership alone proves no UID mapping.
 The root directory must not be group/world writable; writable /tmp must be sticky.
@@ -12,7 +12,9 @@ ownership until our final waitpid. Ordinary local kernel/filesystem calls must r
 """
 from __future__ import annotations
 
+import base64
 import errno
+import hashlib
 import math
 import os
 from pathlib import Path
@@ -22,16 +24,45 @@ import stat
 import subprocess
 import sys
 import time
+import zlib
 
 _PARENT = Path("/tmp")
 _ROOT_NAME = "onec-smoke"
 _DB_NAME = "db"
-_FILE_NAME = "1Cv8.1CD"
-_PAGE_SIZE = 4096
-_PAGE_COUNT = 3
-_HEADER = (b"1CDBMSV8" + bytes((8, 3, 8, 0)) + _PAGE_COUNT.to_bytes(4, "little")
-           + b"\0" * 4 + _PAGE_SIZE.to_bytes(4, "little"))
-_FIXTURE_BYTES = _HEADER + b"\0" * (_PAGE_COUNT * _PAGE_SIZE - len(_HEADER))
+_FILE_NAME = "application.sqlite"
+# Generated once through import_configuration + SQLiteCatalogBackend.create from
+# the authored official-XML inputs below. No native database bytes are involved.
+# Fixed synthetic identities; exact bytes are pinned, not promised reproducible
+# across SQLite versions. Regeneration must preserve logical content/schema.
+_FIXTURE_SQLITE_VERSION = '3.53.1'
+_FIXTURE_SHA256 = 'aabc7b0b6aa0f0c0ed28fef937b4e46b7152aba822cc6465447b9c814cf101ef'
+_FIXTURE_SOURCE_FILES = {
+    'Configuration.xml': b'<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20"><Configuration uuid="10000000-0000-4000-8000-000000000001"><Properties><Name>NativeHostFixture</Name></Properties><ChildObjects><Catalog>HostItems</Catalog></ChildObjects></Configuration></MetaDataObject>',
+    'Catalogs/HostItems.xml': b'<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20"><Catalog uuid="10000000-0000-4000-8000-000000000002"><Properties><Name>HostItems</Name><CodeType>String</CodeType><CodeLength>8</CodeLength><DescriptionLength>32</DescriptionLength><Autonumbering>false</Autonumbering><CheckUnique>true</CheckUnique></Properties><ChildObjects/></Catalog></MetaDataObject>',
+}
+_FIXTURE_BYTES = zlib.decompress(base64.b64decode(
+    'eNrt2stvGkccB/BdOzYGYydVWlk9VFlxCUiEZXlTY1QHk8aKH4kDai3LQsPuYDaBXYcdrEQ5kce9l5566LE99lj1mFtvPfYv'
+    '6D/Qf6CzLI9dwBWRqqixvh8tyDOzs8zMb3fkgXn8aE9nVGqYnTZhUlK4IYii8JUkCYIg8ldQGFvir2uutDh4CcfbO7vCbKIQ'
+    '+/73tfWfhVX/O2H9l7Vf19XgT2sv14qBH4NPgnf87wJ1AQAAAADeS++LgG8jEhF7XUbqLaqa7bbOah2qUv2ceVOrpaPydqUs'
+    'Vbbv7pUlb1nYPKcdwnTTqOmaVCl/W5EeHu3ubx8dSw/Kx1GpQ591qcVqTWI1neKDQ/6q7u3ZZRe6xWtatSeWaXhLI5uryxuH'
+    'EVHQDY0+t561+L+bNdJlZj9d8zaipnjTwdervn7n3j5yOkcYaZlndrHZ0bypFW/nPGXhYXLYtWHrpKPyvfJR+aBUfjyqYqlN'
+    '2iZhXaMG09mLiN0/+yJTlccdl3YPKuWvy0fj65bul0sPwsPyYpxfRTU1OnkBjVpqh3dUnxw2u6hF++Fok87Tyz5g8qRwPKpE'
+    '+GddkBaP1oxwRN1RdQ1LdNRHXrt6sPuoWnaX2m2PRDb9/xpKz5DXEt50YHPlPSor3rS/9+k15yZXPfeBEypvamnmfTAR1Bk3'
+    'uEHaE+EZjIMdioZu6NNBimwuz9Mn57PHA+KkfZtL71FZ8aaXe+EF34aiiL2Xg6feaOhn3cED3NBn5SxOPP2T5eFzwpozBuYp'
+    'b9DkTcRrMz6S0t29w7uubKtJEunMxCCVFpc3vlEunwAm22FPApN59rpzxZ7tXu2Lvo3bt8U3x/1+a3xU6sSiNd1omJ7Egqe3'
+    'nqKwpRtn/LlxPbeuDg+erNE5Wwp/Ikb1u93pWeCMGoOp87LHdHzGYCZw92/WJadvxqhEVKZfEEa1yz7FfcJwIhjk9ad1y+Jz'
+    'wkRw1uxF+vUfBH4AAAAAAAAAwIeniitC1V+V/Z8occed/lvKfssNkwPJOc5RDgjTL+h902L39Oes26Enp/b6fyH4m7Ae4W8A'
+    'AAAAAAD/S69aCz755ptYb63k/jk19rzd4kdhnzKyQxg5rD+hKpN4lmFthZqMnX8pyxe5mKLGOl05F0vK+zulFrEsaoWkC9qx'
+    't2tshRKxRDxULHiuLNk/1G6F5llo8aoPO/aGGqZTq1g4IG1anFp8FeR+fkF2n1pq6i3NabOdcn70L9q1dhltWwV5mMX/8pwq'
+    'e9rK094BKKr5RE6p17NqIqMkSUbJNRJUVbR4PZ1OkXRGIzSZzWlKJqEpyXxOS/OiVCqbTWtxmqFqXHldEX35m28ZH26nBZY8'
+    'atV/O+bO5ecf7cSs0XaNmDPKJVOjlRfntPiYdXTjzB6vQUa/aI8aZ6xZzDn5g1RhZ7w9Z5CVTBTk6dzCdpeZRrddp/a1iw3S'
+    'snh4vZk8tFR9WjX0Z11aZJ0utSM4zrn8NpCL7qhPhFVJZrJ1JZ1Iq6l6sm7HsVFPqzSVz6TTalLN5hVKGxktk0qklUw8lVUa'
+    'mTjNNTI5ovLYZ/MBe/1//Q/h+l/8DQAAAAAAAAA+Cp8tyuLU92ELny/m/bO/tnH2/38n8AMAAAAAAAAAPhBDXKre6i3Ns+1h'
+    'tI4/mW+XRDQ0qhGK5qLJRPTk9DTQX///KfADAAAAAAAAAD4ytxer/nm+FXDW/38L/AAAAAAAAACAqyO4eMs/2glg7/8XbmBQ'
+    'AAAAAAAAAK6yANb/AAAAAAAAAFj/AwAAAAAAAMBHD/v/AQAAAAAAAK4+/P4PAAAAAAAAcPX9A305jWA='
+))
+if hashlib.sha256(_FIXTURE_BYTES).hexdigest() != _FIXTURE_SHA256:
+    raise RuntimeError("invalid owned SQLite fixture")
 _SHUTDOWN_SECONDS = 1.0
 _POLL_SECONDS = 0.01
 _MAX_PROC_ENTRIES = 32768
@@ -119,6 +150,10 @@ class OwnedInfobase:
     @property
     def directory(self) -> Path:
         return _PARENT / _ROOT_NAME / _DB_NAME
+
+    @property
+    def database_path(self) -> Path:
+        return self.directory / _FILE_NAME
 
     def abandon(self) -> None:
         """Withhold deletion when child shutdown or filesystem identity is uncertain."""

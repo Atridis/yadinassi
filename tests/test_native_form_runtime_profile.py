@@ -70,7 +70,7 @@ class ManagedFormProfileTests(unittest.TestCase):
                 with self.assertRaises(host.FormError):host.validate_envelope(wire,NONCE,hashes)
 
     def test_closed_shell_flag_and_stage_forwarding(self):
-        from test_native_catalog_description_rows_workflow import dispatch
+        from native_workflow_shell import dispatch
         from test_native_tree_profile_host import synthetic_producer_reader
         import run_stage
         shell=(ROOT/'scripts/native_1c_smoke_probe.sh').read_text(encoding='utf-8')
@@ -145,26 +145,39 @@ class ManagedFormProfileTests(unittest.TestCase):
                 (root/'extra').mkdir()
                 with self.assertRaises(lane.full.FullError):lane._dump_files(root)
 
-    def test_comparison_uses_closed_session_entry_and_bounded_child(self):
+    def test_comparison_contract_uses_closed_session_entry(self):
         from yadinassi.form_runtime import FormSession
         from form_runtime_packet import source
         session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
         raw=dict(session.open().attributes)['FLog'].encode('ascii')
         hashes={host.SOURCE:host.SOURCE_SHA256}
         with tempfile.TemporaryDirectory() as directory:
-            result=host.compare_output(ROOT,Path(directory).resolve(),raw,hashes)
+            runner=mock.Mock(return_value=(0,raw,b''))
+            result=host.compare_output(ROOT,Path(directory).resolve(),raw,hashes,runner=runner)
+            self.assertEqual(runner.call_args.args[0][1:3],['-I','-B'])
+            self.assertIn(host.EXECUTE_SCRIPT,runner.call_args.args[0])
         self.assertEqual(result['acceptance_status'],'accepted')
         self.assertEqual(result['scope'],'programmatic-and-direct-handler-with-create-open-lifecycle')
+
+    @unittest.skipUnless(os.name=='posix','Production native-host bounded-child containment requires POSIX')
+    def test_actual_bounded_child_replay(self):
+        from yadinassi.form_runtime import FormSession
+        from form_runtime_packet import source
+        session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
+        raw=dict(session.open().attributes)['FLog'].encode('ascii')
+        with tempfile.TemporaryDirectory() as directory:
+            result=host.compare_output(ROOT,Path(directory).resolve(),raw,{host.SOURCE:host.SOURCE_SHA256})
+        self.assertEqual(result['acceptance_status'],'accepted')
 
     def test_closed_job_and_required_gate_not_paired_tree_matrix(self):
         job=workflow_job('form_smoke');workflow=(ROOT/'.github/workflows/native-1c-isolated-smoke.yml').read_text(encoding='utf-8')
         self.assertIn('native_1c_form_runtime_profile.py --execute-approved-image --export-native-outputs',job)
         self.assertIn('persist-credentials: false',job);self.assertIn('contents: read\n      packages: read',job)
         self.assertIn('native_1c_ci_policy.py bind',job)
-        self.assertIn('needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, form_smoke]',workflow)
+        self.assertIn('needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke]',workflow)
         self.assertNotIn('managed-form-programmatic-v1',workflow_job('tree_copy_smoke'))
         env={'ELIGIBILITY_RESULT':'success','NATIVE_RESULT':'success','TREE_REQUIRED':'true',
-             'TREE_RESULT':'success','TREE_COPY_RESULT':'success','FORM_RESULT':'success'}
+             'TREE_RESULT':'success','TREE_COPY_RESULT':'success','FORM_RESULT':'success','CATALOG_OBJECT_RESULT':'success'}
         for result in ('success','failure','skipped','cancelled',''):
             env['FORM_RESULT']=result
             process=subprocess.run([sys.executable,'-I','-B','-c',inline_program('verdict')],

@@ -80,7 +80,7 @@ class NativeDirectiveWitnessTests(SyntheticFilesystemCase):
         self.addCleanup(temporary.cleanup)
         source = Path(temporary.name).resolve() / "probe.bsl"
         source.write_bytes(linux_fixture(ROOT / full.CLIENT_SOURCE))
-        good = json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
+        good = json.dumps(full.CLIENT_SQLITE_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
                           separators=(",", ":")).encode()
         for result in [(1, good, b""), (0, good, b"error"),
                        (0, b"[]", b""), (0, good.replace(b"42,", b"42.0,", 1), b"")]:

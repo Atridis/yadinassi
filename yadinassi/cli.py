@@ -5,7 +5,8 @@ from pathlib import Path
 import sys
 
 from . import __version__
-from .database_context import FileDBContext
+from .database_context import SQLiteDBContext
+from .catalog_backend import BackendError
 from .errors import BSLError, BSLRuntimeError, IncompleteInput
 from .syntax.parser import parse
 from .syntax.preprocessor import COMPILATION_PROFILES
@@ -14,7 +15,7 @@ from .values import to_string
 
 
 _UNSUPPORTED_AUTH = "yadinassi: authentication options --user/--psw are not supported"
-_EMPTY_DATABASE = "yadinassi: --f requires a non-empty directory"
+_EMPTY_DATABASE = "yadinassi: --f requires a non-empty SQLite file"
 
 
 def _option_arguments(arguments: list[str]):
@@ -133,18 +134,49 @@ def main(argv: list[str] | None = None) -> int:
                                      allow_abbrev=False)
     parser.add_argument("file", nargs="?", help="файл BSL для исполнения; '-' — стандартный ввод")
     parser.add_argument("-c", "-с", "--command", help="код BSL для исполнения")
-    parser.add_argument("--f", metavar="DIRECTORY",
-                        help="каталог offline-копии файловой базы; проверяется только при DB-вызове")
+    parser.add_argument("--f", metavar="SQLITE_FILE",
+                        help="файл SQLite базы yadinassi с конфигурацией и данными")
+    parser.add_argument("--create-db", metavar="SQLITE_FILE", help="создать новую SQLite базу из XML конфигурации")
+    parser.add_argument("--import-xml", metavar="DIRECTORY", help="каталог штатной XML-выгрузки конфигурации")
+    parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(arguments)
+    if args.create_db is not None or args.import_xml is not None or args.inactive:
+        if args.create_db is None or args.import_xml is None:
+            parser.error("--create-db и --import-xml требуются вместе")
+        if args.f is not None or args.file is not None or args.command is not None:
+            parser.error("импорт конфигурации не совмещается с исполнением или --f")
+        from .configuration_import import load_configuration_directory
+        try:
+            configuration = load_configuration_directory(args.import_xml)
+            context = SQLiteDBContext.create(args.create_db, configuration, activate=not args.inactive)
+            context.close()
+        except (BackendError, ValueError, OSError):
+            print("yadinassi: configuration import refused", file=sys.stderr)
+            return 1
+        print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")
+        if args.inactive:
+            for issue in configuration.activation_issues:
+                print("Activation issue: " + issue)
+        return 0
     if args.file is not None and args.command is not None:
         parser.error("файл и -c нельзя использовать одновременно")
-    database_context = FileDBContext(args.f) if args.f is not None else None
-    interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
-                              compilation_profile=args.preprocessor_profile)
+    try:
+        database_context = SQLiteDBContext(args.f) if args.f is not None else None
+    except BackendError as error:
+        print(f"yadinassi: database {error.code}", file=sys.stderr)
+        return 1
+    try:
+        interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
+                                  compilation_profile=args.preprocessor_profile)
+    except BackendError as error:
+        if database_context is not None:
+            database_context.close()
+        print(f"yadinassi: database {error.code}", file=sys.stderr)
+        return 1
     try:
         if args.command is not None:
             interpreter.execute(args.command, "<команда>")
@@ -177,4 +209,6 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     finally:
         interpreter.close()
+        if database_context is not None:
+            database_context.close()
     return 0

@@ -110,13 +110,18 @@ class TreeHostTests(unittest.TestCase):
         end = text.index('          PYTHON', begin)
         code = '\n'.join(line[10:] for line in text[begin:end].splitlines())
         for tree in ('success', 'failed', 'skipped', 'cancelled', ''):
-            for required in ('true', 'false'):
-                env = {'ELIGIBILITY_RESULT': 'success', 'NATIVE_RESULT': 'success',
-                       'TREE_RESULT': tree, 'TREE_COPY_RESULT': 'success', 'FORM_RESULT': 'success', 'TREE_REQUIRED': required}
-                with mock.patch.dict(os.environ, env, clear=True), mock.patch('builtins.print'):
-                    with self.assertRaises(SystemExit) as result:
-                        exec(code, {'os': os})
-                self.assertEqual(result.exception.code, 0 if required == 'false' or tree == 'success' else 1)
+            for catalog in ('success', 'failed', 'skipped', 'cancelled', '', None):
+                for required in ('true', 'false'):
+                    env = {'ELIGIBILITY_RESULT': 'success', 'NATIVE_RESULT': 'success',
+                           'TREE_RESULT': tree, 'TREE_COPY_RESULT': 'success', 'FORM_RESULT': 'success', 'TREE_REQUIRED': required}
+                    if catalog is not None:
+                        env['CATALOG_OBJECT_RESULT'] = catalog
+                    with self.subTest(tree=tree, catalog=catalog, required=required), \
+                         mock.patch.dict(os.environ, env, clear=True), mock.patch('builtins.print'):
+                        with self.assertRaises(SystemExit) as result:
+                            exec(code, {'os': os})
+                        expected = 0 if required == 'false' or tree == catalog == 'success' else 1
+                        self.assertEqual(result.exception.code, expected)
 
     def test_raw_crlf_staging_source_is_rejected(self):
         from unittest import mock

@@ -38,6 +38,28 @@ class FormRouteTests(unittest.TestCase):
         self.assertNotIn('ОписаниеОшибки'.encode(),module)
         self.assertEqual(module.count(b'Procedure FormOpen('),1)
 
+    def test_measured_version_event_order_unused_root_namespaces_only(self):
+        data=files();path='Launcher/Forms/Main/Ext/Form.xml'
+        raw=data[path].replace(b'version="2.4"',b'xmlns:unused="urn:fixed-public-test" version="2.20"')
+        old=(b'  <Event name="OnCreateAtServer">FormCreate</Event>\n'
+             b'  <Event name="OnOpen">FormOpen</Event>\n'
+             b'  <Event name="BeforeClose">FormBeforeClose</Event>')
+        new=(b'  <Event name="OnOpen">FormOpen</Event>\n'
+             b'  <Event name="BeforeClose">FormBeforeClose</Event>\n'
+             b'  <Event name="OnCreateAtServer">FormCreate</Event>')
+        self.assertIn(old,raw);raw=raw.replace(old,new)
+        data[path]=raw
+        self.assertEqual(route.validate_redump(data),route.validate_redump(files()))
+        for bad in (raw.replace(b'version="2.20"',b'version="2.21"'),
+                    raw.replace(b'name="OnOpen">FormOpen',b'name="BeforeClose">FormBeforeClose'),
+                    raw.replace(b'id="1"',b'id="2"'),
+                    raw.replace(b'cfg:ExternalDataProcessorObject.Launcher',b'cfg:ExternalDataProcessorObject.Other'),
+                    raw.replace(b'<MainAttribute>true',b'<MainAttribute>false'),
+                    raw.replace(b'<Attributes>',b'<Attributes enabled="false">'),
+                    raw.replace(b'urn:fixed-public-test',b'http://v8.1c.ru/8.1/data/core').replace(b'v8:Type',b'unused:Type')):
+            changed=dict(data);changed[path]=bad
+            with self.subTest(raw=bad[:70]),self.assertRaises(ValueError):route.validate_redump(changed)
+
     def test_redump_exact_owned_module_and_routing(self):
         data=files();self.assertEqual(len(route.validate_redump(data)),64)
         normalized=dict(data)

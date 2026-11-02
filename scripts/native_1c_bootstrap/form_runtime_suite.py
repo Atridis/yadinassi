@@ -40,8 +40,7 @@ def _dump_files(directory):
     # all files are secure descriptor reads, never copied from user directories.
     expected={'Launcher.xml','Launcher/Forms/Main.xml',FORM_PATH,MODULE,'Launcher/Ext/ObjectModule.bsl'}
     seen=set()
-    directories={str(Path(name).parent) for name in expected}
-    directories |= {str(parent) for name in expected for parent in Path(name).parents if str(parent)!='.'}
+    directories={parent.as_posix() for name in expected for parent in Path(name).parents if parent.as_posix()!='.'}
     for path in directory.rglob('*'):
         if path.is_symlink():raise full.FullError('module_mismatch')
         if path.is_file():seen.add(path.relative_to(directory).as_posix())

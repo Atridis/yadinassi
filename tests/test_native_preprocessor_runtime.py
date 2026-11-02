@@ -97,8 +97,8 @@ class PreprocessorRuntimeTests(SyntheticFilesystemCase):
             def runner(args,cwd):
                 self.assertEqual(args[-3],PROFILE);self.assertEqual(Path(args[-2]),path)
                 self.assertEqual(path.read_bytes(),source)
-                self.assertIn('FileDBContext(sys.argv[4])',args[-5]);self.assertIn('compilation_profile=sys.argv[2]',args[-5])
-                return 0,json.dumps(full.CLIENT_RUNTIME_VALUES+[TOKEN],ensure_ascii=False,separators=(',',':')).encode(),b''
+                self.assertIn('SQLiteDBContext(sys.argv[4])',args[-5]);self.assertIn('compilation_profile=sys.argv[2]',args[-5])
+                return 0,json.dumps(full.CLIENT_SQLITE_RUNTIME_VALUES+[TOKEN],ensure_ascii=False,separators=(',',':')).encode(),b''
             full.verify_client_interpreter(ROOT,path,full.PREPROCESSOR_SOURCE_SHA256,runner=runner)
             for values in (full.CLIENT_RUNTIME_VALUES,full.CLIENT_RUNTIME_VALUES+[full.PREPROCESSOR_DEFAULT_TOKEN]):
                 with self.assertRaises(full.FullError):full.verify_client_interpreter(ROOT,path,full.PREPROCESSOR_SOURCE_SHA256,

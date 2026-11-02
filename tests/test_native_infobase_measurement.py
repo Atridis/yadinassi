@@ -120,16 +120,16 @@ class InfobaseSourceTests(SyntheticFilesystemCase):
             seen = []
             def runner(arguments, cwd):
                 self.assertEqual(Path(arguments[-2]), path)
-                self.assertEqual(arguments[-1], str(Path('/tmp/onec-smoke/db')))
+                self.assertEqual(arguments[-1], str(Path('/tmp/onec-smoke/db/application.sqlite')))
                 self.assertEqual(path.read_bytes(), raw)
                 seen.append(full.digest(path.read_bytes()))
-                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
+                return 0, json.dumps(full.CLIENT_SQLITE_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
                                      separators=(',', ':')).encode(), b''
             full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=runner, preprocessor_measurement=True)
             self.assertEqual(seen, [full.PREPROCESSOR_SOURCE_SHA256])
             def altered_runner(arguments, cwd):
                 Path(arguments[-2]).write_bytes(b'changed')
-                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
+                return 0, json.dumps(full.CLIENT_SQLITE_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False,
                                      separators=(',', ':')).encode(), b''
             with self.assertRaises(full.FullError) as raised:
                 full.verify_client_interpreter(ROOT, path, full.digest(raw), runner=altered_runner, preprocessor_measurement=True)
@@ -359,3 +359,17 @@ class InfobaseHelperSourceTests(SyntheticFilesystemCase):
             with mock.patch.object(full, '__file__', str(directory / 'native_1c_full_host.py')):
                 source_only = full._load_infobase_fixture()
             self.assertEqual(source_only.VALUE, 'CLEAN')
+
+class SQLiteHostIdentityBoundaryTests(unittest.TestCase):
+    def test_only_five_connection_shape_slots_intentionally_differ(self):
+        native = full.INFOBASE_CONTEXT_EXPECTED_TOKEN
+        host = full.SQLITE_INFOBASE_CONTEXT_EXPECTED_TOKEN
+        self.assertEqual(native, suite.INFOBASE_CONTEXT_EXPECTED_TOKEN)
+        self.assertEqual([i for i, pair in enumerate(zip(native, host)) if pair[0] != pair[1]],
+                         [9, 15, 21, 27, 33])
+        self.assertEqual([host[i] for i in (9, 15, 21, 27, 33)], ['0'] * 5)
+        self.assertEqual(full.CLIENT_SQLITE_RUNTIME_VALUES[:-1], full.CLIENT_RUNTIME_VALUES[:-1])
+        self.assertEqual(full.CLIENT_RUNTIME_VALUES[-1], native)
+        self.assertIn('context.connection_string() != "SQLite=" + str(Path(sys.argv[4]).absolute())',
+                      full.CLIENT_EXECUTE_SCRIPT)
+        self.assertNotIn('replace(', full.CLIENT_EXECUTE_SCRIPT)
