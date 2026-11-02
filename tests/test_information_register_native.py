@@ -453,3 +453,54 @@ class InformationRegisterSetupHelperTests(InformationRegisterSourceFixtureCase):
         self.assertEqual(text.count('R.Write(False)'),3)
         for forbidden in ('InteractivePosting','UndoPosting','SetPrivilegedMode(True)'):
             self.assertNotIn(forbidden,text)
+
+class InformationRegisterProcessDiagnosticTests(unittest.TestCase):
+    def diagnostic(self):
+        return dict(site='process',phase=None,status=None,operation_matches=None,
+            markers=dict(control='nonempty',result='nonempty',completion='nonempty',**{'completion.pending':'absent'}),
+            compile=dict(state='completed',result_code=0,log_state='nonempty',issues=[],truncated=False))
+
+    def test_launch_keeps_original_inventory_failure_and_only_finite_details(self):
+        import information_register_diagnostics as d
+        s,_,_=fixture.load(1)
+        with tempfile.TemporaryDirectory() as tmp:
+            backend=runner.Native.__new__(runner.Native)
+            backend.evidence=Path(tmp).resolve();backend.counter=3;backend.nonce=NONCE
+            error=runner.lifecycle.SandboxInventoryError('home','race');error.oracle_site='poll'
+            with mock.patch.object(backend,'command',return_value=[]),mock.patch.object(backend,'process',side_effect=error),mock.patch.object(d,'_collect',return_value=self.diagnostic()),self.assertRaises(runner.lifecycle.SandboxInventoryError) as caught:
+                backend.launch(Path(tmp),operation='information_register_client',b=s)
+            self.assertIs(caught.exception,error)
+            self.assertEqual(backend.catalog_native_failure['process_detail'],dict(site='poll',region='home',reason='race'))
+            self.assertFalse(any(backend.evidence.iterdir()))
+            d.validate(backend.catalog_native_failure)
+            for changes in ({'site':'PRIVATE/PATH'},{'reason':'PRIVATE ERROR'},{'region':'arbitrary'},{'path':'private'}):
+                bad=copy.deepcopy(backend.catalog_native_failure);bad['process_detail'].update(changes)
+                with self.assertRaises(OracleError):d.validate(bad)
+
+    def test_process_detail_never_reads_foreign_hooks_or_error_text(self):
+        import information_register_diagnostics as d
+        called=[]
+        class Hostile(runner.lifecycle.SandboxInventoryError):
+            def __getattribute__(self,name):called.append(name);raise AssertionError(name)
+            def __str__(self):called.append('str');raise AssertionError('text')
+        class Text(str):
+            def __hash__(self):called.append('hash');raise AssertionError('hash')
+            def __eq__(self,other):called.append('eq');raise AssertionError('eq')
+        for e in (Hostile('home','race'),ValueError('PRIVATE PATH')):
+            self.assertIsNone(d.process_detail(e))
+        e=OracleError('invalid_input');e.oracle_site=Text('poll')
+        self.assertIsNone(d.process_detail(e))
+        e.oracle_site='poll';e.__dict__={1:'private'}
+        self.assertIsNone(d.process_detail(e));self.assertEqual(called,[])
+        e=OracleError('invalid_input');e.oracle_site='poll';e.secret='PRIVATE VALUE'
+        self.assertEqual(d.process_detail(e),dict(site='poll',region=None,reason=None))
+        self.assertNotIn('PRIVATE',json.dumps(d.process_detail(e)))
+
+    def test_new_projection_is_diagnostic_only_and_old_collector_remains_exact(self):
+        import information_register_diagnostics as d
+        value=self.diagnostic()
+        with mock.patch.object(d,'_collect',return_value=copy.deepcopy(value)):
+            got=d.collect(None,None,None,error=RuntimeError('PRIVATE'))
+        self.assertEqual(got,{**value,'process_detail':None})
+        d._validate(value)
+        with self.assertRaises(OracleError):d.validate({**got,'unknown':'private'})
