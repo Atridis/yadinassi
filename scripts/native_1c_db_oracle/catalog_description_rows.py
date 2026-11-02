@@ -49,6 +49,7 @@ _RUNTIME_DIAGNOSTICS = {
     'structural_rejection': frozenset((
         'config_document_identity_overlap', 'config_document_prefix',
         'config_information_register_identity_overlap', 'config_information_register_prefix',
+        'periodic_information_register_key_duplicate',
         'binding_reference_identity', 'binding_reference_role', 'binding_typed_rows',
         'catalog_free_head_range', 'catalog_free_head_active', 'catalog_unlinked_free_slot',
         'blob_declared_length', 'dbnames_duplicate', 'dbnames_filename_length',

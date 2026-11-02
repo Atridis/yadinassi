@@ -766,6 +766,11 @@ class _CatalogBindingGraph:
                         information_register = (type(binding) is InformationRegisterBinding
                                                 and type(binding.profile_identifier) is str
                                                 and binding.profile_identifier == REGISTER_PROFILE)
+                        from .config_periodic_information_register_binding import PeriodicInformationRegisterBinding, PROFILE_IDENTIFIER as PERIODIC_REGISTER_PROFILE
+                        information_register = information_register or (
+                            type(binding) is PeriodicInformationRegisterBinding
+                            and type(binding.profile_identifier) is str
+                            and binding.profile_identifier == PERIODIC_REGISTER_PROFILE)
                     if role == "document_lines":
                         previous = self._document_binding
                         if (not document_lines or previous is None

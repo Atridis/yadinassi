@@ -1,4 +1,4 @@
-"""Measured independent/nonperiodic InformationRegister CONFIG, native41353896285.
+"""Measured independent nonperiodic/Second CONFIG, native41353896285/41380811903.
 
 Only the observed six-field scalar/reference profile is admitted. No XML, oracle
 mapping, fixture names or physical offsets are inputs to this projector.
@@ -68,7 +68,7 @@ class _Register(a._Walk):
     def __init__(self, data, budget, limits):
         super().__init__(data, budget, limits, linked=True)
         self.identity = {}; self.generated = {}; self.header = set()
-        self.collections = {}; self.indexed = {}
+        self.collections = {}; self.indexed = {}; self.periodicity = None
 
     def kind(self, path):
         if path in HEADER:
@@ -92,7 +92,13 @@ class _Register(a._Walk):
 
     def value(self, path, kind):
         if kind == 'header':
-            if self.peek() == 34 or self.scalar(True) != HEADER[path]:
+            if self.peek() == 34: raise a.CatalogAttributeError('type_unsupported')
+            value = self.scalar(True)
+            if path == (1, 18):
+                # Native Second mode is literal5, not inferred XML enum order.
+                if value not in ('0', '5'): raise a.CatalogAttributeError('type_unsupported')
+                self.periodicity = int(value)
+            elif value != HEADER[path]:
                 raise a.CatalogAttributeError('type_unsupported')
             self.header.add(path)
         elif kind == 'generated': self.generated[path[1]] = _IdentityCursor.uuid(self)
@@ -159,8 +165,8 @@ def project_information_register_metadata(data, *, budget):
         if len(set(identities)) != len(identities): raise a.CatalogAttributeError('duplicate_uuid')
         if len({x.name.casefold() for x in all_fields}) != 6: raise a.CatalogAttributeError('duplicate_name')
         generated = tuple((name, walk.generated[2*i+1], walk.generated[2*i+2]) for i, name in enumerate(FAMILIES))
-        return InformationRegisterIdentityPrefix(**walk.identity, generated_types=generated), dims, resources, attributes
+        return InformationRegisterIdentityPrefix(**walk.identity, periodicity=walk.periodicity, generated_types=generated), dims, resources, attributes
     except CatalogNameError as error:
         raise a.CatalogAttributeError(error.code) from None
-    # !todo Periodic/recorder-bound registers, other field profiles and extensions
+    # !todo Other periodicities/recorder-bound registers, other field profiles and extensions
     # need independent native CONFIG/physical evidence; never infer their layout.

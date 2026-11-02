@@ -12,7 +12,7 @@ def wrap(raw,name):
         source=re.sub(r'(Try CREmit\("[0-9]{2}", )(.+?)(\); Except )',
             lambda m:m[1]+'Вычислить('+bsl_string(m[2])+')'+m[3],source)
         # Only source-owned fixed assignment targets, resolved inside CRRun.
-        source=re.sub(r'\b(G0|G1|G2|L0|L1|L2|GM|GN|LF|FF|LP|FP|LK|FK|S|E|D|M) = ([^;\n]*InformationRegisters[^;\n]*);',
+        source=re.sub(r'\b(G0|G1|G2|L0|L1|L2|GM|GN|LF|FF|LP|FP|LK|FK|S|E|D|M|R0|R1|R2) = ([^;\n]*(?:InformationRegisters|Catalogs)[^;\n]*);',
             lambda m:m[1]+' = Вычислить('+bsl_string(m[2])+');',source)
         raw=source.encode('utf-8')
     if name.startswith('S'):

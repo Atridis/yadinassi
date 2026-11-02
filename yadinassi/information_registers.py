@@ -76,6 +76,7 @@ class BSLInformationRegisterManager(BSLObject):
         self._registers, self._metadata = registers, metadata
         snapshot = registers._metadata._config_snapshot
         definition = next(row[1] for row in snapshot.register_fields if row[0] == metadata._metadata_uuid)
+        self._periodicity = definition.periodicity
         generated = {family: uid for family, uid, _ in definition.generated_types}
         self._manager_type = BSLInformationRegisterType(UUID(metadata._metadata_uuid), UUID(generated['Manager']),
             metadata._name, registers._metadata, 'Manager')
@@ -91,9 +92,15 @@ class BSLInformationRegisterManager(BSLObject):
         return result
 
     def _fields(self, result, row):
-        return {attribute.name.casefold(): _bound_card(attribute).project(
+        periodic = result.identity.periodicity == 5
+        fields = row.fields[1:] if periodic else row.fields
+        values = {attribute.name.casefold(): _bound_card(attribute).project(
                     _bound_value(attribute, value.value), self._registers._catalogs)
-                for attribute, value in zip(result.binding.attributes, row.fields)}
+                for attribute, value in zip(result.binding.attributes, fields)}
+        if periodic:
+            from .dates import _date_from_datetime
+            values['period'] = values['период'] = _date_from_datetime(row.fields[0].value)
+        return values
 
     def _key(self, structure, dimensions):
         if type(structure) is not BSLStructure:
@@ -118,6 +125,8 @@ class BSLInformationRegisterManager(BSLObject):
         return values
 
     def get(self, key):
+        if self._periodicity != 0:
+            raise ValueError("periodic Get profile not admitted; use GetFirst/GetLast")
         result = self._rows()
         dimensions = result.binding.attributes[:result.binding.dimension_count]
         wanted = self._key(key, dimensions)
@@ -132,7 +141,29 @@ class BSLInformationRegisterManager(BSLObject):
                           else _bound_card(attribute).default(self._registers._catalogs))
         return answer
 
-    def select(self, selection=_OMITTED, order=_OMITTED):
+    def select(self, *args):
+        if self._periodicity == 5:
+            from .periodic_information_registers import select
+            return select(self, *args)
+        return self._select_nonperiodic(*args)
+
+    def get_first(self, boundary, key):
+        from .periodic_information_registers import get_edge
+        return get_edge(self, boundary, key, last=False)
+
+    def get_last(self, boundary, key):
+        from .periodic_information_registers import get_edge
+        return get_edge(self, boundary, key, last=True)
+
+    def slice_first(self, boundary, selection=_OMITTED):
+        from .periodic_information_registers import slice_edge
+        return slice_edge(self, boundary, selection, last=False)
+
+    def slice_last(self, boundary, selection=_OMITTED):
+        from .periodic_information_registers import slice_edge
+        return slice_edge(self, boundary, selection, last=True)
+
+    def _select_nonperiodic(self, selection=_OMITTED, order=_OMITTED):
         result = self._rows()
         dimensions = result.binding.attributes[:result.binding.dimension_count]
         reference = tuple(attribute for attribute in dimensions if attribute.type_token == '#')
@@ -157,7 +188,11 @@ class BSLInformationRegisterManager(BSLObject):
         return BSLInformationRegisterSelection(self, result, tuple(sorted(selected, key=key, reverse=reverse)))
 
     def get_member(self, name):
-        method = {'get': self.get, 'получить': self.get,
+        method = {'getfirst': self.get_first, 'получитьпервое': self.get_first,
+                  'getlast': self.get_last, 'получитьпоследнее': self.get_last,
+                  'slicefirst': self.slice_first, 'срезпервых': self.slice_first,
+                  'slicelast': self.slice_last, 'срезпоследних': self.slice_last,
+                  'get': self.get, 'получить': self.get,
                   'select': self.select, 'выбрать': self.select}.get(name.casefold())
         return HostFunction(name, method) if method else super().get_member(name)
 
@@ -185,6 +220,7 @@ class BSLInformationRegisterSelection(BSLObject):
     def get_member(self, name):
         key = name.casefold()
         names = {attribute.name.casefold() for attribute in self._result.binding.attributes}
+        if self._result.identity.periodicity == 5: names.update(('period', 'период'))
         if key not in names: return super().get_member(name)
         if self._position < 0: return None
         return self._manager._fields(self._result, self._rows[self._position])[key]

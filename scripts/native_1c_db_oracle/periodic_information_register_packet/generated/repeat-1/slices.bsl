@@ -51,6 +51,9 @@ LP = Undefined; Try LP = InformationRegisters.Ie75536d0.SliceLast(Date(2024,2,29
 FP = Undefined; Try FP = InformationRegisters.Ie75536d0.SliceFirst(Date(2024,2,29,12,0,1),New Structure("Product",Catalogs.Cbfb39146.GetRef(New UUID("14ccbb32-331f-491f-8c82-dce64419dc99")))); Except EndTry;
 LK = Undefined; Try LK = InformationRegisters.Ie75536d0.SliceLast(Date(2024,2,29,12,0,1),New Structure("Product,Variant",Catalogs.Cbfb39146.GetRef(New UUID("14ccbb32-331f-491f-8c82-dce64419dc99")),1)); Except EndTry;
 FK = Undefined; Try FK = InformationRegisters.Ie75536d0.SliceFirst(Date(2024,2,29,12,0,1),New Structure("Product,Variant",Catalogs.Cbfb39146.GetRef(New UUID("14ccbb32-331f-491f-8c82-dce64419dc99")),1)); Except EndTry;
+R0 = Undefined; Try R0 = LF.FindRows(New Structure("Product,Variant",Catalogs.Cbfb39146.GetRef(New UUID("14ccbb32-331f-491f-8c82-dce64419dc99")),1)); Except EndTry;
+R1 = Undefined; Try R1 = LF.FindRows(New Structure("Product,Variant",Catalogs.Cbfb39146.GetRef(New UUID("14ccbb32-331f-491f-8c82-dce64419dc99")),2)); Except EndTry;
+R2 = Undefined; Try R2 = LF.FindRows(New Structure("Product,Variant",Catalogs.Cbfb39146.GetRef(New UUID("e6cdbfda-9660-4265-bc10-9abcf9897e26")),1)); Except EndTry;
 Try CREmit("01", Metadata.InformationRegisters.Ie75536d0.Name); Except Message("CR-01: [action-error]"); EndTry;
 // control.register
 Try CREmit("02", Catalogs.Cbfb39146.EmptyRef().Metadata().Name); Except Message("CR-02: [action-error]"); EndTry;
@@ -71,31 +74,31 @@ Try CREmit("09", String(TypeOf(LF))); Except Message("CR-09: [action-error]"); E
 // table.type
 Try CREmit("10", LF.Columns.Count()); Except Message("CR-10: [action-error]"); EndTry;
 // columns
-Try CREmit("11", String(TypeOf(LK[0].Period))); Except Message("CR-11: [action-error]"); EndTry;
+Try CREmit("11", String(TypeOf(LK[0].Период))); Except Message("CR-11: [action-error]"); EndTry;
 // period.type
-Try CREmit("12", XMLString(LK[0].Period)); Except Message("CR-12: [action-error]"); EndTry;
+Try CREmit("12", XMLString(LK[0].Период)); Except Message("CR-12: [action-error]"); EndTry;
 // last.period
 Try CREmit("13", XMLString(LK[0].Price)); Except Message("CR-13: [action-error]"); EndTry;
 // last.price
-Try CREmit("14", XMLString(FK[0].Period)); Except Message("CR-14: [action-error]"); EndTry;
+Try CREmit("14", XMLString(FK[0].Период)); Except Message("CR-14: [action-error]"); EndTry;
 // first.period
 Try CREmit("15", XMLString(FK[0].Price)); Except Message("CR-15: [action-error]"); EndTry;
 // first.price
 Try CREmit("16", LK[0].Product.Description); Except Message("CR-16: [action-error]"); EndTry;
 // target
-Try CREmit("17", String(LF[0].Product.UUID())); Except Message("CR-17: [action-error]"); EndTry;
-// last.0.product
-Try CREmit("18", XMLString(LF[0].Variant)); Except Message("CR-18: [action-error]"); EndTry;
-// last.0.variant
-Try CREmit("19", String(LF[1].Product.UUID())); Except Message("CR-19: [action-error]"); EndTry;
-// last.1.product
-Try CREmit("20", XMLString(LF[1].Variant)); Except Message("CR-20: [action-error]"); EndTry;
-// last.1.variant
-Try CREmit("21", String(LF[2].Product.UUID())); Except Message("CR-21: [action-error]"); EndTry;
-// last.2.product
-Try CREmit("22", XMLString(LF[2].Variant)); Except Message("CR-22: [action-error]"); EndTry;
-// last.2.variant
-Try CREmit("23", LK[0].Note); Except Message("CR-23: [action-error]"); EndTry;
-// last.note
+Try CREmit("17", R0.Count()); Except Message("CR-17: [action-error]"); EndTry;
+// key.0.count
+Try CREmit("18", XMLString(R0[0].Период) + "|" + XMLString(R0[0].Price) + "|" + XMLString(R0[0].Available) + "|" + XMLString(R0[0].ValidUntil) + "|" + XMLString(R0[0].Note)); Except Message("CR-18: [action-error]"); EndTry;
+// key.0.values
+Try CREmit("19", R1.Count()); Except Message("CR-19: [action-error]"); EndTry;
+// key.1.count
+Try CREmit("20", XMLString(R1[0].Период) + "|" + XMLString(R1[0].Price) + "|" + XMLString(R1[0].Available) + "|" + XMLString(R1[0].ValidUntil) + "|" + XMLString(R1[0].Note)); Except Message("CR-20: [action-error]"); EndTry;
+// key.1.values
+Try CREmit("21", R2.Count()); Except Message("CR-21: [action-error]"); EndTry;
+// key.2.count
+Try CREmit("22", XMLString(R2[0].Период) + "|" + XMLString(R2[0].Price) + "|" + XMLString(R2[0].Available) + "|" + XMLString(R2[0].ValidUntil) + "|" + XMLString(R2[0].Note)); Except Message("CR-22: [action-error]"); EndTry;
+// key.2.values
+Try CREmit("23", String(LF.Columns[0].ValueType)); Except Message("CR-23: [action-error]"); EndTry;
+// period.column.type
 Try CREmit("24", LF.Columns[0].Name + "|" + LF.Columns[1].Name + "|" + LF.Columns[2].Name + "|" + LF.Columns[3].Name + "|" + LF.Columns[4].Name + "|" + LF.Columns[5].Name + "|" + LF.Columns[6].Name); Except Message("CR-24: [action-error]"); EndTry;
 // column.names
