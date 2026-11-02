@@ -20,7 +20,8 @@ class CleanupRoundingInverseTests(unittest.TestCase):
         self.assertEqual(history.without_child_cleanup_rounding(restored), restored)
         self.assertEqual(history.without_collections_measurement_budget(original),
                          history.without_collections_measurement_budget(restored))
-        self.assertIn('code = process.wait(timeout=max(0.001, deadline - time.monotonic()))', original)
+        self.assertIn('code = process.wait(timeout=max(0.001, deadline - time.monotonic()))',
+                      history.without_execution_wait_rounding(original))
         self.assertEqual(self.source(), original)
 
     def test_unrelated_or_cap_drift_refused(self):
@@ -49,3 +50,13 @@ class CleanupRoundingInverseTests(unittest.TestCase):
         with mock.patch.object(history.json, 'loads', return_value=changed):
             with self.assertRaises(AssertionError):
                 history.without_child_cleanup_rounding(self.source())
+
+    def test_execution_wait_inverse_rejects_unknown_source_or_budget_mutation(self):
+        original=self.source()
+        restored=history.without_execution_wait_rounding(original)
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         '785dd4f696ee0c0a9b52f2bfbc183404c6a9980d62ee508e165b0a09ee19478b')
+        self.assertEqual(history.without_execution_wait_rounding(restored),restored)
+        for mutation in (original+'\n',original.replace('min(seconds, deadline','min(5, deadline'),
+                         original.replace('CASE_SECONDS = 10','CASE_SECONDS = 11')):
+            with self.assertRaises(AssertionError):history.without_execution_wait_rounding(mutation)

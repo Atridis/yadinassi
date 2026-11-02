@@ -358,6 +358,25 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_execution_wait_rounding(source):
+    """Exact test-only inverse of the ordinary execution wait rounding clamp."""
+    base = '785dd4f696ee0c0a9b52f2bfbc183404c6a9980d62ee508e165b0a09ee19478b'
+    candidate = '2b48ff5ce0578f86979b9e2dd0ac43170bd5e11b44afc66eb01b882a73f78ecc'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('execution wait outer source identity')
+    old = 'code = process.wait(timeout=max(0.001, deadline - time.monotonic()))'
+    new = 'code = process.wait(timeout=max(0.001, min(seconds, deadline - time.monotonic())))'
+    if source.count(new) != 1:
+        raise AssertionError('execution wait inverse unique hunk')
+    source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('execution wait inner source identity')
+    return source
+
+
 def without_child_cleanup_rounding(source):
     """Exact test-only cap-rounding inverse; historical pins remain unchanged."""
     contract = json.loads((REPOSITORY / 'tests/child_cleanup_rounding_source_inverse.json').read_text(encoding='utf-8'))
@@ -365,6 +384,9 @@ def without_child_cleanup_rounding(source):
             or contract.get('candidate_sha256') != '785dd4f696ee0c0a9b52f2bfbc183404c6a9980d62ee508e165b0a09ee19478b'):
         raise AssertionError('cleanup rounding inverse identity')
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in (contract['base_sha256'], contract['candidate_sha256']):
+        source = without_execution_wait_rounding(source)
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest == contract['base_sha256']:
         return source
     if digest != contract['candidate_sha256']:
