@@ -1,0 +1,17 @@
+{
+  "schema": "xdto-family-minimal-capture-v1",
+  "source_sha256": "c317011c5fb651fe313eed07cf9587ab14e3f474857ef54d3646a9ae52e5376a",
+  "output_sha256": "6646c0e7d22b770b580fb19a037b2612c54e2364224b078cbe4a767ef8697a16",
+  "cases": 40,
+  "context": "managed-client-and-server",
+  "platform": "8.3.27.1508",
+  "native_actions_available": 40,
+  "initial_mismatches": [
+    5,
+    25
+  ],
+  "limits": [
+    "Fixed ordinary inputs only; no advanced schema claim.",
+    "Outer transport envelope reconstructed during private source-bound audit; public fixture contains no nonce/install/job/path metadata."
+  ]
+}

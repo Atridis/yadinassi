@@ -130,7 +130,9 @@ def load_schemas(factory,paths,packages=None):
                 form=a.get('form',attribute_form if is_attr else element_form)
                 if form not in ('qualified','unqualified'):raise ValueError('XDTO: неверная форма свойства')
                 properties.append(BSLXDTOProperty(kind,name,prop_type,kind._uri if form=='qualified' else '',lower,upper,nil,is_attr))
-        kind._properties=BSLXDTOPropertyCollection(properties)
+        # Ordinary native40: attributes precede sequence elements in metadata.
+        # !todo Multiple-attribute relative ordering has not yet been measured.
+        kind._properties=BSLXDTOPropertyCollection([p for p in properties if p._attribute]+[p for p in properties if not p._attribute])
     # Acyclic type graph: bounded iterative DFS, before publishing this factory.
     done=set();heights={}
     for kind,_,_,_ in declarations:

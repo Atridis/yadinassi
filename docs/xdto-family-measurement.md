@@ -1,8 +1,9 @@
 # Ordinary XDTO factory workflow measurement
 
 One closed `xdto-family-v1` packet (`xdto_family`) observes 40 ordinary cases.
-Native results are pending. Local runtime observations and synthetic wire tests
-are not native goldens.
+Initial native acquisition contains forty successful actions on managed client
+and server; local runtime and synthetic wire tests are not native goldens.
+The immutable minimal capture is under tests/fixtures/xdto_family/native-initial.
 
 ## Primary source
 
@@ -75,3 +76,20 @@ models, inheritance, mixed/choice content, serializer mappings, callbacks and
 arbitrary XPath are deferred. No credentials, permissions, environment overrides,
 new CI triggers or host timeout changes are requested. The single closed profile is integrated into the existing native workflow;
 actual acquisition is pending. No public capture is yet a native golden.
+
+## Initial measured calibration
+
+The original40 capture is retained byte-for-byte (SHA256
+`6646c0e7d22b770b580fb19a037b2612c54e2364224b078cbe4a767ef8697a16`).
+It measured two differences: case05 metadata index0 is attribute `id`, not the
+first sequence element; case25 empty-list `IsSet` is false. All other38
+observations matched. The runtime now replays the entire capture exactly; a
+fresh native run on the corrected runtime is still required. Packet source and
+all resource caps are unchanged.
+
+Private acquisition audit verified authenticated archive digests, exact source,
+generated server/client modules, runtime manifest and cleanup. The outer
+transport envelope is not archived: strict validation was rerun on an envelope
+reconstructed from the authenticated summary/output. The public minimal fixture
+contains only fixed source, bounded observations and source/output digests; no
+nonce, installation data, credentials, run paths or raw exceptions.

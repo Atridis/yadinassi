@@ -303,7 +303,11 @@ class BSLXDTODataObject(_FileMethods):
         p=self._property(key);old=self._values.pop(p._name,None)
         if type(old) is BSLXDTOList:old.clear()
         else:_detach(old)
-    def is_set(self,key):return self._property(key)._name in self._values
+    def is_set(self,key):
+        p=self._property(key)
+        if p._name not in self._values:return False
+        value=self._values[p._name]
+        return bool(value._items) if type(value) is BSLXDTOList else True
     def get_member(self,name):return self.get(name)
     def set_member(self,name,value):return self.set(name,value)
     def __getitem__(self,key):return self.get(key)

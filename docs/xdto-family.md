@@ -3,8 +3,10 @@
 This checkpoint adds an end-to-end typed-data workflow: read explicit owned XSD
 files with `CreateXDTOFactory`, create typed scalar/object/list values, inspect
 readonly type/property/package metadata, and read/write XML or JSON through the
-existing readers/writers. **Real 1C calibration is pending**; local tests are not
-native equivalence evidence. The fixed ordinary40 acquisition is described in
+existing readers/writers. **Initial ordinary40 real 1C acquisition is available**; all40 actions succeeded
+on managed client and server. The retained capture calibrated two differences:
+attribute-first property metadata and false IsSet for an empty repeated field.
+Fresh exact-head native acceptance is pending; local replay is not a new native run. The fixed ordinary40 acquisition is described in
 [xdto-family-measurement.md](xdto-family-measurement.md).
 
 ## Public ordinary surface
@@ -61,8 +63,10 @@ owned temporary paths and are removed by exact-name cleanup.
 
 ## Explicit provisional / unsupported behavior
 
-!todo Native list return values, unset/list identity, scalar lexical spellings,
-package/type flags and XML/JSON representation are pending ordinary40 facts.
+The retained ordinary40 fixture covers observed list returns, unset/list identity,
+scalar lexical spellings, metadata flags and XML/JSON roundtrips. !todo Unmeasured
+multiple-attribute relative ordering and alternate lexical/serialization modes
+are not generalized from that finite capture.
 Only direct property names are supported, not XPath expressions. XML/JSON reads
 start at the beginning of a borrowed reader; callbacks, alternate type-assignment
 modes and positional reads are rejected. XML writes support element form;

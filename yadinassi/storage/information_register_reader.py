@@ -52,7 +52,8 @@ def _snapshot(graph):
             all_fields = dimensions.attributes + resources.attributes + attributes.attributes
             unique((key, *(uid for family, type_uid, value_uid in identity.generated_types for uid in (type_uid, value_uid)),
                     *(a.metadata_uuid for a in all_fields)))
-            if any(a.name.casefold() in ('next', 'следующий') for a in all_fields):
+            if any(a.name.casefold() in (('next', 'следующий', 'period', 'период')
+                    if identity.periodicity == 5 else ('next', 'следующий')) for a in all_fields):
                 raise c.InvalidStructure('information_register_field_name')
             bound = []
             for collection in (dimensions, resources, attributes):
@@ -99,11 +100,21 @@ def read_information_register_rows(read_at, file_size, *, register_name, limits=
             reader._budget.charge('bytes_processed', reserve.bytes_processed)
             reader._budget.charge('tokens', min(len(extracted.data), parse_limits.max_tokens + 1))
             parsed = dbnames.parse_dbnames(extracted.data, profile=profile, limits=parse_limits)
-            binding = compiler.compile_information_register_binding(identity, dimensions, resources,
-                attributes, parsed, budget=reader._budget)
+            if identity.periodicity == 5:
+                from . import config_periodic_information_register_binding as periodic_compiler
+                binding = periodic_compiler.compile_periodic_information_register_binding(
+                    identity, dimensions, resources, attributes, parsed, budget=reader._budget)
+            else:
+                binding = compiler.compile_information_register_binding(identity, dimensions, resources,
+                    attributes, parsed, budget=reader._budget)
         with graph.stage('records', binding=binding) as handle:
-            physical = records.read_bound_information_register_records(reader, catalog, binding,
-                handle=handle, limits=RecordLimits(max_active_records=4096))
+            if identity.periodicity == 5:
+                from . import config_periodic_information_register_records as periodic_records
+                physical = periodic_records.read_bound_periodic_information_register_records(
+                    reader, catalog, binding, handle=handle, limits=RecordLimits(max_active_records=4096))
+            else:
+                physical = records.read_bound_information_register_records(reader, catalog, binding,
+                    handle=handle, limits=RecordLimits(max_active_records=4096))
         return InformationRegisterRowsReadResult(snapshot, identity, binding, physical, physical.rows, reader.usage)
     except BaseException as error:
         graph.failed = True

@@ -41,6 +41,9 @@ class DiagnosticCoverageTests(unittest.TestCase):
         value=policy.diagnostic_for(error,snapshot='applied',phase='public_reader')
         self.assertEqual((value['category'],value['code']),(CATEGORIES[kind],code),(kind,code))
 
+    def test_periodic_key_duplicate_is_closed_structural_diagnostic(self):
+        self.assert_classified('InvalidStructure','periodic_information_register_key_duplicate')
+
     def test_every_storage_literal_raise_in_loaded_runtime_sources_is_classified(self):
         literals,_=source_raises()
         self.assertGreater(len(literals),100)
