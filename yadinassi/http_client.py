@@ -8,14 +8,16 @@ async operations and advanced authentication need separate reviewed workflows.
 from decimal import Decimal
 import http.client
 import io
+import os
 import re
 import socket
 import time
 from urllib.parse import quote
 
 from .file_io import (BSLBinaryData, BSLTextEncoding, _FileMethods, _methods,
-                      _encoding, _decode, _BOMS, _open_regular, _write_bytes)
-from .binary_streams import _Enum, _Namespace, _number, _stream_path, binary_data_stream
+                      _encoding, _decode, _BOMS, _open_regular, _write_bytes, _file_errors)
+from .binary_streams import (_Enum, _Namespace, _number, _stream_path, binary_data_stream,
+                             BSLMemoryStream, BSLStream)
 from .data_io import _encoded
 from .maps import BSLMap
 
@@ -76,7 +78,7 @@ def _header_map(pairs):
         if size > MAX_HEADER_BYTES: raise ValueError('HTTP: превышен предел заголовков ответа')
         lower = key.lower(); original = names.setdefault(lower, key)
         previous = result.get(original)
-        result.insert(original, value if previous is None else previous + ', ' + value)
+        result.insert(original, value if previous is None else value + ', ' + previous)
     _headers(result)
     return result
 
@@ -116,7 +118,7 @@ class BSLHTTPRequest(_FileMethods):
         self._address = _text(resource_address)
         self._headers = BSLMap() if headers is None else headers
         _headers(self._headers)
-        self._body = None; self._file = None; self._codec = 'utf-8'
+        self._body = None; self._file = None; self._file_handle = None
 
     def __str__(self): return 'HTTPЗапрос'
     def get_member(self, name):
@@ -144,25 +146,65 @@ class BSLHTTPRequest(_FileMethods):
             mark = next((b for b,c in _BOMS if c == codec), b'')
             if len(data) + len(mark) > MAX_BODY: raise ValueError('HTTP: превышен предел тела')
             data = mark + data
-        _body(data); self._body, self._file, self._codec = data, None, codec
+        _body(data); replacement = bytearray(data)
+        self._release_file(); self._body, self._file = replacement, None
+    def _release_file(self):
+        handle = self._file_handle
+        self._file_handle = None
+        if handle is not None: handle.close()
+    def __del__(self):
+        handle = getattr(self, '_file_handle', None)
+        if handle is not None: handle.close()
     def set_body_from_binary_data(self, data):
         if type(data) is not BSLBinaryData: raise TypeError('HTTP: ожидается ДвоичныеДанные')
-        raw = _body(data._data); self._body, self._file, self._codec = raw, None, 'utf-8'
+        replacement = bytearray(_body(data._data))
+        self._release_file(); self._body, self._file = replacement, None
+    @_file_errors
     def set_body_file_name(self, path):
         path = _stream_path(_text(path))
-        # Filename is a deferred source, not an eager content snapshot.
-        self._file, self._body, self._codec = path, None, 'utf-8'
+        # Official API opens now, reads at send/getter. Keep the admitted file,
+        # rather than reopening a potentially replaced pathname later.
+        handle = _open_regular(path)
+        try:
+            if os.fstat(handle.fileno()).st_size > MAX_BODY:
+                raise ValueError('HTTP: превышен предел тела')
+        except BaseException:
+            handle.close(); raise
+        self._release_file(); self._file_handle = handle
+        self._file, self._body = path, None
     def get_body_file_name(self): return self._file
     def get_body_as_binary_data(self):
-        return None if self._body is None else BSLBinaryData.from_bytes(self._body)
+        data = self._bytes()
+        return None if data is None else BSLBinaryData.from_bytes(data)
     def get_body_as_string(self):
-        return None if self._body is None else _decode(self._body, self._codec, 'utf-8')
+        data = self._bytes()
+        if data is None: return None
+        # Native HT13: default decoding is UTF-8 with replacement, independent
+        # of SetBodyFromString's encoding; ordinary BOM detection still applies.
+        codec = 'utf-8'
+        for mark, detected in _BOMS:
+            if data.startswith(mark): codec, data = detected, data[len(mark):]; break
+        return data.decode(codec, errors='replace')
     def get_body_as_stream(self):
-        if self._file is not None: data = _read_file(self._file)
-        elif self._body is not None: data = self._body
-        else: return None
-        return binary_data_stream(BSLBinaryData.from_bytes(data))
-    def _bytes(self): return _read_file(self._file) if self._file is not None else self._body
+        if self._file is not None:
+            # !todo Writable file-backed body streams require separate native
+            # lifetime/authority calibration; keep the existing readonly snapshot.
+            return binary_data_stream(BSLBinaryData.from_bytes(self._bytes()))
+        if self._body is None: self._body = bytearray()
+        memory = BSLMemoryStream()
+        memory._state.data = self._body
+        memory._state.capacity = MAX_BODY
+        result = BSLStream.__new__(BSLStream)
+        result._state, result._readonly, result._closed = memory._state, False, False
+        # !todo Multiple request-stream cursor and body-replacement alias
+        # lifetime semantics are not established by the single-stream HT18.
+        return result
+    @_file_errors
+    def _bytes(self):
+        if self._file_handle is not None:
+            self._file_handle.seek(0)
+            return _body(self._file_handle.read(MAX_BODY + 1))
+        return None if self._body is None else _body(bytes(self._body))
     _methods = _methods(
         ('set_body_from_string', False, 'SetBodyFromString УстановитьТелоИзСтроки'),
         ('set_body_from_binary_data', False, 'SetBodyFromBinaryData УстановитьТелоИзДвоичныхДанных'),

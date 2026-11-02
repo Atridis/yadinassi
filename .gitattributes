@@ -110,3 +110,5 @@ scripts/form_runtime_packet/form.xml -text
 
 # Source-bound HTTP ordinary measurement: preserve exact UTF-8 bytes.
 scripts/HTTPFamily.bsl -text
+
+tests/fixtures/http_family/native-initial/* -text

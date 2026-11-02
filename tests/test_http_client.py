@@ -78,7 +78,7 @@ class HTTPTests(unittest.TestCase):
     def test_status_redirect_headers_and_charset(self):
         response=self.connection().get(Request('/missing'))
         self.assertEqual(response.get_member('КодСостояния'),404)
-        self.assertEqual(response.get_member('Headers').get('X-Repeat'),'a, b')
+        self.assertEqual(response.get_member('Headers').get('X-Repeat'),'b, a')
         response=self.connection().get(Request('/redirect'))
         self.assertEqual(response.get_member('StatusCode'),302)
         self.assertEqual(response.get_body_as_string(),'/redirect')
@@ -91,7 +91,7 @@ class HTTPTests(unittest.TestCase):
     def test_empty_unset_and_explicit_text_body(self):
         request=Request()
         self.assertIsNone(request.get_body_as_string());self.assertIsNone(request.get_body_as_binary_data())
-        self.assertIsNone(request.get_body_as_stream());self.assertIsNone(request.get_body_file_name())
+        self.assertIsNone(request.get_body_file_name())
         request.set_body_from_string('')
         self.assertEqual(request.get_body_as_string(),'');self.assertEqual(request.get_body_as_binary_data()._data,b'')
         request.set_body_from_string('hello')
@@ -114,12 +114,52 @@ class HTTPTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve();source=root/'in.bin';target=root/'out.bin';source.write_bytes(b'old');target.write_bytes(b'keep')
             request=Request('/echo');request.set_body_file_name(str(source));source.write_bytes(b'new')
-            self.assertIsNone(request.get_body_as_string());self.assertEqual(request.get_body_file_name(),str(source))
+            self.assertEqual(request.get_body_as_string(),'new');self.assertEqual(request.get_body_as_binary_data()._data,b'new');self.assertEqual(request.get_body_file_name(),str(source))
             response=self.connection().post(request,str(target))
             self.assertEqual(target.read_bytes(),b'POST:new')
             self.assertEqual(response.get_body_file_name(),str(target));self.assertIsNone(response.get_body_as_string())
             self.assertIsNone(response.get_body_as_binary_data())
             self.assertEqual(request.get_body_as_stream()._read_bytes(3),b'new')
+            request.set_body_from_string('released')
+
+    def test_native_request_stream_live_body_cap_and_close(self):
+        request=Request('/echo')
+        with mock.patch.object(api,'MAX_BODY',3):
+            stream=request.get_body_as_stream()
+            self.assertIs(type(stream),api.BSLStream)
+            self.assertTrue(stream.get_member('CanWrite'))
+            stream._write_bytes(b'abc')
+            self.assertEqual(request.get_body_as_binary_data()._data,b'abc')
+            with self.assertRaises(ValueError):stream._write_bytes(b'd')
+            self.assertEqual(stream.current_position(),3)
+            self.assertEqual(request.get_body_as_string(),'abc')
+            stream.close()
+            with self.assertRaises(ValueError):stream._write_bytes(b'x')
+        self.assertEqual(self.connection().post(request).get_body_as_string(),'POST:abc')
+        request.set_body_from_string('Привет','windows-1251')
+        self.assertEqual(request.get_body_as_string(),'\ufffd'*6)
+        self.assertEqual(request.get_body_as_binary_data()._data,'Привет'.encode('cp1251'))
+
+    def test_file_setter_atomic_admission_and_handle_release(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve();source=root/'body';source.write_bytes(b'abc')
+            request=Request();request.set_body_from_string('before')
+            with self.assertRaises(ValueError):request.set_body_file_name(str(root/'missing'))
+            self.assertEqual(request.get_body_as_string(),'before')
+            with mock.patch.object(api,'MAX_BODY',2):
+                with self.assertRaises(ValueError):request.set_body_file_name(str(source))
+            self.assertEqual(request.get_body_as_string(),'before')
+            request.set_body_file_name(str(source));handle=request._file_handle
+            self.assertFalse(handle.closed)
+            self.assertEqual(request.get_body_as_binary_data()._data,b'abc')
+            with self.assertRaises(ValueError):request.set_body_file_name(str(root))
+            self.assertIs(request._file_handle,handle)
+            self.assertEqual(request.get_body_as_string(),'abc')
+            request.set_body_from_binary_data(Binary.from_bytes(b'replaced'))
+            self.assertTrue(handle.closed)
+            request.set_body_file_name(str(source));handle=request._file_handle
+            del request
+            self.assertTrue(handle.closed)
 
     def test_response_stream_readonly_independent(self):
         response=self.connection().get(Request('/text'))

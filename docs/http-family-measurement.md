@@ -3,7 +3,9 @@
 One closed server-context packet, `scripts/HTTPFamily.bsl`, exposes
 `HTTPFamily(Port, OwnedRoot)`. It is not an all-client tree injector. Native
 execution, publication and test execution remain separately coordinated with the
-owner. Local runtime behavior is provisional; no native answers are claimed.
+owner. The first clean forty-record native capture is retained; four measured
+local corrections await fresh source-bound acceptance. Broader HTTP behavior
+remains explicitly outside the measured ordinary subset.
 
 ## Primary API and context
 
@@ -126,3 +128,15 @@ computing the observation and **before** known-file cleanup, on success and erro
 The official `SetBodyFileName` contract opens the input for reading at the call;
 a retained request is therefore a plausible cleanup cause, not yet a confirmed
 native diagnosis. No runtime behavior, cleanup refusal or resource cap changes.
+
+## First retained forty-record capture
+
+The handle-release packet completed 21 owned HTTP requests, all forty valid
+ordinary observations, and verified empty fixture cleanup. The immutable public
+fixture is `tests/fixtures/http_family/native-initial`; its output SHA256 is
+`d159e9a8b3a11329b453871870e44794478edd30a4ea4681ffa1e31ecb91d971`.
+The initial local comparison differed only in cases 13, 18, 26 and 37. Runtime
+corrections and exact local replay do not replace fresh source-bound CI/native
+acceptance. Earlier cleanup-failure artifacts remain failures, not successful
+forty-record captures. Original transport was not retained; audit verifies the
+retained report/output with a reconstructed strict envelope and states this limit.

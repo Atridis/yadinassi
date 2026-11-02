@@ -1,6 +1,7 @@
 # HTTP: bounded ordinary synchronous workflow (local checkpoint)
 
-Provisional implementation, **not yet native-calibrated**. The source baseline is
+Ordinary native forty-record capture retained; calibrated local changes await
+fresh source-bound native acceptance. No full HTTP compatibility claim. The source baseline is
 main `f2509f0`; the official signature reference is the pinned 1C 8.3.27 EDT
 platform documentation archive (SHA-256
 `a8cf9c3cd5d7828958dcf69d8864cf6664180260e4d50cbff338921304c7e642`).
@@ -11,7 +12,8 @@ platform documentation archive (SHA-256
 `HTTPResponse` / `HTTPОтвет`, and `ByteOrderMarkUse` / `ИспользованиеByteOrderMark`.
 The ordinary workflow covers GET, POST, PUT, PATCH, DELETE, HEAD and
 CallHTTPMethod (including OPTIONS), mutable request headers, status and response
-headers, string/binary/deferred-file bodies, independent readonly body streams,
+headers, string/binary/file bodies, writable in-memory request-body streams,
+independent readonly response-body streams,
 and a response output file. Resource addresses are origin-relative, beginning
 with `/`; absolute URLs and authority-relative targets are refused.
 
@@ -68,3 +70,21 @@ not be used blindly. Request/response semantics, encodings, unset/empty bodies,
 status/header behavior and output-file relations need actual observation.
 The new fixture lifecycle/source adapter requires independent review before the
 first native dispatch. TLS policy tests are not native TLS parity evidence.
+
+## First ordinary calibration
+
+All forty server-side observations were acquired with verified cleanup. Four
+local corrections follow those facts: request default decoding uses UTF-8 with
+replacement (and ordinary BOM detection), a request stream writes into its live
+bounded body, repeated response headers accumulate newest first, and file-backed
+request getters return body data. `SetBodyFileName` opens an admitted regular
+file immediately, as documented; send/getters read that same descriptor with the
+HTTP body bound. Replacing the body or destroying the request releases it.
+
+!todo: multiple request-view cursor relations, old-view behavior after body
+replacement, and writable file-backed request streams are not native-calibrated.
+The file-backed stream remains an explicitly readonly snapshot in this subset;
+no global MemoryStream semantics are changed. Header ordering beyond the measured
+ordinary duplicate pattern remains a compatibility edge, not an HTTP standard
+recommendation. Public fixture contains only fixed source, typed output and a
+minimal receipt; original failed cleanup attempts remain historical failures.
