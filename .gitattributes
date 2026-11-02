@@ -107,3 +107,6 @@ scripts/catalog_object_behavior/** -text
 # Fixed managed-form source checkpoint; no platform newline conversion.
 scripts/form_runtime_packet/module.bsl -text
 scripts/form_runtime_packet/form.xml -text
+
+# Source-bound HTTP ordinary measurement: preserve exact UTF-8 bytes.
+scripts/HTTPFamily.bsl -text

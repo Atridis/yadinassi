@@ -248,8 +248,8 @@ class ProfileObservationTransportTests(SyntheticFilesystemCase):
         self.assertEqual(len(commands),2)
         self.assertTrue(all('--client-preprocessor-measurement' not in line for line in commands))
         self.assertEqual(source.count('--client-preprocessor-measurement'),0)
-        self.assertEqual(source.count('packages: read'),5)
-        self.assertEqual(source.count('contents: read'),5)
+        self.assertEqual(source.count('packages: read'),6)
+        self.assertEqual(source.count('contents: read'),6)
         for job in ('smoke', 'tree_smoke', 'tree_copy_smoke', 'catalog_object_smoke', 'form_smoke'):
             block = re.search(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(0)
             self.assertEqual(block.count("    permissions:\n      contents: read\n      packages: read\n"), 1)
