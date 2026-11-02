@@ -358,6 +358,27 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_catalog_assets_provenance(source):
+    """Exact test-only inverse of the closed renderer asset inventory addition."""
+    contract = json.loads((REPOSITORY / 'tests/catalog_assets_source_inverse.json').read_text(encoding='utf-8'))
+    base = '3eed042a41e51efebf4d9d4a184ffd8cf23226ace99970864648ac4779200b69'
+    candidate = 'e83119e314deae20d6e0288cdbdaf00ad7d92c88236aed227c5c982ca4ee2db4'
+    if contract.get('base_sha256') != base or contract.get('candidate_sha256') != candidate:
+        raise AssertionError('catalog assets inverse identity')
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('catalog assets outer source identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('catalog assets inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('catalog assets inner source identity')
+    return source
+
+
 def without_sqlite_host_context(source):
     """Exact test-only inverse; native evidence is not SQLite host equivalence."""
     contract = json.loads((REPOSITORY / 'tests/sqlite_host_context_source_inverse.json').read_text(encoding='utf-8'))
@@ -365,6 +386,9 @@ def without_sqlite_host_context(source):
             or contract.get('candidate_sha256') != '3eed042a41e51efebf4d9d4a184ffd8cf23226ace99970864648ac4779200b69'):
         raise AssertionError('SQLite host inverse identity')
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in (contract['base_sha256'], contract['candidate_sha256']):
+        source = without_catalog_assets_provenance(source)
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest == contract['base_sha256']:
         return source
     if digest != contract['candidate_sha256']:

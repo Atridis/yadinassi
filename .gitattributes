@@ -107,3 +107,7 @@ scripts/catalog_object_behavior/** -text
 # Fixed managed-form source checkpoint; no platform newline conversion.
 scripts/form_runtime_packet/module.bsl -text
 scripts/form_runtime_packet/form.xml -text
+
+# Deterministic catalog renderer source/output manifest on every checkout OS.
+frontend/catalog/** text eol=lf
+yadinassi/ui/assets/catalog/* text eol=lf

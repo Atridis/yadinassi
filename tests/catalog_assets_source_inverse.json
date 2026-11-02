@@ -1,0 +1,10 @@
+{
+  "base_sha256": "3eed042a41e51efebf4d9d4a184ffd8cf23226ace99970864648ac4779200b69",
+  "candidate_sha256": "e83119e314deae20d6e0288cdbdaf00ad7d92c88236aed227c5c982ca4ee2db4",
+  "edits": [
+    {
+      "old": "    if any(path.suffix not in {\".py\", \".txt\"} for path in files):\n        raise FullError(\"unexpected_interpreter_source\")\n",
+      "new": "    # Optional prebuilt renderer resources are a closed, fully hashed inventory.\n    # Do not broaden suffix admission or exclude these runtime package bytes.\n    assets = {\"yadinassi/ui/assets/catalog/\" + name for name in\n              (\"app.js\", \"index.html\", \"style.css\", \"LICENSE.txt\", \"build-manifest.json\")}\n    names = {path.relative_to(root).as_posix() for path in files}\n    if (not assets <= names or any(\n            (path.relative_to(root).as_posix().startswith(\"yadinassi/ui/assets/\")\n             and path.relative_to(root).as_posix() not in assets)\n            or (path.suffix not in {\".py\", \".txt\"} and path.relative_to(root).as_posix() not in assets)\n            for path in files)):\n        raise FullError(\"unexpected_interpreter_source\")\n"
+    }
+  ]
+}
