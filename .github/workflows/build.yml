@@ -128,7 +128,7 @@ jobs:
 
   heavy:
     name: Heavy tests (${{ matrix.target }}, ${{ matrix.shard_index }})
-    needs: admission
+    needs: [admission, light]
     if: needs.admission.outputs.heavy == 'true'
     strategy:
       fail-fast: false
@@ -191,7 +191,7 @@ jobs:
 
   build:
     name: Package (${{ matrix.target }})
-    needs: admission
+    needs: [admission, heavy]
     if: needs.admission.outputs.heavy == 'true'
     runs-on: ${{ matrix.os }}
     strategy:

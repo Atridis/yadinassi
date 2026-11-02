@@ -11,6 +11,21 @@ def section(source, name):
     return re.split(r'\n  [a-z][a-z0-9-]*:\n',block,maxsplit=1)[0]
 
 
+def assert_phase_dependencies(test, source):
+    """Check literal DAG edges, not a simulation of GitHub's scheduler."""
+    import re
+    for job, needs in (('light', 'admission'),
+                       ('heavy', '[admission, light]'),
+                       ('build', '[admission, heavy]')):
+        block = section(source, job)
+        test.assertEqual(re.findall(r'^    needs: (.+)$', block, re.M), [needs])
+        conditions = re.findall(r'^    if: (.+)$', block, re.M)
+        test.assertEqual(conditions, [] if job == 'light' else
+                         ["needs.admission.outputs.heavy == 'true'"])
+        test.assertNotIn('always()', block)
+        test.assertNotIn('continue-on-error', block)
+
+
 class TieredWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.source=(ROOT/'.github/workflows/build.yml').read_text(encoding='utf-8')
@@ -35,6 +50,34 @@ class TieredWorkflowTests(unittest.TestCase):
             self.assertIn("    if: needs.admission.outputs.heavy == 'true'",section(self.source,name))
         self.assertIn('--tier heavy --shard-count ${{ matrix.shard_count }}',section(self.source,'heavy'))
         self.assertIn('python scripts/build.py --target',section(self.source,'build'))
+
+    def test_phases_preserve_draft_skips_and_fail_closed_verdict(self):
+        # Draft: light runs, heavy is false and build remains skipped. Ready:
+        # success-only needs edges serialize whole matrices; failed/skipped
+        # prerequisites cannot produce an accepted partial phase.
+        assert_phase_dependencies(self, self.source)
+        verdict = section(self.source, 'verdict')
+        self.assertIn("if: always() && needs.admission.result == 'success'", verdict)
+        self.assertIn('needs: [admission, light, heavy, build, regex-python310]', verdict)
+        self.assertIn("expected='success' if e['PHASE_HEAVY']=='true' else 'skipped'", verdict)
+        self.assertIn("e['HEAVY_RESULT']==e['BUILD_RESULT']==expected", verdict)
+        for job, expected_mac in (('light', 2), ('heavy', 3), ('build', 2)):
+            block = section(self.source, job)
+            self.assertEqual(block.count('          - target: mac-'), expected_mac)
+            self.assertEqual(block.count('          - target: mac-arm\n'), 1)
+        # Per-run mac demand is 2 -> 3 -> 2, not all seven at admission.
+        # Other workflows/provider scheduling remain outside this contract.
+
+    def test_missing_or_bypassed_phase_dependencies_are_rejected(self):
+        for changed in (
+            self.source.replace('needs: [admission, light]', 'needs: admission'),
+            self.source.replace('needs: [admission, heavy]', 'needs: admission'),
+            self.source.replace('needs: [admission, heavy]', 'needs: [admission, light]'),
+            self.source.replace("if: needs.admission.outputs.heavy == 'true'",
+                                "if: always() && needs.admission.outputs.heavy == 'true'"),
+        ):
+            with self.assertRaises(AssertionError):
+                assert_phase_dependencies(self, changed)
 
     def test_two_separate_intel_jobs_and_one_other_platform_each(self):
         heavy=section(self.source,'heavy')
