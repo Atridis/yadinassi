@@ -145,6 +145,9 @@ class BSLType(Enum):
     VALUE_TREE_COLUMN = "КолонкаДереваЗначений"
     VALUE_TREE_ROW = "СтрокаДереваЗначений"
     VALUE_TREE_ROW_COLLECTION = "КоллекцияСтрокДереваЗначений"
+    QUERY = "Запрос"
+    QUERY_RESULT = "РезультатЗапроса"
+    QUERY_RESULT_SELECTION = "ВыборкаИзРезультатаЗапроса"
     VALUE_TABLE = "ТаблицаЗначений"
     VALUE_TABLE_COLUMN_COLLECTION = "КоллекцияКолонокТаблицыЗначений"
     VALUE_TABLE_COLUMN = "КолонкаТаблицыЗначений"
@@ -171,6 +174,10 @@ class BSLType(Enum):
             return "Коллекция колонок дерева значений"
         if self is BSLType.VALUE_TREE_COLUMN:
             return "Колонка дерева значений"
+        if self is BSLType.QUERY_RESULT:
+            return "Результат запроса"
+        if self is BSLType.QUERY_RESULT_SELECTION:
+            return "Выборка из результата запроса"
         if self is BSLType.VALUE_TABLE:
             return "Таблица значений"
         if self is BSLType.COLLECTION_INDEXES:

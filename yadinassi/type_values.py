@@ -1,3 +1,4 @@
+from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
@@ -56,6 +57,9 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLQuery, BSLType.QUERY, "Query"),
+    (BSLQueryResult, BSLType.QUERY_RESULT, "QueryResult"),
+    (BSLQueryResultSelection, BSLType.QUERY_RESULT_SELECTION, "QueryResultSelection"),
     (BSLClientApplicationForm, BSLType.FORM, "ClientApplicationForm"),
     (BSLFormAttribute, BSLType.FORM_ATTRIBUTE, "FormAttribute"),
     (BSLFormField, BSLType.FORM_FIELD, "FormField"),
