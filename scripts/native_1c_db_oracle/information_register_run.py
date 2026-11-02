@@ -138,9 +138,9 @@ class Native(lifecycle.Native):
                           {block:fixture.validate_capture(text.encode('ascii'),b,block) for block,text in outputs.items()})
             self.catalog_native_failure = None
             return dict(token=token, marker_sha256=hashlib.sha256(raw).hexdigest(), outputs=outputs, assessment=assessment)
-        except BaseException:
+        except BaseException as error:
             from information_register_diagnostics import collect
-            try:self.catalog_native_failure=collect(self,database,self.catalog_native_failure)
+            try:self.catalog_native_failure=collect(self,database,self.catalog_native_failure,error=error)
             except BaseException:self.catalog_native_failure=None
             raise
         finally:

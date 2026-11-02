@@ -6,8 +6,53 @@ user data. Capturing a redump does not admit its defaults or physical layout.
 import hashlib
 import re
 import xml.etree.ElementTree as ET
-from linked_card_diagnostics import PHASES, collect, validate, INSTALL_STAGES
+from linked_card_diagnostics import PHASES, collect as _collect, validate as _validate, INSTALL_STAGES
 from protocol import require, exact, digest, OracleError
+
+def process_detail(error):
+    """Only trusted exact exception fields and existing finite enums; no text."""
+    from run import SandboxInventoryError
+    from protocol import CONTEXT_SITES, INVENTORY_REGIONS, INVENTORY_REASONS
+    if type(error) is not OracleError and type(error) is not SandboxInventoryError:
+        return None
+    fields=object.__getattribute__(error,'__dict__')
+    if type(fields) is not dict or len(fields)>8 or any(type(k) is not str for k in fields):
+        return None
+    site=fields.get('oracle_site')
+    if type(site) is not str or site not in CONTEXT_SITES:
+        return None
+    region=reason=None
+    if type(error) is SandboxInventoryError:
+        region=fields.get('region');reason=fields.get('reason')
+        if (type(region) is not str or region not in INVENTORY_REGIONS
+                or type(reason) is not str or reason not in INVENTORY_REASONS):
+            return None
+    return dict(site=site,region=region,reason=reason)
+
+
+def validate(value):
+    from protocol import CONTEXT_SITES, INVENTORY_REGIONS, INVENTORY_REASONS
+    exact(value,('site','phase','status','operation_matches','markers','compile','process_detail'))
+    original=dict(value);detail=original.pop('process_detail')
+    _validate(original)
+    if detail is not None:
+        exact(detail,('site','region','reason'))
+        require(value['site']=='process' and type(detail['site']) is str
+                and detail['site'] in CONTEXT_SITES)
+        if detail['region'] is None:
+            require(detail['reason'] is None)
+        else:
+            require(type(detail['region']) is str and detail['region'] in INVENTORY_REGIONS
+                    and type(detail['reason']) is str and detail['reason'] in INVENTORY_REASONS)
+    return value
+
+
+def collect(backend,database,previous,*,error=None):
+    value=_collect(backend,database,previous)
+    value['process_detail']=process_detail(error) if value['site']=='process' else None
+    validate(value)
+    return value
+
 
 MD='{http://v8.1c.ru/8.3/MDClasses}'
 CATEGORIES=('baseline-register-catalog-inventory','register-redump-inventory','register-redump-profile','register-profile','register-xml-budget','register-rights','register-fragments','register-xml-profile','baseline-document-catalog-inventory','document-redump-inventory','document-redump-profile','document-profile','document-xml-budget','schema-provenance',
