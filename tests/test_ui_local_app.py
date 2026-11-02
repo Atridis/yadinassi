@@ -69,7 +69,10 @@ class LocalRendererHTTPTests(unittest.TestCase):
         self.bridge.exchange.assert_not_called()
 
     def test_bounded_body_and_duplicate_json_reject_before_dispatch(self):
-        self.assertEqual(self.request(body=b'x' * (MAX_LINE_BYTES + 1))[0], 413)
+        # The server rejects the declared size before reading a body. Sending a
+        # large body concurrently with that deliberate close races TCP reset on
+        # some hosts and tests the client socket buffer, not this admission gate.
+        self.assertEqual(self.request(body=b'', headers={'Content-Length': str(MAX_LINE_BYTES + 1)})[0], 413)
         self.assertEqual(self.request(body=b'{"id":1,"id":2}')[0], 503)
         self.assertEqual(self.request(body=b'{"jsonrpc":"2.0","id":true,"method":"editor.hello","params":{}}')[0], 400)
         self.bridge.exchange.assert_not_called()

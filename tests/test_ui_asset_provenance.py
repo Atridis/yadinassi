@@ -7,11 +7,16 @@ import unittest
 from unittest import mock
 
 from test_native_preprocessor_budget import full, ROOT, source_provenance
+from test_native_1c_full_host import SyntheticFilesystemCase
+import test_native_1c_full_host as filesystem_fixture
 
 ASSETS = ('app.js', 'index.html', 'style.css', 'LICENSE.txt', 'build-manifest.json')
 
 
-class UIAssetProvenanceTests(unittest.TestCase):
+class UIAssetProvenanceTests(SyntheticFilesystemCase):
+    # Trusted repository source hashing, not native-container filesystem evidence.
+    # Reuse the existing Windows offline adapter; Linux secure reader is unchanged.
+
     def test_actual_inventory_includes_all_assets_and_modules(self):
         result = source_provenance()
         self.assertEqual(result['source_file_count'], 107)
@@ -58,3 +63,12 @@ class UIAssetProvenanceTests(unittest.TestCase):
     def test_runtime_resource_loader_finds_nonempty_exact_assets(self):
         for name in ASSETS:
             self.assertTrue(files('yadinassi.ui').joinpath('assets', 'catalog', name).read_bytes())
+
+    def test_windows_offline_adapter_keeps_exact_inventory_and_byte_drift_checks(self):
+        with mock.patch.object(filesystem_fixture, '_USE_SYNTHETIC_FILE_READER', True):
+            case = UIAssetProvenanceTests('test_actual_inventory_includes_all_assets_and_modules')
+            result = unittest.TestResult()
+            case.run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
