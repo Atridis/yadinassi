@@ -50,6 +50,31 @@ credentials and authentication tokens. Separate payload authorization and
 platform procedures apply; previous individual XML/JSON permissions are not
 silently extended to new files.
 
-Actual Designer redump, logical API observations, periodic physical layout and
-final offline `.1CD` parity are **pending**, not inferred from local synthetic
-host tests. A successful measurement alone is not production admission.
+First native Designer redump and logical API observations are recorded below.
+Periodic physical admission and final source-composed offline `.1CD` parity
+remain **pending**, not inferred from local synthetic host tests. A successful
+measurement alone is not production admission.
+
+## First measured facts and final observer correction
+
+Run `41380811903` completed both identity/state/context sets with strict source
+validation and cleanup. Both generated XML profiles passed whole semantic redump.
+GetFirst/GetLast temporal edges and native readonly observations were captured;
+periodic production reading was still unavailable. Raw table lengths alone are
+not a layout proof. The original source and authenticated report remain retained.
+
+Slice tables named their standard column literally `Период`; three `.Period`
+probes produced action errors, even when filled. Only those probes now use the
+actual column name. Historical SliceLast positional row orders differed between
+identities and were not the Select ordering. The official slice contract does
+not promise row order. Six positional key probes are replaced by three full-key
+FindRows counts plus complete Period/resource/attribute content. Together with
+the total row count, these observations detect missing and duplicate keys and
+retain exact column-order checks without imposing an unproven slice row order.
+Get/Select ordered observations are unchanged. Corrected packet observations
+still require the final actual native run; old output bytes are not relabeled.
+
+The redundant standalone Note probe (now covered for all three keys) instead
+records the standard Period column ValueType. A provisional existing scalar
+Date descriptor can be checked by this final native observation; other column
+metadata remains unmeasured and must not silently default to unrestricted types.

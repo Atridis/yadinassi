@@ -90,9 +90,20 @@ class Tests(unittest.TestCase):
         get=p.render(self.s,self.p,'get');sl=p.render(self.s,self.p,'slices');ed=p.render(self.s,self.p,'edges')
         for value in (p.T0,p.T1,p.T2,p.T1+' + 1',p.T1+' - 1',p.T2+' + 1'):self.assertIn(value,get)
         for value in ('GetFirst','GetLast','Property("Period")','Property("Note")'):self.assertIn(value,get)
-        for value in ('SliceFirst','SliceLast','Columns.Count()','Product.Description','LK[0].Note'):self.assertIn(value,sl)
+        for value in ('SliceFirst','SliceLast','Columns.Count()','Product.Description','LF.Columns[0].ValueType'):self.assertIn(value,sl)
         for label in ('before','exact.end','exact.again','desc.end','missing','period.type'):self.assertIn(label,dict(p.cases(self.s,self.p,'edges')))
         self.assertIn(f'Select({p.T1},{p.T1},',ed)
+        self.assertIn('LK[0].Период',sl)
+        self.assertIn('FK[0].Период',sl)
+        self.assertNotIn('LK[0].Period',sl)
+        self.assertNotIn('FK[0].Period',sl)
+        for i in range(3):
+            self.assertIn(f'R{i}.Count()',sl)
+            self.assertIn(f'XMLString(R{i}[0].Период)',sl)
+            self.assertIn(f'XMLString(R{i}[0].Note)',sl)
+        self.assertEqual(sl.count('.FindRows('),3)
+        self.assertNotIn('LF[',sl)
+        self.assertEqual(len(dict(p.cases(self.s,self.p,'slices'))),24)
     def test_witness_full_key_and_temporal_values(self):
         values=[self.p['register'],self.p['catalog'],5,2]
         for product,variant,period,price,available,date,note in p.ordered_records():

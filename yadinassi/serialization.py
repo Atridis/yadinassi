@@ -399,6 +399,8 @@ class _Writer:
         self.emit(',\n' + _LIST_PICTURE + ',' + str(identifier) + ',0,""}')
 
     def table(self, table, depth):
+        if table._bounded_slice_read:
+            raise ValueError('native slice column codec profile is not admitted')
         # Canonical snapshot layout established by table.codec.empty/table.
         # The owner's table.indexes.codec.table adds ordered index definitions.
         # Historic column/row IDs and undocumented flags are not synthesized.

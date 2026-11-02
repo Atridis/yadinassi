@@ -309,11 +309,11 @@
       ],
       [
         "period.type",
-        "String(TypeOf(LK[0].Period))"
+        "String(TypeOf(LK[0].\u041f\u0435\u0440\u0438\u043e\u0434))"
       ],
       [
         "last.period",
-        "XMLString(LK[0].Period)"
+        "XMLString(LK[0].\u041f\u0435\u0440\u0438\u043e\u0434)"
       ],
       [
         "last.price",
@@ -321,7 +321,7 @@
       ],
       [
         "first.period",
-        "XMLString(FK[0].Period)"
+        "XMLString(FK[0].\u041f\u0435\u0440\u0438\u043e\u0434)"
       ],
       [
         "first.price",
@@ -332,32 +332,32 @@
         "LK[0].Product.Description"
       ],
       [
-        "last.0.product",
-        "String(LF[0].Product.UUID())"
+        "key.0.count",
+        "R0.Count()"
       ],
       [
-        "last.0.variant",
-        "XMLString(LF[0].Variant)"
+        "key.0.values",
+        "XMLString(R0[0].\u041f\u0435\u0440\u0438\u043e\u0434) + \"|\" + XMLString(R0[0].Price) + \"|\" + XMLString(R0[0].Available) + \"|\" + XMLString(R0[0].ValidUntil) + \"|\" + XMLString(R0[0].Note)"
       ],
       [
-        "last.1.product",
-        "String(LF[1].Product.UUID())"
+        "key.1.count",
+        "R1.Count()"
       ],
       [
-        "last.1.variant",
-        "XMLString(LF[1].Variant)"
+        "key.1.values",
+        "XMLString(R1[0].\u041f\u0435\u0440\u0438\u043e\u0434) + \"|\" + XMLString(R1[0].Price) + \"|\" + XMLString(R1[0].Available) + \"|\" + XMLString(R1[0].ValidUntil) + \"|\" + XMLString(R1[0].Note)"
       ],
       [
-        "last.2.product",
-        "String(LF[2].Product.UUID())"
+        "key.2.count",
+        "R2.Count()"
       ],
       [
-        "last.2.variant",
-        "XMLString(LF[2].Variant)"
+        "key.2.values",
+        "XMLString(R2[0].\u041f\u0435\u0440\u0438\u043e\u0434) + \"|\" + XMLString(R2[0].Price) + \"|\" + XMLString(R2[0].Available) + \"|\" + XMLString(R2[0].ValidUntil) + \"|\" + XMLString(R2[0].Note)"
       ],
       [
-        "last.note",
-        "LK[0].Note"
+        "period.column.type",
+        "String(LF.Columns[0].ValueType)"
       ],
       [
         "column.names",
@@ -567,7 +567,7 @@
     "cursor.bsl": "25ba060df15c9819d91c9c646d375432e845fca90fecbf3c5bd83663b165156a",
     "get.bsl": "2517ee416ad090a3e6836b840d2e7a85fc1da636482bb1899b6e1d6d5c308e39",
     "setup-empty.bsl": "1972f5004824e4e95cced2990a727c25939f6c6a1896d125c67f5e1c8f55bdc4",
-    "slices.bsl": "c3cc24b1174d229424e6f6794cda5b4e16e22819e4d04d03bce6ca1d0292ab03",
+    "slices.bsl": "50d87e4e86f1ae2e99cfa9723ba36d9a52d34743ce1bf317ba47b226babdb082",
     "Catalogs/C6b515170.xml": "154763f1f278cb7be0d2fb97094cc027f6c536df3e286337d7ccbaf7fd1bb3b8",
     "InformationRegisters/I641d343f.xml": "c70752caa737e0794e8a30b98db022c8da16e5b3a007da2531ba596a12952069"
   }

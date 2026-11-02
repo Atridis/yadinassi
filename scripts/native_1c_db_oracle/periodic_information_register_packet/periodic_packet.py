@@ -155,7 +155,8 @@ def preparation(s,p,block):
     if block=='slices':
         return [(v,f'{reg}.{method}({date}{","+flt if flt else ""})') for v,method,date,flt in (
             ('LF','SliceLast',T1,''),('FF','SliceFirst',T1,'New Structure'),('LP','SliceLast',T1,a),
-            ('FP','SliceFirst',T1,a),('LK','SliceLast',T1,k),('FK','SliceFirst',T1,k))]
+            ('FP','SliceFirst',T1,a),('LK','SliceLast',T1,k),('FK','SliceFirst',T1,k))] + [(f'R{i}',f'LF.FindRows({key(s,p,product,variant)})')
+                for i,(product,variant) in enumerate((('A',1),('A',2),('B',1)))]
     if block=='cursor':return [('S',f'{reg}.Select()')]
     if block=='edges':return [('E',f'{reg}.Select({T1},{T1},{a})'),('D',f'{reg}.Select({T0},{T2},{a},"Desc")'),
         ('M',f'{reg}.Select({T0},{T2},New Structure("Product",{target(s,p,"missing")}))')]
@@ -173,12 +174,18 @@ def cases(s,p,block):
             ('manager.type',f'String(TypeOf(InformationRegisters.{p["register"]}))')]
     elif block=='slices':
         for v in ('LF','FF','LP','FP','LK','FK'):out.append((v+'.count',v+'.Count()'))
-        out += [('table.type','String(TypeOf(LF))'),('columns','LF.Columns.Count()'),('period.type','String(TypeOf(LK[0].Period))'),
-            ('last.period','XMLString(LK[0].Period)'),('last.price','XMLString(LK[0].Price)'),('first.period','XMLString(FK[0].Period)'),
+        out += [('table.type','String(TypeOf(LF))'),('columns','LF.Columns.Count()'),('period.type','String(TypeOf(LK[0].Период))'),
+            ('last.period','XMLString(LK[0].Период)'),('last.price','XMLString(LK[0].Price)'),('first.period','XMLString(FK[0].Период)'),
             ('first.price','XMLString(FK[0].Price)'),('target','LK[0].Product.Description')]
-        # Read actual order of all slice rows, not assumed sorting.
-        for i in range(3):out += [(f'last.{i}.product',f'String(LF[{i}].Product.UUID())'),(f'last.{i}.variant',f'XMLString(LF[{i}].Variant)')]
-        out += [('last.note','LK[0].Note'),('column.names',' + "|" + '.join(f'LF.Columns[{i}].Name' for i in range(7)))]
+        # Native41380811903 demonstrated differing, undocumented slice row order.
+        # Three complete keys plus total count prove coverage/uniqueness without
+        # imposing an order or discarding resource/attribute content.
+        for i in range(3):
+            row=f'R{i}[0]'
+            values=' + "|" + '.join(f'XMLString({row}.{name})' for name in
+                ('Период','Price','Available','ValidUntil','Note'))
+            out += [(f'key.{i}.count',f'R{i}.Count()'),(f'key.{i}.values',values)]
+        out += [('period.column.type','String(LF.Columns[0].ValueType)'),('column.names',' + "|" + '.join(f'LF.Columns[{i}].Name' for i in range(7)))]
     elif block=='cursor':
         for i in range(5):out += [(f'{i}.next','S.Next()'),(f'{i}.period','XMLString(S.Period)'),(f'{i}.product','String(S.Product.UUID())'),(f'{i}.variant','XMLString(S.Variant)')]
         out += [('exhaust','S.Next()'),('retained','XMLString(S.Period)')]
