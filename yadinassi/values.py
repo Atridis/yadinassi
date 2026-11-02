@@ -19,6 +19,14 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    FORM = "ФормаКлиентскогоПриложения"
+    FORM_ATTRIBUTE = "РеквизитФормы"
+    FORM_FIELD = "ПолеФормы"
+    FORM_BUTTON = "КнопкаФормы"
+    FORM_COMMAND = "КомандаФормы"
+    FORM_ITEMS = "ВсеЭлементыФормы"
+    FORM_COMMANDS = "КомандыФормы"
+    FORM_FIELD_VIEW = "ВидПоляФормы"
     XDTO_FACTORY = "ФабрикаXDTO"
     XDTO_OBJECT = "ОбъектXDTO"
     XDTO_VALUE = "ЗначениеXDTO"

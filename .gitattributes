@@ -140,3 +140,6 @@ scripts/native_1c_db_oracle/periodic_information_register_packet/** -text
 
 /tests/fixtures/periodic_information_register_records.json -text
 /tests/fixtures/periodic_information_register_native.json -text
+# Fixed managed-form source checkpoint; no platform newline conversion.
+scripts/form_runtime_packet/module.bsl -text
+scripts/form_runtime_packet/form.xml -text

@@ -50,7 +50,7 @@ def environment(context):
 
 
 def inline_admission():
-    block = WORKFLOW.read_text().split("\n  eligibility:\n", 1)[1].split("\n  smoke:\n", 1)[0]
+    block = re.split(r"\n  [a-z_]+:\n", WORKFLOW.read_text().split("\n  eligibility:\n", 1)[1], maxsplit=1)[0]
     return textwrap.dedent(block.split("        run: |\n", 1)[1]).split("<<'PYTHON'\n", 1)[1].split("\nPYTHON", 1)[0]
 
 
@@ -365,7 +365,9 @@ class ManualWorkflowTests(unittest.TestCase):
     def test_manual_admission_and_binding_precede_same_scoped_auth_and_artifacts(self):
         source = WORKFLOW.read_text()
         trees = {}
-        legacy = source
+        form = re.findall(r"(?ms)^  form_smoke:\n.*?(?=^  [a-z_]+:|\Z)", source)
+        self.assertEqual(len(form), 1)
+        legacy = source.replace(form[0], "", 1)
         for job in ('tree_smoke', 'tree_copy_smoke'):
             matches = re.findall(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)
             self.assertEqual(len(matches), 1)
@@ -396,7 +398,7 @@ class ManualWorkflowTests(unittest.TestCase):
                                   'native-smoke/${{ matrix.artifact }}-outputs/provenance.json']
             output_paths = tree.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in output_paths.splitlines()], expected_paths)
-        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke'):
+        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke', 'form_smoke'):
             matches = re.findall(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)
             self.assertEqual(len(matches), 1)
             block = matches[0]
@@ -404,10 +406,10 @@ class ManualWorkflowTests(unittest.TestCase):
             self.assertLess(block.index("scripts/native_1c_ci_policy.py bind"), block.index("GHCR_TOKEN:"))
             self.assertIn("ref: ${{ github.sha }}", block)
             self.assertIn("persist-credentials: false", block)
-        self.assertEqual(source.count("contents: read"), 3)
-        self.assertEqual(source.count("packages: read"), 3)
+        self.assertEqual(source.count("contents: read"), 4)
+        self.assertEqual(source.count("packages: read"), 4)
         self.assertNotIn(": write", source)
-        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke]", source)
+        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, form_smoke]", source)
         self.assertIn("if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')", legacy)
 
 

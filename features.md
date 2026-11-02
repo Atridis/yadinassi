@@ -6121,3 +6121,10 @@ Added a bounded ordinary XDTO factory, typed objects/scalars/lists and readonly
 metadata, with explicit XSD file admission and existing XML/JSON adapters.
 [Exact subset and resource boundaries](docs/xdto-family.md). Native40 calibration
 is pending; this is not full XSD/XPath or configuration-model support.
+
+## Подготовка headless управляемых форм
+
+Локальный ограниченный FormRuntime: скалярные реквизиты, поля/команды,
+закрытый вызов привязанных BSL-обработчиков, версии состояния и отменяемое
+закрытие. Это не renderer и пока не native parity автоматических событий.
+Ограничения и неподключённый native source checkpoint: [form-runtime.md](docs/form-runtime.md).

@@ -1208,11 +1208,15 @@ class Interpreter:
 
         return [copy(value, 0) for value in values]
 
+    def _activation_interpreter(self):
+        """Internal specialization seam; ordinary modules retain their behavior."""
+        return Interpreter(self.output, encoding=self.encoding, native_target=self.native_target,
+                           database_context=self.database_context,
+                           compilation_profile=self.compilation_profile)
+
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
-        server = Interpreter(self.output, encoding=self.encoding, native_target=self.native_target,
-                             database_context=self.database_context,
-                             compilation_profile=self.compilation_profile)
+        server = self._activation_interpreter()
         server._scheduler = self._scheduler
         server._logical_side = "server"
         server._context_stack = self._context_stack

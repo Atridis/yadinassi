@@ -175,7 +175,7 @@ class CopyProfileTests(unittest.TestCase):
         begin=text.index('          # BEGIN NATIVE CI VERDICT');end=text.index('          PYTHON',begin)
         code='\n'.join(line[10:] for line in text[begin:end].splitlines())
         for status in ('success','failed','skipped','cancelled',''):
-            env=dict(ELIGIBILITY_RESULT='success',NATIVE_RESULT='success',TREE_RESULT='success',TREE_COPY_RESULT=status,TREE_REQUIRED='true')
+            env=dict(ELIGIBILITY_RESULT='success',NATIVE_RESULT='success',TREE_RESULT='success',TREE_COPY_RESULT=status,FORM_RESULT='success',TREE_REQUIRED='true')
             with mock.patch.dict(os.environ,env,clear=True),mock.patch('builtins.print'),self.assertRaises(SystemExit) as caught:
                 exec(code,{'os':os})
             self.assertEqual(caught.exception.code,0 if status=='success' else 1)

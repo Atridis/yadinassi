@@ -1,3 +1,4 @@
+from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
 from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
@@ -55,6 +56,14 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLClientApplicationForm, BSLType.FORM, "ClientApplicationForm"),
+    (BSLFormAttribute, BSLType.FORM_ATTRIBUTE, "FormAttribute"),
+    (BSLFormField, BSLType.FORM_FIELD, "FormField"),
+    (BSLFormButton, BSLType.FORM_BUTTON, "FormButton"),
+    (BSLFormCommand, BSLType.FORM_COMMAND, "FormCommand"),
+    (BSLFormItems, BSLType.FORM_ITEMS, "FormAllItems"),
+    (BSLFormCommands, BSLType.FORM_COMMANDS, "FormCommands"),
+    (BSLFormFieldView, BSLType.FORM_FIELD_VIEW, "FormFieldType"),
     (BSLXDTOFactory, BSLType.XDTO_FACTORY, "XDTOFactory"),
     (BSLXDTODataObject, BSLType.XDTO_OBJECT, "XDTODataObject"),
     (BSLXDTODataValue, BSLType.XDTO_VALUE, "XDTODataValue"),
