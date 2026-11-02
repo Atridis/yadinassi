@@ -23,6 +23,17 @@ class HTTPPacketTests(unittest.TestCase):
         self.assertEqual(contract.MAX_ENCODED_BYTES,7130)
         self.assertLessEqual(contract.MAX_ENCODED_BYTES,contract.MAX_OUTPUT_BYTES)
 
+    def test_file_observer_releases_handles_before_owned_cleanup(self):
+        source=(ROOT/route.SOURCE).read_text(encoding='utf-8')
+        helper=source.split('Функция HTFile(',1)[1].split('EndFunction',1)[0]
+        release='Q=Undefined;R=Undefined;D=Undefined;'
+        self.assertEqual(helper.count(release),2)
+        self.assertIn(release+'\nDeleteFiles(I);If B.Exists() Then DeleteFiles(O);EndIf;',helper)
+        self.assertIn('Except\n'+release+'\nTry DeleteFiles(I);Except EndTry;Try DeleteFiles(O);Except EndTry;Raise;',helper)
+        self.assertLess(helper.index('EndIf;\n'+release),helper.index('DeleteFiles(I)'))
+        self.assertIn('If A.Exists() Or B.Exists() Then Raise "collision";EndIf;',helper)
+        self.assertIn('If A.Exists() Or B.Exists() Then Raise "cleanup";EndIf;',helper)
+
     def test_source_bound_wrapper_closed_parameters(self):
         raw=(ROOT/route.SOURCE).read_bytes();nonce='a'*32
         result=route.program(raw,12345,nonce)

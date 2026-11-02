@@ -82,8 +82,8 @@ user data.
 ## Source and wire contract
 
 Source SHA256:
-`83ed3c4e5263580df0b30c2bd3b7f44d602e913ee79ee47eaa4cd623de6f3702`.
-Source is 6785 UTF-8 bytes under the unchanged 8192-byte packet bound. Supplied
+`3d975d1dafa02811b760386dfc2cf31fc4d81fb046a0b6e85a1f1a8c9c91cf97`.
+Source is 6859 UTF-8 bytes under the unchanged 8192-byte packet bound. Supplied
 port/root invocation material must be separately source-bound and validated by
 the owner; it must not overwrite this public source identity.
 
@@ -117,3 +117,12 @@ The next source revision adds only a failed-only inventory projection: up to
 32 entry/kind counts, a two-bit exact known-file presence mask, and a truncation
 flag. Unknown names, paths, contents and error text never leave the container.
 No unknown file is deleted and no cleanup or acceptance condition is bypassed.
+
+The source-bound diagnostic attempt identified exactly one regular leftover:
+the known `http-in.bin`; no directories, unknown entries or truncation occurred.
+Its forty raw records are still unavailable and no parity is claimed. The owned
+file observer now releases request/response/binary-data references **after**
+computing the observation and **before** known-file cleanup, on success and error.
+The official `SetBodyFileName` contract opens the input for reading at the call;
+a retained request is therefore a plausible cleanup cause, not yet a confirmed
+native diagnosis. No runtime behavior, cleanup refusal or resource cap changes.

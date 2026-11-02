@@ -18,9 +18,11 @@ ElsIf N=38 Then R=C.Post(Q);V=R.GetBodyAsString()+":"+String(A.Exists());
 ElsIf N=39 Then R=C.Get(New HTTPRequest("/binary"),O);D=New BinaryData(O);V=Base64String(D)+":"+String(R.GetBodyAsBinaryData()=Undefined)+":"+String(R.GetBodyFileName()=O);
 Else R=C.Post(Q,O);D=New BinaryData(O);V=Base64String(D)+":"+String(R.GetBodyAsString()=Undefined)+":"+String(R.GetBodyFileName()=O);
 EndIf;
+Q=Undefined;R=Undefined;D=Undefined;
 DeleteFiles(I);If B.Exists() Then DeleteFiles(O);EndIf;
 If A.Exists() Or B.Exists() Then Raise "cleanup";EndIf;Return V;
 Except
+Q=Undefined;R=Undefined;D=Undefined;
 Try DeleteFiles(I);Except EndTry;Try DeleteFiles(O);Except EndTry;Raise;
 EndTry;
 EndFunction

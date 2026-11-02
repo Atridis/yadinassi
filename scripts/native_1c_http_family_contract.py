@@ -1,7 +1,7 @@
 """Bounded HTTP family measurement wire grammar; no native expected semantic values."""
 import re
 
-SOURCE_SHA256 = '83ed3c4e5263580df0b30c2bd3b7f44d602e913ee79ee47eaa4cd623de6f3702'
+SOURCE_SHA256 = '3d975d1dafa02811b760386dfc2cf31fc4d81fb046a0b6e85a1f1a8c9c91cf97'
 CASE_COUNT = 40
 MAX_STRING_UNITS = 40
 MAX_OUTPUT_BYTES = 8192
