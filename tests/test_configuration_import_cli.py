@@ -62,3 +62,52 @@ class ConfigurationImportCLITests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '^configuration directory entry bound$'):
                 reader.load_configuration_directory(self.source)
         self.assertFalse(self.database.exists())
+
+    def test_host_directory_canonical_spelling_and_closed_system_aliases(self):
+        import os
+        import stat
+        from types import SimpleNamespace
+        from pathlib import PurePosixPath
+        import posixpath
+        import yadinassi.configuration_import as reader
+        directory = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_file_attributes=0)
+        # Canonical spelling is not an alias test: Windows may expand 8.3 names.
+        with mock.patch.object(reader.os, 'lstat', return_value=directory), mock.patch.object(reader.os.path, 'realpath', return_value=str(self.source.resolve())), mock.patch.object(reader.sys, 'platform', 'win32'):
+            self.assertEqual(reader._host_directory(self.root/'OWNED~1'), str(self.source.resolve()))
+        with mock.patch.object(reader.sys, 'platform', 'darwin'), mock.patch.object(reader, 'Path', PurePosixPath), mock.patch.object(reader.os.path, 'abspath', posixpath.abspath), mock.patch.object(reader.os, 'lstat', return_value=directory), mock.patch.object(reader.os.path, 'realpath', side_effect=lambda p: '/private/var' if str(p) == '/var' else str(p)):
+            self.assertEqual(reader._host_directory('/var/folders/owned'), '/private/var/folders/owned')
+        with mock.patch.object(reader.sys, 'platform', 'darwin'), mock.patch.object(reader, 'Path', PurePosixPath), mock.patch.object(reader.os.path, 'abspath', posixpath.abspath), mock.patch.object(reader.os.path, 'realpath', return_value='/unexpected'):
+            with self.assertRaisesRegex(ValueError, 'unexpected system'):
+                reader._host_directory('/var/folders/owned')
+        for mode, attributes in ((stat.S_IFLNK | 0o777, 0), (stat.S_IFDIR | 0o700, 0x400)):
+            with self.subTest(mode=mode, attributes=attributes), mock.patch.object(reader.os, 'lstat', return_value=SimpleNamespace(st_mode=mode, st_file_attributes=attributes)):
+                with self.assertRaisesRegex(ValueError, 'aliases unsupported'):
+                    reader._host_directory(self.source)
+
+    def test_fresh_stat_not_windows_direntry_identity_cache(self):
+        import os
+        import yadinassi.configuration_import as reader
+        real_scandir = os.scandir
+        class Entry:
+            def __init__(self, entry):self.path=entry.path;self.name=entry.name
+            def stat(self, **kwargs):raise AssertionError('DirEntry identity is not portable')
+        @contextmanager
+        def scan(path):
+            with real_scandir(path) as iterator:
+                yield iter([Entry(entry) for entry in iterator])
+        with mock.patch.object(reader.os, 'scandir', scan):
+            self.assertEqual(reader.load_configuration_directory(self.source).name, 'OwnedApplication')
+
+    def test_directory_symlink_and_file_hardlink_remain_refused(self):
+        import os
+        linked=self.root/'alias'
+        try:linked.symlink_to(self.source, target_is_directory=True)
+        except (OSError,NotImplementedError):pass
+        else:
+            with self.assertRaisesRegex(ValueError,'aliases unsupported'):
+                load_configuration_directory(linked)
+            linked.unlink()
+        try:os.link(self.source/'Configuration.xml', self.source/'hardlink.xml')
+        except (OSError,NotImplementedError):self.skipTest('hardlinks unavailable')
+        with self.assertRaisesRegex(ValueError,'unsupported configuration file'):
+            load_configuration_directory(self.source)

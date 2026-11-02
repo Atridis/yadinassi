@@ -3,6 +3,8 @@ from pathlib import Path
 from decimal import Decimal
 import contextlib
 import json
+import os
+import stat
 import sys
 import tempfile
 import types
@@ -33,6 +35,46 @@ def wire(values=None):
 def write_files(root,files):
     for name,raw in files.items():
         p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw)
+
+@contextlib.contextmanager
+def synthetic_container_files(root):
+    """Owned static fixtures only; not Linux descriptor-security evidence.
+
+    Model the container's file facts with portable path lstat, rather than
+    Windows DirEntry's cached nlink=0 or macOS /var parent alias handling.
+    The production reader/stat guards are unchanged and restored on exit.
+    """
+    root=Path(root).resolve(strict=True)
+    original_scandir=os.scandir
+    def checked(path):
+        path=Path(path).absolute()
+        try:relative=path.relative_to(root)
+        except ValueError:raise suite.full.FullError('invalid_input') from None
+        current=root
+        for part in relative.parts:
+            current=current/part
+            if stat.S_ISLNK(current.lstat().st_mode):raise suite.full.FullError('invalid_input')
+        return path
+    def read(path,limit,*,allow_empty=False):
+        path=checked(path);before=path.lstat()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink!=1
+                or not (0 if allow_empty else 1)<=before.st_size<=limit):
+            raise suite.full.FullError('artifact_missing')
+        with path.open('rb') as stream:raw=stream.read(limit+1)
+        after=path.lstat()
+        identity=lambda st:(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_nlink)
+        if identity(before)!=identity(after) or len(raw)!=before.st_size:
+            raise suite.full.FullError('artifact_missing')
+        return raw
+    @contextlib.contextmanager
+    def scan(path):
+        path=checked(path)
+        with original_scandir(path) as entries:
+            yield (types.SimpleNamespace(path=entry.path,
+                       stat=lambda *,follow_symlinks=False,p=Path(entry.path):
+                           p.stat() if follow_symlinks else p.lstat()) for entry in entries)
+    with mock.patch.object(suite,'os',types.SimpleNamespace(scandir=scan)),mock.patch.object(suite.full,'secure_bytes',side_effect=read):
+        yield
 
 class RouteTests(unittest.TestCase):
     def test_wire_and_canonical_are_exact(self):
@@ -81,29 +123,42 @@ class RouteTests(unittest.TestCase):
 class DumpTests(unittest.TestCase):
     def test_official_xml_inventory_roundtrip(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td);files=baseline();write_files(root,files)
-            self.assertEqual(suite.dump_files(root),files)
-    def test_symlinks_and_entry_bound_are_rejected(self):
+            root=Path(td).resolve();files=baseline();write_files(root,files)
+            with synthetic_container_files(root):self.assertEqual(suite.dump_files(root),files)
+    def test_symlinks_are_rejected(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td);(root/'target.xml').write_bytes(b'<a/>')
+            root=Path(td).resolve();(root/'target.xml').write_bytes(b'<a/>')
             try:(root/'link.xml').symlink_to(root/'target.xml')
             except OSError:self.skipTest('symlink unavailable')
-            with self.assertRaises(suite.full.FullError):suite.dump_files(root)
+            with synthetic_container_files(root),self.assertRaises(suite.full.FullError):suite.dump_files(root)
+    def test_entry_bound_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td)
+            root=Path(td).resolve()
             for n in range(257):(root/f'{n}.xml').write_bytes(b'<a/>')
-            with self.assertRaises(suite.full.FullError):suite.dump_files(root)
+            with synthetic_container_files(root),self.assertRaises(suite.full.FullError):suite.dump_files(root)
+    def test_static_adapter_bounds_and_restoration(self):
+        original_reader=suite.full.secure_bytes;original_os=suite.os
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td).resolve();path=root/'owned.xml';path.write_bytes(b'<a/>')
+            with self.assertRaisesRegex(RuntimeError,'exit'):
+                with synthetic_container_files(root):
+                    self.assertEqual(suite.full.secure_bytes(path,4),b'<a/>')
+                    with self.assertRaises(suite.full.FullError):suite.full.secure_bytes(path,3)
+                    with self.assertRaises(suite.full.FullError):suite.full.secure_bytes(root.parent/'outside',100)
+                    raise RuntimeError('exit')
+        self.assertIs(suite.full.secure_bytes,original_reader);self.assertIs(suite.os,original_os)
+
     def test_input_manifest_traversal_rejected(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td)
+            root=Path(td).resolve()
             for target in ('../outside','/outside','a//b','./a'):
                 (root/'catalog-inputs.json').write_text(json.dumps({'scripts/owned.py':target}),encoding='utf-8')
-                with self.assertRaises(suite.full.FullError):suite.input_hashes(root)
+                with synthetic_container_files(root),self.assertRaises(suite.full.FullError):suite.input_hashes(root)
 
 class SuiteTests(unittest.TestCase):
     def exercise(self, failure=None):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
-        parent=Path(temp.name);root=parent/'run';inputs=parent/'inputs';inputs.mkdir()
+        parent=Path(temp.name).resolve();root=parent/'run';inputs=parent/'inputs';inputs.mkdir()
         (inputs/'owned.py').write_bytes(b'# source\n')
         (inputs/'catalog-inputs.json').write_text(json.dumps({'scripts/owned.py':'owned.py'}),encoding='utf-8')
         platform=types.SimpleNamespace(user='NativeSmoke',password=None,timeout=120,executable=Path('/owned/platform'),
@@ -136,6 +191,7 @@ class SuiteTests(unittest.TestCase):
             if failure=='input':(inputs/'owned.py').write_bytes(b'changed')
         launcher.run_case=run_case
         with contextlib.ExitStack() as stack:
+            stack.enter_context(synthetic_container_files(parent))
             for name,value in [('run_process',native_process),('client_process_baseline',lambda n:set()),
                                ('client_process_snapshot',lambda:set()),('native_processes_quiet',lambda p:True),
                                ('require_session_bus',lambda *a:None),('validate_case_request',lambda *a:None)]:

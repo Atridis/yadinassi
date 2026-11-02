@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from pathlib import Path
 from functools import wraps
 
+from .configuration_import import _host_directory
 from .catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogDraft,
                               CatalogKey, CatalogSchema, CatalogSelection,
                               FieldSchema, Revision)
@@ -45,12 +46,15 @@ def _revision_number(token):
 
 
 def _private_parent(path):
-    parent = os.path.dirname(path)
-    if os.path.realpath(parent) != parent: raise BackendError('invalid_input')
+    try:
+        parent = _host_directory(os.path.dirname(path))
+    except (OSError, ValueError):
+        raise BackendError('invalid_input') from None
     info = os.stat(parent)
     # This is an owned-directory contract, not defence against a hostile same-user process.
     if hasattr(os, 'getuid') and (info.st_uid != os.getuid() or info.st_mode & 0o022):
         raise BackendError('invalid_input')
+    return os.path.join(parent, os.path.basename(path))
 
 
 def _uuid(value, *, empty=False):
@@ -189,7 +193,7 @@ class SQLiteCatalogBackend:
             raise BackendError('invalid_input')
         if type(read_only) is not bool: raise BackendError('invalid_input')
         self.read_only = read_only
-        self.path = os.path.abspath(raw)
+        self.path = _private_parent(os.path.abspath(raw))
         self._closed = False
         self._active = None
         self._check_file()
@@ -217,7 +221,7 @@ class SQLiteCatalogBackend:
     def _check_file(self):
         try:
             info = os.lstat(self.path)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > _MAX_DATABASE_BYTES:
+            if not stat.S_ISREG(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400 or info.st_nlink != 1 or info.st_size > _MAX_DATABASE_BYTES:
                 raise BackendError('invalid_input')
             _private_parent(self.path)
         except OSError: raise BackendError('storage_error') from None
@@ -275,8 +279,7 @@ class SQLiteCatalogBackend:
         raw = os.fspath(path)
         if type(raw) is not str or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
             raise BackendError('invalid_input')
-        absolute = os.path.abspath(raw)
-        _private_parent(absolute)
+        absolute = _private_parent(os.path.abspath(raw))
         connection = None
         try:
             fd = os.open(absolute, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)

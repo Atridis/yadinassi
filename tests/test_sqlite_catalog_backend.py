@@ -36,6 +36,29 @@ class BackendTests(unittest.TestCase):
     def draft(self,*,record=None,code='10',amount=decimal.Decimal('1.25')):
         return CatalogDraft(CatalogKey(self.backend.database_id,self.product.identity,record or uuid4()),code,'Product',False,
             ('text',amount,True,datetime.datetime(1,1,1),CatalogKey(self.backend.database_id,self.category.identity,UUID(int=0))))
+    def test_path_leaf_reparse_and_untrusted_ancestor_stay_closed(self):
+        from unittest import mock
+        from types import SimpleNamespace
+        import yadinassi.sqlite_catalog as storage
+        original = os.lstat
+        def fake(path):
+            info = original(path)
+            if os.path.abspath(path) == os.path.abspath(self.backend.path):
+                return SimpleNamespace(st_mode=info.st_mode, st_nlink=info.st_nlink,
+                    st_size=info.st_size, st_file_attributes=0x400)
+            return info
+        with mock.patch.object(storage.os, 'lstat', side_effect=fake):
+            with self.assertRaisesRegex(BackendError, 'invalid_input'):
+                SQLiteCatalogBackend(self.path)
+        alias = self.path.parent/'alias'
+        try:alias.symlink_to(self.path.parent, target_is_directory=True)
+        except (OSError, NotImplementedError):return
+        with self.assertRaisesRegex(BackendError, 'invalid_input'):
+            SQLiteCatalogBackend(alias/self.path.name)
+        with self.assertRaisesRegex(BackendError, 'invalid_input'):
+            SQLiteCatalogBackend.create(alias/'must-not-exist.sqlite', self.config)
+        self.assertFalse((self.path.parent/'must-not-exist.sqlite').exists())
+
     def test_create_edit_rollback_reopen_and_stored_code(self):
         draft=self.draft(); tx=self.backend.begin_write(uuid4()); tx.create(draft); revision=tx.commit()[0]
         self.backend.close(); self.backend=SQLiteCatalogBackend(self.path)
