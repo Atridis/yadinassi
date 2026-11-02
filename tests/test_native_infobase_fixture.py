@@ -860,7 +860,7 @@ class OwnedSQLiteFixtureSourceTests(unittest.TestCase):
             path = Path(directory) / 'application.sqlite'
             path.write_bytes(fixture._FIXTURE_BYTES)
             with SQLiteDBContext(path) as context:
-                self.assertEqual(context.connection_string(), 'SQLite=' + str(path.absolute()))
+                self.assertEqual(context.connection_string(), 'SQLite=' + str(path.resolve(strict=True)))
                 self.assertEqual(context.backend.export_configuration(), fixture._FIXTURE_SOURCE_FILES)
                 view = context.backend.begin_read()
                 try:
