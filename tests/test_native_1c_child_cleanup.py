@@ -116,6 +116,22 @@ class ChildCleanupTests(unittest.TestCase):
              mock.patch.object(full.signal, "SIGKILL", 9, create=True):
             return full.bounded_child(["unused"], Path("unused"), seconds=seconds, stdout_limit=64)
 
+    def test_execution_deadline_rounding_preserves_each_original_budget(self):
+        # Subtraction after addition can exceed either finite budget by an ulp.
+        for seconds in (10, 20):
+            self.assertGreater((255.1 + seconds) - 255.1, seconds)
+            for start, now, expected in ((255.1,255.1,seconds),
+                                         (100.0,101.25,seconds-1.25),
+                                         (100.0,100.0+seconds+1,0.001)):
+                with self.subTest(seconds=seconds,start=start,now=now):
+                    process=self.child()
+                    with mock.patch.object(full.time,'monotonic',side_effect=[start,now,100.0,100.0]):
+                        self.assertEqual(self.bounded_call(process,[None],overflow=False,seconds=seconds),(0,b'',b''))
+                    self.assertEqual(process.wait.call_args_list,
+                                     [mock.call(timeout=expected),mock.call(timeout=5)])
+                    self.assertLessEqual(process.wait.call_args_list[0].kwargs['timeout'],seconds)
+                    self.assert_closed_without_context(process)
+
     def assert_closed_without_context(self, process):
         process.stdout.close.assert_called_once()
         process.stderr.close.assert_called_once()

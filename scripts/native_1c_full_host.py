@@ -1275,7 +1275,7 @@ def bounded_child(args: list[str], cwd: Path, *, seconds=CASE_SECONDS,
                         limit = stdout_limit if key.data == "stdout" else stderr_limit
                         if len(buffers[key.data]) > limit:
                             raise FullError("interpreter_output_limit")
-                code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                code = process.wait(timeout=max(0.001, min(seconds, deadline - time.monotonic())))
             return code, bytes(buffers["stdout"]), bytes(buffers["stderr"])
         finally:
             try:
