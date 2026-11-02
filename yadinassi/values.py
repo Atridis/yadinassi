@@ -19,6 +19,17 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    XDTO_FACTORY = "ФабрикаXDTO"
+    XDTO_OBJECT = "ОбъектXDTO"
+    XDTO_VALUE = "ЗначениеXDTO"
+    XDTO_LIST = "СписокXDTO"
+    XDTO_VALUE_TYPE = "ТипЗначенияXDTO"
+    XDTO_OBJECT_TYPE = "ТипОбъектаXDTO"
+    XDTO_PROPERTY = "СвойствоXDTO"
+    XDTO_PROPERTIES = "КоллекцияСвойствXDTO"
+    XDTO_PACKAGE = "ПакетXDTO"
+    XDTO_PACKAGES = "КоллекцияПакетовXDTO"
+    XML_FORM = "ФормаXML"
     DOM_DOCUMENT = "ДокументDOM"
     DOM_ELEMENT = "ЭлементDOM"
     DOM_ATTRIBUTE = "АтрибутDOM"

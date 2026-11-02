@@ -1,3 +1,5 @@
+from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
+from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
 from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
 from .dom_io import BSLDOMBuilder, BSLDOMWriter
 from .data_hashing import BSLDataHashing, BSLHashFunction
@@ -53,6 +55,18 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLXDTOFactory, BSLType.XDTO_FACTORY, "XDTOFactory"),
+    (BSLXDTODataObject, BSLType.XDTO_OBJECT, "XDTODataObject"),
+    (BSLXDTODataValue, BSLType.XDTO_VALUE, "XDTODataValue"),
+    (BSLXDTOList, BSLType.XDTO_LIST, "XDTOList"),
+    (BSLXDTOValueType, BSLType.XDTO_VALUE_TYPE, "XDTOValueType"),
+    (BSLXDTOObjectType, BSLType.XDTO_OBJECT_TYPE, "XDTOObjectType"),
+    (BSLXDTOProperty, BSLType.XDTO_PROPERTY, "XDTOProperty"),
+    (BSLXDTOPropertyCollection, BSLType.XDTO_PROPERTIES, "XDTOPropertyCollection"),
+    (BSLXDTOPackage, BSLType.XDTO_PACKAGE, "XDTOPackage"),
+    (BSLXDTOPackageCollection, BSLType.XDTO_PACKAGES, "XDTOPackageCollection"),
+    (BSLXMLForm, BSLType.XML_FORM, "XMLForm"),
+
     (BSLDOMDocument, BSLType.DOM_DOCUMENT, "DOMDocument"),
     (BSLDOMElement, BSLType.DOM_ELEMENT, "DOMElement"),
     (BSLDOMAttribute, BSLType.DOM_ATTRIBUTE, "DOMAttribute"),

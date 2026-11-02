@@ -6114,3 +6114,10 @@ permissions or general host stream adapter was added. Scope and `!todo` limits:
 ## XML DOM: ordinary mutable document workflows
 
 Added bounded DOMDocument/Builder/Writer, element/attribute/character nodes, live child/attribute collections and snapshot Document tag queries: create/read, navigate/edit, clone/import, namespace-aware string/file roundtrips. Exact integrity/resource guards and unsupported features: [DOM family](docs/dom-family.md). Native40 calibration is pending; no full DOM/XPath/XDTO or external entity support is claimed.
+
+## XDTO: typed schema / XML / JSON workflows
+
+Added a bounded ordinary XDTO factory, typed objects/scalars/lists and readonly
+metadata, with explicit XSD file admission and existing XML/JSON adapters.
+[Exact subset and resource boundaries](docs/xdto-family.md). Native40 calibration
+is pending; this is not full XSD/XPath or configuration-model support.
