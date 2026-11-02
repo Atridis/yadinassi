@@ -1,7 +1,7 @@
 """Independent tiny renderer/client example, with no yadinassi imports.
 
 Use HeadlessCatalogClient with a bytes exchange callable, or run this script
-with an offline directory to browse its first supported catalog in a subprocess.
+with an existing SQLite file to browse its first supported catalog in a subprocess.
 Typed values are retained as JSON tags; this client never evaluates BSL.
 The example trusts the host implementation. It validates identities/revisions,
 but is not a hardened JSON decoder for hostile servers or network connections.
@@ -103,7 +103,7 @@ class HeadlessCatalogClient:
 def main(argv=None):
     arguments = sys.argv[1:] if argv is None else argv
     if len(arguments) != 1:
-        print('Expected one offline database directory.', file=sys.stderr)
+        print('Expected one existing SQLite database file.', file=sys.stderr)
         return 2
     bridge = Path(__file__).with_name('ui_catalog_bridge.py')
     child = subprocess.Popen([sys.executable, str(bridge), arguments[0]],
@@ -136,7 +136,7 @@ def main(argv=None):
         client.event('close')
         return 0
     except (ValueError, OSError):
-        print('Headless catalog operation rejected; inspect the supported offline profile.', file=sys.stderr)
+        print('Headless catalog operation rejected; inspect the supported SQLite profile.', file=sys.stderr)
         return 1
     finally:
         child.stdin.close()

@@ -66,24 +66,28 @@ exact JSON type and value, and the last equals the independently captured token
 `ibc.v1:121122221122021122021122021122`. During the historical measurement only,
 the last value was admitted by the finite grammar above. An omitted, changed, malformed, partial or oversized tail cannot pass.
 
-The historical measurement used shared-prefix parity: an exact inverse restored
-and executed all 136 old values because the new API did not yet exist. Current
-host preflight instead executes the **unchanged whole137 source** in a bounded
-Linux child with real `FileDBContext` and read-only `inspect_header`. No builtin
-callback is substituted and no BSL source is rewritten. The 136-value constant
-and exact inverse remain only for legacy adapters/history; the four legacy
-module hashes and all eight literal Async identities remain unchanged.
+The historical measurement used shared-prefix parity before the API existed.
+Current host preflight executes the unchanged whole137/whole138 source with a
+real owned `SQLiteDBContext`. No builtin callback is substituted and no BSL
+source is rewritten. Native captured output and source hashes remain unchanged.
+The host contract deliberately returns `SQLite=<absolute selected file>`, not
+native `File=` syntax. Its separate expected IBC token changes exactly the five
+connection-shape digits (positions 9, 15, 21, 27, 33) to zero; availability,
+type, alias, arity and all other values remain exact. A separate assertion checks
+the complete actual SQLite identity. This is an intentional backend difference,
+**not** normalized native parity or permission to ignore a later mismatch.
 
 The host exclusively creates `/tmp/onec-smoke` with mode 0700. Any pre-existing
 pathname causes immediate failure without reading, reusing or removing it.
-Pinned descriptors and identities guard an owned `db/1Cv8.1CD`, containing only
-a bounded recognized synthetic header/layout. Exact content, link count, source
-bytes and ownership are rechecked around the child. Only verified owned files
-and empty directories are removed; uncertainty prevents success and cleanup.
-This is a trusted single-job Linux test-host contract, not atomic isolation
-against a malicious same-UID/root process. There is no lock/reuse fallback.
-A bounded non-reaping child-exit observation preserves PID ownership through
-process-group shutdown, then performs bounded reaping before fixture cleanup.
+Pinned descriptors guard an owned `db/application.sqlite` containing our own
+small schema and authored official XML, generated through the XML importer and
+SQLite backend. The source-encoded fixture pins its generation SQLite version
+and SHA-256; tests check exact bytes plus logical content/schema, without a
+cross-SQLite-version byte-reproducibility claim. Exact content, link count,
+source bytes and ownership are rechecked around the child. Only verified owned
+files and empty directories are removed; uncertainty prevents success and cleanup.
+The trusted single-job Linux process/namespace assumptions and bounded non-reaping
+exit observation, process-group shutdown and final reaping are unchanged.
 
 The optional `client_probe.infobase_context` field is accepted only for this
 exact source/module, full existing proof, successful stage and captured exact
@@ -118,8 +122,11 @@ Fresh runtime admission must still pass independently for each candidate.
 
 ## Bounded implementation, not a native database session
 
-See [file-database-context.md](file-database-context.md) for actual `--f` modes,
-lazy execution, immutable context propagation, fixed unsupported-auth errors,
-path scope and deferred CF/DT commands. Recognized physical header geometry is
-not proof of native database validity, authenticated user identity or a session.
-The Linux capture does not establish native Windows function return formatting.
+See [file-database-context.md](file-database-context.md) for the current SQLite
+context: standalone execution needs no database; `--f` selects an existing owned
+SQLite file, and database creation is a separate explicit command. Native binary
+formats, physical-header inspection and CF/DT commands are not supported.
+The historical Linux witness retains its native `File=` observation; the current
+host reports `SQLite=` and uses the separately tested five-shape-slot expectation
+described above. Neither this intentional difference nor the historical capture
+establishes a native database session, authentication or Windows return formatting.

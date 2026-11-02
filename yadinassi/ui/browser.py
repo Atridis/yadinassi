@@ -130,6 +130,8 @@ class CatalogBrowserSession:
                 'formId': 'catalog-browser', 'baseRevision': self._revision, 'revision': revision,
                 'state': self._state(view=view, card=card, page=page)}}
         def commit():
+            if event == 'close':
+                self._repository.close()
             self._revision = revision
             self._closed = event == 'close'
             self._view, self._card, self._page = view, card, page

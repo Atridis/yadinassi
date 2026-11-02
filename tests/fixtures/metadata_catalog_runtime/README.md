@@ -8,11 +8,12 @@ artifact 13039712291 (Linux 1C 8.3.27.1508). SHA256:
 Independent review receipt SHA256:
 `f93dce3a8f9f27b7ffb43acf9bb414d719642637f47444bf5a3af591eb4b3cff`.
 
-The stub-context test establishes only BSL surface replay of the exact source
-probe. It does not establish public file adapter or native integration success.
-Cases 07/08 are retained and explicitly excluded: the Attributes API is not
-implemented, and their native 32/32/64 values discriminate the owned applied
-CONFIG view. The other 24 cases are compared exactly in all six state/context
-captures (144 supported comparisons). A fresh public-adapter same-postimage
-native readback is still required before runtime acceptance. No universal
-applied-state, multi-catalog numeric ordering or live database claim is made.
+The replay test executes the unchanged official BSL probe against an authored
+SQLite catalog configuration. It establishes offline logical surface replay,
+not a new native run or native physical-file equivalence. Cases 07/08 remain
+visible exclusions: Attributes is not implemented, and their historic 32/32/64
+values distinguish native configuration states. All other 24 cases are compared
+exactly across six state/context captures (144 supported comparisons). The
+native acquisition and physical reader were retired; no capture bytes were
+rewritten or relabeled as evidence for the new backend. No universal applied-state,
+multi-catalog numeric ordering or live native database claim is made.

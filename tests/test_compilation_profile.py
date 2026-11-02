@@ -13,7 +13,9 @@ from unittest import mock
 
 from yadinassi import BSLError, BSLRuntimeError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.database_context import FileDBContext
+from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration_xml import import_configuration
+from sqlite_catalog_fixture import configuration_files
 from yadinassi.syntax import lexer as lexer_module
 from yadinassi.syntax import parser as parser_module
 from yadinassi import runtime as runtime_module
@@ -554,7 +556,9 @@ Message(Dual()); Message(ServerCall()); Message(Detached());
 
     def test_database_context_and_builtin_availability_are_not_selected_by_profile(self):
         with tempfile.TemporaryDirectory(prefix="managed-profile-db-") as temporary:
-            context = FileDBContext(Path(temporary) / "missing-unused-base")
+            context = SQLiteDBContext.create(Path(temporary) / "application.sqlite",
+                                             import_configuration(configuration_files()))
+            self.addCleanup(context.close)
             for db in (None, context):
                 standalone = Interpreter(database_context=db)
                 managed = Interpreter(database_context=db, compilation_profile=MANAGED_PROFILE)

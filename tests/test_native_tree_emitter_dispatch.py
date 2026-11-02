@@ -35,7 +35,7 @@ def arguments(mode):
 
 
 def previous_emitter():
-    return EMITTER.replace(', "xdto-family", ', ', ').replace(', "zip-family"}', '}').replace(', "data-hashing-family"}', '}').replace(', "dom-family"}', '}').replace(', "data-io-family"}', '}').replace(', "regex-family"}', '}').replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
+    return EMITTER.replace('"catalog-object", ', '').replace(', "xdto-family", ', ', ').replace(', "zip-family"}', '}').replace(', "data-hashing-family"}', '}').replace(', "dom-family"}', '}').replace(', "data-io-family"}', '}').replace(', "regex-family"}', '}').replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
                            '{"false", "true", "copy", "sort"}').replace(
         '{"true", "copy", "sort", "columns-move"}', '{"true", "copy", "sort"}')
 
@@ -318,7 +318,7 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                     host.validate_envelope(emitted,NONCE,hashes,modules,smoke.validate_report,profile=profile)
 
     def test_actual_bash_fixed_clear_setup_stage_flag_and_workflow_command(self):
-        from test_native_catalog_description_rows_workflow import dispatch
+        from native_workflow_shell import dispatch
         # Execute the actual bounded setup/flag fragments, never the native body.
         setup='tree_suite=false\n'+SOURCE.split('tree_suite=false\n',1)[1].split('if [ "$#" -ge 5 ]',1)[0]
         flags='tree_flag=--tree-suite\n'+SOURCE.split('tree_flag=--tree-suite\n',1)[1].split('        python3 /smoke/bootstrap/run_stage.py',1)[0]
@@ -340,6 +340,22 @@ class TreeEmitterDispatchTests(unittest.TestCase):
         result=dispatch("TREE_PROFILE='tree-columns-clear-v1'\n"+command)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual(result.stdout.strip(),'scripts/native_1c_tree_profile.py --execute-approved-image --export-native-outputs --profile tree-columns-clear-v1')
+
+    def test_catalog_object_dispatch_is_exact_and_sequential(self):
+        from native_workflow_shell import dispatch
+        setup = 'bootstrap=false\n' + SOURCE.split('bootstrap=false\n',1)[1].split('\nfinish() {',1)[0]
+        branch = SOURCE.split('if [ "$bootstrap" = true ]; then\n    stage=stage2',1)[1].split('\nstage=complete',1)[0]
+        branch = 'if [ "$bootstrap" = true ]; then\n' + branch
+        branch = branch.replace('> /tmp/onec-smoke/stage2-console.log 2>&1','')
+        valid = '--catalog-object-suite --invocation-nonce ' + NONCE
+        result = dispatch('set -- '+valid+'\n'+setup+branch)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(result.stdout.strip(),'/smoke/bootstrap/catalog_object_suite.py --invocation-nonce '+NONCE)
+        for args in (valid+' extra', '--catalog-object-suite --tree-suite --invocation-nonce '+NONCE,
+                     '--catalog-object-suite --invocation-nonce invalid'):
+            rejected=dispatch('set -- '+args+'\n'+setup+branch)
+            self.assertEqual(rejected.returncode,2)
+            self.assertEqual(rejected.stdout,'')
 
     def test_shell_finish_passes_the_mode_after_preprocessor(self):
         self.assertIn('"$bus_cleanup_failed" "$preprocessor_measurement" "$tree_suite" <<\'PY\'',SOURCE)

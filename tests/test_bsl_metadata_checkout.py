@@ -8,9 +8,13 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PINNED = {
+    'scripts/native_1c_reference/modules/NativeOracleServer.bsl':
+        '5700a4f2f44574e47afdcea4d3ecb136436715a1391e945a8de31d5f45cfe69b',
+    'scripts/native_1c_reference/modules/CatalogReferenceObservation.bsl':
+        'fa46b96c26915928531aaecf1097bef1186c548d1facf79c1bb2c5439a383046',
     'tests/fixtures/metadata_catalog_runtime/native_observations.json':
         'e7a54e3ed988c32ecf897710c32e7c6c32a46b906009c846a34970b3f497b124',
-    'scripts/native_1c_db_oracle/modules/MetadataCatalogProbe.bsl':
+    'scripts/native_1c_reference/modules/MetadataCatalogProbe.bsl':
         'acb83b5ae6e5de3630cce70fe1214f9027439e8ee505a52a29e7697a3d5f5785',
 }
 

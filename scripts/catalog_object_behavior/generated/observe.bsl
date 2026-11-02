@@ -1,0 +1,24 @@
+M=Catalogs.OwnedCatalog4f4ccaa9;
+P=M.CreateItem();
+CBOEmit(1,P.IsNew()); CBOEmit(2,P.Ref.IsEmpty());
+R=M.GetRef(New UUID("6fe6c569-c38f-4f76-a3a6-bea52c24ed0a"));P.SetNewObjectRef(R);
+CBOEmit(3,P.Ref.IsEmpty());CBOEmit(4,R.GetObject()=Undefined);
+P.Code="100";P.Description="initial";P.Write();
+CBOEmit(5,Not P.IsNew());CBOEmit(6,P.Ref=R);CBOEmit(7,M.FindByCode("100")=R);
+O=R.GetObject();CBOEmit(8,Not O.IsNew());O.Description="discarded";
+CBOEmit(9,R.Description);O=Undefined;CBOEmit(10,R.GetObject().Description);
+E=R.GetObject();E.Description="edited";E.Write();
+CBOEmit(11,Not E.IsNew());CBOEmit(12,E.Ref=R);CBOEmit(13,R.Description);
+D=M.CreateItem();D.Code="100";D.Description="duplicate";DuplicateSucceeded=False;
+Try D.Write();DuplicateSucceeded=True;Except EndTry;
+CBOEmit(14,DuplicateSucceeded);CBOEmit(15,D.IsNew());CBOEmit(16,D.Ref.IsEmpty());
+CBOEmit(17,R.Code);
+CS=M.Select();CBOCount=0;While CS.Next() Do
+CBOCount=CBOCount+1;If CBOCount>3 Then Raise "owned row bound";EndIf;
+EndDo;CBOEmit(18,CBOCount);
+A=R.GetObject();B=R.GetObject();A.Description="first-update";A.Write();
+B.Description="stale-update";StaleSucceeded=False;
+Try B.Write();StaleSucceeded=True;Except EndTry;
+CBOEmit(19,StaleSucceeded);CBOEmit(20,R.Description);CBOEmit(21,B.Description);
+CBOEmit(22,R.GetObject().Ref=R);CBOEmit(23,TypeOf(E)=Type("CatalogObject.OwnedCatalog4f4ccaa9"));
+CBOEmit(24,R.Metadata()=Metadata.Catalogs.OwnedCatalog4f4ccaa9);

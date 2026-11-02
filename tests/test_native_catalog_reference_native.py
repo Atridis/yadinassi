@@ -6,7 +6,7 @@ import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts/native_1c_db_oracle"))
+sys.path.insert(0, str(ROOT / "scripts/native_1c_reference"))
 import catalog_reference_native as native
 
 
@@ -82,7 +82,7 @@ class NativeReferenceTests(unittest.TestCase):
             self.decode(data)
 
     def test_template_is_pinned_and_legacy_unchanged(self):
-        path = ROOT / "scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl"
+        path = ROOT / "scripts/native_1c_reference/modules/NativeOracleServer.bsl"
         original = path.read_bytes()
         # Canonical test text only: never rewrite the checkout or hash staged inputs this way.
         source = original.decode("utf-8-sig").replace("\r\n", "\n")
@@ -105,7 +105,7 @@ class NativeReferenceTests(unittest.TestCase):
                 native.render_template(source, case)
 
     def test_probe_template_has_no_dynamic_evaluation_or_expected_constants(self):
-        source = (ROOT / "scripts/native_1c_db_oracle/modules/CatalogReferenceObservation.bsl").read_text(encoding="utf-8-sig")
+        source = (ROOT / "scripts/native_1c_reference/modules/CatalogReferenceObservation.bsl").read_text(encoding="utf-8-sig")
         self.assertNotIn("Вычислить(", source)
         self.assertEqual(source.count('Коды = Коды + "E";'), 12)
         self.assertEqual(source.count("Коды = Коды + NativeReferenceCode("), 12)

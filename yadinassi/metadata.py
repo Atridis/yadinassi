@@ -1,12 +1,12 @@
-"""Lazy, read-only CONFIG metadata view; deliberately not catalog managers.
+"""Lazy logical configuration metadata, scoped to a backend generation.
 
 The admitted offline profile exposes names and lookup only. Attribute metadata,
 iteration, configuration properties and multi-catalog numeric ordering are not
-implemented. Loading a snapshot requires neither PARAMS nor any catalog row.
+implemented. Loading a snapshot reads only the logical backend schema.
 """
 from decimal import Decimal
 
-from .database_context import FileDBContext, require_database_context
+from .database_context import SQLiteDBContext, require_database_context
 from .values import BSLObject, HostFunction, to_string
 
 
@@ -34,7 +34,7 @@ class BSLCatalogMetadata(_MetadataObject):
 
 
 class BSLCatalogMetadataCollection(_MetadataObject):
-    def __init__(self, context: FileDBContext | None):
+    def __init__(self, context: SQLiteDBContext | None):
         self._context = context
         self._items = None
 
@@ -42,13 +42,19 @@ class BSLCatalogMetadataCollection(_MetadataObject):
         if self._items is None:
             if self._context is None:
                 require_database_context()
-            entries = self._context.catalog_metadata()
+            view=self._context.backend.begin_read()
+            try:
+                entries=view.catalogs()
+                self._database_id=view.database_id
+                self._generation=view.configuration_generation
+            finally:view.close()
             items = {}
             for entry in entries:
-                key = entry.name.casefold()
-                if key in items:
-                    raise ValueError('ambiguous catalog metadata name')
-                items[key] = BSLCatalogMetadata(entry.name, getattr(entry, "metadata_uuid", None))
+                key=entry.name.casefold()
+                if key in items:raise ValueError('ambiguous catalog metadata name')
+                item=BSLCatalogMetadata(entry.name,str(entry.identity))
+                item._schema=entry
+                items[key]=item
             self._items = items
         return self._items
 
@@ -111,23 +117,7 @@ class BSLDocumentMetadataCollection(BSLCatalogMetadataCollection):
         self._config_snapshot = None
 
     def _snapshot(self):
-        if self._items is None:
-            if self._context is None:
-                require_database_context()
-            snapshot = self._context.document_metadata()
-            catalogs = {identity.name.casefold(): BSLCatalogMetadata(identity.name, key)
-                        for key, identity, _ in snapshot.catalog_fields}
-            if self._catalogs._items is not None:
-                previous = self._catalogs._items
-                if ({k: (v._name, v._metadata_uuid) for k,v in previous.items()} !=
-                        {k: (v._name, v._metadata_uuid) for k,v in catalogs.items()}):
-                    raise ValueError('metadata identity changed')
-            else:
-                self._catalogs._items = catalogs
-            self._items = {identity.name.casefold(): BSLDocumentMetadata(identity.name, key)
-                           for key, identity, _ in snapshot.document_fields}
-            self._config_snapshot = snapshot
-        return self._items
+        raise ValueError('Documents are not supported by the SQLite catalog MVP')
 
 
 class BSLInformationRegisterMetadata(BSLCatalogMetadata):
@@ -138,27 +128,11 @@ class BSLInformationRegisterMetadata(BSLCatalogMetadata):
 
 class BSLInformationRegisterMetadataCollection(BSLDocumentMetadataCollection):
     def _snapshot(self):
-        if self._items is None:
-            if self._context is None:
-                require_database_context()
-            snapshot = self._context.information_register_metadata()
-            catalogs = {identity.name.casefold(): BSLCatalogMetadata(identity.name, key)
-                        for key, identity, _ in snapshot.catalog_fields}
-            if self._catalogs._items is not None:
-                previous = self._catalogs._items
-                if ({k: (v._name, v._metadata_uuid) for k,v in previous.items()} !=
-                        {k: (v._name, v._metadata_uuid) for k,v in catalogs.items()}):
-                    raise ValueError('metadata identity changed')
-            else:
-                self._catalogs._items = catalogs
-            self._items = {identity.name.casefold(): BSLInformationRegisterMetadata(identity.name, key)
-                           for key, identity, *rest in snapshot.register_fields}
-            self._config_snapshot = snapshot
-        return self._items
+        raise ValueError('InformationRegisters are not supported by the SQLite catalog MVP')
 
 
 class BSLMetadata(_MetadataObject):
-    def __init__(self, context: FileDBContext | None):
+    def __init__(self, context: SQLiteDBContext | None):
         self._catalogs = BSLCatalogMetadataCollection(context)
         self._documents = BSLDocumentMetadataCollection(context, self._catalogs)
         self._information_registers = BSLInformationRegisterMetadataCollection(context, self._catalogs)

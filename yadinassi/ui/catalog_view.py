@@ -1,16 +1,16 @@
-"""Immutable host views of the existing bounded read-only catalog API.
+"""Immutable UI projections of the logical catalog backend port.
 
-No form metadata, business object, BSL API, authentication or write semantics
-are introduced. An offline source remains the caller's responsibility.
+No SQL, filesystem paths, storage bindings, BSL handlers or write route.
+The host supplies an owned backend; this repository owns its read-view lifetime.
 """
 from dataclasses import dataclass
-import os
-import stat
+from datetime import datetime
+from decimal import Decimal
+from uuid import UUID
 
-from ..catalogs import BSLCatalogs, BSLCatalogSelection, _bound_card
-from ..catalog_types import BSLCatalogReference
-from ..database_context import FileDBContext
-from ..metadata import BSLCatalogMetadataCollection
+from ..catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogKey,
+                               CatalogSchema, CatalogSelection, FieldSchema, Revision)
+from ..dates import BSLDate, TICKS_PER_SECOND
 from .protocol import CatalogRef, MAX_PAGE, UIError, bounded_text, encode_value, uuid_text
 
 
@@ -83,62 +83,127 @@ class CatalogView:
 
 
 class CatalogRepository:
-    """One host-selected offline path; renderer input can never select a path.
+    """Host-owned logical backend and one pinned read view; always read-only UI.
 
-    Descriptor checks are inherited from FileDBContext. Session stat stamps also
-    reject detectable replacement/modification between reads, but are NOT a lock,
-    transaction or proof that a live source is consistent. No file is written.
+    The backend chooses its storage/transport. This facade never opens a database,
+    sends SQL or exposes backend revisions. Closing it releases the owned backend.
     """
-    def __init__(self, context):
-        if type(context) is not FileDBContext:
-            raise TypeError('catalog UI requires FileDBContext')
-        self._context = context
-        self._metadata = BSLCatalogMetadataCollection(context)
-        self._catalogs = BSLCatalogs(self._metadata, context)
-        self._inventory = None
-        self._source_stamp = None
+    def __init__(self, backend):
+        if not all(callable(getattr(backend, name, None))
+                   for name in ('capabilities', 'begin_read', 'close')):
+            raise TypeError('catalog UI requires logical catalog backend')
+        self._backend = backend
+        self._view = None
+        self._identity = None
+        self._schemas = None
+        self._closed = False
 
-    def _stamp(self):
-        if self._context._unsupported:
-            # Preserve FileDBContext's pre-I/O spelling boundary, notably UNC
-            # and device-like paths. Even stat must not touch such a target.
+    @staticmethod
+    def _uuid(value, *, empty=False):
+        if type(value) is not UUID or not empty and not value.int:
+            raise UIError('catalog_identity')
+        return str(value)
+
+    def _read(self):
+        if self._closed:
             raise UIError('catalog_unavailable')
         try:
-            value = os.stat(os.path.join(self._context.directory, '1Cv8.1CD'))
-            if not stat.S_ISREG(value.st_mode):
+            capability = self._backend.capabilities()
+            if (type(capability) is not Capabilities or capability.catalog_read is not True
+                    or capability.read_consistency != 'transaction_snapshot'):
                 raise UIError('catalog_unavailable')
-        except OSError:
+            if self._view is None:
+                self._view = self._backend.begin_read()
+                identity = (self._view.database_id, self._view.configuration_generation)
+                self._uuid(identity[0])
+                if type(identity[1]) is not int or identity[1] <= 0:
+                    raise UIError('metadata_unavailable')
+                self._identity = identity
+            if (self._view.database_id, self._view.configuration_generation) != self._identity:
+                raise UIError('catalog_unavailable')
+            return self._view
+        except BackendError:
             raise UIError('catalog_unavailable') from None
-        return (value.st_dev, value.st_ino, value.st_size,
-                value.st_mtime_ns, value.st_ctime_ns)
 
     def check_source(self):
-        current = self._stamp()
-        if self._source_stamp is not None and current != self._source_stamp:
-            raise UIError('catalog_unavailable')
-        return current
+        """Validate the pinned view, not filesystem stat or latest-write visibility."""
+        view = self._read()
+        try:
+            schemas = view.catalogs()  # Also checks the declared view lifetime.
+            if type(schemas) is not tuple or len(schemas) > 128:
+                raise UIError('message_limit')
+            if self._schemas is not None and schemas != self._schemas:
+                raise UIError('metadata_unavailable')
+            return schemas
+        except BackendError:
+            raise UIError('catalog_unavailable') from None
 
     def inventory(self):
-        before = self.check_source()
-        if self._inventory is None:
-            # Pin even a failed initial read: a later replacement must never
-            # reuse the metadata collection's earlier lazy cache.
-            self._source_stamp = before
-            try:
-                items = self._metadata._snapshot()
-                if len(items) > 128:
-                    raise UIError('message_limit')
-                inventory = tuple(CatalogInfo(uuid_text(item._metadata_uuid, nonzero=True),
-                                              bounded_text(item._name, 1024))
-                                  for item in items.values())
-                if self._stamp() != before:
-                    raise UIError('catalog_unavailable')
-            except (ValueError, TypeError) as error:
-                if type(error) is UIError:
-                    raise
-                raise UIError('metadata_unavailable') from None
-            self._inventory, self._source_stamp = inventory, before
-        return self._inventory
+        schemas = self.check_source()
+        inventory, names, identities = [], set(), set()
+        for schema in schemas:
+            if type(schema) is not CatalogSchema:
+                raise UIError('metadata_unavailable')
+            identity = self._uuid(schema.identity)
+            name = bounded_text(schema.name, 1024)
+            if not name or name.casefold() in names or identity in identities:
+                raise UIError('metadata_unavailable')
+            names.add(name.casefold()); identities.add(identity)
+            inventory.append(CatalogInfo(identity, name))
+        self._schemas = schemas
+        return tuple(inventory)
+
+    def _fields(self, schema):
+        if (type(schema.fields) is not tuple or len(schema.fields) > 64 or
+                any(type(n) is not int or not 0 <= n <= 1024
+                    for n in (schema.code_length, schema.description_length))):
+            raise UIError('metadata_unavailable')
+        fields = [CatalogField('Code', 'string', (schema.code_length,)),
+                  CatalogField('Description', 'string', (schema.description_length,)),
+                  CatalogField('DeletionMark', 'boolean', ())]
+        names, identities = {'code', 'description', 'deletionmark', 'ref'}, set()
+        catalog_ids = {item.identity for item in self._schemas}
+        for field in schema.fields:
+            if type(field) is not FieldSchema:
+                raise UIError('metadata_unavailable')
+            identity = self._uuid(field.identity)
+            name = bounded_text(field.name, 1024)
+            if (not name or identity in identities or name.casefold() in names
+                    or field.kind not in ('string', 'number', 'boolean', 'datetime', 'catalog_ref')
+                    or type(field.qualifiers) is not tuple or len(field.qualifiers) > 4):
+                raise UIError('metadata_unavailable')
+            for value in field.qualifiers:
+                if type(value) is str:
+                    bounded_text(value, 1024)
+                elif type(value) is not int or not 0 <= value <= 4096:
+                    raise UIError('metadata_unavailable')
+            names.add(name.casefold()); identities.add(identity)
+            target = None
+            if field.kind == 'catalog_ref':
+                target = self._uuid(field.target_catalog_id)
+                if field.target_catalog_id not in catalog_ids:
+                    raise UIError('metadata_unavailable')
+            elif field.target_catalog_id is not None:
+                raise UIError('metadata_unavailable')
+            fields.append(CatalogField(name, field.kind, field.qualifiers, target))
+        return tuple(fields)
+
+    def _value(self, value, field):
+        kind = field.kind
+        if kind == 'catalog_ref':
+            if (type(value) is not CatalogKey or value.database_id != self._identity[0]
+                    or value.catalog_id != field.target_catalog_id):
+                raise UIError('catalog_identity')
+            value = CatalogRef(self._uuid(value.catalog_id), self._uuid(value.record_id, empty=True))
+        elif kind == 'datetime':
+            if type(value) is not datetime or value.tzinfo is not None or value.microsecond:
+                raise UIError('unsupported_value')
+            delta = value - datetime(1, 1, 1)
+            value = BSLDate((delta.days * 86400 + delta.seconds) * TICKS_PER_SECOND)
+        elif type(value) is not {'string': str, 'number': Decimal, 'boolean': bool}.get(kind):
+            raise UIError('unsupported_value')
+        encode_value(value)
+        return value
 
     def load(self, identity):
         uuid_text(identity, nonzero=True)
@@ -146,46 +211,55 @@ class CatalogRepository:
         if info is None:
             raise UIError('catalog_not_found')
         try:
-            manager = self._catalogs.get_index(info.name)
-            result = manager._rows()
-            # Reuse the BSL reader's ordering admission, never physical row order
-            # or a new UI-specific approximation to native collation.
-            selection = BSLCatalogSelection(manager, result)
-            fields = (CatalogField('Code', 'number' if result.binding.code_type == 0 else 'string',
-                                   (result.binding.code_length,)),
-                      CatalogField('Description', 'string', (result.binding.description_length,)),
-                      CatalogField('DeletionMark', 'boolean', ()))
-            fields += tuple(CatalogField(bounded_text(item.name, 1024), _bound_card(item).kind,
-                                         item.qualifiers, item.reference_catalog_uuid)
-                            for item in result.binding.attributes)
-            cards = []
-            for row in selection._rows:
-                logical = manager._fields(result, row)
-                values = tuple(self._value(logical[field.name.casefold()]) for field in fields)
-                # Validate the narrow value envelope before retaining a snapshot.
+            schema = self._view.catalog_schema(UUID(identity))
+            if (type(schema) is not CatalogSchema or schema.identity != UUID(identity)
+                    or schema not in self._schemas):
+                raise UIError('metadata_unavailable')
+            fields = self._fields(schema)
+            # The port refuses overflow rather than returning a misleading total.
+            rows = self._view.select_catalog(schema.identity, CatalogSelection(limit=1000))
+            if type(rows) is not tuple or len(rows) > 1000:
+                raise UIError('message_limit')
+            cards, seen = [], set()
+            for row in rows:
+                if (type(row) is not CatalogCard or type(row.key) is not CatalogKey
+                        or row.key.database_id != self._identity[0]
+                        or row.key.catalog_id != schema.identity):
+                    raise UIError('catalog_identity')
+                record = self._uuid(row.key.record_id)
+                if record in seen or type(row.values) is not tuple or len(row.values) != len(schema.fields):
+                    raise UIError('catalog_unavailable')
+                seen.add(record)
+                revision = row.revision
+                if (type(revision) is not Revision or revision.database_id != row.key.database_id
+                        or revision.configuration_generation != self._identity[1]
+                        or revision.catalog_id != row.key.catalog_id or revision.record_id != row.key.record_id):
+                    raise UIError('catalog_identity')
+                if type(row.code) is not str or type(row.description) is not str or type(row.deletion_mark) is not bool:
+                    raise UIError('unsupported_value')
+                values = (row.code, row.description, row.deletion_mark) + tuple(
+                    self._value(value, field) for field, value in zip(schema.fields, row.values))
                 for value in values:
                     encode_value(value)
-                cards.append(CatalogCardSnapshot(CatalogRef(identity, str(row.reference_uuid)),
-                                                  info.name, fields, values))
+                cards.append(CatalogCardSnapshot(CatalogRef(identity, record), info.name, fields, values))
             self.check_source()
             return CatalogView(info, tuple(cards))
-        except (ValueError, TypeError, KeyError) as error:
-            if type(error) is UIError:
-                raise
-            raise UIError('catalog_unavailable') from None
+        except BackendError as error:
+            raise UIError('catalog_not_found' if error.code == 'not_found' else 'catalog_unavailable') from None
 
-    @staticmethod
-    def _value(value):
-        if type(value) is BSLCatalogReference:
-            return CatalogRef(str(value.value_type.metadata_uuid), str(value.reference_uuid))
-        return value
-
-    @staticmethod
-    def capabilities():
-        return {'mode': 'offline-read-only', 'canWrite': False, 'canEdit': False,
+    def capabilities(self):
+        return {'mode': 'read-only', 'canWrite': False, 'canEdit': False,
                 'formRuntime': False, 'actual1CForms': False, 'maxPage': MAX_PAGE,
-                'rowSupport': 'checked-on-selection', 'consistency': 'caller-owned-offline-copy'}
+                'rowSupport': 'checked-on-selection', 'consistency': 'transaction-snapshot'}
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            try:
+                if self._view is not None:
+                    self._view.close()
+            finally:
+                self._backend.close()
 
     def commit(self, *args, **kwargs):
-        # Intentionally no success stub, sidecar, overlay or file write fallback.
         raise UIError('write_unsupported')

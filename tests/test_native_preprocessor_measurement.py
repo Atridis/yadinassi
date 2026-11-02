@@ -129,10 +129,10 @@ class ProfileObservationSourceTests(SyntheticFilesystemCase):
             path=Path(folder).resolve()/'candidate.bsl';path.write_bytes(raw);seen=[]
             def runner(arguments,cwd):
                 self.assertEqual(Path(arguments[-2]),path);self.assertEqual(path.read_bytes(),raw)
-                self.assertIn('FileDBContext',full.CLIENT_EXECUTE_SCRIPT)
+                self.assertIn('SQLiteDBContext',full.CLIENT_EXECUTE_SCRIPT)
                 self.assertNotIn('preprocessor_shared_source',full.CLIENT_EXECUTE_SCRIPT)
                 seen.append(True)
-                return 0,json.dumps(full.CLIENT_RUNTIME_VALUES+[full.PREPROCESSOR_DEFAULT_TOKEN],ensure_ascii=False,separators=(',',':')).encode(),b''
+                return 0,json.dumps(full.CLIENT_SQLITE_RUNTIME_VALUES+[full.PREPROCESSOR_DEFAULT_TOKEN],ensure_ascii=False,separators=(',',':')).encode(),b''
             full.verify_client_interpreter(ROOT,path,full.PREPROCESSOR_SOURCE_SHA256,runner=runner,preprocessor_measurement=True)
             self.assertEqual(seen,[True])
             with self.assertRaises(full.FullError):
