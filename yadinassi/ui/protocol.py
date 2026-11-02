@@ -286,6 +286,6 @@ def error_response(request_id, code):
     data = {'reason': code}
     if code in ('metadata_unavailable', 'catalog_unavailable'):
         data['capability'] = 'not-established'
-        data['guidance'] = 'Check offline source and supported schema; rejection does not establish corruption.'
+        data['guidance'] = 'Check selected database and supported schema; rejection does not establish corruption.'
     return {'jsonrpc': '2.0', 'id': request_id, 'error': {
         'code': rpc_code, 'message': 'Request rejected', 'data': data}}

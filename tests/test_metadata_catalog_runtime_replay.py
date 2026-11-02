@@ -1,6 +1,5 @@
-"""Exact observed surface replay, distinct from actual public file readback."""
+"""Exact observed BSL surface replay against owned SQLite, not native-file parity."""
 from pathlib import Path
-from types import SimpleNamespace
 import hashlib
 import json
 import sys
@@ -9,11 +8,25 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'scripts/native_1c_db_oracle'))
+sys.path.insert(0, str(ROOT / 'scripts/native_1c_reference'))
 import metadata_catalog_runtime_readback as subject
 import metadata_catalog_probe_contract as wire
 
 CAPTURE = ROOT / 'tests/fixtures/metadata_catalog_runtime/native_observations.json'
+
+
+def create_database(directory):
+    from yadinassi.configuration_xml import import_configuration
+    from yadinassi.database_context import SQLiteDBContext
+    prefix = '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">'
+    files = {
+        'Configuration.xml': (prefix + '<Configuration uuid="20000000-0000-4000-8000-000000000001"><Properties><Name>ReferenceReplay</Name></Properties><ChildObjects><Catalog>NativeOracleItems</Catalog></ChildObjects></Configuration></MetaDataObject>').encode(),
+        'Catalogs/NativeOracleItems.xml': (prefix + '<Catalog uuid="20000000-0000-4000-8000-000000000002"><Properties><Name>NativeOracleItems</Name><CodeType>String</CodeType><CodeLength>8</CodeLength><DescriptionLength>32</DescriptionLength><Autonumbering>false</Autonumbering><CheckUnique>true</CheckUnique></Properties><ChildObjects/></Catalog></MetaDataObject>').encode(),
+    }
+    path = directory / 'application.sqlite'
+    with SQLiteDBContext.create(path, import_configuration(files)):
+        pass
+    return path
 
 
 def native_wire(rows):
@@ -43,10 +56,12 @@ class MetadataRuntimeReplayTests(unittest.TestCase):
         self.assertEqual(subject.SUPPORTED_IDS, tuple(i for i in range(1, 27) if i not in (7, 8)))
         for capture in captures:
             with self.subTest(snapshot=capture['snapshot'], context=capture['context']):
-                # Explicit stub: this test proves behavior, not CONFIG acquisition.
-                context = mock.Mock()
-                context.catalog_metadata.return_value = (SimpleNamespace(name=capture['config']['name']),)
-                actual = subject._execute(context)
+                # Authored configuration is independent of the captured result.
+                from yadinassi.database_context import SQLiteDBContext
+                with tempfile.TemporaryDirectory() as directory:
+                    path = create_database(Path(directory))
+                    with SQLiteDBContext(path) as context:
+                        actual = subject._execute(context)
                 comparison = subject.compare_readback(actual, native_wire(capture['rows']))
                 self.assertTrue(comparison['supported_match'])
                 self.assertEqual(len(comparison['matched_ids']), 24)
@@ -54,7 +69,6 @@ class MetadataRuntimeReplayTests(unittest.TestCase):
                 self.assertEqual([c['runtime_status'] for c in comparison['excluded_controls']],
                                  ['action-error', 'action-error'])
                 self.assertEqual([c['native_status'] for c in comparison['excluded_controls']], ['ok', 'ok'])
-                context.catalog_metadata.assert_called_once_with()
 
     def test_supported_mismatch_cannot_be_hidden_as_exclusion(self):
         rows = json.loads(CAPTURE.read_bytes())[0]['rows']
@@ -64,31 +78,15 @@ class MetadataRuntimeReplayTests(unittest.TestCase):
         self.assertFalse(result['supported_match'])
         self.assertEqual(result['mismatched_ids'], [9])
 
-    def test_public_helper_constructs_actual_context_not_expected_values(self):
-        from yadinassi.database_context import FileDBContext
-        rows = json.loads(CAPTURE.read_bytes())[0]['rows']
-        raw = native_wire(rows)
-        with mock.patch.object(subject, '_execute', return_value=raw) as run:
-            result = subject.readback(Path('owned-frozen'), native_wire=raw)
-        context = run.call_args.args[0]
-        self.assertIs(type(context), FileDBContext)
-        self.assertEqual(context.directory, str(Path('owned-frozen').absolute()))
-        self.assertTrue(result['comparison']['supported_match'])
-
-    def test_actual_public_adapter_reads_config_only_image_and_replays24(self):
-        from test_catalog_metadata_reader import image
-        value = image(names=('NativeOracleItems',))
-        rows = json.loads(CAPTURE.read_bytes())[0]['rows']
+    def test_public_helper_opens_sqlite_and_preserves_owned_data(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / '1Cv8.1CD'
-            path.write_bytes(value.read_at(0, value.size))
+            path = create_database(Path(directory))
             original = path.read_bytes()
-            result = subject.readback(Path(directory), native_wire=native_wire(rows))
+            rows = json.loads(CAPTURE.read_bytes())[0]['rows']
+            result = subject.readback(path, native_wire=native_wire(rows))
             self.assertEqual(path.read_bytes(), original)
-        self.assertTrue(result['comparison']['supported_match'])
-        self.assertEqual(len(result['comparison']['matched_ids']), 24)
-        self.assertEqual([c['runtime_status'] for c in result['comparison']['excluded_controls']],
-                         ['action-error', 'action-error'])
+            self.assertTrue(result['comparison']['supported_match'])
+            self.assertEqual(len(result['comparison']['matched_ids']), 24)
 
     def test_probe_source_change_rejected(self):
         with mock.patch.object(subject, 'PROBE_SHA256', '0' * 64):

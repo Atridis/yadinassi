@@ -29,9 +29,12 @@ Early input/bootstrap failures retain this strict schema/profile binding.
 Only exact recognized historical source hashes select the historical lane.
 
 The host executes the unchanged whole 138-value source with a real, exclusively
-owned `FileDBContext` and explicitly selects `managed-thick-file`. The native
-private marker and host output must match every typed value, including the
-captured token. Neither a source inverse nor a callback substitutes for current
+owned `SQLiteDBContext` and explicitly selects `managed-thick-file`. The native
+private marker retains every captured typed value. The host has one explicit
+backend difference: five IBC connection-shape slots describe its `SQLite=`
+identity instead of native `File=`; all other values and the preprocessor token
+remain exact. This is not a claim of native connection-string parity. The
+[bounded distinction](infobase-context-measurement.md) is source-regression tested. Neither a source inverse nor a callback substitutes for current
 runtime execution. Source/module, cleanup, process, six-output and four-client
 checks remain mandatory. Async identities are unchanged; no new native Async
 claim is made by the earlier observation.

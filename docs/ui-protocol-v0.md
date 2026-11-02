@@ -3,7 +3,7 @@
 **Unstable host protocol, not a BSL form API or a finished application MVP.**
 This first UI increment has no GUI, network listener, catalog object writer,
 managed-form metadata loader, or new `yadinassi` CLI flags. It can read an admitted
-offline `.1CD`, list catalogs/records, open a card and follow a fixed catalog
+yadinassi SQLite database, list catalogs/records, open a card and follow a fixed catalog
 reference. `canEdit=false`, `canWrite=false`; `CatalogRepository.commit()` always
 raises `write_unsupported`. No sidecar, overlay or in-memory Save success exists.
 
@@ -12,7 +12,7 @@ raises `write_unsupported`. No sidecar, overlay or in-memory Save success exists
 Use the existing development environment from README; no extra dependencies:
 
 ```sh
-python scripts/ui_catalog_client.py "/path/to/consistent-offline-copy"
+python scripts/ui_catalog_client.py "/path/to/application.sqlite"
 ```
 
 The independent client starts `scripts/ui_catalog_bridge.py` as a child process,
@@ -20,7 +20,7 @@ prints the inventory, first catalog page and first card, then closes. It uses
 only JSON and pipes, not private interpreter objects or a BSL handler API.
 It validates response identities/revisions but trusts the host's JSON decoder
 behavior; it is an example client, not a hardened parser for hostile servers.
-The bridge accepts the offline directory **from its host command line only**.
+The bridge accepts the existing SQLite file **from its host command line only**.
 No protocol message can select another filesystem path. The examples are not
 new packaged entry points and do not launch a browser. Their output can include
 the selected database's names/data; do not publish it with private databases.
@@ -29,14 +29,17 @@ For raw protocol exploration:
 
 ```sh
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"ui.hello","params":{"protocol":"yadinassi-ui/0"}}' \
-  | python scripts/ui_catalog_bridge.py "/path/to/consistent-offline-copy"
+  | python scripts/ui_catalog_bridge.py "/path/to/application.sqlite"
 ```
 
-`FileDBContext` remains read-only. Caller-provided offline consistency is still
-required: unchanged stat fields are not a lock or snapshot guarantee. The host
-repository pins a source stat generation across reads and rejects detectable
-replacement/change, including after a failed initial read. Existing reader limits,
-schema admission and native-order restrictions are not weakened.
+The UI consumes a backend-neutral logical catalog port; it neither opens SQL
+connections nor inspects storage details. The host opens the read-only SQLite
+session. Its explicit read view pins database identity and configuration generation
+until close. A coherent old snapshot is not a claim to show later commits;
+reopen starts a new view. Closing the bridge (including EOF/error) releases its
+read resources. Missing databases are not implicitly created by this viewer.
+Ordering and supported schema are explicit backend capabilities, not assumed
+native 1C collation. This route has no legacy database-format fallback.
 
 ## Framing and requests
 
@@ -108,7 +111,9 @@ qualifiers, target catalog IDs and `readOnly=true`.
 
 Default pages contain 8 rows; request limits are 1..64 and must also fit the frame
 budget. A larger page can be refused with `message_limit`; retry with a new ID
-and smaller page. Paging projects an already bounded reader snapshot; it is NOT
+and smaller page. Each admitted catalog has at most 1,000 records; overflow is
+refused, never silently truncated into a false total. Paging projects a bounded
+logical reader snapshot; it is NOT
 native DynamicList/query pagination or an arbitrary-size database cursor.
 
 Navigation and complete response encoding finish before session state/revision
@@ -127,7 +132,7 @@ without consuming an outer request ID. JSON-RPC parse/invalid-request/unknown-me
 errors use -32700/-32600/-32601; finite application rejection reasons use -32000.
 Responses never expose exception text, local paths, physical slots or traceback.
 Metadata/catalog admission failures include `capability="not-established"` and
-guidance to check offline consistency and the supported schema, not a corruption
+guidance to check the selected database and supported schema, not a corruption
 claim. There is no automatic reconnect retry of a state-changing request.
 
 ## Typed scalar codec
@@ -147,7 +152,11 @@ claim. There is no automatic reconnect retry of a state-changing request.
 UUID strings must be canonical lowercase; catalog UUID cannot be zero, record UUID
 can be zero. They are distinct logical identities, not generated native type UUIDs,
 physical bytes or Python object IDs. Resolution is scoped to the repository's
-metadata, not a global identity registry.
+metadata and pinned database identity, not a global identity registry. The wire
+omits database identity because this session cannot select or switch databases;
+the host rejects references from a different database before encoding them.
+Backend object revisions remain opaque and are distinct from UI navigation
+revision counters and native BSL DataVersion.
 
 Numbers retain canonical `str(Decimal)` including scale/signed zero; finite values
 are limited to 128 coefficient digits and exponent magnitude 4096. A local
@@ -161,12 +170,13 @@ arbitrary host objects and unsupported BSL types remain outside the scalar codec
 ## Verification and next boundary
 
 `test_ui_protocol`, `test_ui_catalog_view`, `test_ui_browser` cover codec bounds,
-malformed messages, identities, revisions, reconnect snapshot, reentrancy, source
-changes, encoding failure, EOF/oversize framing and an independent subprocess
-client. Integration uses existing owned captured CONFIG/rows in **synthetic page
-transport** through real FileDBContext. It is not a retained native `.1CD`, a new
-native run, a form-event parity claim, or write acceptance. Tests verify unchanged
-file bytes after navigation.
+malformed messages, identities, revisions, reconnect snapshot, reentrancy, read-view
+lifetime, encoding failure, EOF/oversize framing and an independent subprocess
+client. Integration uses independently authored configuration/data in temporary
+SQLite files created through the backend setup, then closed and reopened by the
+viewer. No native database image or physical-format fixture is used. Read-only
+navigation does not establish native form-event parity or UI write acceptance;
+a working backend writer alone does not enable a Save action.
 
 The next increment is measured BSL FormRuntime with explicitly bound handlers;
 the current navigation prototype does not define that API. See

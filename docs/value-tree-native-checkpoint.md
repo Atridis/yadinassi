@@ -8,8 +8,6 @@ between contexts, create application data, or access external resources.
 The unchanged normal owner-authored same-repository PR targeting `main` admits
 its merge revision to `.github/workflows/native-1c-isolated-smoke.yml`.
 The existing server EPF and managed-thick-client adapter execute the whole source.
-No dedicated `codex/native-file-db-oracle-reviewed` operation is involved;
-that operation was denied and remains pending separate user authorization.
 
 No workflow, package permission, network restriction, mount, image digest,
 security gate, output allowlist, timeout or fixed byte cap is changed.

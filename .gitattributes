@@ -11,11 +11,6 @@ tests/fixtures/value_tree_copy_linux_8_3_27_1508.out -text
 # Preserve the authenticated numeric ValueTree.Rows.Sort capture on every checkout.
 tests/fixtures/value_tree_sort/linux-8.3.27.1508.out -text
 
-# Description experiment pins exact canonical template bytes on every OS.
-scripts/native_1c_db_oracle/metadata/Catalog.xml text eol=lf
-scripts/native_1c_db_oracle/modules/NativeOracleServer.bsl text eol=lf
-scripts/native_1c_db_oracle/modules/CatalogDescriptionObservation.bsl text eol=lf
-
 # Preserve authenticated Columns.Move checkpoints byte-exact on every checkout.
 tests/fixtures/value_tree_columns_move/*.out -text
 tests/fixtures/value_tree_columns_move/provenance.json -text
@@ -25,12 +20,9 @@ tests/fixtures/value_tree_columns_clear/*.out -text
 tests/fixtures/value_tree_columns_clear/provenance.json -text
 tests/fixtures/value_tree_columns_clear/metadata-provenance.json -text
 
-scripts/native_1c_db_oracle/modules/CatalogNumericCodeObservation.bsl text eol=lf
 
-scripts/native_1c_db_oracle/modules/CatalogZeroCodeObservation.bsl text eol=lf
 
 # The zero-code frontier observer pins the managed client template on every OS.
-scripts/native_1c_db_oracle/modules/ManagedApplicationModule.bsl text eol=lf
 
 integrational_tests/measurements/tree_columns_delete_string.bsl text eol=lf
 
@@ -40,7 +32,7 @@ tests/fixtures/value_tree_columns_delete/provenance.json -text
 
 # Preserve the source-bound Metadata Catalogs replay and observer hashes.
 tests/fixtures/metadata_catalog_runtime/native_observations.json -text
-scripts/native_1c_db_oracle/modules/MetadataCatalogProbe.bsl text eol=lf
+scripts/native_1c_reference/modules/*.bsl text eol=lf
 
 # Preserve exact Format probe source on every platform.
 integrational_tests/measurements/format_numbers.bsl text eol=lf
@@ -55,27 +47,18 @@ tests/fixtures/format_dates/*.bsl text eol=lf
 tests/fixtures/format_dates/*provenance.json -text
 tests/fixtures/format_dates/*mapping.json -text
 
-# Native catalog batch captures preserve exact bytes across checkouts.
-tests/fixtures/catalog_read_slots/*.json -text
 # JSON family source/captures are byte-bound across checkout platforms.
 integrational_tests/measurements/json_family.bsl text eol=lf
 tests/fixtures/json_family/*.out -text
 tests/fixtures/json_family/*.bsl text eol=lf
 tests/fixtures/json_family/*provenance.json -text
 
-# Byte-bound catalog packet templates/generated sources; manifests hash raw bytes.
-scripts/native_1c_db_oracle/catalog_read_packet/** -text
 
-# Closed linked-card packet preserves schema/QName/source hashes on every host.
-scripts/native_1c_db_oracle/linked_card_packet/** -text
 # File family sources and future native captures remain byte-bound.
 integrational_tests/measurements/file_io_family.bsl text eol=lf
 tests/fixtures/file_io_family/*.out -text
 tests/fixtures/file_io_family/*.bsl text eol=lf
 tests/fixtures/file_io_family/*provenance.json -text
-# Source-bound linked-card native evidence bytes.
-tests/fixtures/linked_catalog_native.json -text
-tests/fixtures/linked_catalog_records.json -text
 
 # XML workflow source/captures are byte-bound across platforms.
 integrational_tests/measurements/xml_workflow_family.bsl text eol=lf
@@ -92,25 +75,14 @@ integrational_tests/measurements/zip_family.bsl text eol=lf
 tests/fixtures/zip_family/*.out -text
 tests/fixtures/zip_family/*.bsl text eol=lf
 tests/fixtures/zip_family/*provenance.json -text
-# Saved document probe bytes are source-bound native inputs, not host newlines.
-scripts/native_1c_db_oracle/document_read_packet/** -text
 
-tests/fixtures/document_records.json -text
-tests/fixtures/document_native.json -text
 integrational_tests/measurements/regex_family.bsl text eol=lf
 tests/fixtures/regex_family/*.out -text
 tests/fixtures/regex_family/*.bsl text eol=lf
 tests/fixtures/regex_family/*provenance.json -text
 
-# Saved source-owned Document Items identities and packet bytes.
-scripts/native_1c_db_oracle/document_lines_packet/generated/** -text
 
-# Native selected Items fixture bytes (no session/authentication metadata).
-tests/fixtures/document_items_native.json -text
-tests/fixtures/document_lines_records.json -text
 
-# Saved InfoReg v2 identities and source-derived bytes.
-scripts/native_1c_db_oracle/information_register_packet/** -text
 integrational_tests/measurements/data_io_family.bsl text eol=lf
 tests/fixtures/data_io_family/*.bsl text eol=lf
 tests/fixtures/data_io_family/*.out -text
@@ -122,9 +94,6 @@ integrational_tests/measurements/data_hashing_family.bsl text eol=lf
 tests/fixtures/data_hashing_family/**/*.bsl text eol=lf
 tests/fixtures/data_hashing_family/**/*.out -text
 
-# Minimized generated InfoReg native row/CONFIG observations, byte-pinned.
-tests/fixtures/information_register_records.json -text
-tests/fixtures/information_register_native.json -text
 # Closed DOM packet and immutable bounded observations.
 integrational_tests/measurements/dom_family.bsl text eol=lf
 tests/fixtures/dom_family/**/*.bsl text eol=lf
@@ -134,9 +103,4 @@ tests/fixtures/dom_family/**/*.out -text
 integrational_tests/measurements/xdto_family.bsl text eol=lf
 tests/fixtures/xdto_family/**/*.bsl text eol=lf
 tests/fixtures/xdto_family/**/*.out -text
-
-# Closed periodic InformationRegister fixture bytes, cross-platform exact hashes.
-scripts/native_1c_db_oracle/periodic_information_register_packet/** -text
-
-/tests/fixtures/periodic_information_register_records.json -text
-/tests/fixtures/periodic_information_register_native.json -text
+scripts/catalog_object_behavior/** -text

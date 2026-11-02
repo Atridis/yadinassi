@@ -15,6 +15,7 @@ class OfflineFixtureError(Exception):
 
 class OfflineOwner:
     directory = Path('/tmp/onec-smoke/db')
+    database_path = directory / 'application.sqlite'
 
     def __enter__(self):
         return self

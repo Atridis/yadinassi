@@ -358,11 +358,34 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_sqlite_host_context(source):
+    """Exact test-only inverse; native evidence is not SQLite host equivalence."""
+    contract = json.loads((REPOSITORY / 'tests/sqlite_host_context_source_inverse.json').read_text(encoding='utf-8'))
+    if (contract.get('base_sha256') != '2b48ff5ce0578f86979b9e2dd0ac43170bd5e11b44afc66eb01b882a73f78ecc'
+            or contract.get('candidate_sha256') != '3eed042a41e51efebf4d9d4a184ffd8cf23226ace99970864648ac4779200b69'):
+        raise AssertionError('SQLite host inverse identity')
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == contract['base_sha256']:
+        return source
+    if digest != contract['candidate_sha256']:
+        raise AssertionError('SQLite host outer source identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('SQLite host inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != contract['base_sha256']:
+        raise AssertionError('SQLite host inner source identity')
+    return source
+
+
 def without_execution_wait_rounding(source):
     """Exact test-only inverse of the ordinary execution wait rounding clamp."""
     base = '785dd4f696ee0c0a9b52f2bfbc183404c6a9980d62ee508e165b0a09ee19478b'
     candidate = '2b48ff5ce0578f86979b9e2dd0ac43170bd5e11b44afc66eb01b882a73f78ecc'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in (base, candidate):
+        source = without_sqlite_host_context(source)
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest == base:
         return source
     if digest != candidate:

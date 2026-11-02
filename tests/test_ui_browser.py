@@ -1,5 +1,6 @@
 """Finite headless session and independent client, not native form semantics."""
 import io
+from contextlib import redirect_stderr
 import json
 from pathlib import Path
 import subprocess
@@ -8,6 +9,9 @@ import unittest
 from unittest import mock
 
 from ui_catalog_fixture import repository
+from yadinassi.catalog_backend import BackendError, Capabilities
+from uuid import UUID
+from yadinassi.sqlite_catalog import SQLiteCatalogBackend
 from scripts.ui_catalog_bridge import main as bridge_main
 from scripts.ui_catalog_client import HeadlessCatalogClient
 from yadinassi.ui.browser import CatalogBrowserSession
@@ -37,10 +41,10 @@ class UIBrowserTests(unittest.TestCase):
     def test_independent_client_complete_navigation_and_resync(self):
         hello = self.client.hello()
         self.assertFalse(hello['capabilities']['canWrite'])
-        state = self.client.event('selectCatalog', catalog=hello['state']['catalogs'][0]['id'])
+        state = self.client.event('selectCatalog', catalog=self.source['product'])
         self.assertEqual(state['state']['list']['total'], 3)
-        view = self.repo.load(hello['state']['catalogs'][0]['id'])
-        target = self.repo.load(hello['state']['catalogs'][1]['id']).cards[0].reference
+        view = self.repo.load(self.source['product'])
+        target = self.repo.load(self.source['category']).cards[0].reference
         source_card, source_field = next((card, field) for card in view.cards
             for field, value in zip(card.fields, card.values) if value == target)
         state = self.client.event('openCard', reference=encode_value(source_card.reference))
@@ -73,9 +77,9 @@ class UIBrowserTests(unittest.TestCase):
     def test_invalid_events_and_forged_cross_catalog_refs(self):
         state = self.client.hello()
         catalogs = state['state']['catalogs']
-        self.client.event('selectCatalog', catalog=catalogs[0]['id'])
+        self.client.event('selectCatalog', catalog=self.source['product'])
         reference = {**self.client.snapshot['state']['list']['rows'][0]['reference'],
-                     'catalog': catalogs[1]['id']}
+                     'catalog': self.source['category']}
         self.error(self.event(3, revision=1, event='openCard', reference=reference), 'catalog_identity')
         self.error(self.event(4, revision=1, event='followReference', field='Description'), 'reference_field')
         self.error(self.event(5, revision=1, event='page', offset=999, limit=1), 'page')
@@ -111,9 +115,9 @@ class UIBrowserTests(unittest.TestCase):
         self.assertNotIn('private', json.dumps(messages))
         self.assertEqual(self.request(3, 'ui.snapshot')[0]['result']['revision'], 0)
 
-    def test_changed_source_rejects_even_cached_snapshot_but_can_close(self):
+    def test_closed_view_rejects_cached_snapshot_but_can_close_session(self):
         self.client.hello()
-        self.path.write_bytes(self.before + b'changed')
+        self.repo.close()
         messages = self.request(2, 'ui.snapshot')
         self.error(messages, 'catalog_unavailable')
         self.assertEqual(messages[0]['error']['data']['capability'], 'not-established')
@@ -138,25 +142,85 @@ class UIBrowserTests(unittest.TestCase):
         hello = encode_line({'jsonrpc': '2.0', 'id': 1, 'method': 'ui.hello',
                              'params': {'protocol': PROTOCOL}})
         target = io.BytesIO()
-        self.assertEqual(bridge_main([str(self.path.parent)], source=io.BytesIO(hello), target=target), 0)
+        self.assertEqual(bridge_main([str(self.path)], source=io.BytesIO(hello), target=target), 0)
         messages = [json.loads(line) for line in target.getvalue().splitlines()]
         self.assertEqual(len(messages), 2)
         self.assertEqual(messages[1]['method'], 'ui.open')
         target = io.BytesIO()
-        self.assertEqual(bridge_main([str(self.path.parent)],
+        self.assertEqual(bridge_main([str(self.path)],
             source=io.BytesIO(b'x' * (MAX_LINE_BYTES + 1) + hello), target=target), 1)
         self.assertEqual(len(target.getvalue().splitlines()), 1)
         self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_source_tree_subprocess_client_uses_public_wire_only(self):
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/ui_catalog_client.py'),
-                                 str(self.path.parent)], capture_output=True, timeout=20)
+                                 str(self.path)], capture_output=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(result.stderr, b'')
         states = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual([state['state']['kind'] for state in states], ['catalogs', 'list', 'card'])
         self.assertFalse(states[-1]['capabilities']['canWrite'])
         self.assertEqual(self.path.read_bytes(), self.before)
+
+    def test_bridge_opens_readonly_and_closes_backend_on_eof_oversize_and_broken_pipe(self):
+        hello = encode_line({'jsonrpc': '2.0', 'id': 1, 'method': 'ui.hello',
+                             'params': {'protocol': PROTOCOL}})
+        opened = []
+        def open_backend(path, *, read_only):
+            self.assertTrue(read_only)
+            backend = SQLiteCatalogBackend(path, read_only=read_only)
+            opened.append(backend)
+            self.assertFalse(backend.capabilities().catalog_update)
+            return backend
+        class BrokenTarget:
+            def write(self, raw): raise BrokenPipeError('private failure detail')
+            def flush(self): pass
+        for source, target, expected in ((hello, io.BytesIO(), 0),
+                (b'x' * (MAX_LINE_BYTES + 1), io.BytesIO(), 1),
+                (hello, BrokenTarget(), 1)):
+            diagnostic = io.StringIO()
+            with mock.patch('scripts.ui_catalog_bridge.SQLiteCatalogBackend', side_effect=open_backend), redirect_stderr(diagnostic):
+                self.assertEqual(bridge_main([str(self.path)], source=io.BytesIO(source), target=target), expected)
+            self.assertNotIn('private failure detail', diagnostic.getvalue())
+            with self.assertRaisesRegex(BackendError, '^closed$'): opened[-1].begin_read()
+        self.assertEqual(self.path.read_bytes(), self.before)
+
+    def test_bridge_cleanup_failures_are_finite_and_attempt_backend_close(self):
+        hello = encode_line({'jsonrpc': '2.0', 'id': 1, 'method': 'ui.hello',
+                             'params': {'protocol': PROTOCOL}})
+        for view_error, backend_error in ((BackendError('storage_error'), None),
+                                          (None, OSError('/private/backend-detail'))):
+            view = mock.Mock(database_id=UUID(int=7), configuration_generation=1)
+            view.catalogs.return_value = ()
+            view.close.side_effect = view_error
+            backend = mock.Mock()
+            backend.capabilities.return_value = Capabilities()
+            backend.begin_read.return_value = view
+            backend.close.side_effect = backend_error
+            diagnostic = io.StringIO()
+            with mock.patch('scripts.ui_catalog_bridge.SQLiteCatalogBackend', return_value=backend), redirect_stderr(diagnostic):
+                self.assertEqual(bridge_main([str(self.path)], source=io.BytesIO(hello), target=io.BytesIO()), 1)
+            view.close.assert_called_once_with()
+            backend.close.assert_called_once_with()
+            self.assertEqual(diagnostic.getvalue(), 'Headless catalog cleanup failed.\n')
+
+    def test_bridge_constructor_rejection_keeps_backend_close_ownership(self):
+        backend = mock.Mock()
+        diagnostic = io.StringIO()
+        with mock.patch('scripts.ui_catalog_bridge.SQLiteCatalogBackend', return_value=backend), \
+             mock.patch('scripts.ui_catalog_bridge.CatalogRepository', side_effect=TypeError('/private/constructor')), \
+             redirect_stderr(diagnostic):
+            self.assertEqual(bridge_main([str(self.path)], source=io.BytesIO(), target=io.BytesIO()), 1)
+        backend.close.assert_called_once_with()
+        self.assertNotIn('/private/', diagnostic.getvalue())
+
+    def test_bridge_missing_database_never_creates_or_leaks_path(self):
+        missing = self.path.parent / 'private-missing.sqlite'
+        diagnostic = io.StringIO()
+        with redirect_stderr(diagnostic):
+            self.assertEqual(bridge_main([str(missing)], source=io.BytesIO(), target=io.BytesIO()), 1)
+        self.assertFalse(missing.exists())
+        self.assertNotIn('private-missing', diagnostic.getvalue())
 
     def test_independent_client_rejects_forged_ids_and_snapshot_revisions_before_mutation(self):
         original = {'formId': 'catalog-browser', 'revision': 2, 'state': {}, 'capabilities': {}}

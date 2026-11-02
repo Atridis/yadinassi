@@ -1,82 +1,35 @@
-# Read-only catalog scenario — measured native semantics
+# SQLite catalog application baseline
 
-This block extends the Metadata API with named `Справочники` / `Catalogs`
-managers, immutable references, dynamic reference/manager/selection type identity,
-read-only fields, a selection cursor, and exact lookup. It is one feature block,
-not separate releases for each method.
+Configuration import accepts bounded UTF-8 official Designer XML-shaped metadata
+and BSL files, retaining their exact bytes inside SQLite. The admitted active
+schema is flat catalogs with explicit unique String codes, descriptions, scalar
+String/Number/Boolean/DateTime fields and single typed catalog references.
+Unknown behavior and executable modules produce activation issues; hooks are
+never silently skipped. This is a storage/catalog baseline, **not yet the full
+configured-application MVP**. Supported form/object-module activation is the
+next integration step, rather than a permanent comment-only-code restriction.
 
-```bsl
-Manager = Catalogs.Products;
-Selection = Manager.Select();
-While Selection.Next() Do
-    Message(Selection.Code);
-    Message(Selection.Description);
-    Message(Selection.Ref = Manager.FindByCode(Selection.Code));
-EndDo;
-```
+The BSL path supports `Catalogs.Name`, `EmptyRef`, `GetRef`, exact `FindByCode`,
+explicit-exact `FindByDescription`, `Select` / `Next`, reference fields/Metadata /
+UUID / GetObject, `CreateItem`, detached CatalogObject field edits, `IsNew`,
+`SetNewObjectRef`, and `Write`. CatalogObject dynamic type identity and codec
+refusal are explicit. Selection order is the backend's `code_then_identity`
+contract, not a claim of native collation parity. Selection restart and retained
+last-row behavior are covered by logical regression tests.
 
-The name `Products` is illustrative, not an admitted fixture name. Named access
-and string indexing resolve CONFIG identities from the same lazy snapshot as
-`Metadata.Catalogs`. No database is opened by parsing an untaken branch or by
-static `Type("String")`. Actual catalog operations require `FileDBContext` and a
-caller-owned consistent offline copy. There is no authentication, live session,
-transaction, write API, or query execution.
+Editing or discarding an object does not persist it. Successful Write atomically
+creates/updates one record; optimistic revisions reject stale edits. Validation
+and duplicate-code failures retain the edit buffer. An uncertain commit keeps
+its exact operation identity and submitted intent; retry resolves the durable
+receipt before another write, and edits are blocked until resolved. References
+are checked against the owning database, target catalog and interpreter schema.
 
-## Implementation
+Inactive imported configurations can be archived/exported separately from
+activation; they must not expose catalog operations or execute unsupported
+configuration code. SQLite owns transactions and indexes; no native-file writer,
+CF/DT lifecycle or physical-layout compatibility exists.
 
-- Managers: named/index access, `EmptyRef`, `GetRef(UUID)` and fresh `GetRef()` / `GetRef(Undefined)`,
-  zero-argument `Select`, `FindByCode`, and explicitly exact
-  `FindByDescription(text, True)`.
-- References: immutable catalog identity + record UUID; `UUID` /
-  `УникальныйИдентификатор`, `IsEmpty` / `Пустая`, `Metadata`, `Ref`, and
-  read-only field dereference; absent references return scalar defaults.
-- Logical fields: `Code`, `Description`, `Ref`, `DeletionMark`, and the existing
-  string/numeric attributes under their CONFIG names. Missing physical Code or
-  Description in the admitted zero-length profiles maps to an empty string.
-- Dynamic types are snapshot scoped and include the catalog metadata UUID and
-  object category. Record UUID is not a metadata UUID or a native type GUID.
-  Identical record UUIDs in different catalogs do not create equal references.
-  `TypeOf(TypeOf(reference)) = Type("Type")`; codec/TypeDescription and dynamic
-  constructor consumers explicitly refuse unsupported catalog types.
-- Cursor has explicit `Next` / `Следующий`. Before the first record, fields are
-  Undefined; exhaustion returns False while retaining the last record fields.
-  The next call restarts the selection. `Reset` / `Сбросить` is unavailable, as
-  is `Metadata()` on a manager (use a reference). These are native observations,
-  not assumptions derived from Python iteration.
-
-## Native evidence and admission boundary
-
-Native run `41214218572`, source `dd2e8e00c1d24a4bc88e1999592db0e8d8c3d5c4`,
-recorded two identity sets × five states × client/server: 20 captures and 3600
-scalar observations. The source report SHA256 is
-`923a8c3f6e5cb529a4d7ffb864e87398ad831dff3150a95f7f0f81a6468cd7b3`.
-Tests retain source-bound native outputs and raw physical slots separately.
-Local replay feeds captured slots through production parsing in synthetic
-transport; this is explicitly not a retained full-image replay. Final native
-runtime parity and the complete source-composition gates remain separate.
-
-The production reader now admits bounded multiple active rows (4096 slot/row
-ceiling) with zero or **one** physically free slot. Reserved bytes1:5 name the
-free slot; its own bytes1:5 must be zero. Every marker is validated before any
-active record is decoded. Unlinked free markers, active heads, out-of-range
-heads, cycles and multiple-node free chains fail closed. No arbitrary-chain
-allocator claim is made. Logical `DeletionMark=True` remains an active record.
-
-Default multirow selection uses the measured ascending fixed-width digit String
-Code profile. Equal codes, arbitrary string collation and zero-code multirow
-ordering remain explicit unsupported cases, rather than physical-order guesses.
-The cursor is an explicit state machine, not a Python list iterator.
-
-Fresh UUID raw strings remain retained; replay compares relational properties,
-never byte equality across independent executions. Setup writes/query witnesses
-belong only to owned disposable native fixtures, not this public runtime.
-
-## Deliberately bounded/deferred
-
-The existing physical compiler admits flat catalogs with exactly its supported
-string and numeric attribute shapes; this is not arbitrary-schema support.
-Hierarchy, owner/parent filtering, custom ordering, partial description lookup,
-collation/padding and duplicate-match ordering,
-and advanced error/presentation semantics remain explicitly restricted. Relevant
-code uses `!todo` markers for the final compatibility pass. Unsupported writes,
-query runtime and transactions are outside this block, not hidden fallbacks.
+`!todo`: generic module/form execution, automatic code allocation, hierarchy,
+composite fields, deletion, query language, and SQLite Documents/Registers are
+outside this baseline. Existing unrelated language/collection behavior remains
+independently supported.

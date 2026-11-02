@@ -118,12 +118,19 @@ class DateNullStrictWitnessTests(SyntheticFilesystemCase):
                 calls.append(command)
                 self.assertEqual(Path(command[-2]), path)
                 self.assertEqual(path.read_bytes(), self.source)
-                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False, separators=(',',':')).encode(), b''
+                return 0, json.dumps(full.CLIENT_SQLITE_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False, separators=(',',':')).encode(), b''
             full.verify_client_interpreter(ROOT,path,full.digest(self.source),runner=runner, preprocessor_measurement=True)
             self.assertEqual(len(calls),1)
             with self.assertRaises(full.FullError):
                 full.verify_client_interpreter(ROOT,path,'0'*64,runner=runner, preprocessor_measurement=True)
             self.assertEqual(len(calls),1)
+            # Native File= identity is not the SQLite host's identity. Keep the
+            # exact historical native values immutable and reject them here.
+            def native_identity_runner(command, cwd):
+                return 0, json.dumps(full.CLIENT_RUNTIME_VALUES + [full.PREPROCESSOR_DEFAULT_TOKEN], ensure_ascii=False, separators=(',',':')).encode(), b''
+            with self.assertRaises(full.FullError) as error:
+                full.verify_client_interpreter(ROOT,path,full.digest(self.source),runner=native_identity_runner,preprocessor_measurement=True)
+            self.assertEqual(error.exception.args, ('interpreter_failed',))
 
     @unittest.skipUnless(sys.platform == 'linux', 'fixed native fixture is Linux-only')
     def test_real_interpreter_computes_whole138_from_exact_native_source(self):

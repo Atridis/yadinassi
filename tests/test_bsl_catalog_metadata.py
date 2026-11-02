@@ -1,18 +1,21 @@
-"""BSL surface tests. Storage is independently covered with actual CONFIG bytes."""
+"""BSL metadata surface over a logical backend read view."""
 from decimal import Decimal
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.database_context import FileDBContext
+from yadinassi.database_context import SQLiteDBContext
+from yadinassi.catalog_backend import CatalogSchema
+from uuid import UUID
 
 
 class CatalogMetadataRuntimeTests(unittest.TestCase):
     def runtime(self, names=('DifferentCatalog',)):
-        context = Mock(spec=FileDBContext)
-        context.catalog_metadata.return_value = tuple(
-            SimpleNamespace(name=name, metadata_uuid=str(i)) for i, name in enumerate(names))
+        context = Mock(spec=SQLiteDBContext)
+        view=context.backend.begin_read.return_value
+        view.database_id=UUID(int=1);view.configuration_generation=1
+        view.catalogs.return_value=tuple(CatalogSchema(UUID(int=i+2),name,8,64,()) for i,name in enumerate(names))
         runtime = Interpreter(database_context=context)
         self.addCleanup(runtime.close)
         return runtime, context
@@ -38,7 +41,7 @@ class CatalogMetadataRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.execute('Metadata.Catalogs[0].FullName()'), 'Справочник.ИнойСправочник')
         self.assertTrue(runtime.execute('(Metadata.Catalogs.Find("инойсправочник") = Метаданные.Справочники.ИнойСправочник)'))
         self.assertTrue(runtime.execute('(Metadata.Catalogs["ИНОЙСПРАВОЧНИК"] = Metadata.Catalogs[0])'))
-        context.catalog_metadata.assert_called_once_with()
+        context.backend.begin_read.assert_called_once_with()
 
     def test_multi_names_count_not_invented_numeric_order(self):
         runtime, _ = self.runtime(('Second', 'First'))
@@ -101,8 +104,8 @@ class CatalogMetadataRuntimeTests(unittest.TestCase):
 
     def test_failed_load_is_not_cached(self):
         runtime, context = self.runtime()
-        context.catalog_metadata.side_effect = [ValueError('unsupported image'),
-            (SimpleNamespace(name='Recovered'),)]
+        context.backend.begin_read.return_value.catalogs.side_effect = [ValueError('unavailable backend'),
+            (CatalogSchema(UUID(int=2),'Recovered',8,64,()),)]
         with self.assertRaises(BSLRuntimeError): runtime.execute('Metadata.Catalogs.Count()')
         self.assertEqual(runtime.execute('Metadata.Catalogs[0].Name'), 'Recovered')
 

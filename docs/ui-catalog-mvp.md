@@ -1,151 +1,130 @@
 # Third track: a usable catalog application, with 1C-compatible programming
 
-The goal is an application that opens a supported existing file database and lets
-people work with its catalogs. Compatibility of **programmatic** forms, elements,
-data and events matters more than pixel-identical drawing. A read-only viewer or
-an in-memory form edit is an intermediate milestone, not the completed MVP.
+The goal is a working application over a yadinassi SQLite database containing
+configuration, BSL source and application data. Configuration interchange uses
+the platform's official XML export/import. Programmatic forms, elements, data
+and events matter more than pixel-identical drawing. A read-only viewer or an
+in-memory form edit is an intermediate milestone, not the completed MVP.
+
+The SQLite direction supersedes the former native-file-format roadmap. There is
+no binary configuration/archive/database import or physical-format fallback.
+Existing native application data migration is not part of this increment.
 
 ## Architectural direction
 
-- The Python interpreter owns form definitions, state, event bindings and BSL.
-- Both logical BSL client/server contexts remain in the interpreter. A browser
-  renderer does not imply `WebClient` preprocessing or remote BSL execution.
-- Optional separate renderer process; JSON-RPC/NDJSON on stdio. The first visual
-  renderer is Preact + HTML/CSS with prebuilt assets; Node is build-time only.
-- A future local browser bridge can own HTTP/WebSocket dependencies. None are
-  required by the core. Local origin/session authentication and loopback-only
-  binding must precede a network implementation; this increment has no listener.
-- Tauri/native window integration and other production renderers are later. A
-  small independent protocol client already tests the replacement boundary.
+- The interpreter owns form definitions, state, event bindings and BSL. Both
+  logical BSL client/server contexts remain in the runtime, not JavaScript.
+- A renderer uses finite events and typed snapshots. No arbitrary procedure
+  name, source code, SQL, database path or transaction handle arrives from it.
+- The first visual renderer remains Preact + HTML/CSS with prebuilt assets;
+  Node is build-time only. Headless JSON-RPC/NDJSON is the present foundation.
+- The UI consumes the logical catalog port, not SQLite connections or storage
+  internals. Local deployment uses a host-selected SQLite database. The intended
+  server deployment gives only yadinassi_server access to that database; clients
+  use a service boundary. That network service, authentication and authorization
+  are not implemented by the current stdio example.
+- Optional browser HTTP/WebSocket integration must establish local origin/session
+  authentication and loopback policy before adding a listener. Tauri, other
+  renderers and other database engines are future extensions, not dependencies
+  of the first local application.
 
-Do not postpone the 1C form semantics until after multiple renderers. Establish
-that model alongside the first vertical slice, and keep renderer component APIs
-out of BSL. Official background: [form module context](https://1c-dn.com/library/tutorials/practical_developer_guide_form_module_context/)
+Form semantics must not wait until multiple renderers exist. Form attributes and
+module variables are different; form data is not simply a CatalogObject or JSON
+dictionary. See the official [form module context](https://1c-dn.com/library/tutorials/practical_developer_guide_form_module_context/)
 and [form data types](https://1c-dn.com/library/tutorials/practical_developer_guide_form_data_types/).
-Form attributes and module variables are different; form data is not just an
-applied CatalogObject or a JSON dictionary.
 
-## Audited starting point
+## UI/backend boundary
 
-At base `6cb6fb0d3d661c394d3744e2293e953af6acf989` (tree `92d24faf`):
+`yadinassi/catalog_backend.py` defines logical schema, keys, snapshots, revisions,
+capabilities and read/write operations. The DB track owns persistence, configuration
+admission, atomicity and recovery; the runtime owns BSL object identity, defaults,
+assignment, handlers and validation. UI owns presentation, navigation, eventual
+edit buffers and dirty/cancel/refresh behavior.
 
-| Area | Existing evidence / missing dependency |
-| --- | --- |
-| Offline access | `database_context.py`: O_RDONLY per call, no native session/lock |
-| Catalog reads | `catalogs.py`, `catalog_types.py`: managers, immutable refs, exact lookup, bounded cursor |
-| Mixed cards | `CatalogCardField`, `docs/linked-catalog-cards-next.md`: S/N/B/D/fixed catalog ref |
-| Schema | `storage/catalog_metadata.py`: names/UUIDs; attribute binder retains types/qualifiers |
-| Existing 1C forms/modules | No CONFIG form/module loader; unknown attribute-parser subtrees are opaque |
-| Form context | `_new_server_activation` explicitly is not a form context |
-| Transfer | `_copy_context_packet` has a measured bounded contract, rejects catalog refs/FormData |
-| Module receiver | `ThisObject` currently is `_Module`, not a ManagedForm |
-| Lifecycle | Scheduler has run-until-idle/close, but no prebound host form-handler API |
-| Writes | No CatalogObject/CreateItem/GetObject/Write, transaction, allocator or index writer |
+The headless catalog repository uses a pinned read view, metadata-derived names,
+bounded logical rows and immutable view/card DTOs. Its read-only bridge closes
+owned resources on normal close, EOF and failure. Database identities scope
+references internally; UI navigation revisions are not database revisions or
+native DataVersion. Declared backend ordering is not a native collation claim.
 
-The managed compilation profile is not a form implementation (the existing
-compilation-profile tests reject `New Form`). Launcher `Form.xml` is input to
-native 1C tests, not a yadinassi form loader.
+The current UI route has `canEdit=false` and `canWrite=false`, even when an
+underlying backend supports writes. No UI Save handler is enabled by a capability
+flag alone. `commit()` refuses rather than publishing a sidecar, overlay or
+in-memory Save success. See [protocol v0](ui-protocol-v0.md).
 
-Before publication the first UI candidate incorporates actual main `d889cb53`
-(XDTO/periodic union). Its four optional UI Python files are included in native
-runtime provenance: 117 -> 121, with exact inventory/byte-drift tests updated.
-No source is excluded and no native report/file-count cap is raised.
+## Small increments and acceptance
 
-Existing read admission remains narrow: 64 MiB catalog images, bounded rows/slots,
-restricted code ordering, flat supported schemas and limited free-slot layouts.
-Do not promise that an arbitrary real configuration is supported. An unsupported
-schema/read budget is not automatically evidence that the database is corrupt.
+1. **SQLite read integration.** Host-selected existing database, catalog chooser,
+   list, card and linked reference through the logical port. Ordinary owned
+   SQLite fixtures, independent subprocess client, bounded errors, lifecycle
+   cleanup, schema/identity rejection and reopen checks. No binary image fixture.
+2. **FormRuntime and native behavior.** Bound module/context, scalar attributes,
+   Items/Commands, DataPath, finite prebound dispatch and cancellable lifecycle.
+   The host invokes resolved routines, never concatenated BSL source. The
+   standalone module ThisObject behavior remains distinct from a form receiver.
+3. **Minimal Preact renderer.** List/card navigation, typed input, focus/keyboard,
+   validation/cancel/close, readable errors, bounded pages and resync. Business
+   logic stays in the runtime. Read-only state must be visibly labeled.
+4. **Actual write flow.** Create/edit draft -> validation -> confirmed atomic
+   backend commit -> refresh. Dirty clears only after durable success. Cancel,
+   conflict or validation failure does not falsely report Save; an ambiguous
+   commit is resolved by its backend receipt, never a blind retry.
+5. **Packaged local application.** Import an admitted official XML configuration;
+   store configuration and code in SQLite; remove the import directory; close
+   and reopen; list/read/create/edit/cancel/save/reopen successfully. Only this
+   integrated user flow closes the bounded functional application MVP.
 
-## Small increments and their acceptance
+The first profile is flat catalogs with explicit string codes, Description,
+String/Number/Boolean/Date attributes and fixed catalog references. Names and
+UUIDs come from configuration, not example constants. Products/Categories are
+illustrative test names, not the only supported application.
 
-1. **Headless catalog foundation (this increment).** Typed wire values, immutable
-   view/card snapshots, source-generation checks, capability report and finite
-   navigation; actual FileDBContext parsing and independent stdio client. No
-   BSL UI API or GUI is claimed. See [protocol v0](ui-protocol-v0.md).
-2. **FormRuntime, immediately next.** Bound form module/context, scalar form
-   attributes, element/command identities, binding and finite event dispatch.
-   A public host invocation path must call resolved routines directly, never
-   concatenate BSL source. Keep standalone `ThisObject` behavior intact.
-3. **Minimal Preact renderer and persistent session.** Catalog chooser/list/card,
-   typed input, focus/keyboard basics, validation/cancel/close, message display,
-   bounded table pages, reconnect snapshot. No business logic in JavaScript.
-4. **Durable catalog write integration.** Detached CatalogObject/draft, validation,
-   commit capability and real storage writer; then create/write/deletion mark.
-5. **Packaged usable application.** Host-selected existing offline supported DB,
-   readable capability failures, reopen persistence and independent native 1C
-   readback. Only this closes the functional application MVP.
+Unsupported configured business handlers, subscriptions or forms must be reported
+explicitly rather than silently bypassed to enable writes. Auto-generated forms
+must be labeled as such. Archiving a configuration/module in SQLite does not prove
+it can execute; opening a database or listing metadata must not execute its BSL.
 
-The first declared profile should reuse flat Products/Categories, distinct
-fixed-width digit String codes, Description, String/Number/Boolean/Date fields
-and a fixed catalog reference. Names and UUIDs must come from metadata, not fixture
-constants. Product/category names here are illustrative. Owned synthetic fixtures
-are development input, not the only accepted product input.
+## Native comparison boundary
 
-Keep backend and UI connected through schema/capabilities, read snapshots, detached
-draft, validate and commit operations. Until a real writer exists, commit refuses
-and the UI never reports Save success. Detached draft behavior can be added without
-claiming native object events or persistence. Auto-generated forms must be labeled
-as such; importing arbitrary existing forms is a separate capability. Never silently
-bypass custom form/object logic with an autoform to enable writes.
+Native 1C is a behavior oracle, not a reader of the SQLite database. Use official
+XML configuration/form/module input and bounded BSL/text observations. The training
+Docker edition permits one session: all native operations are strictly sequential,
+with prior sessions reaped before the next starts. No binary database extraction,
+native page/index analysis or native concurrency research is needed for this UI.
 
-## Native form probe specification for the next increment
+Choose an explicit measured platform/profile and bind observations to source,
+module and official XML hashes. Record real outputs before implementing claimed
+native semantics. A direct handler call is not an actual platform event or write
+transaction. First useful discriminators:
 
-Choose an explicit existing measured target/profile (initially managed-thick-file
-on Linux 8.3.27.1508); browser rendering does not change that BSL profile. Stage a
-small owned form and literal BSL module, with source/module/redump hashes and
-typed observations. First record, then implement; do not fabricate native outputs
-from the host model. A probe must distinguish direct handler calls from actual
-platform-generated events. See [Developer Guide, chapters 7.7–7.9](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1808293).
-
-First discriminators:
-
-- Form attributes vs client/server module variables, direct-name resolution and
-  `ThisObject`, two independent form instances, close/reopen lifetimes.
-- Items/Commands identity, DataPath binding, scalar property changes, inherited
-  visibility/availability/read-only state; no pixel parity requirement.
-- A dynamically added attribute, element and command: server-side availability,
-  subsequent access rules and command/action binding.
-- Creation/opening sequence and cancellation; input commit vs programmatic
+- Form attributes vs client/server module variables, direct-name lookup,
+  ThisObject, independent instances and close/reopen lifetime.
+- Items/Commands identities, DataPath, visibility/availability/read-only state,
+  server-side dynamic mutation and subsequent access restrictions.
+- Creation/open ordering and cancellation; user input commit vs programmatic
   assignment vs direct OnChange invocation; command and cancellable close.
-- Context-bearing server call updates form data; NoContext cannot access form
-  state. Preserve existing ordinary parameter-transfer rules separately.
-- Escaping/caught errors, exactly-once dispatch, cancelled actions, repeated
-  clicks, stale events, closed elements and pending asynchronous work.
+- Context-bearing server calls synchronize form data; NoContext cannot access
+  it. Preserve ordinary argument transfer separately from UI serialization.
+- Caught/escaping errors, repeated/stale events, closed controls and asynchronous
+  work. Do not invent handler rollback rules from host navigation atomicity.
 
-Object references/FormData conversion and the complete write-event pipeline are
-separate bounded measurements. Simply calling OnWriteAtServer is not a platform
-write transaction. Enforce source-bound host/native equality, independent evidence
-audit and the existing four-platform/Ready gates for any claimed native semantics.
+Object references/FormData conversion and the complete object-write event pipeline
+need separate bounded measurements. Runtime DTO tests or SQLite durability tests
+alone do not establish native event parity. See the official
+[Developer Guide, chapters 7.7–7.9](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1808293).
 
-## Durable writes: the actual critical path
+## Integration gates
 
-Existing `_VERSION` bytes are opaque; physical indexes, allocator and write/lock
-semantics are not implemented. Even same-length row updates cannot be treated as
-safe patches. Working-copy/copy-on-write publication simplifies rollback but does
-not establish correct versions, indexes, page ownership, free lists or ID allocation.
+Test typed scalar/reference fidelity, identity/schema scope, source-independent
+configuration/code reopen, bounded navigation, closed sessions, missing records,
+unsupported profiles, wrong revisions and failure-without-success. Writer gates
+add atomic rollback/conflict, interrupted commit/recovery and actual UI save/reopen.
+Mocks establish routing, not durability. Process interruption tests are not a
+universal power-loss proof.
 
-Develop only against owned disposable actual `.1CD` copies. First measure native
-before/after images and metadata for one existing-card update, failure/rollback
-and reopen; implement that narrow path; then creation and deletion mark. Preserve
-the original, reject conflicting/changed sources and prove the resulting image
-through both readers. Do not modify a user's real database without authorization
-for the particular target.
-
-General configurations also require object modules, subscriptions, validation and
-their dependencies to execute or to fail closed as unsupported. Physical format
-integrity alone is not business compatibility. A native-1C write bridge, if later
-chosen, must disclose its installed-1C dependency; it is not a standalone writer.
-
-MVP completion requires change -> save -> close -> reopen in yadinassi and native
-1C, reference identity preserved, validation/cancel/failure behavior checked, no
-silent duplicates and no changes on failed commit. A JSON protocol, browser shell,
-green unit test, sidecar or in-memory object alone cannot satisfy that criterion.
-
-## Coordination
-
-Core track owns form context, prebound routine dispatch and measured FormData/ref
-transfer. Database track owns durable object/write integrity and metadata admission.
-UI track owns protocol/session/rendering and the integrated user flow. Full XDTO,
-full Query/СКД, document/register writes and multiple production renderers should
-not block the minimal catalog slice. Reconcile exact current-main source before
-publication; never reuse a previous runtime bundle's native evidence for a union.
+Core track owns BSL/forms and official XML admission; database track owns the
+logical service and SQLite transactions; UI track owns protocol/rendering and
+the integrated user flow. Recompute exact runtime provenance on the composed
+source and run the existing independent-review/CI gates. Do not reuse native
+behavior evidence for a different runtime bundle. Other engines, full Query/СКД,
+documents/register writes and multiple renderers must not block this first slice.

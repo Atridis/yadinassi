@@ -175,10 +175,12 @@ class CopyProfileTests(unittest.TestCase):
         begin=text.index('          # BEGIN NATIVE CI VERDICT');end=text.index('          PYTHON',begin)
         code='\n'.join(line[10:] for line in text[begin:end].splitlines())
         for status in ('success','failed','skipped','cancelled',''):
-            env=dict(ELIGIBILITY_RESULT='success',NATIVE_RESULT='success',TREE_RESULT='success',TREE_COPY_RESULT=status,TREE_REQUIRED='true')
-            with mock.patch.dict(os.environ,env,clear=True),mock.patch('builtins.print'),self.assertRaises(SystemExit) as caught:
-                exec(code,{'os':os})
-            self.assertEqual(caught.exception.code,0 if status=='success' else 1)
+            for catalog in ('success','failed','skipped','cancelled','',None):
+                env=dict(ELIGIBILITY_RESULT='success',NATIVE_RESULT='success',TREE_RESULT='success',TREE_COPY_RESULT=status,TREE_REQUIRED='true')
+                if catalog is not None:env['CATALOG_OBJECT_RESULT']=catalog
+                with self.subTest(tree_copy=status,catalog=catalog), mock.patch.dict(os.environ,env,clear=True),mock.patch('builtins.print'),self.assertRaises(SystemExit) as caught:
+                    exec(code,{'os':os})
+                self.assertEqual(caught.exception.code,0 if status==catalog=='success' else 1)
 
     def test_fixed_stage_cli_and_invalid_combinations_never_start(self):
         import run_stage

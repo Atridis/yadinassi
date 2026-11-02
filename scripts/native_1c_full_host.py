@@ -402,11 +402,14 @@ Interpreter = module.Interpreter
 
 import json
 from decimal import Decimal
-from yadinassi.database_context import FileDBContext
+from yadinassi.database_context import SQLiteDBContext
 if len(sys.argv) != 5 or sys.argv[2] not in ("standalone", "managed-thick-file"):
     raise RuntimeError("invalid compilation profile")
+context = SQLiteDBContext(sys.argv[4])
+if context.connection_string() != "SQLite=" + str(Path(sys.argv[4]).absolute()):
+    raise RuntimeError("invalid SQLite host identity")
 vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")),
-                 database_context=FileDBContext(sys.argv[4]), compilation_profile=sys.argv[2])
+                 database_context=context, compilation_profile=sys.argv[2])
 vm.execute(Path(sys.argv[3]).read_text(encoding="utf-8-sig"))
 values = list(vm.execute("ВычислитьПробу()"))
 result = []
@@ -496,6 +499,10 @@ INFOBASE_CONTEXT_MODULE_SHA256 = '8f0e26621fed3a26f3073764f51dbf1c2164e4ebcc9a50
 INFOBASE_CONTEXT_BASE_SHA256 = '56dc0e682f31a13e52d3b5d278e1effe20d6899110770b94671dd0ba426aa751'
 # Independently audited capture: run 40137786320, not a synthetic prediction.
 INFOBASE_CONTEXT_EXPECTED_TOKEN = 'ibc.v1:121122221122021122021122021122'
+# Intentional host-backend difference: only the five native File= shape slots.
+# Never alter the native capture/source or normalize an observed mismatch.
+SQLITE_INFOBASE_CONTEXT_EXPECTED_TOKEN = 'ibc.v1:120122220122020122020122020122'
+CLIENT_SQLITE_RUNTIME_VALUES = CLIENT_VALUES + [SQLITE_INFOBASE_CONTEXT_EXPECTED_TOKEN]
 INFOBASE_CONTEXT_CORE = b'// BEGIN bounded infobase context measurement\n// Only ordinary /tmp/onec-smoke/db, verified by the native host.\n// Zero-argument calls are direct; arity rejection is dynamic, not static.\n&AtClient\nFunction IBCClient()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServer\nFunction IBCServer()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtServerNoContext\nFunction IBCNoContext()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCDual()\n    Var Profile, EnglishValue, RussianValue;\n    Profile = 0;\n#If AtClient Then\n    Profile = Profile + 1;\n#EndIf\n#If AtServer Then\n    Profile = Profile + 2;\n#EndIf\n    Try\n        EnglishValue = InfoBaseConnectionString();\n        RussianValue = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b();\n    Except\n        Return IBCEncode(Profile, 1, 0, 0, 0, 0);\n    EndTry;\n    Return IBCObserve(Profile, EnglishValue, RussianValue);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCObserve(Val Profile, Val EnglishValue, Val RussianValue)\n    Var Shape, Aliases, EnglishArity, RussianArity, IBCArityTemporary;\n    If TypeOf(EnglishValue) <> Type("String") Or TypeOf(RussianValue) <> Type("String") Then\n        Return IBCEncode(Profile, 3, 0, 0, 0, 0);\n    EndIf;\n    Shape = 0;\n    If EnglishValue = "File=""/tmp/onec-smoke/db"";" Then Shape = 1; EndIf;\n    If EnglishValue = "File=""/tmp/onec-smoke/db""" Then Shape = 2; EndIf;\n    Aliases = 0;\n    If EnglishValue = RussianValue Then Aliases = 1; EndIf;\n    // Arity runs in this dual no-context observer, on the same side.\n    // It does not measure the originating routine\'s arity profile.\n    EnglishArity = 1;\n    Try\n        Execute("IBCArityTemporary = InfoBaseConnectionString(1);");\n    Except\n        EnglishArity = 2;\n    EndTry;\n    RussianArity = 1;\n    Try\n        Execute("IBCArityTemporary = \xd0\xa1\xd1\x82\xd1\x80\xd0\xbe\xd0\xba\xd0\xb0\xd0\xa1\xd0\xbe\xd0\xb5\xd0\xb4\xd0\xb8\xd0\xbd\xd0\xb5\xd0\xbd\xd0\xb8\xd1\x8f\xd0\x98\xd0\xbd\xd1\x84\xd0\xbe\xd1\x80\xd0\xbc\xd0\xb0\xd1\x86\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb9\xd0\x91\xd0\xb0\xd0\xb7\xd1\x8b(1);");\n    Except\n        RussianArity = 2;\n    EndTry;\n    Return IBCEncode(Profile, 2, Shape, Aliases, EnglishArity, RussianArity);\nEndFunction\n\n&AtClientAtServerNoContext\nFunction IBCEncode(Val Profile, Val Status, Val Shape, Val Aliases, Val EnglishArity, Val RussianArity)\n    Return Mid("0123", Profile + 1, 1) + Mid("0123", Status + 1, 1)\n        + Mid("012", Shape + 1, 1) + Mid("01", Aliases + 1, 1)\n        + Mid("012", EnglishArity + 1, 1) + Mid("012", RussianArity + 1, 1);\nEndFunction\n\n&AtServer\nFunction IBCServerDual()\n    Return IBCDual();\nEndFunction\n\n&AtClient\nProcedure IBCAppend(RecordsOut)\n    Var Encoded;\n    Encoded = "ibc.v1:" + IBCClient() + IBCServer() + IBCNoContext()\n        + IBCDual() + IBCServerDual();\n    If StrLen(Encoded) <> 37 Then Raise "ibc-invalid-token"; EndIf;\n    RecordsOut.Add(Encoded);\nEndProcedure\n// END bounded infobase context measurement\n'
 INFOBASE_CONTEXT_CALL = '    IBCAppend(Значения);\n'.encode('utf-8')
 
@@ -552,10 +559,12 @@ def _load_infobase_fixture():
 
 
 def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, runner=None, preprocessor_measurement=False) -> None:
-    """Execute exact current whole138 (or explicitly historical137) source with a real, exclusively owned file DB.
+    """Execute exact current whole138 (or explicitly historical137) source with a real, exclusively owned SQLite application DB.
 
     This preflight is Linux-only and assumes a trusted single-job host. Its
-    fixture is header-recognized synthetic storage, not a valid native database.
+    fixture uses our own SQLite schema, not a native database. Its connection
+    identity intentionally differs from native File=; all other observations
+    remain exact, with no comparison normalization.
     The historical inverse is used by legacy adapters only, never admission.
     """
     raw = read_regular(source, MAX_FILE, nonempty=True)
@@ -572,7 +581,7 @@ def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, run
             fixture.verify()
             with tempfile.TemporaryDirectory(prefix="client-interpreter-cache-") as cache:
                 arguments = [sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-                             "-c", CLIENT_EXECUTE_SCRIPT, str(root), profile, str(source), str(fixture.directory)]
+                             "-c", CLIENT_EXECUTE_SCRIPT, str(root), profile, str(source), str(fixture.database_path)]
                 if runner is None:
                     code, output, stderr = fixture.run_child(
                         arguments, root, env=child_environment(), seconds=CASE_SECONDS,
@@ -584,7 +593,7 @@ def verify_client_interpreter(root: Path, source: Path, source_hash: str, *, run
                 fixture.verify()
                 if read_regular(source, MAX_FILE, nonempty=True) != raw:
                     raise FullError("source_changed")
-            values = CLIENT_RUNTIME_VALUES + ([PREPROCESSOR_DEFAULT_TOKEN if preprocessor_measurement
+            values = CLIENT_SQLITE_RUNTIME_VALUES + ([PREPROCESSOR_DEFAULT_TOKEN if preprocessor_measurement
                                                else PREPROCESSOR_RUNTIME_TOKEN] if current else [])
             expected = json.dumps(values, ensure_ascii=False,
                                   separators=(",", ":")).encode()

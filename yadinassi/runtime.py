@@ -37,7 +37,7 @@ from .information_registers import BSLInformationRegisters, BSLInformationRegist
 from .document_types import BSLDocumentType
 from .document_lines import BSLDocumentLines, BSLDocumentLinesType
 from .catalog_types import BSLCatalogType
-from .database_context import FileDBContext, require_database_context
+from .database_context import SQLiteDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
 from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
@@ -164,10 +164,12 @@ class _Namespace:
 class Interpreter:
     def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig",
                  native_target: str = WINDOWS_8_3_27_2342,
-                 database_context: FileDBContext | None = None,
+                 database_context: SQLiteDBContext | None = None,
                  compilation_profile: str = "standalone"):
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
+        if database_context is not None:
+            database_context.require_active()
         self._database_context = database_context
         self._metadata = BSLMetadata(database_context)
         self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
@@ -281,7 +283,7 @@ class Interpreter:
         self.register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
 
     @property
-    def database_context(self) -> FileDBContext | None:
+    def database_context(self) -> SQLiteDBContext | None:
         return self._database_context
 
     @property

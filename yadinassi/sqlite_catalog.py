@@ -1,0 +1,528 @@
+"""Owned SQLite catalog persistence. No native database format dependencies."""
+import datetime
+import decimal
+import hashlib
+import json
+import os
+import sqlite3
+import stat
+from uuid import UUID, uuid4
+from pathlib import Path
+from functools import wraps
+
+from .configuration_import import _host_directory
+from .catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogDraft,
+                              CatalogKey, CatalogSchema, CatalogSelection,
+                              FieldSchema, Revision)
+
+_APPLICATION_ID = 0x59414449
+_MAX_ROWS = 10000
+_MAX_FILES = 256
+_MAX_CONFIG_BYTES = 16 * 1024 * 1024
+_MAX_DATABASE_BYTES = 256 * 1024 * 1024
+_MAX_ROW_BYTES = 1024 * 1024
+
+
+def _boundary(function):
+    @wraps(function)
+    def call(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except BackendError:
+            raise
+        except sqlite3.Error:
+            raise BackendError('storage_error') from None
+        except (ValueError, TypeError, KeyError, IndexError, OverflowError, RecursionError):
+            raise BackendError('integrity') from None
+    return call
+
+
+def _revision_number(token):
+    if type(token) is not str or not 1 <= len(token) <= 19 or not token.isascii() or not token.isdecimal() or token.startswith('0'):
+        raise BackendError('conflict')
+    result = int(token)
+    if not 1 <= result < 2**63-1: raise BackendError('conflict')
+    return result
+
+
+def _private_parent(path):
+    try:
+        parent = _host_directory(os.path.dirname(path))
+    except (OSError, ValueError):
+        raise BackendError('invalid_input') from None
+    info = os.stat(parent)
+    # This is an owned-directory contract, not defence against a hostile same-user process.
+    if hasattr(os, 'getuid') and (info.st_uid != os.getuid() or info.st_mode & 0o022):
+        raise BackendError('invalid_input')
+    return os.path.join(parent, os.path.basename(path))
+
+
+def _uuid(value, *, empty=False):
+    if type(value) is not UUID or (not empty and value.int == 0):
+        raise BackendError('invalid_input')
+    return str(value)
+
+
+def _json(value):
+    return json.dumps(value, ensure_ascii=True, separators=(',', ':'), allow_nan=False)
+
+
+def _schema_data(schema):
+    if type(schema) is not CatalogSchema or type(schema.fields) is not tuple:
+        raise BackendError('invalid_input')
+    _uuid(schema.identity)
+    if type(schema.name) is not str or not schema.name or len(schema.name) > 128:
+        raise BackendError('invalid_input')
+    if any(type(n) is not int or not 0 <= n <= 1024 for n in (schema.code_length, schema.description_length)):
+        raise BackendError('invalid_input')
+    if len(schema.fields) > 64:
+        raise BackendError('invalid_input')
+    names = {'code', 'description', 'deletionmark', 'ref'}
+    ids = set()
+    fields = []
+    for field in schema.fields:
+        if type(field) is not FieldSchema or type(field.name) is not str or not field.name or len(field.name) > 128:
+            raise BackendError('invalid_input')
+        identity = _uuid(field.identity)
+        if identity in ids or field.name.casefold() in names:
+            raise BackendError('invalid_input')
+        ids.add(identity); names.add(field.name.casefold())
+        if type(field.kind) is not str or field.kind not in ('string', 'number', 'boolean', 'datetime', 'catalog_ref') or type(field.qualifiers) is not tuple:
+            raise BackendError('unsupported')
+        q = field.qualifiers
+        if field.kind == 'string' and (len(q) != 1 or type(q[0]) is not int or not 0 <= q[0] <= 65536):
+            raise BackendError('invalid_input')
+        if field.kind == 'number' and (len(q) != 3 or type(q[0]) is not int or type(q[1]) is not int or not 1 <= q[0] <= 38 or not 0 <= q[1] <= q[0] or type(q[2]) is not str or q[2] not in ('Any', 'Nonnegative')):
+            raise BackendError('invalid_input')
+        if field.kind == 'datetime' and (len(q) != 1 or type(q[0]) is not str or q[0] != 'DateTime'):
+            raise BackendError('unsupported')
+        if field.kind in ('boolean', 'catalog_ref') and q:
+            raise BackendError('invalid_input')
+        if field.kind == 'catalog_ref':
+            _uuid(field.target_catalog_id)
+        elif field.target_catalog_id is not None:
+            raise BackendError('invalid_input')
+        fields.append([identity, field.name, field.kind, list(field.qualifiers),
+                       str(field.target_catalog_id) if field.target_catalog_id else None])
+    return [str(schema.identity), schema.name, schema.code_length, schema.description_length, fields]
+
+
+def _schema(raw):
+    if type(raw) is not str or len(raw) > 65536: raise BackendError('integrity')
+    data = json.loads(raw)
+    result = CatalogSchema(UUID(data[0]), data[1], data[2], data[3], tuple(
+        FieldSchema(UUID(f[0]), f[1], f[2], tuple(f[3]), UUID(f[4]) if f[4] else None)
+        for f in data[4]))
+    if _schema_data(result) != data:
+        raise BackendError('integrity')
+    return result
+
+
+def _encode(value, field, database_id):
+    kind, q = field.kind, field.qualifiers
+    if kind == 'string':
+        if type(value) is not str or len(q) != 1 or type(q[0]) is not int or len(value) > q[0]:
+            raise BackendError('invalid_input')
+        try: value.encode('utf-8')
+        except UnicodeEncodeError: raise BackendError('invalid_input') from None
+        return ['s', value]
+    if kind == 'boolean':
+        if type(value) is not bool: raise BackendError('invalid_input')
+        return ['b', value]
+    if kind == 'number':
+        if type(value) is not decimal.Decimal or not value.is_finite() or len(q) != 3:
+            raise BackendError('invalid_input')
+        digits, scale, sign = q
+        if type(digits) is not int or type(scale) is not int or not 1 <= digits <= 38 or not 0 <= scale <= digits:
+            raise BackendError('invalid_input')
+        # Fixed-point text is exact, never float or implicit SQLite NUMERIC affinity.
+        with decimal.localcontext() as context:
+            context.prec = 80
+            quantum = decimal.Decimal(1).scaleb(-scale)
+            try: quantized = value.quantize(quantum)
+            except decimal.InvalidOperation: raise BackendError('invalid_input') from None
+            if quantized != value or abs(value) >= decimal.Decimal(10) ** (digits-scale):
+                raise BackendError('invalid_input')
+        if sign == 'Nonnegative' and value < 0:
+            raise BackendError('invalid_input')
+        return ['n', format(quantized, 'f')]
+    if kind == 'datetime':
+        if type(value) is not datetime.datetime or value.tzinfo is not None or value.microsecond != 0:
+            raise BackendError('invalid_input')
+        return ['d', '%04d%02d%02d%02d%02d%02d' % (value.year,value.month,value.day,value.hour,value.minute,value.second)]
+    if kind == 'catalog_ref':
+        if type(value) is not CatalogKey or value.database_id != database_id or value.catalog_id != field.target_catalog_id:
+            raise BackendError('invalid_input')
+        _uuid(value.record_id, empty=True)
+        return ['r', str(value.catalog_id), str(value.record_id)]
+    raise BackendError('unsupported')
+
+
+def _decode(value, field, database_id):
+    if type(value) is not list or not value: raise BackendError('integrity')
+    tag = value[0]
+    try:
+        if tag == 's' and len(value) == 2: result = value[1]
+        elif tag == 'b' and len(value) == 2: result = value[1]
+        elif tag == 'n' and len(value) == 2: result = decimal.Decimal(value[1])
+        elif tag == 'd' and len(value) == 2 and type(value[1]) is str and len(value[1]) == 14:
+            s = value[1]; result = datetime.datetime(int(s[:4]),int(s[4:6]),int(s[6:8]),int(s[8:10]),int(s[10:12]),int(s[12:]))
+        elif tag == 'r' and len(value) == 3: result = CatalogKey(database_id, UUID(value[1]), UUID(value[2]))
+        else: raise BackendError('integrity')
+        if _encode(result, field, database_id) != value: raise BackendError('integrity')
+        return result
+    except (ValueError, TypeError, decimal.InvalidOperation):
+        raise BackendError('integrity') from None
+
+
+_DDL = (
+    'CREATE TABLE database_info(singleton INTEGER PRIMARY KEY CHECK(singleton=1), database_uuid TEXT NOT NULL, generation INTEGER NOT NULL CHECK(generation>0), configuration_uuid TEXT NOT NULL, name TEXT NOT NULL, activated INTEGER NOT NULL CHECK(activated IN(0,1)), activation_issues TEXT NOT NULL)',
+    'CREATE TABLE configuration_file(path TEXT PRIMARY KEY, kind TEXT NOT NULL, content BLOB NOT NULL, sha256 TEXT NOT NULL)',
+    'CREATE TABLE catalog_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
+    'CREATE TABLE catalog_record(catalog_id TEXT NOT NULL REFERENCES catalog_schema(identity), record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), code TEXT NOT NULL, description TEXT NOT NULL, deletion_mark INTEGER NOT NULL CHECK(deletion_mark IN(0,1)), values_json TEXT NOT NULL, PRIMARY KEY(catalog_id,record_id), UNIQUE(catalog_id,code))',
+    'CREATE TABLE commit_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, revisions_json TEXT NOT NULL)',
+)
+
+
+class SQLiteCatalogBackend:
+    """Host-owned local file; one active view/writer per backend instance."""
+    @_boundary
+    def __init__(self, path, *, read_only=False):
+        raw = os.fspath(path)
+        if type(raw) is not str or not raw or '\x00' in raw or raw.startswith(('file:', '//', '\\\\')):
+            raise BackendError('invalid_input')
+        if type(read_only) is not bool: raise BackendError('invalid_input')
+        self.read_only = read_only
+        self.path = _private_parent(os.path.abspath(raw))
+        self._closed = False
+        self._active = None
+        self._check_file()
+        connection = self._connect()
+        try:
+            if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID or connection.execute('PRAGMA user_version').fetchone()[0] != 1:
+                raise BackendError('unsupported')
+            expected = {statement.split('(')[0].split()[-1]: statement for statement in _DDL}
+            actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
+                raise BackendError('unsupported')
+            row = connection.execute('SELECT database_uuid,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
+            self.activated = row[2] == 1
+            if type(row[3]) is not str or len(row[3]) > 65536: raise BackendError('integrity')
+            issues = json.loads(row[3])
+            if type(issues) is not list or len(issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in issues): raise BackendError('integrity')
+            self.activation_issues = tuple(issues)
+            if type(row[2]) is not int or row[2] not in (0,1) or any(type(v) is not str for v in self.activation_issues) or (self.activated and self.activation_issues): raise BackendError('integrity')
+            self.database_id = UUID(row[0]); self.configuration_generation = row[1]
+            _uuid(self.database_id)
+        except (sqlite3.Error, TypeError, ValueError):
+            raise BackendError('integrity') from None
+        finally: connection.close()
+
+    def _check_file(self):
+        try:
+            info = os.lstat(self.path)
+            if not stat.S_ISREG(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400 or info.st_nlink != 1 or info.st_size > _MAX_DATABASE_BYTES:
+                raise BackendError('invalid_input')
+            _private_parent(self.path)
+        except OSError: raise BackendError('storage_error') from None
+
+    def _connect(self):
+        self._check_file()
+        connection = None
+        try:
+            connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if self.read_only else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2)
+            if self.read_only: connection.execute('PRAGMA query_only=ON')
+            connection.execute('PRAGMA foreign_keys=ON')
+            connection.execute('PRAGMA trusted_schema=OFF')
+            connection.execute('PRAGMA synchronous=FULL')
+            if not self.read_only:
+                page_size = connection.execute('PRAGMA page_size').fetchone()[0]
+                connection.execute('PRAGMA max_page_count=%d' % (_MAX_DATABASE_BYTES // page_size))
+            if connection.execute('PRAGMA foreign_keys').fetchone()[0] != 1:
+                raise BackendError('unsupported')
+            if connection.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'delete':
+                raise BackendError('unsupported')
+            return connection
+        except BaseException:
+            if connection is not None: connection.close()
+            raise
+
+    @classmethod
+    @_boundary
+    def create(cls, path, configuration, *, activate=True):
+        """Create only a new owned file, atomically import admitted XML and code."""
+        from .configuration_xml import ConfigurationImport, ConfigurationFile, ConfigurationModule
+        if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
+            raise BackendError('invalid_input')
+        if type(activate) is not bool: raise BackendError('invalid_input')
+        if activate and configuration.activation_issues: raise BackendError('unsupported')
+        if len(configuration.activation_issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in configuration.activation_issues) or len(_json(configuration.activation_issues)) > 65536: raise BackendError('invalid_input')
+        if type(configuration.name) is not str or not configuration.name or len(configuration.name) > 128:
+            raise BackendError('invalid_input')
+        if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
+            raise BackendError('invalid_input')
+        schemas = tuple(configuration.catalogs)
+        if not 1 <= len(schemas) <= 128: raise BackendError('invalid_input')
+        definitions = [_schema_data(s) for s in schemas]
+        identities = {s.identity for s in schemas}
+        if len(identities) != len(schemas): raise BackendError('invalid_input')
+        if any(f.target_catalog_id not in identities for s in schemas for f in s.fields if f.kind == 'catalog_ref'):
+            raise BackendError('invalid_input')
+        files = tuple(configuration.files)
+        if not 1 <= len(files) <= _MAX_FILES or sum(len(f.content) for f in files) > _MAX_CONFIG_BYTES:
+            raise BackendError('invalid_input')
+        if len({f.path for f in files}) != len(files): raise BackendError('invalid_input')
+        for f in files:
+            if type(f.kind) is not str or f.kind not in ('xml','module'): raise BackendError('invalid_input')
+            if type(f.path) is not str or len(f.path) > 256 or f.path.startswith('/') or '\\' in f.path or ':' in f.path or '\x00' in f.path or any(p in ('','.', '..') for p in f.path.split('/')) or type(f.content) is not bytes or len(f.content) > 1024*1024:
+                raise BackendError('invalid_input')
+        raw = os.fspath(path)
+        if type(raw) is not str or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
+            raise BackendError('invalid_input')
+        absolute = _private_parent(os.path.abspath(raw))
+        connection = None
+        try:
+            fd = os.open(absolute, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            created_identity = os.fstat(fd)
+            os.close(fd)
+        except OSError: raise BackendError('storage_error') from None
+        try:
+            connection = sqlite3.connect(absolute, isolation_level=None, detect_types=0)
+            connection.execute('PRAGMA foreign_keys=ON'); connection.execute('PRAGMA journal_mode=DELETE'); connection.execute('PRAGMA synchronous=FULL')
+            connection.execute('BEGIN IMMEDIATE')
+            for statement in _DDL: connection.execute(statement)
+            connection.execute('INSERT INTO database_info VALUES(1,?,1,?,?,?,?)', (str(uuid4()), _uuid(configuration.config_uuid), configuration.name, int(activate), _json(configuration.activation_issues)))
+            for definition in definitions:
+                connection.execute('INSERT INTO catalog_schema VALUES(?,?,?)', (definition[0], definition[1], _json(definition)))
+            for f in files:
+                connection.execute('INSERT INTO configuration_file VALUES(?,?,?,?)', (f.path,f.kind,f.content,hashlib.sha256(f.content).hexdigest()))
+            connection.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
+            connection.execute('PRAGMA user_version=1')
+            connection.execute('COMMIT')
+        except BaseException:
+            if connection is not None:
+                if connection.in_transaction: connection.execute('ROLLBACK')
+                connection.close(); connection = None
+            # Only this newly created file is removed; never an existing database.
+            try:
+                current = os.lstat(absolute)
+                if (current.st_dev,current.st_ino) == (created_identity.st_dev,created_identity.st_ino): os.unlink(absolute)
+            except OSError: pass
+            raise
+        finally:
+            if connection is not None: connection.close()
+        return cls(absolute)
+
+    @_boundary
+    def capabilities(self):
+        return Capabilities(self.activated, self.activated and not self.read_only, self.activated and not self.read_only, self.activated and not self.read_only)
+
+    @_boundary
+    def begin_read(self): return self._begin(None)
+    @_boundary
+    def begin_write(self, operation_id):
+        if self.read_only: raise BackendError('unsupported')
+        _uuid(operation_id)
+        return self._begin(operation_id)
+
+    def _begin(self, operation_id):
+        if self._closed: raise BackendError('closed')
+        if not self.activated: raise BackendError('unsupported')
+        if self._active is not None: raise BackendError('busy')
+        connection = self._connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
+            view = _View(self, connection, operation_id)
+            self._active = view
+            return view
+        except sqlite3.OperationalError:
+            connection.close(); raise BackendError('busy') from None
+        except BaseException:
+            connection.close(); raise
+
+    @_boundary
+    def export_configuration(self):
+        if self._closed: raise BackendError('closed')
+        connection = self._connect()
+        try:
+            count,total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
+            if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES: raise BackendError('integrity')
+            result = {}
+            for path, content, digest in connection.execute('SELECT path,content,sha256 FROM configuration_file ORDER BY path'):
+                if type(content) is not bytes or type(path) is not str or len(path) > 256 or len(content) > 1024*1024 or hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
+                result[path] = content
+            return result
+        finally: connection.close()
+
+    @_boundary
+    def resolve_write(self, operation_id, draft, expected_revision=None):
+        # Resolve one catalog Write, binding the durable receipt to the exact intent.
+        receipt = self.committed_operation(operation_id)
+        if receipt is None: return None
+        view = self.begin_read()
+        try:
+            values = view._draft(draft)
+            if expected_revision is None:
+                revision = 1
+            else:
+                r = expected_revision
+                if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id) != (self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
+                    raise BackendError('conflict')
+                revision = _revision_number(r.token) + 1
+            intent = [[str(draft.key.catalog_id),str(draft.key.record_id),draft.code,draft.description,draft.deletion_mark,values,revision]]
+            digest = hashlib.sha256(_json(intent).encode('utf-8')).hexdigest()
+            if digest != receipt[0] or len(receipt[1]) != 1:
+                raise BackendError('conflict')
+            return receipt[1][0]
+        finally: view.close()
+
+    @_boundary
+    def committed_operation(self, operation_id):
+        _uuid(operation_id)
+        if self._closed: raise BackendError('closed')
+        connection = self._connect()
+        try:
+            row = connection.execute('SELECT request_hash,revisions_json FROM commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone()
+            if row is None: return None
+            if type(row[0]) is not str or len(row[0]) != 64 or type(row[1]) is not str or len(row[1]) > _MAX_ROW_BYTES: raise BackendError('integrity')
+            revisions = tuple(Revision(self.database_id,self.configuration_generation,UUID(c),UUID(r),v)
+                              for c,r,v in json.loads(row[1]))
+            return (row[0], revisions)
+        finally: connection.close()
+
+    def close(self):
+        if self._active is not None: self._active.close()
+        self._closed = True
+
+
+class _View:
+    def __init__(self, backend, connection, operation_id):
+        self._backend, self._connection, self._operation_id = backend, connection, operation_id
+        self._closed = False; self._changes = []; self._intents = []
+        row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
+        self.database_id, self.configuration_generation = UUID(row[0]), row[1]
+        if operation_id is not None and connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone() is not None:
+            raise BackendError('conflict')
+        if self.database_id != backend.database_id or self.configuration_generation != backend.configuration_generation:
+            raise BackendError('schema_changed')
+
+    def _require(self, write=False, mutate=False):
+        if self._closed: raise BackendError('closed')
+        if write and self._operation_id is None: raise BackendError('unsupported')
+        if mutate and len(self._changes) >= _MAX_ROWS: raise BackendError('unsupported')
+
+    @_boundary
+    def catalogs(self):
+        self._require()
+        rows = self._connection.execute('SELECT definition FROM catalog_schema ORDER BY name,identity').fetchall()
+        if len(rows) > 128: raise BackendError('integrity')
+        return tuple(_schema(row[0]) for row in rows)
+
+    @_boundary
+    def catalog_schema(self, catalog_id):
+        self._require(); _uuid(catalog_id)
+        row = self._connection.execute('SELECT definition FROM catalog_schema WHERE identity=?', (str(catalog_id),)).fetchone()
+        if row is None: raise BackendError('not_found')
+        return _schema(row[0])
+
+    def _card(self, catalog_id, row):
+        schema = self.catalog_schema(catalog_id)
+        if type(row[5]) is not str or len(row[5]) > _MAX_ROW_BYTES: raise BackendError('integrity')
+        encoded = json.loads(row[5])
+        if type(encoded) is not list: raise BackendError('integrity')
+        if len(encoded) != len(schema.fields): raise BackendError('integrity')
+        if type(row[1]) is not int or not 1 <= row[1] < 2**63 or type(row[2]) is not str or len(row[2]) > schema.code_length or type(row[3]) is not str or len(row[3]) > schema.description_length or type(row[4]) is not int or row[4] not in (0,1): raise BackendError('integrity')
+        key = CatalogKey(self.database_id, catalog_id, UUID(row[0]))
+        _uuid(key.record_id)
+        revision = Revision(self.database_id,self.configuration_generation,catalog_id,key.record_id,str(row[1]))
+        return CatalogCard(key,revision,row[2],row[3],bool(row[4]),tuple(_decode(v,f,self.database_id) for v,f in zip(encoded,schema.fields)))
+
+    @_boundary
+    def select_catalog(self, catalog_id, request=CatalogSelection()):
+        self._require(); self.catalog_schema(catalog_id)
+        if type(request) is not CatalogSelection or type(request.limit) is not int or not 1 <= request.limit <= _MAX_ROWS or request.order != 'code_then_identity':
+            raise BackendError('unsupported')
+        rows = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? ORDER BY code COLLATE BINARY,record_id LIMIT ?', (str(catalog_id),request.limit+1)).fetchall()
+        if len(rows) > request.limit: raise BackendError('unsupported')
+        return tuple(self._card(catalog_id,row) for row in rows)
+
+    @_boundary
+    def read_catalog(self, key):
+        self._require(); self._key(key)
+        row = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? AND record_id=?', (str(key.catalog_id),str(key.record_id))).fetchone()
+        return None if row is None else self._card(key.catalog_id,row)
+
+    def _key(self,key):
+        if type(key) is not CatalogKey or key.database_id != self.database_id: raise BackendError('invalid_input')
+        _uuid(key.catalog_id); _uuid(key.record_id, empty=True)
+
+    def _draft(self,draft):
+        if type(draft) is not CatalogDraft: raise BackendError('invalid_input')
+        self._key(draft.key); _uuid(draft.key.record_id)
+        schema = self.catalog_schema(draft.key.catalog_id)
+        if type(draft.code) is not str or len(draft.code)>schema.code_length or type(draft.description) is not str or len(draft.description)>schema.description_length or type(draft.deletion_mark) is not bool or type(draft.values) is not tuple or len(draft.values)!=len(schema.fields):
+            raise BackendError('invalid_input')
+        try:
+            draft.code.encode('utf-8'); draft.description.encode('utf-8')
+        except UnicodeEncodeError: raise BackendError('invalid_input') from None
+        values = [_encode(v,f,self.database_id) for v,f in zip(draft.values,schema.fields)]
+        for value in draft.values:
+            if type(value) is CatalogKey and value.record_id.int and self.read_catalog(value) is None:
+                raise BackendError('not_found')
+        encoded = _json(values)
+        if len(encoded.encode('utf-8')) > _MAX_ROW_BYTES: raise BackendError('invalid_input')
+        return encoded
+
+    @_boundary
+    def create(self,draft):
+        self._require(True, mutate=True); values = self._draft(draft)
+        if self._connection.execute('SELECT COUNT(*) FROM catalog_record WHERE catalog_id=?',(str(draft.key.catalog_id),)).fetchone()[0] >= _MAX_ROWS:
+            raise BackendError('unsupported')
+        try:
+            self._connection.execute('INSERT INTO catalog_record VALUES(?,?,1,?,?,?,?)',(str(draft.key.catalog_id),str(draft.key.record_id),draft.code,draft.description,int(draft.deletion_mark),values))
+        except sqlite3.IntegrityError: raise BackendError('duplicate_identity' if self.read_catalog(draft.key) else 'duplicate_code') from None
+        self._record_change(draft,1,values)
+
+    @_boundary
+    def update(self,draft,expected_revision):
+        self._require(True, mutate=True); values = self._draft(draft)
+        r = expected_revision
+        if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id)!=(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
+            raise BackendError('conflict')
+        revision = _revision_number(r.token)
+        try:
+            cursor = self._connection.execute('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',(draft.code,draft.description,int(draft.deletion_mark),values,str(draft.key.catalog_id),str(draft.key.record_id),revision))
+        except sqlite3.IntegrityError: raise BackendError('duplicate_code') from None
+        if cursor.rowcount != 1: raise BackendError('conflict')
+        self._record_change(draft,revision+1,values)
+
+    def _record_change(self,draft,revision,values):
+        self._changes.append(Revision(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id,str(revision)))
+        self._intents.append([str(draft.key.catalog_id),str(draft.key.record_id),draft.code,draft.description,draft.deletion_mark,values,revision])
+
+    @_boundary
+    def commit(self):
+        self._require(True)
+        revisions = tuple(self._changes)
+        digest = hashlib.sha256(_json(self._intents).encode('utf-8')).hexdigest()
+        try:
+            self._connection.execute('INSERT INTO commit_receipt VALUES(?,?,?)',(str(self._operation_id),digest,_json([[str(r.catalog_id),str(r.record_id),r.token] for r in revisions])))
+            self._connection.execute('COMMIT')
+        except sqlite3.Error:
+            # Caller must resolve persistent receipt after reopening, never blindly replay.
+            try: self.close()
+            except BackendError: pass
+            raise BackendError('uncertain_commit') from None
+        self.close()
+        return revisions
+
+    def rollback(self): self.close()
+    def close(self):
+        if not self._closed:
+            try:
+                if self._connection.in_transaction: self._connection.execute('ROLLBACK')
+            except sqlite3.Error:
+                raise BackendError('storage_error') from None
+            finally:
+                self._connection.close(); self._closed=True
+                if self._backend._active is self: self._backend._active=None
