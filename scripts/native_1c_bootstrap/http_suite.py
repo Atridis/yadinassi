@@ -2,6 +2,8 @@
 from pathlib import Path
 import base64
 import json
+import os
+import stat
 import sys
 import full_suite as full
 import run_stage
@@ -15,7 +17,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,port=None,request_count=None,
-        process_diagnostics=full.empty_process_diagnostics(),
+        fixture_inventory=None,process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified',
                             'fixture_started','fixture_stopped','fixture_clean')})
 
@@ -31,6 +33,24 @@ def input_hashes(inputs):
             raise full.FullError('invalid_input')
         result[source]=full.digest(full.secure_bytes(inputs/target,full.MAX_OUTPUT))
     return result
+
+
+def fixture_inventory(root):
+    """Finite failed-only structure: never export names, paths or file content."""
+    info=root.lstat()
+    if not stat.S_ISDIR(info.st_mode):raise full.FullError('invalid_input')
+    value=dict(entries=0,known_files=0,regular=0,directories=0,other=0,truncated=False)
+    with os.scandir(root) as entries:
+        for entry in entries:
+            if value['entries']==32:
+                value['truncated']=True;break
+            value['entries']+=1
+            if entry.name=='http-in.bin':value['known_files']|=1
+            if entry.name=='http-out.bin':value['known_files']|=2
+            mode=entry.stat(follow_symlinks=False).st_mode
+            kind='regular' if stat.S_ISREG(mode) else 'directories' if stat.S_ISDIR(mode) else 'other'
+            value[kind]+=1
+    return value
 
 
 def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
@@ -85,7 +105,10 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
                 if not report['quiet'] or report['process_diagnostics']['reason']!='none':raise full.FullError('process_failed')
                 if full.secure_bytes(case/'src/TestModule/Ext/ObjectModule.bsl',8195)!=module:raise full.FullError('module_mismatch')
                 report['module_verified_sha256']=full.digest(module)
-                if any(fixture_root.iterdir()):raise full.FullError('invalid_result')
+                inventory=fixture_inventory(fixture_root)
+                if inventory['entries'] or inventory['truncated']:
+                    report['fixture_inventory']=inventory
+                    raise full.FullError('invalid_result')
                 report['fixture_clean']=True
         finally:
             if server is not None:

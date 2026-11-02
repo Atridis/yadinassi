@@ -55,6 +55,47 @@ class HTTPHostTests(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(host.HTTPError):
                 host.validate_envelope(json.dumps(bad).encode(),NONCE,hashes)
 
+    def test_inventory_projection_exports_only_finite_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            (root/'http-in.bin').write_bytes(b'fixed')
+            (root/'http-out.bin').write_bytes(b'fixed')
+            (root/'PRIVATE_CANARY.txt').write_bytes(b'PRIVATE_CONTENT')
+            (root/'PRIVATE_DIRECTORY').mkdir()
+            result=lane.fixture_inventory(root)
+            self.assertEqual(result,dict(entries=4,known_files=3,regular=3,directories=1,other=0,truncated=False))
+            self.assertNotIn('PRIVATE',json.dumps(result))
+            self.assertEqual(host.validate_fixture_inventory(result),result)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            for n in range(34):(root/('owned-'+str(n))).write_bytes(b'')
+            result=lane.fixture_inventory(root)
+            self.assertEqual(result,dict(entries=32,known_files=0,regular=32,directories=0,other=0,truncated=True))
+
+    def test_inventory_failed_only_source_binding(self):
+        value,hashes,_=envelope();value['outputs']=[]
+        value['report'].update(status='stage3_failed',native_tests_completed=False)
+        stage=value['report']['stage3']
+        stage.update(status='failed',failure_kind='invalid_result',failure_phase='markers',
+            fixture_clean=False,witness_verified=False,
+            fixture_inventory=dict(entries=1,known_files=2,regular=1,directories=0,other=0,truncated=False))
+        with self.assertRaises(host.HTTPError) as caught:
+            host.validate_envelope(json.dumps(value).encode(),NONCE,hashes)
+        self.assertTrue(hasattr(caught.exception,'validated_report'))
+        for key,bad_value in [('input_sha256',{}),('module_verified_sha256','f'*64),('completed',False),
+                              ('fixture_stopped',False),('fixture_clean',True),('status','ok')]:
+            bad=copy.deepcopy(value);bad['report']['stage3'][key]=bad_value
+            with self.subTest(key=key),self.assertRaises(host.HTTPError) as caught:
+                host.validate_envelope(json.dumps(bad).encode(),NONCE,hashes)
+            self.assertFalse(hasattr(caught.exception,'validated_report'))
+
+    def test_inventory_projection_rejects_unknown_or_unbounded_fields(self):
+        good=dict(entries=1,known_files=1,regular=1,directories=0,other=0,truncated=False)
+        for key,value in [('entries',True),('entries',33),('known_files',4),('regular',0),
+                          ('truncated',True),('path','PRIVATE_CANARY')]:
+            bad={**good,key:value}
+            with self.subTest(key=key),self.assertRaises(host.HTTPError):host.validate_fixture_inventory(bad)
+
     def test_failed_cleanup_never_exports(self):
         from test_native_tree_profile_host import synthetic_producer_reader
         value,hashes,raw=envelope()

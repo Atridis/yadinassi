@@ -249,7 +249,17 @@ PHASES=('prerequisites','inputs','fixture','enterprise','markers','final')
 FLAGS={'entered','completed','process_exited','quiet','witness_verified','fixture_started','fixture_stopped','fixture_clean'}
 HASH_FIELDS={'source_sha256','module_sha256','module_verified_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics','port','request_count'}
+    'input_sha256','output_size','record_count','process_diagnostics','port','request_count','fixture_inventory'}
+
+
+def validate_fixture_inventory(value):
+    require(type(value) is dict and set(value)=={'entries','known_files','regular','directories','other','truncated'})
+    require(all(type(value[k]) is int and 0<=value[k]<=32 for k in ('entries','regular','directories','other')))
+    require(type(value['known_files']) is int and 0<=value['known_files']<=3)
+    require(type(value['truncated']) is bool and (not value['truncated'] or value['entries']==32))
+    require(value['regular']+value['directories']+value['other']==value['entries'])
+    require(value['entries']>0 and value['known_files'].bit_count()<=value['entries'])
+    return value
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -275,6 +285,16 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(stage['request_count'] is None or type(stage['request_count']) is int and 0<=stage['request_count']<=128)
         FULL.validate_process_diagnostics(stage['process_diagnostics'])
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({},hashes))
+        if stage['fixture_inventory'] is not None:
+            validate_fixture_inventory(stage['fixture_inventory'])
+            require(stage['status']=='failed' and stage['failure_kind']=='invalid_result' and stage['failure_phase']=='markers')
+            require(stage['input_sha256']==hashes and stage['source_sha256']==SOURCE_SHA256==hashes[SOURCE])
+            require(all(stage[k] for k in ('entered','completed','process_exited','quiet','fixture_started','fixture_stopped')))
+            require(stage['fixture_clean'] is False and stage['witness_verified'] is False)
+            require(type(stage['port']) is int and type(stage['request_count']) is int and 1<=stage['request_count']<=128)
+            expected=FULL.digest(FULL.generated_module(route.program(FULL.read_regular(ROOT/SOURCE,8192,nonempty=True),stage['port'],nonce)))
+            require(stage['module_sha256']==stage['module_verified_sha256']==expected)
+            require(stage['process_diagnostics']['stage']=='after_exit' and stage['process_diagnostics']['reason']=='none')
         if stage['status']!='ok':
             require(report['native_tests_completed'] is False and value['outputs']==[])
             require(report['status']!='ok' and stage['failure_kind']!='none')

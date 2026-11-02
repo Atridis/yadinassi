@@ -103,3 +103,17 @@ this packet. No permissions, network mode, environment override, native session
 count or CI trigger changes are introduced. Existing Docker network isolation
 remains unchanged; the owner coordinates one owned loopback fixture inside the
 approved training session.
+
+## First native attempt: failed owned fixture cleanup
+
+PR193 initial source completed the fixed observer with verified source/module,
+entered/completed markers, 18 loopback requests, a quiet native process and a
+stopped fixture server. The owned fixture directory was not empty, so the
+producer correctly refused output export and parity. Raw forty observations
+were not retained; this does **not** establish forty successful API calls or
+a particular leftover filename. The initial failure remains preserved privately.
+
+The next source revision adds only a failed-only inventory projection: up to
+32 entry/kind counts, a two-bit exact known-file presence mask, and a truncation
+flag. Unknown names, paths, contents and error text never leave the container.
+No unknown file is deleted and no cleanup or acceptance condition is bypassed.

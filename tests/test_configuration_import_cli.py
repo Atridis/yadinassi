@@ -4,9 +4,71 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+from yadinassi import cli
 from yadinassi.cli import main
+from yadinassi.catalog_backend import BackendError
 from yadinassi.configuration_import import load_configuration_directory
 from sqlite_catalog_fixture import configuration_files
+
+# Test-only failure localization. Never print exception text, paths or arguments.
+_PHASES = frozenset({'import', 'create', 'close'})
+_CODES = frozenset({'unsupported', 'invalid_input', 'not_found', 'conflict',
+    'busy', 'closed', 'integrity', 'storage_error', 'uncertain_commit',
+    'schema_changed', 'duplicate_code', 'duplicate_identity'})
+_REASONS = frozenset({'invalid configuration directory',
+    'unexpected system directory alias', 'directory depth bound',
+    'directory aliases unsupported', 'configuration source unavailable',
+    'configuration directory bound', 'configuration directory entry bound',
+    'unsafe configuration path', 'configuration reparse point unsupported',
+    'unsupported configuration file', 'configuration file bound',
+    'configuration source changed'})
+_ERRNOS = frozenset({1, 2, 5, 9, 13, 16, 17, 20, 22, 28, 30})
+
+
+def _diagnostic_call(records, phase, operation, *args, **kwargs):
+    if phase not in _PHASES:
+        raise AssertionError('unknown diagnostic phase')
+    try:
+        return operation(*args, **kwargs)
+    except (BackendError, ValueError, OSError) as error:
+        family, code, errno = 'unknown', 'unknown', None
+        if type(error) is BackendError:
+            family = 'BackendError'
+            candidate = error.__dict__.get('code')
+            if type(candidate) is str and candidate in _CODES:
+                code = candidate
+        elif type(error) is ValueError:
+            family = 'ValueError'
+            values = error.args
+            if type(values) is tuple and len(values) == 1:
+                candidate = values[0]
+                if type(candidate) is str and candidate in _REASONS:
+                    code = candidate
+        elif type(error) in (OSError, PermissionError, FileNotFoundError,
+                             FileExistsError, NotADirectoryError, IsADirectoryError):
+            family = 'OSError'
+            candidate = error.errno
+            if type(candidate) is int and candidate in _ERRNOS:
+                errno = candidate
+        if len(records) < 3:
+            records.append((phase, family, code, errno))
+        raise
+
+
+@contextmanager
+def _creation_diagnostics(records):
+    import yadinassi.configuration_import as reader
+    original_import = reader.load_configuration_directory
+    original_create = cli.SQLiteDBContext.create
+    original_close = cli.SQLiteDBContext.close
+    with mock.patch.object(reader, 'load_configuration_directory',
+            side_effect=lambda *a, **k: _diagnostic_call(records, 'import', original_import, *a, **k)), \
+         mock.patch.object(cli.SQLiteDBContext, 'create',
+            side_effect=lambda *a, **k: _diagnostic_call(records, 'create', original_create, *a, **k)), \
+         mock.patch.object(cli.SQLiteDBContext, 'close', autospec=True,
+            side_effect=lambda *a, **k: _diagnostic_call(records, 'close', original_close, *a, **k)):
+        yield
+
 
 class ConfigurationImportCLITests(unittest.TestCase):
     def setUp(self):
@@ -15,9 +77,9 @@ class ConfigurationImportCLITests(unittest.TestCase):
             target=self.source/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(content)
     def tearDown(self):self.temp.cleanup()
     def run_cli(self,args):
-        out,err=StringIO(),StringIO()
-        with redirect_stdout(out),redirect_stderr(err):result=main(args)
-        return result,out.getvalue(),err.getvalue()
+        out,err=StringIO(),StringIO();diagnostics=[]
+        with _creation_diagnostics(diagnostics),redirect_stdout(out),redirect_stderr(err):result=main(args)
+        return result,out.getvalue(),err.getvalue(),tuple(diagnostics)
     def test_create_write_reopen_and_plain_script(self):
         self.assertEqual(self.run_cli(['-c','Message(2+3);'])[:2],(0,'5\n'))
         self.assertFalse(self.database.exists())
@@ -112,3 +174,50 @@ class ConfigurationImportCLITests(unittest.TestCase):
         except (OSError,NotImplementedError):self.skipTest('hardlinks unavailable')
         with self.assertRaisesRegex(ValueError,'unsupported configuration file'):
             load_configuration_directory(self.source)
+
+    def test_diagnostic_phases_preserve_exception_identity_and_single_call(self):
+        for phase, error, expected in (
+            ('import', ValueError('configuration source changed'), ('ValueError', 'configuration source changed', None)),
+            ('create', BackendError('storage_error'), ('BackendError', 'storage_error', None)),
+            ('close', OSError(13, 'PRIVATE error', '/PRIVATE/path'), ('OSError', 'unknown', 13)),
+        ):
+            with self.subTest(phase=phase):
+                records=[];operation=mock.Mock(side_effect=error)
+                with self.assertRaises(type(error)) as caught:
+                    _diagnostic_call(records, phase, operation)
+                self.assertIs(caught.exception,error)
+                operation.assert_called_once_with()
+                self.assertEqual(records,[(phase,*expected)])
+
+    def test_diagnostic_unknown_values_are_private_and_bounded(self):
+        class Hostile(ValueError):
+            def __str__(self):raise AssertionError('exception text accessed')
+            def __getattribute__(self,name):
+                if name in ('args','code','errno'):raise AssertionError('subclass hook accessed')
+                return super().__getattribute__(name)
+        records=[]
+        for error in (Hostile('PRIVATE'),ValueError('/PRIVATE/path'),OSError(9999,'PRIVATE','/PRIVATE')):
+            with self.assertRaises(type(error)):
+                _diagnostic_call(records,'import',mock.Mock(side_effect=error))
+        self.assertNotIn('PRIVATE',repr(records))
+        self.assertEqual(records,[('import','unknown','unknown',None),
+            ('import','ValueError','unknown',None),('import','OSError','unknown',None)])
+        with self.assertRaises(ValueError):
+            _diagnostic_call(records,'import',mock.Mock(side_effect=ValueError('PRIVATE')))
+        self.assertEqual(len(records),3)
+
+    def test_diagnostic_scope_restores_methods_and_cli_failure(self):
+        import yadinassi.configuration_import as reader
+        original_import=reader.load_configuration_directory
+        original_create=cli.SQLiteDBContext.create.__func__
+        original_close=cli.SQLiteDBContext.close
+        error=ValueError('configuration source unavailable')
+        with mock.patch.object(reader,'load_configuration_directory',side_effect=error) as failed:
+            result=self.run_cli(['--create-db',str(self.database),'--import-xml',str(self.source)])
+            failed.assert_called_once()
+        self.assertEqual(result,(1,'','yadinassi: configuration import refused\n',
+            (('import','ValueError','configuration source unavailable',None),)))
+        self.assertIs(reader.load_configuration_directory,original_import)
+        self.assertIs(cli.SQLiteDBContext.create.__func__,original_create)
+        self.assertIs(cli.SQLiteDBContext.close,original_close)
+        self.assertFalse(self.database.exists())
