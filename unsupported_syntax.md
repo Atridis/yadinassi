@@ -385,3 +385,11 @@ No custom/async streams, internal hash-state codec, authentication/password-stor
 ### DOM: границы нового обычного семейства
 
 Ограниченное обычное DOM-дерево теперь описано в [DOM family](docs/dom-family.md); его native40-паритет ещё не подтверждён. XPath/XSD/HTML/XDTO, DTD/entities, DOMConfiguration, ReadWithContext, automatic-prefix/reconcile, traversal filters, user data, attribute-child trees, codecs и XML1.1 остаются неподдержанными.
+
+### XDTO: explicit subset rather than full XSD support
+
+The earlier blanket XDTO exclusion is superseded only by
+[the bounded ordinary family](docs/xdto-family.md). Imports/includes, network
+resolution, DTD/entities, recursive/mixed/choice schemas, inheritance/facets,
+full XMLSchema objects, XPath property selectors, callbacks and configuration
+model loading remain unsupported. Native40 semantics are still provisional.
