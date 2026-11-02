@@ -217,8 +217,11 @@ class BSLTypeDescription(BSLObject):
     date_qualifiers: BSLDateQualifiers
     binary_data_qualifiers: BSLBinaryDataQualifiers
 
+    # Preserve ordinary descriptors' exact five-field host shape. Only the
+    # internal query factory installs an instance marker for nullable metadata.
+    _query_scalar = None
+
     def __init__(self, source=None, *args):
-        object.__setattr__(self, "_query_scalar", None)
         if type(source) is BSLTypeDescription and source._query_scalar is not None:
             _unsupported("копирование nullable описания результата запроса")
         if type(source) is BSLTypeDescription:
