@@ -40,6 +40,7 @@ class Predicate:
 class Projection:
     field: Field
     alias: str
+    explicit_alias: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,8 +192,9 @@ class _Parser:
         projections = []
         while True:
             field = self.field()
-            alias = self.take('name') if self.accept('as') else field.parts[-1]
-            projections.append(Projection(field, alias))
+            explicit = self.accept('as')
+            alias = self.take('name') if explicit else field.parts[-1]
+            projections.append(Projection(field, alias, explicit))
             if len(projections) > 128:
                 raise ValueError('Query projection budget exceeded')
             if not self.accept(','):

@@ -499,12 +499,14 @@ class _View:
             return card.key if field == 'ref' else getattr(card, field)
         return card.values[next(i for i, item in enumerate(schema.fields) if item.identity == field)]
 
-    def _scan_matches(self, schema, card, predicate):
+    def _scan_matches(self, schema, card, predicate, string_comparison):
         if predicate is None: return True
         if type(predicate) is CatalogPredicate:
-            values = (self._scan_matches(schema,card,term) for term in predicate.terms)
+            values = (self._scan_matches(schema,card,term,string_comparison) for term in predicate.terms)
             return all(values) if predicate.kind == 'and' else any(values)
         left = self._scan_value(schema,card,predicate.field); right = predicate.value
+        if type(left) is str and string_comparison == 'casefold_v1':
+            left, right = left.casefold(), right.casefold()
         op = predicate.operator
         if op == 'eq': return left == right
         if op == 'ne': return left != right
@@ -520,6 +522,7 @@ class _View:
         if self._operation_id is not None: raise BackendError('unsupported')
         schema = self.catalog_schema(catalog_id)
         if type(request) is not CatalogScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000 or type(request.order) is not tuple or len(request.order) > 16: raise BackendError('invalid_input')
+        if type(request.string_comparison) is not str or request.string_comparison not in ('codepoint','casefold_v1'): raise BackendError('unsupported')
         if request.predicate is not None: self._scan_predicate(schema,request.predicate,[0])
         seen = set()
         for item in request.order:
@@ -527,7 +530,7 @@ class _View:
             self._scan_field(schema,item.field)
             if item.field in seen: raise BackendError('invalid_input')
             seen.add(item.field)
-        binding = (catalog_id,request.predicate,request.order,request.page_size)
+        binding = (catalog_id,request.predicate,request.order,request.page_size,request.string_comparison)
         if request.continuation is not None:
             if type(request.continuation) is not str or len(request.continuation) != 32: raise BackendError('invalid_input')
             cursor = self._scan_cursor
@@ -556,10 +559,11 @@ class _View:
             rows = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? LIMIT ?', (str(catalog_id),_MAX_ROWS+1)).fetchall()
             if len(rows) != count: raise BackendError('integrity')
             cards = [self._card(catalog_id,row) for row in rows]
-            cards = [card for card in cards if self._scan_matches(schema,card,request.predicate)]
+            cards = [card for card in cards if self._scan_matches(schema,card,request.predicate,request.string_comparison)]
             def compare(left, right):
                 for item in request.order:
                     a=self._scan_value(schema,left,item.field); b=self._scan_value(schema,right,item.field)
+                    if type(a) is str and request.string_comparison == 'casefold_v1': a,b=a.casefold(),b.casefold()
                     if type(a) is CatalogKey: a,b=a.record_id.int,b.record_id.int
                     result=(a>b)-(a<b)
                     if result: return -result if item.descending else result

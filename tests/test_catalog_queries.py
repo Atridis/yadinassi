@@ -55,7 +55,7 @@ Message(S.Ref.Code);Message(S.Category.Description);Try T=R.Unload();Except Mess
 R=Q.Выполнить();Message(R.Пустой());S=R.Выбрать();Message(S.Следующий());Message(S.Следующий());Message(R.Выгрузить().Count());''')
         self.assertEqual(self.output, ['Да','Нет','Нет','0'])
         result = BSLQuery(self.vm._catalogs, 'SELECT Code FROM Catalog.Products').execute()
-        with self.assertRaises(ValueError): result.select().get_member('Code')
+        self.assertIsNone(result.select().get_member('Code'))
         with self.assertRaises(ValueError): result.get_member('Columns')
 
     def test_wrong_missing_and_foreign_parameters_refused_before_scan(self):
@@ -135,6 +135,62 @@ S=Q.Execute().Select();Message(S.Next());Message(S.Code);Message(S.Next());''')
 Q.SetParameter("D",Date(2024,2,29));Q.SetParameter("A",True);Q.SetParameter("R",Catalogs.Products.FindByCode("1"));
 S=Q.Execute().Select();While S.Next() Do Message(S.Code);EndDo;''')
         self.assertEqual(self.output, ['3'])
+
+    def test_measured_cursor_boundaries_keep_last_row_and_explicit_aliases(self):
+        result = BSLQuery(self.vm._catalogs, 'SELECT Code FROM Catalog.Products ORDER BY Amount').execute()
+        rows = result.select()
+        self.assertIsNone(rows.get_member('Code'))
+        self.assertIsNone(rows.get_member('Код'))
+        while rows.next(): pass
+        self.assertEqual(rows.get_member('Code'), '3')
+        self.assertFalse(rows.next())
+        self.assertEqual(rows.get_member('Код'), '3')
+        aliased = BSLQuery(self.vm._catalogs, 'SELECT Code AS English FROM Catalog.Products').execute()
+        self.assertEqual(aliased.unload().columns.items[0].name, 'English')
+        rows = aliased.select(); rows.next()
+        with self.assertRaises(ValueError): rows.get_member('Code')
+
+    def test_measured_nullable_scalar_metadata_and_exact_assignment(self):
+        from yadinassi.values import BSLType, NULL
+        result = BSLQuery(self.vm._catalogs, 'SELECT Code,Amount,Active,Stamp FROM Catalog.Products ORDER BY Amount').execute()
+        table = result.unload()
+        self.assertEqual([c.name for c in table.columns.items], ['Код','Amount','Active','Stamp'])
+        descriptions = [c.value_type for c in table.columns.items]
+        self.assertEqual([str(d) for d in descriptions], ['Строка, Null','Null, Число','Булево, Null','Дата, Null'])
+        for d in descriptions: self.assertTrue(d.contains_type(BSLType.NULL))
+        self.assertEqual(descriptions[0].string_qualifiers.length, Decimal(8))
+        self.assertEqual((descriptions[1].number_qualifiers.digits, descriptions[1].number_qualifiers.fraction_digits), (Decimal(12), Decimal(2)))
+        table.rows[0].set_member('Amount', Decimal(999))
+        self.assertEqual(table.rows[0].get_member('Amount'), Decimal(999))
+        rows=result.select();rows.next();self.assertEqual(rows.get_member('Amount'), Decimal(10))
+        for value in (NULL,None,'999',True):
+            with self.assertRaises(ValueError): table.rows[0].set_member('Amount', value)
+        with self.assertRaises(ValueError): table.add()
+        with self.assertRaises(ValueError): table.copy()
+
+    def test_nullable_query_schema_does_not_admit_public_union_or_codec(self):
+        from yadinassi.type_descriptions import BSLTypeDescription, _query_nullable_description
+        query = BSLQuery(self.vm._catalogs, 'SELECT Amount FROM Catalog.Products')
+        description = query.execute().unload().columns.items[0].value_type
+        for source in ('Number,Null', description):
+            with self.assertRaises(ValueError): BSLTypeDescription(source)
+        with self.assertRaises(ValueError): _query_nullable_description(BSLTypeDescription('UUID'))
+        with self.assertRaises(TypeError): _query_nullable_description(description)
+        with self.assertRaises(ValueError): description.adjust_value()
+        self.vm.execute('Q=New Query("SELECT Amount FROM Catalog.Products");T=Q.Execute().Unload();')
+        for code in ('ValueToStringInternal(T);','ValueToStringInternal(T.Columns[0].ValueType);'):
+            with self.assertRaises(Exception): self.vm.execute(code)
+        # Ordinary scalar tables, defaults and codecs remain unchanged.
+        self.vm.execute('T=New ValueTable;T.Columns.Add("N",New TypeDescription("Number"));T.Add();Message(T[0].N);Message(ValueToStringInternal(T)<>"");')
+        self.assertEqual(self.output[-2:], ['0','Да'])
+
+    def test_unmeasured_default_labels_refuse_unload_but_alias_is_supported(self):
+        query=BSLQuery(self.vm._catalogs,'SELECT Description FROM Catalog.Products')
+        result=query.execute();rows=result.select();rows.next()
+        self.assertEqual(rows.get_member('Description'),'item')
+        with self.assertRaises(ValueError): result.unload()
+        query.set_member('Text','SELECT Description AS Caption FROM Catalog.Products')
+        self.assertEqual(query.execute().unload().columns.items[0].name,'Caption')
 
 
 if __name__ == '__main__': unittest.main()

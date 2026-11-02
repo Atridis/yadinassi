@@ -15,6 +15,8 @@ class QueryParserTests(unittest.TestCase):
                         'ORDER BY P.Amount DESC, P.Code ASC')
         self.assertEqual((q.catalog, q.source_alias, q.limit), ('Products', 'P', 15))
         self.assertEqual(q.projections[0].alias, 'ItemCode')
+        self.assertTrue(q.projections[0].explicit_alias)
+        self.assertFalse(q.projections[1].explicit_alias)
         self.assertEqual(q.predicate.kind, 'and')
         self.assertEqual(q.predicate.terms[0].value, Parameter('Minimum'))
         self.assertEqual(q.predicate.terms[1].terms[1].value, 'a"b')

@@ -71,8 +71,11 @@ AND/OR predicates and ordered field identities. It accepts no SQL, database hand
 or arbitrary callbacks. SQLite applies comparisons to canonical decoded scalars;
 Decimal values never pass through float or SQLite numeric coercion. References must
 belong to the same database and declared target catalog; only equality/inequality
-reference predicates are admitted. String ordering is explicitly Unicode code-point
-order in this backend version, **not** a claim about native regional collations.
+reference predicates are admitted. String policy is explicit and continuation-bound: default `codepoint` preserves
+exact Find behavior, while Query requests versioned `casefold_v1` Unicode casefold
+comparison/order. This is **not** a claim about native regional collations or a
+change to SQLite write uniqueness. Native evidence currently covers the owned
+ASCII case-pair fixture only; broader local tests are our implementation contract.
 
 A read view pins one SQLite transaction snapshot. Each view supports one active scan;
 continuation tokens are opaque, single-use and bound to that view and exact request.

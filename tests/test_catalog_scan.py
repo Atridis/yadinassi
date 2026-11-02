@@ -137,3 +137,36 @@ class ScanTests(unittest.TestCase):
             with self.assertRaisesRegex(BSLRuntimeError,'ambiguous exact catalog lookup'):
                 vm.execute('Catalogs.Products.FindByDescription("same",True);')
         finally:context.close()
+
+    def test_versioned_casefold_policy_preserves_exact_default(self):
+        tx=self.backend.begin_write(uuid4())
+        for code,text in (('1','alpha'),('2','Alpha'),('3','АЛЬФА'),('4','альфа')):
+            tx.create(replace(self.draft(code=code),description=text))
+        tx.commit();view=self.backend.begin_read()
+        for operand,exact,folded in (('alpha',('1',),('1','2')),('альфа',('4',),('3','4'))):
+            request=CatalogScanRequest(CatalogComparison('description','eq',operand),(CatalogOrder('code'),))
+            self.assertEqual(tuple(c.code for c in view.scan_catalog(self.product.identity,request).cards),exact)
+            self.assertEqual(tuple(c.code for c in view.scan_catalog(self.product.identity,replace(request,string_comparison='casefold_v1')).cards),folded)
+        view.close()
+
+    def test_casefold_order_and_continuation_bind_policy(self):
+        tx=self.backend.begin_write(uuid4())
+        for code,text in (('1','Beta'),('2','alpha'),('3','ALPHA')):
+            tx.create(replace(self.draft(code=code),description=text))
+        tx.commit();view=self.backend.begin_read()
+        request=CatalogScanRequest(order=(CatalogOrder('description'),CatalogOrder('code')),page_size=1,string_comparison='casefold_v1')
+        first=view.scan_catalog(self.product.identity,request)
+        self.assertEqual(first.cards[0].code,'2')
+        with self.assertRaisesRegex(BackendError,'invalid_input'):
+            view.scan_catalog(self.product.identity,replace(request,continuation=first.continuation,string_comparison='codepoint'))
+        second=view.scan_catalog(self.product.identity,replace(request,continuation=first.continuation))
+        self.assertEqual(second.cards[0].code,'3');view.close()
+
+    def test_unknown_or_hostile_string_policy_refused(self):
+        view=self.backend.begin_read()
+        class Hostile:
+            def __eq__(self,other):raise AssertionError('host equality')
+        for policy in ('native-regional',None,Hostile()):
+            with self.assertRaisesRegex(BackendError,'unsupported'):
+                view.scan_catalog(self.product.identity,CatalogScanRequest(string_comparison=policy))
+        view.close()

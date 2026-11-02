@@ -34,11 +34,16 @@ an inactive configuration archive or bypass catalog/schema admission.
 
 Joins, expressions/functions, grouping/aggregates, subqueries, packages, temporary
 tables, `NOT`, query writes and arbitrary SQL are refused, not approximated.
-`Result.Columns` is currently unsupported. Cursor fields require a positioned row;
-actual native before/after-position behavior is being measured separately.
+`Result.Columns` is currently unsupported. The observed cursor starts with Undefined field values; after exhaustion it
+retains the last selected row while subsequent `Next` calls stay false. An empty
+selection has no last row and continues to expose Undefined.
 
 `Unload` creates a fresh mutable ValueTable with scalar column descriptions and
-qualifiers. Changing it does not write the database or mutate an earlier result.
+qualifiers. Changing an existing scalar cell does not write the database or mutate an earlier
+result. Measured Query column descriptions include the scalar plus Null. This is
+a query-only metadata view: unmeasured Null assignments, default/coercing writes
+and descriptor/table serialization are explicitly unsupported; the public mixed-Null
+TypeDescription constructor is not broadened.
 Reference projections work through the cursor, but unloading a projection that
 contains references is explicitly unsupported until truthful dynamic reference
 column descriptions are implemented. No untyped stand-in is returned.
@@ -63,9 +68,13 @@ also applies before row materialization; details are in
 truncated successful result. Exact catalog lookup also no longer depends on the
 ordinary first-1,000 selection limit.
 
-String comparison/order uses the current backend's explicit Unicode code-point
-contract. Native string rules depend on regional database settings; general native
-collation equivalence is **not** claimed. Record identity is a backend-only stable
+Query string comparison/order requests explicit versioned `casefold_v1`: compare
+Unicode-casefolded text, without locale-sensitive accent or language tailoring.
+The default backend `codepoint` policy and existing exact Find methods remain
+unchanged. The first native fixture confirms only ASCII `alpha`/`Alpha` equality;
+Cyrillic tests define our local implementation contract, not new native evidence.
+Native string rules depend on regional database settings; general native collation
+equivalence is **not** claimed. !todo: explicit regional comparison policies. Record identity is a backend-only stable
 tie breaker, not a promise about native unspecified order. Reference range
 predicates are not admitted. Do not rely on unspecified query row order.
 
@@ -81,5 +90,10 @@ qualifiers are observations to verify, not hardcoded native goldens.
 The SQLite comparison is labelled `owned-catalog-query-logical-reference-model`;
 `metadata_import_parity_claimed` is false. Its authored logical configuration is
 checked against the owned semantic profile; it does not silently strip unknown
-properties from arbitrary imported configurations. Actual native acceptance is
-pending until the exact source-bound lane completes and is independently audited.
+properties from arbitrary imported configurations. The first source-bound acquisition (41511900693) completed all 24 observations
+and strict official XML redump verification, but differed in five cases: regional
+string equality, cursor boundaries, unaliased Code column naming and nullable
+scalar column descriptions. Its raw observations are retained unchanged. The
+correction preserves explicit aliases; only the measured unaliased Code name is
+localized to `Код`, without a claim about all standard default column names.
+Fresh corrected-source native parity remains required before acceptance.

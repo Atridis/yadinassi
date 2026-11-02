@@ -1,7 +1,7 @@
 """Bounded single-catalog Query over the logical read port, never SQL text.
 
-!todo Native calibration of string comparison, cursor boundaries and unloaded
-column qualifiers. No joins, aggregates, data modification or implicit casts.
+!todo General regional string collation and other query profiles. Native
+Query24 calibrates cursor boundaries, Code label and nullable scalar metadata. No joins, aggregates, data modification or implicit casts.
 Dynamic-reference projections are available in cursors; Unload refuses them
 until truthful dynamic column TypeDescription support exists.
 """
@@ -18,7 +18,7 @@ from .catalog_types import BSLCatalogReference
 from .dates import BSLDate
 from .values import BSLObject, HostFunction
 from .value_tables import BSLValueTable
-from .type_descriptions import BSLTypeDescription
+from .type_descriptions import BSLTypeDescription, _query_nullable_description
 from .type_qualifiers import (BSLStringQualifiers, BSLNumberQualifiers,
                               BSLDateQualifiers, BSLAllowedSign)
 
@@ -37,6 +37,7 @@ class _Column:
     kind: str
     qualifiers: tuple
     custom: object = None
+    explicit_alias: bool = False
 
 
 def _field(manager, field, source_alias):
@@ -118,6 +119,8 @@ def _logical(manager, column, card):
 
 
 def _description(column):
+    if not column.explicit_alias and column.field in ('description', 'deletion_mark'):
+        raise ValueError('Query unaliased standard column label is not yet supported by Unload')
     if column.kind == 'string':
         return BSLTypeDescription('String', None, BSLStringQualifiers(Decimal(column.qualifiers[0])))
     if column.kind == 'number':
@@ -176,8 +179,12 @@ class BSLQuery(BSLObject):
         columns = []
         for projection in query.projections:
             column = _field(manager, projection.field, query.source_alias)
-            columns.append(_Column(projection.alias, column.field, column.kind,
-                                   column.qualifiers, column.custom))
+            name = ('Код' if not projection.explicit_alias and column.field == 'code'
+                    else projection.alias)
+            columns.append(_Column(name, column.field, column.kind,
+                                   column.qualifiers, column.custom, projection.explicit_alias))
+        if len({column.name.casefold() for column in columns}) != len(columns):
+            raise ValueError('Duplicate localized query output column')
         predicate = _predicate(manager, query.predicate, query.source_alias, dict(self._parameters))
         order = tuple(CatalogOrder(_field(manager, item.field, query.source_alias).field, item.descending)
                       for item in query.order)
@@ -190,7 +197,7 @@ class BSLQuery(BSLObject):
         try:
             while len(rows) < query.limit:
                 page = view.scan_catalog(manager._schema.identity,
-                                         CatalogScanRequest(predicate, order, size, continuation))
+                                         CatalogScanRequest(predicate, order, size, continuation, string_comparison='casefold_v1'))
                 if (type(page) is not CatalogPage or type(page.cards) is not tuple or len(page.cards) > size
                         or (page.continuation is not None and
                             (type(page.continuation) is not str or len(page.continuation) != 32))):
@@ -256,6 +263,10 @@ class BSLQueryResult(BSLObject):
             row = table.add()
             for column, value in zip(table.columns.items, values):
                 row.cells[column] = value
+        # Build data using known scalar defaults first. Only then expose the
+        # measured nullable metadata. New-row defaults/coercions remain refused.
+        for column, description in zip(table.columns.items, descriptions):
+            column.value_type = _query_nullable_description(description)
         return table
 
 
@@ -279,11 +290,13 @@ class BSLQueryResultSelection(BSLObject):
 
     def get_member(self, name):
         for index, column in enumerate(self._result._columns):
-            if column.name.casefold() == name.casefold():
-                # Boundary field values require native calibration; refusal is
-                # explicit instead of invented defaults or stale-field values.
-                if self._position < 0 or self._exhausted:
-                    raise ValueError('Query selection is not positioned on a record')
+            if (column.name.casefold() == name.casefold() or
+                    (not column.explicit_alias and column.field == 'code'
+                     and name.casefold() in ('code', 'код'))):
+                # Native Query24: Undefined before positioning, retained last
+                # row after exhaustion (including another false Next call).
+                if self._position < 0:
+                    return None
                 return self._result._rows[self._position][index]
         return self.get_method(name)
 

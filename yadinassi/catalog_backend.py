@@ -109,12 +109,14 @@ class CatalogScanRequest:
     Continue on the same open read view with the same request. Each view admits
     one active traversal; starting another invalidates its previous continuation.
     Equal order keys use record identity as a stable backend-only tie breaker.
-    String order is Unicode code-point order, not a native collation claim.
+    String policy is explicit: codepoint or casefold_v1. Neither claims full
+    native regional collation. Exact lookup keeps the codepoint default.
     """
     predicate: CatalogComparison | CatalogPredicate | None = None
     order: tuple[CatalogOrder, ...] = ()
     page_size: int = 1000
     continuation: str | None = None
+    string_comparison: str = 'codepoint'
 
 
 @dataclass(frozen=True, slots=True)

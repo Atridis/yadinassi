@@ -65,9 +65,13 @@ class CatalogQueryFixtureTests(unittest.TestCase):
         self.assertFalse(replay.METADATA_IMPORT_PARITY_CLAIMED)
         self.assertEqual(replay.COMPARISON_SCOPE,'owned-catalog-query-logical-reference-model')
         self.assertEqual(f.load_saved()[1],before)
-        # Own logical contract only, not a fabricated native expected result.
-        self.assertEqual(rows[0],'01')
-        self.assertEqual(rows[15:17],['action-error','action-error'])
+        # Measured owned native run41511900693; regional policy remains bounded,
+        # not a claim of every database collation or general mixed-Null semantics.
+        self.assertEqual(rows[0],'01,02')
+        self.assertEqual(rows[15:17],['Не определено:','Строка:03'])
+        self.assertEqual(rows[19], 'Код/Quantity/Active/Stamp')
+        self.assertEqual(rows[20], 'Строка, Null/Null, Число/Булево, Null/Дата, Null')
+        self.assertEqual(rows[21], '8/12/2/Дата и время')
         self.assertEqual(rows[22],'10/10')
         self.assertTrue(rows[23])
 
