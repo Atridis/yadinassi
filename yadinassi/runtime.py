@@ -31,6 +31,7 @@ from .chars import BSLChars, CHARS
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
 from .catalogs import BSLCatalogs
 from .documents import BSLDocuments
+from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
 from .document_types import BSLDocumentType
 from .document_lines import BSLDocumentLines, BSLDocumentLinesType
 from .catalog_types import BSLCatalogType
@@ -169,6 +170,7 @@ class Interpreter:
         self._metadata = BSLMetadata(database_context)
         self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
         self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
+        self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
         self._scheduler = Scheduler(self._native_target)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
@@ -212,7 +214,7 @@ class Interpreter:
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
                                "FillPropertyValues", returns_value=False)
         self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
-        self.register_function("Тип", self._documents.type_by_name, "Type")
+        self.register_function("Тип", self._information_registers.type_by_name, "Type")
         self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
         self.register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
                                "ValueToStringInternal")
@@ -642,6 +644,8 @@ class Interpreter:
             if not self._has_module_context:
                 raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
             return self._self_module
+        if name in ("регистрысведений", "informationregisters"):
+            return self._information_registers
         if name in ("документы", "documents"):
             return self._documents
         if name in ("справочники", "catalogs"):
@@ -1329,7 +1333,7 @@ class Interpreter:
         # EDT root_New explicitly says to ignore a non-array second value.
         value_type = (yield from self._visit(node.type_expression))
         parameters = (yield from self._visit(node.parameters)) if node.parameters is not None else None
-        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or type(value_type) is BSLDocumentLinesType):
+        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or type(value_type) is BSLDocumentLinesType or type(value_type) is BSLInformationRegisterType):
             raise ValueError("catalog reference type construction is unsupported")
         if type(value_type) is BSLType:
             name = value_type.value

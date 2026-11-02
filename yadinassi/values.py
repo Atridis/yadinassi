@@ -62,6 +62,7 @@ class BSLType(Enum):
     POSITION_IN_STREAM = "ПозицияВПотоке"
 
     DOCUMENTS_MANAGER = "Документы менеджер"
+    INFORMATION_REGISTERS_MANAGER = "Регистры сведений менеджер"
     CATALOGS_MANAGER = "Справочники менеджер"
     XML_READER = "ЧтениеXML"
     XML_WRITER = "ЗаписьXML"

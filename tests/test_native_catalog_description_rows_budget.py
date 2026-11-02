@@ -145,5 +145,5 @@ class DescriptionBudgetTests(unittest.TestCase):
         tree=ast.parse(Path(__file__).read_text(encoding='utf-8'))
         self.assertFalse(any(isinstance(node,ast.Assert) for node in ast.walk(tree)))
 
-EXPECTED = {'sources':42,'physical_comparison':1078,'capture_rectangular':6983,'capture_cap':8192,'report_without_capture':20376,'report_full_capture_plus_newline':28565,'report_cap':32768,'aggregate_plus_newline':633,'aggregate_cap':2048}
+EXPECTED = {'sources':42,'physical_comparison':1078,'capture_rectangular':6983,'capture_cap':8192,'report_without_capture':20383,'report_full_capture_plus_newline':28572,'report_cap':32768,'aggregate_plus_newline':633,'aggregate_cap':2048}
 if __name__=='__main__':unittest.main()

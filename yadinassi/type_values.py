@@ -15,6 +15,8 @@ from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 
 from .catalogs import BSLCatalogs
 from .documents import BSLDocuments
+from .information_registers import (BSLInformationRegisters, BSLInformationRegisterType,
+    BSLInformationRegisterManager, BSLInformationRegisterSelection)
 from .document_types import BSLDocumentReference, BSLDocumentType
 from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine
 from .catalog_types import BSLCatalogReference, BSLCatalogType
@@ -95,6 +97,7 @@ _VALUE_TYPES = (
     (BSLPositionInStream, BSLType.POSITION_IN_STREAM, "PositionInStream"),
 
     (BSLDocuments, BSLType.DOCUMENTS_MANAGER, None),
+    (BSLInformationRegisters, BSLType.INFORMATION_REGISTERS_MANAGER, None),
     (BSLCatalogs, BSLType.CATALOGS_MANAGER, None),
     (BSLXMLReader, BSLType.XML_READER, "XMLReader"),
     (BSLXMLWriter, BSLType.XML_WRITER, "XMLWriter"),
@@ -190,6 +193,12 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
+    if type(value) is BSLInformationRegisterType:
+        return BSLType.TYPE
+    if type(value) is BSLInformationRegisterManager:
+        return value._manager_type
+    if type(value) is BSLInformationRegisterSelection:
+        return value._selection_type
     if type(value) is BSLDocumentLinesType:
         return BSLType.TYPE
     if type(value) is BSLDocumentLines or type(value) is BSLDocumentLine:
