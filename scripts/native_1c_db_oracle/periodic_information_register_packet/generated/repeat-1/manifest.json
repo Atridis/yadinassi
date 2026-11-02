@@ -1,0 +1,574 @@
+{
+  "profile": {
+    "register": "Ie75536d0",
+    "catalog": "Cbfb39146",
+    "metadata_uuid": "4450f193-4623-49d9-8005-b761642b3734",
+    "periodicity": "Second",
+    "write_mode": "Independent",
+    "columns": [
+      "Product",
+      "Variant",
+      "Price",
+      "Available",
+      "ValidUntil",
+      "Note"
+    ],
+    "catalog_schema": {
+      "status": "schema-backed-Designer-input-not-native-applied",
+      "generated_ids": {
+        "Ce75536d0": {
+          "CATALOG_UUID": "4450f193-4623-49d9-8005-b761642b3734",
+          "OBJECT_TYPE_UUID": "400b71ee-09df-47b9-8b88-3deae9b1456a",
+          "OBJECT_VALUE_UUID": "71ac45e5-e486-4860-9c0b-c3fdad671a70",
+          "REF_TYPE_UUID": "fc127d01-c0ff-4f84-958d-e36f2c7d8335",
+          "REF_VALUE_UUID": "6a79e614-04c6-48f6-a409-d9ef25cd2357",
+          "SELECTION_TYPE_UUID": "5e973fa5-8983-4fc4-9e80-dc81adb64bb3",
+          "SELECTION_VALUE_UUID": "fb6cdbbc-2899-4a5b-90c6-06b301194ab8",
+          "LIST_TYPE_UUID": "22d1d42d-2857-4b3c-9d61-54ab5b2f3be0",
+          "LIST_VALUE_UUID": "3d564528-22cb-4c02-9096-aa6307aeff6d",
+          "MANAGER_TYPE_UUID": "ff53eb8b-8d62-4948-9bc0-e03a2c06c553",
+          "MANAGER_VALUE_UUID": "b75024fc-dc26-4597-b43c-85b2bced7344"
+        },
+        "Cbfb39146": {
+          "CATALOG_UUID": "0d64a568-0109-425f-8349-5a484a9e2e75",
+          "OBJECT_TYPE_UUID": "98c0edb3-c48d-4e36-9ea7-7c7758aef3be",
+          "OBJECT_VALUE_UUID": "df44a9d6-2049-4326-b259-2a16ef5c87ae",
+          "REF_TYPE_UUID": "5d0ef09d-cb68-451a-85ab-a75a8800c577",
+          "REF_VALUE_UUID": "e03b9f9e-2746-4d3d-bc0b-f5983a21d462",
+          "SELECTION_TYPE_UUID": "0a050518-d38d-41f9-9921-e03be208cad4",
+          "SELECTION_VALUE_UUID": "8bd8ed6e-0f37-4cd4-9488-eaafa1521112",
+          "LIST_TYPE_UUID": "552b611f-9571-4c09-94c7-5f545b751a21",
+          "LIST_VALUE_UUID": "d0d43494-546b-4227-84bd-5a6d68c51067",
+          "MANAGER_TYPE_UUID": "fa036f96-077f-4191-8f73-0490f67a1f2d",
+          "MANAGER_VALUE_UUID": "abd7c022-f16d-4885-bc86-079039a1fa4e"
+        }
+      },
+      "catalogs": [
+        {
+          "name": "Ce75536d0",
+          "metadata_uuid": "4450f193-4623-49d9-8005-b761642b3734",
+          "code_length": 2,
+          "code_type": "String",
+          "description_length": 8,
+          "hierarchical": false,
+          "attributes": [
+            {
+              "name": "Aaf57e17e",
+              "metadata_uuid": "0f003fcf-a9a6-4cec-80dd-dc147d6ff7e7",
+              "type": "String",
+              "length": 32,
+              "allowed_length": "Variable"
+            },
+            {
+              "name": "A2d15023d",
+              "metadata_uuid": "88f97431-fcdf-402f-b317-70395a521166",
+              "type": "Number",
+              "digits": 9,
+              "fraction_digits": 2,
+              "allowed_sign": "Any"
+            },
+            {
+              "name": "Ae5a5789c",
+              "metadata_uuid": "4a81ea47-922f-429f-8420-390253ff2811",
+              "type": "Boolean"
+            },
+            {
+              "name": "A8aa2e69f",
+              "metadata_uuid": "c941ff84-2ae9-4552-bcc6-d5a15741bbba",
+              "type": "Date",
+              "date_fractions": "DateTime"
+            },
+            {
+              "name": "Ac3af340f",
+              "metadata_uuid": "60b18735-66e8-40b6-9d11-ab08134829d9",
+              "type": "SingleCatalogRef",
+              "target_name": "Cbfb39146",
+              "target_metadata_uuid": "0d64a568-0109-425f-8349-5a484a9e2e75",
+              "target_requested_ref_type_uuid": "5d0ef09d-cb68-451a-85ab-a75a8800c577"
+            }
+          ]
+        },
+        {
+          "name": "Cbfb39146",
+          "metadata_uuid": "0d64a568-0109-425f-8349-5a484a9e2e75",
+          "code_length": 2,
+          "code_type": "String",
+          "description_length": 8,
+          "hierarchical": false,
+          "attributes": []
+        }
+      ],
+      "pending": [
+        "schema-defined Designer inputs require native apply and saved-identity redump",
+        "saved-identity applied configuration and redump",
+        "CONFIG descriptors and target typeUUID-to-metadataUUID mapping",
+        "DBNames and physical declarations/slot bytes on same frozen postimage"
+      ]
+    },
+    "ids": {
+      "Available": "ebfef14e-7663-4e01-940d-3834a5cd19d9",
+      "List.TypeId": "11f29366-8186-4cc2-8366-3255caddc19e",
+      "List.ValueId": "d4ec95c3-7aa3-4b7c-9ce5-4e91c38c6f2b",
+      "Manager.TypeId": "e6307809-dab3-46dd-987a-acbc132b46b1",
+      "Manager.ValueId": "489da592-d686-4a73-aa68-b552d793cd89",
+      "Note": "be7f7870-d22e-44d4-bb79-a49c5068d273",
+      "Price": "06f5e60f-b6dd-40f2-be33-8dcf62527032",
+      "Product": "9f65bf57-8338-4972-a74f-d0cbd9af6b60",
+      "Record.TypeId": "95ea1cbe-269e-4d44-84ca-eacd8c5fb7c6",
+      "Record.ValueId": "d1e894aa-bec9-4bfc-826a-7d782973244b",
+      "RecordKey.TypeId": "48333434-d17c-48d5-b91c-a56dbafbef3a",
+      "RecordKey.ValueId": "54b4e533-e09b-4ece-b779-db08ade7391a",
+      "RecordManager.TypeId": "48aab3a6-4eaa-4f54-a367-c33e11542f21",
+      "RecordManager.ValueId": "4590cde7-ace4-4d3e-a2eb-ae3b7292d249",
+      "RecordSet.TypeId": "4d0c9abd-ec72-4da1-997c-b62169edeca4",
+      "RecordSet.ValueId": "8ae4d720-47cd-4506-a1fd-3359a6a57cef",
+      "Selection.TypeId": "a312c261-e406-4c17-a4fe-ecd7dfc9771e",
+      "Selection.ValueId": "0f1a346c-d577-4da8-8034-05f174985f86",
+      "ValidUntil": "f60f8e1d-06b3-45fc-8ccb-64f4df888541",
+      "Variant": "e265656d-3c08-4370-b063-0bd2d56966d8",
+      "product2": "e6cdbfda-9660-4265-bc10-9abcf9897e26"
+    },
+    "status": "periodic-v1-prospective-not-native-applied"
+  },
+  "names": [
+    "Ce75536d0",
+    "Cbfb39146"
+  ],
+  "metadata_ids": [
+    "4450f193-4623-49d9-8005-b761642b3734",
+    "0d64a568-0109-425f-8349-5a484a9e2e75"
+  ],
+  "record_ids": [
+    "14ccbb32-331f-491f-8c82-dce64419dc99",
+    "7ef7bb37-4add-4c13-b4ef-9c27952e0d58"
+  ],
+  "product_rows": [
+    "c42b3662-5c31-47fd-afb1-8caec00e0945",
+    "c4772a55-64e9-46d0-b86f-d26c413c81ac"
+  ],
+  "attribute_names": [
+    "Aaf57e17e",
+    "A2d15023d",
+    "Ae5a5789c",
+    "A8aa2e69f",
+    "Ac3af340f"
+  ],
+  "attribute_ids": [
+    "0f003fcf-a9a6-4cec-80dd-dc147d6ff7e7",
+    "88f97431-fcdf-402f-b317-70395a521166",
+    "4a81ea47-922f-429f-8420-390253ff2811",
+    "c941ff84-2ae9-4552-bcc6-d5a15741bbba",
+    "60b18735-66e8-40b6-9d11-ab08134829d9"
+  ],
+  "order": [
+    "text",
+    "number",
+    "boolean",
+    "datetime",
+    "reference"
+  ],
+  "cases": {
+    "get": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.Ie75536d0.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cbfb39146.EmptyRef().Metadata().Name"
+      ],
+      [
+        "G0.price",
+        "XMLString(G0.Price)"
+      ],
+      [
+        "G1.price",
+        "XMLString(G1.Price)"
+      ],
+      [
+        "G2.price",
+        "XMLString(G2.Price)"
+      ],
+      [
+        "L0.price",
+        "XMLString(L0.Price)"
+      ],
+      [
+        "L1.price",
+        "XMLString(L1.Price)"
+      ],
+      [
+        "L2.price",
+        "XMLString(L2.Price)"
+      ],
+      [
+        "GM.price",
+        "XMLString(GM.Price)"
+      ],
+      [
+        "GN.price",
+        "XMLString(GN.Price)"
+      ],
+      [
+        "type",
+        "String(TypeOf(G1))"
+      ],
+      [
+        "count",
+        "G1.Count()"
+      ],
+      [
+        "has.period",
+        "G1.Property(\"Period\")"
+      ],
+      [
+        "has.product",
+        "G1.Property(\"Product\")"
+      ],
+      [
+        "has.note",
+        "G1.Property(\"Note\")"
+      ],
+      [
+        "boolean",
+        "G1.Available"
+      ],
+      [
+        "date",
+        "XMLString(G1.ValidUntil)"
+      ],
+      [
+        "missing.count",
+        "GM.Count()"
+      ],
+      [
+        "missing.boolean",
+        "GM.Available"
+      ],
+      [
+        "missing.date",
+        "XMLString(GM.ValidUntil)"
+      ],
+      [
+        "future.count",
+        "GN.Count()"
+      ],
+      [
+        "future.boolean",
+        "GN.Available"
+      ],
+      [
+        "future.date",
+        "XMLString(GN.ValidUntil)"
+      ],
+      [
+        "manager.type",
+        "String(TypeOf(InformationRegisters.Ie75536d0))"
+      ]
+    ],
+    "slices": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.Ie75536d0.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cbfb39146.EmptyRef().Metadata().Name"
+      ],
+      [
+        "LF.count",
+        "LF.Count()"
+      ],
+      [
+        "FF.count",
+        "FF.Count()"
+      ],
+      [
+        "LP.count",
+        "LP.Count()"
+      ],
+      [
+        "FP.count",
+        "FP.Count()"
+      ],
+      [
+        "LK.count",
+        "LK.Count()"
+      ],
+      [
+        "FK.count",
+        "FK.Count()"
+      ],
+      [
+        "table.type",
+        "String(TypeOf(LF))"
+      ],
+      [
+        "columns",
+        "LF.Columns.Count()"
+      ],
+      [
+        "period.type",
+        "String(TypeOf(LK[0].Period))"
+      ],
+      [
+        "last.period",
+        "XMLString(LK[0].Period)"
+      ],
+      [
+        "last.price",
+        "XMLString(LK[0].Price)"
+      ],
+      [
+        "first.period",
+        "XMLString(FK[0].Period)"
+      ],
+      [
+        "first.price",
+        "XMLString(FK[0].Price)"
+      ],
+      [
+        "target",
+        "LK[0].Product.Description"
+      ],
+      [
+        "last.0.product",
+        "String(LF[0].Product.UUID())"
+      ],
+      [
+        "last.0.variant",
+        "XMLString(LF[0].Variant)"
+      ],
+      [
+        "last.1.product",
+        "String(LF[1].Product.UUID())"
+      ],
+      [
+        "last.1.variant",
+        "XMLString(LF[1].Variant)"
+      ],
+      [
+        "last.2.product",
+        "String(LF[2].Product.UUID())"
+      ],
+      [
+        "last.2.variant",
+        "XMLString(LF[2].Variant)"
+      ],
+      [
+        "last.note",
+        "LK[0].Note"
+      ],
+      [
+        "column.names",
+        "LF.Columns[0].Name + \"|\" + LF.Columns[1].Name + \"|\" + LF.Columns[2].Name + \"|\" + LF.Columns[3].Name + \"|\" + LF.Columns[4].Name + \"|\" + LF.Columns[5].Name + \"|\" + LF.Columns[6].Name"
+      ]
+    ],
+    "cursor": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.Ie75536d0.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cbfb39146.EmptyRef().Metadata().Name"
+      ],
+      [
+        "0.next",
+        "S.Next()"
+      ],
+      [
+        "0.period",
+        "XMLString(S.Period)"
+      ],
+      [
+        "0.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "0.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "1.next",
+        "S.Next()"
+      ],
+      [
+        "1.period",
+        "XMLString(S.Period)"
+      ],
+      [
+        "1.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "1.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "2.next",
+        "S.Next()"
+      ],
+      [
+        "2.period",
+        "XMLString(S.Period)"
+      ],
+      [
+        "2.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "2.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "3.next",
+        "S.Next()"
+      ],
+      [
+        "3.period",
+        "XMLString(S.Period)"
+      ],
+      [
+        "3.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "3.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "4.next",
+        "S.Next()"
+      ],
+      [
+        "4.period",
+        "XMLString(S.Period)"
+      ],
+      [
+        "4.product",
+        "String(S.Product.UUID())"
+      ],
+      [
+        "4.variant",
+        "XMLString(S.Variant)"
+      ],
+      [
+        "exhaust",
+        "S.Next()"
+      ],
+      [
+        "retained",
+        "XMLString(S.Period)"
+      ]
+    ],
+    "edges": [
+      [
+        "control.register",
+        "Metadata.InformationRegisters.Ie75536d0.Name"
+      ],
+      [
+        "control.catalog",
+        "Catalogs.Cbfb39146.EmptyRef().Metadata().Name"
+      ],
+      [
+        "type",
+        "String(TypeOf(E))"
+      ],
+      [
+        "before",
+        "XMLString(E.Period)"
+      ],
+      [
+        "exact.0.next",
+        "E.Next()"
+      ],
+      [
+        "exact.0.variant",
+        "XMLString(E.Variant)"
+      ],
+      [
+        "exact.0.period",
+        "XMLString(E.Period)"
+      ],
+      [
+        "exact.1.next",
+        "E.Next()"
+      ],
+      [
+        "exact.1.variant",
+        "XMLString(E.Variant)"
+      ],
+      [
+        "exact.1.period",
+        "XMLString(E.Period)"
+      ],
+      [
+        "exact.end",
+        "E.Next()"
+      ],
+      [
+        "exact.again",
+        "E.Next()"
+      ],
+      [
+        "desc.0.next",
+        "D.Next()"
+      ],
+      [
+        "desc.0.price",
+        "XMLString(D.Price)"
+      ],
+      [
+        "desc.1.next",
+        "D.Next()"
+      ],
+      [
+        "desc.1.price",
+        "XMLString(D.Price)"
+      ],
+      [
+        "desc.2.next",
+        "D.Next()"
+      ],
+      [
+        "desc.2.price",
+        "XMLString(D.Price)"
+      ],
+      [
+        "desc.3.next",
+        "D.Next()"
+      ],
+      [
+        "desc.3.price",
+        "XMLString(D.Price)"
+      ],
+      [
+        "desc.end",
+        "D.Next()"
+      ],
+      [
+        "missing",
+        "M.Next()"
+      ],
+      [
+        "missing.period",
+        "XMLString(M.Period)"
+      ],
+      [
+        "period.type",
+        "String(TypeOf(E.Period))"
+      ]
+    ]
+  },
+  "files": {
+    "edges.bsl": "e08c1d5190c54ea06c2a39e49192984a6ad12d3f18c15aa35809f822c131e38f",
+    "setup-filled.bsl": "5756f78ae250d56585d1f836376883a7604d6194313e857da32fe69a0320b981",
+    "cursor.bsl": "a7ebba0f71e8953d4b3967d1116ce5069555f88fa7ddcf66bc133f2e0a1f834a",
+    "get.bsl": "625e580f7e78d1ced2de20042c48e9d9a850b0dd9f6a5e426345c81c9a7bcb24",
+    "setup-empty.bsl": "3ad82ff503fb12d1a783954cce204658fb571316786117c39d5c22d5ce0382d5",
+    "slices.bsl": "d9b6a696137a713b764e5fdfcd180d7702f83491f684d24e7eabc6145086b8e9",
+    "Catalogs/Cbfb39146.xml": "0411e9649ffb7f84d179983b185b0d72e3a289b114da8a8e052308b9fbb48f62",
+    "InformationRegisters/Ie75536d0.xml": "4499a69c30442f89d21b438df770ae6343236863e2d0c0cd932944caf17b668a"
+  }
+}

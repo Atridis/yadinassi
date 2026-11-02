@@ -129,3 +129,6 @@ tests/fixtures/information_register_native.json -text
 integrational_tests/measurements/dom_family.bsl text eol=lf
 tests/fixtures/dom_family/**/*.bsl text eol=lf
 tests/fixtures/dom_family/**/*.out -text
+
+# Closed periodic InformationRegister fixture bytes, cross-platform exact hashes.
+scripts/native_1c_db_oracle/periodic_information_register_packet/** -text
