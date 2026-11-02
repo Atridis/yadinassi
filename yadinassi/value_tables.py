@@ -454,7 +454,8 @@ class BSLValueTableColumn(BSLObject):
         return "КолонкаТаблицыЗначений"
 
     def get_member(self, name):
-        if (self.table._bounded_slice_read and name.casefold() not in ('name', 'имя')
+        if (type(self.table) is BSLValueTable and self.table._bounded_slice_read
+                and name.casefold() not in ('name', 'имя')
                 and not (name.casefold() in ('valuetype','типзначения')
                          and self is self.table.columns.items[0])):
             # !todo Native slice column descriptors/qualifiers require evidence;
