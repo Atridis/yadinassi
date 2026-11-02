@@ -200,3 +200,23 @@ current snapshots and logical activation do not prove remote synchronization,
 exactly-once writes, exception rollback or automatic native UI event parity.
 MessagePack/WebSocket, authenticated module caching and remote resume are future
 transport choices, not dependencies or capabilities added by this slice.
+
+## Closed application actions (local integration)
+
+Trusted Python infrastructure may install immutable `FormApplicationAction`
+descriptors at session creation. Each binds one command and expected BSL handler,
+a finite scalar input/output schema, one host callback and an optional fixed
+post-application acknowledgement. The renderer cannot
+register/select callbacks, methods or sides. Dispatch checks the binding both
+before and after the ordinary BSL handler. Rebinding cannot redirect a capability.
+The callback returns `FormActionResult`; the whole scalar patch is preflighted,
+then applied shrink-before-growth with the existing form member API inside the
+serialized event. Only successful application invokes the fixed acknowledgement;
+the result payload cannot provide a callback.
+Exceptions retain preceding effects and advance the form revision. No rollback
+of a completed database operation is implied by a later callback/patch failure.
+This is internal application integration, **not a native BSL form method**, and
+must not be used to claim standard Save/FormData semantics. The catalog editor
+keeps references outside the scalar form and uses detached CatalogObject.Write.
+`FormSnapshot.item_views` adds field-view metadata without changing the existing
+`items` tuple shape. See [the editor contract](catalog-editor.md).

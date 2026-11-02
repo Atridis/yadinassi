@@ -88,10 +88,13 @@ class CatalogRepository:
     The backend chooses its storage/transport. This facade never opens a database,
     sends SQL or exposes backend revisions. Closing it releases the owned backend.
     """
-    def __init__(self, backend):
+    def __init__(self, backend, *, own_backend=True):
         if not all(callable(getattr(backend, name, None))
                    for name in ('capabilities', 'begin_read', 'close')):
             raise TypeError('catalog UI requires logical catalog backend')
+        if type(own_backend) is not bool:
+            raise TypeError('catalog UI ownership requires Boolean')
+        self._own_backend = own_backend
         self._backend = backend
         self._view = None
         self._identity = None
@@ -259,7 +262,8 @@ class CatalogRepository:
                 if self._view is not None:
                     self._view.close()
             finally:
-                self._backend.close()
+                if self._own_backend:
+                    self._backend.close()
 
     def commit(self, *args, **kwargs):
         raise UIError('write_unsupported')

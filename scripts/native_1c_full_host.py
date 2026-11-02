@@ -1802,7 +1802,16 @@ def repository_provenance(root: Path) -> dict:
 def interpreter_provenance(root: Path) -> dict:
     files = sorted([path for path in (root / "yadinassi").rglob("*")
                     if not path.is_dir() and "__pycache__" not in path.parts])
-    if any(path.suffix not in {".py", ".txt"} for path in files):
+    # Optional prebuilt renderer resources are a closed, fully hashed inventory.
+    # Do not broaden suffix admission or exclude these runtime package bytes.
+    assets = {"yadinassi/ui/assets/catalog/" + name for name in
+              ("app.js", "index.html", "style.css", "LICENSE.txt", "build-manifest.json")}
+    names = {path.relative_to(root).as_posix() for path in files}
+    if (not assets <= names or any(
+            (path.relative_to(root).as_posix().startswith("yadinassi/ui/assets/")
+             and path.relative_to(root).as_posix() not in assets)
+            or (path.suffix not in {".py", ".txt"} and path.relative_to(root).as_posix() not in assets)
+            for path in files)):
         raise FullError("unexpected_interpreter_source")
     files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
               root / "scripts/native_1c_map_contract.py", root / "scripts/native_1c_tree_load_contract.py", root / "scripts/native_1c_tree_move_contract.py", root / "scripts/native_1c_tree_total_contract.py",
