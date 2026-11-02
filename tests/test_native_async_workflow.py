@@ -371,10 +371,10 @@ class ManualWorkflowTests(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             trees[job] = "  " + job + ":\n" + matches[0]
             legacy = legacy.replace(trees[job], '', 1)
-        self.assertEqual(legacy.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 3)
-        self.assertEqual(legacy.count("GHCR_TOKEN: ${{ github.token }}"), 3)
+        self.assertEqual(legacy.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 4)
+        self.assertEqual(legacy.count("GHCR_TOKEN: ${{ github.token }}"), 4)
         upload = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
-        self.assertEqual(legacy.count(upload), 4)
+        self.assertEqual(legacy.count(upload), 6)
         catalog = re.search(r"(?ms)^  catalog_object_smoke:\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(1)
         self.assertEqual(catalog.count(upload), 2)
         self.assertEqual(catalog.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 1)
@@ -417,10 +417,10 @@ class ManualWorkflowTests(unittest.TestCase):
             self.assertLess(block.index("scripts/native_1c_ci_policy.py bind"), block.index("GHCR_TOKEN:"))
             self.assertIn("ref: ${{ github.sha }}", block)
             self.assertIn("persist-credentials: false", block)
-        self.assertEqual(source.count("contents: read"), 5)
-        self.assertEqual(source.count("packages: read"), 5)
+        self.assertEqual(source.count("contents: read"), 6)
+        self.assertEqual(source.count("packages: read"), 6)
         self.assertNotIn(": write", source)
-        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke]", source)
+        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, http_smoke]", source)
         self.assertIn("if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')", legacy)
 
 
