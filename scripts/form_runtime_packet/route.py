@@ -177,3 +177,100 @@ def marker(raw, nonce, phase):
     if values[23:25]!=('server-create','server-create:client-open'):
         raise ValueError('invalid form lifecycle witness')
     return values
+
+# Failed-only structural vocabulary: reviewed public source names/literals.
+# Zero means redacted, never a run-learned token. No arbitrary strings escape.
+DIAGNOSTIC_TAGS=(
+    '{http://v8.1c.ru/8.3/xcf/logform}Form',
+    '{http://v8.1c.ru/8.3/xcf/logform}AutoCommandBar',
+    '{http://v8.1c.ru/8.3/xcf/logform}Events',
+    '{http://v8.1c.ru/8.3/xcf/logform}Event',
+    '{http://v8.1c.ru/8.3/xcf/logform}Attributes',
+    '{http://v8.1c.ru/8.3/xcf/logform}Attribute',
+    '{http://v8.1c.ru/8.3/xcf/logform}Type',
+    '{http://v8.1c.ru/8.1/data/core}Type',
+    '{http://v8.1c.ru/8.3/xcf/logform}MainAttribute')
+DIAGNOSTIC_ATTRIBUTES=('version','name','id')
+# 2.20 is an existing public owned XML version in periodic_packet.py, not run-derived.
+DIAGNOSTIC_LITERALS=('', '2.4','FormCommandBar','-1','OnCreateAtServer','FormCreate',
+    'OnOpen','FormOpen','BeforeClose','FormBeforeClose','Object','1',
+    'cfg:ExternalDataProcessorObject.Launcher','true','false','2.20')
+DIAGNOSTIC_PREFIXES=('', 'cfg','v8')
+DIAGNOSTIC_URIS=('http://v8.1c.ru/8.3/xcf/logform',
+    'http://v8.1c.ru/8.1/data/enterprise/current-config','http://v8.1c.ru/8.1/data/core')
+DIAGNOSTIC_PHASES=('inventory','metadata','form_xml','module','other')
+DIAGNOSTIC_FILES=('Launcher.xml','Launcher/Forms/Main.xml','Launcher/Forms/Main/Ext/Form.xml',
+    'Launcher/Forms/Main/Ext/Form/Module.bsl','Launcher/Ext/ObjectModule.bsl')
+
+
+def redump_projection(files,subphase,*,extra_count=0):
+    """Bounded numeric projection only; cannot admit or repair a failed dump."""
+    def token(value,values):
+        try:return values.index(value)+1
+        except ValueError:return 0
+    result={'schema':1,'subphase':subphase if subphase in DIAGNOSTIC_PHASES else 'other',
+            'presence':sum(1<<i for i,name in enumerate(DIAGNOSTIC_FILES) if name in files),
+            'extra_count':min(32,max(0,extra_count)),'xml_status':'absent','row_count':0,
+            'rows':[],'rows_truncated':False,'namespaces':[],'form_sha256':None}
+    raw=files.get(DIAGNOSTIC_FILES[2])
+    if type(raw) is not bytes:return result
+    if len(raw)>MAX_SOURCE:result['xml_status']='budget';return result
+    result['form_sha256']=hashlib.sha256(raw).hexdigest()
+    try:
+        root=_xml(raw)  # strict UTF8/no DTD/PI guard precedes all parsing
+        rows=[];stack=[(root,0)];total=0
+        while stack:
+            node,depth=stack.pop();total+=1
+            if total>128 or depth>16 or len(node.attrib)>8 or len(node)>128:raise ValueError('budget')
+            if len(rows)<32:
+                tag=token(node.tag,DIAGNOSTIC_TAGS)
+                attrs=[]
+                for k,v in sorted(node.attrib.items()):
+                    key=token(k,DIAGNOSTIC_ATTRIBUTES) if tag else 0
+                    attrs.append([key,token(v,DIAGNOSTIC_LITERALS) if key else 0])
+                rows.append([depth,tag,attrs,
+                    token((node.text or '').strip(),DIAGNOSTIC_LITERALS) if tag else 0,
+                    token((node.tail or '').strip(),DIAGNOSTIC_LITERALS) if tag else 0,len(node)])
+            stack.extend((child,depth+1) for child in reversed(list(node)))
+        bindings=[]
+        for event,value in ET.iterparse(io.BytesIO(raw),events=('start-ns',)):
+            if len(bindings)>=32:raise ValueError('budget')
+            prefix,uri=value;prefix_id=token(prefix,DIAGNOSTIC_PREFIXES)
+            bindings.append([prefix_id,token(uri,DIAGNOSTIC_URIS) if prefix_id else 0])
+        result.update(xml_status='parsed',row_count=total,rows=rows,rows_truncated=total>32,namespaces=bindings)
+        if len(json.dumps(result,separators=(',',':')).encode())>4096:raise ValueError('budget')
+    except (ValueError,ET.ParseError,UnicodeError):
+        result.update(xml_status='rejected',row_count=0,rows=[],rows_truncated=False,namespaces=[])
+    return result
+
+
+def validate_redump_projection(value):
+    keys={'schema','subphase','presence','extra_count','xml_status','row_count','rows','rows_truncated','namespaces','form_sha256'}
+    def integer(v,limit):return type(v) is int and 0<=v<=limit
+    if (type(value) is not dict or set(value)!=keys or type(value['schema']) is not int or value['schema']!=1
+            or type(value['subphase']) is not str or value['subphase'] not in DIAGNOSTIC_PHASES
+            or not integer(value['presence'],31) or not integer(value['extra_count'],32)
+            or type(value['xml_status']) is not str or value['xml_status'] not in ('absent','budget','parsed','rejected')
+            or not integer(value['row_count'],128) or type(value['rows_truncated']) is not bool
+            or type(value['rows']) is not list or len(value['rows'])>32
+            or type(value['namespaces']) is not list or len(value['namespaces'])>32
+            or value['form_sha256'] is not None and (type(value['form_sha256']) is not str or re.fullmatch('[0-9a-f]{64}',value['form_sha256']) is None)):
+        raise ValueError('invalid redump projection')
+    for row in value['rows']:
+        if (type(row) is not list or len(row)!=6 or not integer(row[0],16)
+                or not integer(row[1],len(DIAGNOSTIC_TAGS)) or type(row[2]) is not list or len(row[2])>8
+                or not integer(row[3],len(DIAGNOSTIC_LITERALS)) or not integer(row[4],len(DIAGNOSTIC_LITERALS))
+                or not integer(row[5],128)):
+            raise ValueError('invalid redump projection row')
+        for pair in row[2]:
+            if type(pair) is not list or len(pair)!=2 or not integer(pair[0],len(DIAGNOSTIC_ATTRIBUTES)) or not integer(pair[1],len(DIAGNOSTIC_LITERALS)):
+                raise ValueError('invalid redump projection attribute')
+    for pair in value['namespaces']:
+        if type(pair) is not list or len(pair)!=2 or not integer(pair[0],len(DIAGNOSTIC_PREFIXES)) or not integer(pair[1],len(DIAGNOSTIC_URIS)):
+            raise ValueError('invalid redump projection namespace')
+    if value['xml_status']=='parsed':
+        if len(value['rows'])!=min(32,value['row_count']) or value['rows_truncated']!=(value['row_count']>32):raise ValueError('invalid redump projection count')
+    elif value['rows'] or value['namespaces'] or value['row_count'] or value['rows_truncated']:
+        raise ValueError('invalid redump projection state')
+    if len(json.dumps(value,separators=(',',':')).encode())>4096:raise ValueError('redump projection budget')
+    return value

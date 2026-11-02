@@ -136,3 +136,20 @@ observations and validated finite provenance, never raw native errors, logs,
 request paths or credentials. Failure reports contain only closed phase/reason
 and boolean witnesses. A successful native observation is separate from
 interpreter equality; neither has yet been measured for this candidate.
+
+### First acquisition and failed-only re-dump diagnosis
+
+The first source-bound run rejected the generated re-dump with
+`module_mismatch` in phase `redump`, before the managed ENTERPRISE invocation.
+No entered/completed observations were available; this does not establish a
+runtime semantic mismatch or its precise normalization cause. The original
+failure receipt is preserved separately.
+
+A bounded failed-only structural projection can now distinguish inventory,
+metadata, Form XML and module checks. It exports only known-file presence bits,
+a capped extra-entry count, at most32 numeric-ID XML rows and root/source-owned
+namespace/literal IDs, with all unknown regions redacted to0. No raw XML,
+unknown identifiers/values, paths or error text escape. Whole owned Form XML
+SHA256 is provenance only. DTD, non-UTF8, oversized/deep input and projection
+budgets fail closed. The strict original re-dump validator remains authoritative:
+a diagnostic never substitutes a source witness or allows ENTERPRISE execution.

@@ -32,7 +32,7 @@ def empty_report(nonce):
             'input_sha256':{},'source_sha256':None,'form_sha256':None,'module_sha256':None,
             'roundtrip_sha256':None,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'output_sha256':None,'output_size':None,
-            'record_count':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
+            'record_count':None,'redump_projection':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
 
 
 def _dump_files(directory):
@@ -92,9 +92,28 @@ def run_suite(platform,root,inputs,nonce):
             '/DumpExternalDataProcessorOrReportToFiles',str(dumped/'Launcher.xml'),str(epf),
             '/Out',str(root/'dump.log'),'/DumpResult',str(root/'dump.result')],
             root,root/'dump-console.log',120,require_clean_tree=True)
-        dumped_files=_dump_files(dumped)
+        try:dumped_files=_dump_files(dumped)
+        except full.FullError as error:
+            if error.kind!='module_mismatch':raise
+            known={};extra=0
+            # Only our five exact public source paths are read, never extra names.
+            for name in route.DIAGNOSTIC_FILES:
+                try:known[name]=full.secure_bytes(dumped/name,route.MAX_MARKER,allow_empty=name.endswith('ObjectModule.bsl'))
+                except full.FullError:pass
+            expected_entries=set(route.DIAGNOSTIC_FILES)|{parent.as_posix() for name in route.DIAGNOSTIC_FILES for parent in Path(name).parents if parent.as_posix()!='.'}
+            for index,path in enumerate(dumped.rglob('*')):
+                if index>=32:extra=32;break
+                if path.relative_to(dumped).as_posix() not in expected_entries:extra+=1
+            report['redump_projection']=route.redump_projection(known,'inventory',extra_count=extra)
+            raise
         try:route.validate_redump(dumped_files)
-        except ValueError:raise full.FullError('module_mismatch') from None
+        except ValueError as error:
+            categories={'form XML structure mismatch':'form_xml','nested form namespace declarations unsupported':'form_xml',
+                        'form module mismatch':'module','unexpected object module':'module',
+                        'invalid managed metadata namespace':'metadata','invalid form metadata binding':'metadata',
+                        'invalid form registration':'metadata','invalid form event wiring':'form_xml'}
+            report['redump_projection']=route.redump_projection(dumped_files,categories.get(str(error),'other'))
+            raise full.FullError('module_mismatch') from None
         actual=full.generated_module(dumped_files[MODULE])
         if actual!=module:raise full.FullError('module_mismatch')
         report['roundtrip_sha256']=full.digest(actual)

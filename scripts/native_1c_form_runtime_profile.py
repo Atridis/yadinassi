@@ -235,7 +235,7 @@ PHASES=('prerequisites','inputs','build','redump','enterprise','markers','final'
 FLAGS={'entered','completed','process_exited','quiet','witness_verified'}
 HASH_FIELDS={'source_sha256','form_sha256','module_sha256','roundtrip_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics'}
+    'input_sha256','output_size','record_count','process_diagnostics','redump_projection'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -257,12 +257,22 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(stage['record_count'] is None or type(stage['record_count']) is int and stage['record_count']==40)
         FULL.validate_process_diagnostics(stage['process_diagnostics'])
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({},hashes))
+        projection=stage['redump_projection']
+        if projection is not None:
+            route.validate_redump_projection(projection)
+            require(stage['status']=='failed' and stage['failure_phase']=='redump' and stage['failure_kind']=='module_mismatch')
+            require(stage['input_sha256']==hashes and stage['source_sha256']==SOURCE_SHA256==hashes[SOURCE]
+                    and stage['form_sha256']==route.FORM_SHA256==hashes[FORM]
+                    and stage['module_sha256']==FULL.digest(FULL.generated_module(route.module())))
+            require(all(stage[k] is False for k in ('entered','completed','process_exited','witness_verified')))
         if stage['status']!='ok':
             require(report['native_tests_completed'] is False and value['outputs']==[])
             require(report['status']!='ok' and stage['failure_kind']!='none')
             error=FormError('form_native_failed')
             error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet')}
+            if projection is not None:error.native_failure['redump_projection']=projection
             raise error
+        require(projection is None)
         require(stage['input_sha256']==hashes and stage['failure_kind']=='none' and stage['failure_phase']=='final')
         require(report['status']=='ok' and report['native_tests_completed'] is True and all(stage[k] for k in FLAGS))
         require(stage['source_sha256']==SOURCE_SHA256==hashes[SOURCE] and stage['form_sha256']==route.FORM_SHA256==hashes[FORM])
