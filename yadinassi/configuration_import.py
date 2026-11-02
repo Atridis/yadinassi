@@ -6,6 +6,30 @@ from pathlib import Path
 from .configuration_xml import import_configuration, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES
 
 
+def _snapshot(info):
+    """Compare timestamps only between observations from the same stat API."""
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+            getattr(info, 'st_birthtime_ns', None),
+            getattr(info, 'st_file_attributes', 0))
+
+
+def _path_matches_descriptor(path_info, descriptor_info):
+    identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns)
+    if identity(path_info) != identity(descriptor_info):
+        return False
+    if sys.platform != 'win32':
+        return path_info.st_ctime_ns == descriptor_info.st_ctime_ns
+    # CPython 3.12 Windows stat(path) exposes creation time as ctime,
+    # while fstat(fd) exposes change time (CPython issue #157671).
+    # Keep full ctime comparisons within each API before/after the read.
+    births = (getattr(path_info, 'st_birthtime_ns', None),
+              getattr(descriptor_info, 'st_birthtime_ns', None))
+    if births != (None, None):
+        return all(type(value) is int for value in births) and births[0] == births[1]
+    return True  # Older Windows Python: no portable cross-API creation field.
+
+
 def _host_directory(directory):
     """Static no-link admission for a stable, host-controlled local directory.
 
@@ -75,7 +99,7 @@ def load_configuration_directory(directory):
                 fd = os.open(entry.path, os.O_RDONLY | getattr(os,'O_BINARY',0) | getattr(os,'O_NOFOLLOW',0))
                 try:
                     opened = os.fstat(fd)
-                    if (opened.st_dev,opened.st_ino,opened.st_size,opened.st_mtime_ns,opened.st_ctime_ns) != (before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns) or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+                    if not _path_matches_descriptor(before, opened) or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
                         raise ValueError('configuration source changed')
                     chunks=[]; remaining=MAX_FILE_BYTES+1
                     while remaining:
@@ -84,7 +108,9 @@ def load_configuration_directory(directory):
                         chunks.append(chunk);remaining-=len(chunk)
                     content=b''.join(chunks)
                     after=os.fstat(fd)
-                    if len(content)!=before.st_size or (after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns)!=(opened.st_dev,opened.st_ino,opened.st_size,opened.st_mtime_ns,opened.st_ctime_ns):
+                    path_after = os.stat(entry.path, follow_symlinks=False)
+                    if (len(content) != before.st_size or _snapshot(after) != _snapshot(opened)
+                            or _snapshot(path_after) != _snapshot(before)):
                         raise ValueError('configuration source changed')
                 finally:os.close(fd)
                 total+=len(content);files[logical]=content
