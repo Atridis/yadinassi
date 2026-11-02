@@ -454,6 +454,13 @@ class BSLValueTableColumn(BSLObject):
         return "КолонкаТаблицыЗначений"
 
     def get_member(self, name):
+        if (type(self.table) is BSLValueTable and self.table._bounded_slice_read
+                and name.casefold() not in ('name', 'имя')
+                and not (name.casefold() in ('valuetype','типзначения')
+                         and self is self.table.columns.items[0])):
+            # !todo Native slice column descriptors/qualifiers require evidence;
+            # never expose the internal untyped materialization as native schema.
+            raise ValueError('slice column schema inspection is not admitted')
         members = {"name": self.name, "имя": self.name,
                    "title": self.title, "заголовок": self.title,
                    "width": self.width, "ширина": self.width,
@@ -464,6 +471,8 @@ class BSLValueTableColumn(BSLObject):
         return super().get_member(name)
 
     def set_member(self, name, value):
+        if self.table._bounded_slice_read:
+            raise ValueError('slice schema mutation is not admitted')
         if self._deleted:
             raise ValueError("Колонка удалена")
         key = name.casefold()
@@ -583,6 +592,8 @@ class BSLValueTableColumnCollection(BSLObject):
         return self.get_index(name)
 
     def get_method(self, name):
+        if self.table._bounded_slice_read and name.casefold() not in ('count','количество','get','получить','find','найти','indexof','индекс'):
+            raise ValueError('slice schema mutation is not admitted')
         return _method(name, {"count": lambda: Decimal(len(self.items)), "количество": lambda: Decimal(len(self.items)),
             "get": self.get, "получить": self.get, "find": self.find, "найти": self.find,
             "indexof": self.index_of, "индекс": self.index_of, "add": self.add, "добавить": self.add,
@@ -619,6 +630,8 @@ class BSLValueTableRow(BSLObject):
         return self.cells[self.table.columns.get(index)]
 
     def set(self, index, value):
+        if self.table._bounded_slice_read:
+            raise ValueError('slice row mutation is not admitted')
         self._live()
         column = self.table.columns.get(index)
         self.table.indexes._set_cell(self, column, _adjust(column.value_type, value))
@@ -628,6 +641,8 @@ class BSLValueTableRow(BSLObject):
         return self.cells[self.table.columns.get_index(index)]
 
     def set_index(self, index, value):
+        if self.table._bounded_slice_read:
+            raise ValueError('slice row mutation is not admitted')
         self._live()
         column = self.table.columns.get_index(index)
         self.table.indexes._set_cell(self, column, _adjust(column.value_type, value))
@@ -645,6 +660,7 @@ class BSLValueTableRow(BSLObject):
 
 class BSLValueTable(BSLObject):
     def __init__(self):
+        self._bounded_slice_read = False
         self.rows = []
         self.columns = BSLValueTableColumnCollection(self)
         self.indexes = BSLCollectionIndexes(self)
@@ -859,6 +875,8 @@ class BSLValueTable(BSLObject):
         return result
 
     def get_member(self, name):
+        if self._bounded_slice_read and name.casefold() not in ('columns','колонки'):
+            raise ValueError('slice auxiliary collections are not admitted')
         if name.casefold() in ("indexes", "индексы"):
             return self.indexes
         if name.casefold() in ("columns", "колонки"):
@@ -866,6 +884,10 @@ class BSLValueTable(BSLObject):
         return super().get_member(name)
 
     def get_method(self, name):
+        if self._bounded_slice_read and name.casefold() not in ('count','количество','get','получить','indexof','индекс','findrows','найтистроки'):
+            # !todo Copy/mutation/sort/codec must not erase the unmeasured schema
+            # boundary. Ordinary constructed ValueTables remain unaffected.
+            raise ValueError('only bounded slice reads are admitted')
         if name.casefold() in ("sort", "сортировать"):
             return HostFunction(name, self.sort, returns_value=False)
         if name.casefold() in ("groupby", "свернуть"):
