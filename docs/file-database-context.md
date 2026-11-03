@@ -45,6 +45,10 @@ Accepted source files are stored with SHA-256 digests and can be exported by
 `context.backend.export_configuration()` without reconstructing native binary
 formats. Stored source does not imply executable support. Activation refuses
 unsupported modules, metadata behavior and object families explicitly.
+An optional [closed ConfigDumpInfo inventory](configuration-dump-info-profile.md)
+can accompany the admitted catalog subset. It is checked against the parsed
+object identities and retained unchanged, not treated as proof of full native
+dump compatibility or executable semantics.
 
 For an existing application database:
 
