@@ -14,3 +14,6 @@ integrational_tests/.work/
 # Native launcher output is disposable; historical Windows evidence is in tests/fixtures.
 /integrational_tests/output/*
 !/integrational_tests/output/.gitkeep
+
+# Optional UI renderer build dependencies; committed assets are prebuilt.
+/frontend/catalog/node_modules/

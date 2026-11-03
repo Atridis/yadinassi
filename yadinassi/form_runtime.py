@@ -28,6 +28,23 @@ class FormLimitError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class FormActionResult:
+    """Closed scalar patch from trusted application infrastructure, not BSL API."""
+    values: tuple = ()
+
+
+@dataclass(frozen=True)
+class FormApplicationAction:
+    """Sealed command/handler capability; callbacks never originate in renderer data."""
+    command: str
+    handler: str
+    inputs: tuple
+    outputs: tuple
+    callback: object
+    applied: object = None
+
+
+@dataclass(frozen=True)
 class FormSnapshot:
     revision: int
     state: str
@@ -35,6 +52,7 @@ class FormSnapshot:
     attributes: tuple
     items: tuple
     commands: tuple
+    item_views: tuple = ()
 
 
 class _FormInterpreter(Interpreter):
@@ -124,7 +142,7 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), initial_values=None, bindings=None, output=None, database_context=None):
+    def __init__(self, source, *, attributes=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=()):
         text(source, MAX_SOURCE)
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
             raise ValueError('Форма: слишком много реквизитов')
@@ -132,6 +150,24 @@ class FormSession:
         if type(bindings) is not dict or len(bindings)>4: raise ValueError('Форма: неверные события')
         if initial_values is None: initial_values = {}
         if type(initial_values) is not dict or len(initial_values)>MAX_ATTRIBUTES: raise ValueError('Форма: неверные начальные данные')
+        if type(application_actions) is not tuple or len(application_actions) > 64:
+            raise ValueError('Форма: неверные действия приложения')
+        self._application_actions = {}
+        attribute_names = {a.name.casefold() for a in attributes if type(a) is BSLFormAttribute}
+        for action in application_actions:
+            if (type(action) is not FormApplicationAction or not callable(action.callback)
+                    or action.applied is not None and not callable(action.applied)):
+                raise TypeError('Форма: требуется связанное действие приложения')
+            key = name(action.command).casefold(); name(action.handler)
+            if key in self._application_actions:
+                raise ValueError('Форма: повторное действие приложения')
+            for members in (action.inputs, action.outputs):
+                if type(members) is not tuple or len(members) > MAX_ATTRIBUTES:
+                    raise ValueError('Форма: неверная схема действия приложения')
+                keys = tuple(name(member).casefold() for member in members)
+                if len(set(keys)) != len(keys) or not set(keys) <= attribute_names:
+                    raise ValueError('Форма: неизвестные реквизиты действия приложения')
+            self._application_actions[key] = action
         self._output = output; self._messages = []
         self.closed = False; self.state = 'created'; self.revision = 0
         self._busy = False; self._steps = 0; self._events = 0
@@ -210,6 +246,43 @@ class FormSession:
             interpreter._scheduler.run_inline(execute())
         return slots
 
+    def _application_action(self, command):
+        action = self._application_actions.get(command.name.casefold())
+        if action is None:
+            return
+        if command.action.casefold() != action.handler.casefold():
+            raise ValueError('Форма: привязка действия приложения изменена')
+        inputs = tuple((key, scalar(self.form.get_member(key))) for key in action.inputs)
+        result = action.callback(inputs)
+        if type(result) is not FormActionResult or type(result.values) is not tuple or len(result.values) > len(action.outputs):
+            raise TypeError('Форма: неверный результат действия приложения')
+        allowed = {key.casefold() for key in action.outputs}; changes = {}
+        for pair in result.values:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise TypeError('Форма: неверный реквизит результата')
+            key, value = pair; key = name(key).casefold()
+            if key not in allowed or key in changes:
+                raise ValueError('Форма: результат вне связанной схемы')
+            attribute = self.form._attributes[key]
+            changes[key] = scalar(attribute.value_type.adjust_value(scalar(value)))
+        total = sum(len(value) for key, value in self.form._data.items()
+                    if key not in changes and type(value) is str)
+        total += sum(len(value) for value in changes.values() if type(value) is str)
+        if total > MAX_TOTAL_TEXT:
+            raise ValueError('Форма: превышен предел данных')
+        # Shrink first so every intermediate text total also fits the validated
+        # final bound. No handlers/observers run between these ordinary setters.
+        def growth(pair):
+            key, value = pair
+            old = self.form.get_member(key)
+            return (len(value) if type(value) is str else 0) - (len(old) if type(old) is str else 0)
+        for key, value in sorted(changes.items(), key=growth):
+            self.form.set_member(key, value)
+        # This acknowledgement is fixed by trusted registration, not returned in
+        # the patch or selected by the renderer. Failed patch => no adoption.
+        if action.applied is not None:
+            action.applied()
+
     def _event(self, event, arguments):
         handler = self.form.actions.get(event)
         return arguments if not handler else self._invoke(handler, self.form.EVENTS[event][0], arguments)
@@ -262,6 +335,9 @@ class FormSession:
                 else:
                     command = self.form.commands._values.get(item.command_name.casefold())
                     if command is None or not command.action: raise ValueError('Форма: команда не привязана')
+                    action = self._application_actions.get(command.name.casefold())
+                    if action is not None and command.action.casefold() != action.handler.casefold():
+                        raise ValueError('Форма: привязка действия приложения изменена')
         except BaseException:
             self._busy = False; self._gate.release(); raise
         try:
@@ -277,6 +353,7 @@ class FormSession:
                     if item.action: self._invoke(item.action,'client',[item])
                 else:
                     self._invoke(command.action,'client',[command])
+                    self._application_action(command)
         finally:
             self.revision += 1; self._busy = False; self._gate.release()
         return self.snapshot()
@@ -291,4 +368,6 @@ class FormSession:
                       for x in form.items._values.values())
         commands = tuple((x.name,x.title) for x in form.commands._values.values())
         return FormSnapshot(self.revision,self.state,form.title,
-                            tuple((a.name,form._data[k]) for k,a in form._attributes.items()),items,commands)
+                            tuple((a.name,form._data[k]) for k,a in form._attributes.items()),items,commands,
+                            tuple((x.name,x.view.value[0]) for x in form.items._values.values()
+                                  if type(x) is BSLFormField))

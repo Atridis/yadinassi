@@ -114,3 +114,7 @@ scripts/catalog_query_behavior/** -text
 scripts/HTTPFamily.bsl -text
 
 tests/fixtures/http_family/native-initial/* -text
+
+# Deterministic catalog renderer source/output manifest on every checkout OS.
+frontend/catalog/** text eol=lf
+yadinassi/ui/assets/catalog/* text eol=lf

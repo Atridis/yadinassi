@@ -308,3 +308,9 @@ Except as contained in this notice, the name of a copyright holder shall
 not be used in advertising or otherwise to promote the sale, use or other
 dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
+
+
+Preact 11.1.1 (https://preactjs.com/), MIT, bundled optional catalog renderer.
+Complete license: yadinassi/ui/assets/catalog/LICENSE.txt and frontend/catalog/PREACT-LICENSE.txt.
+Build tool esbuild 0.28.2 is not a runtime dependency; its license is retained
+in frontend/catalog/ESBUILD-LICENSE.txt.

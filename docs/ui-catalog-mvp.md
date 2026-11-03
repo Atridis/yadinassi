@@ -1,3 +1,9 @@
+> The optional scalar editor/renderer is now implemented as a bounded next slice;
+> see [catalog-editor.md](catalog-editor.md) for the current executable contract.
+> Historical read-only foundation limitations below describe `yadinassi-ui/0`,
+> not the separate `yadinassi-editor/0` adapter. Full native managed forms and
+> reference editing remain outside this slice.
+
 # Third track: a usable catalog application, with 1C-compatible programming
 
 The goal is a working application over a yadinassi SQLite database containing

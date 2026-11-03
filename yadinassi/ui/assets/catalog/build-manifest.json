@@ -1,0 +1,22 @@
+{
+  "schema": "yadinassi-catalog-assets/0",
+  "dependencies": {
+    "preact": "11.1.1",
+    "esbuild": "0.28.2"
+  },
+  "sources": {
+    "package.json": "3d21d35754f9d16f1e07b239c27a8b31b6451efeb2f0189372203ae5e9266d09",
+    "package-lock.json": "33747f75a1c0c7ad808932f1a4530ac0b9ed273f3fe7918413c8240ba49dbb92",
+    "build.mjs": "db9623940ad61a90c1d9e77427bafc24b0e4b9ecd254f408465a3466fe15623b",
+    "src/app.jsx": "0bea809e1d5ae802e251684de2433ba8748bbb715e7b62edf08ceee1fb59d930",
+    "src/client.mjs": "f9f909f530757b6e4bd29263be7b8868f043321aa712a0c773259dee48f4e666",
+    "src/index.html": "b1765901cc19ebf5857ca309d2479f9087ef566ed43c15abb0b63abe4f268c28",
+    "src/style.css": "a8169efbaa5e94edc72371064e84085033df73ad8ca76e9d9a9f03c45f1f7e32"
+  },
+  "outputs": {
+    "app.js": "e3a919bfe3ea5bbbca7eddd01e6168a8aa58b261ac185fadf6e728b46c4d53c3",
+    "index.html": "b1765901cc19ebf5857ca309d2479f9087ef566ed43c15abb0b63abe4f268c28",
+    "style.css": "a8169efbaa5e94edc72371064e84085033df73ad8ca76e9d9a9f03c45f1f7e32",
+    "LICENSE.txt": "1fe6958409c8c257a70c587a18b6f7f412b179b456630790d30b2ec9a8e4b7d4"
+  }
+}

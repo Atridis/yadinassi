@@ -16,6 +16,7 @@ build = ["pyinstaller==6.22.2"]
 
 [project.scripts]
 yadinassi = "yadinassi.cli:main"
+yadinassi-catalog = "yadinassi.ui.local_app:main"
 
 [tool.setuptools]
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
@@ -27,4 +28,4 @@ include = ["yadinassi*"]
 version = {attr = "yadinassi.__version__"}
 
 [tool.setuptools.package-data]
-yadinassi = ["data/*.txt"]
+yadinassi = ["data/*.txt", "ui/assets/catalog/*"]
