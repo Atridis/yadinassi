@@ -1,12 +1,12 @@
-"""Bounded Format measurement wire grammar; no native expected semantic values."""
+"""Bounded temporary NumberInWords measurement wire grammar; no native expected semantic values."""
 import re
 
-CASE_COUNT = 48
-MAX_STRING_UNITS = 32
+CASE_COUNT = 29
+MAX_STRING_UNITS = 64
 MAX_OUTPUT_BYTES = 8192
 CALIBRATION = b'FM-C1: [S0:]\nFM-C2: [S6:004100a0003b0022d83dde00]\n'
 # Fixed ASCII label/framing + maximum two-digit length + four hex digits per unit.
-MAX_RECORD_BYTES = len(b'FM-00: [ok|S32:') + MAX_STRING_UNITS * 4 + len(b']\n')
+MAX_RECORD_BYTES = len(b'FM-00: [ok|S64:') + MAX_STRING_UNITS * 4 + len(b']\n')
 MAX_ENCODED_BYTES = len(CALIBRATION) + CASE_COUNT * MAX_RECORD_BYTES
 
 class ObservationError(ValueError):

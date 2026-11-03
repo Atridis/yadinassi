@@ -75,12 +75,12 @@ COLUMNS_DELETE_STRING = Profile('tree-columns-delete-string-v1', 'native-1c-tree
     7, 'native_1c_tree_columns_delete_string_contract', '\nСообщить("DS-C1: [" + CCCalibrate() + "]");\n', 2, 'tree-columns-delete-string')
 
 FORMAT_NUMBERS = Profile('format-numbers-v1', 'native-1c-format-numbers-v1', 'native-1c-format-numbers-stage-v1',
-    'format_numbers', 'a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84',
-    50, 'native_1c_format_numbers_contract', '\nСообщить("FM-C1: [" + FMEncode("") + "]");\n', 5, 'format-numbers')
+    'format_numbers', '433a8ee21a7fb9d33d981556c1d90ec36e0af9a81a911e650c75a4d7ad2bb73f',
+    31, 'native_1c_format_numbers_contract', '\nСообщить("FM-C1: [" + FMEncode("") + "]");\n', 5, 'format-numbers')
 
 FORMAT_DATES = Profile('format-dates-v1', 'native-1c-format-dates-v1', 'native-1c-format-dates-stage-v1',
-    'format_dates', '7fbdcca1257bc6d754fd8a640f3ed4790196db12b8c61be2a8a88f93ee5adccb',
-    58, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
+    'format_dates', '15d1986a4e9c08d2b0e76fd09f3ed6b6d4a8f0a91364119e1edcb6673ddb3e57',
+    30, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
 
 JSON_FAMILY = Profile('json-family-v1', 'native-1c-json-family-v1', 'native-1c-json-family-stage-v1',
     'json_family', 'ac6acd4a5af2b93c3d6b3b2e7ffdc95f8024e3fbd52482cd4c814b3f2020b00b',

@@ -19,7 +19,7 @@ from yadinassi.syntax import ast
 
 SOURCE_PATH = ROOT / 'integrational_tests/measurements/format_dates.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
-SOURCE_SHA = '7fbdcca1257bc6d754fd8a640f3ed4790196db12b8c61be2a8a88f93ee5adccb'
+SOURCE_SHA = '15d1986a4e9c08d2b0e76fd09f3ed6b6d4a8f0a91364119e1edcb6673ddb3e57'
 
 
 def emit(witness=None, source=SOURCE, *, missing=False):
@@ -28,9 +28,13 @@ def emit(witness=None, source=SOURCE, *, missing=False):
     if missing:
         vm.functions.pop("format", None)
         vm.functions.pop("формат", None)
+        vm.functions.pop("periodpresentation", None)
+        vm.functions.pop("представлениепериода", None)
     if witness is not None:
         vm.register_function('Format', witness)
         vm.register_function('Формат', witness)
+        vm.register_function('PeriodPresentation', witness)
+        vm.register_function('ПредставлениеПериода', witness)
     vm.execute(source)
     return ('\n'.join(output) + '\n').encode('ascii')
 
@@ -48,8 +52,8 @@ class FormatObserverTests(unittest.TestCase):
     def test_exact_source_pin_and_bounded_fixed_matrix(self):
         self.assertEqual(hashlib.sha256(SOURCE.encode('utf-8')).hexdigest(), SOURCE_SHA)
         rows = fixed_rows()
-        self.assertEqual([r[0] for r in rows], list(range(1,57)))
-        self.assertEqual(len({r[2] for r in rows}), 56)
+        self.assertEqual([r[0] for r in rows], list(range(1,29)))
+        self.assertEqual(len({r[2] for r in rows}), 28)
         parse(SOURCE)
         for _, expression, _ in rows:
             statements = parse(expression)
@@ -57,7 +61,7 @@ class FormatObserverTests(unittest.TestCase):
             call = statements[0].expression
             self.assertIsInstance(call, ast.Call)
             self.assertIsInstance(call.callee, ast.Name)
-            self.assertIn(call.callee.name, ('Format', 'Формат'))
+            self.assertIn(call.callee.name, ('Format', 'Формат', 'PeriodPresentation', 'ПредставлениеПериода'))
             for arg in call.arguments:
                 if isinstance(arg, ast.Unary):
                     self.assertEqual(arg.operator, '-')
@@ -80,7 +84,7 @@ class FormatObserverTests(unittest.TestCase):
         receipt = json.loads((fixture / 'original40-provenance.json').read_text(encoding='utf-8'))
         self.assertEqual(hashlib.sha256(original).hexdigest(), '5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa')
         self.assertTrue((fixture / 'supplement56.bsl').read_bytes().startswith(original))
-        self.assertEqual((fixture / 'supported56.bsl').read_bytes(), SOURCE.encode())
+        self.assertEqual(hashlib.sha256((fixture / 'supported56.bsl').read_bytes()).hexdigest(), '7fbdcca1257bc6d754fd8a640f3ed4790196db12b8c61be2a8a88f93ee5adccb')
         self.assertEqual(hashlib.sha256((fixture / 'supplement56.bsl').read_bytes()).hexdigest(), '7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb')
         self.assertEqual(hashlib.sha256((fixture / 'supplement56.out').read_bytes()).hexdigest(), 'fe558102e1e7f6cf879243b10ec377906d908a784fe2ed497c19826a4359fa8f')
         self.assertTrue((fixture / 'supplement56.out').read_bytes().startswith(capture))
@@ -89,7 +93,7 @@ class FormatObserverTests(unittest.TestCase):
         self.assertEqual(receipt['cases'], 40)
         self.assertEqual(receipt['head'], '1eaf2de6b60e199f21debc3d182b779b4a74b153')
         self.assertFalse(receipt['runtime_parity_accepted'])
-        self.assertEqual(wire.MAX_ENCODED_BYTES, 8170)
+        self.assertEqual(wire.MAX_ENCODED_BYTES, len(wire.CALIBRATION) + 28 * wire.MAX_RECORD_BYTES)
 
     def test_exact_inputs_reach_witness_unchanged(self):
         seen = []
@@ -98,14 +102,12 @@ class FormatObserverTests(unittest.TestCase):
             return 'synthetic'
         raw = emit(witness)
         records = wire.require_available(raw)
-        self.assertEqual(len(seen), 56)
+        self.assertEqual(len(seen), 28)
         self.assertTrue(all(r['status']=='ok' for r in records))
-        import json
-        mapping = json.loads((ROOT / 'tests/fixtures/format_dates/supported56-mapping.json').read_text(encoding='utf-8'))
-        self.assertEqual(len(mapping['cases']), 56)
-        self.assertEqual([r[1] for r in fixed_rows()], [r['expression'] for r in mapping['cases']])
         self.assertEqual(seen[0][1], 'DF=yyyy-MM-dd HH:mm:ss')
-        self.assertEqual(seen[38][1], 'NFD=1;NG=0;nds=.'); self.assertEqual(seen[-1][1], 'DF=yyyy;ДФ=MM')
+        self.assertEqual(seen[13][2], 'ФП=Истина')
+        self.assertEqual(seen[23][2], 'L=en_US')
+        self.assertEqual(seen[26][2], 'L=en_US;FP=True')
 
     def test_repository_fixture_reads_are_independent_of_default_encoding(self):
         from unittest import mock
@@ -129,7 +131,7 @@ class FormatObserverTests(unittest.TestCase):
             runtime_case.test_final_supported56_is_explicit_projection_of_immutable_observations()
 
     def test_unicode_and_empty_outputs_are_lossless(self):
-        for value, units in [('',()), (' \u00a0\U0001f600', (32,160,55357,56832)), ('a'*32,(97,)*32)]:
+        for value, units in [('',()), (' \u00a0\U0001f600', (32,160,55357,56832)), ('a'*64,(97,)*64)]:
             records=wire.require_available(emit(lambda *args:value))
             self.assertTrue(all(r['units']==units for r in records))
 
@@ -140,7 +142,7 @@ class FormatObserverTests(unittest.TestCase):
         self.assertNotIn(b'PRIVATE',raw)
         self.assertTrue(all(r['status']=='action-error' for r in wire.validate_output(raw)))
         with self.assertRaises(wire.AvailabilityError):wire.require_available(raw)
-        for value in (None,Decimal(1),True,'x'*33):
+        for value in (None,Decimal(1),True,'x'*65):
             raw=emit(lambda *args:value)
             self.assertTrue(all(r['status']=='observer-error' for r in wire.validate_output(raw)))
             with self.assertRaises(wire.AvailabilityError):wire.require_available(raw)
@@ -150,8 +152,18 @@ class FormatObserverTests(unittest.TestCase):
         self.assertTrue(all(r['status']=='action-error' for r in wire.validate_output(raw)))
         with self.assertRaises(wire.AvailabilityError):wire.require_available(raw)
 
+    def test_period_positive_controls_are_required(self):
+        raw = emit(lambda *args: 'ok')
+        for case in (5, 6):
+            line = f'FD-{case:02d}: [ok|S2:006f006b]'.encode('ascii')
+            self.assertIn(line, raw)
+            bad = raw.replace(line, f'FD-{case:02d}: [action-error]'.encode('ascii'), 1)
+            wire.validate_output(bad)
+            with self.assertRaises(wire.AvailabilityError):
+                wire.require_available(bad)
+
     def test_rectangular_maximum_fits_unraised_cap(self):
-        raw=emit(lambda *args:'x'*32)
+        raw=emit(lambda *args:'x'*64)
         self.assertEqual(len(raw),wire.MAX_ENCODED_BYTES)
         self.assertLessEqual(len(raw),wire.MAX_OUTPUT_BYTES)
         wire.require_available(raw)
