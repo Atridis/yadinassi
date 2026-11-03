@@ -185,6 +185,10 @@ _GENERATED = {'Object': 'CatalogObject', 'Ref': 'CatalogRef',
 # Generated from scripts/catalog_object_behavior/generated/Catalog.xml after
 # its owned Designer round-trip. See docs/official-catalog-xml-profile.md.
 _PROFILE_SHA256 = '100592da54dc738bf82f1950f943a8408e848400082c7a38d7ab920274fed4bb'
+# Separate whole-object profile for catalog_query_behavior/generated/Catalog.xml.
+# Its strict Designer redump was verified in run 41511900693; that run is not
+# evidence of complete runtime parity. Defaults and qualifiers remain exact.
+_SCALAR_PROFILE_SHA256 = '96cf0df15e450ae7ed0cc4e03aa2d76269ce56764a1d4d5c5cd89599da0a0572'
 
 
 def _valid_uuid(text):
@@ -196,7 +200,7 @@ def _valid_uuid(text):
     return value
 
 
-def _catalog_profile_fingerprint(catalog, namespaces):
+def _catalog_profile_fingerprint(catalog, namespaces, *, scalar_attributes=False):
     if catalog.tag != '{'+MD+'}Catalog' or set(catalog.attrib) != {'uuid'}:
         raise ValueError('catalog shape')
     catalog_uuid = _valid_uuid(catalog.get('uuid'))
@@ -211,6 +215,40 @@ def _catalog_profile_fingerprint(catalog, namespaces):
         raise ValueError('name')
     identities = {catalog_uuid}
     generated_seen = set()
+    attributes = set()
+    attribute_names = set()
+    attribute_ids = set()
+    type_nodes = set()
+    if scalar_attributes:
+        # Recognize neither isolated fields nor a subset of a larger catalog.
+        # The digest below still covers every property, default and component.
+        children = catalog.findall('{'+MD+'}ChildObjects')
+        expected = (('number', (12, 2, 'Any'), None),
+                    ('boolean', (), None), ('datetime', ('DateTime',), None))
+        if len(children) != 1 or len(children[0]) != len(expected):
+            raise ValueError('scalar inventory')
+        field_names = set(_RESERVED)
+        for field, description in zip(children[0], expected):
+            if field.tag != '{'+MD+'}Attribute' or set(field.attrib) != {'uuid'}:
+                raise ValueError('scalar attribute')
+            field_id = _valid_uuid(field.get('uuid'))
+            if field_id in identities:
+                raise ValueError('duplicate identity')
+            identities.add(field_id)
+            attribute_ids.add(field_id)
+            fp = _props(field)
+            field_name = fp.get('{'+MD+'}Name')
+            if field_name is None or field_name.attrib or len(field_name):
+                raise ValueError('field name')
+            value = _name(field_name.text)
+            if value.casefold() in field_names:
+                raise ValueError('field name collision')
+            field_names.add(value.casefold())
+            if _type(fp, namespaces, {}) != description:
+                raise ValueError('scalar type')
+            attributes.add(field)
+            attribute_names.add(field_name)
+            type_nodes.add(fp['{'+MD+'}Type'].find('{'+V8+'}Type'))
 
     def node_value(node, parent=None):
         if (node.tail or '').strip():
@@ -223,6 +261,13 @@ def _catalog_profile_fingerprint(catalog, namespaces):
         attrs = dict(node.attrib)
         if node is catalog:
             attrs['uuid'] = '@CATALOG_UUID@'
+        elif node in attributes:
+            attrs['uuid'] = '@ATTRIBUTE_UUID@'
+        elif node in attribute_names:
+            text = '@ATTRIBUTE_NAME@'
+        elif node in type_nodes:
+            namespace, local_name = _qname(node, namespaces)
+            text = '{'+namespace+'}'+local_name
         elif node.tag == '{'+XR+'}GeneratedType':
             if set(attrs) != {'name', 'category'}:
                 raise ValueError('type attributes')
@@ -259,19 +304,24 @@ def _catalog_profile_fingerprint(catalog, namespaces):
         return [node.tag, sorted(attrs.items()), text, [node_value(child, node) for child in node]]
 
     result = node_value(catalog)
-    if generated_seen != set(_GENERATED) or len(identities) != 11:
+    if generated_seen != set(_GENERATED) or len(identities) != 11 + len(attribute_ids):
         raise ValueError('generated identities')
     digest = sha256(json.dumps(result, ensure_ascii=True, separators=(',', ':')).encode('ascii')).hexdigest()
-    return digest, frozenset(identities - {catalog_uuid})
+    return digest, frozenset(identities - {catalog_uuid} - attribute_ids)
 
 
 def _catalog_generated_identities(catalog, namespaces):
-    """Return ten validated identities only for an exact admitted profile."""
-    try:
-        digest, identities = _catalog_profile_fingerprint(catalog, namespaces)
-        return identities if digest == _PROFILE_SHA256 else None
-    except (ValueError, TypeError, KeyError, RecursionError):
-        return None
+    """Return ten generated identities only for a whole admitted catalog."""
+    for scalar_attributes, expected in ((False, _PROFILE_SHA256),
+                                        (True, _SCALAR_PROFILE_SHA256)):
+        try:
+            digest, identities = _catalog_profile_fingerprint(
+                catalog, namespaces, scalar_attributes=scalar_attributes)
+            if digest == expected:
+                return identities
+        except (ValueError, TypeError, KeyError, RecursionError):
+            pass
+    return None
 
 
 def _activation_properties(obj, allowed, issues, owner):
@@ -435,7 +485,10 @@ def import_configuration(files):
         fields=[];names=set(_RESERVED);child=obj.find('{'+MD+'}ChildObjects')
         for field in () if child is None else child:
             if field.tag!='{'+MD+'}Attribute':_fail('catalog child object unsupported')
-            _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,cname)
+            # Rich Designer defaults require the whole catalog fingerprint.
+            # Every unmatched field retains the restrictive activation path.
+            if generated is None:
+                _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,cname)
             fp=_props(field);fn=_name(_text(fp,'Name'));fid=_uuid(field.get('uuid'))
             if fn.casefold() in names or fid in used:_fail('field identity/name collision')
             names.add(fn.casefold());used.add(fid);kind,q,target=_type(fp,ns,targets)
