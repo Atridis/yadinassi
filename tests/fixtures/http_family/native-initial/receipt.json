@@ -1,0 +1,9 @@
+{
+  "schema": "http-family-public-observation-v1",
+  "scope": "owned-loopback-server-only",
+  "source_sha256": "3d975d1dafa02811b760386dfc2cf31fc4d81fb046a0b6e85a1f1a8c9c91cf97",
+  "output_sha256": "d159e9a8b3a11329b453871870e44794478edd30a4ea4681ffa1e31ecb91d971",
+  "records": 40,
+  "runtime_parity_at_acquisition": false,
+  "limit": "Direct synchronous API observations; no TLS/client/advanced-stream parity."
+}

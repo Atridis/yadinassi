@@ -370,9 +370,9 @@ class WorkflowTests(unittest.TestCase):
         source = WORKFLOW_PATH.read_text()
         self.assertIn("\npermissions: {}\n", source)
         self.assertEqual(re.findall(r"^  ([a-z_]+):$", source.split("\njobs:\n")[1], re.M),
-                         ["eligibility", "form_smoke", "smoke", "tree_smoke", "tree_copy_smoke", "catalog_object_smoke", "catalog_query_smoke", "verdict"])
-        self.assertEqual(source.count("contents: read"), 6)
-        self.assertEqual(source.count("packages: read"), 6)
+                         ["eligibility", "form_smoke", "smoke", "tree_smoke", "tree_copy_smoke", "catalog_object_smoke", "catalog_query_smoke", "http_smoke", "verdict"])
+        self.assertEqual(source.count("contents: read"), 7)
+        self.assertEqual(source.count("packages: read"), 7)
         self.assertNotIn(": write", source)
         for job in ("eligibility", "verdict"):
             block = workflow_job(job)
@@ -394,7 +394,7 @@ class WorkflowTests(unittest.TestCase):
         verdict = workflow_job("verdict")
         self.assertIn("    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}", verdict)
         self.assertIn("    if: always()", verdict)
-        self.assertIn("    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, catalog_query_smoke]", verdict)
+        self.assertIn("    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, catalog_query_smoke, http_smoke]", verdict)
 
     def test_exact_job_headers_do_not_allow_extra_bypass_conditions(self):
         expected_headers = {
@@ -424,7 +424,7 @@ class WorkflowTests(unittest.TestCase):
 """,
             "verdict": """    name: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/codex/native-client-async-reviewed')) && 'Native 1C async measurement verdict' || 'Native 1C required verdict' }}
     if: always()
-    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, catalog_query_smoke]
+    needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, catalog_query_smoke, http_smoke]
     permissions: {}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -436,6 +436,7 @@ class WorkflowTests(unittest.TestCase):
             "needs.eligibility.result == 'success' &&\n      github.event_name != 'workflow_dispatch' &&\n      github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", 1)
         expected_headers["catalog_object_smoke"] = expected_headers["tree_smoke"].replace("Native 1C tree profile", "Native 1C CatalogObject behavior measurement")
         expected_headers["form_smoke"] = expected_headers["tree_smoke"].replace("Native 1C tree profile", "Native 1C managed form programmatic profile")
+        expected_headers["http_smoke"] = expected_headers["tree_smoke"].replace("Native 1C tree profile", "Native 1C HTTP behavior measurement")
         expected_headers["tree_copy_smoke"] = expected_headers["tree_smoke"].replace(
             "Native 1C tree profile", "Native 1C ${{ matrix.profile }} measurement") + """    strategy:
       fail-fast: false

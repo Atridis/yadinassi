@@ -219,7 +219,7 @@ class QueryRequiredVerdictTests(unittest.TestCase):
         for query in ('success','failure','skipped','cancelled','',None):
             for required in ('true','false'):
                 env=dict(ELIGIBILITY_RESULT='success',NATIVE_RESULT='success',TREE_RESULT='success',
-                    TREE_COPY_RESULT='success',FORM_RESULT='success',CATALOG_OBJECT_RESULT='success',TREE_REQUIRED=required)
+                    TREE_COPY_RESULT='success',FORM_RESULT='success',CATALOG_OBJECT_RESULT='success',HTTP_RESULT='success',TREE_REQUIRED=required)
                 if query is not None:env['CATALOG_QUERY_RESULT']=query
                 with self.subTest(query=query,required=required),mock.patch.dict(os.environ,env,clear=True),mock.patch('builtins.print'):
                     with self.assertRaises(SystemExit) as error:exec(code,{'os':os})

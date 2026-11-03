@@ -33,6 +33,10 @@ if [ "$#" -eq 3 ] && [ "$1" = --form-runtime-suite ]; then
     tree_suite=form-runtime
     set -- --full-suite "$2" "$3" --client-probe
 fi
+if [ "$#" -eq 3 ] && [ "$1" = --http-family-suite ]; then
+    tree_suite=http-family
+    set -- --full-suite "$2" "$3" --client-probe
+fi
 if [ "$#" -eq 3 ] && [ "$1" = --catalog-object-suite ]; then
     tree_suite=catalog-object
     set -- --full-suite "$2" "$3" --client-probe
@@ -172,7 +176,7 @@ import xml.etree.ElementTree as ET
 
 emitter_args = sys.argv[1:]
 tree_mode = emitter_args.pop() if len(emitter_args) == 19 else "false"
-if tree_mode not in {"catalog-query", "catalog-object", "false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family", "binary-stream-family", "regex-family", "data-io-family", "dom-family", "xdto-family", "data-hashing-family", "zip-family"} and tree_mode != "form-runtime":
+if tree_mode not in {"http-family", "catalog-query", "catalog-object", "false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family", "binary-stream-family", "regex-family", "data-io-family", "dom-family", "xdto-family", "data-hashing-family", "zip-family"} and tree_mode != "form-runtime":
     raise ValueError("tree mode")
 preprocessor_mode = emitter_args.pop() if len(emitter_args) == 18 else "false"
 if preprocessor_mode not in {"false", "true"}:
@@ -269,6 +273,15 @@ if tree_mode == "form-runtime":
     import form_runtime_suite as form_lane
     import full_suite
     raw = form_lane.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
+        quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
+        bus_cleanup_failed=bus_cleanup_failed == "true")
+    sys.stdout.buffer.write(raw)
+    raise SystemExit(0)
+if tree_mode == "http-family":
+    sys.path.insert(0, "/smoke/bootstrap")
+    import http_suite
+    import full_suite
+    raw = http_suite.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
         quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
         bus_cleanup_failed=bus_cleanup_failed == "true")
     sys.stdout.buffer.write(raw)
@@ -490,6 +503,9 @@ if [ "$bootstrap" = true ]; then
     # All source inputs are host-allowlisted and read-only. All outputs stay tmpfs.
     if [ "$tree_suite" = catalog-query ]; then
         python3 /smoke/bootstrap/catalog_query_suite.py --invocation-nonce "$invocation_nonce" \
+            > /tmp/onec-smoke/stage2-console.log 2>&1
+    elif [ "$tree_suite" = http-family ]; then
+        python3 /smoke/bootstrap/http_suite.py --invocation-nonce "$invocation_nonce" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     elif [ "$tree_suite" = catalog-object ]; then
         python3 /smoke/bootstrap/catalog_object_suite.py --invocation-nonce "$invocation_nonce" \
