@@ -24,8 +24,13 @@ class SQLiteDBContext:
     def backend(self):
         return self._backend
 
-    def require_active(self):
+    def require_active(self, *, tabular_sections=False):
+        if type(tabular_sections) is not bool: raise BackendError('invalid_input')
         if not self._backend.activated:
+            raise BackendError('unsupported')
+        # Only the bounded BSL adapter opts in. Existing UI callers remain
+        # closed until they have a real tabular-section editor.
+        if self._backend.capabilities().catalog_tabular_sections and not tabular_sections:
             raise BackendError('unsupported')
 
     def connection_string(self):
