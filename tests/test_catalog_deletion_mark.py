@@ -37,19 +37,33 @@ Message(O.DeletionMark);Message(P.Ref.DeletionMark);O.Write();Message(P.Ref.Dele
         vm = Interpreter(database_context=self.context)
         self.assertTrue(vm.execute('Catalogs.Products.FindByCode("10").DeletionMark'))
 
-    def test_method_writes_dirty_values_and_toggles_mark(self):
-        self.vm.execute('''O=P.Ref.GetObject();O.Description="changed";O.SetDeletionMark(True);
-Message(P.Ref.Description);Message(P.Ref.DeletionMark);O.УстановитьПометкуУдаления(Ложь);
+    def test_assignment_writes_dirty_values_and_toggles_mark(self):
+        self.vm.execute('''O=P.Ref.GetObject();O.Description="changed";O.DeletionMark=True;O.Write();
+Message(P.Ref.Description);Message(P.Ref.DeletionMark);O.ПометкаУдаления=Ложь;O.Write();
 Message(P.Ref.DeletionMark);''')
         self.assertEqual(self.out, ['changed', 'Да', 'Нет'])
 
-    def test_new_object_and_repeated_mark(self):
-        self.vm.execute('''N=Catalogs.Products.CreateItem();N.Code="20";N.УстановитьПометкуУдаления(Истина);
-Message(N.IsNew());Message(N.Ref.DeletionMark);N.SetDeletionMark(True);Message(N.Ref.DeletionMark);''')
-        self.assertEqual(self.out, ['Нет', 'Да', 'Да'])
+    def test_new_object_assignment_and_method_refusal(self):
+        self.vm.execute('''N=Catalogs.Products.CreateItem();N.Code="20";N.ПометкаУдаления=Истина;N.Write();
+Message(N.IsNew());Message(N.Ref.DeletionMark);''')
+        self.assertEqual(self.out, ['Нет', 'Да'])
+        for expr in ('P.Ref.GetObject()', 'Catalogs.Products.CreateItem()'):
+            obj = self.vm.execute(expr)
+            was_new = obj.is_new()
+            obj.set_member('Description', 'dirty')
+            obj.set_member('DeletionMark', True)
+            for name in ('SetDeletionMark', 'УстановитьПометкуУдаления'):
+                with self.subTest(expr=expr, name=name), self.assertRaises(ValueError):
+                    obj.get_member(name)
+                self.assertEqual(obj.get_member('Description'), 'dirty')
+                self.assertTrue(obj.get_member('DeletionMark'))
+                self.assertEqual(obj.is_new(), was_new)
+                if was_new: self.assertTrue(obj.get_member('Ref').is_empty())
+        self.assertFalse(self.vm.execute('P.Ref.DeletionMark'))
+        self.assertEqual(self.vm.execute('P.Ref.Description'), 'original')
 
     def test_query_and_selection_observe_mark_without_filtering(self):
-        self.vm.execute('''P.SetDeletionMark(True);S=Catalogs.Products.Select();S.Next();Message(S.DeletionMark);
+        self.vm.execute('''P.DeletionMark=True;P.Write();S=Catalogs.Products.Select();S.Next();Message(S.DeletionMark);
 Q=New Query("SELECT Code FROM Catalog.Products WHERE DeletionMark=TRUE");R=Q.Execute().Select();
 Message(R.Next());Message(R.Code);Message(R.Next());''')
         self.assertEqual(self.out, ['Да', 'Да', '10', 'Нет'])
@@ -59,15 +73,15 @@ Message(R.Next());Message(R.Code);Message(R.Next());''')
         for value in (None, 1, 'true'):
             with self.subTest(value=value):
                 with self.assertRaises(TypeError): obj.set_member('DeletionMark', value)
-                with self.assertRaises(TypeError): obj.set_deletion_mark(value)
                 self.assertFalse(obj.get_member('DeletionMark'))
         self.assertFalse(self.vm.execute('P.Ref.DeletionMark'))
 
     def test_stale_mark_conflict_preserves_detached_buffer(self):
         stale = self.vm.execute('P.Ref.GetObject()')
         self.vm.execute('O=P.Ref.GetObject();O.Description="newer";O.Write();')
+        stale.set_member('DeletionMark', True)
         with self.assertRaises(BackendError) as raised:
-            stale.set_deletion_mark(True)
+            stale.write()
         self.assertEqual(raised.exception.code, 'conflict')
         self.assertTrue(stale.get_member('DeletionMark'))
         self.assertFalse(self.vm.execute('P.Ref.DeletionMark'))
@@ -109,14 +123,15 @@ Message(R.Next());Message(R.Code);Message(R.Next());''')
         def lost_response(tx):
             commit(tx)
             raise BackendError('uncertain_commit')
+        obj.set_member('DeletionMark', True)
         with patch.object(_View, 'commit', lost_response), self.assertRaises(BackendError):
-            obj.set_deletion_mark(True)
+            obj.write()
         with self.assertRaises(BackendError): obj.set_member('DeletionMark', False)
-        with self.assertRaises(BackendError): obj.set_deletion_mark(False)
         with patch.object(_View, 'commit', side_effect=AssertionError('must not commit twice')):
             obj.write()
         self.assertTrue(self.vm.execute('P.Ref.DeletionMark'))
-        obj.set_deletion_mark(False)
+        obj.set_member('DeletionMark', False)
+        obj.write()
         self.assertFalse(self.vm.execute('P.Ref.DeletionMark'))
 
 

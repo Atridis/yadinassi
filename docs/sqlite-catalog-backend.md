@@ -97,26 +97,29 @@ remain explicit unsupported surfaces until truthful dynamic descriptors are admi
 
 ## Flat catalog deletion marks
 
-For the admitted flat, ownerless catalogs, `DeletionMark` / `ПометкаУдаления`
-can be assigned a Boolean in a detached object. Assignment is buffered and
-`Write` persists it along with the other fields. `SetDeletionMark(Boolean)` /
-`УстановитьПометкуУдаления(Булево)` sets the value and writes the object; pending
-edits are included. Ordinary reads, selections and Query expose the persisted
+For admitted flat, ownerless catalogs, `DeletionMark` / `ПометкаУдаления`
+is a Boolean in a detached object. Assignment is buffered; `Write` persists it
+along with other edits. Ordinary reads, selections and Query expose the stored
 mark. A mark does not delete a record or invalidate references. Optimistic
 revision conflicts and commit-receipt recovery use the same rules as other
-writes; after an uncertain response call `Write` to resolve the exact pending
+writes. After an uncertain response, call `Write` to resolve the exact pending
 intent before changing the object. A failed write leaves its edit buffer intact.
 
-This profile does not perform physical deletion. `!todo`: cascading marks for
-hierarchical or owned catalogs and module/event semantics require their own
-atomic backend contract; those metadata profiles cannot currently activate.
-The owned SQLite tests define the local contract. A separate single-session 1C
-observation is required before claiming native behavior parity, including new
-objects and failures. The official 1C description of assignment and the method
-is [Using the DeletionMark field](https://1c-dn.com/library/using_the_deletionmark_field_of_a_database_object/).
+`SetDeletionMark` / `УстановитьПометкуУдаления` remains unsupported. Two
+source-bound native acquisitions on platform 8.3.27.1508 observed successful
+property assignment and Write, but SetDeletionMark(True) raised an exception
+for existing and new objects, with both Read/Insert/Update rights and an
+additional Delete grant. The exception cause was not captured and must not be
+inferred from those two runs; their bootstrap baselines were independently
+created. A third finite diagnostic matched neither its rights, lock nor
+method-missing patterns; this does not exclude those causes. See the [first
+observation](https://github.com/Atridis/yadinassi/actions/runs/41645005336),
+[Delete-right observation](https://github.com/Atridis/yadinassi/actions/runs/41647274341)
+and [finite diagnostic](https://github.com/Atridis/yadinassi/actions/runs/41649545810).
 
-If an admitted catalog attribute has the same name as one of the new methods,
-the attribute takes precedence over that spelling, preserving access and XML
-export/re-import. The other spelling remains usable if it does not also collide;
-if both names are attributes neither spelling of the method is callable. `!todo`: native
-name-collision behavior is not claimed by this backwards-compatibility policy.
+`!todo`: understand the observed method failure and measure its return, writes,
+permissions and error semantics before exposing the method. Physical deletion,
+cascading marks for hierarchical/owned catalogs and module/event semantics need
+separate contracts; these metadata profiles cannot currently activate. The
+[official platform description](https://1c-dn.com/library/using_the_deletionmark_field_of_a_database_object/)
+distinguishes direct assignment and the method's additional actions.

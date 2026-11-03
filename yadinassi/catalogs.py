@@ -216,22 +216,10 @@ class BSLCatalogObject(BSLObject):
             tx.rollback();raise
         finally:tx.close()
         return None
-    def set_deletion_mark(self, value):
-        # Only flat catalogs without owners are admitted by configuration XML;
-        # !todo hierarchical/subordinate cascade requires a separate atomic port.
-        if self._pending_write is not None:raise BackendError('uncertain_commit')
-        if type(value) is not bool:raise TypeError('DeletionMark requires Boolean')
-        self._values['deletionmark']=value
-        return self.write()
     def get_member(self,name):
         key=name.casefold()
-        # Schemas may contain attributes with these method names. Preserve their
-        # existing access, rather than shadowing data with a new method.
-        if key in ('setdeletionmark','установитьпометкуудаления') and key in self._values:
-            return self._values[key]
         methods={'write':self.write,'записать':self.write,'isnew':self.is_new,'этоновый':self.is_new,
             'setnewobjectref':self.set_new_object_ref,'установитьссылкунового':self.set_new_object_ref,
-            'setdeletionmark':self.set_deletion_mark,'установитьпометкуудаления':self.set_deletion_mark,
             'metadata':lambda:self._manager._metadata,'метаданные':lambda:self._manager._metadata}
         if key in methods:return HostFunction(name,methods[key])
         return _field(self._values,name)
