@@ -32,7 +32,7 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
         Interpreter(output.append).execute(source.decode())
         self.assertEqual(('\n'.join(output) + '\n').encode('ascii'), raw)
 
-    def test_supplement_native_supported_cases_and_explicit_policy_gap(self):
+    def test_supplement_native_cases_replay(self):
         fixture = ROOT / 'tests/fixtures/format_numbers'
         source = (fixture / 'supplement56.bsl').read_bytes()
         raw = (fixture / 'supplement56-linux-8.3.27.1508.out').read_bytes()
@@ -46,11 +46,7 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
         self.assertEqual(len(lines), 58)
         output = []
         Interpreter(output.append).execute(source.decode('utf-8'))
-        # ND remains an explicit policy gap. The formerly unsupported DF witness
-        # is now admitted by independently acquired numeric-mask Date support.
-        for case in (52,):
-            self.assertTrue(lines[case + 1].startswith(f'FM-{case}: [ok|'))
-            lines[case + 1] = f'FM-{case}: [action-error]'
+        # ND and DF are now supported by independently acquired measurements.
         self.assertEqual(output, lines)
 
     @unittest.skipUnless(shutil.which('git'), 'Git required for real autocrlf checkout regression')
@@ -134,9 +130,8 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
         self.assertEqual(format_value(Decimal('1'), "MYSTERY='a;b';NFD=2"), '1,00')
 
     def test_unsupported_or_malformed_is_not_plausible_fallback(self):
-        for mask in ('ND=5', 'ЧЦ=5', 'NS=2', "NF='$N / Hour'", "ЧФ='$Ч / Час'",
-                     "nf='N'", "чф='Ч'", 'NLZ=', 'NN=0',
-                     'DLF=D', 'BT=yes', 'BF=no', 'L=en', 'Л=ru_RU',
+        for mask in ('NLZ=', 'NN=5', 'ND=33', 'NS=325',
+                     'DLF=D', 'L=en', 'Л=ru_RU',
                      'NFD=-1', 'NFD=1.5', 'NFD=325', 'NFD=9999999', 'NFD=²',
                      'NDS=', 'NG=0,3', 'NG=3,2,1', 'NG=33', 'NG=-1',
                      "NZ='unterminated", "NZ='valid'junk", 'NFD', 'NFD=2;bad',
