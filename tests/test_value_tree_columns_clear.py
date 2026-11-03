@@ -25,6 +25,26 @@ class ClearPolicyTests(unittest.TestCase):
         tree=BSLValueTree();column=tree.columns.add('Key');root=tree.rows.add();child=root.rows.add();deep=child.rows.add();sibling=tree.rows.add()
         return tree,column,(root,child,deep,sibling)
 
+    def test_query_nullable_marker_preserves_ordinary_exact_descriptor_shape(self):
+        from yadinassi.type_descriptions import BSLTypeDescription, _query_nullable_description
+        fields = {'types', 'number_qualifiers', 'string_qualifiers',
+                  'date_qualifiers', 'binary_data_qualifiers'}
+        ordinary = BSLTypeDescription('Number')
+        self.assertEqual(set(vars(ordinary)), fields)
+        self.assertIsNone(ordinary._query_scalar)
+        nullable = _query_nullable_description(ordinary)
+        self.assertEqual(set(vars(nullable)), fields | {'_query_scalar'})
+        self.assertIs(nullable._query_scalar, ordinary)
+        for forged in (None, Poison(), ordinary):
+            tree, column, rows = self.fixture()
+            held = rows[1].rows
+            tree.columns.clear()
+            column = tree.columns.add('Key', BSLTypeDescription('Number'))
+            object.__setattr__(column.value_type, '_query_scalar', forged)
+            with self.assertRaisesRegex(ValueError, 'Неверное описание типов вставки дерева'):
+                held.add()
+            self.assertEqual(tree.rows.count(), D(0))
+
     def test_windows_preserves_legacy_empty_schema_only_and_zero_column_rows(self):
         with target_context(WINDOWS_8_3_27_2342):
             for has_columns, has_rows in ((False, False), (True, False), (False, True), (True, True)):

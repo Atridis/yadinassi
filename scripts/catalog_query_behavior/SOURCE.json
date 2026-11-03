@@ -1,0 +1,11 @@
+{
+  "scope": "owned authored official XML template, not native database/config bytes",
+  "base_template_sha256": "810823e2481d9aa56f2526a778fc1c3df75597d183e8107e885db04ea19fc8dc",
+  "attribute_template_source_commit": "84f560108a34eb207706cb1da517976024ee4a13",
+  "attribute_template_source_sha256": "612fa20fc7a30262c27ccb52201ce57bbbba8cbbab60ae9ac82e0358a36024c5",
+  "changes": [
+    "fresh metadata/generated/record/field identities",
+    "Quantity Number12.2, Active Boolean, Stamp DateTime; common Catalog Attribute property structure retained"
+  ],
+  "native_status": "prospective; strict whole redump equality required before observations"
+}

@@ -1,3 +1,5 @@
+from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
+from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLByteOrderMarkUse
 from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
@@ -56,6 +58,13 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLQuery, BSLType.QUERY, "Query"),
+    (BSLQueryResult, BSLType.QUERY_RESULT, "QueryResult"),
+    (BSLQueryResultSelection, BSLType.QUERY_RESULT_SELECTION, "QueryResultSelection"),
+    (BSLHTTPConnection, BSLType.HTTP_CONNECTION, "HTTPConnection"),
+    (BSLHTTPRequest, BSLType.HTTP_REQUEST, "HTTPRequest"),
+    (BSLHTTPResponse, BSLType.HTTP_RESPONSE, "HTTPResponse"),
+    (BSLByteOrderMarkUse, BSLType.BYTE_ORDER_MARK_USE, "ByteOrderMarkUse"),
     (BSLClientApplicationForm, BSLType.FORM, "ClientApplicationForm"),
     (BSLFormAttribute, BSLType.FORM_ATTRIBUTE, "FormAttribute"),
     (BSLFormField, BSLType.FORM_FIELD, "FormField"),

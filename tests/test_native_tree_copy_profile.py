@@ -176,7 +176,7 @@ class CopyProfileTests(unittest.TestCase):
         code='\n'.join(line[10:] for line in text[begin:end].splitlines())
         for status in ('success','failed','skipped','cancelled',''):
             for catalog in ('success','failed','skipped','cancelled','',None):
-                env=dict(ELIGIBILITY_RESULT='success',NATIVE_RESULT='success',TREE_RESULT='success',TREE_COPY_RESULT=status,FORM_RESULT='success',TREE_REQUIRED='true')
+                env=dict(ELIGIBILITY_RESULT='success',NATIVE_RESULT='success',TREE_RESULT='success',TREE_COPY_RESULT=status,FORM_RESULT='success',CATALOG_QUERY_RESULT='success',HTTP_RESULT='success',TREE_REQUIRED='true')
                 if catalog is not None:env['CATALOG_OBJECT_RESULT']=catalog
                 with self.subTest(tree_copy=status,catalog=catalog), mock.patch.dict(os.environ,env,clear=True),mock.patch('builtins.print'),self.assertRaises(SystemExit) as caught:
                     exec(code,{'os':os})

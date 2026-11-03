@@ -33,8 +33,16 @@ if [ "$#" -eq 3 ] && [ "$1" = --form-runtime-suite ]; then
     tree_suite=form-runtime
     set -- --full-suite "$2" "$3" --client-probe
 fi
+if [ "$#" -eq 3 ] && [ "$1" = --http-family-suite ]; then
+    tree_suite=http-family
+    set -- --full-suite "$2" "$3" --client-probe
+fi
 if [ "$#" -eq 3 ] && [ "$1" = --catalog-object-suite ]; then
     tree_suite=catalog-object
+    set -- --full-suite "$2" "$3" --client-probe
+fi
+if [ "$#" -eq 3 ] && [ "$1" = --catalog-query-suite ]; then
+    tree_suite=catalog-query
     set -- --full-suite "$2" "$3" --client-probe
 fi
 if [ "$#" -eq 3 ] && { [ "$1" = --tree-suite ] || [ "$1" = --tree-copy-suite ] || [ "$1" = --tree-sort-suite ] || [ "$1" = --tree-columns-move-suite ] || [ "$1" = --tree-columns-move-boundary-suite ] || [ "$1" = --tree-columns-move-tail-suite ] || [ "$1" = --tree-columns-clear-suite ] || [ "$1" = --tree-columns-clear-lifetime-suite ] || [ "$1" = --tree-columns-clear-metadata-suite ] || [ "$1" = --tree-columns-delete-suite ] || [ "$1" = --tree-columns-delete-string-suite ] || [ "$1" = --format-numbers-suite ] || [ "$1" = --format-dates-suite ] || [ "$1" = --json-family-suite ] || [ "$1" = --file-io-family-suite ] || [ "$1" = --xml-workflow-family-suite ] || [ "$1" = --binary-stream-family-suite ] || [ "$1" = --data-io-family-suite ] || [ "$1" = --dom-family-suite ] || [ "$1" = --xdto-family-suite ] || [ "$1" = --data-hashing-family-suite ] || [ "$1" = --regex-family-suite ] || [ "$1" = --zip-family-suite ]; }; then
@@ -168,7 +176,7 @@ import xml.etree.ElementTree as ET
 
 emitter_args = sys.argv[1:]
 tree_mode = emitter_args.pop() if len(emitter_args) == 19 else "false"
-if tree_mode not in {"catalog-object", "false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family", "binary-stream-family", "regex-family", "data-io-family", "dom-family", "xdto-family", "data-hashing-family", "zip-family"} and tree_mode != "form-runtime":
+if tree_mode not in {"http-family", "catalog-query", "catalog-object", "false", "true", "copy", "sort", "columns-move", "columns-move-boundary", "columns-move-tail", "columns-clear", "columns-clear-lifetime", "columns-clear-metadata", "columns-delete", "columns-delete-string", "format-numbers", "format-dates", "json-family", "file-io-family", "xml-workflow-family", "binary-stream-family", "regex-family", "data-io-family", "dom-family", "xdto-family", "data-hashing-family", "zip-family"} and tree_mode != "form-runtime":
     raise ValueError("tree mode")
 preprocessor_mode = emitter_args.pop() if len(emitter_args) == 18 else "false"
 if preprocessor_mode not in {"false", "true"}:
@@ -269,11 +277,29 @@ if tree_mode == "form-runtime":
         bus_cleanup_failed=bus_cleanup_failed == "true")
     sys.stdout.buffer.write(raw)
     raise SystemExit(0)
+if tree_mode == "http-family":
+    sys.path.insert(0, "/smoke/bootstrap")
+    import http_suite
+    import full_suite
+    raw = http_suite.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
+        quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
+        bus_cleanup_failed=bus_cleanup_failed == "true")
+    sys.stdout.buffer.write(raw)
+    raise SystemExit(0)
 if tree_mode == "catalog-object":
     sys.path.insert(0, "/smoke/bootstrap")
     import catalog_object_suite
     import full_suite
     raw = catalog_object_suite.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
+        quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
+        bus_cleanup_failed=bus_cleanup_failed == "true")
+    sys.stdout.buffer.write(raw)
+    raise SystemExit(0)
+if tree_mode == "catalog-query":
+    sys.path.insert(0, "/smoke/bootstrap")
+    import catalog_query_suite
+    import full_suite
+    raw = catalog_query_suite.finish_report(report, nonce, Path("/tmp/onec-smoke") / ("stage3-" + nonce),
         quiet=full_suite.native_processes_quiet(Path("/opt/1cv8t/x86_64/8.3.27.1508/1cv8t")),
         bus_cleanup_failed=bus_cleanup_failed == "true")
     sys.stdout.buffer.write(raw)
@@ -475,7 +501,13 @@ configuration_dumped=true
 if [ "$bootstrap" = true ]; then
     stage=stage2
     # All source inputs are host-allowlisted and read-only. All outputs stay tmpfs.
-    if [ "$tree_suite" = catalog-object ]; then
+    if [ "$tree_suite" = catalog-query ]; then
+        python3 /smoke/bootstrap/catalog_query_suite.py --invocation-nonce "$invocation_nonce" \
+            > /tmp/onec-smoke/stage2-console.log 2>&1
+    elif [ "$tree_suite" = http-family ]; then
+        python3 /smoke/bootstrap/http_suite.py --invocation-nonce "$invocation_nonce" \
+            > /tmp/onec-smoke/stage2-console.log 2>&1
+    elif [ "$tree_suite" = catalog-object ]; then
         python3 /smoke/bootstrap/catalog_object_suite.py --invocation-nonce "$invocation_nonce" \
             > /tmp/onec-smoke/stage2-console.log 2>&1
     elif [ "$tree_suite" != false ]; then

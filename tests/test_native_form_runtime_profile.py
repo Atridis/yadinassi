@@ -174,10 +174,10 @@ class ManagedFormProfileTests(unittest.TestCase):
         self.assertIn('native_1c_form_runtime_profile.py --execute-approved-image --export-native-outputs',job)
         self.assertIn('persist-credentials: false',job);self.assertIn('contents: read\n      packages: read',job)
         self.assertIn('native_1c_ci_policy.py bind',job)
-        self.assertIn('needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke]',workflow)
+        self.assertIn('needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, catalog_query_smoke, http_smoke]',workflow)
         self.assertNotIn('managed-form-programmatic-v1',workflow_job('tree_copy_smoke'))
         env={'ELIGIBILITY_RESULT':'success','NATIVE_RESULT':'success','TREE_REQUIRED':'true',
-             'TREE_RESULT':'success','TREE_COPY_RESULT':'success','FORM_RESULT':'success','CATALOG_OBJECT_RESULT':'success'}
+             'TREE_RESULT':'success','TREE_COPY_RESULT':'success','FORM_RESULT':'success','CATALOG_OBJECT_RESULT':'success','CATALOG_QUERY_RESULT':'success','HTTP_RESULT':'success'}
         for result in ('success','failure','skipped','cancelled',''):
             env['FORM_RESULT']=result
             process=subprocess.run([sys.executable,'-I','-B','-c',inline_program('verdict')],

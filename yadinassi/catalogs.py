@@ -8,7 +8,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 from .dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from .catalog_types import BSLCatalogReference, BSLCatalogType
-from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, Revision, BackendError
+from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError
 from .unique_identifiers import BSLUUID
 from .values import BSLObject, HostFunction
 
@@ -136,9 +136,12 @@ class BSLCatalogManager(BSLObject):
         return BSLCatalogSelection(self,rows)
     def _find(self,field,value):
         view=self._view()
-        try:rows=view.select_catalog(self._schema.identity,CatalogSelection())
+        try:
+            page=view.scan_catalog(self._schema.identity,CatalogScanRequest(
+                predicate=CatalogComparison(field,'eq',value),page_size=2))
+            matches=page.cards
+            if page.continuation is not None:raise ValueError('ambiguous exact catalog lookup')
         finally:view.close()
-        matches=[row for row in rows if getattr(row,field)==value]
         if len(matches)>1:raise ValueError('ambiguous exact catalog lookup')
         return self._ref(matches[0].key.record_id) if matches else self.empty_ref()
     def find_by_code(self,code):

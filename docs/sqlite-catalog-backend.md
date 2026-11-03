@@ -63,3 +63,34 @@ the same bounded catalog behavior profile. It labels its scope
 from method-output parity. Duplicate-code and stale detached-object writes are measured
 outcomes, not assumed native concurrency guarantees. Actual native results remain
 pending until the source-bound lane runs and is independently audited.
+
+## Typed catalog scans (Query v1 preparation)
+
+The backend port adds `CatalogScanRequest` with exact typed comparisons, bounded
+AND/OR predicates and ordered field identities. It accepts no SQL, database handles
+or arbitrary callbacks. SQLite applies comparisons to canonical decoded scalars;
+Decimal values never pass through float or SQLite numeric coercion. References must
+belong to the same database and declared target catalog; only equality/inequality
+reference predicates are admitted. String policy is explicit and continuation-bound: default `codepoint` preserves
+exact Find behavior, while Query requests versioned `casefold_v1` Unicode casefold
+comparison/order. This is **not** a claim about native regional collations or a
+change to SQLite write uniqueness. Native evidence currently covers the owned
+ASCII case-pair fixture only; broader local tests are our implementation contract.
+
+A read view pins one SQLite transaction snapshot. Each view supports one active scan;
+continuation tokens are opaque, single-use and bound to that view and exact request.
+Starting a new scan invalidates the previous continuation. Pages contain at most
+1,000 cards; the existing 10,000-record catalog limit remains. Before materializing
+rows, same-snapshot SQL aggregates reject scans exceeding 16 MiB of selected text
+plus fixed row overhead, independently of page size/filter selectivity. Predicate
+limits are 64 nodes/depth 8 and 16 order terms. Exact numeric operands are bounded
+before coefficient expansion on supported CPython Decimal implementations.
+
+`FindByCode` and exact `FindByDescription` use typed predicates across the complete
+admitted catalog, not a first-1,000-row window. Ambiguous description matches still
+refuse. This change does not silently expand ordinary catalog selection limits.
+
+Query parser/runtime and native output-only comparison remain under development;
+local SQLite tests are not native query compatibility evidence. Reference cursor
+values are supported, while reference-projection `Unload` and result-column metadata
+remain explicit unsupported surfaces until truthful dynamic descriptors are admitted.
