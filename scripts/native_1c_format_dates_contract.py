@@ -1,12 +1,12 @@
 """Bounded Format measurement wire grammar; no native expected semantic values."""
 import re
 
-CASE_COUNT = 28
-MAX_STRING_UNITS = 64
+CASE_COUNT = 56
+MAX_STRING_UNITS = 32
 MAX_OUTPUT_BYTES = 8192
 CALIBRATION = b'FD-C1: [S0:]\nFD-C2: [S6:004100a0003b0022d83dde00]\n'
 # Fixed ASCII label/framing + maximum two-digit length + four hex digits per unit.
-MAX_RECORD_BYTES = len(b'FD-00: [ok|S64:') + MAX_STRING_UNITS * 4 + len(b']\n')
+MAX_RECORD_BYTES = len(b'FD-00: [ok|S32:') + MAX_STRING_UNITS * 4 + len(b']\n')
 MAX_ENCODED_BYTES = len(CALIBRATION) + CASE_COUNT * MAX_RECORD_BYTES
 
 class ObservationError(ValueError):
@@ -47,9 +47,7 @@ def validate_output(raw):
 
 def require_available(raw):
     records = validate_output(raw)
-    # Four Format controls plus the first RU and EN PeriodPresentation calls.
-    # All-action-error PeriodPresentation output is not an available profile.
-    if any(record['status'] != 'ok' for record in records[:6]):
+    if any(record['status'] != 'ok' for record in records[:4]):
         raise AvailabilityError('format_dates_positive_controls_failed')
     if any(record['status'] == 'observer-error' for record in records):
         raise AvailabilityError('format_dates_observer_failed')

@@ -21,7 +21,7 @@ host, tree, full, smoke = budget.host, budget.tree, budget.suite, budget.smoke
 ROOT, NONCE = budget.ROOT, budget.NONCE
 PROFILE = 'format-dates-v1'
 def spec(): return tree.profiles.select(PROFILE)
-def output(): return emit(lambda *args:'x'*64)
+def output(): return emit(lambda *args:'x'*32)
 def envelope(raw):
     s=spec(); hashes=dict.fromkeys(tree.input_files(profile=PROFILE),'a'*64);hashes[s.source]=s.source_sha256
     modules={s.case:'b'*64,'client_tree':'c'*64};stage=tree.empty_report(NONCE,profile=PROFILE)
@@ -37,7 +37,7 @@ def envelope(raw):
 
 class FormatProfileTests(unittest.TestCase):
     def test_closed_registry_and_exact_staging(self):
-        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_dates',30,5,'format-dates'))
+        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_dates',58,5,'format-dates'))
         self.assertEqual(tree.input_files(profile=PROFILE),host.staged_files(smoke,profile=PROFILE))
         self.assertEqual(len(tree.input_files(profile=PROFILE)),22)
         self.assertNotIn(s.source,tree.input_files(profile='tree-v1'))
@@ -49,17 +49,17 @@ class FormatProfileTests(unittest.TestCase):
             self.assertEqual(set(host.module_hashes(staged,hashes,smoke,profile=PROFILE)),{s.case,'client_tree'})
             code='import sys;sys.path.insert(0,'+repr(str(staged/'bootstrap'))+');import native_1c_format_dates_contract as c;c.require_available('+repr(output())+');print(c.MAX_ENCODED_BYTES)'
             result=subprocess.run([sys.executable,'-I','-B','-c',code],capture_output=True,timeout=30)
-            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,(str(28 * (len(b'FD-00: [ok|S64:') + 64 * 4 + len(b']\n')) + len(b'FD-C1: [S0:]\nFD-C2: [S6:004100a0003b0022d83dde00]\n')) + os.linesep).encode(),b''))
+            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,('8170'+os.linesep).encode(),b''))
             (staged/'bootstrap/native_1c_format_dates_contract.py').unlink()
             with self.assertRaises(host.TreeError):host.module_hashes(staged,hashes,smoke,profile=PROFILE)
 
     def test_generated_client_captures_helpers_and_utf16(self):
         source=(ROOT/spec().source).read_text(encoding='utf-8').encode()
         module=tree.client_module(source,(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode(),profile=PROFILE)
-        for witness in (None,lambda *args:' \u00a0\U0001f600',lambda *args:'x'*64,lambda *args:42):
+        for witness in (None,lambda *args:' \u00a0\U0001f600',lambda *args:'x'*32,lambda *args:42):
             vm=Interpreter(native_target=LINUX_8_3_27_1508)
             if witness:
-                vm.register_function('Format',witness);vm.register_function('Формат',witness);vm.register_function('PeriodPresentation',witness);vm.register_function('ПредставлениеПериода',witness)
+                vm.register_function('Format',witness);vm.register_function('Формат',witness)
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
             self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit(witness))
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):

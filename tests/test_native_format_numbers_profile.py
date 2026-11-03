@@ -37,7 +37,7 @@ def envelope(raw):
 
 class FormatProfileTests(unittest.TestCase):
     def test_closed_registry_and_exact_staging(self):
-        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_numbers',31,5,'format-numbers'))
+        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_numbers',50,5,'format-numbers'))
         self.assertEqual(tree.input_files(profile=PROFILE),host.staged_files(smoke,profile=PROFILE))
         self.assertEqual(len(tree.input_files(profile=PROFILE)),22)
         self.assertNotIn(s.source,tree.input_files(profile='tree-v1'))
@@ -49,7 +49,7 @@ class FormatProfileTests(unittest.TestCase):
             self.assertEqual(set(host.module_hashes(staged,hashes,smoke,profile=PROFILE)),{s.case,'client_tree'})
             code='import sys;sys.path.insert(0,'+repr(str(staged/'bootstrap'))+');import native_1c_format_numbers_contract as c;c.require_available('+repr(output())+');print(c.MAX_ENCODED_BYTES)'
             result=subprocess.run([sys.executable,'-I','-B','-c',code],capture_output=True,timeout=30)
-            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,('7967'+os.linesep).encode(),b''))
+            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,('7010'+os.linesep).encode(),b''))
             (staged/'bootstrap/native_1c_format_numbers_contract.py').unlink()
             with self.assertRaises(host.TreeError):host.module_hashes(staged,hashes,smoke,profile=PROFILE)
 
@@ -59,7 +59,7 @@ class FormatProfileTests(unittest.TestCase):
         for witness in (None,lambda *args:' \u00a0\U0001f600',lambda *args:'x'*32,lambda *args:42):
             vm=Interpreter(native_target=LINUX_8_3_27_1508)
             if witness:
-                vm.register_function('NumberInWords',witness);vm.register_function('ЧислоПрописью',witness)
+                vm.register_function('Format',witness);vm.register_function('Формат',witness)
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
             self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit(witness))
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):
