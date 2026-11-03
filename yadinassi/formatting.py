@@ -13,12 +13,15 @@ _MAX_DIGITS = 4096
 _MAX_FRACTION = 324
 _ALIASES = {"NFD": "NFD", "ЧДЦ": "NFD", "NDS": "NDS", "ЧРД": "NDS",
             "NG": "NG", "ЧГ": "NG", "NGS": "NGS", "ЧРГ": "NGS",
-            "NZ": "NZ", "ЧН": "NZ", "L": "L", "Л": "L"}
+            "NZ": "NZ", "ЧН": "NZ", "L": "L", "Л": "L",
+            "ND": "ND", "ЧЦ": "ND", "NLZ": "NLZ", "ЧВН": "NLZ",
+            "NN": "NN", "ЧО": "NN", "NS": "NS", "ЧС": "NS",
+            "NF": "NF", "ЧФ": "NF", "BF": "BF", "БЛ": "BF",
+            "BT": "BT", "БИ": "BT"}
 
 # Recognized native families outside this bounded slice must not become no-ops.
-_UNIMPLEMENTED = frozenset(("ND", "ЧЦ", "NS", "ЧС", "NLZ", "ЧВН", "NN", "ЧО", "NF", "ЧФ",
-                            "DLF", "ДЛФ",
-                            "BF", "БЛ", "BT", "БИ"))
+_UNIMPLEMENTED = frozenset(("DLF", "ДЛФ"))
+_EXTENDED = frozenset(("ND", "NLZ", "NN", "NS", "NF", "BF", "BT"))
 
 def _unsupported():
     raise ValueError("Формат: формат вне поддержанного подмножества Yadinassi")
@@ -34,6 +37,7 @@ def _parameters(text):
     _bound(text)
     result = {}
     date_entries = {}
+    extended_names = {}
     i = 0
     while i < len(text):
         if text[i] in " ;\t":
@@ -98,6 +102,29 @@ def _parameters(text):
             _unsupported()
         elif key == "NDS" and not value:
             _unsupported()
+        elif key == "ND":
+            # Zero and -1 are witnessed as disabling the length. Larger
+            # negative values and unusually large widths remain unmeasured.
+            if value not in ("0", "-1") and (not value.isascii() or not value.isdigit()
+                    or len(value) > 2 or not 1 <= int(value) <= 32):
+                _unsupported()
+        elif key == "NS":
+            if (not value or len(value) > 4 or not value.lstrip("-").isascii()
+                    or not value.lstrip("-").isdigit() or value.count("-") > 1
+                    or ("-" in value and not value.startswith("-"))
+                    or abs(int(value)) > _MAX_FRACTION):
+                _unsupported()
+        elif key == "NN" and value not in ("0", "1", "2", "3", "4"):
+            _unsupported()
+        elif key == "NLZ" and value not in ("", "0", "1"):
+            _unsupported()
+        elif key == "NF":
+            value = _number_mask(value)
+        if key in _EXTENDED:
+            # Cross-alias precedence for these families has no witness yet.
+            if key in extended_names and extended_names[key] != raw_name:
+                _unsupported()
+            extended_names[key] = raw_name
         if date_key is not None:
             if date_key in {"DF", "ДФ"}:
                 if not value:
@@ -106,6 +133,13 @@ def _parameters(text):
                 # Native bare multiword Date masks fall back to the default.
                 value = None if quote is None and any(c in " \t" for c in value) else tokens
             date_entries.setdefault(date_key, value)
+        elif key in {"BF", "BT"}:
+            result.setdefault(key, value)
+        elif key in _EXTENDED:
+            # !todo: conflicting numeric duplicates lack a native witness.
+            if key in result and result[key] != value:
+                _unsupported()
+            result[key] = value
         elif key is not None:
             result[key] = value
         if i < len(text):
@@ -117,6 +151,40 @@ def _parameters(text):
         elif canonical in date_entries:
             result[canonical] = date_entries[canonical]
     return result
+
+
+def _number_mask(mask):
+    """One number placeholder and bounded literal text; reject other grammar.
+
+    The quoted literal and one-placeholder forms are documented by 1C and
+    witnessed in extended48. More elaborate template grammar is !todo.
+    """
+    before, after = [], []
+    current = before
+    found = False
+    i = 0
+    while i < len(mask):
+        c = mask[i]
+        if c == "'":
+            end = mask.find("'", i + 1)
+            if end < 0:
+                _unsupported()
+            current.append(mask[i + 1:end])
+            i = end + 1
+        elif c in "NЧ":
+            if found:
+                _unsupported()
+            found = True
+            current = after
+            i += 1
+        elif c.isalpha() or c.isdigit() or c in '"':
+            _unsupported()
+        else:
+            current.append(c)
+            i += 1
+    if not found:
+        _unsupported()
+    return "".join(before), "".join(after)
 
 
 def _date_tokens(mask):
@@ -246,12 +314,35 @@ def format_value(value, specification=""):
     else:
         raise TypeError("Формат: формат должен быть строкой или числом")
     if kind is not Decimal:
-        result = _format_date(value, parameters) if kind is BSLDate else to_string(value)
+        if kind is BSLDate:
+            result = _format_date(value, parameters)
+        elif kind is bool and ("BT" if value else "BF") in parameters:
+            result = parameters["BT" if value else "BF"]
+        else:
+            result = to_string(value)
         _bound(result)
         return result
-    places = int(parameters["NFD"]) if "NFD" in parameters else None
-    negative, integer, fraction = _decimal_parts(value, places)
-    # NZ tests the original numeric zero, NOT the rounded magnitude.
+    width = int(parameters.get("ND", "0"))
+    if "NLZ" in parameters and width <= 0:
+        # !todo: leading zeros without a positive width are unmeasured.
+        _unsupported()
+    places = int(parameters["NFD"]) if "NFD" in parameters else (0 if width > 0 else None)
+    if width > 0 and places >= width:
+        # !todo: native width with no integer slots is unmeasured.
+        _unsupported()
+    # Validate the source before adjusting its exponent without Decimal context.
+    _decimal_parts(value, None)
+    shift = int(parameters.get("NS", "0"))
+    sign, digits, exponent = value.as_tuple()
+    scaled = Decimal((sign, digits, exponent - shift))
+    negative, integer, fraction = _decimal_parts(scaled, places)
+    if width > 0 and len(integer) > width - places:
+        # Native overflow does not merely truncate (extended48 cases 07, 08).
+        # !todo: measure its rule before rendering instead of inventing one.
+        _unsupported()
+    if "NLZ" in parameters:
+        integer = integer.zfill(width - places)
+    # NZ tests the original numeric zero, NOT the rounded or shifted magnitude.
     if value.is_zero() and parameters.get("NZ") != "":
         return parameters.get("NZ", "")
     separator = parameters.get("NGS") or "\u00a0"
@@ -277,9 +368,24 @@ def format_value(value, specification=""):
                       for end in range(len(leading), 0, -repeat)]
             leading = separator.join(reversed(groups))
         integer = leading + separator + last
-    result = ("-" if negative else "") + integer
+    result = integer
     if fraction:
         result += parameters.get("NDS", ",") + fraction
+    if negative:
+        appearance = parameters.get("NN", "1")
+        if appearance == "0":
+            result = "(" + result + ")"
+        elif appearance == "1":
+            result = "-" + result
+        elif appearance == "2":
+            result = "- " + result
+        elif appearance == "3":
+            result += "-"
+        else:
+            result += " -"
+    if "NF" in parameters:
+        prefix, suffix = parameters["NF"]
+        result = prefix + result + suffix
     _bound(result)
     return result
 

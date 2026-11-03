@@ -1,0 +1,21 @@
+{
+  "description": "Extended numeric and Boolean Format, 48 fixed observations; Linux training 1C 8.3.27.1508",
+  "run": "https://github.com/Atridis/yadinassi/actions/runs/41642739481",
+  "pull_request": "https://github.com/Atridis/yadinassi/pull/197",
+  "head": "8f24937b70cdc8fa712a6ad3da86d979eac7bcf9",
+  "base": "99ffd76bb08f7290000b8215278b44c14d42e9d3",
+  "checkout": "1283d21bd14b3be479f56d261860f2fac3e1f87e",
+  "tree": "67dfbe4ca0cb6665e7f8f6c27c6b0e53f57d25f3",
+  "source_sha256": "0c4f9cd38dd6851ae70b80d69905a4d39447972d54fa33f0fdf1bbc70f9931f6",
+  "output_sha256": "ad9b9f9dcda8e1da2a0f64ef98eba4ec238156abb526c0d082bc603c736531ff",
+  "output_size": 1795,
+  "summary_artifact_id": 13232464076,
+  "summary_zip_sha256": "efedf2e6e2bc8667e0dc9c2c2d15304025a9276d15d21983a24772dd11244de4",
+  "outputs_artifact_id": 13232948892,
+  "outputs_zip_sha256": "44fa63e7816e213b2a15eb818a0f87e880412bab43ebcc970dc9309c5e60435f",
+  "native_available": true,
+  "native_measurement_accepted": true,
+  "runtime_parity_accepted_at_acquisition": false,
+  "client_and_server_capture_sha256_equal": true,
+  "raw_client_capture_retained": false
+}

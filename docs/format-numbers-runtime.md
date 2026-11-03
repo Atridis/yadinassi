@@ -25,10 +25,9 @@ probes corrected the initial mixed-case inference: numeric aliases are exact-cas
 with last-canonical-value selection; lowercase names are ignored. These witnesses support a generic rule, not a dispatch
 on the literal names/values of test cases.
 
-The required native runner restores the original 48-case source. Offline tests
-also replay the six supported supplemental cases, while explicitly asserting
-that ND (native-supported supplemental control52) fails closed. Custom DF
-control53 is now admitted by separately measured numeric-mask Date support. This is a documented gap, not claimed 56-case parity.
+The required native runner restores the original 48-case source. Offline tests replay all supplemental cases. ND control 52 is now admitted
+by the extended numeric checkpoint below; custom DF control 53 is admitted by
+separately measured numeric-mask Date support.
 
 ## Numeric behavior
 
@@ -59,23 +58,23 @@ spelling; lowercase names follow the generic unknown-name no-op rule. Date keys
 use their separately documented selection rules. ASCII spaces/tabs around fields and semicolon
 separators are allowed. Single- or double-quoted values preserve punctuation and spaces;
 doubled matching quotes represent that quote. Bare values trim outer space/tab.
-Canonical duplicate aliases use the last value, but every entry is validated;
+Existing numeric parameters select the last canonical value, but every entry is validated;
 an invalid overwritten entry is not silently accepted. Malformed quoting,
 missing assignments, unsupported locale and out-of-subset parameter values
 raise an error rather than a plausible default.
 
-Unknown ASCII/Russian letter-only names use a generic no-op rule; no expression/fixture-name dispatch exists. Recognized but
-unimplemented native ND/ЧЦ, NS/ЧС, NLZ/ЧВН, NN/ЧО, NF/ЧФ, DLF/ДЛФ,
-BF/БЛ and BT/БИ explicitly fail. This is not complete native numeric, Date,
-Boolean or locale formatting support. The NF/ЧФ numeric-template family is
+Unknown ASCII/Russian letter-only names use a generic no-op rule; no expression/fixture-name dispatch exists. Recognized but unimplemented DLF/ДЛФ explicitly fails. New numeric and
+Boolean parameters are bounded as described below. This is not complete native
+numeric, Date, Boolean or locale formatting support. The NF/ЧФ family is
 specified in the [official localization guidelines](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_Development_Standards/Localization_requirements/Localization_guidelines_____Dates__numbers__and_Boolean/?language=en)
 and must not fall through the unknown-name no-op path.
 
 ## Dispatcher and explicit local policies
 
 Exact Number (Decimal), String, Boolean, Date, Undefined and Null values are
-accepted. Non-numeric values use their existing String presentation after mask
-validation; supported numeric directives do not affect them. Date values now use the separately measured [numeric-mask Date slice](format-dates-runtime.md),
+accepted. String, Undefined and Null use their existing String presentation
+after mask validation; Boolean uses BF/BT when supplied. Numeric directives do
+not affect non-numeric values. Date values use the separately measured [numeric-mask Date slice](format-dates-runtime.md),
 including empty-date presentation. Out-of-range Date states remain rejected.
 This does not establish unmeasured Date/Boolean/locale families. Objects and Python primitive subclasses are
 rejected without invoking arbitrary conversion hooks.
@@ -91,3 +90,31 @@ widths, each 0–32 (zero first width only alone). Non-finite Numbers fail expli
 Text output is bounded before separator expansion. Wider precision, malformed
 masks, escaping extensions and unmeasured combinations have local tests, not a
 claim of native equivalence outside the stated slice.
+
+## Extended numeric and Boolean checkpoint
+
+The 48-case source `tests/fixtures/format_numbers/extended48.bsl` was measured on
+Linux 1C 8.3.27.1508 in [run 41642739481](https://github.com/Atridis/yadinassi/actions/runs/41642739481).
+The server capture is retained unchanged; the client capture's SHA-256, size and
+message count match, but its raw bytes were not separately exported. Source,
+checkout, artifact identities and the historical failed runtime-parity verdict
+are recorded in `extended48-provenance.json`. All 48 cases produced successful
+native values. This acquisition is not a fresh acceptance of the current runtime.
+
+The current bounded implementation supports `ND/ЧЦ` total width, `NLZ/ЧВН`
+leading zeros, `NN/ЧО` negative representations 0–4, `NS/ЧС` decimal shift,
+a one-placeholder `NF/ЧФ` template with bounded literals, and Boolean
+`BF/БЛ`, `BT/БИ` presentations. Both Russian and English names work. Boolean
+repeated same-name parameters select the first observed value. Conflicting
+repeats of the new numeric directives and mixed Russian/English names for one
+new directive are rejected until measured; older numeric directive rules are
+unchanged. Unknown lowercase names retain the existing no-op policy.
+
+The observed width overflow/carry cases 07 and 08 remain explicitly rejected,
+not claimed as parity: native produced `99.99` and `0.00` respectively. Other
+width/rounding boundaries, width with no integer slot, leading zeros without a
+positive width, broader template grammar and mixed-alias precedence are `!todo`.
+Supported cases generalize finite observations and official 1C documentation;
+they do not establish all combinations, locales or format strings. Numeric
+shift, precision and rendering remain context-independent and resource-bounded.
+The original active 48-case measurement source and pin remain intact.

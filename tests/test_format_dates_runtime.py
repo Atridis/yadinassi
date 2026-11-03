@@ -92,9 +92,10 @@ class FormatDatesRuntimeTests(unittest.TestCase):
     def test_unsupported_families_and_malformed_masks_stay_explicit(self):
         value=date('20260102030405')
         for mask in ('DF=MMMM','DF=ddd','DF=hh tt',"DF='hh tt'",'DF=q','DF=yyy','DF=',
-                     'DLF=D','L=en',"DF=\"yyyy 'bad\"",'NF=N','nd=2','BF=No'):
+                     'DLF=D','L=en',"DF=\"yyyy 'bad\""):
             with self.subTest(mask=mask),self.assertRaises(ValueError):format_value(value,mask)
         self.assertEqual(format_value(Decimal('1234.5'),'NFD=1;NG=0;l=en'),'1234,5')
+        self.assertEqual(format_value(value, 'nd=2'), to_string(value))
 
     def test_resource_boundaries_and_numeric_context_preserved(self):
         value=date('20260102030405')
