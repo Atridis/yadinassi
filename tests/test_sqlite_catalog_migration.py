@@ -1,3 +1,4 @@
+from contextlib import closing
 """Migration tests use authored temporary v1 databases, never user data."""
 import hashlib
 import json
@@ -34,7 +35,7 @@ class MigrationTests(unittest.TestCase):
         self.vb = [['r', str(self.a), str(self.ra)]]
         self.ve = [['r', str(self.a), str(UUID(int=0))]]
         self.receipt = (str(self.op), 'a'*64, _json([[str(self.a), str(self.ra), '7']]))
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             for ddl in _V1_DDL: db.execute(ddl)
             db.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
             db.execute('PRAGMA user_version=1')
@@ -51,10 +52,10 @@ class MigrationTests(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
 
     def execute(self, sql, args=()):
-        with sqlite3.connect(self.path) as db: db.execute(sql, args)
+        with closing(sqlite3.connect(self.path)) as db, db: db.execute(sql, args)
 
     def assert_v1(self):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM catalog_record').fetchone()[0], 3)
             self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='catalog_storage_map'").fetchone())
@@ -62,7 +63,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_roundtrip_and_preserved_receipt(self):
         migrate_v1(self.path, self.plan, maintenance=True)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
             self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='catalog_record'").fetchone())
             layout = load_layout(db, (self.sa, self.sb))
@@ -127,7 +128,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_cycles_and_empty_reference(self):
         migrate_v1(self.path, self.plan, maintenance=True)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             layout = load_layout(db, (self.sa, self.sb))
             f = quote_identifier(layout.field_name(self.b, self.sb.fields[0].identity))
             table = quote_identifier(layout.table_name(self.b))
@@ -143,7 +144,7 @@ class MigrationTests(unittest.TestCase):
     def test_utf16_v1_is_rejected_without_modification(self):
         path = Path(self.tmp.name) / 'utf16.sqlite'
         tables = ('database_info', 'configuration_file', 'catalog_schema', 'catalog_record', 'commit_receipt')
-        with sqlite3.connect(self.path) as source, sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(self.path)) as source, source, closing(sqlite3.connect(path)) as db, db:
             db.execute("PRAGMA encoding='UTF-16le'")
             for ddl in _V1_DDL: db.execute(ddl)
             db.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
@@ -155,7 +156,7 @@ class MigrationTests(unittest.TestCase):
             prepare_v1(path, maintenance=True)
         with self.assertRaisesRegex(BackendError, 'unsupported'):
             migrate_v1(path, self.plan, maintenance=True)
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             self.assertEqual(db.execute('PRAGMA encoding').fetchone()[0], 'UTF-16le')
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM catalog_record').fetchone()[0], 3)
@@ -164,7 +165,7 @@ class MigrationTests(unittest.TestCase):
     def test_unknown_version_rejected(self):
         self.execute('PRAGMA user_version=3')
         with self.assertRaisesRegex(BackendError, 'unsupported'): migrate_v1(self.path, self.plan, maintenance=True)
-        with sqlite3.connect(self.path) as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],3)
+        with closing(sqlite3.connect(self.path)) as db, db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],3)
 
     def test_unknown_schema_rejected(self):
         self.execute('CREATE TABLE unexpected(value TEXT)')
@@ -184,7 +185,7 @@ class MigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'unsupported'):
             migrate_v1(self.path, self.plan, maintenance=True)
         self.assert_v1()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='user_index'").fetchone())
 
     def test_malformed_values_roll_back(self):
@@ -242,7 +243,7 @@ class MigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'unsupported'):
             migrate_v1(self.path, self.plan, maintenance=True)
         self.assert_v1()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM sqliteXhidden').fetchone()[0], 1)
 
     def test_configuration_digest_failure_rolls_back(self):
@@ -284,7 +285,7 @@ class MigrationTests(unittest.TestCase):
                 return result
         with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'): migrate_v1(self.path, self.plan, maintenance=True)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
             self.assertEqual(db.execute('SELECT * FROM commit_receipt').fetchone(), self.receipt)
         self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'committed')
@@ -293,7 +294,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_process_crash_before_commit_preserves_v1(self):
         tables = ('database_info', 'configuration_file', 'catalog_schema', 'catalog_record', 'commit_receipt')
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             before = {table: db.execute(f'SELECT * FROM {table} ORDER BY rowid').fetchall() for table in tables}
         script = """
 import os, sys
@@ -313,7 +314,7 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
         self.assertIn(resolve_migration(self.path, self.plan, maintenance=True), ('uncertain', 'not_committed'))
         # This writable recovery is explicitly limited to the temporary fixture
         # and occurs while the test has exclusive maintenance control.
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchall(), [('ok',)])
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             after = {table: db.execute(f'SELECT * FROM {table} ORDER BY rowid').fetchall() for table in tables}

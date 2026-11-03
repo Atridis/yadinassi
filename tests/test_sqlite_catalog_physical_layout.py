@@ -1,3 +1,4 @@
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -18,7 +19,7 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
             backend = SQLiteCatalogBackend.create(path, config)
             layout = backend._layout
             backend.close()
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 2)
                 tables = {x[0] for x in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertNotIn('catalog_record', tables)
@@ -37,7 +38,7 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
             path = Path(directory) / 'owned.sqlite'
             config = configuration()
             backend = SQLiteCatalogBackend.create(path, config); layout = backend._layout; backend.close()
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute('CREATE INDEX attacker ON %s (description)' % quote_identifier(layout.table_name(config.catalogs[0].identity)))
             with self.assertRaisesRegex(BackendError, 'unsupported'):
                 SQLiteCatalogBackend(path)
@@ -46,7 +47,7 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'owned.sqlite'
             backend = SQLiteCatalogBackend.create(path, configuration())
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute('PRAGMA user_version=1')
             with self.assertRaisesRegex(BackendError, 'schema_changed'):
                 backend.begin_write(uuid4())
@@ -93,7 +94,7 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
             path = Path(directory) / 'owned.sqlite'
             config = configuration()
             backend = SQLiteCatalogBackend.create(path, config); backend.close()
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute('UPDATE catalog_storage_map SET physical_name=? WHERE catalog_id=?',
                                    ('catalog_different', str(config.catalogs[0].identity)))
             with self.assertRaises(BackendError):
@@ -106,7 +107,7 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
             schema = config.catalogs[1]
             table = quote_identifier(backend._layout.table_name(schema.identity))
             column = quote_identifier(backend._layout.field_name(schema.identity, schema.fields[0].identity))
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute('ALTER TABLE %s RENAME COLUMN %s TO changed' % (table,column))
             with self.assertRaisesRegex(BackendError, 'schema_changed'): backend.begin_read()
             backend.close()
@@ -126,9 +127,9 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'owned.sqlite'
             backend = SQLiteCatalogBackend.create(path, configuration()); backend.close()
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute('CREATE TABLE sqliteXhidden(secret TEXT)')
                 connection.execute("INSERT INTO sqliteXhidden VALUES ('keep')")
             with self.assertRaises(BackendError): SQLiteCatalogBackend(path)
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 self.assertEqual(connection.execute('SELECT secret FROM sqliteXhidden').fetchone(), ('keep',))
