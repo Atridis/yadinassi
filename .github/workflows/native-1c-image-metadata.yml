@@ -1,113 +1,358 @@
-name: Inspect native 1C image metadata
+name: Reviewed PR203 Docker lifecycle probe
 
+# TEMPORARY BRANCH ONLY. Do not merge this workflow variant into main or PR203.
 on:
   workflow_dispatch:
+    inputs:
+      reviewed_probe_sha:
+        description: Exact independently reviewed temporary-branch commit SHA
+        required: true
+        type: string
 
 permissions:
   contents: read
-  packages: read
+
+concurrency:
+  group: docker-lifecycle-pr203-probe
+  cancel-in-progress: false
 
 jobs:
-  metadata:
-    name: Read image metadata without running 1C
+  probe:
     if: >-
       github.repository == 'Atridis/yadinassi' &&
       github.event_name == 'workflow_dispatch' &&
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      github.ref == 'refs/heads/codex/docker-lifecycle-pr203-probe' &&
+      github.run_attempt == 1
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 6
     steps:
-      # No checkout, arbitrary image/ref input, container creation, or image execution.
-      # Authentication stays on this ephemeral host and is never passed to an image.
-      - name: Pull fixed training image and report allowlisted metadata
+      - name: Admit exact owner and reviewed dispatch revision
         env:
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ github.token }}
+          PROBE_SHA: ${{ inputs.reviewed_probe_sha }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          python3 -I -B - <<'PY'
+          import os, re
+          e = os.environ
+          valid = (re.fullmatch('[0-9a-f]{40}', e['PROBE_SHA']) is not None
+                   and e['PROBE_SHA'] == e['EVENT_SHA'] == e['WORKFLOW_SHA']
+                   and e['ACTOR'] == e['TRIGGERING_ACTOR'] == 'Atridis'
+                   and e['ACTOR_ID'] == '30860798' and e['REPOSITORY_ID'] == '359770628'
+                   and e['RUN_ATTEMPT'] == '1')
+          if not valid: raise SystemExit('Dispatch identity or reviewed revision rejected.')
+          PY
+      - name: Checkout only immutable PR203 source without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Atridis/yadinassi
+          ref: d2250fb3b41dc5781c35294bbfa5cfc75d3cd9c5
+          path: reviewed
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Verify checked-out revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C reviewed rev-parse HEAD)" = d2250fb3b41dc5781c35294bbfa5cfc75d3cd9c5
+      - name: Four sequential owned-container checks without native platform
+        env:
+          PROBE_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          PROBE_REVIEWED_SHA: ${{ inputs.reviewed_probe_sha }}
+          PROBE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          PROBE_DRIVER_SHA: 3a284ec135ba3a070fa8837c977f0c9e7fee2ddd3612268fff4489c4a86c6557
         shell: bash
         run: |
           set -euo pipefail
           umask 077
-          export DOCKER_CONFIG
-          DOCKER_CONFIG=$(mktemp -d "$RUNNER_TEMP/onec-registry-auth.XXXXXXXX")
-          RAW_INSPECT="$RUNNER_TEMP/onec-image-inspect.json"
-          DOCKER_LOG="$RUNNER_TEMP/onec-docker-command.log"
-          cleanup() {
-            docker logout ghcr.io >/dev/null 2>&1 || true
-            rm -f -- "$DOCKER_CONFIG/config.json" "$RAW_INSPECT" "$DOCKER_LOG"
-            rmdir -- "$DOCKER_CONFIG" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-          if printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin > "$DOCKER_LOG" 2>&1; then
-            printf 'Registry authentication succeeded.\n'
-          else
-            status=$?
-            printf 'Registry authentication failed (Docker exit %s).\n' "$status" >&2
-            exit "$status"
-          fi
-          unset GHCR_TOKEN
-          IMAGE_REF='ghcr.io/atridis/onec-ubuntu22:8.3.27.1508'
-          if docker pull "$IMAGE_REF" > "$DOCKER_LOG" 2>&1; then
-            printf 'Image download completed; no image process was started.\n'
-          else
-            status=$?
-            printf 'Image pull failed (Docker exit %s). Check package Read access for this repository.\n' "$status" >&2
-            exit "$status"
-          fi
-          if docker image inspect "$IMAGE_REF" > "$RAW_INSPECT" 2> "$DOCKER_LOG"; then
-            printf 'Image inspection completed.\n'
-          else
-            status=$?
-            printf 'Image inspection failed (Docker exit %s).\n' "$status" >&2
-            exit "$status"
-          fi
-          python3 - "$RAW_INSPECT" <<'PY'
+          PROBE_SCRIPT=$(mktemp "$RUNNER_TEMP/pr203-docker-probe.XXXXXXXX.py")
+          trap 'rm -f -- "$PROBE_SCRIPT"' EXIT
+          # BEGIN REVIEWED DOCKER PROBE
+          cat > "$PROBE_SCRIPT" <<'PY'
+          """Branch-only PR203 Docker validation; never a 1C/native evidence producer."""
+          from __future__ import annotations
+          import hashlib
           import json
           import os
           from pathlib import Path
           import re
           import sys
-
-          image, = json.loads(Path(sys.argv[1]).read_text())
-          repository = "ghcr.io/atridis/onec-ubuntu22"
-          digests = sorted(digest for digest in image.get("RepoDigests", [])
-                           if re.fullmatch(re.escape(repository) + r"@sha256:[0-9a-f]{64}", digest))
-          if not digests:
-              raise SystemExit("No immutable digest for the requested repository")
-          image_id = image.get("Id", "")
-          if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
-              raise SystemExit("Unexpected image ID")
-          platform = {key.lower(): image.get(key, "")
-                      for key in ("Os", "Architecture", "Variant")}
-          if any(not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_.-]*", value)
-                 for value in platform.values()):
-              raise SystemExit("Unexpected platform metadata")
-          config = image.get("Config") or {}
-          size = image.get("Size")
-          if type(size) is not int or size < 0:
-              raise SystemExit("Unexpected image size metadata")
-          user = config.get("User", "")
-          user_kind = ("default" if not user else
-                       "numeric" if re.fullmatch(r"[0-9]+(?::[0-9]+)?", user) else "named")
-          # Never print Env, Labels, history, Entrypoint/Cmd text or raw config:
-          # a private image could accidentally embed credentials or private details.
-          report = {
-              "requested_image": repository + ":8.3.27.1508",
-              "immutable_references": digests,
-              "image_id": image_id,
-              "platform": platform,
-              "size_bytes": size,
-              "configuration": {
-                  "user_kind": user_kind,
-                  "has_entrypoint": bool(config.get("Entrypoint")),
-                  "has_command": bool(config.get("Cmd")),
-                  "has_environment": bool(config.get("Env")),
-              },
-              "image_process_started": False,
-              "native_test_completed": False,
+          import tempfile
+          import time
+          import types
+          import uuid
+          
+          REVIEWED_SHA = 'd2250fb3b41dc5781c35294bbfa5cfc75d3cd9c5'
+          HELPER_SHA = '7488d3c3934de0792afedacc4d9f84072015bcf078d6a84e258cbf30af41b25e'
+          IMAGE = 'docker.io/library/alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d'
+          IMAGE_ID = 'sha256:b92841763c5c2140a20eeb2a44e94ebb0e80fd51d9d6b5895ea72fa999525d68'
+          PR_FILES = {
+              'docs/native-docker-lifecycle.md': 'e7a367d94b58e721d86bb0b974c8722db4b4b27e2e1dd3b07960874dd0091d45',
+              'scripts/native_1c_catalog_deletion_mark_profile.py': '7549d9afe05cda96c266630095b6dc947fdba0ec05aa392f8577d7fc5b07f518',
+              'scripts/native_1c_docker_lifecycle.py': HELPER_SHA,
+              'tests/test_catalog_deletion_mark_packet.py': '7341d6fac159872a73beec884557fb8587fdd38819ff8c2594e3ae9a06007ab1',
+              'tests/test_native_docker_lifecycle.py': '575de0567fc2619b12a1aff626eab08a7b12c057f6b62c15a48f74b267b2be96',
           }
-          rendered = json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True)
-          print(rendered)
-          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
-              summary.write("Metadata only. No image process or native test was started.\n\n")
-              summary.write("```json\n" + rendered + "\n```\n")
+          CASES = (
+              ('success', "printf 'owned-docker-success\\n'", 0, b'owned-docker-success\n', None),
+              ('exit_seven', "printf 'owned-docker-exit-seven\\n'; exit 7", 7, b'owned-docker-exit-seven\n', None),
+              ('timeout', 'sleep 45', None, None, 'docker_command_timeout'),
+              ('output_overflow', 'i=0; while [ "$i" -lt 512 ]; do printf x; i=$((i+1)); done', None, None, 'docker_output_limit'),
+          )
+          CASE_SECONDS = 40
+          OUTPUT_LIMIT = 64
+          PULL_SECONDS = 120
+          INSPECT_SECONDS = 30
+          VERSION_SECONDS = 10
+          MAX_REPORT = 4096
+          SAFE_STAGES = {'image_inspect', 'container_create', 'container_ownership', 'container_start',
+                         'container_exit', 'container_cleanup'}
+          SAFE_REASONS = {'source_identity_invalid', 'platform_not_supported', 'image_pull_failed',
+                          'image_identity_invalid', 'unexpected_outcome', 'cleanup_unverified',
+                          'private_cleanup_unverified', 'probe_failed', 'workflow_identity_invalid',
+                          'driver_identity_invalid', 'docker_version_invalid', 'operation_witness_missing'}
+          
+          
+          class ProbeError(Exception): pass
+          
+          
+          def verify_sources(root):
+              """No repo imports before all five reviewed files match their exact bytes."""
+              helper = None
+              for name, expected in PR_FILES.items():
+                  path = root / name
+                  if any(item.is_symlink() for item in (path, *path.parents)):
+                      raise ProbeError('source_identity_invalid')
+                  try:
+                      with path.open('rb') as stream:
+                          raw = stream.read(131073)
+                  except OSError:
+                      raise ProbeError('source_identity_invalid') from None
+                  if not 0 < len(raw) <= 131072 or hashlib.sha256(raw).hexdigest() != expected:
+                      raise ProbeError('source_identity_invalid')
+                  if name == 'scripts/native_1c_docker_lifecycle.py': helper = raw
+              return helper
+          
+          
+          def load_helper(root):
+              raw = verify_sources(root)
+              module = types.ModuleType('reviewed_pr203_docker_lifecycle')
+              exec(compile(raw, '<sha256:' + HELPER_SHA + '>', 'exec'), module.__dict__)
+              return module
+          
+          
+          def create_command(helper, name, nonce, script):
+              if (type(nonce) is not str or re.fullmatch('[0-9a-f]{32}', nonce) is None
+                      or name != 'onec-docker-probe-' + nonce or script not in {case[1] for case in CASES}):
+                  raise ProbeError('unexpected_outcome')
+              return ['docker', 'create', '--name', name, '--label', helper.OWNER_LABEL + '=' + nonce,
+                  '--hostname', 'owned-docker-probe', '--pull', 'never', '--platform', 'linux/amd64',
+                  '--network', 'none', '--user', '65534:65534', '--read-only', '--no-healthcheck',
+                  '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--pids-limit', '16',
+                  '--memory', '64m', '--memory-swap', '64m', '--cpus', '0.5',
+                  '--ulimit', 'nofile=64:64', '--ulimit', 'fsize=1048576:1048576',
+                  '--ipc', 'private', '--shm-size', '8m', '--log-driver', 'none', '--stop-timeout', '1',
+                  '--init', '--workdir', '/', '--entrypoint', '/usr/bin/env', IMAGE,
+                  '-i', 'PATH=/bin:/usr/bin', 'HOME=/nonexistent', 'LC_ALL=C', '/bin/sh', '-c', script]
+          
+          
+          def docker_environment(directory):
+              config = directory / 'config'
+              config.mkdir(mode=0o700)
+              return {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                      'HOME': str(directory), 'DOCKER_CONFIG': str(config), 'LANG': 'C', 'LC_ALL': 'C'}
+          
+          
+          class ObservedCli:
+              """Transparent delegation; evidence never changes the helper's decisions.
+          
+              Start means the exact start --attach call. A later matching running snapshot
+              proves a started container, not completion of Docker's attach handshake.
+              """
+              def __init__(self, helper, name, nonce, state):
+                  self.helper, self.name, self.nonce, self.state = helper, name, nonce, state
+                  self.container_id = None
+                  self.created_verified = False
+                  self.start_calls = 0
+                  self.exact_start = False
+                  self.start_error = None
+                  self.running_after_start_error = False
+          
+              def snapshot_matches(self, raw):
+                  try:
+                      data = json.loads(raw)
+                      return (type(data) is list and len(data) == 11
+                              and data[:5] == [self.container_id, '/' + self.name, IMAGE, IMAGE_ID, self.nonce]
+                              and all(type(value) is str for value in data[:6])
+                              and all(type(value) is bool for value in data[6:10])
+                              and type(data[10]) is int and 0 <= data[10] <= 255), data
+                  except (ValueError, TypeError, UnicodeError, RecursionError):
+                      return False, None
+          
+              def __call__(self, command, env, *, deadline, limit):
+                  is_start = command[:2] == ['docker', 'start']
+                  if is_start:
+                      self.start_calls += 1
+                      self.exact_start = (self.start_calls == 1 and self.created_verified
+                                         and command == ['docker', 'start', '--attach', self.container_id])
+                  try:
+                      # Preserve the same command/env objects, deadline, output cap, result
+                      # and exception object. No command is added, retried or substituted.
+                      result = self.helper.bounded_cli(command, env, deadline=deadline, limit=limit)
+                  except self.helper.CliError as error:
+                      if is_start and self.exact_start: self.start_error = error
+                      raise
+                  code, raw = result
+                  if code == 0 and command[:2] == ['docker', 'create']:
+                      if type(raw) is bytes and re.fullmatch(rb'[0-9a-f]{64}\n?', raw):
+                          self.container_id = raw.decode('ascii').removesuffix('\n')
+                  if (code == 0 and self.container_id is not None
+                          and command == ['docker', 'container', 'inspect', '--format', self.helper.CONTAINER_FORMAT, self.container_id]):
+                      valid, snapshot = self.snapshot_matches(raw)
+                      if valid and self.start_calls == 0 and snapshot[5:] == ['created', False, False, False, False, 0]:
+                          self.created_verified = True
+                      if (valid and self.start_calls == 1 and self.exact_start and self.start_error is not None
+                              and self.state.get('stage') == 'container_cleanup'
+                              and snapshot[5:10] == ['running', True, False, False, False]):
+                          self.running_after_start_error = True
+                  return result
+          
+              def failure_observed(self, reason):
+                  return (self.start_calls == 1 and self.exact_start and self.start_error is not None
+                          and str(self.start_error) == reason)
+          
+          
+          def run_cases(helper, env, report):
+              for case, script, expected_code, expected_output, expected_error in CASES:
+                  nonce = uuid.uuid4().hex
+                  name = 'onec-docker-probe-' + nonce
+                  state = {}
+                  observer = ObservedCli(helper, name, nonce, state)
+                  entry = {'case': case, 'outcome': 'failed', 'reason': 'unexpected_outcome',
+                           'start_error_observed': False, 'running_at_cleanup_observed': False,
+                           'attach_handshake_verified': False,
+                           'docker_cli_reap_verified': False, 'container_cleanup_verified': False}
+                  report['cases'].append(entry)
+                  started = time.monotonic()
+                  try:
+                      # Unmodified run_owned delegates each command through a transparent
+                      # observer to the real, unmodified bounded_cli. No clock/constants change.
+                      code, output = helper.run_owned(create_command(helper, name, nonce, script), env,
+                          name=name, nonce=nonce, image=IMAGE, seconds=CASE_SECONDS,
+                          output_limit=OUTPUT_LIMIT, state=state, runner=observer)
+                      entry.update(docker_cli_reap_verified=True, container_cleanup_verified=True)
+                      if (expected_error is not None or code != expected_code or output != expected_output
+                              or observer.start_calls != 1 or not observer.exact_start):
+                          raise ProbeError('unexpected_outcome')
+                      del output
+                      entry.update(outcome='expected_success' if code == 0 else 'expected_exit', reason='none')
+                  except helper.LifecycleError as error:
+                      reason = str(error) if str(error) in helper.FAILURE_CODES else 'probe_failed'
+                      entry.update(reason=reason, start_error_observed=observer.failure_observed(reason),
+                          running_at_cleanup_observed=observer.running_after_start_error,
+                          docker_cli_reap_verified=error.cli_reap_verified is True,
+                          container_cleanup_verified=error.container_cleanup_verified is True)
+                      if state.get('stage') in SAFE_STAGES: entry['stage'] = state['stage']
+                      if not entry['docker_cli_reap_verified'] or not entry['container_cleanup_verified']:
+                          raise ProbeError('cleanup_unverified') from None
+                      if expected_error is None or reason != expected_error:
+                          raise ProbeError('unexpected_outcome') from None
+                      if (not entry['start_error_observed']
+                              or (case == 'timeout' and not entry['running_at_cleanup_observed'])):
+                          raise ProbeError('operation_witness_missing') from None
+                      entry['outcome'] = 'expected_failure'
+                  finally:
+                      entry['elapsed_milliseconds'] = max(0, round((time.monotonic() - started) * 1000))
+                  # No next container is created until both cleanup proofs above hold.
+          
+          
+          def execution_platform():
+              return sys.platform == 'linux' and os.name == 'posix'
+          
+          
+          def execute(root, temp_root, context):
+              report = {'schema': 'docker-lifecycle-pr203-probe-v1', 'reviewed_sha': REVIEWED_SHA,
+                  'helper_sha256': HELPER_SHA, 'image': IMAGE, 'expected_image_id': IMAGE_ID,
+                  'status': 'failed', 'validation_accepted': False, 'native_test_completed': False,
+                  'container_output_exported': False, 'private_payloads_removed': False, 'cases': []}
+              directory = None
+              try:
+                  if not execution_platform(): raise ProbeError('platform_not_supported')
+                  if (type(context) is not dict or context.get('run_attempt') != '1'
+                          or type(context.get('workflow_sha')) is not str
+                          or re.fullmatch('[0-9a-f]{40}', context['workflow_sha']) is None
+                          or context.get('reviewed_probe_sha') != context['workflow_sha']):
+                      raise ProbeError('workflow_identity_invalid')
+                  driver_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+                  if context.get('driver_sha256') != driver_hash:
+                      raise ProbeError('driver_identity_invalid')
+                  report.update(reviewed_workflow_sha=context['workflow_sha'], driver_sha256=driver_hash, run_attempt=1)
+                  helper = load_helper(root)
+                  with tempfile.TemporaryDirectory(prefix='owned-docker-probe-', dir=temp_root) as directory:
+                      env = docker_environment(Path(directory))
+                      code, raw = helper.bounded_cli(['docker', 'version', '--format',
+                          '[{{json .Client.Version}},{{json .Server.Version}}]'], env,
+                          deadline=time.monotonic() + VERSION_SECONDS, limit=256)
+                      versions = json.loads(raw)
+                      if (code != 0 or type(versions) is not list or len(versions) != 2
+                              or any(type(value) is not str or re.fullmatch(r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9][A-Za-z0-9.-]{0,31})?', value) is None for value in versions)):
+                          raise ProbeError('docker_version_invalid')
+                      report['docker_versions'] = dict(zip(('client', 'server'), versions))
+                      del raw
+                      code, _ = helper.bounded_cli(['docker', 'pull', '--platform', 'linux/amd64', IMAGE], env,
+                          deadline=time.monotonic() + PULL_SECONDS, limit=65536)
+                      if code != 0: raise ProbeError('image_pull_failed')
+                      code, raw = helper.bounded_cli(['docker', 'image', 'inspect', '--format', helper.IMAGE_FORMAT, IMAGE], env,
+                          deadline=time.monotonic() + INSPECT_SECONDS, limit=2048)
+                      image = json.loads(raw)
+                      if (code != 0 or type(image) is not list or image != [IMAGE_ID, 'linux', 'amd64', 0]
+                              or type(image[-1]) is not int):
+                          raise ProbeError('image_identity_invalid')
+                      del raw
+                      run_cases(helper, env, report)
+                      verify_sources(root)
+                  if Path(directory).exists(): raise ProbeError('private_cleanup_unverified')
+                  report.update(status='passed', validation_accepted=True, private_payloads_removed=True)
+              except BaseException as error:
+                  reason = str(error)
+                  report['reason'] = reason if isinstance(error, ProbeError) and reason in SAFE_REASONS else 'probe_failed'
+                  report['private_payloads_removed'] = directory is not None and not Path(directory).exists()
+              return report
+          
+          
+          def rendered_report(report):
+              raw = json.dumps(report, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+              if len(raw.encode()) > MAX_REPORT:
+                  return '{"schema":"docker-lifecycle-pr203-probe-v1","status":"failed","validation_accepted":false,"reason":"report_limit","container_output_exported":false,"native_test_completed":false}'
+              return raw
+          
+          
+          def main():
+              try:
+                  context = {key: os.environ.get(env, '') for key, env in (
+                      ('workflow_sha', 'PROBE_WORKFLOW_SHA'), ('reviewed_probe_sha', 'PROBE_REVIEWED_SHA'),
+                      ('run_attempt', 'PROBE_RUN_ATTEMPT'), ('driver_sha256', 'PROBE_DRIVER_SHA'))}
+                  report = execute(Path(sys.argv[1]).resolve(), Path(os.environ['RUNNER_TEMP']).resolve(), context)
+                  rendered = rendered_report(report)
+                  with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:
+                      stream.write('PR203 Docker lifecycle only. No 1C or native evidence.\n\n```json\n' + rendered + '\n```\n')
+              except BaseException:
+                  print('{"schema":"docker-lifecycle-pr203-probe-v1","status":"failed","validation_accepted":false,"reason":"report_failed","container_output_exported":false,"native_test_completed":false}')
+                  return 1
+              print(rendered)
+              return 0 if json.loads(rendered).get('validation_accepted') is True else 1
+          
+          
+          if __name__ == '__main__': raise SystemExit(main())
           PY
+          # END REVIEWED DOCKER PROBE
+          printf '%s  %s\n' "$PROBE_DRIVER_SHA" "$PROBE_SCRIPT" | sha256sum --check --status
+          python3 -I -B "$PROBE_SCRIPT" "$GITHUB_WORKSPACE/reviewed"
