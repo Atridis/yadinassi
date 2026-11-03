@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -21,7 +22,7 @@ spec.loader.exec_module(fixture)
 
 class BrowserQAContractTests(unittest.TestCase):
     def test_workflow_is_explicit_opt_in_not_default_or_native(self):
-        source = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text()
+        source = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text(encoding='utf-8')
         self.assertIn('branches: [codex/ui-browser-reviewed]', source)
         for forbidden in ('pull_request:', 'workflow_dispatch:', 'schedule:', 'sudo ', 'sysctl ', 'container:', 'secrets.'):
             self.assertNotIn(forbidden, source)
@@ -31,8 +32,8 @@ class BrowserQAContractTests(unittest.TestCase):
         self.assertNotIn('write', source)
 
     def test_dependency_lock_exact_official_packages_only(self):
-        manifest = json.loads((QA / 'package.json').read_text())
-        lock = json.loads((QA / 'package-lock.json').read_text())
+        manifest = json.loads((QA / 'package.json').read_text(encoding='utf-8'))
+        lock = json.loads((QA / 'package-lock.json').read_text(encoding='utf-8'))
         self.assertEqual(manifest['devDependencies'], {'playwright': '1.64.1'})
         self.assertEqual(set(lock['packages']), {'', 'node_modules/playwright', 'node_modules/playwright-core'})
         for name in ('playwright', 'playwright-core'):
@@ -40,10 +41,10 @@ class BrowserQAContractTests(unittest.TestCase):
             self.assertEqual(package['version'], '1.64.1')
             self.assertEqual(package['resolved'], f'https://registry.npmjs.org/{name}/-/{name}-1.64.1.tgz')
             self.assertTrue(package['integrity'].startswith('sha512-'))
-        self.assertIn('ignore-scripts=true', (QA / '.npmrc').read_text())
+        self.assertIn('ignore-scripts=true', (QA / '.npmrc').read_text(encoding='utf-8'))
 
     def test_browser_launch_is_one_explicit_sandbox_enabled_acquisition(self):
-        source = (QA / 'catalog_browser_qa.mjs').read_text()
+        source = (QA / 'catalog_browser_qa.mjs').read_text(encoding='utf-8')
         self.assertEqual(source.count('chromium.launch('), 1)
         self.assertIn('chromiumSandbox:true', source)
         self.assertIn("channel:'chromium'", source)
@@ -60,7 +61,7 @@ class BrowserQAContractTests(unittest.TestCase):
         self.assertNotIn('recordHar', source)
 
     def test_artifacts_explicit_no_database_profile_or_trace(self):
-        source = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text()
+        source = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text(encoding='utf-8')
         paths = [line.strip() for line in source.splitlines() if 'yadinassi-browser-artifacts/' in line]
         self.assertEqual([path.rsplit('/', 1)[1] for path in paths],
                          ['result.json', 'manifest.json', 'list.png', 'editor.png', 'narrow.png'])
@@ -68,12 +69,22 @@ class BrowserQAContractTests(unittest.TestCase):
         self.assertIn('if-no-files-found: error', source)
 
     def test_harness_binds_checkout_assets_fixture_and_never_rebuilds_renderer(self):
-        source = (QA / 'catalog_browser_qa.mjs').read_text()
+        source = (QA / 'catalog_browser_qa.mjs').read_text(encoding='utf-8')
         self.assertIn('process.env.QA_SOURCE_SHA', source)
         self.assertIn("'tests/ui_catalog_fixture.py'", source)
         self.assertIn("git('ls-files','-z','yadinassi'", source)
         self.assertIn('source_changed', source)
         self.assertNotIn('build.mjs', source)
+
+    def test_harness_checks_ignore_windows_default_text_encoding(self):
+        original = Path.read_text
+        def windows_default(path, *args, **kwargs):
+            # Model a Windows default only when the caller omitted its encoding.
+            kwargs.setdefault('encoding', 'cp1252')
+            return original(path, *args, **kwargs)
+        with mock.patch.object(Path, 'read_text', windows_default):
+            self.test_browser_launch_is_one_explicit_sandbox_enabled_acquisition()
+            self.test_harness_binds_checkout_assets_fixture_and_never_rebuilds_renderer()
 
     def test_fixture_is_owned_and_initial_database_is_not_a_durability_pass(self):
         with tempfile.TemporaryDirectory() as directory:
