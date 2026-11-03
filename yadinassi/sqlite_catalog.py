@@ -6,14 +6,16 @@ import json
 import os
 import sqlite3
 import stat
+import sys
 from uuid import UUID, uuid4
 from pathlib import Path
-from functools import wraps
+from functools import wraps, cmp_to_key
 
 from .configuration_import import _host_directory
 from .catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogDraft,
                               CatalogKey, CatalogSchema, CatalogSelection,
-                              FieldSchema, Revision)
+                              FieldSchema, Revision, CatalogComparison, CatalogPredicate,
+                              CatalogOrder, CatalogScanRequest, CatalogPage)
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
@@ -399,6 +401,7 @@ class _View:
     def __init__(self, backend, connection, operation_id):
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._closed = False; self._changes = []; self._intents = []
+        self._scan_cursor = None
         row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
         self.database_id, self.configuration_generation = UUID(row[0]), row[1]
         if operation_id is not None and connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone() is not None:
@@ -445,6 +448,133 @@ class _View:
         rows = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? ORDER BY code COLLATE BINARY,record_id LIMIT ?', (str(catalog_id),request.limit+1)).fetchall()
         if len(rows) > request.limit: raise BackendError('unsupported')
         return tuple(self._card(catalog_id,row) for row in rows)
+
+    def _scan_field(self, schema, field):
+        if type(field) is str:
+            kinds = {'ref': 'catalog_ref', 'code': 'string',
+                     'description': 'string', 'deletion_mark': 'boolean'}
+            if field not in kinds: raise BackendError('invalid_input')
+            return kinds[field], schema.identity if field == 'ref' else None
+        if type(field) is UUID:
+            for item in schema.fields:
+                if item.identity == field: return item.kind, item.target_catalog_id
+        raise BackendError('invalid_input')
+
+    def _scan_operand(self, kind, target, value):
+        if kind == 'string':
+            if type(value) is not str or len(value) > 65536: raise BackendError('invalid_input')
+            try: value.encode('utf-8')
+            except UnicodeEncodeError: raise BackendError('invalid_input') from None
+        elif kind == 'number':
+            if sys.implementation.name != 'cpython' or decimal.Decimal.__sizeof__ is object.__sizeof__: raise BackendError('unsupported')
+            if type(value) is not decimal.Decimal or not value.is_finite() or value.__sizeof__() > 2048: raise BackendError('invalid_input')
+            parts = value.as_tuple()
+            if len(parts.digits) > 256 or abs(parts.exponent) > 1000: raise BackendError('invalid_input')
+        elif kind == 'boolean':
+            if type(value) is not bool: raise BackendError('invalid_input')
+        elif kind == 'datetime':
+            if type(value) is not datetime.datetime or value.tzinfo is not None or value.microsecond: raise BackendError('invalid_input')
+        elif kind == 'catalog_ref':
+            if type(value) is not CatalogKey or any(type(v) is not UUID for v in (value.database_id,value.catalog_id,value.record_id)): raise BackendError('invalid_input')
+            self._key(value)
+            if value.catalog_id != target: raise BackendError('invalid_input')
+        else: raise BackendError('unsupported')
+
+    def _scan_predicate(self, schema, predicate, budget, depth=0):
+        budget[0] += 1
+        if budget[0] > 64 or depth > 8: raise BackendError('unsupported')
+        if type(predicate) is CatalogComparison:
+            kind, target = self._scan_field(schema, predicate.field)
+            if type(predicate.operator) is not str or predicate.operator not in ('eq','ne','lt','le','gt','ge'): raise BackendError('unsupported')
+            if kind == 'catalog_ref' and predicate.operator not in ('eq','ne'): raise BackendError('unsupported')
+            self._scan_operand(kind, target, predicate.value)
+        elif type(predicate) is CatalogPredicate:
+            if type(predicate.kind) is not str or predicate.kind not in ('and','or') or type(predicate.terms) is not tuple or not 1 <= len(predicate.terms) <= 64: raise BackendError('invalid_input')
+            for term in predicate.terms: self._scan_predicate(schema, term, budget, depth+1)
+        else: raise BackendError('invalid_input')
+
+    @staticmethod
+    def _scan_value(schema, card, field):
+        if type(field) is str:
+            return card.key if field == 'ref' else getattr(card, field)
+        return card.values[next(i for i, item in enumerate(schema.fields) if item.identity == field)]
+
+    def _scan_matches(self, schema, card, predicate, string_comparison):
+        if predicate is None: return True
+        if type(predicate) is CatalogPredicate:
+            values = (self._scan_matches(schema,card,term,string_comparison) for term in predicate.terms)
+            return all(values) if predicate.kind == 'and' else any(values)
+        left = self._scan_value(schema,card,predicate.field); right = predicate.value
+        if type(left) is str and string_comparison == 'casefold_v1':
+            left, right = left.casefold(), right.casefold()
+        op = predicate.operator
+        if op == 'eq': return left == right
+        if op == 'ne': return left != right
+        if op == 'lt': return left < right
+        if op == 'le': return left <= right
+        if op == 'gt': return left > right
+        return left >= right
+
+    @_boundary
+    def scan_catalog(self, catalog_id, request):
+        self._require()
+        # Write views are mutable and cannot promise a pinned traversal.
+        if self._operation_id is not None: raise BackendError('unsupported')
+        schema = self.catalog_schema(catalog_id)
+        if type(request) is not CatalogScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000 or type(request.order) is not tuple or len(request.order) > 16: raise BackendError('invalid_input')
+        if type(request.string_comparison) is not str or request.string_comparison not in ('codepoint','casefold_v1'): raise BackendError('unsupported')
+        if request.predicate is not None: self._scan_predicate(schema,request.predicate,[0])
+        seen = set()
+        for item in request.order:
+            if type(item) is not CatalogOrder or type(item.descending) is not bool: raise BackendError('invalid_input')
+            self._scan_field(schema,item.field)
+            if item.field in seen: raise BackendError('invalid_input')
+            seen.add(item.field)
+        binding = (catalog_id,request.predicate,request.order,request.page_size,request.string_comparison)
+        if request.continuation is not None:
+            if type(request.continuation) is not str or len(request.continuation) != 32: raise BackendError('invalid_input')
+            cursor = self._scan_cursor
+            if cursor is None or cursor[0] != request.continuation or cursor[1] != binding: raise BackendError('invalid_input')
+            cards, offset = cursor[2], cursor[3]
+        else:
+            self._scan_cursor = None
+            # Aggregate in the already pinned SQLite transaction before any row
+            # text is materialized in Python. Include every selected text column.
+            malformed = self._connection.execute(
+                "SELECT 1 FROM catalog_record WHERE catalog_id=? AND ("
+                "typeof(revision)!='integer' OR typeof(deletion_mark)!='integer' OR "
+                "typeof(record_id)!='text' OR typeof(code)!='text' OR "
+                "typeof(description)!='text' OR typeof(values_json)!='text' OR "
+                "length(CAST(record_id AS BLOB))>36 OR "
+                "length(CAST(code AS BLOB))>? OR length(CAST(description AS BLOB))>? OR "
+                "length(CAST(values_json AS BLOB))>?) LIMIT 1",
+                (str(catalog_id),schema.code_length*4,schema.description_length*4,_MAX_ROW_BYTES)).fetchone()
+            if malformed is not None: raise BackendError('integrity')
+            count, raw_bytes = self._connection.execute(
+                'SELECT COUNT(*), COALESCE(SUM(length(CAST(record_id AS BLOB)) + '
+                'length(CAST(code AS BLOB)) + length(CAST(description AS BLOB)) + '
+                'length(CAST(values_json AS BLOB)) + 32),0) '
+                'FROM catalog_record WHERE catalog_id=?', (str(catalog_id),)).fetchone()
+            if type(count) is not int or type(raw_bytes) is not int or count > _MAX_ROWS or raw_bytes > _MAX_CONFIG_BYTES: raise BackendError('unsupported')
+            rows = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? LIMIT ?', (str(catalog_id),_MAX_ROWS+1)).fetchall()
+            if len(rows) != count: raise BackendError('integrity')
+            cards = [self._card(catalog_id,row) for row in rows]
+            cards = [card for card in cards if self._scan_matches(schema,card,request.predicate,request.string_comparison)]
+            def compare(left, right):
+                for item in request.order:
+                    a=self._scan_value(schema,left,item.field); b=self._scan_value(schema,right,item.field)
+                    if type(a) is str and request.string_comparison == 'casefold_v1': a,b=a.casefold(),b.casefold()
+                    if type(a) is CatalogKey: a,b=a.record_id.int,b.record_id.int
+                    result=(a>b)-(a<b)
+                    if result: return -result if item.descending else result
+                return (left.key.record_id.int>right.key.record_id.int)-(left.key.record_id.int<right.key.record_id.int)
+            cards = tuple(sorted(cards,key=cmp_to_key(compare)))
+            offset = 0
+        end = offset + request.page_size
+        page = cards[offset:end]
+        token = uuid4().hex if end < len(cards) else None
+        self._scan_cursor = None if token is None else (token,binding,cards,end)
+        return CatalogPage(page,token)
 
     @_boundary
     def read_catalog(self, key):
@@ -524,5 +654,5 @@ class _View:
             except sqlite3.Error:
                 raise BackendError('storage_error') from None
             finally:
-                self._connection.close(); self._closed=True
+                self._connection.close(); self._closed=True; self._scan_cursor=None
                 if self._backend._active is self: self._backend._active=None

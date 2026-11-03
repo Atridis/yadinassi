@@ -33,6 +33,7 @@ from . import clocks, date_time_conversions, dates, formatting, serialization, s
 from .chars import BSLChars, CHARS
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
 from .catalogs import BSLCatalogs
+from .queries import BSLQuery
 from .documents import BSLDocuments
 from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
 from .document_types import BSLDocumentType
@@ -276,6 +277,7 @@ class Interpreter:
         self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
+        self.register_type("Запрос", lambda text="": BSLQuery(self._catalogs, text), "Query")
         self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
         self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
         self.register_type("СписокЗначений", BSLValueList, "ValueList")

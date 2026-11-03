@@ -217,7 +217,13 @@ class BSLTypeDescription(BSLObject):
     date_qualifiers: BSLDateQualifiers
     binary_data_qualifiers: BSLBinaryDataQualifiers
 
+    # Preserve ordinary descriptors' exact five-field host shape. Only the
+    # internal query factory installs an instance marker for nullable metadata.
+    _query_scalar = None
+
     def __init__(self, source=None, *args):
+        if type(source) is BSLTypeDescription and source._query_scalar is not None:
+            _unsupported("копирование nullable описания результата запроса")
         if type(source) is BSLTypeDescription:
             if len(args) > 6:
                 raise TypeError("ОписаниеТипов: ожидается не более 7 аргументов")
@@ -285,6 +291,14 @@ class BSLTypeDescription(BSLObject):
         return kind in self.types
 
     def adjust_value(self, value=_OMITTED):
+        if self._query_scalar is not None:
+            # Native Query24 measures the descriptor's nullable metadata and
+            # exact scalar assignment only, not mixed-Null coercion/defaults.
+            if value is _OMITTED or value is None or value is NULL:
+                _unsupported("значение по умолчанию или Null для колонки запроса")
+            if _scalar_type(value) is not self._query_scalar.types[0]:
+                _unsupported("преобразование типа nullable колонки запроса")
+            return self._query_scalar.adjust_value(value)
         if ((type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType or type(value) is BSLInformationRegisterType or type(value) is BSLDocumentLinesType or type(value) is BSLDocumentLines or type(value) is BSLDocumentLine)):
             _unsupported("приведение ссылки или типа справочника")
         if self.types == (BSLType.UUID,):
@@ -359,6 +373,28 @@ class BSLTypeDescription(BSLObject):
                    "adjustvalue": self.adjust_value, "привестизначение": self.adjust_value}
         method = methods.get(key)
         return super().get_member(name) if method is None else HostFunction(name, method)
+
+
+def _query_nullable_description(scalar):
+    """Internal metadata factory for native Query24 scalar projection columns.
+
+    This is not public mixed-Null construction. Pair order and qualifiers match
+    run41511900693 cases21/22; mutation is limited to exact scalar values.
+    """
+    if (type(scalar) is not BSLTypeDescription or scalar._query_scalar is not None
+            or len(scalar.types) != 1):
+        raise TypeError('query column requires one scalar description')
+    orders = {BSLType.STRING:(BSLType.STRING, BSLType.NULL),
+              BSLType.NUMBER:(BSLType.NULL, BSLType.NUMBER),
+              BSLType.BOOLEAN:(BSLType.BOOLEAN, BSLType.NULL),
+              BSLType.DATE:(BSLType.DATE, BSLType.NULL)}
+    order = orders.get(scalar.types[0])
+    if order is None:
+        _unsupported("nullable тип колонки запроса")
+    result = BSLTypeDescription(scalar)
+    object.__setattr__(result, "types", order)
+    object.__setattr__(result, "_query_scalar", scalar)
+    return result
 
 
 __all__ = ["BSLTypeDescription"]

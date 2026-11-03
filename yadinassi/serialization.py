@@ -95,6 +95,7 @@ _TYPE_IDS = {
 _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
 _UNSUPPORTED_CODEC_TYPES = frozenset({
+    BSLType.QUERY, BSLType.QUERY_RESULT, BSLType.QUERY_RESULT_SELECTION,
     BSLType.HTTP_CONNECTION, BSLType.HTTP_REQUEST, BSLType.HTTP_RESPONSE, BSLType.BYTE_ORDER_MARK_USE,
     BSLType.FORM, BSLType.FORM_ATTRIBUTE, BSLType.FORM_FIELD, BSLType.FORM_BUTTON, BSLType.FORM_COMMAND, BSLType.FORM_ITEMS, BSLType.FORM_COMMANDS, BSLType.FORM_FIELD_VIEW,
     BSLType.XDTO_FACTORY, BSLType.XDTO_OBJECT, BSLType.XDTO_VALUE, BSLType.XDTO_LIST, BSLType.XDTO_VALUE_TYPE, BSLType.XDTO_OBJECT_TYPE, BSLType.XDTO_PROPERTY, BSLType.XDTO_PROPERTIES, BSLType.XDTO_PACKAGE, BSLType.XDTO_PACKAGES, BSLType.XML_FORM,
@@ -176,6 +177,8 @@ def _number(value: Decimal) -> str:
 
 def _require_representable_description(value: BSLTypeDescription) -> None:
     """Never silently erase settings for types absent from the Pattern."""
+    if value._query_scalar is not None:
+        raise ValueError("Сериализация nullable описания колонки запроса пока не поддерживается")
     if BSLType.UUID in value.types:
         raise ValueError("Сериализация ОписаниеТипов UUID пока не поддерживается")
     n, s, d, b = (value.number_qualifiers, value.string_qualifiers,

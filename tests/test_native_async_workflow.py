@@ -365,7 +365,7 @@ class ManualWorkflowTests(unittest.TestCase):
     def test_manual_admission_and_binding_precede_same_scoped_auth_and_artifacts(self):
         source = WORKFLOW.read_text()
         trees = {}
-        legacy = re.sub(r"(?ms)^  form_smoke:\n.*?(?=^  [a-z_]+:|\Z)", "", source)
+        legacy = re.sub(r"(?ms)^  (?:form_smoke|catalog_query_smoke):\n.*?(?=^  [a-z_]+:|\Z)", "", source)
         for job in ('tree_smoke', 'tree_copy_smoke'):
             matches = re.findall(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)
             self.assertEqual(len(matches), 1)
@@ -388,6 +388,19 @@ class ManualWorkflowTests(unittest.TestCase):
         self.assertEqual([line.strip() for line in catalog_outputs.splitlines()], [
             'native-smoke/catalog-object-outputs/catalog-object.out',
             'native-smoke/catalog-object-outputs/provenance.json'])
+        catalog = re.search(r"(?ms)^  catalog_query_smoke:\n(.*?)(?=^  [a-z_]+:|\Z)", source).group(1)
+        self.assertEqual(catalog.count(upload), 2)
+        self.assertEqual(catalog.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 1)
+        self.assertEqual(catalog.count("GHCR_TOKEN: ${{ github.token }}"), 1)
+        self.assertIn("github.event_name != 'workflow_dispatch' &&", catalog)
+        self.assertIn("github.ref != 'refs/heads/codex/native-client-async-reviewed' &&", catalog)
+        self.assertIn('run: python3 scripts/native_1c_catalog_query_profile.py --execute-approved-image --export-native-outputs\n', catalog)
+        self.assertIn('path: native-smoke/catalog-query.json\n', catalog)
+        self.assertIn("if: always() && steps.catalog_query.outputs.catalog_query_outputs_ready == 'true'", catalog)
+        catalog_outputs = catalog.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
+        self.assertEqual([line.strip() for line in catalog_outputs.splitlines()], [
+            'native-smoke/catalog-query-outputs/catalog-query.out',
+            'native-smoke/catalog-query-outputs/provenance.json'])
         for job, tree in trees.items():
             self.assertEqual(tree.count(upload), 2)
             self.assertEqual(tree.count("NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}"), 1)
@@ -409,7 +422,7 @@ class ManualWorkflowTests(unittest.TestCase):
                                   'native-smoke/${{ matrix.artifact }}-outputs/provenance.json']
             output_paths = tree.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in output_paths.splitlines()], expected_paths)
-        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke', 'catalog_object_smoke', 'form_smoke'):
+        for job in ('smoke', 'tree_smoke', 'tree_copy_smoke', 'catalog_object_smoke', 'form_smoke', 'catalog_query_smoke', 'http_smoke'):
             matches = re.findall(r"(?ms)^  " + job + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)
             self.assertEqual(len(matches), 1)
             block = matches[0]
@@ -417,10 +430,10 @@ class ManualWorkflowTests(unittest.TestCase):
             self.assertLess(block.index("scripts/native_1c_ci_policy.py bind"), block.index("GHCR_TOKEN:"))
             self.assertIn("ref: ${{ github.sha }}", block)
             self.assertIn("persist-credentials: false", block)
-        self.assertEqual(source.count("contents: read"), 6)
-        self.assertEqual(source.count("packages: read"), 6)
+        self.assertEqual(source.count("contents: read"), 7)
+        self.assertEqual(source.count("packages: read"), 7)
         self.assertNotIn(": write", source)
-        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, http_smoke]", source)
+        self.assertIn("needs: [eligibility, smoke, tree_smoke, tree_copy_smoke, catalog_object_smoke, form_smoke, catalog_query_smoke, http_smoke]", source)
         self.assertIn("if: always() && (steps.native.outputs.native_outputs_ready == 'true' || steps.native_async.outputs.native_outputs_ready == 'true')", legacy)
 
 

@@ -35,7 +35,7 @@ def arguments(mode):
 
 
 def previous_emitter():
-    return EMITTER.replace('"http-family", ', '').replace('"catalog-object", ', '').replace(', "xdto-family", ', ', ').replace(', "zip-family"}', '}').replace(', "data-hashing-family"}', '}').replace(', "dom-family"}', '}').replace(', "data-io-family"}', '}').replace(', "regex-family"}', '}').replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
+    return EMITTER.replace('"http-family", ', '').replace('"catalog-query", ', '').replace('"catalog-object", ', '').replace(', "xdto-family", ', ', ').replace(', "zip-family"}', '}').replace(', "data-hashing-family"}', '}').replace(', "dom-family"}', '}').replace(', "data-io-family"}', '}').replace(', "regex-family"}', '}').replace(', "binary-stream-family"}', '}').replace(', "xml-workflow-family"}', '}').replace(', "file-io-family"}', '}').replace(', "json-family"}', '}').replace(', "format-dates"}', '}').replace(', "format-numbers"}', '}').replace(', "columns-delete-string"}', '}').replace(', "columns-delete"}', '}').replace(', "columns-clear-metadata"}', '}').replace(', "columns-clear-lifetime"}', '}').replace(', "columns-clear"}', '}').replace(', "columns-move-tail"}', '}').replace(', "columns-move-boundary"}', '}').replace('{"false", "true", "copy", "sort", "columns-move"}',
                            '{"false", "true", "copy", "sort"}').replace(
         '{"true", "copy", "sort", "columns-move"}', '{"true", "copy", "sort"}')
 
@@ -376,6 +376,45 @@ class TreeEmitterDispatchTests(unittest.TestCase):
                     ('/smoke/bootstrap/catalog_object_suite.py --invocation-nonce '+NONCE).encode('ascii'))
                 for args in (valid+' extra', '--catalog-object-suite --tree-suite --invocation-nonce '+NONCE,
                              '--catalog-object-suite --invocation-nonce invalid'):
+                    rejected=dispatch('set -- '+args+'\n'+setup+branch)
+                    self.assertEqual(rejected.returncode,2)
+                    self.assertEqual(rejected.stdout,b'')
+
+    def test_catalog_query_dispatch_is_exact_and_sequential(self):
+        import subprocess
+        from native_workflow_shell import bash_executable
+
+        def dispatch(script):
+            # A multiline -c argument with backslash continuations crosses the
+            # Windows command-line quoting boundary. Feed exact LF UTF-8 bytes
+            # through stdin instead; never write or execute a native fixture.
+            stub = "python3() { printf '%s\\n' \"$*\"; }\n"
+            env = {key: value for key, value in os.environ.items()
+                   if key not in ('BASH_ENV', 'ENV')}
+            return subprocess.run(
+                [bash_executable(), '--noprofile', '--norc', '-e', '-s'],
+                input=(stub + script + '\n').encode('utf-8'), env=env,
+                capture_output=True, timeout=10)
+
+        # read_text uses universal newlines on both platforms. Exercise the
+        # same conversion explicitly for both Git checkout newline forms.
+        for newline in ('\n', '\r\n'):
+            with self.subTest(checkout_newline=repr(newline)):
+                wire = SOURCE.replace('\n', newline).encode('utf-8')
+                with io.TextIOWrapper(io.BytesIO(wire), encoding='utf-8', newline=None) as source_file:
+                    source = source_file.read()
+                self.assertEqual(source, SOURCE)
+                setup = 'bootstrap=false\n' + source.split('bootstrap=false\n',1)[1].split('\nfinish() {',1)[0]
+                branch = source.split('if [ "$bootstrap" = true ]; then\n    stage=stage2',1)[1].split('\nstage=complete',1)[0]
+                branch = 'if [ "$bootstrap" = true ]; then\n' + branch
+                branch = branch.replace('> /tmp/onec-smoke/stage2-console.log 2>&1','')
+                valid = '--catalog-query-suite --invocation-nonce ' + NONCE
+                result = dispatch('set -- '+valid+'\n'+setup+branch)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.strip(),
+                    ('/smoke/bootstrap/catalog_query_suite.py --invocation-nonce '+NONCE).encode('ascii'))
+                for args in (valid+' extra', '--catalog-query-suite --tree-suite --invocation-nonce '+NONCE,
+                             '--catalog-query-suite --invocation-nonce invalid'):
                     rejected=dispatch('set -- '+args+'\n'+setup+branch)
                     self.assertEqual(rejected.returncode,2)
                     self.assertEqual(rejected.stdout,b'')

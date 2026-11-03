@@ -84,6 +84,48 @@ class CatalogSelection:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogComparison:
+    field: str | UUID
+    operator: str
+    value: object
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogPredicate:
+    kind: str
+    terms: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogOrder:
+    field: str | UUID
+    descending: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogScanRequest:
+    """Typed object scan; no SQL text or connection-shaped authority.
+
+    Continue on the same open read view with the same request. Each view admits
+    one active traversal; starting another invalidates its previous continuation.
+    Equal order keys use record identity as a stable backend-only tie breaker.
+    String policy is explicit: codepoint or casefold_v1. Neither claims full
+    native regional collation. Exact lookup keeps the codepoint default.
+    """
+    predicate: CatalogComparison | CatalogPredicate | None = None
+    order: tuple[CatalogOrder, ...] = ()
+    page_size: int = 1000
+    continuation: str | None = None
+    string_comparison: str = 'codepoint'
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogPage:
+    cards: tuple[CatalogCard, ...]
+    continuation: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Capabilities:
     catalog_read: bool = True
     catalog_create: bool = False
@@ -98,6 +140,7 @@ class CatalogReadView(Protocol):
     def catalogs(self) -> tuple[CatalogSchema, ...]: ...
     def catalog_schema(self, catalog_id: UUID) -> CatalogSchema: ...
     def select_catalog(self, catalog_id: UUID, request: CatalogSelection) -> tuple[CatalogCard, ...]: ...
+    def scan_catalog(self, catalog_id: UUID, request: CatalogScanRequest) -> CatalogPage: ...
     def read_catalog(self, key: CatalogKey) -> CatalogCard | None: ...
     def close(self) -> None: ...
 

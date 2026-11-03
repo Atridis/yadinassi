@@ -108,6 +108,8 @@ scripts/catalog_object_behavior/** -text
 scripts/form_runtime_packet/module.bsl -text
 scripts/form_runtime_packet/form.xml -text
 
+# Owned Query XML/BSL packet is byte-pinned across checkout platforms.
+scripts/catalog_query_behavior/** -text
 # Source-bound HTTP ordinary measurement: preserve exact UTF-8 bytes.
 scripts/HTTPFamily.bsl -text
 
