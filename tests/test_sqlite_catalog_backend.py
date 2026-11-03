@@ -138,9 +138,8 @@ class BackendTests(unittest.TestCase):
             self.assertEqual(error.exception.code,'conflict');tx.close()
         connection=sqlite3.connect(self.path)
         connection.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',('{bad',str(self.product.identity)));connection.commit();connection.close()
-        view=self.backend.begin_read()
-        with self.assertRaises(BackendError) as error:view.catalog_schema(self.product.identity)
-        self.assertEqual(error.exception.code,'integrity');view.close()
+        with self.assertRaises(BackendError) as error:self.backend.begin_read()
+        self.assertEqual(error.exception.code,'schema_changed')
     def test_exact_transaction_change_limit_can_commit(self):
         from unittest.mock import patch
         with patch('yadinassi.sqlite_catalog._MAX_ROWS',2):

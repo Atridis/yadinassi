@@ -1,11 +1,11 @@
 # Local SQLite catalog database
 
-This is yadinassi's own storage format, implemented using Python's standard-library `sqlite3`, not a native 1C file-format adapter. No external SQL server or ORM is required. Official configuration XML and BSL module files are the configuration interchange; data migration is not implemented.
+This is yadinassi's own storage format, implemented using Python's standard-library `sqlite3`, not a native 1C file-format adapter. No external SQL server or ORM is required. Official configuration XML and BSL module files are the configuration interchange. A separate, explicitly invoked offline maintenance API migrates this project’s own SQLite v1 storage to v2; it does not import native 1C database files.
 
 ## Explicit modes
 
 - No database flag: ordinary BSL script execution, no database or server selected or created.
-- `--f application.sqlite`: local thick/runtime mode against an **existing** SQLite file. Missing files refuse; opening never creates a database. The GUI bridge remains a read-only catalog browser in this increment.
+- `--f application.sqlite`: local thick/runtime mode against an **existing** SQLite file. Missing files refuse; opening never creates a database.
 - `--create-db application.sqlite --import-xml configuration-directory`: explicit creation of a new database, with configuration files and normalized schema imported atomically. Cannot be combined with script execution, `-c`, or `--f`; existing files are never overwritten.
 - Add `--inactive` to archive a configuration without activation. Original XML and module bytes persist and can be exported by the host API, but data reads/writes and Interpreter activation refuse. Activation issues are reported; unsupported code is never silently skipped or executed by import.
 
@@ -19,13 +19,13 @@ python -m yadinassi --f application.sqlite -c 'O=Catalogs.Products.CreateItem();
 python -m yadinassi --f application.sqlite -c 'Message(Catalogs.Products.FindByCode("10").Description);'
 ```
 
-Use names/required field values from your admitted configuration. Unsupported configurations fail rather than promise arbitrary application compatibility. Initially supported: flat string-code catalogs, explicit codes, Description, and bounded String/Number/Boolean/DateTime/fixed catalog-reference attributes. Nonempty required application/object modules and unsupported metadata behaviors prevent activation. Their source may be archived with `--inactive`. General configured-module execution, data migration, Documents/register adapters and UI editing/saving are not claimed by this storage increment.
+Use names/required field values from your admitted configuration. Unsupported configurations fail rather than promise arbitrary application compatibility. Initially supported: flat string-code catalogs, explicit codes, Description, and bounded String/Number/Boolean/DateTime/fixed catalog-reference attributes. Nonempty required application/object modules and unsupported metadata behaviors prevent activation. Their source may be archived with `--inactive`. General configured-module execution, arbitrary data import, and Documents/register adapters are not claimed by this storage increment.
 
 ## Persisted application
 
-The database stores its format marker, logical database UUID, configuration generation/activation state, exact accepted XML/BSL bytes with hashes, normalized catalog schemas, typed catalog records, opaque revisions and commit receipts. Row attribute payloads use a closed tagged JSON encoding inside SQLite TEXT; this is our encoding, not a native serialized value format. Exact Decimal text never passes through binary float; dates are timezone-free whole-second calendar values, including year 0001. References retain database/catalog/record identity, including typed empty UUID. Undefined/Null are not implicitly mapped from SQL NULL or admitted into fixed fields.
+The database stores its format marker, logical database UUID, configuration generation/activation state, exact accepted XML/BSL bytes with hashes, normalized catalog schemas, typed catalog records, opaque revisions and commit receipts. Version 1 stores row attributes in tagged JSON. Version 2 stores attributes in individual typed columns; the same closed tagged codec remains in use for canonical write intents and receipt compatibility. Neither representation is a native serialized value format. Exact Decimal text never passes through binary float; dates are timezone-free whole-second calendar values, including year 0001. References retain database/catalog/record identity, including typed empty UUID. Undefined/Null are not implicitly mapped from SQL NULL or admitted into fixed fields.
 
-The SQL schema and connection remain inside `sqlite_catalog.py`. `catalog_backend.py` exposes immutable logical schema/card/key/revision types and bounded operations. Runtime owns BSL CatalogObject semantics, UI owns edit/navigation state, and backend owns consistency and persistence. PostgreSQL and MongoDB are future adapter targets only: no dependencies or claimed engine support. Unsupported ordering/filter/transaction capabilities must refuse, not silently change behavior. Current catalog scans have an explicit limit and code/identity order; overflow refuses rather than displaying a truncated total. This order is not a claim of native collation parity.
+The SQLite connection and catalog operations remain in `sqlite_catalog.py`; the physical-name registry and offline v1 migration are in SQLite-specific modules. `catalog_backend.py` exposes immutable logical schema/card/key/revision types and bounded operations. Runtime owns BSL CatalogObject semantics, UI owns edit/navigation state, and backend owns consistency and persistence. PostgreSQL and MongoDB are future adapter targets only: no dependencies or claimed engine support. Unsupported ordering/filter/transaction capabilities must refuse, not silently change behavior. Default catalog selection has an explicit limit and code/identity order; overflow refuses rather than displaying a truncated total. Typed scans support explicit ordering. These orders are not a claim of native collation parity.
 
 ## Transactions and failures
 
@@ -37,7 +37,7 @@ Process termination before commit and after commit is tested with real temporary
 
 Initial host authority is a local, host-selected regular file under an owned directory (POSIX rejects group/world-writable parents and foreign ownership). Symlink/reparse ancestors and hardlinked database files refuse. macOS’s verified OS-owned `/var` and `/tmp` aliases are normalized before those checks; Windows case/8.3 spelling is canonicalized only after every directory component passes no-link admission. This is **not** protection against a malicious process running as the same OS user or a portable Windows ACL proof. Keep application files in a private local directory. The renderer cannot select database paths or submit SQL.
 
-Bounds include 256 configuration files, 1 MiB per source file, 16 MiB total configuration, 128 backend catalog schemas (the XML importer admits fewer), 64 attributes/catalog, 10,000 records/catalog and transaction changes, 1 MiB encoded row payload, and 256 MiB database ceiling. XML directory traversal is bounded and rejects symlinks, special files, arbitrary path aliases, DTD/entities and changed source files. Schema activation is all-or-nothing.
+Bounds include 2,048 configuration files, 1 MiB per source file, 16 MiB total configuration, up to 512 catalog schemas, 64 attributes/catalog, 10,000 records/catalog and transaction changes, a 1 MiB canonical write-intent row payload, and a 256 MiB database ceiling. Legacy v1 reads may admit JSON up to 1 Mi characters; v2 point reads bound the corresponding UTF-8 fields to 4 MiB plus bounded system-column overhead. Aggregate scans remain bounded to 16 MiB. Other metadata and filesystem limits can refuse a configuration before these maxima are reached. XML directory traversal is bounded and rejects symlinks, special files, arbitrary path aliases, DTD/entities and changed source files. Schema activation is all-or-nothing.
 
 ## Compatibility evidence boundary
 
@@ -61,8 +61,7 @@ the same bounded catalog behavior profile. It labels its scope
 `owned-catalog-object-logical-reference-model` and sets
 `metadata_import_parity_claimed=false`. Full Designer XML activation is not inferred
 from method-output parity. Duplicate-code and stale detached-object writes are measured
-outcomes, not assumed native concurrency guarantees. Actual native results remain
-pending until the source-bound lane runs and is independently audited.
+outcomes, not assumed native concurrency guarantees. The source-bound lane has produced bounded results, including [this independently reviewed run](https://github.com/Atridis/yadinassi/actions/runs/41663986227); it does not establish general application or metadata parity.
 
 ## Typed catalog scans (Query v1 preparation)
 
@@ -94,3 +93,38 @@ Query parser/runtime and native output-only comparison remain under development;
 local SQLite tests are not native query compatibility evidence. Reference cursor
 values are supported, while reference-projection `Unload` and result-column metadata
 remain explicit unsupported surfaces until truthful dynamic descriptors are admitted.
+
+## Flat catalog deletion marks
+
+For admitted flat, ownerless catalogs, `DeletionMark` / `ПометкаУдаления`
+is a Boolean in a detached object. Assignment is buffered; `Write` persists it
+along with other edits. Ordinary reads, selections and Query expose the stored
+mark. A mark does not delete a record or invalidate references. Optimistic
+revision conflicts and commit-receipt recovery use the same rules as other
+writes. After an uncertain response, call `Write` to resolve the exact pending
+intent before changing the object. A failed write leaves its edit buffer intact.
+
+`SetDeletionMark` / `УстановитьПометкуУдаления` remains unsupported. Two
+source-bound native acquisitions on platform 8.3.27.1508 observed successful
+property assignment and Write, but SetDeletionMark(True) raised an exception
+for existing and new objects, with both Read/Insert/Update rights and an
+additional Delete grant. The exception cause was not captured and must not be
+inferred from those two runs; their bootstrap baselines were independently
+created. A third finite diagnostic matched neither its rights, lock nor
+method-missing patterns; this does not exclude those causes. See the [first
+observation](https://github.com/Atridis/yadinassi/actions/runs/41645005336),
+[Delete-right observation](https://github.com/Atridis/yadinassi/actions/runs/41647274341)
+and [finite diagnostic](https://github.com/Atridis/yadinassi/actions/runs/41649545810).
+
+`!todo`: understand the observed method failure and measure its return, writes,
+permissions and error semantics before exposing the method. Physical deletion,
+cascading marks for hierarchical/owned catalogs and module/event semantics need
+separate contracts; these metadata profiles cannot currently activate. The
+[official platform description](https://1c-dn.com/library/using_the_deletionmark_field_of_a_database_object/)
+distinguishes direct assignment and the method's additional actions.
+
+## Catalog storage and maintenance
+
+New owned SQLite databases use an individual table for each catalog and individual columns for its attributes. Names and identity mapping, the limitations of legacy migration, and the design-only treatment of tabular sections are described in [SQLite catalog layout v2](sqlite-catalog-layout-v2.md).
+
+The migration API requires all old processes stopped and prevented from reconnecting, a verified backup, sufficient disk space and a trusted owned directory. `prepare_v1(path, maintenance=True)` returns a plan that must be saved outside the database before `migrate_v1(path, plan, maintenance=True)`. If the outcome is `uncertain_commit`, keep that exact plan and use `resolve_migration(path, plan, maintenance=True)` while maintaining exclusive access. Never blindly retry. The resolver is read-only; a hot rollback journal can require SQLite recovery under maintenance before a definite result is possible. The API does not itself create a backup or stop other processes. It declines unexpected schema objects or explicit third-party indexes instead of silently dropping them.

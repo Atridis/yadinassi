@@ -196,8 +196,7 @@ class BSLCatalogObject(BSLObject):
                 self._accept_revision(revision)
                 return None
         else:
-            if self._values['deletionmark']:raise BackendError('unsupported')
-            draft=CatalogDraft(self._key,self._values['code'],self._values['description'],False,
+            draft=CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
                                tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields))
             expected=self._revision
         tx=m._backend.begin_write(self._operation_id)
@@ -218,7 +217,8 @@ class BSLCatalogObject(BSLObject):
         finally:tx.close()
         return None
     def get_member(self,name):
-        key=name.casefold();methods={'write':self.write,'записать':self.write,'isnew':self.is_new,'этоновый':self.is_new,
+        key=name.casefold()
+        methods={'write':self.write,'записать':self.write,'isnew':self.is_new,'этоновый':self.is_new,
             'setnewobjectref':self.set_new_object_ref,'установитьссылкунового':self.set_new_object_ref,
             'metadata':lambda:self._manager._metadata,'метаданные':lambda:self._manager._metadata}
         if key in methods:return HostFunction(name,methods[key])
@@ -231,7 +231,7 @@ class BSLCatalogObject(BSLObject):
         if key in ('code','description'):
             if type(value) is not str:raise TypeError('String field required')
         elif key=='deletionmark':
-            if value is not False:raise BackendError('unsupported')
+            if type(value) is not bool:raise TypeError('DeletionMark requires Boolean')
         else:
             f=next(f for f in self._manager._schema.fields if f.name.casefold()==key)
             self._manager._stored(f,value)

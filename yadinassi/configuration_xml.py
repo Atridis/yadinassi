@@ -16,7 +16,7 @@ MD = 'http://v8.1c.ru/8.3/MDClasses'
 V8 = 'http://v8.1c.ru/8.1/data/core'
 XS = 'http://www.w3.org/2001/XMLSchema'
 CFG = 'http://v8.1c.ru/8.1/data/enterprise/current-config'
-MAX_FILES = 256
+MAX_FILES = 2048
 MAX_FILE_BYTES = 1024 * 1024
 MAX_TOTAL_BYTES = 16 * 1024 * 1024
 _RESERVED = frozenset(('code','код','description','наименование','ref','ссылка',
@@ -208,7 +208,7 @@ def import_configuration(files):
         if node.tag!='{'+MD+'}Catalog':
             issues.append('unsupported metadata family:'+node.tag.rsplit('}',1)[-1]);continue
         catalog_names.append(_name((node.text or '').strip()))
-    if not 1<=len(catalog_names)<=64 or len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
+    if not 1<=len(catalog_names)<=512 or len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
     for cname in catalog_names:
         path='Catalogs/'+cname+'.xml'
         if path not in files:_fail('missing catalog XML')

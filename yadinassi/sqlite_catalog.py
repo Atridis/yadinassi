@@ -12,6 +12,8 @@ from pathlib import Path
 from functools import wraps, cmp_to_key
 
 from .configuration_import import _host_directory
+from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
+                                    catalog_ddl, index_ddls, encode_columns, decode_columns)
 from .catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogDraft,
                               CatalogKey, CatalogSchema, CatalogSelection,
                               FieldSchema, Revision, CatalogComparison, CatalogPredicate,
@@ -19,7 +21,7 @@ from .catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogDr
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
-_MAX_FILES = 256
+_MAX_FILES = 2048
 _MAX_CONFIG_BYTES = 16 * 1024 * 1024
 _MAX_DATABASE_BYTES = 256 * 1024 * 1024
 _MAX_ROW_BYTES = 1024 * 1024
@@ -201,11 +203,42 @@ class SQLiteCatalogBackend:
         self._check_file()
         connection = self._connect()
         try:
-            if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID or connection.execute('PRAGMA user_version').fetchone()[0] != 1:
+            connection.execute('BEGIN')  # Pin schema, registry and metadata to one snapshot.
+            if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID:
                 raise BackendError('unsupported')
-            expected = {statement.split('(')[0].split()[-1]: statement for statement in _DDL}
-            actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
+            self.storage_version = connection.execute('PRAGMA user_version').fetchone()[0]
+            if self.storage_version not in (1, 2): raise BackendError('unsupported')
+            statements = list(_DDL)
+            if self.storage_version == 2:
+                statements = [x for x in statements if not x.startswith('CREATE TABLE catalog_record(')]
+                malformed = connection.execute("SELECT 1 FROM catalog_schema WHERE typeof(identity)!='text' OR typeof(name)!='text' OR typeof(definition)!='text' OR length(CAST(identity AS BLOB))>36 OR length(CAST(name AS BLOB))>512 OR length(CAST(definition AS BLOB))>262144 LIMIT 1").fetchone()
+                if malformed: raise BackendError('integrity')
+                count, total = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(identity AS BLOB))+length(CAST(name AS BLOB))+length(CAST(definition AS BLOB))),0) FROM catalog_schema").fetchone()
+                if not 1 <= count <= 512 or total > _MAX_CONFIG_BYTES: raise BackendError('integrity')
+                rows = connection.execute('SELECT identity,name,definition FROM catalog_schema LIMIT 513').fetchall()
+                if not 1 <= len(rows) <= 512: raise BackendError('integrity')
+                schemas = tuple(_schema(definition) for _,_,definition in rows)
+                if any((identity,name) != (str(schema.identity),schema.name) for (identity,name,_),schema in zip(rows,schemas)):
+                    raise BackendError('integrity')
+                if len({schema.identity for schema in schemas}) != len(schemas): raise BackendError('integrity')
+                ids = {schema.identity for schema in schemas}
+                if any(f.target_catalog_id not in ids for schema in schemas for f in schema.fields if f.kind == 'catalog_ref'): raise BackendError('integrity')
+                self._layout = load_layout(connection, schemas)
+                self._schemas = schemas
+                self._schema_snapshot = tuple(rows)
+                statements.extend(REGISTRY_DDL)
+                statements.append(MIGRATION_MARKER_DDL)
+                statements.extend(catalog_ddl(schema, self._layout) for schema in schemas)
+            expected = {statement.split('(')[0].split()[-1]: statement for statement in statements[:len(_DDL) - (1 if self.storage_version == 2 else 0)]}
+            if self.storage_version == 2:
+                expected.update({statement.split('(')[0].split()[-1]: statement for statement in (*REGISTRY_DDL, MIGRATION_MARKER_DDL)})
+                expected.update({self._layout.table_name(schema.identity): catalog_ddl(schema, self._layout) for schema in schemas})
+            # Bound all schema text before fetching it, including unexpected objects.
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE length(CAST(name AS BLOB))>1024 OR length(CAST(COALESCE(sql,'') AS BLOB))>262144 LIMIT 1").fetchone(): raise BackendError('unsupported')
+            objects, schema_bytes = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(name AS BLOB))+length(CAST(COALESCE(sql,'') AS BLOB))),0) FROM sqlite_master").fetchone()
+            if objects > 4096 or schema_bytes > 64 * 1024 * 1024: raise BackendError('unsupported')
+            actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND lower(substr(name,1,7)) != 'sqlite_'")}
+            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone() or (self.storage_version == 2 and connection.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND sql IS NOT NULL LIMIT 1").fetchone()):
                 raise BackendError('unsupported')
             row = connection.execute('SELECT database_uuid,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
             self.activated = row[2] == 1
@@ -215,7 +248,9 @@ class SQLiteCatalogBackend:
             self.activation_issues = tuple(issues)
             if type(row[2]) is not int or row[2] not in (0,1) or any(type(v) is not str for v in self.activation_issues) or (self.activated and self.activation_issues): raise BackendError('integrity')
             self.database_id = UUID(row[0]); self.configuration_generation = row[1]
+            self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             _uuid(self.database_id)
+        except BackendError: raise
         except (sqlite3.Error, TypeError, ValueError):
             raise BackendError('integrity') from None
         finally: connection.close()
@@ -264,7 +299,7 @@ class SQLiteCatalogBackend:
         if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
             raise BackendError('invalid_input')
         schemas = tuple(configuration.catalogs)
-        if not 1 <= len(schemas) <= 128: raise BackendError('invalid_input')
+        if not 1 <= len(schemas) <= 512: raise BackendError('invalid_input')
         definitions = [_schema_data(s) for s in schemas]
         identities = {s.identity for s in schemas}
         if len(identities) != len(schemas): raise BackendError('invalid_input')
@@ -292,14 +327,21 @@ class SQLiteCatalogBackend:
             connection = sqlite3.connect(absolute, isolation_level=None, detect_types=0)
             connection.execute('PRAGMA foreign_keys=ON'); connection.execute('PRAGMA journal_mode=DELETE'); connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
-            for statement in _DDL: connection.execute(statement)
+            for statement in _DDL:
+                if not statement.startswith('CREATE TABLE catalog_record('): connection.execute(statement)
+            for statement in (*REGISTRY_DDL, MIGRATION_MARKER_DDL): connection.execute(statement)
             connection.execute('INSERT INTO database_info VALUES(1,?,1,?,?,?,?)', (str(uuid4()), _uuid(configuration.config_uuid), configuration.name, int(activate), _json(configuration.activation_issues)))
             for definition in definitions:
                 connection.execute('INSERT INTO catalog_schema VALUES(?,?,?)', (definition[0], definition[1], _json(definition)))
+            layout = build_layout(schemas)
+            save_layout(connection, layout)
+            for schema in schemas:
+                connection.execute(catalog_ddl(schema, layout))
+                for statement in index_ddls(schema, layout): connection.execute(statement)
             for f in files:
                 connection.execute('INSERT INTO configuration_file VALUES(?,?,?,?)', (f.path,f.kind,f.content,hashlib.sha256(f.content).hexdigest()))
             connection.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
-            connection.execute('PRAGMA user_version=1')
+            connection.execute('PRAGMA user_version=2')
             connection.execute('COMMIT')
         except BaseException:
             if connection is not None:
@@ -334,6 +376,15 @@ class SQLiteCatalogBackend:
         connection = self._connect()
         try:
             connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
+            if (connection.execute('PRAGMA user_version').fetchone()[0] != self.storage_version or
+                connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
+                raise BackendError('schema_changed')
+            if self.storage_version == 2:
+                if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
+                for identity, name, definition in self._schema_snapshot:
+                    if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
+                layout = load_layout(connection, self._schemas)
+                if layout._tables != self._layout._tables or layout._fields != self._layout._fields: raise BackendError('schema_changed')
             view = _View(self, connection, operation_id)
             self._active = view
             return view
@@ -341,6 +392,17 @@ class SQLiteCatalogBackend:
             connection.close(); raise BackendError('busy') from None
         except BaseException:
             connection.close(); raise
+
+    @_boundary
+    def inspect_storage_mapping(self):
+        """Read-only SQLite physical names and their current logical identities."""
+        if self.storage_version != 2: raise BackendError('unsupported')
+        view = self.begin_read()
+        try:
+            return tuple((schema.identity, schema.name, self._layout.table_name(schema.identity),
+                          tuple((f.identity, f.name, self._layout.field_name(schema.identity, f.identity)) for f in schema.fields))
+                         for schema in view.catalogs())
+        finally: view.close()
 
     @_boundary
     def export_configuration(self):
@@ -418,7 +480,7 @@ class _View:
     def catalogs(self):
         self._require()
         rows = self._connection.execute('SELECT definition FROM catalog_schema ORDER BY name,identity').fetchall()
-        if len(rows) > 128: raise BackendError('integrity')
+        if len(rows) > 512: raise BackendError('integrity')
         return tuple(_schema(row[0]) for row in rows)
 
     @_boundary
@@ -430,8 +492,11 @@ class _View:
 
     def _card(self, catalog_id, row):
         schema = self.catalog_schema(catalog_id)
-        if type(row[5]) is not str or len(row[5]) > _MAX_ROW_BYTES: raise BackendError('integrity')
-        encoded = json.loads(row[5])
+        if self._backend.storage_version == 1:
+            if type(row[5]) is not str or len(row[5]) > _MAX_ROW_BYTES: raise BackendError('integrity')
+            encoded = json.loads(row[5])
+        else:
+            encoded = decode_columns(row[5:], schema)
         if type(encoded) is not list: raise BackendError('integrity')
         if len(encoded) != len(schema.fields): raise BackendError('integrity')
         if type(row[1]) is not int or not 1 <= row[1] < 2**63 or type(row[2]) is not str or len(row[2]) > schema.code_length or type(row[3]) is not str or len(row[3]) > schema.description_length or type(row[4]) is not int or row[4] not in (0,1): raise BackendError('integrity')
@@ -440,12 +505,48 @@ class _View:
         revision = Revision(self.database_id,self.configuration_generation,catalog_id,key.record_id,str(row[1]))
         return CatalogCard(key,revision,row[2],row[3],bool(row[4]),tuple(_decode(v,f,self.database_id) for v,f in zip(encoded,schema.fields)))
 
+    def _source(self, schema):
+        if self._backend.storage_version == 1:
+            return ('catalog_record', 'record_id,revision,code,description,deletion_mark,values_json', 'catalog_id=?', (str(schema.identity),))
+        fields = ','.join(quote_identifier(self._backend._layout.field_name(schema.identity, f.identity)) for f in schema.fields)
+        return (quote_identifier(self._backend._layout.table_name(schema.identity)), 'record_id,revision,code,description,deletion_mark' + (',' + fields if fields else ''), '1', ())
+
+    def _preflight_v2(self, schema, *, record_id=None, selection_limit=None):
+        table, _, _, _ = self._source(schema)
+        invalid = ["typeof(record_id)!='text'", "typeof(revision)!='integer'", "typeof(code)!='text'", "typeof(description)!='text'", "typeof(deletion_mark)!='integer'", "length(CAST(record_id AS BLOB))>36", "length(CAST(code AS BLOB))>%d" % (schema.code_length*4), "length(CAST(description AS BLOB))>%d" % (schema.description_length*4)]
+        lengths = ['length(CAST(record_id AS BLOB))', 'length(CAST(code AS BLOB))', 'length(CAST(description AS BLOB))', '32']
+        for field in schema.fields:
+            col = quote_identifier(self._backend._layout.field_name(schema.identity, field.identity))
+            expected = 'integer' if field.kind == 'boolean' else 'text'
+            nullable = field.kind == 'catalog_ref'
+            invalid.append(("(%s IS NOT NULL AND typeof(%s)!='%s')" if nullable else "typeof(%s)!='%s'") % ((col,col,expected) if nullable else (col,expected)))
+            limit = field.qualifiers[0]*4 if field.kind == 'string' else (36 if nullable else 64)
+            invalid.append('length(CAST(%s AS BLOB))>%d' % (col,limit))
+            lengths.append('COALESCE(length(CAST(%s AS BLOB)),0)' % col)
+        length = '+'.join(lengths)
+        # A v1 database could contain non-ASCII JSON up to 1 Mi characters.
+        # UTF-8 can need four bytes per character; keep point reads bounded.
+        invalid.append('(%s)>%d' % (length,4 * _MAX_ROW_BYTES + 4 * 2048 + 128))
+        if selection_limit is not None:
+            table = '(SELECT * FROM %s ORDER BY code COLLATE BINARY,record_id LIMIT ?)' % table
+            args = (selection_limit,)
+            where = '1'
+        else:
+            where = '1' if record_id is None else 'record_id=?'
+            args = () if record_id is None else (str(record_id),)
+        if self._connection.execute('SELECT 1 FROM %s WHERE (%s) AND (%s) LIMIT 1' % (table,where,' OR '.join(invalid)), args).fetchone(): raise BackendError('integrity')
+        count, total = self._connection.execute('SELECT COUNT(*),COALESCE(SUM(%s),0) FROM %s WHERE %s' % (length,table,where), args).fetchone()
+        if type(count) is not int or type(total) is not int or count > _MAX_ROWS or total > _MAX_CONFIG_BYTES: raise BackendError('unsupported')
+        return count
+
     @_boundary
     def select_catalog(self, catalog_id, request=CatalogSelection()):
-        self._require(); self.catalog_schema(catalog_id)
+        self._require(); schema = self.catalog_schema(catalog_id)
         if type(request) is not CatalogSelection or type(request.limit) is not int or not 1 <= request.limit <= _MAX_ROWS or request.order != 'code_then_identity':
             raise BackendError('unsupported')
-        rows = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? ORDER BY code COLLATE BINARY,record_id LIMIT ?', (str(catalog_id),request.limit+1)).fetchall()
+        table, columns, where, args = self._source(schema)
+        if self._backend.storage_version == 2: self._preflight_v2(schema, selection_limit=request.limit+1)
+        rows = self._connection.execute('SELECT %s FROM %s WHERE %s ORDER BY code COLLATE BINARY,record_id LIMIT ?' % (columns,table,where), args+(request.limit+1,)).fetchall()
         if len(rows) > request.limit: raise BackendError('unsupported')
         return tuple(self._card(catalog_id,row) for row in rows)
 
@@ -540,23 +641,29 @@ class _View:
             self._scan_cursor = None
             # Aggregate in the already pinned SQLite transaction before any row
             # text is materialized in Python. Include every selected text column.
-            malformed = self._connection.execute(
-                "SELECT 1 FROM catalog_record WHERE catalog_id=? AND ("
-                "typeof(revision)!='integer' OR typeof(deletion_mark)!='integer' OR "
-                "typeof(record_id)!='text' OR typeof(code)!='text' OR "
-                "typeof(description)!='text' OR typeof(values_json)!='text' OR "
-                "length(CAST(record_id AS BLOB))>36 OR "
-                "length(CAST(code AS BLOB))>? OR length(CAST(description AS BLOB))>? OR "
-                "length(CAST(values_json AS BLOB))>?) LIMIT 1",
-                (str(catalog_id),schema.code_length*4,schema.description_length*4,_MAX_ROW_BYTES)).fetchone()
-            if malformed is not None: raise BackendError('integrity')
-            count, raw_bytes = self._connection.execute(
-                'SELECT COUNT(*), COALESCE(SUM(length(CAST(record_id AS BLOB)) + '
-                'length(CAST(code AS BLOB)) + length(CAST(description AS BLOB)) + '
-                'length(CAST(values_json AS BLOB)) + 32),0) '
-                'FROM catalog_record WHERE catalog_id=?', (str(catalog_id),)).fetchone()
-            if type(count) is not int or type(raw_bytes) is not int or count > _MAX_ROWS or raw_bytes > _MAX_CONFIG_BYTES: raise BackendError('unsupported')
-            rows = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? LIMIT ?', (str(catalog_id),_MAX_ROWS+1)).fetchall()
+            if self._backend.storage_version == 2:
+                count = self._preflight_v2(schema)
+                table, columns, where, args = self._source(schema)
+                rows = self._connection.execute('SELECT %s FROM %s WHERE %s LIMIT ?' % (columns,table,where), args+(_MAX_ROWS+1,)).fetchall()
+            else:
+                malformed = self._connection.execute(
+                    "SELECT 1 FROM catalog_record WHERE catalog_id=? AND ("
+                    "typeof(revision)!='integer' OR typeof(deletion_mark)!='integer' OR "
+                    "typeof(record_id)!='text' OR typeof(code)!='text' OR "
+                    "typeof(description)!='text' OR typeof(values_json)!='text' OR "
+                    "length(CAST(record_id AS BLOB))>36 OR "
+                    "length(CAST(code AS BLOB))>? OR length(CAST(description AS BLOB))>? OR "
+                    "length(CAST(values_json AS BLOB))>?) LIMIT 1",
+                    (str(catalog_id),schema.code_length*4,schema.description_length*4,_MAX_ROW_BYTES)).fetchone()
+                if malformed is not None: raise BackendError('integrity')
+                count, raw_bytes = self._connection.execute(
+                    'SELECT COUNT(*), COALESCE(SUM(length(CAST(record_id AS BLOB)) + '
+                    'length(CAST(code AS BLOB)) + length(CAST(description AS BLOB)) + '
+                    'length(CAST(values_json AS BLOB)) + 32),0) '
+                    'FROM catalog_record WHERE catalog_id=?', (str(catalog_id),)).fetchone()
+                if type(count) is not int or type(raw_bytes) is not int or count > _MAX_ROWS or raw_bytes > _MAX_CONFIG_BYTES: raise BackendError('unsupported')
+                rows = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? LIMIT ?', (str(catalog_id),_MAX_ROWS+1)).fetchall()
+                if len(rows) != count: raise BackendError('integrity')
             if len(rows) != count: raise BackendError('integrity')
             cards = [self._card(catalog_id,row) for row in rows]
             cards = [card for card in cards if self._scan_matches(schema,card,request.predicate,request.string_comparison)]
@@ -579,7 +686,10 @@ class _View:
     @_boundary
     def read_catalog(self, key):
         self._require(); self._key(key)
-        row = self._connection.execute('SELECT record_id,revision,code,description,deletion_mark,values_json FROM catalog_record WHERE catalog_id=? AND record_id=?', (str(key.catalog_id),str(key.record_id))).fetchone()
+        schema = self.catalog_schema(key.catalog_id)
+        table, columns, where, args = self._source(schema)
+        if self._backend.storage_version == 2: self._preflight_v2(schema, record_id=key.record_id)
+        row = self._connection.execute('SELECT %s FROM %s WHERE %s AND record_id=?' % (columns,table,where), args+(str(key.record_id),)).fetchone()
         return None if row is None else self._card(key.catalog_id,row)
 
     def _key(self,key):
@@ -606,10 +716,16 @@ class _View:
     @_boundary
     def create(self,draft):
         self._require(True, mutate=True); values = self._draft(draft)
-        if self._connection.execute('SELECT COUNT(*) FROM catalog_record WHERE catalog_id=?',(str(draft.key.catalog_id),)).fetchone()[0] >= _MAX_ROWS:
+        schema = self.catalog_schema(draft.key.catalog_id)
+        table, columns, where, args = self._source(schema)
+        if self._connection.execute('SELECT COUNT(*) FROM %s WHERE %s' % (table,where),args).fetchone()[0] >= _MAX_ROWS:
             raise BackendError('unsupported')
         try:
-            self._connection.execute('INSERT INTO catalog_record VALUES(?,?,1,?,?,?,?)',(str(draft.key.catalog_id),str(draft.key.record_id),draft.code,draft.description,int(draft.deletion_mark),values))
+            if self._backend.storage_version == 1:
+                self._connection.execute('INSERT INTO catalog_record VALUES(?,?,1,?,?,?,?)',(str(draft.key.catalog_id),str(draft.key.record_id),draft.code,draft.description,int(draft.deletion_mark),values))
+            else:
+                vals = (str(draft.key.record_id),1,draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema)
+                self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table,columns,','.join('?' for _ in vals)),vals)
         except sqlite3.IntegrityError: raise BackendError('duplicate_identity' if self.read_catalog(draft.key) else 'duplicate_code') from None
         self._record_change(draft,1,values)
 
@@ -621,7 +737,14 @@ class _View:
             raise BackendError('conflict')
         revision = _revision_number(r.token)
         try:
-            cursor = self._connection.execute('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',(draft.code,draft.description,int(draft.deletion_mark),values,str(draft.key.catalog_id),str(draft.key.record_id),revision))
+            schema = self.catalog_schema(draft.key.catalog_id)
+            table, columns, where, args = self._source(schema)
+            if self._backend.storage_version == 1:
+                cursor = self._connection.execute('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',(draft.code,draft.description,int(draft.deletion_mark),values,str(draft.key.catalog_id),str(draft.key.record_id),revision))
+            else:
+                sets = ['revision=revision+1','code=?','description=?','deletion_mark=?'] + [quote_identifier(self._backend._layout.field_name(schema.identity, f.identity))+'=?' for f in schema.fields]
+                vals = (draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema)+args+(str(draft.key.record_id),revision)
+                cursor = self._connection.execute('UPDATE %s SET %s WHERE %s AND record_id=? AND revision=?' % (table,','.join(sets),where), vals)
         except sqlite3.IntegrityError: raise BackendError('duplicate_code') from None
         if cursor.rowcount != 1: raise BackendError('conflict')
         self._record_change(draft,revision+1,values)
