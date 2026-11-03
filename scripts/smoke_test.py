@@ -2711,6 +2711,8 @@ def main() -> None:
         # the subprocess cwd canonical too (e.g. macOS /var, Windows aliases,
         # and a symlink or a noncanonical path supplied through TMPDIR).
         temporary = str(Path(temporary).resolve())
+        from ui_frozen_smoke import check_ui
+        check_ui(executable, temporary, env)
         check_tree_findrows(executable, directory=Path(temporary) / "tree-findrows", env=env)
         check_text_document(executable, directory=Path(temporary) / "text-document", env=env)
         check_dates(executable, directory=Path(temporary) / "dates", env=env)
