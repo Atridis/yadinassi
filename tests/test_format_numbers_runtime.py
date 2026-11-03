@@ -25,7 +25,8 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(raw).hexdigest(),
                          '543fa283c906e7d430e8100cf23fdf376f4d552f8d7efd196fe87fb8a858c63b')
         self.assertEqual(len(contract.require_available(raw)), 48)
-        source = (ROOT / 'integrational_tests/measurements/format_numbers.bsl').read_bytes()
+        # The original exact source is the immutable prefix of the authenticated supplement.
+        source = (ROOT / 'tests/fixtures/format_numbers/supplement56.bsl').read_bytes().split(b'FMObserve("49"', 1)[0]
         self.assertEqual(hashlib.sha256(source).hexdigest(),
                          'a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84')
         output = []

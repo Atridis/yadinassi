@@ -75,7 +75,7 @@ COLUMNS_DELETE_STRING = Profile('tree-columns-delete-string-v1', 'native-1c-tree
     7, 'native_1c_tree_columns_delete_string_contract', '\nСообщить("DS-C1: [" + CCCalibrate() + "]");\n', 2, 'tree-columns-delete-string')
 
 FORMAT_NUMBERS = Profile('format-numbers-v1', 'native-1c-format-numbers-v1', 'native-1c-format-numbers-stage-v1',
-    'format_numbers', 'a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84',
+    'format_numbers', '0c4f9cd38dd6851ae70b80d69905a4d39447972d54fa33f0fdf1bbc70f9931f6',
     50, 'native_1c_format_numbers_contract', '\nСообщить("FM-C1: [" + FMEncode("") + "]");\n', 5, 'format-numbers')
 
 FORMAT_DATES = Profile('format-dates-v1', 'native-1c-format-dates-v1', 'native-1c-format-dates-stage-v1',

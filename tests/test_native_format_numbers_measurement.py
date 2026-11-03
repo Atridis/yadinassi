@@ -15,7 +15,7 @@ from yadinassi.syntax import ast
 
 SOURCE_PATH = ROOT / 'integrational_tests/measurements/format_numbers.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
-SOURCE_SHA = 'a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84'
+SOURCE_SHA = '0c4f9cd38dd6851ae70b80d69905a4d39447972d54fa33f0fdf1bbc70f9931f6'
 
 
 def emit(witness=None, source=SOURCE, *, missing=False):
@@ -72,15 +72,14 @@ class FormatObserverTests(unittest.TestCase):
         records = wire.require_available(raw)
         self.assertEqual(len(seen), 48)
         self.assertTrue(all(r['status']=='ok' for r in records))
-        self.assertEqual(seen[7], (Decimal('1.235'), 'NFD=2'))
-        self.assertEqual(seen[8][0], Decimal('-1.235'))
-        self.assertEqual(seen[17][1], "NFD=2;NG=3;NGS=' ';NDS=,")
-        self.assertEqual(seen[18][1], "NFD=2;NG=3;NGS='';NDS=.")
-        self.assertEqual(seen[20][1], 'NFD=2;NG=0;NDS=.')
-        self.assertEqual(seen[21][1], "NFD=2;NZ='';NG=0;NDS=.")
-        self.assertEqual(seen[44], (Decimal(1),))
-        self.assertEqual(seen[45], (Decimal(1), '', Decimal(3)))
-        self.assertEqual(seen[46], (Decimal(1), Decimal(2)))
+        self.assertEqual(seen[4], (Decimal('123.45'), 'ND=5;NG=0;NDS=.'))
+        self.assertEqual(seen[12], (Decimal('12.3'), 'ND=6;NFD=2;NLZ=;NG=0;NDS=.'))
+        self.assertEqual(seen[18], (Decimal('-12.3'), 'NN=0;NFD=2;NG=0;NDS=.'))
+        self.assertEqual(seen[25], (Decimal('1234.5'), 'NS=1;NFD=2;NG=0;NDS=.'))
+        self.assertEqual(seen[31], (Decimal('123.45'), 'NF="$N";NFD=2;NG=0;NDS=.'))
+        self.assertEqual(seen[33], (Decimal('123.45'), 'NF="N\' kg\'";NFD=2;NG=0;NDS=.'))
+        self.assertEqual(seen[39], (False, 'BF=No;BT=Yes'))
+        self.assertEqual(seen[40], (True, 'BF=No;BT=Yes'))
 
     def test_unicode_and_empty_outputs_are_lossless(self):
         for value, units in [('',()), (' \u00a0\U0001f600', (32,160,55357,56832)), ('a'*32,(97,)*32)]:
