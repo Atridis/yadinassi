@@ -13,6 +13,8 @@ With the Python package installed, use:
 yadinassi-catalog --f /path/to/application.sqlite
 # Equivalent, including from the source tree:
 python -m yadinassi.ui.local_app --f /path/to/application.sqlite
+# Self-contained release executable (Windows: yadinassi.exe):
+yadinassi --catalog-ui --f /path/to/application.sqlite
 ```
 
 The file must already be a supported, active Yadinassi SQLite application. Use
@@ -24,9 +26,8 @@ owned copies, not a user's live database. Back up important application files.
 
 The launcher prints a per-launch URL. Open that exact URL in a browser on the
 same computer. Browser launch is opt-in (`--open-browser`). Stop with Close
-database or Ctrl+C. This entrypoint is Python-package/source-tree functionality;
-existing frozen standalone release archives are not claimed to include the new
-launcher until their packaging is separately verified. Plain `yadinassi` still
+database or Ctrl+C. The explicit `--catalog-ui` mode is included in standalone release executables.
+Plain `yadinassi` still
 runs BSL without a database, browser or server.
 
 Prebuilt HTML/CSS/JS is shipped with the Python package. **Node/npm, a CDN and
