@@ -5,6 +5,8 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -49,7 +51,33 @@ def identity(raw, **kwargs):
     return json.loads(raw)
 
 
+def read_windows_staging_fixture(path, limit, *, nonempty=False):
+    """Synthetic Windows fixture only; not the Linux no-follow security gate."""
+    try:
+        if any(parent.is_symlink() for parent in (path, *path.parents)):
+            raise ValueError('link')
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+            raise ValueError('file')
+        with path.open('rb') as stream:
+            data = stream.read(limit + 1)
+        after = path.lstat()
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+                                 info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        if identity(before) != identity(after) or len(data) != before.st_size or len(data) > limit or (nonempty and not data):
+            raise ValueError('unstable')
+        return data
+    except (OSError, ValueError):
+        raise host.FULL.FullError('invalid_private_file') from None
+
+
 class DeletionMarkPacketTests(unittest.TestCase):
+    def setUp(self):
+        if os.name == 'nt':
+            patcher = mock.patch.object(host.FULL, 'read_regular', side_effect=read_windows_staging_fixture)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_source_hash_and_fixture(self):
         setup, assets = fixture.load_saved()
         self.assertEqual(hashlib.sha256(route.source()).hexdigest(), route.SOURCE_SHA256)
@@ -101,7 +129,7 @@ class DeletionMarkPacketTests(unittest.TestCase):
 
     def test_staging_binds_new_suite_and_source(self):
         with tempfile.TemporaryDirectory() as tmp:
-            destination = Path(tmp) / 'staged'
+            destination = Path(tmp).resolve() / 'staged'
             hashes = host.stage_inputs(ROOT, destination, host.SMOKE)
             self.assertEqual(hashes[host.SOURCE], route.SOURCE_SHA256)
             self.assertEqual((destination / 'bootstrap/catalog_object_suite.py').read_bytes(),
@@ -110,7 +138,7 @@ class DeletionMarkPacketTests(unittest.TestCase):
 
     def test_staging_detects_changed_source(self):
         with tempfile.TemporaryDirectory() as tmp:
-            destination = Path(tmp) / 'staged'
+            destination = Path(tmp).resolve() / 'staged'
             hashes = host.stage_inputs(ROOT, destination, host.SMOKE)
             (destination / 'bootstrap/catalog_deletion_mark_behavior/observe.bsl').write_bytes(b'changed')
             with self.assertRaises(host.CatalogObjectError): host.validate_inputs(destination, hashes, host.SMOKE)
