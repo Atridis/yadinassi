@@ -87,6 +87,8 @@ XML/BSL-интерфейсы, а не эталоном внутреннего ф
 ```console
 python -m yadinassi.ui.local_app --f "/path/to/application.sqlite"
 # После установки Python-пакета: yadinassi-catalog --f application.sqlite
+# Для автономного исполняемого файла (Windows: yadinassi.exe):
+yadinassi --catalog-ui --f application.sqlite
 ```
 
 Откройте напечатанный локальный URL: список → карточка → создание/редактирование

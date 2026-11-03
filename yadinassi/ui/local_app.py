@@ -29,9 +29,13 @@ class RuntimeBridge:
     """One persistent child and sequential transport; never retries a write."""
     def __init__(self, database):
         environment = dict(os.environ)
-        environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         environment['PYTHONIOENCODING'] = 'utf-8'
-        self.child = subprocess.Popen([sys.executable, '-m', 'yadinassi.ui.editor_stdio', database],
+        if getattr(sys, 'frozen', False):
+            command = [sys.executable, '--catalog-ui-runtime', database]
+        else:
+            environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
+            command = [sys.executable, '-m', 'yadinassi.ui.editor_stdio', database]
+        self.child = subprocess.Popen(command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment, bufsize=0)
         self.gate = Lock()
         self.counter = 0
