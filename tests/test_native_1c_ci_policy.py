@@ -493,6 +493,9 @@ class WorkflowTests(unittest.TestCase):
           - profile: binary-stream-family-v1
             artifact: binary-stream-family
             case: binary_stream_family
+          - profile: value-storage-v1
+            artifact: value-storage
+            case: value_storage
 """
         for job, expected in expected_headers.items():
             with self.subTest(job=job):
