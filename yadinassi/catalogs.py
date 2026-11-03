@@ -196,8 +196,7 @@ class BSLCatalogObject(BSLObject):
                 self._accept_revision(revision)
                 return None
         else:
-            if self._values['deletionmark']:raise BackendError('unsupported')
-            draft=CatalogDraft(self._key,self._values['code'],self._values['description'],False,
+            draft=CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
                                tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields))
             expected=self._revision
         tx=m._backend.begin_write(self._operation_id)
@@ -217,9 +216,22 @@ class BSLCatalogObject(BSLObject):
             tx.rollback();raise
         finally:tx.close()
         return None
+    def set_deletion_mark(self, value):
+        # Only flat catalogs without owners are admitted by configuration XML;
+        # !todo hierarchical/subordinate cascade requires a separate atomic port.
+        if self._pending_write is not None:raise BackendError('uncertain_commit')
+        if type(value) is not bool:raise TypeError('DeletionMark requires Boolean')
+        self._values['deletionmark']=value
+        return self.write()
     def get_member(self,name):
-        key=name.casefold();methods={'write':self.write,'записать':self.write,'isnew':self.is_new,'этоновый':self.is_new,
+        key=name.casefold()
+        # Schemas may contain attributes with these method names. Preserve their
+        # existing access, rather than shadowing data with a new method.
+        if key in ('setdeletionmark','установитьпометкуудаления') and key in self._values:
+            return self._values[key]
+        methods={'write':self.write,'записать':self.write,'isnew':self.is_new,'этоновый':self.is_new,
             'setnewobjectref':self.set_new_object_ref,'установитьссылкунового':self.set_new_object_ref,
+            'setdeletionmark':self.set_deletion_mark,'установитьпометкуудаления':self.set_deletion_mark,
             'metadata':lambda:self._manager._metadata,'метаданные':lambda:self._manager._metadata}
         if key in methods:return HostFunction(name,methods[key])
         return _field(self._values,name)
@@ -231,7 +243,7 @@ class BSLCatalogObject(BSLObject):
         if key in ('code','description'):
             if type(value) is not str:raise TypeError('String field required')
         elif key=='deletionmark':
-            if value is not False:raise BackendError('unsupported')
+            if type(value) is not bool:raise TypeError('DeletionMark requires Boolean')
         else:
             f=next(f for f in self._manager._schema.fields if f.name.casefold()==key)
             self._manager._stored(f,value)

@@ -94,3 +94,29 @@ Query parser/runtime and native output-only comparison remain under development;
 local SQLite tests are not native query compatibility evidence. Reference cursor
 values are supported, while reference-projection `Unload` and result-column metadata
 remain explicit unsupported surfaces until truthful dynamic descriptors are admitted.
+
+## Flat catalog deletion marks
+
+For the admitted flat, ownerless catalogs, `DeletionMark` / `ПометкаУдаления`
+can be assigned a Boolean in a detached object. Assignment is buffered and
+`Write` persists it along with the other fields. `SetDeletionMark(Boolean)` /
+`УстановитьПометкуУдаления(Булево)` sets the value and writes the object; pending
+edits are included. Ordinary reads, selections and Query expose the persisted
+mark. A mark does not delete a record or invalidate references. Optimistic
+revision conflicts and commit-receipt recovery use the same rules as other
+writes; after an uncertain response call `Write` to resolve the exact pending
+intent before changing the object. A failed write leaves its edit buffer intact.
+
+This profile does not perform physical deletion. `!todo`: cascading marks for
+hierarchical or owned catalogs and module/event semantics require their own
+atomic backend contract; those metadata profiles cannot currently activate.
+The owned SQLite tests define the local contract. A separate single-session 1C
+observation is required before claiming native behavior parity, including new
+objects and failures. The official 1C description of assignment and the method
+is [Using the DeletionMark field](https://1c-dn.com/library/using_the_deletionmark_field_of_a_database_object/).
+
+If an admitted catalog attribute has the same name as one of the new methods,
+the attribute takes precedence over that spelling, preserving access and XML
+export/re-import. The other spelling remains usable if it does not also collide;
+if both names are attributes neither spelling of the method is callable. `!todo`: native
+name-collision behavior is not claimed by this backwards-compatibility policy.
