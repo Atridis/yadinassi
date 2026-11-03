@@ -1,126 +1,113 @@
-"""Synthetic Format witnesses prove the observer, not native Format semantics."""
-from decimal import Decimal
+"""Synthetic wire cases for a temporary ValueStorage acquisition, not a native oracle."""
 import hashlib
 from pathlib import Path
 import re
 import sys
 import unittest
+from yadinassi import Interpreter
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import native_1c_format_numbers_contract as wire
-from yadinassi import Interpreter
-from yadinassi.syntax.parser import parse
-from yadinassi.syntax import ast
 
-SOURCE_PATH = ROOT / 'integrational_tests/measurements/format_numbers.bsl'
-SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
-SOURCE_SHA = 'a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84'
+SOURCE = (ROOT / 'integrational_tests/measurements/format_numbers.bsl').read_bytes()
+SOURCE_SHA = '0d6c7ddc213df18af0140a4ecff88246bfc293fd4483746f3137f96ca853ca2e'
 
+# Deliberately synthetic, in the allowed per-case grammar.
+_SYNTHETIC = ('1','1','1','1','type-ok','type-ok','1','11','ABCA','ABCA',
+              'ABCA','ABCAB','ABCAB','A','A','A','ABCA','A','A','1',
+              'A','1','A','A','1','1','1')
 
-def emit(witness=None, source=SOURCE, *, missing=False):
-    output = []
-    vm = Interpreter(output.append)
-    if missing:
-        vm.functions.pop("format", None)
-        vm.functions.pop("формат", None)
-    if witness is not None:
-        vm.register_function('Format', witness)
-        vm.register_function('Формат', witness)
-    vm.execute(source)
-    return ('\n'.join(output) + '\n').encode('ascii')
+def emit(*, missing=False):
+    rows = [b'VS-C1: [wire-v1]\n']
+    for i, value in enumerate(_SYNTHETIC, 1):
+        payload = 'construct-error' if missing and i == 1 else 'ok|' + value
+        rows.append(f'VS-{i:02d}: [{payload}]\n'.encode('ascii'))
+    return b''.join(rows)
 
+def with_synthetic_case(source):
+    """Keep the real observer/helper; replace only unsupported storage actions."""
+    start = source.index('Функция VSCase(Знач N)\n')
+    end = source.index('КонецФункции\n', start) + len('КонецФункции\n')
+    stub = ['Функция VSCase(Знач N)']
+    stub += ['Если N = 9 Тогда VSPhase = "construct"; ВызватьИсключение "private"; КонецЕсли;',
+             'Если N = 10 Тогда VSPhase = "inspect"; ВызватьИсключение "private"; КонецЕсли;',
+             'Если N = 11 Тогда Возврат "bad!"; КонецЕсли;',
+             'Если N = 12 Тогда Возврат "xxxxxxxxxxxxxxxxx"; КонецЕсли;']
+    stub += [f'Если N = {i} Тогда Возврат "{value}"; КонецЕсли;'
+             for i, value in enumerate(_SYNTHETIC, 1)]
+    stub += ['ВызватьИсключение "unreachable";', 'КонецФункции']
+    return source[:start] + '\n'.join(stub) + '\n' + source[end:]
 
-def fixed_rows():
-    rows = []
-    for line in SOURCE.split('// Fixed measurement inputs start here.\n', 1)[1].splitlines():
-        match = re.fullmatch(r'FMObserve\("(\d{2})", "((?:[^\"]|\"\")*)"\); // ([a-z0-9.-]+)', line)
-        if not match:
-            raise AssertionError('Non-fixed expression in matrix')
-        rows.append((int(match[1]), match[2].replace('""', '"'), match[3]))
-    return rows
+class ValueStorageWireTests(unittest.TestCase):
+    def test_source_identity_and_finite_cases(self):
+        self.assertEqual(hashlib.sha256(SOURCE).hexdigest(), SOURCE_SHA)
+        text = SOURCE.decode('utf-8')
+        cases = re.findall(r'(?:Если|ИначеЕсли) N = (\d+) Тогда', text)
+        self.assertEqual(list(map(int, cases)), list(range(1, 28)))
+        self.assertEqual(text.count('Перем VSPhase;'), 1)
+        self.assertLess(text.index('Перем VSPhase;'), text.index('Функция '))
+        self.assertEqual(text.count('Сообщить('), 5)
+        self.assertEqual(text.count('Вычислить('), 5)
+        self.assertNotIn('ОписаниеОшибки', text)
+        self.assertNotIn('Выполнить(', text)
+        self.assertIn('Для N = 1 По 27 Цикл VSObserve(N); КонецЦикла;', text)
 
-class FormatObserverTests(unittest.TestCase):
-    def test_exact_source_pin_and_bounded_fixed_matrix(self):
-        self.assertEqual(hashlib.sha256(SOURCE.encode('utf-8')).hexdigest(), SOURCE_SHA)
-        rows = fixed_rows()
-        self.assertEqual([r[0] for r in rows], list(range(1,49)))
-        self.assertEqual(len({r[2] for r in rows}), 48)
-        parse(SOURCE)
-        for _, expression, _ in rows:
-            statements = parse(expression)
-            self.assertEqual(len(statements), 1)
-            call = statements[0].expression
-            self.assertIsInstance(call, ast.Call)
-            self.assertIsInstance(call.callee, ast.Name)
-            self.assertIn(call.callee.name, ('Format', 'Формат'))
-            for arg in call.arguments:
-                if isinstance(arg, ast.Unary):
-                    self.assertEqual(arg.operator, '-')
-                    arg = arg.operand
-                self.assertIsInstance(arg, ast.Literal)
-        self.assertEqual(SOURCE.count('Вычислить(Expression)'), 1)
-        self.assertNotIn('ОписаниеОшибки', SOURCE)
-        self.assertNotIn('Выполнить(', SOURCE)
+    def test_fixed_wire_and_rectangular_budget(self):
+        self.assertEqual(wire.CASE_COUNT, 27)
+        self.assertEqual(wire.MESSAGE_COUNT, 28)
+        self.assertEqual(wire.MAX_ENCODED_BYTES, 854)
+        self.assertEqual(wire.MAX_OUTPUT_BYTES, 854)
+        self.assertEqual(len(wire.require_available(emit())), 27)
 
-    def test_exact_inputs_reach_witness_unchanged(self):
-        seen = []
-        def witness(*args):
-            seen.append(args)
-            return 'synthetic'
-        raw = emit(witness)
-        records = wire.require_available(raw)
-        self.assertEqual(len(seen), 48)
-        self.assertTrue(all(r['status']=='ok' for r in records))
-        self.assertEqual(seen[7], (Decimal('1.235'), 'NFD=2'))
-        self.assertEqual(seen[8][0], Decimal('-1.235'))
-        self.assertEqual(seen[17][1], "NFD=2;NG=3;NGS=' ';NDS=,")
-        self.assertEqual(seen[18][1], "NFD=2;NG=3;NGS='';NDS=.")
-        self.assertEqual(seen[20][1], 'NFD=2;NG=0;NDS=.')
-        self.assertEqual(seen[21][1], "NFD=2;NZ='';NG=0;NDS=.")
-        self.assertEqual(seen[44], (Decimal(1),))
-        self.assertEqual(seen[45], (Decimal(1), '', Decimal(3)))
-        self.assertEqual(seen[46], (Decimal(1), Decimal(2)))
+    def test_real_observer_with_synthetic_case_and_phases(self):
+        output = []
+        vm = Interpreter(output.append)
+        vm.execute(with_synthetic_case(SOURCE.decode('utf-8')))
+        raw = ('\n'.join(output) + '\n').encode('ascii')
+        self.assertEqual(len(output), 28)
+        self.assertIn(b'VS-09: [construct-error]\n', raw)
+        self.assertIn(b'VS-10: [inspect-error]\n', raw)
+        self.assertIn(b'VS-11: [observer-error]\n', raw)
+        self.assertIn(b'VS-12: [observer-error]\n', raw)
+        self.assertNotIn(b'private', raw)
+        with self.assertRaises(wire.AvailabilityError): wire.require_available(raw)
 
-    def test_unicode_and_empty_outputs_are_lossless(self):
-        for value, units in [('',()), (' \u00a0\U0001f600', (32,160,55357,56832)), ('a'*32,(97,)*32)]:
-            records=wire.require_available(emit(lambda *args:value))
-            self.assertTrue(all(r['units']==units for r in records))
+    def test_action_errors_are_observed_separately(self):
+        raw = emit().replace(b'VS-19: [ok|A]', b'VS-19: [construct-error]', 1)
+        self.assertEqual(wire.require_available(raw)[18]['status'], 'action-error')
+        raw = emit().replace(b'VS-24: [ok|A]', b'VS-24: [get2-error]', 1)
+        self.assertEqual(wire.require_available(raw)[23]['phase'], 'get2')
 
-    def test_action_and_observer_failures_stay_distinct(self):
-        def fails(*args):
-            raise ValueError('PRIVATE must not be exported')
-        raw=emit(fails)
-        self.assertNotIn(b'PRIVATE',raw)
-        self.assertTrue(all(r['status']=='action-error' for r in wire.validate_output(raw)))
-        with self.assertRaises(wire.AvailabilityError):wire.require_available(raw)
-        for value in (None,Decimal(1),True,'x'*33):
-            raw=emit(lambda *args:value)
-            self.assertTrue(all(r['status']=='observer-error' for r in wire.validate_output(raw)))
-            with self.assertRaises(wire.AvailabilityError):wire.require_available(raw)
+    def test_observer_and_control_errors_reject_acquisition(self):
+        for phase in (b'setup', b'mutate-original', b'mutate-get1', b'inspect', b'observer'):
+            raw = emit().replace(b'VS-09: [ok|ABCA]', b'VS-09: [' + phase + b'-error]', 1)
+            self.assertEqual(wire.validate_output(raw)[8]['status'], 'observer-error')
+            with self.subTest(phase=phase), self.assertRaises(wire.AvailabilityError):
+                wire.require_available(raw)
+        with self.assertRaises(wire.AvailabilityError):
+            wire.require_available(emit(missing=True))
+        for case in (1, 2, 3, 4):
+            raw = emit().replace(f'VS-{case:02d}: [ok|1]'.encode(), f'VS-{case:02d}: [ok|0]'.encode(), 1)
+            with self.subTest(case=case), self.assertRaises(wire.AvailabilityError):
+                wire.require_available(raw)
+        raw = emit().replace(b'VS-23: [ok|A]', b'VS-23: [ok|B]', 1)
+        with self.assertRaises(wire.AvailabilityError):
+            wire.require_available(raw)
 
-    def test_missing_function_does_not_pass_availability(self):
-        raw=emit(missing=True)
-        self.assertTrue(all(r['status']=='action-error' for r in wire.validate_output(raw)))
-        with self.assertRaises(wire.AvailabilityError):wire.require_available(raw)
+    def test_strict_closed_per_case_grammar(self):
+        raw = emit()
+        mutations = (raw[:-1], raw+b'\n', raw.replace(b'VS-01:', b'VS-02:', 1),
+                     raw.replace(b'wire-v1', b'wire-v2', 1), raw.replace(b'\n',b'\r\n'),
+                     raw.replace(b'VS-01: [ok|1]', b'VS-01: [ok|A]',1),
+                     raw.replace(b'VS-09: [ok|ABCA]', b'VS-09: [ok|ABCD]',1),
+                     raw.replace(b'VS-01: [ok|1]', b'VS-01: [get2-error]',1),
+                     raw.replace(b'VS-01: [ok|1]', b'VS-01: [observer-error private]',1),
+                     raw.replace(b'VS-01: [ok|1]', b'VS-01: [ok|11111111111111111]',1),
+                     raw.replace(b'VS-01: [ok|1]', b'VS-01: [ok|\xff]',1),
+                     bytearray(raw), raw.decode('ascii'), b'x'*855)
+        for mutation in mutations:
+            with self.subTest(mutation=repr(mutation)[:40]), self.assertRaises(wire.ObservationError):
+                wire.validate_output(mutation)
 
-    def test_rectangular_maximum_fits_unraised_cap(self):
-        raw=emit(lambda *args:'x'*32)
-        self.assertEqual(len(raw),wire.MAX_ENCODED_BYTES)
-        self.assertLessEqual(len(raw),wire.MAX_OUTPUT_BYTES)
-        wire.require_available(raw)
-
-    def test_hostile_wire_rejected(self):
-        raw=emit(lambda *args:'A')
-        mutations=[raw[:-1],raw+b'\n',raw.replace(b'FM-01:',b'FM-02:',1),
-                   raw.replace(b'S1:0041',b'S01:0041',1),
-                   raw.replace(b'S1:0041',b'S2:0041',1),
-                   raw.replace(b'S1:0041',b'S1:004X',1),
-                   raw.replace(b'S1:0041',b'S1:0041secret',1),
-                   raw.replace(b'S6:0041',b'S6:0042',1),raw.replace(b'\n',b'\r\n'),
-                   bytearray(raw),raw.decode('ascii'), b'x'*8193]
-        for mutated in mutations:
-            with self.subTest(type=type(mutated).__name__):
-                with self.assertRaises(wire.ObservationError):wire.validate_output(mutated)
-
-if __name__=='__main__':unittest.main()
+if __name__ == '__main__': unittest.main()

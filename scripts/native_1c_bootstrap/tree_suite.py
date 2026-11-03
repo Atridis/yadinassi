@@ -122,6 +122,10 @@ def observation_diagnostic(raw, site, *, profile='tree-v1'):
             contract.validate_output(raw)
         except contract.ObservationError:
             return {'site':site,'case':None,'category':'record_count','calibration':None}
+        if profile == 'format-numbers-v1':
+            try: contract.require_available(raw)
+            except contract.AvailabilityError:
+                return {'site':site,'case':None,'category':'api_controls','calibration':None}
         return None
     from native_1c_tree_fill_contract import validate_payload, validate_api_payload, ObservationError
     if site not in ('server','client'): raise full.FullError('invalid_input')
@@ -163,8 +167,10 @@ def validate_diagnostic(value, *, profile='tree-v1'):
         except diagnostic.DiagnosticError:
             raise full.FullError('invalid_result') from None
     if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'dom-family-v1', 'xdto-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):
-        if value is not None and (type(value) is not dict or value != {
-                'site':value.get('site'),'case':None,'category':'record_count','calibration':None}
+        allowed_categories = ('record_count', 'api_controls') if profile == 'format-numbers-v1' else ('record_count',)
+        if value is not None and (type(value) is not dict or set(value) != {'site','case','category','calibration'}
+                or value['case'] is not None or value['calibration'] is not None
+                or type(value['category']) is not str or value['category'] not in allowed_categories
                 or type(value['site']) is not str or value['site'] not in ('server','client')):
             raise full.FullError('invalid_result')
         return
@@ -241,7 +247,12 @@ def validate_observations(raw, site='server', *, profile='tree-v1'):
         if diagnostic is not None: raise ObservationFailure(diagnostic)
         _, main = probe.split_capture(raw)
         return validate_output(main)
-    try: return validate_output(raw)
+    try:
+        records = validate_output(raw)
+        if profile == 'format-numbers-v1':
+            from native_1c_format_numbers_contract import require_available
+            require_available(raw)
+        return records
     except ObservationError:
         diagnostic=observation_diagnostic(raw,site, profile=profile)
         if diagnostic is None: diagnostic={'site':site,'case':None,'category':'record_count','calibration':None}
@@ -264,6 +275,19 @@ def client_module(source, template, *, profile='tree-v1'):
     inverse=re.sub(r'(?m)^&НаКлиенте\n(?=Функция |Процедура )','',declarations)
     inverse+=body.replace('TreeLaneCapture(', 'Сообщить(')
     if inverse!=original: raise full.FullError('invalid_input')
+    # Temporary, source-hash-bound ValueStorage observer: module variables must
+    # precede procedures and carry a client directive. The exact declaration
+    # is moved to the module prefix; all other profiles retain their old path.
+    if profile == 'format-numbers-v1':
+        variable = 'Перем VSPhase;\n'
+        if original.count(variable) != 1 or declarations.count(variable) != 1:
+            raise full.FullError('invalid_input')
+        moved = declarations.replace(variable, '', 1)
+        if declarations.index(variable) > declarations.index('Функция '):
+            raise full.FullError('invalid_input')
+        if moved[:declarations.index(variable)] + variable + moved[declarations.index(variable):] != declarations:
+            raise full.FullError('invalid_input')
+        declarations = moved
     # Format's bounded observer emits inside a helper procedure. Capture those
     # calls too; the exact source pin and inverse above still bind all inputs.
     if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'dom-family-v1', 'xdto-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):
@@ -314,6 +338,8 @@ def client_module(source, template, *, profile='tree-v1'):
 КонецФункции
 '''
     prefix='&НаКлиенте\nПерем TreeLaneMessages;\n&НаКлиенте\nПерем TreeLaneCharacters;\n'
+    if profile == 'format-numbers-v1':
+        prefix += '&НаКлиенте\nПерем VSPhase;\n'
     if profile in ('tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1'):
         wrapper = wrapper.replace('Или Code = 95;', 'Или Code = 95 Или Code = 47;')
     if profile in ('format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'dom-family-v1', 'xdto-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):

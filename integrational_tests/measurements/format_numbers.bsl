@@ -1,86 +1,196 @@
-// Standalone Format measurement. Fixed expressions only; no predicted native answers.
-Функция FMEncode(Знач Text)
-    Если ТипЗнч(Text) <> Тип("Строка") Или СтрДлина(Text) > 32 Тогда
-        ВызватьИсключение "format-observer-text-bound";
-    КонецЕсли;
-    Record = "S" + Строка(СтрДлина(Text)) + ":";
-    Для P = 1 По СтрДлина(Text) Цикл
-        Code = КодСимвола(Text, P);
-        Если Code < 0 Или Code > 65535 Тогда ВызватьИсключение "format-observer-unit-bound"; КонецЕсли;
-        Digits = "";
-        Для D = 1 По 4 Цикл
-            Quotient = Цел(Code / 16);
-            Digits = Сред("0123456789abcdef", Code - Quotient * 16 + 1, 1) + Digits;
-            Code = Quotient;
-        КонецЦикла;
-        Record = Record + Digits;
-    КонецЦикла;
-    Возврат Record;
+// SOURCE ONLY. No native expectations. Run only after isolated acquisition review.
+// No files, network, metadata, database writes, secrets, or unbounded input.
+Перем VSPhase;
+
+Функция VSBit(Знач B)
+    Если B Тогда Возврат "1"; КонецЕсли;
+    Возврат "0";
 КонецФункции
-Процедура FMObserve(Знач Label, Знач Expression)
+
+// Maps the three fixed sentinel numbers losslessly; X is another number, T another type.
+Функция VSMark(Знач V)
+    Если ТипЗнч(V) <> Тип("Число") Тогда Возврат "T"; КонецЕсли;
+    Если V = 1 Тогда Возврат "A"; КонецЕсли;
+    Если V = 2 Тогда Возврат "B"; КонецЕсли;
+    Если V = 3 Тогда Возврат "C"; КонецЕсли;
+    Возврат "X";
+КонецФункции
+
+Функция VSScalar(Знач V, Знач Kind)
+    VSPhase = "construct";
+    H = Новый ХранилищеЗначения(V);
+    VSPhase = "get1";
+    R = H.Получить();
+    VSPhase = "inspect";
+    Если ТипЗнч(R) <> ТипЗнч(V) Тогда Возврат "type"; КонецЕсли;
+    Если Kind = "undefined" Или Kind = "null" Тогда Возврат "type-ok"; КонецЕсли;
+    Если Kind = "binary" Тогда
+        Возврат VSBit(R.Размер() = V.Размер()) + VSBit(Base64Строка(R) = Base64Строка(V));
+    КонецЕсли;
+    Возврат VSBit(R = V);
+КонецФункции
+
+Функция VSSequence(Знач Kind)
+    VSPhase = "setup";
+    Если Kind = "array" Тогда
+        A = Новый Массив; A.Добавить(1);
+    ИначеЕсли Kind = "structure" Тогда
+        A = Новый Структура("x", 1);
+    Иначе
+        A = Новый Соответствие; A.Вставить("x", 1);
+    КонецЕсли;
+    VSPhase = "construct"; H = Новый ХранилищеЗначения(A);
+    VSPhase = "mutate-original";
+    Если Kind = "array" Тогда A[0] = 2;
+    ИначеЕсли Kind = "structure" Тогда A.x = 2;
+    Иначе A.Вставить("x", 2); КонецЕсли;
+    VSPhase = "get1"; R1 = H.Получить();
+    VSPhase = "inspect";
+    Если ТипЗнч(R1) <> ТипЗнч(A) Тогда Возврат "type"; КонецЕсли;
+    Если Kind = "array" Тогда Before = VSMark(R1[0]);
+    ИначеЕсли Kind = "structure" Тогда Before = VSMark(R1.x);
+    Иначе Before = VSMark(R1["x"]); КонецЕсли;
+    VSPhase = "mutate-get1";
+    Если Kind = "array" Тогда R1[0] = 3;
+    ИначеЕсли Kind = "structure" Тогда R1.x = 3;
+    Иначе R1.Вставить("x", 3); КонецЕсли;
+    VSPhase = "get2"; R2 = H.Получить();
+    VSPhase = "inspect";
+    Если ТипЗнч(R2) <> ТипЗнч(A) Тогда Возврат "type"; КонецЕсли;
+    Если Kind = "array" Тогда Возврат Before + VSMark(A[0]) + VSMark(R1[0]) + VSMark(R2[0]);
+    ИначеЕсли Kind = "structure" Тогда Возврат Before + VSMark(A.x) + VSMark(R1.x) + VSMark(R2.x);
+    Иначе Возврат Before + VSMark(A["x"]) + VSMark(R1["x"]) + VSMark(R2["x"]); КонецЕсли;
+КонецФункции
+
+// Two positions refer to one inner array. Mutation reveals sharing without
+// relying on object equality, and the second Get is inspected independently.
+Функция VSShared(Знач Kind)
+    VSPhase = "setup"; Inner = Новый Массив; Inner.Добавить(1);
+    Если Kind = "array" Тогда
+        Root = Новый Массив; Root.Добавить(Inner); Root.Добавить(Inner);
+    Иначе
+        Root = Новый Структура("a,b", Inner, Inner);
+    КонецЕсли;
+    VSPhase = "construct"; H = Новый ХранилищеЗначения(Root);
+    VSPhase = "mutate-original"; Inner[0] = 2;
+    VSPhase = "get1"; R1 = H.Получить();
+    VSPhase = "inspect";
+    Если ТипЗнч(R1) <> ТипЗнч(Root) Тогда Возврат "type"; КонецЕсли;
+    Если Kind = "array" Тогда X = R1[0]; Y = R1[1]; Иначе X = R1.a; Y = R1.b; КонецЕсли;
+    Если ТипЗнч(X) <> Тип("Массив") Или ТипЗнч(Y) <> Тип("Массив") Тогда Возврат "type"; КонецЕсли;
+    Before = VSMark(X[0]);
+    VSPhase = "mutate-get1"; X[0] = 3;
+    VSPhase = "get2"; R2 = H.Получить();
+    VSPhase = "inspect";
+    Если ТипЗнч(R2) <> ТипЗнч(Root) Тогда Возврат "type"; КонецЕсли;
+    Если Kind = "array" Тогда Z = R2[0]; W = R2[1]; Иначе Z = R2.a; W = R2.b; КонецЕсли;
+    Если ТипЗнч(Z) <> Тип("Массив") Или ТипЗнч(W) <> Тип("Массив") Тогда Возврат "type"; КонецЕсли;
+    Возврат Before + VSMark(Y[0]) + VSMark(Inner[0]) + VSMark(Z[0]) + VSMark(W[0]);
+КонецФункции
+
+Функция VSFixed(Знач Kind)
+    VSPhase = "setup";
+    Если Kind = "array" Тогда
+        A = Новый Массив; A.Добавить(1); V = Новый ФиксированныйМассив(A);
+    ИначеЕсли Kind = "structure" Тогда
+        V = Новый ФиксированнаяСтруктура("x", 1);
+    Иначе
+        A = Новый Соответствие; A.Вставить("x", 1); V = Новый ФиксированноеСоответствие(A);
+    КонецЕсли;
+    VSPhase = "construct"; H = Новый ХранилищеЗначения(V);
+    VSPhase = "get1"; R = H.Получить();
+    VSPhase = "inspect";
+    Если ТипЗнч(R) <> ТипЗнч(V) Тогда Возврат "type"; КонецЕсли;
+    Если Kind = "array" Тогда Возврат VSMark(R[0]); КонецЕсли;
+    Если Kind = "structure" Тогда Возврат VSMark(R.x); КонецЕсли;
+    Возврат VSMark(R["x"]);
+КонецФункции
+
+Функция VSCase(Знач N)
+    VSPhase = "setup";
+    Если N = 1 Тогда Возврат VSScalar(42.25, "number");
+    ИначеЕсли N = 2 Тогда Возврат VSScalar("abc", "string");
+    ИначеЕсли N = 3 Тогда Возврат VSScalar(Истина, "boolean");
+    ИначеЕсли N = 4 Тогда Возврат VSScalar('20240229123456', "date");
+    ИначеЕсли N = 5 Тогда Возврат VSScalar(Неопределено, "undefined");
+    ИначеЕсли N = 6 Тогда Возврат VSScalar(Null, "null");
+    ИначеЕсли N = 7 Тогда Возврат VSScalar(Новый УникальныйИдентификатор("00000000-0000-0000-0000-000000000001"), "uuid");
+    ИначеЕсли N = 8 Тогда Возврат VSScalar(ПолучитьДвоичныеДанныеИзСтроки("abc"), "binary");
+    ИначеЕсли N = 9 Тогда Возврат VSSequence("array");
+    ИначеЕсли N = 10 Тогда Возврат VSSequence("structure");
+    ИначеЕсли N = 11 Тогда Возврат VSSequence("map");
+    ИначеЕсли N = 12 Тогда Возврат VSShared("array");
+    ИначеЕсли N = 13 Тогда Возврат VSShared("structure");
+    ИначеЕсли N = 14 Тогда Возврат VSFixed("array");
+    ИначеЕсли N = 15 Тогда Возврат VSFixed("structure");
+    ИначеЕсли N = 16 Тогда Возврат VSFixed("map");
+    ИначеЕсли N = 17 Тогда
+        T = Новый ТаблицаЗначений; T.Колонки.Добавить("x"); Row = T.Добавить(); Row.x = 1;
+        VSPhase = "construct"; H = Новый ХранилищеЗначения(T);
+        VSPhase = "mutate-original"; Row.x = 2;
+        VSPhase = "get1"; R = H.Получить();
+        VSPhase = "inspect"; Если ТипЗнч(R) <> Тип("ТаблицаЗначений") Тогда Возврат "type"; КонецЕсли;
+        Before = VSMark(R[0].x);
+        VSPhase = "mutate-get1"; R[0].x = 3;
+        VSPhase = "get2"; S = H.Получить();
+        VSPhase = "inspect"; Если ТипЗнч(S) <> Тип("ТаблицаЗначений") Тогда Возврат "type"; КонецЕсли;
+        Возврат Before + VSMark(Row.x) + VSMark(R[0].x) + VSMark(S[0].x);
+    ИначеЕсли N = 18 Тогда
+        VSPhase = "setup"; Compression = Новый СжатиеДанных(0);
+        VSPhase = "construct"; H = Новый ХранилищеЗначения(1, Compression);
+        VSPhase = "get1"; R = H.Получить(); VSPhase = "inspect"; Возврат VSMark(R);
+    ИначеЕсли N = 19 Тогда
+        VSPhase = "construct"; H = Вычислить("Новый ХранилищеЗначения(1, ""bad"")");
+        VSPhase = "get1"; R = H.Получить(); VSPhase = "inspect"; Возврат VSMark(R);
+    ИначеЕсли N = 20 Тогда
+        VSPhase = "construct"; H = Вычислить("Новый ХранилищеЗначения()");
+        VSPhase = "get1"; R = H.Получить(); VSPhase = "inspect";
+        Возврат VSBit(ТипЗнч(R) = Тип("Неопределено"));
+    ИначеЕсли N = 21 Тогда
+        VSPhase = "construct"; H = Новый ХранилищеЗначения(1);
+        VSPhase = "get1"; R = Вычислить("H.Получить(1)"); VSPhase = "inspect"; Возврат VSMark(R);
+    ИначеЕсли N = 22 Тогда
+        V = Новый ЗаписьJSON;
+        VSPhase = "construct"; H = Новый ХранилищеЗначения(V);
+        VSPhase = "get1"; R = H.Получить(); VSPhase = "inspect";
+        Возврат VSBit(ТипЗнч(R) = ТипЗнч(V));
+    ИначеЕсли N = 23 Тогда
+        VSPhase = "construct"; H = Вычислить("Новый ХранилищеЗначения(1)");
+        VSPhase = "get1"; R = Вычислить("H.Получить()");
+        VSPhase = "inspect"; Возврат VSMark(R);
+    ИначеЕсли N = 24 Тогда
+        Inner = Новый ХранилищеЗначения(1);
+        VSPhase = "construct"; H = Новый ХранилищеЗначения(Inner);
+        VSPhase = "get1"; R = H.Получить(); VSPhase = "inspect";
+        Если ТипЗнч(R) <> Тип("ХранилищеЗначения") Тогда Возврат "type"; КонецЕсли;
+        VSPhase = "get2"; V = R.Получить(); VSPhase = "inspect"; Возврат VSMark(V);
+    ИначеЕсли N = 25 Тогда Возврат VSScalar(-12.5, "number");
+    ИначеЕсли N = 26 Тогда Возврат VSScalar("", "string");
+    ИначеЕсли N = 27 Тогда Возврат VSScalar(Ложь, "boolean");
+    КонецЕсли;
+    ВызватьИсключение "unreachable";
+КонецФункции
+
+Процедура VSObserve(Знач N)
+    Label = Прав("0" + Строка(N), 2);
+    VSPhase = "setup";
     Попытка
-        Value = Вычислить(Expression);
+        Result = VSCase(N);
     Исключение
-        Сообщить("FM-" + Label + ": [action-error]");
+        // No raw error text: bounded phase only. inspect-error blocks acquisition.
+        Сообщить("VS-" + Label + ": [" + VSPhase + "-error]");
         Возврат;
     КонецПопытки;
-    Попытка
-        Record = FMEncode(Value);
-    Исключение
-        Сообщить("FM-" + Label + ": [observer-error]");
-        Возврат;
-    КонецПопытки;
-    Сообщить("FM-" + Label + ": [ok|" + Record + "]");
+    Если ТипЗнч(Result) <> Тип("Строка") Или СтрДлина(Result) > 16 Тогда
+        Сообщить("VS-" + Label + ": [observer-error]"); Возврат;
+    КонецЕсли;
+    Для P = 1 По СтрДлина(Result) Цикл
+        Если Найти("01ABCXTtype-ok", Сред(Result, P, 1)) = 0 Тогда
+            Сообщить("VS-" + Label + ": [observer-error]"); Возврат;
+        КонецЕсли;
+    КонецЦикла;
+    Сообщить("VS-" + Label + ": [ok|" + Result + "]");
 КонецПроцедуры
-// Calibration covers empty text, NBSP, semicolon, quote and supplementary UTF-16.
-Сообщить("FM-C1: [" + FMEncode("") + "]");
-Сообщить("FM-C2: [" + FMEncode("A ;""😀") + "]");
-// Fixed measurement inputs start here.
-FMObserve("01", "Format(0, """")"); // zero.empty
-FMObserve("02", "Format(1, """")"); // one.empty
-FMObserve("03", "Format(-1, """")"); // negative.empty
-FMObserve("04", "Format(1234567.89, """")"); // large.empty
-FMObserve("05", "Format(0, ""NFD=2"")"); // zero.fd2
-FMObserve("06", "Format(1, ""NFD=2"")"); // one.fd2
-FMObserve("07", "Format(-1, ""NFD=2"")"); // negative.fd2
-FMObserve("08", "Format(1.235, ""NFD=2"")"); // positive.tie
-FMObserve("09", "Format(-1.235, ""NFD=2"")"); // negative.tie
-FMObserve("10", "Format(9.995, ""NFD=2"")"); // carry
-FMObserve("11", "Format(0.004, ""NFD=2"")"); // positive.tiny
-FMObserve("12", "Format(-0.004, ""NFD=2"")"); // negative.tiny
-FMObserve("13", "Format(1.5, ""NFD=0"")"); // integer.round
-FMObserve("14", "Format(-1.5, ""NFD=0"")"); // integer.negative
-FMObserve("15", "Format(1.2, ""NFD=4"")"); // precision.four
-FMObserve("16", "Format(1234567.89, ""NFD=2;NG=0;NDS=."")"); // group.none
-FMObserve("17", "Format(1234567.89, ""NFD=2;NG=3;NDS=."")"); // group.three
-FMObserve("18", "Format(1234567.89, ""NFD=2;NG=3;NGS=' ';NDS=,"")"); // group.space
-FMObserve("19", "Format(1234567.89, ""NFD=2;NG=3;NGS='';NDS=."")"); // group.empty
-FMObserve("20", "Format(1234567.89, ""NFD=2;NG=3;NGS='_';NDS=,"")"); // group.underscore
-FMObserve("21", "Format(0, ""NFD=2;NG=0;NDS=."")"); // zero.absent
-FMObserve("22", "Format(0, ""NFD=2;NZ='';NG=0;NDS=."")"); // zero.empty-nz
-FMObserve("23", "Format(0, ""NFD=2;NZ='ZERO';NG=0;NDS=."")"); // zero.word
-FMObserve("24", "Format(0.004, ""NFD=2;NZ='ZERO';NG=0;NDS=."")"); // tiny.word
-FMObserve("25", "Format(-0.004, ""NFD=2;NZ='ZERO';NG=0;NDS=."")"); // negative-tiny.word
-FMObserve("26", "Формат(1234.5, ""ЧДЦ=2;ЧГ=3;ЧРГ='_';ЧРД=.;ЧН='ZERO'"")"); // alias.ru
-FMObserve("27", "Формат(1234.5, ""NFD=2;NG=3;NGS='_';NDS=.;NZ='ZERO'"")"); // alias.cross
-FMObserve("28", "Format(1234.5, ""ЧДЦ=2;ЧГ=3;ЧРГ='_';ЧРД=.;ЧН='ZERO'"")"); // alias.en-ru
-FMObserve("29", "Format(1234.5, ""NDS=.;NZ='ZERO';NGS='_';NG=3;NFD=2"")"); // order
-FMObserve("30", "Format(12.5, ""NFD=2;NG=0;NDS=';'"")"); // quoted.separator
-FMObserve("31", "Format(1.2345, ""NFD=1;NFD=3;NG=0;NDS=."")"); // duplicate.forward
-FMObserve("32", "Format(1.2345, ""NFD=3;NFD=1;NG=0;NDS=."")"); // duplicate.reverse
-FMObserve("33", "Format(1234.5, ""L=ru;NFD=2"")"); // locale.en
-FMObserve("34", "Формат(1234.5, ""Л=ru;ЧДЦ=2"")"); // locale.ru
-FMObserve("35", "Format(""abc"", """")"); // string.empty
-FMObserve("36", "Format(True, """")"); // true.empty
-FMObserve("37", "Format(False, """")"); // false.empty
-FMObserve("38", "Format('20261030123456', """")"); // date.empty
-FMObserve("39", "Format(Undefined, """")"); // undefined.empty
-FMObserve("40", "Format(Null, """")"); // null.empty
-FMObserve("41", "Format(""abc"", ""NFD=2;NG=0;NDS=."")"); // string.number-mask
-FMObserve("42", "Format(True, ""NFD=2;NG=0;NDS=."")"); // true.number-mask
-FMObserve("43", "Format('20261030123456', ""NFD=2;NG=0;NDS=."")"); // date.number-mask
-FMObserve("44", "Format(Undefined, ""NFD=2;NG=0;NDS=."")"); // undefined.number-mask
-FMObserve("45", "Format(1)"); // arity.missing
-FMObserve("46", "Format(1, """", 3)"); // arity.extra
-FMObserve("47", "Format(1, 2)"); // format.number
-FMObserve("48", "Format(1, ""UNKNOWN=1;NFD=2"")"); // unknown
+
+Сообщить("VS-C1: [wire-v1]");
+Для N = 1 По 27 Цикл VSObserve(N); КонецЦикла;

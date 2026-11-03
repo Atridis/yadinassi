@@ -3,6 +3,8 @@ import base64
 import contextlib
 import io
 import json
+import re
+import types
 import os
 from pathlib import Path
 import subprocess
@@ -15,13 +17,13 @@ from yadinassi.native_targets import LINUX_8_3_27_1508
 import test_native_tree_profile_budget as budget
 from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
-from test_native_format_numbers_measurement import emit
+from test_native_format_numbers_measurement import emit, with_synthetic_case
 
 host, tree, full, smoke = budget.host, budget.tree, budget.suite, budget.smoke
 ROOT, NONCE = budget.ROOT, budget.NONCE
 PROFILE = 'format-numbers-v1'
 def spec(): return tree.profiles.select(PROFILE)
-def output(): return emit(lambda *args:'x'*32)
+def output(): return emit()
 def envelope(raw):
     s=spec(); hashes=dict.fromkeys(tree.input_files(profile=PROFILE),'a'*64);hashes[s.source]=s.source_sha256
     modules={s.case:'b'*64,'client_tree':'c'*64};stage=tree.empty_report(NONCE,profile=PROFILE)
@@ -37,7 +39,7 @@ def envelope(raw):
 
 class FormatProfileTests(unittest.TestCase):
     def test_closed_registry_and_exact_staging(self):
-        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_numbers',50,5,'format-numbers'))
+        s=spec();self.assertEqual((s.case,s.count,s.print_sites,s.artifact),('format_numbers',28,5,'format-numbers'))
         self.assertEqual(tree.input_files(profile=PROFILE),host.staged_files(smoke,profile=PROFILE))
         self.assertEqual(len(tree.input_files(profile=PROFILE)),22)
         self.assertNotIn(s.source,tree.input_files(profile='tree-v1'))
@@ -49,39 +51,109 @@ class FormatProfileTests(unittest.TestCase):
             self.assertEqual(set(host.module_hashes(staged,hashes,smoke,profile=PROFILE)),{s.case,'client_tree'})
             code='import sys;sys.path.insert(0,'+repr(str(staged/'bootstrap'))+');import native_1c_format_numbers_contract as c;c.require_available('+repr(output())+');print(c.MAX_ENCODED_BYTES)'
             result=subprocess.run([sys.executable,'-I','-B','-c',code],capture_output=True,timeout=30)
-            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,('7010'+os.linesep).encode(),b''))
+            self.assertEqual((result.returncode,result.stdout,result.stderr),(0,('854'+os.linesep).encode(),b''))
             (staged/'bootstrap/native_1c_format_numbers_contract.py').unlink()
             with self.assertRaises(host.TreeError):host.module_hashes(staged,hashes,smoke,profile=PROFILE)
 
-    def test_generated_client_captures_helpers_and_utf16(self):
-        source=(ROOT/spec().source).read_text(encoding='utf-8').encode()
-        module=tree.client_module(source,(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode(),profile=PROFILE)
-        for witness in (None,lambda *args:' \u00a0\U0001f600',lambda *args:'x'*32,lambda *args:42):
-            vm=Interpreter(native_target=LINUX_8_3_27_1508)
-            if witness:
-                vm.register_function('Format',witness);vm.register_function('Формат',witness)
-            vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
-            self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit(witness))
+    def test_generated_client_moves_global_and_captures_helpers(self):
+        source=(ROOT/spec().source).read_bytes()
+        template=(ROOT/full.CLIENT_SOURCE).read_bytes()
+        module=tree.client_module(source,template,profile=PROFILE).decode('utf-8-sig')
+        declaration='&НаКлиенте\nПерем VSPhase;\n'
+        self.assertEqual(module.count(declaration),1)
+        self.assertLess(module.index(declaration),module.index('Процедура '))
+        marker='\nСообщить("VS-C1: [wire-v1]");\n'
+        original=source.decode('utf-8')
+        pre=original[:original.index(marker)+1]
+        expected=re.sub(r'(?m)^(Функция |Процедура )',r'&НаКлиенте\n\1',pre)
+        expected=expected.replace('Перем VSPhase;\n','',1).replace('Сообщить(','TreeLaneCapture(')
+        self.assertEqual(module.count(expected),1)
+        inverse=re.sub(r'(?m)^&НаКлиенте\n(?=Функция |Процедура )','',expected)
+        inverse=inverse.replace('TreeLaneCapture(','Сообщить(')
+        position=pre.index('Перем VSPhase;\n')
+        inverse=inverse[:position]+'Перем VSPhase;\n'+inverse[position:]
+        self.assertEqual(inverse,pre)
+        self.assertIn('Или Code = 124;',module)
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):
-            with self.assertRaises(full.FullError):tree.client_module(bad,(ROOT/full.CLIENT_SOURCE).read_bytes(),profile=PROFILE)
+            with self.assertRaises(full.FullError): tree.client_module(bad,template,profile=PROFILE)
+
+    def test_real_observer_and_client_wrapper_synthetic_phase_failures(self):
+        source=(ROOT/spec().source).read_bytes()
+        template=(ROOT/full.CLIENT_SOURCE).read_bytes()
+        server=[]
+        Interpreter(server.append).execute(with_synthetic_case(source.decode('utf-8')))
+        module=tree.client_module(source,template,profile=PROFILE).decode('utf-8-sig')
+        vm=Interpreter(native_target=LINUX_8_3_27_1508)
+        vm.execute(with_synthetic_case(module))
+        vm.execute('Result = ВычислитьПробу();')
+        client=vm.variables['result'].items
+        self.assertEqual(client,server)
+        self.assertIn('VS-09: [construct-error]',client)
+        self.assertIn('VS-10: [inspect-error]',client)
+        self.assertIn('VS-11: [observer-error]',client)
+        self.assertIn('VS-12: [observer-error]',client)
 
     def test_real_envelope_validation_and_availability_not_equivalence(self):
-        for available,raw in ((True,output()),(False,emit(missing=True))):
-            encoded,hashes,modules=envelope(raw)
-            _,observed=host.validate_envelope(encoded,NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
-            self.assertEqual(observed,raw)
-            with tempfile.TemporaryDirectory(prefix='format-compare-') as tmp,budget.synthetic_inventory_reader():
-                root=Path(tmp).resolve();p=root/spec().source;p.parent.mkdir(parents=True);p.write_bytes((ROOT/spec().source).read_text(encoding='utf-8').encode())
-                result=host.compare_output(root,root,raw,hashes,runner=lambda *args:(0,raw,b''),profile=PROFILE)
-                self.assertEqual(result['native_format_numbers_available'],available)
-                self.assertEqual(result['acceptance_status'],'accepted' if available else 'rejected')
-                self.assertEqual(result['status'],'matched')
-            value=json.loads(encoded)
-            for key in ('nonce','profile'):
-                bad=dict(value);bad[key]='wrong'
-                with self.assertRaises(host.TreeError):host.validate_envelope(budget.wire(bad),NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
-            bad=json.loads(encoded);bad['report']['stage3']['client_tree']['quiet']=False
+        raw=output()
+        encoded,hashes,modules=envelope(raw)
+        _,observed=host.validate_envelope(encoded,NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
+        self.assertEqual(observed,raw)
+        with tempfile.TemporaryDirectory(prefix='format-compare-') as tmp,budget.synthetic_inventory_reader():
+            root=Path(tmp).resolve();p=root/spec().source;p.parent.mkdir(parents=True);p.write_bytes((ROOT/spec().source).read_bytes())
+            result=host.compare_output(root,root,raw,hashes,runner=lambda *args:(0,raw,b''),profile=PROFILE)
+            self.assertTrue(result['native_format_numbers_available'])
+            self.assertEqual(result['acceptance_status'],'accepted')
+        value=json.loads(encoded)
+        for key in ('nonce','profile'):
+            bad=dict(value);bad[key]='wrong'
             with self.assertRaises(host.TreeError):host.validate_envelope(budget.wire(bad),NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
+        bad=json.loads(encoded);bad['report']['stage3']['client_tree']['quiet']=False
+        with self.assertRaises(host.TreeError):host.validate_envelope(budget.wire(bad),NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
+
+    def test_unavailable_rejected_from_both_contexts_to_export(self):
+        candidates=(emit(missing=True),
+                    output().replace(b'VS-09: [ok|ABCA]',b'VS-09: [observer-error]',1),
+                    output().replace(b'VS-01: [ok|1]',b'VS-01: [ok|0]',1))
+        for unavailable in candidates:
+            for site in ('server','client'):
+                with self.subTest(site=site, witness=unavailable[:80]), self.assertRaises(tree.ObservationFailure) as failure:
+                    tree.validate_observations(unavailable,site,profile=PROFILE)
+                self.assertEqual(failure.exception.diagnostic['category'],'api_controls')
+            encoded,hashes,modules=envelope(output())
+            value=json.loads(encoded)
+            digest=full.digest(unavailable)
+            case=value['report']['stage3']['cases'][0]
+            client=value['report']['stage3']['client_tree']
+            case.update(output_sha256=digest,output_size=len(unavailable))
+            client.update(output_sha256=digest,output_size=len(unavailable))
+            value['outputs'][0].update(sha256=digest,size=len(unavailable),data_b64=base64.b64encode(unavailable).decode())
+            forged=budget.wire(value)
+            with self.assertRaises(host.TreeError) as rejected:
+                host.validate_envelope(forged,NONCE,hashes,modules,smoke.validate_report,profile=PROFILE)
+            self.assertEqual(rejected.exception.envelope_phase,'observation_contract')
+            with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+                root=Path(directory)
+                stack.enter_context(mock.patch.dict(os.environ,{'GHCR_TOKEN':'synthetic','GHCR_USER':'Atridis'}))
+                stack.enter_context(mock.patch.object(host.uuid,'uuid4',return_value=types.SimpleNamespace(hex=NONCE)))
+                for name,result in (('repository_provenance',{'sha':'a'*40}),('interpreter_provenance',{}),
+                                    ('windows_fingerprints',{}),('read_regular',b'host'),('verify_client_interpreter',None)):
+                    stack.enter_context(mock.patch.object(host.FULL,name,return_value=result))
+                stack.enter_context(mock.patch.object(host,'stage_inputs',return_value=hashes))
+                stack.enter_context(mock.patch.object(host,'module_hashes',return_value=modules))
+                stack.enter_context(mock.patch.object(host,'validate_inputs'))
+                stack.enter_context(mock.patch.object(host,'container_command',return_value=['container']))
+                stack.enter_context(mock.patch.object(smoke,'run_silent'))
+                stack.enter_context(mock.patch.object(smoke,'bounded_run',side_effect=[(0,b'linux/amd64|0'),(0,forged),(0,b'')]))
+                original_sibling=host.sibling
+                stack.enter_context(mock.patch.object(host,'sibling',side_effect=lambda name: smoke if name == 'native_1c_smoke' else original_sibling(name)))
+                compare=stack.enter_context(mock.patch.object(host,'compare_output'))
+                export=stack.enter_context(mock.patch.object(host,'export_artifact'))
+                state={}
+                with self.assertRaises(host.TreeError) as rejected:
+                    host.run(root,root,export_native_outputs=True,failure_state=state,profile=PROFILE)
+                self.assertEqual(rejected.exception.envelope_phase,'observation_contract')
+                compare.assert_not_called();export.assert_not_called()
+                self.assertEqual(state['stage'],'envelope')
 
     def test_emitter_closed_dispatch_and_bad_flags(self):
         import test_native_tree_emitter_dispatch as emitter
