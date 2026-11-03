@@ -10,7 +10,7 @@ from yadinassi.formatting import format_value
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-import historical_format_numbers_contract as wire
+import native_1c_format_numbers_contract as wire
 
 
 class ExtendedFormatTests(unittest.TestCase):

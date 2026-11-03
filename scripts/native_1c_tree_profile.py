@@ -117,11 +117,9 @@ def validate_diagnostic(value, *, profile='tree-v1'):
         except COPY_DIAGNOSTICS.DiagnosticError:
             raise TreeError('tree_report_invalid') from None
     if profile in ('tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'format-dates-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'dom-family-v1', 'xdto-family-v1', 'data-hashing-family-v1', 'zip-family-v1'):
-        allowed_categories = ('record_count', 'api_controls') if profile == 'format-numbers-v1' else ('record_count',)
-        require(value is None or type(value) is dict and set(value) == {'site','case','category','calibration'}
-                and value['case'] is None and value['calibration'] is None
-                and type(value['category']) is str and value['category'] in allowed_categories
-                and type(value['site']) is str and value['site'] in ('server', 'client'))
+        require(value is None or type(value) is dict and value == {
+            'site': value.get('site'), 'case': None, 'category': 'record_count', 'calibration': None}
+            and type(value['site']) is str and value['site'] in ('server', 'client'))
         return
     if value is None:
         return
@@ -333,10 +331,6 @@ def validate_envelope(raw, nonce, input_hashes, module_hashes, report_validator,
             contract.validate_output(main)
         else:
             contract.validate_output(payload)
-            # Defense in depth: a syntactically valid but unavailable temporary
-            # ValueStorage capture must not reach comparison or artifact export.
-            if profile == 'format-numbers-v1':
-                contract.require_available(payload)
         return report, payload
     except TreeError as error:
         error.envelope_phase = phase
