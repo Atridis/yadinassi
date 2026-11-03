@@ -164,7 +164,7 @@ class ValueStorageProfileTests(unittest.TestCase):
         wire.require_available(different)
         encoded,inputs,modules=envelope(native)
         with tempfile.TemporaryDirectory(prefix='value-storage-compare-') as tmp,budget.synthetic_inventory_reader():
-            root=Path(tmp);p=root/spec().source;p.parent.mkdir(parents=True);p.write_bytes((ROOT/spec().source).read_bytes())
+            root=Path(tmp).resolve();p=root/spec().source;p.parent.mkdir(parents=True);p.write_bytes((ROOT/spec().source).read_bytes())
             result=host.compare_output(root,root,native,inputs,runner=lambda *args:(0,different,b''),profile=PROFILE)
         self.assertTrue(result['native_value_storage_available'])
         self.assertEqual(result['status'],'mismatched')
@@ -175,7 +175,7 @@ class ValueStorageProfileTests(unittest.TestCase):
             native = re.sub(rb'(VS-' + f'{case:02d}'.encode() + rb': \[)[^\n]+\]',
                             rb'\1construct-error]', output(), count=1)
             with tempfile.TemporaryDirectory(prefix='value-storage-unavailable-') as tmp,budget.synthetic_inventory_reader():
-                root=Path(tmp);p=root/spec().source;p.parent.mkdir(parents=True);p.write_bytes((ROOT/spec().source).read_bytes())
+                root=Path(tmp).resolve();p=root/spec().source;p.parent.mkdir(parents=True);p.write_bytes((ROOT/spec().source).read_bytes())
                 inputs={spec().source:spec().source_sha256}
                 result=host.compare_output(root,root,native,inputs,runner=lambda *args:(0,native,b''),profile=PROFILE)
             self.assertEqual(result['status'],'matched')
