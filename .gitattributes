@@ -121,3 +121,6 @@ yadinassi/ui/assets/catalog/* text eol=lf
 
 # Source-bound catalog deletion mark packet must retain exact bytes.
 scripts/catalog_deletion_mark_behavior/** -text
+
+# Exact bytes for source-bound deletion diagnostics.
+scripts/catalog_deletion_diagnostic_behavior/** -text
