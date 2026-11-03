@@ -1,6 +1,6 @@
 # Bounded Format number measurement
 
-The original `format-numbers-v1` checkpoint contains 48 fixed observations of `Формат` / `Format`, with
+`format-numbers-v1` adds 48 fixed observations of `Формат` / `Format`, with
 separate empty-string and UTF-16 calibration records. This is a measurement
 profile, not a Format implementation or evidence of native compatibility.
 
@@ -42,7 +42,7 @@ reviewed before runtime implementation or a compatibility claim.
 
 ## Acquired supplementary scope and required runtime lane
 
-The original required 48-case source (temporarily swapped for the acquisition below) has SHA-256
+The original 48-case source remains the required profile, SHA-256
 `a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84`.
 A temporary append-only 56-case measurement was published in PR #163 head
 `b0808e2731fd936dcdfe9cd45b00c14b58249c5c` and acquired by run `41185012239`.
@@ -58,32 +58,3 @@ native controls (ND and DF) are deliberately unsupported and explicitly tested
 as a policy gap. Restoring the original required lane does not discard those
 observations or claim equivalence on the wider 56-case surface. See
 [bounded runtime scope](format-numbers-runtime.md).
-
-## Temporary extended-parameter acquisition packet
-
-For a separate source-bound acquisition the active 48-case matrix is temporarily
-replaced, without changing the 50-record wire contract, 32-unit result bound,
-8192-byte output cap or other profiles. Its source SHA-256 is
-`0c4f9cd38dd6851ae70b80d69905a4d39447972d54fa33f0fdf1bbc70f9931f6`.
-It contains no predicted answers. Cases 1–4 are existing positive controls;
-5–11 examine ND/ЧЦ, 12–18 NLZ/ЧВН (including grouping and sign),
-19–25 NN/ЧО, 26–31 NS/ЧС, 32–39 NF/ЧФ (including zero, shift,
-width and sign interactions), and 40–48 BF/БЛ and BT/БИ including
-empty values, aliases, duplicates and type interaction. Values stay modest to
-avoid observer overflow. The template examples follow the linked official
-localization guidance; their actual native results remain unknown.
-
-This is an acquisition-only temporary head, not a replacement for the original
-checkpoint or evidence of interpreter parity. The old output remains associated
-only with its original pinned source, recoverable as the exact prefix of the
-unchanged authenticated `supplement56.bsl`. Acquisition checks valid framing, positive controls, matching source/checkout
-identity and independently verified provenance. The server capture bytes are
-transported; the client capture is bound by matching digest, size and count, not
-retained as a second raw output. The summary and output artifacts must both be
-retained with run/commit/tree/digest provenance. An action-error does not identify
-its cause; successful controls alone do not establish any new parameter semantics.
-Check `native_format_numbers_available` independently; `native_measurement_accepted`
-alone does not validate availability. Classify each case before drawing conclusions.
-Interpreter parity is a separate
-gate and can fail on this acquisition-only head. Restore the original active
-profile before merging runtime support. Never fabricate observations.
