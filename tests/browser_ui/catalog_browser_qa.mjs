@@ -215,6 +215,7 @@ try{
     await input('Text').fill('Discard me');
     await desktopWorkspace();await lockedNavigation();
     await page.getByText('List preview · refreshed when you return',{exact:true}).waitFor();
+    await screenshot('editor.png'); // Populated dark split-view and a retained dirty draft.
     for(const [preference,resolved] of [['Light','light'],['Dark','dark'],['System','light']]){
       await themePreference(preference,resolved);
       assert.equal(await input('Text').inputValue(),'Discard me','theme_lost_dirty_draft');
@@ -245,7 +246,7 @@ try{
     assert.equal(await page.locator('.references input').count(),0);
     await themePreference('Dark','dark');await desktopWorkspace();
     await page.getByText('Return to records to refresh the list.',{exact:true}).waitFor();
-    await screenshot('editor.png');await page.setViewportSize({width:390,height:844});
+    await page.setViewportSize({width:390,height:844});
     assert.equal(await page.locator('.editor').isVisible(),true,'mobile_editor_hidden');
     const editorBox=await page.locator('.editor').boundingBox();
     for(const panel of [page.locator('aside'),page.locator('.records')]){
