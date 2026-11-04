@@ -6,14 +6,16 @@ Dynamic-reference projections are available in cursors; Unload refuses them
 until truthful dynamic column TypeDescription support exists.
 """
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
 from uuid import UUID
 import sys
 
 from . import query_parser as syntax
 from .catalog_backend import (CatalogComparison, CatalogPredicate, CatalogOrder,
                               CatalogScanRequest, CatalogPage, CatalogCard,
-                              CatalogKey, BackendError)
+                              CatalogKey, CatalogSectionPage, CatalogSectionRecord,
+                              TabularRow, BackendError)
+from .catalog_qualifiers import bound_number, validate_string
 from .catalog_types import BSLCatalogReference
 from .dates import BSLDate
 from .values import BSLObject, HostFunction
@@ -40,18 +42,23 @@ class _Column:
     explicit_alias: bool = False
 
 
-def _field(manager, field, source_alias):
+def _field(manager, field, source_alias, section=None):
     if len(field.parts) == 2 and field.parts[0].casefold() != source_alias.casefold():
         raise ValueError('Unknown query source qualifier')
     name = field.parts[-1].casefold()
     standard = _STANDARD.get(name)
+    if section is not None and name in ('linenumber', 'номерстроки'):
+        raise ValueError('Query section line numbers are unsupported')
+    if section is not None and standard not in (None, 'ref'):
+        raise ValueError('Query section does not inherit owner fields')
     if standard is not None:
         kind = {'ref':'catalog_ref', 'code':'string', 'description':'string',
                 'deletion_mark':'boolean'}[standard]
         qualifiers = ((manager._schema.code_length,) if standard == 'code' else
                       (manager._schema.description_length,) if standard == 'description' else ())
         return _Column('', standard, kind, qualifiers)
-    fields = [item for item in manager._schema.fields if item.name.casefold() == name]
+    schema_fields = manager._schema.fields if section is None else section.fields
+    fields = [item for item in schema_fields if item.name.casefold() == name]
     if len(fields) != 1:
         raise ValueError('Unknown query field')
     item = fields[0]
@@ -92,13 +99,13 @@ def _stored(manager, column, value):
     return value
 
 
-def _predicate(manager, node, alias, parameters):
+def _predicate(manager, node, alias, parameters, section=None):
     if node is None:
         return None
     if type(node) is syntax.Predicate:
-        return CatalogPredicate(node.kind, tuple(_predicate(manager, term, alias, parameters)
+        return CatalogPredicate(node.kind, tuple(_predicate(manager, term, alias, parameters, section)
                                                  for term in node.terms))
-    column = _field(manager, node.field, alias)
+    column = _field(manager, node.field, alias, section)
     value = node.value
     if type(value) is syntax.Parameter:
         key = value.name.casefold()
@@ -116,6 +123,60 @@ def _logical(manager, column, card):
         return manager._ref(card.key.record_id)
     return {'code':card.code, 'description':card.description,
             'deletion_mark':card.deletion_mark}[column.field]
+
+
+def _section_value(manager, field, value):
+    """Validate the logical port independently of any particular backend."""
+    try:
+        if field.kind == 'string':
+            validate_string(value, field.qualifiers[0])
+        elif field.kind == 'number':
+            bound_number(value)
+            digits, scale, sign = field.qualifiers
+            # A hostile ambient/default Decimal context cannot alter validation.
+            context = Context(prec=80, rounding=ROUND_HALF_EVEN, Emin=-999999,
+                              Emax=999999, capitals=1, clamp=0, flags=[],
+                              traps=[InvalidOperation])
+            quantum = Decimal((0, (1,), -scale))
+            ceiling = Decimal((0, (1,), digits - scale))
+            if (context.quantize(value, quantum) != value
+                    or value.copy_abs() >= ceiling
+                    or (sign == 'Nonnegative' and value < 0)):
+                raise BackendError('integrity')
+        elif field.kind == 'catalog_ref':
+            if (type(value) is not CatalogKey
+                    or any(type(identity) is not UUID for identity in
+                           (value.database_id, value.catalog_id, value.record_id))):
+                raise BackendError('integrity')
+        # This also enforces exact scalar/date types and database/target scope.
+        return manager._logical(field, value)
+    except (ValueError, TypeError, InvalidOperation):
+        raise BackendError('integrity') from None
+
+
+def _section_row(manager, section, record, columns, view, seen):
+    if (type(record) is not CatalogSectionRecord or type(record.owner) is not CatalogKey
+            or any(type(identity) is not UUID for identity in
+                   (record.owner.database_id, record.owner.catalog_id, record.owner.record_id))
+            or record.owner.database_id != view.database_id
+            or record.owner.catalog_id != manager._schema.identity
+            or not record.owner.record_id.int
+            or type(record.section_id) is not UUID or record.section_id != section.identity
+            or type(record.row) is not TabularRow
+            or type(record.row.identity) is not UUID or not record.row.identity.int
+            or type(record.row.values) is not tuple
+            or len(record.row.values) != len(section.fields)):
+        raise BackendError('integrity')
+    identity = (record.owner, record.section_id, record.row.identity)
+    if identity in seen:
+        raise BackendError('integrity')
+    seen.add(identity)
+    # Unprojected values must be checked too: a narrow projection cannot hide
+    # corrupt scalars, wrong reference scopes or malformed record identities.
+    values = {field.identity: _section_value(manager, field, value)
+              for field, value in zip(section.fields, record.row.values)}
+    return tuple(manager._ref(record.owner.record_id) if column.field == 'ref'
+                 else values[column.field] for column in columns)
 
 
 def _description(column):
@@ -176,54 +237,80 @@ class BSLQuery(BSLObject):
     def execute(self):
         query = syntax.parse_query(self._text)
         manager = self._catalogs.get_index(query.catalog)
+        section = None
+        if query.section is not None:
+            matches = [item for item in manager._schema.tabular_sections
+                       if item.name.casefold() == query.section.casefold()]
+            if len(matches) != 1:
+                raise ValueError('Unknown query tabular section')
+            section = matches[0]
         columns = []
         for projection in query.projections:
-            column = _field(manager, projection.field, query.source_alias)
+            column = _field(manager, projection.field, query.source_alias, section)
             name = ('Код' if not projection.explicit_alias and column.field == 'code'
                     else projection.alias)
             columns.append(_Column(name, column.field, column.kind,
                                    column.qualifiers, column.custom, projection.explicit_alias))
         if len({column.name.casefold() for column in columns}) != len(columns):
             raise ValueError('Duplicate localized query output column')
-        predicate = _predicate(manager, query.predicate, query.source_alias, dict(self._parameters))
-        order = tuple(CatalogOrder(_field(manager, item.field, query.source_alias).field, item.descending)
+        predicate = _predicate(manager, query.predicate, query.source_alias, dict(self._parameters), section)
+        order = tuple(CatalogOrder(_field(manager, item.field, query.source_alias, section).field, item.descending)
                       for item in query.order)
         rows = []
         text_units = 0
         continuation = None
         seen = set()
+        seen_continuations = set()
         size = min(1000, query.limit)
         view = manager._view()
         try:
             while len(rows) < query.limit:
-                page = view.scan_catalog(manager._schema.identity,
-                                         CatalogScanRequest(predicate, order, size, continuation, string_comparison='casefold_v1'))
-                if (type(page) is not CatalogPage or type(page.cards) is not tuple or len(page.cards) > size
-                        or (page.continuation is not None and
-                            (type(page.continuation) is not str or len(page.continuation) != 32))):
-                    raise BackendError('integrity')
-                for card in page.cards[:query.limit - len(rows)]:
-                    if (type(card) is not CatalogCard or type(card.key) is not CatalogKey
-                            or card.key.database_id != view.database_id
-                            or card.key.catalog_id != manager._schema.identity
-                            or type(card.key.record_id) is not UUID or card.key.record_id.int == 0
-                            or type(card.code) is not str or type(card.description) is not str
-                            or len(card.code) > manager._schema.code_length
-                            or len(card.description) > manager._schema.description_length
-                            or type(card.deletion_mark) is not bool or type(card.values) is not tuple
-                            or len(card.values) != len(manager._schema.fields)
-                            or card.key.record_id in seen):
+                request = CatalogScanRequest(predicate, order, size, continuation,
+                                             string_comparison='casefold_v1')
+                if section is None:
+                    page = view.scan_catalog(manager._schema.identity, request)
+                    if type(page) is not CatalogPage:
                         raise BackendError('integrity')
-                    seen.add(card.key.record_id)
-                    row = tuple(_logical(manager, column, card) for column in columns)
+                    records = page.cards
+                else:
+                    page = view.scan_catalog_section(manager._schema.identity, section.identity, request)
+                    if type(page) is not CatalogSectionPage:
+                        raise BackendError('integrity')
+                    records = page.rows
+                if (type(records) is not tuple or len(records) > size
+                        or (page.continuation is not None and
+                            (type(page.continuation) is not str or len(page.continuation) != 32
+                             or page.continuation in seen_continuations))):
+                    raise BackendError('integrity')
+                # Validate every supplied record, even the tail beyond TOP.
+                for card in records:
+                    if section is not None:
+                        row = _section_row(manager, section, card, columns, view, seen)
+                    else:
+                        if (type(card) is not CatalogCard or type(card.key) is not CatalogKey
+                                or card.key.database_id != view.database_id
+                                or card.key.catalog_id != manager._schema.identity
+                                or type(card.key.record_id) is not UUID or card.key.record_id.int == 0
+                                or type(card.code) is not str or type(card.description) is not str
+                                or len(card.code) > manager._schema.code_length
+                                or len(card.description) > manager._schema.description_length
+                                or type(card.deletion_mark) is not bool or type(card.values) is not tuple
+                                or len(card.values) != len(manager._schema.fields)
+                                or card.key.record_id in seen):
+                            raise BackendError('integrity')
+                        seen.add(card.key.record_id)
+                        row = tuple(_logical(manager, column, card) for column in columns)
+                    if len(rows) >= query.limit:
+                        continue
                     text_units += sum(len(value) for value in row if type(value) is str)
                     rows.append(row)
                     if len(rows) * len(columns) > _MAX_CELLS or text_units > _MAX_RESULT_TEXT:
                         raise ValueError('Query result resource limit exceeded')
                 if page.continuation is None:
                     break
-                if not page.cards or page.continuation == continuation:
+                if not records:
                     raise BackendError('integrity')
+                seen_continuations.add(page.continuation)
                 continuation = page.continuation
         finally:
             view.close()
