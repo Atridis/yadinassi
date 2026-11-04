@@ -79,6 +79,7 @@ def _check_source(db):
     schemas = {}
     for identity, name, definition in db.execute('SELECT identity,name,definition FROM catalog_schema'):
         schema = _schema(definition)
+        if schema.tabular_sections: raise BackendError('unsupported')
         if identity != str(schema.identity) or name != schema.name: raise BackendError('integrity')
         schemas[identity] = schema
     for schema in schemas.values():
@@ -336,6 +337,7 @@ def resolve_migration(path, plan, *, maintenance=False):
         rows = db.execute('SELECT identity,name,definition FROM catalog_schema LIMIT 129').fetchall()
         if len(rows) != count: return 'uncertain'
         schemas = tuple(_schema(definition) for _, _, definition in rows)
+        if any(schema.tabular_sections for schema in schemas): return 'uncertain'
         if any((identity, name) != (str(schema.identity), schema.name) for (identity, name, _), schema in zip(rows, schemas)): return 'uncertain'
         ids = {s.identity for s in schemas}
         if len(ids) != count or any(f.target_catalog_id not in ids for s in schemas for f in s.fields if f.kind == 'catalog_ref'): return 'uncertain'

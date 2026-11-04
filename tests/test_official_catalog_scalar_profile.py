@@ -65,6 +65,7 @@ class OfficialCatalogScalarProfileTests(unittest.TestCase):
         self.assertEqual([(f.name, f.kind, f.qualifiers, f.target_catalog_id) for f in schema.fields],
                          [('Quantity', 'number', (12, 2, 'Any'), None),
                           ('Active', 'boolean', (), None), ('Stamp', 'datetime', ('DateTime',), None)])
+        self.assertEqual(schema.tabular_sections, ())
 
     def test_fixture_fingerprint_is_whole_object_and_generated_ids_only(self):
         obj, namespaces = _object(CATALOG.read_bytes(), 'Catalog')
