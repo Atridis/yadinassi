@@ -10,6 +10,8 @@ Limits are 16 sections per catalog, 512 per import and 64 fields per section, to
 
 The [closed module inventory](configuration-module-inventory.md) also applies to section-bearing catalogs. Empty canonical configuration/catalog modules retain their actual metadata owner and allow this bounded section adapter. Unknown paths, including invented section modules, never acquire an owner and block activation even when empty. Executable source remains independently blocked. Inactive archives retain both the section schemas and exact XML/BSL bytes on reopen; compact unknown-path diagnostics do not clear executable-code or metadata issues. This composition adds no module execution or native tabular-section parity claim.
 
+A configuration may contain a bounded section-bearing catalog alongside a separate catalog admitted by the closed 0–64 scalar-attribute composition profile. Each catalog keeps its own admission rules and actual UUID module ownership. The rich scalar envelope does not admit appended sections, and rich scalar Attribute defaults do not automatically become valid section-row defaults. XML-whitespace and QName checks also apply to section attributes. The section-bearing configuration still cannot activate with ConfigDumpInfo, even when an owner-only inventory matches the scalar sibling. These combinations are covered by synthetic local tests, not new native observations.
+
 ## Detached object operations
 
 `Catalogs.Products.CreateItem()` and `Ref.GetObject()` expose each section by its metadata name. A new object starts with empty sections. The supported methods are:

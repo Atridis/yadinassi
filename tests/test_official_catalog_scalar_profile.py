@@ -221,7 +221,7 @@ class OfficialCatalogScalarProfileTests(unittest.TestCase):
                         field_properties(root).find('{'+MD+'}Type').tail = 'unexpected'
                 self.assert_refused(changed(mutate))
 
-    def test_missing_added_and_reordered_fields_are_blocked(self):
+    def test_complete_fields_may_be_removed_added_or_reordered(self):
         for operation in ('remove', 'add', 'reorder', 'section'):
             with self.subTest(operation=operation):
                 def mutate(root):
@@ -235,7 +235,14 @@ class OfficialCatalogScalarProfileTests(unittest.TestCase):
                         field = deepcopy(child[0]); field.set('uuid', str(uuid4()))
                         field.find('{'+MD+'}Properties/{'+MD+'}Name').text = 'Additional'
                         child.append(field)
-                self.assert_refused(changed(mutate))
+                raw = changed(mutate)
+                if operation == 'section':
+                    self.assert_refused(raw)
+                else:
+                    source = files(raw)
+                    result = import_configuration(source)
+                    self.assertEqual(result.activation_issues, ())
+                    self.assertEqual({entry.path: entry.content for entry in result.files}, source)
 
     def test_type_substitution_and_composite_type_are_blocked(self):
         for index, replacement in ((0, 'xs:boolean'), (1, 'xs:decimal'), (2, 'xs:string'),
