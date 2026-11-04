@@ -376,5 +376,39 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
         with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'uncertain')
 
+    def test_section_metadata_is_not_silently_dropped_from_v1(self):
+        from dataclasses import replace
+        from yadinassi.catalog_backend import TabularSectionSchema
+        changed = replace(self.sa, tabular_sections=(TabularSectionSchema(uuid4(), 'Lines'),))
+        self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',
+                     (_json(_schema_data(changed)), str(self.a)))
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(BackendError, 'unsupported'):
+            prepare_v1(self.path, maintenance=True)
+        self.assertEqual(self.path.read_bytes(), before)
+        backend = SQLiteCatalogBackend(self.path)
+        try:
+            view = backend.begin_read()
+            try:
+                with self.assertRaisesRegex(BackendError, 'unsupported'):
+                    view.catalogs()
+            finally:
+                view.close()
+        finally:
+            backend.close()
+
+    def test_resolver_refuses_section_metadata_in_v2(self):
+        from dataclasses import replace
+        from yadinassi.catalog_backend import TabularSectionSchema
+        migrate_v1(self.path, self.plan, maintenance=True)
+        changed = replace(self.sa, tabular_sections=(TabularSectionSchema(uuid4(), 'Lines'),))
+        self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',
+                     (_json(_schema_data(changed)), str(self.a)))
+        before = self.path.read_bytes()
+        self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'uncertain')
+        self.assertEqual(self.path.read_bytes(), before)
+        with self.assertRaisesRegex(BackendError, 'unsupported'):
+            SQLiteCatalogBackend(self.path)
+
 
 if __name__ == '__main__': unittest.main()

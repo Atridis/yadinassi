@@ -1,6 +1,6 @@
-# SQLite catalog storage: design in progress
+# SQLite catalog storage and UUID mapping
 
-This document describes the intended SQLite storage design. It is not a claim that tabular sections or schema evolution are implemented. The logical catalog backend remains separate from this SQLite layout; other backends need not use SQL tables or the same physical names.
+Catalog tables and their registry are implemented in SQLite v2. The tabular-section storage extension uses [SQLite v3](sqlite-catalog-sections.md). Configuration/schema evolution remains future work. The logical catalog backend remains separate from this SQLite layout; other backends need not use SQL tables or the same physical names.
 
 ## Catalogs and names
 
@@ -16,11 +16,11 @@ Opening a version 1 database does not automatically rewrite it. Migration must b
 
 A migration should validate the old schema and data before and while streaming records; create all target tables before copying references; verify counts, typed values and referential integrity; and change the version only inside the same transaction. If rollback succeeds before commit, changes are rolled back. If rollback or close fails, the outcome requires recovery and resolution rather than an assumption that the database is unchanged. The caller needs a durable plan identifier and identity/digest persisted before execution; a marker bound to that plan is committed in the same transaction. On an uncertain COMMIT, reopen and verify identity, marker, expected schema and invariants before reporting success. If the evidence is unavailable or mismatched, stop with an uncertain outcome rather than retrying blindly. A separate verified backup and sufficient space for both the new tables and SQLite rollback journal are operational prerequisites. Durability remains subject to the configured journal, synchronization and underlying filesystem.
 
-## Tabular sections: future work, not implemented
+## Tabular sections: current v3 storage
 
-For each catalog and each of its tabular sections, plan a separate table such as `catalog_Товары__part_Цены`. It contains an owner reference to that catalog, an explicit internal row-order position, and its own attribute columns. Enforce owner foreign keys and uniqueness of `(owner, position)`; a catalog object may have zero rows. Do not infer 1C's precise row numbering or identity semantics without behavioral evidence.
+The [v3 backend contract](sqlite-catalog-sections.md) adds a separate UUID-keyed table for each catalog/section pair, owner FK, UUID rows, explicit ordering and typed attributes. Owner and requested rows share one revision, transaction and receipt. A legacy draft with `tabular_sections=None` leaves rows unchanged; an explicit tuple replaces all section contents and `()` clears them. Deletion marks do not remove owners or rows. Physical deletion of catalog objects remains unsupported; explicit section replacement may remove that owner's old rows inside the same transaction.
 
-Owner changes and all requested section changes must commit atomically under one owner revision and one receipt. A legacy draft that omits sections must not silently clear them: preserve them or fail closed. A future API must distinguish “leave unchanged” from “replace with empty”. Setting the deletion mark is not physical deletion. Physical deletion is not implemented; its policy, including incoming references and section rows, must be defined and tested before it is enabled.
+The separate [XML/BSL adapter](catalog-tabular-sections.md) supports a bounded metadata and collection profile. UI editing, automatic v2-to-v3 migration and general configuration updates remain unimplemented. Names may change without changing the existing UUID mapping, but altering a real configuration still needs a future explicit migration planner. The fixture rename tests do not provide a production schema-update API.
 
 ## Future configuration updates by UUID
 

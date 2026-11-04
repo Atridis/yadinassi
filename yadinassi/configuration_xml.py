@@ -12,7 +12,7 @@ from hashlib import sha256
 import re
 import xml.etree.ElementTree as ET
 
-from .catalog_backend import CatalogSchema, FieldSchema
+from .catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
 
 MD = 'http://v8.1c.ru/8.3/MDClasses'
 V8 = 'http://v8.1c.ru/8.1/data/core'
@@ -385,7 +385,7 @@ def _activation_properties(obj, allowed, issues, owner):
             issues.append('unsupported presentation metadata:'+owner+':'+tag)
     for container in obj.findall('{'+MD+'}ChildObjects'):
         for node in container:
-            permitted = {'uuid'} if node.tag == '{'+MD+'}Attribute' else set()
+            permitted = {'uuid'} if node.tag == '{'+MD+'}Attribute' or (obj.tag == '{'+MD+'}Catalog' and node.tag == '{'+MD+'}TabularSection') else set()
             if (set(node.attrib) != permitted or (node.tail or '').strip(_XML_WHITESPACE)
                     or (len(node) and (node.text or '').strip(_XML_WHITESPACE))
                     or (node.tag == '{'+MD+'}Catalog' and len(node))):
@@ -404,6 +404,10 @@ def _dump_info_matches(raw, config_uuid, name, catalogs, metadata_versions):
     evidence. A matching inventory never clears other activation issues.
     """
     root, _ = _parse(raw)
+    # The admitted PR201 inventory profile covers only catalog attributes.
+    # Do not accept an owner-only inventory while silently ignoring sections.
+    # A nested section inventory needs its own source-reviewed profile.
+    if any(catalog.tabular_sections for catalog in catalogs): return False
     # _parse decodes bytes itself. Do not admit a contradictory declaration
     # merely because ElementTree accepts an already decoded Unicode stream.
     text = raw.decode('utf-8-sig')
@@ -493,7 +497,7 @@ def import_configuration(files):
         used.add(identity)
         if _text(p,'Name')!=cname:_fail('catalog filename/name mismatch')
         objects[cname.casefold()]=(identity,obj,p,ns,root)
-    targets={key:v[0] for key,v in objects.items()};catalogs=[]
+    targets={key:v[0] for key,v in objects.items()};catalogs=[];section_count=0
     for cname in catalog_names:
         identity,obj,p,ns,root=objects[cname.casefold()]
         # Admit only the whole closed envelope with fully verified fields; any
@@ -516,19 +520,47 @@ def import_configuration(files):
             local=node.tag.rsplit('}',1)[-1];text=(node.text or '').strip(_XML_WHITESPACE)
             if local=='FillChecking' and text not in ('','DontCheck'):issues.append('required field validation unsupported:'+cname)
             if local in ('FillFromFillingValue','DataHistory','RegisterRecords') and text not in ('','false','DontUse'):issues.append('automatic metadata behavior unsupported:'+cname)
-        fields=[];names=set(_RESERVED);child=obj.find('{'+MD+'}ChildObjects')
-        for field in () if child is None else child:
-            if field.tag!='{'+MD+'}Attribute':_fail('catalog child object unsupported')
+        fields=[];sections=[];names=set(_RESERVED);child=obj.find('{'+MD+'}ChildObjects')
+        def field_schema(field, field_names, owner, row=False):
+            if field.tag!='{'+MD+'}Attribute':_fail('child object unsupported')
+            if row:
+                section_components(field)
+                nested=field.find('{'+MD+'}ChildObjects')
+                if nested is not None and len(nested):_fail('attribute child object unsupported')
             # Rich Designer defaults require the envelope and every full field.
             # Every unmatched field retains the restrictive activation path.
-            if generated is None:
-                _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,cname)
+            if generated is None or row:
+                _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,owner)
             fp=_props(field);fn=_name(_text(fp,'Name'));fid=_uuid(field.get('uuid'))
-            if fn.casefold() in names or fid in used:_fail('field identity/name collision')
-            names.add(fn.casefold());used.add(fid);kind,q,target=_type(fp,ns,targets)
-            fields.append(FieldSchema(fid,fn,kind,q,target))
+            if fn.casefold() in field_names or fid in used:_fail('field identity/name collision')
+            field_names.add(fn.casefold());used.add(fid);kind,q,target=_type(fp,ns,targets)
+            return FieldSchema(fid,fn,kind,q,target)
+        def section_components(section):
+            # Inline executable payloads are outside this bounded metadata format,
+            # even when hidden inside otherwise descriptive properties.
+            for node in section.iter():
+                local=node.tag.rsplit('}',1)[-1].casefold()
+                if local.endswith('module') or local in ('code','script','procedure','function'):
+                    _fail('embedded executable component unsupported')
+        for item in () if child is None else child:
+            if item.tag=='{'+MD+'}Attribute':
+                fields.append(field_schema(item,names,cname))
+            elif item.tag=='{'+MD+'}TabularSection':
+                section_components(item)
+                _activation_properties(item,{'Name','Synonym','Comment'},issues,cname)
+                sp=_props(item);sn=_name(_text(sp,'Name'));sid=_uuid(item.get('uuid'))
+                if sn.casefold() in names or sid in used:_fail('section identity/name collision')
+                names.add(sn.casefold());used.add(sid)
+                row_names=set(_RESERVED)|{'linenumber','номерстроки'}
+                rows=item.find('{'+MD+'}ChildObjects')
+                row_fields=tuple(field_schema(f,row_names,cname+'.'+sn,True)
+                                 for f in (() if rows is None else rows))
+                if len(row_fields)>64:_fail('section field count')
+                sections.append(TabularSectionSchema(sid,sn,row_fields));section_count+=1
+                if len(sections)>16 or section_count>512:_fail('tabular section count')
+            else:_fail('catalog child object unsupported')
         if len(fields)>64:_fail('field count')
-        catalogs.append(CatalogSchema(identity,cname,_int(p,'CodeLength',1,64),_int(p,'DescriptionLength',0,1024),tuple(fields)))
+        catalogs.append(CatalogSchema(identity,cname,_int(p,'CodeLength',1,64),_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections)))
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names)}
     # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
     # A source archive may contain unknown modules, but it must not activate or
