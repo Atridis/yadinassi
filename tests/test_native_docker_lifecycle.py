@@ -309,6 +309,103 @@ class OwnedLifecycleTests(unittest.TestCase):
         self.assertEqual(fake.calls[-1][0], 'start')
 
 
+class ImageInspectTests(unittest.TestCase):
+    """Check the exact CLI template and admission, not execution of Go templates.
+
+    A typed nil or empty Volumes map is projected by Go len as integer zero.
+    FakeDocker supplies that projection; a real Docker check remains separate.
+    """
+    CANARY = 'private-image-inspect-payload'
+
+    def invoke(self, fake, state):
+        with mock.patch.object(lifecycle, 'bounded_cli', side_effect=AssertionError('real CLI forbidden')), \
+             mock.patch.object(lifecycle.subprocess, 'Popen', side_effect=AssertionError('process forbidden')):
+            return lifecycle.run_owned(COMMAND, {}, name=NAME, nonce=NONCE, image=IMAGE,
+                                       seconds=120, output_limit=1024, state=state, runner=fake)
+
+    def refuse(self, response, expected='unexpected_image_platform_or_volumes', *, reaped=True):
+        fake = FakeDocker(); state = {}
+        fake.overrides['image'] = response
+        with self.assertRaises(lifecycle.LifecycleError) as caught:
+            self.invoke(fake, state)
+        error = caught.exception
+        self.assertEqual(error.args, (expected,))
+        self.assertIs(error.cli_reap_verified, reaped)
+        self.assertIs(error.container_cleanup_verified, True)
+        self.assertIsNone(error.cleanup_error)
+        self.assertEqual(state, {'stage': 'image_inspect'})
+        self.assertEqual([call[0] for call in fake.calls], ['image'])
+        self.assertFalse(fake.started)
+        self.assertNotIn(self.CANARY, repr(error.args) + repr(vars(error)) + repr(state))
+
+    def test_literal_template_uses_typed_id_without_fallback(self):
+        expected = '[{{json .ID}},{{json .Os}},{{json .Architecture}},{{len .Config.Volumes}}]'
+        self.assertEqual(lifecycle.IMAGE_FORMAT, expected)
+        fake = FakeDocker()
+        self.invoke(fake, {})
+        self.assertEqual(fake.calls[0][1], ['docker', 'image', 'inspect', '--format', expected, IMAGE])
+        self.assertEqual(fake.calls[0][3], lifecycle.MAX_INSPECT_OUTPUT)
+
+    def test_zero_volume_projection_admits_linux_amd64(self):
+        fake = FakeDocker()
+        fake.overrides['image'] = 0, encoded([IMAGE_ID, 'linux', 'amd64', 0])
+        self.assertEqual(self.invoke(fake, {}), (0, b'owned output'))
+        self.assertEqual([call[0] for call in fake.calls],
+                         ['image', 'create', 'inspect', 'start', 'inspect', 'inspect', 'rm', 'ps'])
+
+    def test_nonzero_volume_projection_refuses_before_create(self):
+        for count in (1, 2, 2048, -1):
+            with self.subTest(count=count):
+                self.refuse((0, encoded([IMAGE_ID, 'linux', 'amd64', count])))
+
+    def test_volume_projection_requires_exact_integer_zero(self):
+        for value in (False, True, 0.0, '0', None, [], {}):
+            with self.subTest(value=value):
+                self.refuse((0, encoded([IMAGE_ID, 'linux', 'amd64', value])))
+
+    def test_image_identity_requires_full_lowercase_sha256(self):
+        for value in (None, 42, 'c' * 64, 'sha256:' + 'c' * 63, 'sha256:' + 'C' * 64,
+                      IMAGE_ID + '\n', self.CANARY):
+            with self.subTest(value=value):
+                self.refuse((0, encoded([value, 'linux', 'amd64', 0])))
+
+    def test_os_and_architecture_are_exact(self):
+        for os_name, architecture in (('windows', 'amd64'), ('linux', 'arm64'),
+                                      ('Linux', 'amd64'), ('linux', 'AMD64'),
+                                      (False, 'amd64'), ('linux', None)):
+            with self.subTest(os_name=os_name, architecture=architecture):
+                self.refuse((0, encoded([IMAGE_ID, os_name, architecture, 0])))
+
+    def test_malformed_image_projection_refuses_before_create(self):
+        malformed = (b'', b'\n', b'\xff', b'[', b'{}', b'null', b'[]',
+                     encoded([IMAGE_ID, 'linux', 'amd64']),
+                     encoded([IMAGE_ID, 'linux', 'amd64', 0, self.CANARY]),
+                     b'x' * (lifecycle.MAX_INSPECT_OUTPUT + 1), self.CANARY)
+        for raw in malformed:
+            with self.subTest(kind=type(raw).__name__, size=len(raw)):
+                self.refuse((0, raw))
+
+    def test_inspect_nonzero_exit_rejects_even_valid_projection(self):
+        for code in (1, 64, 125):
+            with self.subTest(code=code):
+                self.refuse((code, encoded([IMAGE_ID, 'linux', 'amd64', 0])))
+
+    def test_template_or_lookup_failure_never_retries_or_creates(self):
+        # Template failure, nil Config, raw-only response or missing image can
+        # fail the CLI before a projection exists. None grants create authority.
+        for raw in (b'', b'\n', self.CANARY.encode()):
+            with self.subTest(size=len(raw)):
+                self.refuse((1, raw))
+
+    def test_inspect_cli_error_preserves_reap_and_safe_reason(self):
+        for code in ('docker_command_timeout', 'docker_command_unavailable',
+                     'docker_output_limit', 'docker_cli_reap_unverified'):
+            for reaped in (False, True):
+                with self.subTest(code=code, reaped=reaped):
+                    self.refuse(lifecycle.CliError(code, cli_reap_verified=reaped), code, reaped=reaped)
+        self.refuse(lifecycle.CliError(self.CANARY), 'docker_command_failed')
+
+
 class FakeProcess:
     def __init__(self, *, unreapable=False):
         self.stdout = mock.Mock()

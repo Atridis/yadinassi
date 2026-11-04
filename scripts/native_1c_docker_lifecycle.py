@@ -21,7 +21,7 @@ COMMAND_SECONDS = 30
 CLEANUP_SECONDS = 30
 MAX_ID_OUTPUT = 65
 MAX_INSPECT_OUTPUT = 2048
-IMAGE_FORMAT = '[{{json .Id}},{{json .Os}},{{json .Architecture}},{{len .Config.Volumes}}]'
+IMAGE_FORMAT = '[{{json .ID}},{{json .Os}},{{json .Architecture}},{{len .Config.Volumes}}]'
 CONTAINER_FORMAT = ('[{{json .Id}},{{json .Name}},{{json .Config.Image}},{{json .Image}},'
                     '{{json (index .Config.Labels "' + OWNER_LABEL + '")}},'
                     '{{json .State.Status}},{{json .State.Running}},{{json .State.Paused}},'
