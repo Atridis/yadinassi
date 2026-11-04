@@ -124,3 +124,9 @@ scripts/catalog_deletion_mark_behavior/** -text
 
 # Native localized-presentation sources and captures retain exact bytes.
 tests/fixtures/localized_presentation/* -text
+
+# Source-bound ValueStorage measurement; preserve hashes across checkouts.
+tests/fixtures/value_storage/* -text
+
+# Source-bound ValueStorage fixed-profile measurement.
+integrational_tests/measurements/value_storage.bsl text eol=lf

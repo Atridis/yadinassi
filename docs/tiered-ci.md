@@ -2,16 +2,29 @@
 
 ## When jobs run
 
-- Each Draft PR commit runs four-platform **light tests**, the existing launcher
-  checks and the small actual-Python-3.10 compatibility checks. It does not build
-  binaries or run heavy partitions.
+- Each Draft PR commit runs **light tests** on Linux x64, Windows x64 and
+  macOS Intel x64, the existing launcher checks and the small actual-Python-3.10
+  compatibility checks. It does not build binaries or run heavy partitions.
 - `ready_for_review`, opening/reopening a non-Draft PR, and each subsequent
-  `synchronize` while non-Draft run **light + heavy + packaged binary smoke**.
-  Draft is the development phase; Ready is the premerge candidate phase.
-- Pushes to `main`, all tag pushes and the existing manual workflow button keep
-  the full coverage/build path. Only `v*` tag pushes release, after all gates.
+  `synchronize` while non-Draft run **light + heavy + packaged binary smoke** on
+  those same three platforms. Draft is development; Ready is a premerge candidate.
+- Pushes to `main` use the same three-platform light/heavy/package path.
+- **Temporary macOS ARM pause:** ordinary PR and `main` runs do not allocate
+  macOS ARM runners for light tests, heavy tests or packaging. Their verdict
+  explicitly reports `excluded_platforms=["mac-arm"]` and `full_coverage=false`.
+  All required tests on the other three platforms remain mandatory.
+- **Every tag push**, including non-`v` and slash-containing tags, and every
+  manual `workflow_dispatch` retain all four platforms for light, heavy and
+  packaging. Only `v*` tag pushes release, after all full-coverage gates.
 - Existing native-1C workflows, permissions and evidence requirements are unchanged.
-  This split does not bypass a native gate or promise those jobs are lightweight.
+  This pause does not bypass a native gate or promise those jobs are lightweight.
+
+Admission derives both JSON job matrices from its validated event binding;
+there is no input, environment flag or caller-provided platform list to select a
+smaller scope. Light and package jobs share exactly the same matrix. Heavy keeps
+two Intel shards and one shard for every other included platform. The existing
+success-only light → heavy → package sequence remains intact. Ordinary PR/main
+macOS runner demand is 1 → 2 → 1; tags/manual remain 2 → 3 → 2.
 
 GitHub has no literal “just before merge” event. The available repository
 connector can mark a PR Ready; it does not expose workflow_dispatch. Accordingly
@@ -54,24 +67,46 @@ missing/duplicate IDs or incomplete coverage cannot produce a passing full gate.
 ## Source binding and mandatory merge procedure
 
 Admission checks the live open PR's head and main base, the event's head/base,
-and the immutable tested merge commit's ordered parents. All jobs explicitly
-check out that admitted commit with credentials persistence disabled. Partitions
-are stamped with source/head/base/run/attempt; the final verdict downloads only
-that attempt's artifacts. It verifies all four light and five heavy reports,
-exact disjoint full-discovery coverage on each OS, and all package/compatibility
-job results, then rereads current PR head AND main.
+and the immutable tested merge commit's ordered parents. Binding schema 2 adds
+the exact GitHub ref. PR refs must be `refs/pull/<number>/merge`. Push payload refs
+must equal trusted `GITHUB_REF`, must not be deleted, and must be either
+`refs/heads/main` or a valid nonempty `refs/tags/...`. Main's payload `after` must
+also match `GITHUB_SHA`; annotated tags are bound to the trusted checked-out
+commit without confusing a tag-object SHA with that commit. Manual runs use the
+trusted full branch/tag ref and always keep all four platforms.
 
-Build + packaged smoke are independent jobs on the same admitted source, allowing
-the existing binary checks to overlap tests without deleting their coverage.
-Release still waits for build, compatibility and the complete final verdict.
+All jobs explicitly check out that admitted commit with credentials persistence
+disabled. Checkout, stamp and verdict commands also regenerate the binding from
+the current GitHub event/context and compare it exactly, including phase, ref,
+source/head/base/run/attempt. These comparisons are local and do not add API
+calls. A well-shaped forged tag-to-main binding or heavy-to-light downgrade is
+not accepted. Unknown binding fields, including scope overrides, are rejected.
+
+Partitions are stamped with that binding; the final verdict downloads only that
+attempt's artifacts. For ordinary PR/main heavy runs it requires exactly three
+light and four heavy reports. Tags/manual require four light and five heavy
+reports. Missing or extra platforms/partitions fail. Heavy runs must prove exact
+disjoint full-discovery coverage on **every required platform**, retain all
+package/compatibility job requirements, then reread current PR head AND main.
+
+The verdict lists `required_platforms`, `excluded_platforms` and per-platform
+coverage. `required_coverage=true` means the heavy suite covered every required
+platform; `full_coverage=true` additionally requires all four platforms. A Draft
+light-only run sets both booleans to false. The temporary three-platform result
+is never represented as full four-platform coverage. Release still waits for
+build, compatibility and the complete four-platform final verdict.
 
 **Before an autonomous merge, the maintainer/root must:**
 
 1. Require the current run's successful `Exact-source test coverage verdict`,
    all required native gates and any other repository gates.
 2. Inspect its `test-verdict-<attempt>` artifact: `phase=heavy-premerge`,
-   `full_coverage=true`, correct repository/PR and current head/base, run/attempt.
-   A successful `light-only` verdict is NOT merge approval.
+   `required_coverage=true`, correct repository/PR/ref and current head/base,
+   run/attempt. During the temporary pause, a PR must list exactly Linux, Windows
+   and macOS Intel as required, only macOS ARM as excluded, and honestly set
+   `full_coverage=false`. This is acceptance under the explicit ARM exception,
+   not evidence that ARM passed. A successful `light-only` verdict is NOT merge
+   approval. Tags/manual require all four platforms and `full_coverage=true`.
 3. Reread the live PR head and `main` immediately before merge. Both must still
    equal the accepted binding. `python scripts/ci_test_gate.py fresh --binding
    binding.json` performs the same read-only check; a connector GET comparison
@@ -89,21 +124,23 @@ with elevated credentials. Only the release job retains contents-write access.
 ## Refresh data, not code
 
 Partition artifacts contain actual timings. After downloading all nine reports
-from one accepted heavy run to a local directory, use:
+from one accepted **four-platform tag or manual heavy run** to a local directory, use:
 
 ```sh
 python -m scripts.refresh_test_durations --reports downloaded-partitions \
   --source TESTED_MERGE_SHA --run RUN_ID --output scripts/test_durations.json
 ```
 
-The command checks complete coverage, same source/run binding, finite bounded
-numbers and all partition statuses. It parses JSON only; it neither executes
+The command requires all nine reports and `full_coverage=true`, same source/run
+binding, finite bounded numbers and all partition statuses. It parses JSON only; it neither executes
 artifact contents nor downloads, commits or publishes anything. Review the data
-change through a normal PR. Light-only/incomplete artifacts cannot replace the
-history. Zero weights for skipped cases never authorize skipping future tests.
+change through a normal PR. Reduced PR/main, light-only or incomplete artifacts
+cannot replace the four-platform history. Zero weights for skipped cases never
+authorize skipping future tests.
 
-Local verification is synthetic normal/-O plus plan-only real discovery, not a
-second full benchmark. Actual Windows/macOS and Python3.10 behavior must pass CI.
+Check policy changes with focused synthetic normal/-O regressions. Actual
+Windows/macOS and Python 3.10 behavior must still pass the relevant CI jobs; local
+synthetic results do not replace that evidence.
 
 ## First Ready-run cleanup regression
 
@@ -117,3 +154,13 @@ floor; original failed CI evidence is retained. This is a one-line native HOST
 change, not an interpreter/runtime change, so the corrected Ready head requires
 fresh automatic native and complete CI gates. Earlier green evidence is not
 reused as acceptance of the corrected source.
+
+## TODO: restore ordinary macOS ARM CI
+
+- [ ] Restore macOS ARM light/heavy/package jobs for ordinary PR and `main` runs
+  when runner capacity is available. Remove the temporary exclusion from
+  `required_platforms`, update route/coverage tests and these instructions, then
+  require a fresh four-platform heavy verdict for the exact current source.
+- Until restoration, preserve every tag/manual ARM job and report the missing
+  ordinary ARM coverage explicitly. Do not weaken timing-profile refresh,
+  release requirements, Intel shards or native-1C evidence requirements.

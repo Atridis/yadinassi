@@ -20,6 +20,7 @@ from . import binary_streams
 from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
 from .text_documents import BSLTextDocument
+from .value_storage import BSLValueStorage
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
 from .unique_identifiers import BSLUUID
 from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
@@ -270,6 +271,7 @@ class Interpreter:
         for ru, function, en, returns_value in file_io.FUNCTIONS:
             self.register_function(ru, function, en, returns_value=returns_value)
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
+        self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
