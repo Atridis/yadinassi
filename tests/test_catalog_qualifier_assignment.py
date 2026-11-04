@@ -1,4 +1,5 @@
 """Authored qualifier/atomicity tests; not CatalogObject native observations."""
+from contextlib import closing, contextmanager
 from dataclasses import replace
 import decimal
 from decimal import Decimal
@@ -20,6 +21,14 @@ from yadinassi.database_context import SQLiteDBContext
 from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View, _encode, _decode, _json
 from yadinassi.sqlite_catalog_layout import quote_identifier
 from catalog_sections_fixture import configuration_files_with_sections
+
+
+@contextmanager
+def _sqlite_mutation(path):
+    # sqlite3.Connection.__exit__ ends a transaction but does not close the
+    # underlying handle. Close deterministically before TemporaryDirectory cleanup.
+    with closing(sqlite3.connect(path)) as connection, connection:
+        yield connection
 
 
 class ScalarQualifierTests(unittest.TestCase):
@@ -245,6 +254,26 @@ class BackendQualifierTests(unittest.TestCase):
             catalogs=(self.schema,), files=(ConfigurationFile('Configuration.xml', b'<owned/>', 'xml'),), modules=())
         self.backend = SQLiteCatalogBackend.create(self.path, self.config)
         self.addCleanup(lambda: self.backend.close())
+
+    def test_sqlite_mutation_closes_on_success_and_exception(self):
+        path = self.path.with_name('mutation-check.sqlite')
+        with _sqlite_mutation(path) as connection:
+            connection.execute('CREATE TABLE probe(value INTEGER)')
+        for fail in (False, True):
+            connection = None
+            try:
+                with _sqlite_mutation(path) as connection:
+                    connection.execute('INSERT INTO probe VALUES(?)', (2 if fail else 1,))
+                    if fail: raise RuntimeError('test rollback')
+            except RuntimeError:
+                self.assertTrue(fail)
+            self.assertIsNotNone(connection)
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute('SELECT 1')
+        with _sqlite_mutation(path) as connection:
+            self.assertEqual(connection.execute('SELECT value FROM probe').fetchall(), [(1,)])
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connection.execute('SELECT 1')
 
     def draft(self, code='123tail', *, sections=True):
         values = ('Я😀tail', Decimal('1.245'), Decimal('-1.235'))
@@ -478,14 +507,14 @@ class BackendQualifierTests(unittest.TestCase):
                 [catalog, record, '9223372036854775808'], [catalog, record, '١']]
             for entry in malformed:
                 with self.subTest(updating=updating, entry=entry):
-                    with sqlite3.connect(self.path) as connection:
+                    with _sqlite_mutation(self.path) as connection:
                         connection.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?',
                                            (_json([entry]), str(operation)))
                     before = self.path.read_bytes()
                     with self.assertRaisesRegex(BackendError, 'integrity'):
                         self.backend.resolve_write(operation, draft, previous)
                     self.assertEqual(self.path.read_bytes(), before)
-            with sqlite3.connect(self.path) as connection:
+            with _sqlite_mutation(self.path) as connection:
                 connection.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?',
                                    (_json([[catalog, record, token]]), str(operation)))
             self.assertEqual(self.backend.resolve_write(operation, draft, previous), revision)
@@ -495,10 +524,10 @@ class BackendQualifierTests(unittest.TestCase):
         table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
         field = quote_identifier(self.backend._layout.field_name(self.schema.identity, self.schema.fields[1].identity))
         for column, bad, good in [('code', '😀😀', '123'), (field, '1.234', '1.25')]:
-            with sqlite3.connect(self.path) as connection:
+            with _sqlite_mutation(self.path) as connection:
                 connection.execute('UPDATE %s SET %s=?' % (table, column), (bad,))
             with self.assertRaisesRegex(BackendError, 'integrity'): self.read(draft.key)
-            with sqlite3.connect(self.path) as connection:
+            with _sqlite_mutation(self.path) as connection:
                 connection.execute('UPDATE %s SET %s=?' % (table, column), (good,))
 
     def test_legacy_codepoint_only_values_and_receipts_fail_closed_without_repair(self):
@@ -514,7 +543,7 @@ class BackendQualifierTests(unittest.TestCase):
             encoded = _json([['s', legacy_text], ['n', '1.25'], ['n', '0.00']])
             intent = [[str(self.schema.identity), str(draft.key.record_id), legacy_text, 'abc', False, encoded, 1]]
             digest = hashlib.sha256(_json(intent).encode('utf-8')).hexdigest()
-            with sqlite3.connect(self.path) as connection:
+            with _sqlite_mutation(self.path) as connection:
                 connection.execute('UPDATE %s SET code=?,%s=?' % (table, text), (legacy_text, legacy_text))
                 connection.execute('UPDATE commit_receipt SET request_hash=? WHERE operation_id=?', (digest, str(operation)))
             before = self.path.read_bytes(); raw = repr(legacy)
