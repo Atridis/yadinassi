@@ -61,12 +61,12 @@ class TieredWorkflowTests(unittest.TestCase):
         self.assertIn('needs: [admission, light, heavy, build, regex-python310]', verdict)
         self.assertIn("expected='success' if e['PHASE_HEAVY']=='true' else 'skipped'", verdict)
         self.assertIn("e['HEAVY_RESULT']==e['BUILD_RESULT']==expected", verdict)
-        for job, expected_mac in (('light', 2), ('heavy', 3), ('build', 2)):
+        for job, output in (('light', 'light_matrix'), ('heavy', 'heavy_matrix'), ('build', 'light_matrix')):
             block = section(self.source, job)
-            self.assertEqual(block.count('          - target: mac-'), expected_mac)
-            self.assertEqual(block.count('          - target: mac-arm\n'), 1)
-        # Per-run mac demand is 2 -> 3 -> 2, not all seven at admission.
-        # Other workflows/provider scheduling remain outside this contract.
+            self.assertIn('matrix: ${{ fromJSON(needs.admission.outputs.' + output + ') }}', block)
+            self.assertNotIn('          - target:', block)
+        # Ordinary PR/main mac demand is 1 -> 2 -> 1. Tags/manual remain
+        # 2 -> 3 -> 2; no runner is allocated just to skip its steps.
 
     def test_missing_or_bypassed_phase_dependencies_are_rejected(self):
         for changed in (
@@ -79,14 +79,15 @@ class TieredWorkflowTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 assert_phase_dependencies(self, changed)
 
-    def test_two_separate_intel_jobs_and_one_other_platform_each(self):
-        heavy=section(self.source,'heavy')
-        self.assertEqual(heavy.count('          - target: mac-x86\n'),2)
-        self.assertEqual(heavy.count('            shard_count: 2\n'),2)
-        self.assertEqual(heavy.count('            shard_index: 1\n'),1)
-        for name in ('linux','windows','mac-arm'):
-            self.assertEqual(heavy.count('          - target: '+name+'\n'),1)
-        self.assertIn('fail-fast: false',heavy)
+    def test_heavy_matrix_and_package_matrix_have_no_independent_scope(self):
+        heavy = section(self.source, 'heavy')
+        self.assertIn('matrix: ${{ fromJSON(needs.admission.outputs.heavy_matrix) }}', heavy)
+        self.assertIn('--shard-count ${{ matrix.shard_count }} --shard-index ${{ matrix.shard_index }}', heavy)
+        self.assertIn('fail-fast: false', heavy)
+        build = section(self.source, 'build')
+        self.assertIn('matrix: ${{ fromJSON(needs.admission.outputs.light_matrix) }}', build)
+        self.assertNotIn('github.ref', build.split('    steps:', 1)[0])
+        self.assertNotIn('exclude:', self.source)
 
     def test_verdict_requires_both_tiers_build_and_compatibility(self):
         verdict=section(self.source,'verdict')

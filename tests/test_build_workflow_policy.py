@@ -55,20 +55,27 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
         # absent, even before a PR is opened.
         self.assertEqual(events, "  push:\n    branches: [main]\n    tags: ['**']\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n  workflow_dispatch:\n")
 
-    def test_every_route_keeps_all_four_platforms(self):
-        build = self.source.split('\n  build:\n', 1)[1].split('\n  release:\n', 1)[0]
-        header, steps = build.split('    steps:\n', 1)
-        self.assertIn('    name: Package (${{ matrix.target }})\n', header)
-        self.assertIn('    runs-on: ${{ matrix.os }}\n', header)
-        self.assertIn('      fail-fast: false\n', header)
-        self.assertNotRegex(header, r'(?m)^\s*exclude\s*:')
-        platforms = re.findall(r'          - target: (\S+)\n            os: (\S+)\n            architecture: (\S+)\n', header)
-        self.assertEqual(platforms, [('windows', 'windows-2022', 'x64'),
-                                     ('linux', 'ubuntu-22.04', 'x64'),
-                                     ('mac-x86', 'macos-15-intel', 'x64'),
-                                     ('mac-arm', 'macos-15', 'arm64')])
-        self.assertIn("    if: needs.admission.outputs.heavy == 'true'\n", header)
-        self.assertNotIn('        if:', steps)
+    def test_all_three_matrices_come_from_validated_admission(self):
+        admission = self.source.split('\n  admission:\n', 1)[1].split('\n  light:\n', 1)[0]
+        for output in ('light_matrix', 'heavy_matrix'):
+            self.assertIn('      ' + output + ': ${{ steps.admit.outputs.' + output + ' }}\n', admission)
+        for job, output in (('light', 'light_matrix'), ('heavy', 'heavy_matrix'), ('build', 'light_matrix')):
+            block = self.source.split('\n  ' + job + ':\n', 1)[1]
+            block = re.split(r'\n  [a-z][a-z0-9-]*:\n', block, maxsplit=1)[0]
+            header, steps = block.split('    steps:\n', 1)
+            self.assertIn('    runs-on: ${{ matrix.os }}\n', header)
+            self.assertIn('      fail-fast: false\n', header)
+            self.assertEqual(re.findall(r'^      matrix: (.+)$', header, re.M),
+                             ['${{ fromJSON(needs.admission.outputs.' + output + ') }}'])
+            self.assertNotRegex(header, r'(?m)^\s*(include|exclude)\s*:')
+            self.assertNotIn('        if:', steps)
+            if job != 'light':
+                self.assertIn("    if: needs.admission.outputs.heavy == 'true'\n", header)
+        # Package and light consume the SAME matrix, including ARM on every tag.
+        # Runtime route/ref/phase and complete matrix contents are checked in
+        # test_ci_test_gate; no workflow input may override platform selection.
+        self.assertNotIn('inputs.', self.source)
+        self.assertNotIn('--platforms', self.source)
 
     def test_no_skip_paths_or_error_bypass(self):
         for forbidden in ('paths:', 'paths-ignore:', 'branches-ignore:',

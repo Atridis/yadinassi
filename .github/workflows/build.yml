@@ -56,6 +56,8 @@ jobs:
     outputs:
       heavy: ${{ steps.admit.outputs.heavy }}
       source_sha: ${{ steps.admit.outputs.source_sha }}
+      light_matrix: ${{ steps.admit.outputs.light_matrix }}
+      heavy_matrix: ${{ steps.admit.outputs.heavy_matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -81,20 +83,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: windows
-            os: windows-2022
-            architecture: x64
-          - target: linux
-            os: ubuntu-22.04
-            architecture: x64
-          - target: mac-x86
-            os: macos-15-intel
-            architecture: x64
-          - target: mac-arm
-            os: macos-15
-            architecture: arm64
+      matrix: ${{ fromJSON(needs.admission.outputs.light_matrix) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -132,33 +121,7 @@ jobs:
     if: needs.admission.outputs.heavy == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: windows
-            os: windows-2022
-            architecture: x64
-            shard_count: 1
-            shard_index: 0
-          - target: linux
-            os: ubuntu-22.04
-            architecture: x64
-            shard_count: 1
-            shard_index: 0
-          - target: mac-x86
-            os: macos-15-intel
-            architecture: x64
-            shard_count: 2
-            shard_index: 0
-          - target: mac-x86
-            os: macos-15-intel
-            architecture: x64
-            shard_count: 2
-            shard_index: 1
-          - target: mac-arm
-            os: macos-15
-            architecture: arm64
-            shard_count: 1
-            shard_index: 0
+      matrix: ${{ fromJSON(needs.admission.outputs.heavy_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -196,20 +159,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: windows
-            os: windows-2022
-            architecture: x64
-          - target: linux
-            os: ubuntu-22.04
-            architecture: x64
-          - target: mac-x86
-            os: macos-15-intel
-            architecture: x64
-          - target: mac-arm
-            os: macos-15
-            architecture: arm64
+      matrix: ${{ fromJSON(needs.admission.outputs.light_matrix) }}
     steps:
       - uses: actions/checkout@v7
         with:
