@@ -97,3 +97,11 @@ scalar column descriptions. Its raw observations are retained unchanged. The
 correction preserves explicit aliases; only the measured unaliased Code name is
 localized to `Код`, without a claim about all standard default column names.
 Fresh corrected-source native parity remains required before acceptance.
+
+The [closed scalar catalog XML profile](official-catalog-xml-profile.md#owned-scalar-attribute-profile)
+separately admits the exact owned three-attribute catalog structure verified by
+that strict redump, with validated metadata UUID/name substitutions. It retains
+the source XML unchanged and uses the existing typed SQLite runtime. This is a
+bounded importer increment, not a new native runtime parity result. The minimal
+surrounding Configuration.xml remains synthetic; full Designer configurations
+and Language metadata are not admitted by this profile.
