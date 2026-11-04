@@ -193,7 +193,7 @@ try{
     await click('← Back to records');
   });
   await step(1,async()=>{
-    await click('＋ New record');await input('Code').fill('10');await input('Description').fill('Browser owned record');
+    await click('+ New record');await input('Code').fill('10');await input('Description').fill('Browser owned record');
     await save();await status('Save rejected: duplicate_code');
     assert.equal(await input('Description').inputValue(),'Browser owned record');
     await input('Code').fill('40');await save();await status('Saved');
@@ -213,6 +213,7 @@ try{
   });
   await step(4,async()=>{
     await input('Text').fill('Discard me');
+    assert.equal(await page.getByRole('status').count(),0,'stale_save_status_with_dirty_draft');
     await desktopWorkspace();await lockedNavigation();
     await page.getByText('List preview · refreshed when you return',{exact:true}).waitFor();
     await screenshot('editor.png'); // Populated dark split-view and a retained dirty draft.
@@ -246,6 +247,12 @@ try{
     assert.equal(await page.locator('.references input').count(),0);
     await themePreference('Dark','dark');await desktopWorkspace();
     await page.getByText('Return to records to refresh the list.',{exact:true}).waitFor();
+    await page.setViewportSize({width:960,height:900});
+    const mediumNavigation=await page.locator('aside').boundingBox();
+    const mediumEditor=await page.locator('.editor').boundingBox();
+    const mediumRecords=await page.locator('.records').boundingBox();
+    assert.ok(mediumNavigation.x+mediumNavigation.width<=mediumEditor.x+1,'medium_navigation_overlap');
+    assert.ok(mediumRecords.y>=mediumEditor.y+mediumEditor.height-1,'medium_preview_not_below_editor');
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.locator('.editor').isVisible(),true,'mobile_editor_hidden');
     const editorBox=await page.locator('.editor').boundingBox();
@@ -254,6 +261,9 @@ try{
         'mobile_editor_not_prioritized');
     }
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    const referencesBox=await page.locator('.references').boundingBox();
+    const actionsBox=await page.locator('.editor-actions').boundingBox();
+    assert.ok(actionsBox.y>=referencesBox.y+referencesBox.height-1,'mobile_actions_overlap_references');
     await screenshot('narrow.png');
   });
   await step(7,async()=>{

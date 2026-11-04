@@ -100,7 +100,7 @@ td button { padding: 7px 9px; }
 .references > div { display: flex; justify-content: space-between; gap: 12px; margin: 9px 0; overflow-wrap: anywhere; }
 .references > div > * { min-width: 0; }
 .references p { font-size: 11px; color: var(--muted); line-height: 1.6; margin-bottom: 0; }
-.editor-actions { position: sticky; bottom: 0; border-top: 1px solid var(--rule); border-radius: 0 0 10px 10px; padding: 16px 18px; background: var(--panel); flex-wrap: wrap; z-index: 1; }
+.editor-actions { border-top: 1px solid var(--rule); border-radius: 0 0 10px 10px; padding: 16px 18px; background: var(--panel); flex-wrap: wrap; }
 .app-footer { font-size: 11px; text-align: center; margin: 20px auto 0; line-height: 1.6; }
 @media (max-width: 1199px) and (min-width: 761px) {
   .workspace, .workspace.has-editor { grid-template-columns: 190px minmax(0, 1fr); }

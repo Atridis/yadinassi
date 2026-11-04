@@ -101,7 +101,7 @@ function App(){
         {editor&&<p class="navigation-hint">Close the editor to switch records or catalogs.</p>}
       </aside>
       <section class="panel records" aria-label="Records">{list?<><div class="section-head"><div><h2>{list.catalogName}</h2><span class="muted">{list.total} records</span></div>
-        <button class="primary" disabled={navigationLocked||!snapshot.capabilities.canCreate} onClick={()=>run('create')}>＋ New record</button></div>
+        <button class="primary" disabled={navigationLocked||!snapshot.capabilities.canCreate} onClick={()=>run('create')}>+ New record</button></div>
         {editor&&<p class="preview-note">List preview · refreshed when you return</p>}
         <div class="table-scroll"><table><thead><tr><th>Code</th><th>Description</th><th></th></tr></thead><tbody>
           {list.rows.map(row=><tr key={row.reference.record} class={editor?.reference?.record===row.reference.record?'current-record':undefined}><td class="code">{text(row.code)}</td><td>{text(row.description)||<span class="muted">Untitled</span>}</td>
@@ -114,7 +114,7 @@ function App(){
     {editor&&<section class="panel editor" aria-label="Record editor"><div class="section-head"><div><button class="quiet back" disabled={busy||editor.editingLocked} onClick={()=>run('closeCard',{},true)}>← Back to records</button>
       <h2>{editor.isNew?'New record':'Edit record'} <span class="muted">/ {editor.catalogName}</span></h2></div>
       <span class={'badge '+((localDirty||editor.dirty)?'dirty':'saved')}>{editor.editingLocked?'Outcome pending':localDirty||editor.dirty?'Unsaved changes':editor.saveState==='saved'?'Saved':'No unsaved changes'}</span></div>
-      {editor.status&&<div role="status" class={'notice '+(editor.error?'error':'success')}>{editor.status}</div>}
+      {editor.status&&(!localDirty||editor.error)&&<div role="status" class={'notice '+(editor.error?'error':'success')}>{editor.status}</div>}
       <form onSubmit={e=>{e.preventDefault();run('command',{control:'SaveButton'},true);}}>
         <div class="fields">{editor.fields.filter(field=>field.visible).map(field=><label key={field.control} class={field.kind==='boolean'?'check-field':'field'}>
           <span>{field.title||field.name}</span>

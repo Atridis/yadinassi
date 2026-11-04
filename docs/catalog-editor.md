@@ -84,7 +84,9 @@ No additional read or write API is introduced for this layout.
 Medium windows put the editor beside navigation with the preview underneath.
 At 760 CSS pixels and below the open editor takes priority and navigation/list
 are hidden until return. Controls, long labels and reference text wrap, while
-Save and Discard remain available at the foot of the editor.
+Save and Discard follow the fields and references in normal document flow, so
+the action row never covers editable or read-only content. A new local edit hides
+a stale success notice until the host reports the next outcome.
 
 ### Persistence, cancellation and failures
 
