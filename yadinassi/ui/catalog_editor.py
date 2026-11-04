@@ -176,6 +176,14 @@ class CatalogEditController:
             self.save_state = 'uncertain' if self.pending_commit else 'rejected'
             self.error = error.code
             return FormActionResult((('IsDirty', True), ('Status', 'Save outcome uncertain' if self.pending_commit else 'Save rejected: ' + error.code)))
+        except BaseException:
+            # An interrupted Write can still have a durable receipt. Keep the
+            # editor locked while the exact submitted intent is unresolved.
+            if self.object._pending_write is not None:
+                self.pending_commit = True
+                self.save_state = 'uncertain'
+                self.error = 'uncertain_commit'
+            raise
         self.pending_commit = False
         self.pending_refresh = True
         self.save_state = 'committed'

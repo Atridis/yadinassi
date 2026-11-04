@@ -152,10 +152,20 @@ def main(argv: list[str] | None = None) -> int:
         from .configuration_import import load_configuration_directory
         try:
             configuration = load_configuration_directory(args.import_xml)
-            context = SQLiteDBContext.create(args.create_db, configuration, activate=not args.inactive)
-            context.close()
         except (BackendError, ValueError, OSError):
             print("yadinassi: configuration import refused", file=sys.stderr)
+            return 1
+        try:
+            context = SQLiteDBContext.create(args.create_db, configuration, activate=not args.inactive)
+            context.close()
+        except BackendError as error:
+            if error.code == 'uncertain_commit':
+                print("yadinassi: database creation outcome uncertain; preserve the destination and SQLite journal, and inspect them before retrying or deleting", file=sys.stderr)
+            else:
+                print("yadinassi: database creation failed; if a destination exists, preserve and inspect it before retrying or deleting", file=sys.stderr)
+            return 1
+        except (ValueError, OSError):
+            print("yadinassi: database creation failed; if a destination exists, preserve and inspect it before retrying or deleting", file=sys.stderr)
             return 1
         print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")
         if args.inactive:

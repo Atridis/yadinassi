@@ -128,3 +128,10 @@ distinguishes direct assignment and the method's additional actions.
 New owned SQLite databases use an individual table for each catalog and individual columns for its attributes. Names and identity mapping, the limitations of legacy migration, and the design-only treatment of tabular sections are described in [SQLite catalog layout v2](sqlite-catalog-layout-v2.md).
 
 The migration API requires all old processes stopped and prevented from reconnecting, a verified backup, sufficient disk space and a trusted owned directory. `prepare_v1(path, maintenance=True)` returns a plan that must be saved outside the database before `migrate_v1(path, plan, maintenance=True)`. If the outcome is `uncertain_commit`, keep that exact plan and use `resolve_migration(path, plan, maintenance=True)` while maintaining exclusive access. Never blindly retry. The resolver is read-only; a hot rollback journal can require SQLite recovery under maintenance before a definite result is possible. The API does not itself create a backup or stop other processes. It declines unexpected schema objects or explicit third-party indexes instead of silently dropping them.
+
+# Creation failure safety
+
+Database creation preserves a reserved destination after failure, including an
+uncertain COMMIT. See [creation failure boundary](sqlite-catalog-create-failure.md)
+before retrying or removing a failed destination.
+
