@@ -25,6 +25,12 @@ def weights(tests, seconds=4, intel=None):
 
 
 class PartitionTests(unittest.TestCase):
+    def setUp(self):
+        # Synthetic main() calls must not append fake partitions to CI Summary.
+        env = mock.patch.dict(partition.os.environ, {'GITHUB_STEP_SUMMARY': ''})
+        env.start()
+        self.addCleanup(env.stop)
+
     def test_exact_union_disjoint_two_shards_and_deterministic_balance(self):
         tests = [case('module_%d' % i, 'Case') for i in range(5)]
         history = {}
@@ -140,6 +146,9 @@ class PartitionTests(unittest.TestCase):
             report = json.loads((path/'nested'/'report').read_text(encoding='utf-8'))
             plan = json.loads((path/'nested'/'plan').read_text(encoding='utf-8'))
             self.assertFalse(report['success'])
+            self.assertGreaterEqual(report['discovery_seconds'], 0)
+            self.assertGreaterEqual(report['partition_wall_seconds'], 0)
+            self.assertNotIn('partition_wall_seconds', plan)
             self.assertEqual(report['counts']['failures'], 1)
             self.assertEqual(report['selected_ids'], report['executed_ids'])
             self.assertEqual(report['selected_ids'], plan['selected_ids'])
@@ -229,6 +238,81 @@ class PartitionTests(unittest.TestCase):
         selected.run(unittest.TestResult())
         self.assertEqual(events, ['ran'])
         self.assertEqual(report['selected_ids'], [])
+
+
+    def test_unknown_counts_describe_discovery_and_selected_partition_separately(self):
+        known, new, heavy = case('same', 'Known'), case('same', 'New'), case('other', 'Heavy')
+        history = weights([known, heavy], 100)
+        plan = partition.partition_suite(unittest.TestSuite([
+            unittest.TestSuite([known, new]), unittest.TestSuite([heavy])]), history)
+        selected, light = plan.select('light')
+        _, heavy_report = plan.select('heavy')
+        self.assertEqual(light['unknown_ids'], [partition.identity(new)[0]])
+        self.assertEqual(light['unknown_count'], 1)
+        self.assertEqual(light['unknown_fraction'], 1/3)
+        self.assertEqual(light['selected_unknown_count'], 1)
+        self.assertEqual(heavy_report['selected_unknown_count'], 0)
+        self.assertEqual(heavy_report['unknown_ids'], light['unknown_ids'])
+        self.assertEqual((light['discovered_group_count'], light['unknown_group_count'],
+                          light['selected_group_count']), (2, 1, 1))
+        self.assertEqual(len(light['selected_ids']), 2)
+
+    def test_empty_custom_suite_is_unknown_group_but_not_a_fabricated_test_id(self):
+        plan = partition.partition_suite(unittest.TestSuite([unittest.TestSuite()]), {})
+        _, report = plan.select('light')
+        self.assertEqual(report['unknown_ids'], [])
+        self.assertEqual(report['unknown_count'], 0)
+        self.assertEqual(report['unknown_fraction'], 0)
+        self.assertEqual(report['unknown_group_count'], 1)
+        self.assertEqual(report['selected_group_count'], 1)
+
+    def test_unknown_ids_keep_discovery_order_across_coalesced_groups(self):
+        tests = [case('first', 'A'), case('second', 'B'), case('first', 'C')]
+        nodes = [unittest.TestSuite([test]) for test in tests]
+        plan = partition.partition_suite(unittest.TestSuite(nodes), {})
+        selected, report = plan.select('light')
+        self.assertEqual(report['unknown_ids'], [partition.identity(test)[0] for test in tests])
+        self.assertEqual(list(selected), nodes)
+        self.assertEqual(len(plan.groups), 2)
+
+    def test_cli_wall_timing_encloses_complete_runner_without_group_estimates(self):
+        test = case('synthetic', 'Pass')
+        test_id = partition.identity(test)[0]
+        result = types.SimpleNamespace(
+            executed_ids=[test_id], skipped_fixture_ids=[], testsRun=1,
+            durations={test_id: 0.5}, skipped=[], failures=[], errors=[],
+            expectedFailures=[], unexpectedSuccesses=[], wasSuccessful=lambda: True)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(unittest.TestLoader, 'discover', return_value=unittest.TestSuite([test])), \
+                 mock.patch.object(partition.PartitionRunner, 'run', return_value=result), \
+                 mock.patch.object(partition, 'perf_counter', side_effect=[100, 102, 103, 110]):
+                code = partition.main(['--tier', 'light', '--history', str(root/'missing'),
+                                       '--report', str(root/'report')])
+            report = json.loads((root/'report').read_text(encoding='utf-8'))
+        self.assertEqual(code, 0)
+        self.assertEqual(report['discovery_seconds'], 2)
+        self.assertEqual(report['partition_wall_seconds'], 7)
+        self.assertEqual(report['durations'], {test_id: 0.5})
+        self.assertNotIn('group_wall_seconds', report)
+
+    def test_github_summary_appends_unknown_fraction_and_honest_timing_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            summary = root/'summary'
+            summary.write_text('Earlier step\n', encoding='utf-8')
+            test = case('synthetic', 'Pass')
+            with mock.patch.object(unittest.TestLoader, 'discover', return_value=unittest.TestSuite([test])), \
+                 mock.patch.dict(partition.os.environ, {'GITHUB_STEP_SUMMARY': str(summary)}), \
+                 mock.patch('sys.stderr', io.StringIO()):
+                self.assertEqual(partition.main(['--tier', 'light', '--history', str(root/'missing')]), 0)
+            text = summary.read_text(encoding='utf-8')
+        self.assertTrue(text.startswith('Earlier step\n'))
+        self.assertIn('Unknown IDs in discovery: 1 / 1 (100.00%)', text)
+        self.assertIn('Discovery wall time:', text)
+        self.assertIn('includes class/module fixtures, cleanups and runner reporting', text)
+        self.assertIn('Per-group wall time is not measured', text)
+        self.assertNotIn('synthetic.Pass', text)
 
 
 if __name__ == '__main__':

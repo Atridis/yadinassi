@@ -23,7 +23,7 @@ def refresh(directory, source_sha, run_id):
         require(key not in reports, 'duplicate artifact')
         reports[key] = report
     require(binding['source_sha'] == source_sha and binding['run_id'] == run_id, 'wrong source/run')
-    coverage(binding, reports, True)
+    require(coverage(binding, reports, True)['full_coverage'] is True, 'complete four-platform coverage required')
     weights = {}
     for report in reports.values():
         duration = report['durations']

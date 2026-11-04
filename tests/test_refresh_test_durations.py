@@ -5,12 +5,12 @@ import tempfile
 import unittest
 
 from scripts.refresh_test_durations import refresh
-from test_ci_test_gate import binding, reports, C
+from test_ci_test_gate import binding, push_binding, reports, C
 
 
 class RefreshTestDurationsTests(unittest.TestCase):
     def test_complete_source_bound_data_only_refresh(self):
-        b = binding(); values = reports(b)
+        b = push_binding(); values = reports(b)
         with tempfile.TemporaryDirectory() as directory:
             for index, report in enumerate(values.values()):
                 report['durations'] = {name: float(index+1) for name in report['executed_ids']}
@@ -24,6 +24,16 @@ class RefreshTestDurationsTests(unittest.TestCase):
             sample=Path(directory)/'0'/'partition.json';data=json.loads(sample.read_text())
             data['durations'][next(iter(data['durations']))]=float('nan');sample.write_text(json.dumps(data))
             with self.assertRaises(ValueError):refresh(directory,C,1)
+
+    def test_reduced_pr_and_main_runs_cannot_refresh_four_platform_history(self):
+        for b in (binding(), push_binding('refs/heads/main')):
+            with self.subTest(ref=b['ref']), tempfile.TemporaryDirectory() as directory:
+                for index, report in enumerate(reports(b).values()):
+                    report['durations'] = {name: 1.0 for name in report['executed_ids']}
+                    path = Path(directory)/str(index)/'partition.json'; path.parent.mkdir()
+                    path.write_text(json.dumps(report))
+                with self.assertRaises(ValueError):
+                    refresh(directory, C, 1)
 
     def test_missing_artifact_is_not_a_new_skip_list(self):
         with tempfile.TemporaryDirectory() as directory:
