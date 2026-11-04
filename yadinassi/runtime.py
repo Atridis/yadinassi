@@ -33,6 +33,7 @@ from . import clocks, date_time_conversions, dates, formatting, number_in_words,
 from .chars import BSLChars, CHARS
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
 from .catalogs import BSLCatalogs
+from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .documents import BSLDocuments
 from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
@@ -71,11 +72,11 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
-_TABLE_COLLECTIONS = (BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+_TABLE_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
                       BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                       BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
@@ -171,7 +172,7 @@ class Interpreter:
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
-            database_context.require_active()
+            database_context.require_active(tabular_sections=True)
         self._database_context = database_context
         self._metadata = BSLMetadata(database_context)
         self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
