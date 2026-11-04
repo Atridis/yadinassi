@@ -21,7 +21,7 @@ const env=childEnvironment(process.env,home);
 env.PYTHONPATH=repo+path.delimiter+path.join(repo,'tests');
 const tokens=[],scenarios=[],diagnostics=[];
 let browser,context,page,host,origin='',phase='binding',sandbox=null,durable=null;
-let globalExpired=false;
+let globalExpired=false,rpcRequests=0;
 const diagnostic=(value)=>{if(diagnostics.length<20)diagnostics.push(redact(value,tokens));};
 const report={status:'FAIL',scenarios,diagnostics,sandbox:null,browser:null,durable:null};
 const bounded=(promise,ms,code)=>{
@@ -71,9 +71,47 @@ async function hostClosed(){
   if(host.exitCode===null)await bounded(new Promise(resolve=>host.once('exit',resolve)),8000,'host_close_timeout');
   assert.equal(host.exitCode,0,'host_cleanup_failed');
 }
-const button=name=>page.getByRole('button',{name:name.endsWith(' ›')?new RegExp('^'+name.slice(0,-2)+'\\s*›$'):name,exact:true});
+const button=name=>page.getByRole('button',{name:name.endsWith(' ›')?new RegExp('^'+name.slice(0,-2)+'(?:\\s*›)?$'):name,exact:true});
 const click=async name=>button(name).click();
 const input=name=>page.getByLabel(name,{exact:true});
+const themeKey='yadinassi.catalog.theme';
+async function resolvedTheme(expected){
+  await page.waitForFunction(value=>document.documentElement.dataset.theme===value,expected);
+}
+async function themePreference(preference,resolved){
+  const before=rpcRequests;
+  await input('Color theme').selectOption({label:preference});
+  await resolvedTheme(resolved);
+  // Let rendering/effects finish without issuing or replaying any host event.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(rpcRequests,before,'theme_issued_rpc');
+}
+async function storageContainsOnlyTheme(expected){
+  // Return only a verdict, never capability-bearing storage contents to diagnostics.
+  assert.equal(await page.evaluate(({key,value})=>
+    localStorage.length===1&&localStorage.getItem(key)===value&&sessionStorage.length===0,
+  {key:themeKey,value:expected}),true,'unexpected_browser_storage');
+  assert.equal((await context.cookies()).length,0,'unexpected_browser_cookie');
+}
+async function desktopWorkspace(){
+  const panels=[page.locator('aside'),page.locator('.records'),page.locator('.editor')];
+  const boxes=[];
+  for(const panel of panels){assert.equal(await panel.isVisible(),true,'desktop_panel_hidden');boxes.push(await panel.boundingBox());}
+  assert.ok(boxes.every(box=>box&&box.width>0&&box.height>0),'desktop_panel_empty');
+  for(let i=1;i<boxes.length;i++){
+    assert.ok(boxes[i-1].x+boxes[i-1].width<=boxes[i].x+1,'desktop_panels_not_side_by_side');
+    assert.ok(Math.max(boxes[i-1].y,boxes[i].y)<Math.min(boxes[i-1].y+boxes[i-1].height,
+      boxes[i].y+boxes[i].height),'desktop_panels_not_aligned');
+  }
+  const main=await page.locator('main').boundingBox();
+  assert.ok(main.width>=1240,'desktop_workspace_not_full_width');
+}
+async function lockedNavigation(){
+  const navigation=page.locator('aside nav button, .records button');
+  assert.ok(await navigation.count()>0,'navigation_missing');
+  for(const control of await navigation.all())assert.equal(await control.isDisabled(),true,'editor_navigation_enabled');
+  await page.getByText('Close the editor to switch records or catalogs.',{exact:true}).waitFor();
+}
 const status=async value=>page.getByRole('status').filter({hasText:value}).waitFor();
 async function save(){
   const response=page.waitForResponse(reply=>{
@@ -133,20 +171,25 @@ try{
   }finally{await command.close();}
   await cdp.detach();
   context=await browser.newContext({viewport:{width:1320,height:900},locale:'en-US',
-    timezoneId:'UTC',acceptDownloads:false,serviceWorkers:'block'});
+    timezoneId:'UTC',colorScheme:'light',acceptDownloads:false,serviceWorkers:'block'});
   context.setDefaultTimeout(10000);context.setDefaultNavigationTimeout(15000);
   const probe=await context.newPage();await probe.goto('chrome://sandbox');
   sandbox=sandboxStatus(await probe.locator('body').innerText());await probe.close();
   report.sandbox={requested:true,commandVerified:true,...sandbox};
   await context.route('**/*',route=>allowedRequest(route.request().url(),origin)?route.continue():route.abort('blockedbyclient'));
   page=await context.newPage();
+  page.on('request',request=>{if(request.url()===origin+'/rpc')rpcRequests++;});
   page.on('pageerror',error=>diagnostic('page: '+error.message));
   page.on('console',message=>{if(message.type()==='error')diagnostic('console: '+message.text());});
   let url;
   await step(0,async()=>{
-    url=await startHost();await page.goto(url);await click('Categories ›');
+    url=await startHost();await page.goto(url);
+    await resolvedTheme('dark');assert.equal(await input('Color theme').inputValue(),'dark');
+    assert.equal(await page.evaluate(()=>matchMedia('(prefers-color-scheme: dark)').matches),false);
+    await click('Categories ›');
     await row('Owned category').waitFor();await screenshot('list.png');
     await open('Owned category');assert.equal(await input('Code').inputValue(),'10');
+    await desktopWorkspace();await lockedNavigation();
     await click('← Back to records');
   });
   await step(1,async()=>{
@@ -169,21 +212,46 @@ try{
     await save();await status('No changes');await save();await status('No changes');
   });
   await step(4,async()=>{
-    await input('Text').fill('Discard me');page.once('dialog',dialog=>dialog.dismiss());
+    await input('Text').fill('Discard me');
+    await desktopWorkspace();await lockedNavigation();
+    await page.getByText('List preview · refreshed when you return',{exact:true}).waitFor();
+    for(const [preference,resolved] of [['Light','light'],['Dark','dark'],['System','light']]){
+      await themePreference(preference,resolved);
+      assert.equal(await input('Text').inputValue(),'Discard me','theme_lost_dirty_draft');
+    }
+    const before=rpcRequests;
+    await page.emulateMedia({colorScheme:'dark'});await resolvedTheme('dark');
+    await page.emulateMedia({colorScheme:'light'});await resolvedTheme('light');
+    assert.equal(rpcRequests,before,'system_theme_issued_rpc');
+    assert.equal(await input('Text').inputValue(),'Discard me');
+    await themePreference('Light','light');await storageContainsOnlyTheme('light');
+    page.once('dialog',dialog=>dialog.dismiss());
     await click('← Back to records');await page.getByText('Unsaved changes',{exact:true}).waitFor();
     assert.equal(await input('Text').inputValue(),'Discard me');await click('Discard & return');
     await open('Owned product 10');assert.equal(await input('Text').inputValue(),'Browser scalar');
   });
   await step(5,async()=>{
+    await page.emulateMedia({colorScheme:'dark'});
     await page.reload();await page.getByText('Session capability missing.',{exact:false}).waitFor();
+    await resolvedTheme('light');assert.equal(await input('Color theme').inputValue(),'light');
+    await storageContainsOnlyTheme('light');
     await page.goto(url);await input('Text').waitFor();
     assert.equal(await input('Text').inputValue(),'Browser scalar');
     assert.equal(new URL(page.url()).hash,'');
+    await resolvedTheme('light');await storageContainsOnlyTheme('light');
   });
   await step(6,async()=>{
     assert.equal(await page.locator('.references').getByText('Owned category',{exact:true}).count(),1);
     assert.equal(await page.locator('.references input').count(),0);
+    await themePreference('Dark','dark');await desktopWorkspace();
+    await page.getByText('Return to records to refresh the list.',{exact:true}).waitFor();
     await screenshot('editor.png');await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.locator('.editor').isVisible(),true,'mobile_editor_hidden');
+    const editorBox=await page.locator('.editor').boundingBox();
+    for(const panel of [page.locator('aside'),page.locator('.records')]){
+      if(await panel.isVisible())assert.ok((await panel.boundingBox()).y>=editorBox.y+editorBox.height-1,
+        'mobile_editor_not_prioritized');
+    }
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await screenshot('narrow.png');
   });
