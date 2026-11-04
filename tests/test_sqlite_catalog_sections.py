@@ -363,7 +363,7 @@ class CatalogSectionTests(unittest.TestCase):
         bad_values = (valid[:1] + (1.25,) + valid[2:],
                       valid[:2] + (1,) + valid[3:],
                       valid[:1] + (decimal.Decimal('NaN'),) + valid[2:],
-                      valid[:1] + (decimal.Decimal('1.001'),) + valid[2:],
+                      valid[:1] + (decimal.Decimal('Infinity'),) + valid[2:],
                       valid[:-1] + (CatalogKey(uuid4(), self.category.identity, UUID(int=0)),),
                       valid[:-1] + (CatalogKey(self.backend.database_id, self.category.identity, uuid4()),),
                       valid[:-1])
@@ -578,7 +578,8 @@ class CatalogSectionTests(unittest.TestCase):
         revision = self.create(draft, operation)
         view = self.backend.begin_read()
         try:
-            encoded_values = view._draft(draft)
+            normalized, encoded_values = view._draft(draft)
+            self.assertEqual(normalized, draft)
         finally:
             view.close()
         old_intent = [[str(draft.key.catalog_id), str(draft.key.record_id),

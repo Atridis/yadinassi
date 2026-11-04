@@ -281,14 +281,12 @@ Message(R.Text); Message(N.Text);'''), ['1', '1', 'keep', 'note'])
             self.vm.execute('O.Lines.Clear(); O.Lines.Add();')
             self.assertLessEqual(obj._section_buffer_bytes(), size)
 
-    def test_invalid_numeric_precision_keeps_buffer_without_partial_write(self):
+    def test_numeric_precision_is_adjusted_before_buffer_and_write(self):
         obj, section, row = self.new_row()
         row.set_member('Amount', Decimal('1.234'))
         self.vm.execute('O.Description="pending"; N=O.Notes.Add(); N.Text="note";')
-        with self.assertRaises(Exception):
-            obj.write()
         self.assertTrue(obj.is_new())
-        self.assertEqual(row.get_member('Amount'), Decimal('1.234'))
+        self.assertEqual(row.get_member('Amount'), Decimal('1.23'))
         self.assertEqual(self.vm.execute('O.Notes[0].Text'), 'note')
         self.assertTrue(self.vm.execute('Catalogs.Products.FindByCode("10").IsEmpty()'))
         view = self.context.backend.begin_read()
@@ -296,7 +294,6 @@ Message(R.Text); Message(N.Text);'''), ['1', '1', 'keep', 'note'])
             self.assertIsNone(view.read_catalog(obj._key))
         finally:
             view.close()
-        row.set_member('Amount', Decimal('1.23'))
         obj.write()
         self.assertEqual(self.vm.execute('O.Ref.GetObject().Lines[0].Amount'), Decimal('1.23'))
         self.assertEqual(self.vm.execute('O.Ref.GetObject().Notes[0].Text'), 'note')

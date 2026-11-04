@@ -67,9 +67,7 @@ class BSLCatalogSectionRow(BSLObject):
         key = name.casefold()
         field = self._section._fields.get(key)
         if field is None: raise ValueError('tabular field not found')
-        self._section._owner._manager._stored(field, value)
-        if field.kind == 'string' and len(value) > field.qualifiers[0]:
-            raise ValueError('tabular field text length')
+        value = self._section._owner._manager._assigned(field, value)
         delta = _units(value) - _units(self._values[key])
         if self._section._owner._section_buffer_bytes() + delta > _MAX_BUFFER_BYTES:
             raise ValueError('tabular section buffer limit')

@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 from dataclasses import dataclass
 
 from .catalog_backend import BackendError
+from .catalog_qualifiers import validate_string
 from .sqlite_catalog import (_APPLICATION_ID, _MAX_CONFIG_BYTES, _MAX_DATABASE_BYTES,
                              _MAX_FILES, _MAX_ROW_BYTES, _MAX_ROWS, _decode,
                              _private_parent, _schema)
@@ -121,6 +122,10 @@ def _copy_records(db, database_id, schemas, layout):
             _canonical_uuid(rid)
             if type(revision) is not int or not 1 <= revision < 2**63 or type(code) is not str or len(code) > schema.code_length or type(description) is not str or len(description) > schema.description_length or type(deletion) is not int or deletion not in (0, 1) or type(raw) is not str or len(raw) > _MAX_ROW_BYTES or len(raw.encode('utf-8')) > _MAX_ROW_BYTES*4:
                 raise BackendError('integrity')
+            # Match the strict target read contract before the source table can
+            # be dropped. Migration never applies assignment truncation.
+            validate_string(code, schema.code_length)
+            validate_string(description, schema.description_length)
             values = json.loads(raw)
             if type(values) is not list or len(values) != len(schema.fields): raise BackendError('integrity')
             for value, field in zip(values, schema.fields):

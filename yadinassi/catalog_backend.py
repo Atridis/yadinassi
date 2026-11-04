@@ -3,6 +3,8 @@
 Backend revisions and database identities are internal, not native DataVersion.
 Only an admitted backend can provide write capabilities. Values use exact Python
 str/Decimal/bool/datetime or CatalogKey; runtime adapters own BSL conversion.
+Writes apply bounded String/Decimal metadata qualifiers before canonical intent
+encoding; reads validate persisted values strictly without conversion.
 """
 from dataclasses import dataclass
 from typing import Protocol

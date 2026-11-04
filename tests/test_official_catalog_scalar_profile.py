@@ -149,19 +149,30 @@ class OfficialCatalogScalarProfileTests(unittest.TestCase):
                 self.assertEqual(vm.execute('T.Columns[1].ValueType.NumberQualifiers.FractionDigits'), Decimal(2))
                 self.assertEqual(context.backend.export_configuration(), source)
 
-    def test_wrong_runtime_types_and_unrepresentable_numbers_remain_refused(self):
+    def test_wrong_runtime_types_remain_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             with SQLiteDBContext.create(Path(directory)/'owned.sqlite', import_configuration(files())) as context:
                 vm = Interpreter(database_context=context)
                 vm.execute('P=Catalogs.'+NAME+'.CreateItem();P.Code="1";')
                 for code, error in (('P.Quantity=True;', 'catalog field type mismatch'),
                                     ('P.Active=1;', 'catalog field type mismatch'),
-                                    ('P.Stamp="2024-01-01";', 'Date field requires Date'),
-                                    ('P.Quantity=1.001;P.Write();', 'invalid_input'),
-                                    ('P.Quantity=10000000000;P.Write();', 'invalid_input')):
+                                    ('P.Stamp="2024-01-01";', 'Date field requires Date')):
                     with self.subTest(code=code), self.assertRaisesRegex(BSLRuntimeError, error):
                         vm.execute(code)
                 self.assertIs(vm.execute('P.IsNew()'), True)
+
+    def test_numeric_qualifiers_apply_before_write_without_widening_xml_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = files()
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite', import_configuration(source)) as context:
+                vm = Interpreter(database_context=context)
+                vm.execute('P=Catalogs.'+NAME+'.CreateItem();P.Code="1";P.Quantity=1.005;')
+                self.assertEqual(vm.execute('P.Quantity'), Decimal('1.01'))
+                vm.execute('P.Quantity=10000000000;')
+                self.assertEqual(vm.execute('P.Quantity'), Decimal('9999999999.99'))
+                vm.execute('P.Write();')
+                self.assertEqual(vm.execute('P.Ref.Quantity'), Decimal('9999999999.99'))
+                self.assertEqual(context.backend.export_configuration(), source)
 
     def test_every_scalar_default_property_is_bound_to_the_whole_profile(self):
         root = ET.fromstring(CATALOG.read_bytes())

@@ -37,7 +37,7 @@ P.Lines.Clear();
 P.Write();
 ```
 
-Use the actual names and admitted types in the loaded configuration. Row fields have exact runtime scalar/reference types; string length is checked on assignment, while numeric precision/scale and durable reference existence are checked by the backend when writing. Runtime buffers retain at most 1,000 rows across an owner's sections and a conservative 4 MiB of field content plus row overhead; the stricter backend write budgets still apply.
+Use the actual names and admitted types in the loaded configuration. Row fields retain exact runtime scalar/reference types. The [qualifier assignment contract](catalog-qualifier-assignment.md) truncates String values and rounds/saturates Numbers before changing the detached row, using the same normalizer as owner attributes, Code and Description. Unrepresentable UTF-16 boundaries refuse atomically. Durable reference existence is still checked by the backend when writing. Runtime buffers retain at most 1,000 rows across an owner's sections and a conservative 4 MiB of field content plus row overhead; the stricter backend write budgets still apply.
 
 ## Write, conflict and recovery
 
