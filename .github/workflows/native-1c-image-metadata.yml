@@ -68,7 +68,7 @@ jobs:
           PROBE_WORKFLOW_SHA: ${{ github.workflow_sha }}
           PROBE_REVIEWED_SHA: ${{ inputs.reviewed_probe_sha }}
           PROBE_RUN_ATTEMPT: ${{ github.run_attempt }}
-          PROBE_DRIVER_SHA: 3a284ec135ba3a070fa8837c977f0c9e7fee2ddd3612268fff4489c4a86c6557
+          PROBE_DRIVER_SHA: dc182ab9a87deb731ef183184c69ba9cd809df7603240cb08d70d622db3df1b1
         shell: bash
         run: |
           set -euo pipefail
@@ -122,6 +122,49 @@ jobs:
           
           
           class ProbeError(Exception): pass
+          
+          
+          DIAGNOSTIC_STAGES = frozenset({'image_pull', 'image_inspect', 'image_decode',
+                                        'case_prepare', 'private_cleanup', 'unknown'})
+          DIAGNOSTIC_CLI_CODES = frozenset({
+              'docker_lifecycle_invalid', 'docker_command_timeout', 'docker_command_unavailable',
+              'docker_command_failed', 'docker_output_limit', 'docker_cli_reap_unverified',
+              'docker_command_interrupted',
+          })
+          
+          
+          def fixed_reason(error):
+              # Never stringify an exception: args may contain command output or a path.
+              args = error.args
+              value = args[0] if type(args) is tuple and len(args) == 1 else None
+              return value if type(value) is str else None
+          
+          
+          def public_reason(error):
+              value = fixed_reason(error)
+              return value if isinstance(error, ProbeError) and value in SAFE_REASONS else 'probe_failed'
+          
+          
+          def failure_diagnostic(error, stage, helper=None, exit_code=None):
+              """Closed scalar projection only; no exception message, bytes or context."""
+              stage = stage if type(stage) is str and stage in DIAGNOSTIC_STAGES else 'unknown'
+              result = {'stage': stage, 'category': 'unexpected_error'}
+              if helper is not None and isinstance(error, helper.CliError):
+                  value = fixed_reason(error)
+                  result.update(category='cli_error',
+                                code=value if value in DIAGNOSTIC_CLI_CODES else 'unclassified_cli_error',
+                                docker_cli_reap_verified=error.cli_reap_verified is True)
+              elif isinstance(error, ProbeError):
+                  result.update(category='probe_error', code=public_reason(error))
+              elif stage == 'image_decode':
+                  if isinstance(error, UnicodeError): result['category'] = 'json_encoding'
+                  elif isinstance(error, json.JSONDecodeError): result['category'] = 'json_syntax'
+                  elif isinstance(error, RecursionError): result['category'] = 'json_depth'
+                  elif isinstance(error, TypeError): result['category'] = 'json_input_type'
+              if (stage in ('image_pull', 'image_inspect', 'image_decode')
+                      and type(exit_code) is int and -255 <= exit_code <= 255):
+                  result['exit_code'] = exit_code
+              return result
           
           
           def verify_sources(root):
@@ -230,8 +273,9 @@ jobs:
                           and str(self.start_error) == reason)
           
           
-          def run_cases(helper, env, report):
+          def run_cases(helper, env, report, progress=None):
               for case, script, expected_code, expected_output, expected_error in CASES:
+                  if progress is not None: progress.update(stage='case_prepare', exit_code=None)
                   nonce = uuid.uuid4().hex
                   name = 'onec-docker-probe-' + nonce
                   state = {}
@@ -241,6 +285,7 @@ jobs:
                            'attach_handshake_verified': False,
                            'docker_cli_reap_verified': False, 'container_cleanup_verified': False}
                   report['cases'].append(entry)
+                  if progress is not None: progress['stage'] = 'unknown'
                   started = time.monotonic()
                   try:
                       # Unmodified run_owned delegates each command through a transparent
@@ -284,6 +329,11 @@ jobs:
                   'status': 'failed', 'validation_accepted': False, 'native_test_completed': False,
                   'container_output_exported': False, 'private_payloads_removed': False, 'cases': []}
               directory = None
+              helper = None
+              progress = {'stage': 'unknown', 'exit_code': None}
+              primary_error = None
+              primary = None
+              primary_reason = None
               try:
                   if not execution_platform(): raise ProbeError('platform_not_supported')
                   if (type(context) is not dict or context.get('run_attempt') != '1'
@@ -297,34 +347,68 @@ jobs:
                   report.update(reviewed_workflow_sha=context['workflow_sha'], driver_sha256=driver_hash, run_attempt=1)
                   helper = load_helper(root)
                   with tempfile.TemporaryDirectory(prefix='owned-docker-probe-', dir=temp_root) as directory:
-                      env = docker_environment(Path(directory))
-                      code, raw = helper.bounded_cli(['docker', 'version', '--format',
-                          '[{{json .Client.Version}},{{json .Server.Version}}]'], env,
-                          deadline=time.monotonic() + VERSION_SECONDS, limit=256)
-                      versions = json.loads(raw)
-                      if (code != 0 or type(versions) is not list or len(versions) != 2
-                              or any(type(value) is not str or re.fullmatch(r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9][A-Za-z0-9.-]{0,31})?', value) is None for value in versions)):
-                          raise ProbeError('docker_version_invalid')
-                      report['docker_versions'] = dict(zip(('client', 'server'), versions))
-                      del raw
-                      code, _ = helper.bounded_cli(['docker', 'pull', '--platform', 'linux/amd64', IMAGE], env,
-                          deadline=time.monotonic() + PULL_SECONDS, limit=65536)
-                      if code != 0: raise ProbeError('image_pull_failed')
-                      code, raw = helper.bounded_cli(['docker', 'image', 'inspect', '--format', helper.IMAGE_FORMAT, IMAGE], env,
-                          deadline=time.monotonic() + INSPECT_SECONDS, limit=2048)
-                      image = json.loads(raw)
-                      if (code != 0 or type(image) is not list or image != [IMAGE_ID, 'linux', 'amd64', 0]
-                              or type(image[-1]) is not int):
-                          raise ProbeError('image_identity_invalid')
-                      del raw
-                      run_cases(helper, env, report)
-                      verify_sources(root)
+                      try:
+                          env = docker_environment(Path(directory))
+                          code, raw = helper.bounded_cli(['docker', 'version', '--format',
+                              '[{{json .Client.Version}},{{json .Server.Version}}]'], env,
+                              deadline=time.monotonic() + VERSION_SECONDS, limit=256)
+                          versions = json.loads(raw)
+                          if (code != 0 or type(versions) is not list or len(versions) != 2
+                                  or any(type(value) is not str or re.fullmatch(r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9][A-Za-z0-9.-]{0,31})?', value) is None for value in versions)):
+                              raise ProbeError('docker_version_invalid')
+                          report['docker_versions'] = dict(zip(('client', 'server'), versions))
+                          del raw
+                          progress.update(stage='image_pull', exit_code=None)
+                          code, _ = helper.bounded_cli(['docker', 'pull', '--platform', 'linux/amd64', IMAGE], env,
+                              deadline=time.monotonic() + PULL_SECONDS, limit=65536)
+                          progress['exit_code'] = code
+                          if code != 0: raise ProbeError('image_pull_failed')
+                          progress.update(stage='image_inspect', exit_code=None)
+                          code, raw = helper.bounded_cli(['docker', 'image', 'inspect', '--format', helper.IMAGE_FORMAT, IMAGE], env,
+                              deadline=time.monotonic() + INSPECT_SECONDS, limit=2048)
+                          progress['exit_code'] = code
+                          if code != 0: raise ProbeError('image_identity_invalid')
+                          progress['stage'] = 'image_decode'
+                          image = json.loads(raw)
+                          if (type(image) is not list or image != [IMAGE_ID, 'linux', 'amd64', 0]
+                                  or type(image[-1]) is not int):
+                              raise ProbeError('image_identity_invalid')
+                          del raw
+                          progress.update(stage='case_prepare', exit_code=None)
+                          run_cases(helper, env, report, progress)
+                          progress['stage'] = 'unknown'
+                          verify_sources(root)
+                      except BaseException as error:
+                          primary_error = error
+                          primary = failure_diagnostic(error, progress['stage'], helper, progress['exit_code'])
+                          primary_reason = public_reason(error)
+                          raise
+                      finally:
+                          # Capture the original failure before TemporaryDirectory.__exit__.
+                          # This does not add, repeat or suppress any cleanup operation.
+                          progress.update(stage='private_cleanup', exit_code=None)
                   if Path(directory).exists(): raise ProbeError('private_cleanup_unverified')
                   report.update(status='passed', validation_accepted=True, private_payloads_removed=True)
               except BaseException as error:
-                  reason = str(error)
-                  report['reason'] = reason if isinstance(error, ProbeError) and reason in SAFE_REASONS else 'probe_failed'
-                  report['private_payloads_removed'] = directory is not None and not Path(directory).exists()
+                  cleanup = None
+                  if progress['stage'] == 'private_cleanup' and error is not primary_error:
+                      cleanup = failure_diagnostic(error, 'private_cleanup', helper)
+                  elif primary is None:
+                      primary = failure_diagnostic(error, progress['stage'], helper, progress['exit_code'])
+                      primary_reason = public_reason(error)
+                  report['reason'] = primary_reason if primary_reason is not None else public_reason(error)
+                  try:
+                      report['private_payloads_removed'] = directory is not None and not Path(directory).exists()
+                  except BaseException as cleanup_error:
+                      report['private_payloads_removed'] = False
+                      if cleanup is None:
+                          cleanup = failure_diagnostic(cleanup_error, 'private_cleanup', helper)
+                  report['failure_diagnostic'] = {
+                      'primary': primary,
+                      'cleanup': cleanup if cleanup is not None else {
+                          'stage': 'private_cleanup',
+                          'category': 'completed' if report['private_payloads_removed'] else 'not_verified'},
+                  }
               return report
           
           
