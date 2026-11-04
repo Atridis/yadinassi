@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: Atridis/yadinassi
-          ref: d2250fb3b41dc5781c35294bbfa5cfc75d3cd9c5
+          ref: 53084311c424147275d2a1f7fefc5355fedbdf79
           path: reviewed
           persist-credentials: false
           fetch-depth: 1
@@ -62,13 +62,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C reviewed rev-parse HEAD)" = d2250fb3b41dc5781c35294bbfa5cfc75d3cd9c5
+          test "$(git -C reviewed rev-parse HEAD)" = 53084311c424147275d2a1f7fefc5355fedbdf79
       - name: Four sequential owned-container checks without native platform
         env:
           PROBE_WORKFLOW_SHA: ${{ github.workflow_sha }}
           PROBE_REVIEWED_SHA: ${{ inputs.reviewed_probe_sha }}
           PROBE_RUN_ATTEMPT: ${{ github.run_attempt }}
-          PROBE_DRIVER_SHA: dc182ab9a87deb731ef183184c69ba9cd809df7603240cb08d70d622db3df1b1
+          PROBE_DRIVER_SHA: b055de5383ec9dcbce7f6143e2bc6d563a193f5a5dc75757e40f08f728c79b35
         shell: bash
         run: |
           set -euo pipefail
@@ -90,8 +90,8 @@ jobs:
           import types
           import uuid
           
-          REVIEWED_SHA = 'd2250fb3b41dc5781c35294bbfa5cfc75d3cd9c5'
-          HELPER_SHA = '7488d3c3934de0792afedacc4d9f84072015bcf078d6a84e258cbf30af41b25e'
+          REVIEWED_SHA = '53084311c424147275d2a1f7fefc5355fedbdf79'
+          HELPER_SHA = 'c9aa44e5115cfaef66184323e58f03e8cd816399e4d6fd5844c39247c4f0160d'
           IMAGE = 'docker.io/library/alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d'
           IMAGE_ID = 'sha256:b92841763c5c2140a20eeb2a44e94ebb0e80fd51d9d6b5895ea72fa999525d68'
           PR_FILES = {
@@ -99,7 +99,7 @@ jobs:
               'scripts/native_1c_catalog_deletion_mark_profile.py': '7549d9afe05cda96c266630095b6dc947fdba0ec05aa392f8577d7fc5b07f518',
               'scripts/native_1c_docker_lifecycle.py': HELPER_SHA,
               'tests/test_catalog_deletion_mark_packet.py': '7341d6fac159872a73beec884557fb8587fdd38819ff8c2594e3ae9a06007ab1',
-              'tests/test_native_docker_lifecycle.py': '575de0567fc2619b12a1aff626eab08a7b12c057f6b62c15a48f74b267b2be96',
+              'tests/test_native_docker_lifecycle.py': '55a7480dab3e8a65decc4813a0737ac32535c2d34e0f602ed72f0ef23571bf52',
           }
           CASES = (
               ('success', "printf 'owned-docker-success\\n'", 0, b'owned-docker-success\n', None),
