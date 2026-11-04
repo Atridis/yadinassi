@@ -25,6 +25,11 @@ MAX_TOTAL_BYTES = 16 * 1024 * 1024
 _RESERVED = frozenset(('code','код','description','наименование','ref','ссылка',
     'deletionmark','пометкаудаления','write','записать','isnew','этоновый',
     'metadata','метаданные','getobject','получитьобъект','setnewobjectref','установитьссылкунового'))
+_CONFIGURATION_MODULES = ('ManagedApplicationModule', 'OrdinaryApplicationModule',
+                          'ExternalConnectionModule', 'SessionModule')
+_CATALOG_MODULES = ('ObjectModule', 'ManagerModule')
+_MODULE_PATH_DIAGNOSTIC_LIMIT = 32
+_MODULE_PATH_DIAGNOSTIC_JSON_LIMIT = 8192
 
 
 @dataclass(frozen=True, slots=True)
@@ -496,12 +501,37 @@ def import_configuration(files):
         if len(fields)>64:_fail('field count')
         catalogs.append(CatalogSchema(identity,cname,_int(p,'CodeLength',1,64),_int(p,'DescriptionLength',0,1024),tuple(fields)))
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names)}
+    # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
+    # A source archive may contain unknown modules, but it must not activate or
+    # invent a Configuration owner for a file whose metadata owner is unknown.
+    module_paths = {f'Ext/{kind}.bsl': (config_uuid, kind)
+                    for kind in _CONFIGURATION_MODULES}
+    for cname in catalog_names:
+        for kind in _CATALOG_MODULES:
+            module_paths[f'Catalogs/{cname}/Ext/{kind}.bsl'] = (targets[cname.casefold()], kind)
+    unknown_module_count = 0
+    unknown_module_issues = []
+    unknown_module_json_size = 2  # The enclosing JSON array brackets.
     for entry in accepted:
         if entry.kind=='module':
-            parts=entry.path.split('/');owner=config_uuid;kind=parts[-1][:-4]
-            if len(parts)==4 and parts[0]=='Catalogs' and parts[2]=='Ext' and parts[1].casefold() in targets:owner=targets[parts[1].casefold()]
-            elif not (len(parts)==2 and parts[0]=='Ext'):issues.append('unsupported module path:'+entry.path)
-            modules.append(ConfigurationModule(owner,kind,entry.path))
+            binding = module_paths.get(entry.path)
+            if binding is None:
+                unknown_module_count += 1
+                if unknown_module_issues is not None:
+                    detail = 'unsupported module path:'+entry.path
+                    # Match SQLite's compact ensure_ascii=True representation,
+                    # including surrogate-pair escapes for astral characters.
+                    size = len(json.dumps(detail, ensure_ascii=True, separators=(',', ':')))
+                    size += bool(unknown_module_issues)  # Separator before this item.
+                    if (unknown_module_count > _MODULE_PATH_DIAGNOSTIC_LIMIT or
+                            unknown_module_json_size + size > _MODULE_PATH_DIAGNOSTIC_JSON_LIMIT):
+                        unknown_module_issues = None
+                    else:
+                        unknown_module_issues.append(detail)
+                        unknown_module_json_size += size
+            else:
+                owner, kind = binding
+                modules.append(ConfigurationModule(owner,kind,entry.path))
             code='\n'.join(line.split('//',1)[0] for line in entry.content.decode('utf-8-sig').splitlines()).strip()
             if code:issues.append('module execution unsupported:'+entry.path)
         elif entry.path == 'ConfigDumpInfo.xml':
@@ -510,4 +540,9 @@ def import_configuration(files):
                 issues.append('unsupported configuration file:'+entry.path)
         elif entry.path not in expected:
             _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
+    if unknown_module_issues is None:
+        issues.append('unsupported module paths:'+str(unknown_module_count)+
+                      ' (individual paths retained in configuration files)')
+    else:
+        issues.extend(unknown_module_issues)
     return ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))))
