@@ -68,7 +68,12 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
             self.assertEqual(re.findall(r'^      matrix: (.+)$', header, re.M),
                              ['${{ fromJSON(needs.admission.outputs.' + output + ') }}'])
             self.assertNotRegex(header, r'(?m)^\s*(include|exclude)\s*:')
-            self.assertNotIn('        if:', steps)
+            # Only diagnostic stamp/upload may run after an ordinary failure.
+            conditions = re.findall(r'^        if: (.+)$', steps, re.M)
+            self.assertEqual(conditions, [] if job == 'build' else [
+                "${{ !cancelled() && (steps.partition.outcome == 'success' || steps.partition.outcome == 'failure') && hashFiles('test-results/partition.json') != '' }}",
+                "${{ !cancelled() && steps.stamp.outcome == 'success' }}",
+            ])
             if job != 'light':
                 self.assertIn("    if: needs.admission.outputs.heavy == 'true'\n", header)
         # Package and light consume the SAME matrix, including ARM on every tag.

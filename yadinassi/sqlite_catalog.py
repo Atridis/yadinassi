@@ -596,8 +596,9 @@ class _View:
         if self._backend.storage_version < 3 and schema.tabular_sections: raise BackendError('unsupported')
         return schema
 
-    def _card(self, catalog_id, row, section_budget=None):
-        schema = self.catalog_schema(catalog_id)
+    def _card(self, catalog_id, row, section_budget=None, *, schema):
+        # Callers have already validated this schema in the same transaction.
+        # Reuse it for every row without a per-card SELECT and JSON parse.
         if self._backend.storage_version == 1:
             if type(row[5]) is not str or len(row[5]) > _MAX_ROW_BYTES: raise BackendError('integrity')
             encoded = json.loads(row[5])
@@ -705,7 +706,7 @@ class _View:
         rows = self._connection.execute('SELECT %s FROM %s WHERE %s ORDER BY code COLLATE BINARY,record_id LIMIT ?' % (columns,table,where), args+(request.limit+1,)).fetchall()
         if len(rows) > request.limit: raise BackendError('unsupported')
         section_budget = [0, 0]
-        return tuple(self._card(catalog_id,row,section_budget) for row in rows)
+        return tuple(self._card(catalog_id,row,section_budget,schema=schema) for row in rows)
 
     def _scan_field(self, schema, field):
         if type(field) is str:
@@ -823,7 +824,7 @@ class _View:
                 if len(rows) != count: raise BackendError('integrity')
             if len(rows) != count: raise BackendError('integrity')
             section_budget = [0, 0]
-            cards = [self._card(catalog_id,row,section_budget) for row in rows]
+            cards = [self._card(catalog_id,row,section_budget,schema=schema) for row in rows]
             cards = [card for card in cards if self._scan_matches(schema,card,request.predicate,request.string_comparison)]
             def compare(left, right):
                 for item in request.order:
@@ -848,7 +849,7 @@ class _View:
         table, columns, where, args = self._source(schema)
         if self._backend.storage_version >= 2: self._preflight_v2(schema, record_id=key.record_id)
         row = self._connection.execute('SELECT %s FROM %s WHERE %s AND record_id=?' % (columns,table,where), args+(str(key.record_id),)).fetchone()
-        return None if row is None else self._card(key.catalog_id,row)
+        return None if row is None else self._card(key.catalog_id,row,schema=schema)
 
     def _key(self,key):
         if type(key) is not CatalogKey or key.database_id != self.database_id: raise BackendError('invalid_input')

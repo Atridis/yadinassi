@@ -77,10 +77,36 @@ jobs:
           path: ci-binding/binding.json
           if-no-files-found: error
 
+  javascript:
+    name: JavaScript client and browser support tests
+    needs: admission
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.admission.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-binding-${{ github.run_attempt }}
+          path: ci-binding
+      - name: Verify exact admitted checkout
+        run: python scripts/ci_test_gate.py checkout --binding ci-binding/binding.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Test existing client and browser support contracts
+        run: node --test frontend/catalog/test/client.test.mjs tests/browser_ui/support.test.mjs
+
   light:
     name: Light tests (${{ matrix.target }})
     needs: admission
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.admission.outputs.light_matrix) }}
@@ -106,10 +132,14 @@ jobs:
       - name: Test native launcher without 1C
         run: python integrational_tests/check_launcher.py
       - name: Run every light module (unknown tests included)
+        id: partition
         run: python -m scripts.test_partition --tier light --report test-results/partition.json
       - name: Bind partition result to admitted source
+        id: stamp
+        if: ${{ !cancelled() && (steps.partition.outcome == 'success' || steps.partition.outcome == 'failure') && hashFiles('test-results/partition.json') != '' }}
         run: python scripts/ci_test_gate.py stamp --binding ci-binding/binding.json --report test-results/partition.json --platform ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && steps.stamp.outcome == 'success' }}
         with:
           name: partition-${{ github.run_attempt }}-${{ matrix.target }}-light-0
           path: test-results/partition.json
@@ -123,6 +153,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.admission.outputs.heavy_matrix) }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -143,10 +174,14 @@ jobs:
       - name: Install pinned runtime dependencies
         run: python -m pip install -e . wcwidth==0.8.2
       - name: Run deterministic duration-balanced heavy partition
+        id: partition
         run: python -m scripts.test_partition --tier heavy --shard-count ${{ matrix.shard_count }} --shard-index ${{ matrix.shard_index }} --report test-results/partition.json
       - name: Bind partition result to admitted source
+        id: stamp
+        if: ${{ !cancelled() && (steps.partition.outcome == 'success' || steps.partition.outcome == 'failure') && hashFiles('test-results/partition.json') != '' }}
         run: python scripts/ci_test_gate.py stamp --binding ci-binding/binding.json --report test-results/partition.json --platform ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && steps.stamp.outcome == 'success' }}
         with:
           name: partition-${{ github.run_attempt }}-${{ matrix.target }}-heavy-${{ matrix.shard_index }}
           path: test-results/partition.json
@@ -157,6 +192,7 @@ jobs:
     needs: [admission, heavy]
     if: needs.admission.outputs.heavy == 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.admission.outputs.light_matrix) }}
@@ -192,7 +228,7 @@ jobs:
 
   verdict:
     name: Exact-source test coverage verdict
-    needs: [admission, light, heavy, build, regex-python310]
+    needs: [admission, light, heavy, build, regex-python310, javascript]
     if: always() && needs.admission.result == 'success'
     runs-on: ubuntu-22.04
     permissions:
@@ -219,7 +255,8 @@ jobs:
           HEAVY_RESULT: ${{ needs.heavy.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           COMPAT_RESULT: ${{ needs.regex-python310.result }}
-        run: python -c "import os; e=os.environ; expected='success' if e['PHASE_HEAVY']=='true' else 'skipped'; raise SystemExit(0 if e['LIGHT_RESULT']==e['COMPAT_RESULT']=='success' and e['HEAVY_RESULT']==e['BUILD_RESULT']==expected else 'incomplete CI phase')"
+          JAVASCRIPT_RESULT: ${{ needs.javascript.result }}
+        run: python -c "import os; e=os.environ; expected='success' if e['PHASE_HEAVY']=='true' else 'skipped'; raise SystemExit(0 if e['LIGHT_RESULT']==e['COMPAT_RESULT']==e['JAVASCRIPT_RESULT']=='success' and e['HEAVY_RESULT']==e['BUILD_RESULT']==expected else 'incomplete CI phase')"
       - uses: actions/download-artifact@v8
         with:
           pattern: partition-${{ github.run_attempt }}-*

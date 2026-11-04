@@ -164,3 +164,50 @@ reused as acceptance of the corrected source.
 - Until restoration, preserve every tag/manual ARM job and report the missing
   ordinary ARM coverage explicitly. Do not weaken timing-profile refresh,
   release requirements, Intel shards or native-1C evidence requirements.
+
+## Failure diagnostics and bounded jobs
+
+Light/heavy partition failures keep their original nonzero step and job status.
+If the runner wrote `test-results/partition.json`, the stamp step still verifies
+its admitted checkout and event binding after an ordinary test failure. Only a
+successfully stamped report is uploaded. No `continue-on-error`, retry-to-green
+or success fallback is used. Cancellation, a killed process, discovery exceptions
+before report creation, or a failed stamp do not promise a diagnostic artifact.
+Missing reports and failed job results still fail the final verdict. Heavy and
+package jobs still require their successful predecessor matrices.
+
+Job timeouts are 30 minutes for light, 45 for heavy and 40 for package. These
+bounds include dependency setup and post-test report handling, not runner queue
+wait. The initial limits leave headroom over the audited Windows heavy step
+(24m10s) and package step (17m31s); they are operational limits, not performance
+budgets. Revisit them using subsequent successful runs rather than weakening a
+failing test or masking an ordinary test failure.
+
+The existing JavaScript client and browser-support unit tests run in a separate
+five-minute Linux Node 22 job on every admitted event, including Draft PRs. It
+checks out the same admitted source, installs no npm packages, starts no browser,
+and is required by the final verdict. This closes the missing existing JS unit
+coverage only. It does not claim an actual browser regression or a rebuilt bundle.
+
+## Additive timing diagnostics
+
+Plans/reports list the real unknown IDs, their count and fraction of discovery,
+the selected unknown count, and discovered/unknown/selected fixture-group counts.
+Empty custom suites remain unknown groups but never fabricate unknown test IDs.
+Unknown IDs still keep their complete original group in light. History schema,
+classification threshold, balancing, coverage and original suite execution are
+unchanged.
+
+Reports also measure discovery wall time separately and partition wall time
+around the complete runner invocation. Partition wall includes class/module
+fixtures, cleanups, custom suites and runner reporting; per-test durations retain
+their existing narrower scope. GitHub Step Summary displays these diagnostics.
+Neither wall value is apportioned across tests or used to refresh history.
+
+Per-group wall time is deliberately not claimed. unittest may run a previous
+group's teardown while entering a later group, and coalesced custom groups can
+occupy noncontiguous positions. Wrapping/reordering groups or forcing fixture
+teardown just for measurement would change execution semantics. A future design
+must prove unchanged custom-suite ordering, module/class fixtures and cleanup
+before using group wall measurements for placement. The existing four-platform,
+full-success refresh requirement remains unchanged.
