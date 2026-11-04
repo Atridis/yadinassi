@@ -9,6 +9,7 @@ import os
 import stat
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -166,6 +167,120 @@ class DeletionMarkPacketTests(unittest.TestCase):
         with self.assertRaises(host.CatalogObjectError) as caught:
             host.validate_envelope(json.dumps(payload).encode(), NONCE, hashes, identity)
         self.assertEqual(caught.exception.native_failure['failure_phase'], 'enterprise')
+
+
+class DeletionMarkLifecycleIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        if os.name == 'nt':
+            patcher = mock.patch.object(host.FULL, 'read_regular', side_effect=read_windows_staging_fixture)
+            patcher.start(); self.addCleanup(patcher.stop)
+
+    def test_create_keeps_every_existing_isolation_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp).resolve() / 'staged'
+            hashes = host.stage_inputs(ROOT, staged, host.SMOKE)
+            command = host.container_command(staged, hashes, 'onec-catalog-object-' + NONCE, NONCE, host.SMOKE)
+        expected = ['docker', 'create', '--name', 'onec-catalog-object-' + NONCE,
+            '--label', host.DOCKER.OWNER_LABEL + '=' + NONCE, '--hostname', 'onec-smoke',
+            '--pull', 'never', '--platform', 'linux/amd64', '--network', 'none',
+            '--user', '1000:1000', '--read-only', '--no-healthcheck', '--cap-drop', 'ALL',
+            '--security-opt', 'no-new-privileges:true', '--pids-limit', '256',
+            '--memory', '2g', '--memory-swap', '2g', '--cpus', '2',
+            '--ulimit', 'nofile=1024:1024', '--ulimit', 'fsize=67108864:67108864',
+            '--ipc', 'private', '--shm-size', '128m', '--log-driver', 'none',
+            '--stop-timeout', '10', '--init',
+            '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777',
+            '--mount', f'type=bind,src={staged},dst=/smoke,readonly',
+            '--workdir', '/tmp', '--entrypoint', '/usr/bin/env', host.SMOKE.IMAGE,
+            '-i', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            'HOME=/tmp/home', 'XDG_RUNTIME_DIR=/tmp/runtime', 'DISPLAY=:99',
+            'LANG=ru_RU.UTF-8', 'LC_ALL=ru_RU.UTF-8', 'TZ=Etc/UTC',
+            '/bin/bash', '--noprofile', '--norc', '/smoke/probe.sh',
+            '--catalog-object-suite', '--invocation-nonce', NONCE]
+        self.assertEqual(command, expected)
+
+    def test_mismatched_name_nonce_is_rejected(self):
+        with mock.patch.object(host, 'validate_inputs'):
+            with self.assertRaises(host.CatalogObjectError):
+                host.container_command(Path('/staged'), {}, 'onec-catalog-object-' + 'b' * 32, NONCE, host.SMOKE)
+
+    def run_fake(self, temporary, *, failed_create=False, failed_cleanup=False):
+        from test_native_docker_lifecycle import FakeDocker
+        fake = FakeDocker()
+        # The harness imports its lifecycle via an isolated sibling module.
+        fake.snapshot[2] = host.SMOKE.IMAGE
+        payload, _, raw = envelope()
+        def start(command):
+            fake.started = True
+            return 0, json.dumps(payload).encode()
+        fake.overrides['start'] = start
+        if failed_create:
+            fake.overrides['create'] = host.DOCKER.CliError('docker_command_timeout')
+        if failed_cleanup: fake.overrides['ps'] = 0, b'still-present'
+        real_validate = host.validate_envelope
+        def validate(*args): return real_validate(*args, validator=identity)
+        def export(root, files):
+            self.assertEqual(list(Path(temporary).iterdir()), [])
+            self.assertEqual(fake.calls[-1][0], 'ps')
+            self.assertEqual(files['catalog-object.out'], raw)
+        with mock.patch.dict(os.environ, {'GHCR_TOKEN': 'synthetic', 'GHCR_USER': 'owner'}), \
+             mock.patch.object(host.uuid, 'uuid4', return_value=types.SimpleNamespace(hex=NONCE)), \
+             mock.patch.object(host.FULL, 'repository_provenance', return_value={}), \
+             mock.patch.object(host.FULL, 'interpreter_provenance', return_value={}), \
+             mock.patch.object(host.FULL, 'windows_fingerprints', return_value={}), \
+             mock.patch.object(host.SMOKE, 'run_silent'), \
+             mock.patch.object(host.SMOKE, 'bounded_run', side_effect=AssertionError('legacy runner forbidden')), \
+             mock.patch.object(host.DOCKER, 'bounded_cli', side_effect=fake), \
+             mock.patch.object(host, 'validate_envelope', side_effect=validate) as validated, \
+             mock.patch.object(host, 'export_artifact', side_effect=export) as exported:
+            if failed_create or failed_cleanup:
+                with self.assertRaises(host.DOCKER.LifecycleError) as caught:
+                    host.run(ROOT, Path(temporary), export_native_outputs=True)
+                exported.assert_not_called(); validated.assert_not_called()
+                self.assertFalse(caught.exception.container_cleanup_verified)
+                self.assertEqual(list(Path(temporary).iterdir()), [])
+                return caught.exception, fake
+            result = host.run(ROOT, Path(temporary), export_native_outputs=True)
+            exported.assert_called_once()
+            self.assertTrue(result['container_cleanup_verified'])
+            self.assertTrue(result['docker_cli_reap_verified'])
+            self.assertTrue(result['private_payloads_removed'])
+            self.assertTrue(result['native_measurement_accepted'])
+            self.assertFalse(result['runtime_parity_accepted'])
+            self.assertIn('scripts/native_1c_docker_lifecycle.py', result['host_source_sha256'])
+            return result, fake
+
+    def test_native_envelope_and_export_follow_verified_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.run_fake(temporary)
+
+    def test_create_uncertainty_discards_evidence_without_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            error, fake = self.run_fake(temporary, failed_create=True)
+        self.assertEqual(str(error), 'docker_command_timeout')
+        self.assertEqual([call[0] for call in fake.calls], ['image', 'create'])
+
+    def test_cleanup_uncertainty_discards_attached_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            error, fake = self.run_fake(temporary, failed_cleanup=True)
+        self.assertEqual(error.cleanup_error, 'container_cleanup_unverified')
+        self.assertTrue(fake.started)
+
+    def test_public_failure_distinguishes_cli_reap_from_container_cleanup(self):
+        error = host.DOCKER.LifecycleError('docker_cli_reap_unverified',
+            cli_reap_verified=False, container_cleanup_verified=True)
+        with tempfile.TemporaryDirectory() as temporary, \
+             mock.patch.object(host, 'ROOT', Path(temporary)), \
+             mock.patch.object(host, 'run', side_effect=error), \
+             mock.patch.object(sys, 'argv', ['profile', '--execute-approved-image']), \
+             mock.patch('builtins.print'):
+            self.assertEqual(host.main(), 1)
+            report = json.loads((Path(temporary) / 'native-smoke/catalog-deletion-mark.json').read_bytes())
+        self.assertFalse(report['docker_cli_reap_verified'])
+        self.assertTrue(report['container_cleanup_verified'])
+        self.assertFalse(report['native_measurement_accepted'])
+        self.assertNotIn('native_report', report)
+        self.assertNotIn('cleanup_error', report)
 
 
 if __name__ == '__main__': unittest.main()
