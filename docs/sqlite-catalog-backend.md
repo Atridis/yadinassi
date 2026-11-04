@@ -65,6 +65,14 @@ outcomes, not assumed native concurrency guarantees. The source-bound lane has p
 
 ## Typed catalog scans (Query v1 preparation)
 
+Each read, selection or scan parses its catalog schema once in the pinned
+transaction and reuses it for card decoding. No schema cache survives the
+operation or crosses configuration generations. Cards still include tabular
+sections, and scans retain their existing aggregate section budgets, Python
+filtering and ordering, including `casefold_v1`, exact Decimal values and UUID
+tie-breaking. This removes per-card schema queries without introducing SQL
+filter pushdown or a scalar-only projection contract.
+
 The backend port adds `CatalogScanRequest` with exact typed comparisons, bounded
 AND/OR predicates and ordered field identities. It accepts no SQL, database handles
 or arbitrary callbacks. SQLite applies comparisons to canonical decoded scalars;
