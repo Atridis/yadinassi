@@ -76,26 +76,24 @@ class MigrationTests(unittest.TestCase):
 
     def test_v1_card_reads_reuse_schema_without_changing_values(self):
         from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
-        backend = SQLiteCatalogBackend(self.path)
-        self.addCleanup(backend.close)
-        view = backend.begin_read()
-        self.addCleanup(view.close)
-        queries = []
-        view._connection.set_trace_callback(queries.append)
-        for read in (lambda: view.select_catalog(self.b),
-                     lambda: view.scan_catalog(self.b, CatalogScanRequest(
-                         order=(CatalogOrder('code'),))).cards):
+        # addCleanup runs after tearDown, too late for Windows file removal.
+        with closing(SQLiteCatalogBackend(self.path)) as backend, closing(backend.begin_read()) as view:
+            queries = []
+            view._connection.set_trace_callback(queries.append)
+            for read in (lambda: view.select_catalog(self.b),
+                         lambda: view.scan_catalog(self.b, CatalogScanRequest(
+                             order=(CatalogOrder('code'),))).cards):
+                queries.clear()
+                cards = read()
+                self.assertEqual([card.code for card in cards], ['2', '3'])
+                self.assertEqual(cards[0].values[0].record_id, self.ra)
+                self.assertEqual(cards[1].values[0].record_id, UUID(int=0))
+                self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
+                                     for query in queries), 1)
             queries.clear()
-            cards = read()
-            self.assertEqual([card.code for card in cards], ['2', '3'])
-            self.assertEqual(cards[0].values[0].record_id, self.ra)
-            self.assertEqual(cards[1].values[0].record_id, UUID(int=0))
+            self.assertEqual(view.read_catalog(cards[0].key), cards[0])
             self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
                                  for query in queries), 1)
-        queries.clear()
-        self.assertEqual(view.read_catalog(cards[0].key), cards[0])
-        self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
-                             for query in queries), 1)
 
     def test_backend_reopen_and_old_receipt_resolves_exact_intent(self):
         from yadinassi.catalog_backend import CatalogDraft, CatalogKey, Revision
