@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core" version="2.8" xmlns:md="http://v8.1c.ru/8.3/MDClasses" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings">
+	<WindowOpeningMode>LockOwnerWindow</WindowOpeningMode>
+	<UseForFoldersAndItems>Items</UseForFoldersAndItems>
+	<AutoCommandBar name="ФормаКоманднаяПанель" id="-1" />
+	<Events>
+		<Event name="BeforeWriteAtServer">ПередЗаписьюНаСервере</Event>
+	</Events>
+	<ChildItems>
+		<InputField name="Код" id="1">
+			<DataPath>Объект.Code</DataPath>
+			<ReadOnly>true</ReadOnly>
+			<EditMode>EnterOnInput</EditMode>
+			<ContextMenu name="КодКонтекстноеМеню" id="2" />
+			<ExtendedTooltip name="КодРасширеннаяПодсказка" id="3" />
+		</InputField>
+		<InputField name="Наименование" id="4">
+			<DataPath>Объект.Description</DataPath>
+			<EditMode>EnterOnInput</EditMode>
+			<ContextMenu name="НаименованиеКонтекстноеМеню" id="5" />
+			<ExtendedTooltip name="НаименованиеРасширеннаяПодсказка" id="6" />
+			<Events>
+				<Event name="OnChange">НаименованиеПриИзменении</Event>
+			</Events>
+		</InputField>
+		<InputField name="ВидНоменклатуры" id="7">
+			<DataPath>Объект.ВидНоменклатуры</DataPath>
+			<EditMode>EnterOnInput</EditMode>
+			<ContextMenu name="ВидНоменклатурыКонтекстноеМеню" id="8" />
+			<ExtendedTooltip name="ВидНоменклатурыРасширеннаяПодсказка" id="9" />
+			<Events>
+				<Event name="OnChange">ВидНоменклатурыПриИзменении</Event>
+			</Events>
+		</InputField>
+		<Table name="Склады" id="10">
+			<Representation>List</Representation>
+			<UseAlternationRowColor>true</UseAlternationRowColor>
+			<DataPath>Объект.Склады</DataPath>
+			<ContextMenu name="СкладыКонтекстноеМеню" id="11" />
+			<AutoCommandBar name="СкладыКоманднаяПанель" id="12" />
+			<ExtendedTooltip name="СкладыРасширеннаяПодсказка" id="13" />
+			<ChildItems>
+				<InputField name="СкладыСклад" id="14">
+					<DataPath>Объект.Склады.Склад</DataPath>
+					<EditMode>EnterOnInput</EditMode>
+					<ContextMenu name="СкладыСкладКонтекстноеМеню" id="15" />
+					<ExtendedTooltip name="СкладыСкладРасширеннаяПодсказка" id="16" />
+					<Events>
+						<Event name="OnChange">СкладыСкладПриИзменении</Event>
+					</Events>
+				</InputField>
+			</ChildItems>
+		</Table>
+	</ChildItems>
+	<Attributes>
+		<Attribute name="Объект" id="1">
+			<Type>
+				<v8:Type>cfg:CatalogObject.Номенклатура</v8:Type>
+			</Type>
+			<MainAttribute>true</MainAttribute>
+			<SavedData>true</SavedData>
+		</Attribute>
+	</Attributes>
+</Form>

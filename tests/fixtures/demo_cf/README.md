@@ -1,41 +1,19 @@
 # Demo configuration: MVP acceptance target
 
-`original.zip` preserves the user-supplied `demo_cf.zip` byte for byte.
-Publication of the demo in this public repository was explicitly authorized by
-the owner on 2026-11-05. The archive has been inspected as data: it contains a
-synthetic configuration, no catalog records, credentials or observed personal
-data. The bundled `validate_dump.py` has not been executed by this workflow.
+The editable Designer source is in `source/`: 15 XML and four BSL files.
+It preserves the supplied demo content byte for byte. Filenames use UTF-8 and
+NFC; `Languages/Русский.xml` matches the metadata name. No archive or extraction
+helper is needed. The supplied validator is not included or executed.
 
-SHA-256: `a2ee9c12d9a91000b282ce3ed5c9ec3936e38bdcb4d57ac4ee11871aa9c6799f`.
-Size: 33,250 bytes. Inventory: 40 ZIP entries, 21 text files, including 15 XML,
-four BSL, the original README and its unexecuted validator.
-
-## Working copy
-
-From the repository root, with an owned existing output parent:
-
-```sh
-python scripts/demo_cf_fixture.py /path/to/new/demo_cf
-```
-
-The helper verifies the whole pinned archive and every manifest entry before
-writing. It copies only the 15 XML and four BSL files; it never evaluates BSL,
-imports the bundled Python script or starts 1C. An existing destination refuses.
-Keep the output parent private from concurrent modification. A failed write may
-leave an incomplete destination; do not use it for validation.
-
-The archive stores UTF-8 filename bytes without the ZIP UTF-8 flag. The helper
-decodes them explicitly, checks paths and normalizes filenames to NFC. The only
-NFC change is `Languages/Русский.xml` to `Languages/Русский.xml`, matching metadata.
-File contents are unchanged. `manifest.json` records original decoded names,
-normalized relative paths, lengths and hashes, including omitted entries.
-The working copy is generated, not committed a second time.
+Publication was explicitly authorized by the owner on 2026-11-05. The demo
+contains a synthetic configuration, not catalog records or observed secrets
+or personal data.
 
 ## Evidence boundary
 
 This is a manually prepared hierarchical Designer XML configuration, format 2.8,
 compatibility 8.3.14. Its README requires actual 1C load and compilation checks.
-Well-formed XML and fixture tests do not establish native acceptance or runtime
+Well-formed XML and source structure tests do not establish native acceptance or runtime
 compatibility. This change does not activate the configuration, execute its
 modules, alter importer policy or extend an existing native CI profile.
 
