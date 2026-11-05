@@ -1,0 +1,287 @@
+{
+  "schema": 1,
+  "archive_sha256": "a2ee9c12d9a91000b282ce3ed5c9ec3936e38bdcb4d57ac4ee11871aa9c6799f",
+  "archive_size": 33250,
+  "entries": [
+    {
+      "zip_name_decoded": "demo_cf/",
+      "staged_name": "",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Ext/",
+      "staged_name": "Ext/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Configuration.xml",
+      "staged_name": "Configuration.xml",
+      "size": 4199,
+      "sha256": "348fb96905c8e87e4803ee40fb6de3bca75902c939386346c6872223bec0c719",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Languages/",
+      "staged_name": "Languages/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/validate_dump.py",
+      "staged_name": "validate_dump.py",
+      "size": 7985,
+      "sha256": "898711b32d82803a9ea4d670e789f0e1f4e7e24f733cbf9566ce814017dcf8b0",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/",
+      "staged_name": "Catalogs/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Subsystems/",
+      "staged_name": "Subsystems/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/README.txt",
+      "staged_name": "README.txt",
+      "size": 11112,
+      "sha256": "d78a52bf76c369772eb41ea1a8d624fc60ec73078ad273777c8cffcc5d126d4d",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Ext/ClientApplicationInterface.xml",
+      "staged_name": "Ext/ClientApplicationInterface.xml",
+      "size": 1323,
+      "sha256": "407d37fdc9c46dc9ef03573c8241f574c382e329cc9670bf5eba0d529860b16a",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Ext/HomePageWorkArea.xml",
+      "staged_name": "Ext/HomePageWorkArea.xml",
+      "size": 707,
+      "sha256": "16188438d96e87c4103ba71fe773543c1b71f3ca98e93476f3174d816672010e",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Ext/CommandInterface.xml",
+      "staged_name": "Ext/CommandInterface.xml",
+      "size": 867,
+      "sha256": "b36fdd6e977f07daa40e5b4efd4bf8ad1c536f08402642df470587600848315a",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Languages/Русский.xml",
+      "staged_name": "Languages/Русский.xml",
+      "size": 806,
+      "sha256": "e0438b24e18c15da067173886270b2a4806aff1ea97031b2211c3f586181cf3c",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/",
+      "staged_name": "Catalogs/Номенклатура/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Склады.xml",
+      "staged_name": "Catalogs/Склады.xml",
+      "size": 3922,
+      "sha256": "3f123ebb7eed85b1b845ae8867749e91cde2d6154cd6e8b5da16a74c9658bb3a",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/",
+      "staged_name": "Catalogs/ВидыНоменклатуры/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура.xml",
+      "staged_name": "Catalogs/Номенклатура.xml",
+      "size": 7671,
+      "sha256": "6418b0b403932a38b24c75bb5db5496837cef396897225fa0bc5b80f905fa156",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры.xml",
+      "staged_name": "Catalogs/ВидыНоменклатуры.xml",
+      "size": 4252,
+      "sha256": "723c973982629b92c183d68b24aef8fde1771b34e649e536749354d7a14cc2d0",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Subsystems/НормативнаяИнформация.xml",
+      "staged_name": "Subsystems/НормативнаяИнформация.xml",
+      "size": 1271,
+      "sha256": "e824868068ac9018757c8fea8adbe4eee1c597a82e0fd6d8215c8d2f94858412",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/",
+      "staged_name": "Catalogs/Номенклатура/Forms/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Ext/",
+      "staged_name": "Catalogs/Номенклатура/Ext/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/Forms/",
+      "staged_name": "Catalogs/ВидыНоменклатуры/Forms/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаЭлемента.xml",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаЭлемента.xml",
+      "size": 993,
+      "sha256": "0d55e449ebff7d194f09af8c92dff5fd53c05db17927a0c478dfae9ad9a7dc6e",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаСписка.xml",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаСписка.xml",
+      "size": 985,
+      "sha256": "ce2e8373aab443a70990c7c1a7f1166e2efc45f025952959ae48de4553f474c2",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаЭлемента/",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаЭлемента/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаСписка/",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаСписка/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Ext/ObjectModule.bsl",
+      "staged_name": "Catalogs/Номенклатура/Ext/ObjectModule.bsl",
+      "size": 4964,
+      "sha256": "b329bc9a92db51032415bc62f779672acff65beb081237105adedab0f16edec9",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml",
+      "staged_name": "Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml",
+      "size": 993,
+      "sha256": "ccf4960ad91cc507a0e8165c973f79d88c9fe5e1773d1bf8fd1bb90584275a28",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/",
+      "staged_name": "Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаСписка/Ext/",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаСписка/Ext/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/",
+      "staged_name": "Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form.xml",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form.xml",
+      "size": 3310,
+      "sha256": "ba70bc4129509c979033632d305d4866e0e311f5e25322369bdf3998b055add6",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form.xml",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form.xml",
+      "size": 3397,
+      "sha256": "192dcb7c76a5805afdff477c9bc27f1f67149f1aa53be5a0894dcae931c4afc6",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/",
+      "staged_name": "Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copied": false
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form.xml",
+      "staged_name": "Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form.xml",
+      "size": 1862,
+      "sha256": "3d5d1cdf429fbc5ece392c4bc4df6621c8753f152c8260a1aa5a83557a2a088d",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl",
+      "size": 3184,
+      "sha256": "86bccc60f288b6d8bec57dd01701b3535a73c297b1a42a97d2f5528f066426e3",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl",
+      "staged_name": "Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl",
+      "size": 2195,
+      "sha256": "cedc20b94809fc639f72ee65d180eb5e6dadb647e02a2ed02d85af7dd1533127",
+      "copied": true
+    },
+    {
+      "zip_name_decoded": "demo_cf/Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl",
+      "staged_name": "Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl",
+      "size": 1642,
+      "sha256": "1362d0c9ab909625f98648a719e87422dd7665634e2cc2e55ce01517a198f53f",
+      "copied": true
+    }
+  ]
+}
