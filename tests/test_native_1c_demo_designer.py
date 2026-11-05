@@ -1,6 +1,6 @@
 import copy
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import tempfile
 import unittest
 from scripts import native_1c_demo_designer as demo
@@ -29,7 +29,7 @@ class DemoDesignerTests(unittest.TestCase):
         self.assertNotIn('ENTERPRISE', str(commands))
 
     def test_container_isolation(self):
-        cmd = demo.container_command(Path('/tmp/owned'), 'a' * 32)
+        cmd = demo.container_command(PurePosixPath('/tmp/owned'), 'a' * 32)
         self.assertEqual(cmd[:2], ['docker', 'create'])
         for flag, expected in {'--network': 'none', '--user': '1000:1000', '--cap-drop': 'ALL',
                                '--security-opt': 'no-new-privileges:true', '--pull': 'never',
