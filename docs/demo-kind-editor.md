@@ -97,8 +97,8 @@ backend replacement in both pending states, and stale discard through protocol.
 An independent static composition review cleared the controller/DB/renderer
 recovery paths. The renderer's existing 20 JavaScript tests pass and its locked
 asset build succeeds. Asset provenance checks run separately against generated
-outputs. No browser interaction run, screenshot, native 1C managed-form parity,
-full-product editing, or all-twelve-scenario completion is claimed here.
+outputs. These local tests do not establish browser interaction, native 1C
+managed-form parity, full-product editing, or all-twelve-scenario completion.
 
 Commands:
 
@@ -110,3 +110,26 @@ node frontend/catalog/build.mjs
 PYTHONPATH=tests:. python -m unittest test_ui_asset_provenance
 PYTHONPATH=tests:. python -O -m unittest test_ui_asset_provenance
 ```
+
+## Exact-source browser acquisition
+
+The explicit `codex/ui-browser-reviewed` acquisition now runs
+`tests/browser_ui/demo_kind_browser_qa.mjs` against the complete original demo
+source and a fresh disposable v6 database. It verifies eight browser flows:
+read-only Code; blur normalization/client feedback; refused short-name Save;
+pointer blur-to-Save ordering; successful edit/numbering; unchanged repeated
+Save; dirty Back/Discard; reload/reattach and process restart with durable reopen.
+
+The existing workflow keeps its ordinary unprivileged runner, locked
+Playwright/browser, enabled Chromium sandbox, read-only permissions and exact
+artifact allowlist. It does not disable sandbox features or alter system security.
+The acquisition is capped at 200 forwarded RPCs and a three-minute overall
+budget, including a cleanup reserve. Only the owned loopback application is
+reachable from pages. Reports bind the exact commit/tree, source hashes and
+screenshots; no database, browser profile, launch token or raw browser logs are
+published. A failed or incomplete run is never browser acceptance evidence.
+
+The first local acquisition attempt on the development executor failed during
+sandbox launch before any scenario completed. No sandbox bypass was attempted.
+Success must be established by the source-bound CI artifact for the exact head;
+merely having this workflow or a passing host-only test is insufficient.
