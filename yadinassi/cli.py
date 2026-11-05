@@ -138,20 +138,22 @@ def main(argv: list[str] | None = None) -> int:
                         help="файл SQLite базы yadinassi с конфигурацией и данными")
     parser.add_argument("--create-db", metavar="SQLITE_FILE", help="создать новую SQLite базу из XML конфигурации")
     parser.add_argument("--import-xml", metavar="DIRECTORY", help="каталог штатной XML-выгрузки конфигурации")
+    parser.add_argument("--numbering-policy", choices=("explicit", "decimal_v1"),
+                        help="локальная политика нумерации при импорте; не гарантия совместимости с 1С")
     parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(arguments)
-    if args.create_db is not None or args.import_xml is not None or args.inactive:
+    if args.create_db is not None or args.import_xml is not None or args.inactive or args.numbering_policy is not None:
         if args.create_db is None or args.import_xml is None:
             parser.error("--create-db и --import-xml требуются вместе")
         if args.f is not None or args.file is not None or args.command is not None:
             parser.error("импорт конфигурации не совмещается с исполнением или --f")
         from .configuration_import import load_configuration_directory
         try:
-            configuration = load_configuration_directory(args.import_xml)
+            configuration = load_configuration_directory(args.import_xml, numbering_policy=args.numbering_policy or 'explicit')
         except (BackendError, ValueError, OSError):
             print("yadinassi: configuration import refused", file=sys.stderr)
             return 1

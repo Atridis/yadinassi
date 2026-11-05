@@ -479,7 +479,13 @@ def _accept_source_files(files):
     return tuple(accepted)
 
 
-def import_configuration(files):
+def import_configuration(files, *, numbering_policy='explicit'):
+    """Import closed XML; decimal_v1 is an explicit local numbering choice.
+
+    It does not assert native numbering parity or waive other activation gates.
+    """
+    if type(numbering_policy) is not str or numbering_policy not in ('explicit', 'decimal_v1'):
+        _fail('unsupported numbering policy')
     accepted = _accept_source_files(files)
     if 'Configuration.xml' not in files:_fail('missing Configuration.xml')
     config,_,config_root=_object(files['Configuration.xml'],'Configuration',include_root=True);config_uuid=_uuid(config.get('uuid'));props=_props(config)
@@ -516,8 +522,11 @@ def import_configuration(files):
         else:
             if generated & used:_fail('duplicate generated metadata UUID')
             used.update(generated)
+        auto_numbering = _text(p, 'Autonumbering', 'false')
+        if auto_numbering not in ('false', 'true') or (auto_numbering == 'true' and numbering_policy != 'decimal_v1'):
+            _fail('unsupported catalog semantics')
         if (_text(p,'Hierarchical','false')!='false' or _text(p,'CodeType','String')!='String'
-                or _text(p,'Autonumbering','false')!='false' or _text(p,'CheckUnique','true')!='true'
+                or _text(p,'CheckUnique','true')!='true'
                 or _text(p,'CodeSeries','WholeCatalog')!='WholeCatalog'):_fail('unsupported catalog semantics')
         owners=p.get('{'+MD+'}Owners')
         if owners is not None and (len(owners) or (owners.text or '').strip(_XML_WHITESPACE)):_fail('catalog owners unsupported')
@@ -565,7 +574,9 @@ def import_configuration(files):
                 if len(sections)>16 or section_count>512:_fail('tabular section count')
             else:_fail('catalog child object unsupported')
         if len(fields)>64:_fail('field count')
-        catalogs.append(CatalogSchema(identity,cname,_int(p,'CodeLength',1,64),_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections)))
+        numbering = 'decimal_v1' if auto_numbering == 'true' else 'explicit'
+        code_length = _int(p, 'CodeLength', 1, 9 if numbering == 'decimal_v1' else 64)
+        catalogs.append(CatalogSchema(identity,cname,code_length,_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections),numbering))
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names)}
     # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
     # A source archive may contain unknown modules, but it must not activate or

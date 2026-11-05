@@ -1,10 +1,10 @@
 # Atomic local catalog numbering and durable write outcomes
 
 This is an explicitly host-authored local `decimal_v1` contract, not measured
-native 1C automatic-numbering parity. It does not admit `Autonumbering=true`
-Designer XML, execute configured modules, install forms, or bypass activation
-issues. The existing XML importer remains unchanged and fails closed. This
-increment is infrastructure for a later source-reviewed application profile.
+native 1C automatic-numbering parity. The default XML importer still refuses
+`Autonumbering=true`. An explicit local-policy opt-in now admits that flag only
+within the otherwise supported closed XML profile. It does not execute configured
+modules, install forms, or bypass any other activation issues.
 
 ## Closed metadata and storage profile
 
@@ -64,11 +64,36 @@ failure before commit leaves the code unassigned and the edit buffer available.
 
 No UI automatic-numbering control, general configuration activation, BeforeWrite
 dispatch, schema-update workflow or native-numbering behavior claim is added.
-A later XML admission must be separately reviewed with its complete modules and
-forms, rather than replacing unsupported source with this local profile.
+Full demo XML admission still needs separate review of its complete modules and
+forms; this option cannot replace unsupported source with a local profile.
 
 The native follow-up must measure initial formatting, explicit/manual code
 interaction, width exhaustion, failed writes/cancellation, assignment timing,
 deleted records/marks and repeated or uncertain client calls within an authorized
 bounded experiment. Local SQLite tests establish the specified local atomicity
 and recovery contract, not those unmeasured native rules.
+
+## Explicit XML import opt-in
+
+Use `import_configuration(files, numbering_policy="decimal_v1")` or
+`load_configuration_directory(directory, numbering_policy="decimal_v1")` to choose
+this local contract deliberately. Only catalogs whose source says
+`Autonumbering=true` select it, and their String code width must be 1–9.
+Unflagged catalogs retain explicit codes. Hierarchy, owners, nonunique codes,
+other series, executable modules, forms and unknown metadata retain their
+existing refusals. In particular, exact rich Designer envelope witnesses that
+pin `Autonumbering=false` are not widened: changing their flag still prevents
+activation. The new active path covers the minimal closed XML envelope, not
+arbitrary Designer dumps. Source files are retained byte-for-byte, and generated
+numbering policy is persisted in the v4 schema. No existing database is migrated.
+
+CLI example for an otherwise admitted source package:
+
+```
+python -m yadinassi --create-db app.sqlite --import-xml source --numbering-policy decimal_v1
+python -m yadinassi --f app.sqlite -c 'O=Catalogs.Categories.CreateItem();O.Description="saved";O.Write();Message(O.Code);'
+```
+
+The option is creation-only and cannot be combined with execution or `--f`.
+It does not activate the original full demo configuration or establish native
+numbering parity. The full demo's unsupported form/module gates remain closed.

@@ -56,7 +56,7 @@ def _host_directory(directory):
     return os.path.realpath(path)
 
 
-def load_configuration_directory(directory):
+def load_configuration_directory(directory, *, numbering_policy='explicit'):
     raw = os.fspath(directory)
     if type(raw) is not str or not raw or '\x00' in raw or raw.startswith(('//','\\\\')):
         raise ValueError('invalid configuration directory')
@@ -116,4 +116,4 @@ def load_configuration_directory(directory):
                 total+=len(content);files[logical]=content
     except OSError:
         raise ValueError('configuration source unavailable') from None
-    return import_configuration(files)
+    return import_configuration(files, numbering_policy=numbering_policy)
