@@ -54,3 +54,43 @@ Commit receipts include canonical section UUIDs, ordered row UUIDs and typed val
 - Existing owner, metadata, file, SQLite schema and 256 MiB database limits still apply. Some limits overlap, so individual maxima are not guaranteed simultaneously.
 
 All test data uses temporary owned SQLite fixtures. No real user database is modified by the test suite. Local fixture tests establish this implementation contract only; they do not replace future native behavior measurements.
+
+## Read-only section scans
+
+`CatalogReadView.scan_catalog_section(catalog_id, section_id, request)` reads one
+declared section directly from its UUID-mapped table. It returns detached
+`CatalogSectionRecord(owner, section_id, row)` values in `CatalogSectionPage`.
+The existing typed `CatalogScanRequest` supplies predicates, ordering, page size,
+continuation and string comparison policy. Its only standard field is `ref`,
+meaning the owner `CatalogKey`; custom field UUIDs belong to the selected section.
+No arbitrary SQL or physical table name crosses the logical backend boundary.
+
+This is a v3 read-view operation, including read-only openings. Mutable write
+views refuse it. The same pinned transaction and single-use continuation rules
+apply as for catalog scans. Starting a new catalog or section traversal invalidates
+the previous traversal on that view. Tokens bind the source kind, catalog and
+section UUIDs, predicate, order, page size and string comparison policy. Equal
+order keys use owner UUID followed by row UUID as an internal deterministic tie
+breaker; neither native row order nor native line numbering is claimed.
+
+Before payload fetch, the complete chosen section is checked for storage types,
+encoded sizes, per-owner row positions, missing owners and dangling nonempty
+reference fields. A missing owner is an error, not a row silently removed by an
+inner join. Every row and every custom field is then decoded and validated before
+predicates or pages are applied. A restrictive filter or TOP cannot hide a
+malformed source row. The scanner does not load unrelated section payloads or
+owner attributes, and is not implemented by flattening `scan_catalog` cards.
+
+Source limits are 10,000 rows and 16 MiB of typed-column bytes plus fixed row
+overhead, with at most 1,000 rows and 1 MiB per owner in the chosen section.
+These are source-local read limits, not a whole-database audit or a relaxation
+of the existing aggregate per-owner write limits. Pages contain at most 1,000
+records. Canonical UUIDs, contiguous stored positions and scoped row identities
+are checked even though row UUIDs and positions are not exposed to BSL.
+Comparisons retain exact Decimal values and the existing typed reference scope;
+string `casefold_v1` remains an explicit local comparison policy.
+
+The [bounded BSL source](catalog-query-v1.md#read-only-tabular-section-source-local-contract)
+adapts these rows to QueryResult. Native section-query behavior has not been
+measured for this increment. It does not change XML activation, UI support,
+configuration migration, or write/recovery semantics.
