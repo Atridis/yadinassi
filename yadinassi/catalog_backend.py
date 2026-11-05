@@ -17,7 +17,7 @@ class BackendError(ValueError):
         if type(code) is not str or code not in {
             'unsupported', 'invalid_input', 'not_found', 'conflict', 'busy',
             'closed', 'integrity', 'storage_error', 'uncertain_commit',
-            'schema_changed', 'duplicate_code', 'duplicate_identity',
+            'schema_changed', 'duplicate_code', 'duplicate_identity', 'code_exhausted',
         }:
             raise ValueError('invalid backend error')
         self.code = code
@@ -48,6 +48,7 @@ class CatalogSchema:
     description_length: int
     fields: tuple[FieldSchema, ...] = ()
     tabular_sections: tuple[TabularSectionSchema, ...] = ()
+    numbering: str = 'explicit'
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,13 @@ class CatalogDraft:
     # None preserves existing contents. An explicit tuple replaces all sections;
     # omitted sections, including all sections when (), become empty.
     tabular_sections: tuple[TabularSectionRows, ...] | None = None
+    auto_number: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogWriteOutcome:
+    revision: Revision
+    code: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +214,7 @@ class Capabilities:
     atomic_transactions: bool = False
     read_consistency: str = 'transaction_snapshot'
     catalog_tabular_sections: bool = False
+    catalog_write_outcomes: bool = False
 
 
 class CatalogReadView(Protocol):
@@ -225,6 +234,7 @@ class CatalogWriteTransaction(CatalogReadView, Protocol):
     def create(self, draft: CatalogDraft) -> None: ...
     def update(self, draft: CatalogDraft, expected_revision: Revision) -> None: ...
     def commit(self) -> tuple[Revision, ...]: ...
+    def commit_outcomes(self) -> tuple[CatalogWriteOutcome, ...]: ...
     def rollback(self) -> None: ...
 
 
@@ -233,4 +243,5 @@ class CatalogBackend(Protocol):
     def begin_read(self) -> CatalogReadView: ...
     def begin_write(self, operation_id: UUID) -> CatalogWriteTransaction: ...
     def resolve_write(self, operation_id: UUID, draft: CatalogDraft, expected_revision: Revision | None = None) -> Revision | None: ...
+    def resolve_write_outcome(self, operation_id: UUID, draft: CatalogDraft, expected_revision: Revision | None = None) -> CatalogWriteOutcome | None: ...
     def close(self) -> None: ...

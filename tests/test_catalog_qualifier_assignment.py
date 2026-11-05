@@ -426,8 +426,8 @@ class BackendQualifierTests(unittest.TestCase):
         from contextlib import nullcontext
         import yadinassi.sqlite_catalog as storage
         original = _View._record_change
-        stages = ('Revision', '_intent', '_json', 'changes_copy', 'intents_copy',
-                  '_changes', '_intents', '_section_write_bytes', '_section_write_rows', 'after_all')
+        stages = ('Revision', 'CatalogWriteOutcome', '_intent', '_json', 'changes_copy', 'intents_copy', 'outcomes_copy',
+                  '_changes', '_intents', '_outcomes', '_section_write_bytes', '_section_write_rows', 'after_all')
         case = 0
         for updating in (False, True):
             for stage in stages:
@@ -441,12 +441,12 @@ class BackendQualifierTests(unittest.TestCase):
                         tx = self.backend.begin_write(operation)
                         try:
                             tx.create(prior)
-                            before = (tx._changes, tx._intents, tx._section_write_bytes, tx._section_write_rows)
-                            def fail(view, *args):
-                                if stage in ('Revision', '_intent', '_json'):
+                            before = (tx._changes, tx._intents, tx._outcomes, tx._section_write_bytes, tx._section_write_rows)
+                            def fail(view, *args, **kwargs):
+                                if stage in ('Revision', 'CatalogWriteOutcome', '_intent', '_json'):
                                     guard = patch.object(storage, stage, side_effect=error_type('injected'))
-                                elif stage in ('changes_copy', 'intents_copy'):
-                                    attribute = '_changes' if stage == 'changes_copy' else '_intents'
+                                elif stage in ('changes_copy', 'intents_copy', 'outcomes_copy'):
+                                    attribute = {'changes_copy': '_changes', 'intents_copy': '_intents', 'outcomes_copy': '_outcomes'}[stage]
                                     class FailingCopy(list):
                                         def __iter__(self): raise error_type('list allocation fault')
                                     setattr(view, attribute, FailingCopy(getattr(view, attribute)))
@@ -457,13 +457,14 @@ class BackendQualifierTests(unittest.TestCase):
                                         object.__setattr__(instance, name, value)
                                     guard = patch.object(_View, '__setattr__', setter, create=True)
                                 else: guard = nullcontext()
-                                with guard: original(view, *args)
+                                with guard: original(view, *args, **kwargs)
                                 if stage == 'after_all': raise error_type('post-bookkeeping fault')
                             with patch.object(_View, '_record_change', fail), self.assertRaises(error_type):
                                 if updating: tx.update(replace(target, description='new'), revision)
                                 else: tx.create(target)
                             self.assertIs(tx._changes, before[0]); self.assertIs(tx._intents, before[1])
-                            self.assertEqual((tx._section_write_bytes, tx._section_write_rows), before[2:])
+                            self.assertIs(tx._outcomes, before[2])
+                            self.assertEqual((tx._section_write_bytes, tx._section_write_rows), before[3:])
                             self.assertFalse(tx._poisoned)
                             self.assertEqual(tx.read_catalog(target.key), expected)
                             revisions = tx.commit()
