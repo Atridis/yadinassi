@@ -5763,7 +5763,9 @@ preserved; actual native acquisition is pending. See
   string/file workflows and basic layout settings. See [scope and verification](docs/json-family.md).
 
 - Ordinary local file/text/binary I/O family: metadata, owned-file workflows,
-  TextReader/TextWriter, encodings, BinaryData and conversions. Native33 accepted; [implemented scope and limits](docs/file-io-family.md).
+  TextReader/TextWriter, encodings, BinaryData and conversions. Native33 accepted
+  for the original nonrecursive slice; recursive FindFiles is a later local
+  extension without new native evidence. [Implemented scope and limits](docs/file-io-family.md).
 
 
 ## Ordinary XML reader/writer family (native XML33 acquired)
@@ -5864,3 +5866,19 @@ is pending; this is not full XSD/XPath or configuration-model support.
 1С 8.3.27.1508 дала 29 и 28 наблюдений; точные исходники и выводы сохранены.
 Неизмеренные локали, сложные параметры и редкие границы остаются `!todo`.
 [Семантика, ограничения и свидетельства](docs/localized-presentations.md).
+
+## Рекурсивный поиск файлов
+
+`НайтиФайлы(Путь, Маска, Истина)` / `FindFiles(Path, Mask, True)` теперь
+обходит вложенные каталоги, независимо от совпадения их имён с маской.
+Возвращаются совпавшие файлы и каталоги. Без маски поиск остаётся проверкой
+единственного пути; Ложь или пропущенный флаг сохраняют прежний нерекурсивный
+режим. Обход итеративный, общий лимит 100000 просмотренных элементов действует
+на всё дерево, включая несовпавшие имена.
+
+Это локальная реализация документированного обычного сценария, а не новый
+native-паритет. Сохранённые 33 native-наблюдения относятся к прежнему срезу.
+Порядок результатов, платформенные правила масок и поведение ссылок в 1С
+не измерены. Существующая политика масок сохраняется; наблюдаемые ссылки и
+Windows reparse points не обходятся, но могут попадать в результат поиска.
+[Точный контракт и границы](docs/file-io-family.md#recursive-findfiles).

@@ -268,7 +268,7 @@ reader/writer and collection workflows are described in [JSON family](docs/json-
 
 ### File I/O remaining scope
 
-TextReader/TextWriter/JSON/XML stream overloads and async methods, sharing locks, recursive searches and deletions,
+TextReader/TextWriter/JSON/XML stream overloads and async methods, sharing locks, recursive deletions,
 wildcard deletion, remote URL schemes, permission setters and exotic codecs
 remain unsupported; `!todo` marks deferred corners. TextReader currently takes
 a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
