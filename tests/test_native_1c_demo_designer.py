@@ -8,8 +8,27 @@ from scripts import native_1c_demo_ci_policy as policy
 
 
 class DemoDesignerTests(unittest.TestCase):
-    def test_exact_archive_source(self):
-        self.assertEqual(len(demo.fixture.fixture_files()), 19)
+    def test_exact_plain_source(self):
+        files = demo.source_files()
+        self.assertEqual(len(files), 19)
+        self.assertEqual(sum(name.endswith('.xml') for name in files), 15)
+        self.assertEqual(sum(name.endswith('.bsl') for name in files), 4)
+        self.assertEqual(len(demo.INPUTS), 21)
+        self.assertNotIn('original.zip', '\n'.join(demo.INPUTS))
+        self.assertNotIn('manifest.json', '\n'.join(demo.INPUTS))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / demo.SOURCE_ROOT
+            source.parent.mkdir(parents=True, exist_ok=True)
+            demo.stage_source(source, files)
+            self.assertEqual(demo.source_files(root), files)
+            (source / 'unexpected.xml').write_bytes(b'<x/>')
+            with self.assertRaises(demo.DemoError):
+                demo.source_files(root)
+            (source / 'unexpected.xml').unlink()
+            (source / 'Configuration.xml').unlink()
+            with self.assertRaises(demo.DemoError):
+                demo.source_files(root)
         self.assertNotIn('validate_dump.py', '\n'.join(demo.INPUTS))
 
     def test_stage_fixed_inputs(self):
@@ -41,11 +60,11 @@ class DemoDesignerTests(unittest.TestCase):
         self.assertTrue(cmd[cmd.index('--mount') + 1].endswith(',readonly'))
 
     def test_redump_unchanged(self):
-        files = demo.fixture.fixture_files()
+        files = demo.source_files()
         self.assertEqual(set(demo.verify_redump(files, files)), set(files))
 
     def test_module_changed_refused(self):
-        files = demo.fixture.fixture_files()
+        files = demo.source_files()
         actual = dict(files)
         name = next(n for n in files if n.endswith('.bsl'))
         actual[name] += b'\n// unexpected source\n'
@@ -53,14 +72,14 @@ class DemoDesignerTests(unittest.TestCase):
             demo.verify_redump(files, actual)
 
     def test_metadata_changed_refused(self):
-        files = demo.fixture.fixture_files()
+        files = demo.source_files()
         actual = dict(files)
         actual['Configuration.xml'] = b'<replaced/>'
         with self.assertRaises(demo.DemoError):
             demo.verify_redump(files, actual)
 
     def test_extra_or_missing_files_refused(self):
-        files = demo.fixture.fixture_files()
+        files = demo.source_files()
         for actual in ({**files, 'extra.bsl': b''}, {n: b for n, b in files.items() if n != 'Configuration.xml'}):
             with self.assertRaises(demo.DemoError):
                 demo.verify_redump(files, actual)
@@ -103,10 +122,10 @@ class DemoDesignerTests(unittest.TestCase):
         self.assertNotIn('secret', json.dumps(demo.failure_report(ValueError('secret'))))
         hashes = demo.inventory(demo.ROOT)
         report = dict(schema=demo.SCHEMA, nonce='a'*32, status='ok', phase='complete', failure='none',
-                      archive_sha256=demo.fixture.ARCHIVE_SHA256, input_sha256=hashes, mismatches={},
-                      redump_sha256={n: demo.digest(b) for n, b in demo.fixture.fixture_files().items()})
+                      input_sha256=hashes, mismatches={},
+                      redump_sha256={n: demo.digest(b) for n, b in demo.source_files().items()})
         demo.validate_report(json.dumps(report).encode(), 'a'*32, hashes)
-        for key, value in [('nonce', 'b'*32), ('failure', 'native raw log'), ('redump_sha256', {}), ('input_sha256', {})]:
+        for key, value in [('schema', 'native-demo-designer-v1'), ('archive_sha256', 'a'*64), ('nonce', 'b'*32), ('failure', 'native raw log'), ('redump_sha256', {}), ('input_sha256', {})]:
             bad = {**report, key: value}
             with self.assertRaises(demo.DemoError):
                 demo.validate_report(json.dumps(bad).encode(), 'a'*32, hashes)

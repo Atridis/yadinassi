@@ -1,7 +1,7 @@
-# Demo archive → isolated native DESIGNER
+# Demo XML/BSL source → isolated native DESIGNER
 
 This is a separate profile, not fixture injection into a closed catalog suite.
-It does not import or execute the archive's `validate_dump.py`, start ENTERPRISE,
+It does not import or execute the supplied `validate_dump.py`, start ENTERPRISE,
 create users/roles, change unsafe-operation protection, run external processors,
 or modify existing smoke/profile inventories or workflows.
 
@@ -44,9 +44,12 @@ process-tree cleanup boundary.
 
 ## Native stages and evidence
 
-1. Pass only the fixed archive, manifest, safe extractor and new profile sources.
-2. Recheck archive identity, CRC/entry hashes, paths and normalized UTF-8 names;
-   materialize exactly 15 XML and 4 BSL files in a fresh owned directory.
+1. Pass only the 19 literal reviewed source paths and the two profile sources.
+   There is no archive, manifest or extraction helper. Git exact-source admission
+   and before/after SHA-256 checks bind the editable XML/BSL bytes.
+2. Read the source tree with bounded no-symlink traversal, reject unexpected or
+   missing files, and copy exactly 15 XML and 4 BSL files unchanged into a fresh
+   owned directory. Filenames retain the previously normalized UTF-8/NFC spelling.
 3. CREATEINFOBASE creates a fresh file database without template/data.
 4. DESIGNER LoadConfigFromFiles loads the untouched source.
 5. DESIGNER CheckConfig runs the selected documented checks.
@@ -77,7 +80,7 @@ MVP acceptance, GUI behavior, storage parity or all twelve demo scenarios.
 
 ## Local source verification
 
-`python3 -B -m unittest tests.test_demo_cf_fixture tests.test_native_1c_demo_designer -v`
+`python3 -B -m unittest tests.test_demo_source tests.test_native_1c_demo_designer -v`
 
 Repeat with `-O` to ensure gates do not depend on assertions. These tests never
 start Docker or 1C. `bash -n scripts/native_1c_demo_designer.sh` checks shell syntax.

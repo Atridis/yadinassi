@@ -1,4 +1,4 @@
-"""Separate, archive-bound DESIGNER-only demo acquisition. No ENTERPRISE route."""
+"""Separate, source-bound DESIGNER-only demo acquisition. No ENTERPRISE route."""
 from __future__ import annotations
 import hashlib
 import io
@@ -16,17 +16,37 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import demo_cf_fixture as fixture
 
-SCHEMA = 'native-demo-designer-v1'
+SCHEMA = 'native-demo-designer-v2'
 VERSION = '8.3.27.1508'
 IMAGE = 'ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728'
 ONEC = '/opt/1cv8t/x86_64/' + VERSION + '/1cv8t'
 CHECK_FLAGS = ('-ConfigLogIntegrity', '-IncorrectReferences', '-ThinClient', '-Server',
                '-ThickClientManagedApplication', '-HandlersExistence', '-ExtendedModulesCheck')
+SOURCE_ROOT = 'tests/fixtures/demo_cf/source'
+SOURCE_FILES = (
+    'Catalogs/ВидыНоменклатуры.xml',
+    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml',
+    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form.xml',
+    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl',
+    'Catalogs/Номенклатура.xml',
+    'Catalogs/Номенклатура/Ext/ObjectModule.bsl',
+    'Catalogs/Номенклатура/Forms/ФормаСписка.xml',
+    'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form.xml',
+    'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl',
+    'Catalogs/Номенклатура/Forms/ФормаЭлемента.xml',
+    'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form.xml',
+    'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl',
+    'Catalogs/Склады.xml',
+    'Configuration.xml',
+    'Ext/ClientApplicationInterface.xml',
+    'Ext/CommandInterface.xml',
+    'Ext/HomePageWorkArea.xml',
+    'Languages/Русский.xml',
+    'Subsystems/НормативнаяИнформация.xml',
+)
 INPUTS = ('scripts/native_1c_demo_designer.py', 'scripts/native_1c_demo_designer.sh',
-          'scripts/demo_cf_fixture.py', 'tests/fixtures/demo_cf/original.zip',
-          'tests/fixtures/demo_cf/manifest.json')
+          *(SOURCE_ROOT + '/' + name for name in SOURCE_FILES))
 PHASES = ('inputs', 'create', 'load', 'check', 'update', 'redump', 'witness', 'complete')
 FAILURES = ('none', 'invalid_input', 'process_failed', 'timeout', 'invalid_result', 'witness_mismatch')
 
@@ -57,6 +77,7 @@ def inventory(root):
 
 
 def stage_inputs(root, target):
+    source_files(root)  # Reject unexpected/missing source paths before staging.
     require(not target.exists() and not target.is_symlink())
     hashes = inventory(root)
     target.mkdir(mode=0o755)
@@ -91,6 +112,23 @@ def dump_files(root):
                     require(total <= 8 * 1048576 and len(result) < 256)
                     result[path.relative_to(root).as_posix()] = raw
     return result
+
+
+def source_files(root=ROOT):
+    files = dump_files(root / SOURCE_ROOT)
+    require(set(files) == set(SOURCE_FILES))
+    return files
+
+
+def stage_source(destination, expected):
+    require(set(expected) == set(SOURCE_FILES))
+    destination.mkdir(mode=0o700, exist_ok=False)
+    for name in SOURCE_FILES:
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('xb') as target:
+            target.write(expected[name])
+    require(dump_files(destination) == expected)
 
 
 def xml_signature(raw):
@@ -184,14 +222,14 @@ def native_quiet():
 
 def native_run(nonce):
     report = dict(schema=SCHEMA, nonce=nonce, status='failed', phase='inputs', failure='invalid_input',
-                  archive_sha256=fixture.ARCHIVE_SHA256, input_sha256={}, redump_sha256={}, mismatches={})
+                  input_sha256={}, redump_sha256={}, mismatches={})
     try:
         require(re.fullmatch('[0-9a-f]{32}', nonce) is not None and os.getuid() == 1000)
         report['input_sha256'] = inventory(ROOT)
         root = Path('/tmp/demo-designer')
         root.mkdir(mode=0o700)
-        fixture.stage(root / 'source')
-        expected = fixture.fixture_files()
+        expected = source_files()
+        stage_source(root / 'source', expected)
         (root / 'redump').mkdir()
         for phase, command in operations(root):
             report['phase'] = phase
@@ -252,13 +290,12 @@ def validate_report(raw, nonce, hashes):
     except (ValueError, UnicodeError):
         raise DemoError('invalid_result') from None
     require(type(report) is dict and set(report) == {'schema', 'nonce', 'status', 'phase', 'failure',
-            'archive_sha256', 'input_sha256', 'redump_sha256', 'mismatches'}, 'invalid_result')
+            'input_sha256', 'redump_sha256', 'mismatches'}, 'invalid_result')
     require(report['schema'] == SCHEMA and report['nonce'] == nonce
-            and report['archive_sha256'] == fixture.ARCHIVE_SHA256
             and report['input_sha256'] == hashes and report['phase'] in PHASES
             and report['failure'] in FAILURES and report['status'] in ('ok', 'failed'), 'invalid_result')
     failures = report['mismatches']
-    require(type(failures) is dict and set(failures) <= set(fixture.fixture_files()) | {'$inventory'}
+    require(type(failures) is dict and set(failures) <= set(SOURCE_FILES) | {'$inventory'}
             and all(type(value) is str and value in ('unexpected_file', 'missing_file', 'module_changed',
                     'metadata_changed', 'invalid_encoding_or_xml') for value in failures.values()), 'invalid_result')
     witness = report['redump_sha256']
@@ -266,9 +303,9 @@ def validate_report(raw, nonce, hashes):
     require(all(type(value) is str and re.fullmatch('[0-9a-f]{64}', value) for value in witness.values()), 'invalid_result')
     if report['status'] == 'ok':
         require(not failures and report['phase'] == 'complete' and report['failure'] == 'none'
-                and set(witness) == set(fixture.fixture_files()), 'invalid_result')
+                and set(witness) == set(SOURCE_FILES), 'invalid_result')
     else:
-        require(report['failure'] != 'none' and set(witness) <= set(fixture.fixture_files()), 'invalid_result')
+        require(report['failure'] != 'none' and set(witness) <= set(SOURCE_FILES), 'invalid_result')
     return report
 
 
@@ -292,7 +329,7 @@ def run_host():
         work = Path(directory).resolve()
         staged = work / 'staged'
         hashes = stage_inputs(ROOT, staged)
-        fixture.fixture_files()  # Verify archive before any native action.
+        source_files()  # Verify bounded exact source inventory before native action.
         auth = work / 'auth'
         auth.mkdir(mode=0o700)
         try:
