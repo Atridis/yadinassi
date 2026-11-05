@@ -1,4 +1,5 @@
 """Host-owned numbering runtime tests; no claim of native 1C behavior."""
+from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -50,7 +51,7 @@ R=O.Lines.Add(); R.Text="row"; N=O.Notes.Add(); N.Text="note";''')
         finally: view.close()
 
     def counter(self):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             return db.execute('SELECT next_value FROM catalog_sequence').fetchone()[0]
 
     def assert_frozen(self, obj):

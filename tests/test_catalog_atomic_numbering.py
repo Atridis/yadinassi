@@ -1,4 +1,5 @@
 """Owned decimal_v1 storage tests, not evidence of native 1C numbering parity."""
+from contextlib import closing
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -57,7 +58,7 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
         finally: view.close()
 
     def counter(self, schema=None):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             return db.execute('SELECT next_value FROM catalog_sequence WHERE catalog_id=?',
                               (str((schema or self.product).identity),)).fetchone()[0]
 
@@ -227,9 +228,9 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
                         "UPDATE catalog_sequence SET next_value='hostile'",
                         'UPDATE catalog_sequence SET next_value=101'):
             with self.subTest(sql=corrupt):
-                with sqlite3.connect(self.path) as db: db.execute(corrupt)
+                with closing(sqlite3.connect(self.path)) as db, db: db.execute(corrupt)
                 with self.assertRaises(BackendError): self.backend.begin_write(uuid4())
-                with sqlite3.connect(self.path) as db:
+                with closing(sqlite3.connect(self.path)) as db, db:
                     db.execute('DELETE FROM catalog_sequence')
                     db.executemany('INSERT INTO catalog_sequence VALUES(?,1)',
                                    [(str(s.identity),) for s in (self.product, self.category)])
@@ -238,7 +239,7 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
     def test_corrupt_receipt_codes_and_shapes_are_not_accepted(self):
         draft, operation = self.draft(), uuid4()
         self.save(draft, operation)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             raw = db.execute('SELECT revisions_json FROM commit_receipt WHERE operation_id=?', (str(operation),)).fetchone()[0]
         entries = json.loads(raw)
         variants = [json.dumps([entries[0][:3]])]
@@ -246,10 +247,10 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
             variants.append(json.dumps([entries[0][:3] + [code]]))
         for encoded in variants:
             with self.subTest(receipt=encoded):
-                with sqlite3.connect(self.path) as db:
+                with closing(sqlite3.connect(self.path)) as db, db:
                     db.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?', (encoded, str(operation)))
                 with self.assertRaises(BackendError): self.backend.resolve_write_outcome(operation, draft)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?', (raw, str(operation)))
         self.assertEqual(self.backend.resolve_write_outcome(operation, draft).code, '01')
 
