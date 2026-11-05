@@ -28,6 +28,7 @@ from .catalog_types import BSLCatalogReference, BSLCatalogType
 
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
 from .text_documents import BSLTextDocument
+from .user_messages import BSLUserMessage
 from .value_storage import BSLValueStorage
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
 from .unique_identifiers import BSLUUID
@@ -59,6 +60,7 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLUserMessage, BSLType.USER_MESSAGE, "UserMessage"),
     (BSLQuery, BSLType.QUERY, "Query"),
     (BSLQueryResult, BSLType.QUERY_RESULT, "QueryResult"),
     (BSLQueryResultSelection, BSLType.QUERY_RESULT_SELECTION, "QueryResultSelection"),

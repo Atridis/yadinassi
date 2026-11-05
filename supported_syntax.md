@@ -1033,3 +1033,12 @@ All normal/optimized local tests remain distinct from pending native40 parity.
 metadata and XML/JSON roundtrip adapters are available for the
 [closed documented schema subset](docs/xdto-family.md). Local workflow tests do
 not establish native equivalence; the ordinary40 profile will calibrate it.
+
+## СообщениеПользователю / UserMessage
+
+Конструктор без параметров; свойства Текст/Text, Поле/Field, ПутьКДанным/DataPath,
+КлючДанных/DataKey и ИдентификаторНазначения/TargetID; процедуры Сообщить/Message()
+и УстановитьДанные/SetData(ОбъектСправочника). Структурированный снимок передаётся
+host callback, либо Текст выводится существующим способом. Привязка к экземпляру
+объекта задаётся host API; автоматическая подсветка и открытие форм отсутствуют.
+Это локальный этап без native-подтверждения. [Контракт](docs/user-messages.md).
