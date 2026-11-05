@@ -14,9 +14,9 @@ The internal format is not a public compatibility contract before a public yadin
 - `TabularRow(identity, values)` carries a nonzero row UUID, scoped to its catalog owner and section. UUID identity is independent of sequence position and all mutable names. Values are a tuple in the section schema's field order.
 - `TabularSectionRows(section_id, rows)` identifies a section by UUID. Row tuple order is significant. A loaded `CatalogCard.tabular_sections` includes every declared section in metadata order, even when empty.
 - `CatalogDraft.tabular_sections=None` means preserve all existing section contents. On create, there are initially no rows. This default preserves old client calls.
-- An explicit tuple means replace all section contents. Sections omitted from that tuple are cleared; `()` clears all. Duplicate/unknown section IDs, duplicate row IDs within one section, invalid types and out-of-range values refuse. No partial patch semantics are inferred.
+- An explicit tuple means replace all section contents. Sections omitted from that tuple are cleared; `()` clears all. Duplicate/unknown section IDs, duplicate row IDs within one section, invalid types and unrepresentable values refuse. String and Decimal values use the bounded [qualifier conversion](catalog-qualifier-assignment.md) before validation and SQL; storage decoding never truncates or rounds. No partial patch semantics are inferred.
 
-`Capabilities.catalog_tabular_sections` is true only for an active v3 backend. A read-only v3 backend supports reading sections but no writes. Explicit nonempty section intents on v1/v2 refuse as unsupported. Existing owner `values` semantics are unchanged.
+`Capabilities.catalog_tabular_sections` is true only for an active v3 backend. A read-only v3 backend supports reading sections but no writes. Explicit nonempty section intents on v1/v2 refuse as unsupported. Owner and section fields use the same qualifier conversion; their exact supported types remain unchanged.
 
 ## Physical layout and names
 
@@ -39,7 +39,7 @@ Renaming or reusing names does not rebind UUIDs. Reopening validates exact metad
 
 ## Atomicity, conflicts and recovery
 
-Owner fields and explicit section replacements execute in the same write transaction under one optimistic owner revision. Every create/update also uses a savepoint. A failure midway through row replacement rolls back that entire owner write, so a caller may catch the failure and safely commit earlier successful writes. Stale revisions cannot alter either the owner or its rows.
+Owner fields and explicit section replacements execute in the same write transaction under one optimistic owner revision. Every create/update also uses a savepoint covering SQL and its revision/receipt bookkeeping. A failure midway through row replacement or bookkeeping rolls back that entire owner write and restores the previous in-memory journal, so a caller may catch the failure and safely commit earlier successful writes after successful cleanup. Interrupted/failed cleanup poisons the transaction and prohibits commit. Stale revisions cannot alter either the owner or its rows.
 
 Explicit replacement performs DELETE/INSERT of only that owner's section rows within the transaction. It never deletes the catalog owner. Setting `deletion_mark` alone preserves rows, references and the owner; physical catalog-object deletion is unsupported. No hidden tombstones are accumulated for section replacement.
 

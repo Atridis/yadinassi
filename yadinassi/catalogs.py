@@ -11,6 +11,7 @@ from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow
 from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES
 from .catalog_backend import TabularSectionRows
+from .catalog_qualifiers import normalize_field, normalize_string
 from .unique_identifiers import BSLUUID
 from .values import BSLObject, HostFunction
 
@@ -109,6 +110,9 @@ class BSLCatalogManager(BSLObject):
         if field.kind=='catalog_ref':return self._catalogs._manager_by_metadata_uuid(field.target_catalog_id).empty_ref()
         if field.kind=='datetime':return BSLDate(0)
         return {'string':'','number':Decimal(0),'boolean':False}[field.kind]
+    def _assigned(self,field,value):
+        self._stored(field,value)
+        return normalize_field(value,field)
     def _defaults(self,ref=None):
         values={'code':'','description':'','deletionmark':False,'ref':ref}
         values.update((f.name.casefold(),self._field_default(f)) for f in self._schema.fields)
@@ -281,12 +285,13 @@ class BSLCatalogObject(BSLObject):
         if key=='ref':raise ValueError('Ref is read-only')
         if key not in self._values:raise ValueError('catalog field not found')
         if key in ('code','description'):
-            if type(value) is not str:raise TypeError('String field required')
+            length=self._manager._schema.code_length if key=='code' else self._manager._schema.description_length
+            value=normalize_string(value,length)
         elif key=='deletionmark':
             if type(value) is not bool:raise TypeError('DeletionMark requires Boolean')
         else:
             f=next(f for f in self._manager._schema.fields if f.name.casefold()==key)
-            self._manager._stored(f,value)
+            value=self._manager._assigned(f,value)
         self._values[key]=value
     def __str__(self):return self._values['description']
 

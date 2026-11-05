@@ -11,8 +11,10 @@ from uuid import UUID, uuid4
 from pathlib import Path
 from functools import wraps, cmp_to_key
 from contextlib import contextmanager
+from dataclasses import replace
 
 from .configuration_import import _host_directory
+from .catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
                                     catalog_ddl, index_ddls, encode_columns, decode_columns)
 from .sqlite_catalog_sections import (SECTION_REGISTRY_DDL, build_section_layout, save_section_layout,
@@ -223,10 +225,10 @@ def _intent(draft, revision, values, sections):
 def _encode(value, field, database_id):
     kind, q = field.kind, field.qualifiers
     if kind == 'string':
-        if type(value) is not str or len(q) != 1 or type(q[0]) is not int or len(value) > q[0]:
+        if len(q) != 1:
             raise BackendError('invalid_input')
-        try: value.encode('utf-8')
-        except UnicodeEncodeError: raise BackendError('invalid_input') from None
+        try: validate_string(value, q[0])
+        except (ValueError, TypeError): raise BackendError('invalid_input') from None
         return ['s', value]
     if kind == 'boolean':
         if type(value) is not bool: raise BackendError('invalid_input')
@@ -237,14 +239,18 @@ def _encode(value, field, database_id):
         digits, scale, sign = q
         if type(digits) is not int or type(scale) is not int or not 1 <= digits <= 38 or not 0 <= scale <= digits:
             raise BackendError('invalid_input')
-        # Fixed-point text is exact, never float or implicit SQLite NUMERIC affinity.
-        with decimal.localcontext() as context:
-            context.prec = 80
-            quantum = decimal.Decimal(1).scaleb(-scale)
-            try: quantized = value.quantize(quantum)
-            except decimal.InvalidOperation: raise BackendError('invalid_input') from None
-            if quantized != value or abs(value) >= decimal.Decimal(10) ** (digits-scale):
-                raise BackendError('invalid_input')
+        try: bound_number(value)
+        except (ValueError, TypeError): raise BackendError('invalid_input') from None
+        # An independent context avoids the caller's precision, rounding, traps,
+        # exponent limits and flags. This remains strict: no value can change.
+        context = decimal.Context(prec=80, rounding=decimal.ROUND_HALF_EVEN,
+            Emin=-999999, Emax=999999, capitals=1, clamp=0,
+            flags=[], traps=[decimal.InvalidOperation])
+        quantum = decimal.Decimal((0, (1,), -scale))
+        try: quantized = context.quantize(value, quantum)
+        except decimal.InvalidOperation: raise BackendError('invalid_input') from None
+        if quantized != value or value.copy_abs() >= decimal.Decimal((0, (1,), digits-scale)):
+            raise BackendError('invalid_input')
         if sign == 'Nonnegative' and value < 0:
             raise BackendError('invalid_input')
         return ['n', format(quantized, 'f')]
@@ -588,7 +594,7 @@ class SQLiteCatalogBackend:
         if receipt is None: return None
         view = self.begin_read()
         try:
-            values = view._draft(draft)
+            draft, values = view._draft(draft)
             sections = view._draft_sections(draft)
             if expected_revision is None:
                 revision = 1
@@ -601,6 +607,10 @@ class SQLiteCatalogBackend:
             digest = hashlib.sha256(_json(intent).encode('utf-8')).hexdigest()
             if digest != receipt[0] or len(receipt[1]) != 1:
                 raise BackendError('conflict')
+            expected = Revision(self.database_id, self.configuration_generation,
+                draft.key.catalog_id, draft.key.record_id, str(revision))
+            if receipt[1][0] != expected:
+                raise BackendError('integrity')
             return receipt[1][0]
         finally: view.close()
 
@@ -612,10 +622,23 @@ class SQLiteCatalogBackend:
         try:
             row = connection.execute('SELECT request_hash,revisions_json FROM commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone()
             if row is None: return None
-            if type(row[0]) is not str or len(row[0]) != 64 or type(row[1]) is not str or len(row[1]) > _MAX_ROW_BYTES: raise BackendError('integrity')
-            revisions = tuple(Revision(self.database_id,self.configuration_generation,UUID(c),UUID(r),v)
-                              for c,r,v in json.loads(row[1]))
-            return (row[0], revisions)
+            if (type(row[0]) is not str or len(row[0]) != 64 or any(c not in '0123456789abcdef' for c in row[0])
+                    or type(row[1]) is not str or len(row[1]) > _MAX_ROW_BYTES): raise BackendError('integrity')
+            entries = json.loads(row[1])
+            if type(entries) is not list or len(entries) > _MAX_ROWS: raise BackendError('integrity')
+            revisions = []
+            for entry in entries:
+                if type(entry) is not list or len(entry) != 3 or any(type(v) is not str for v in entry):
+                    raise BackendError('integrity')
+                c, r, token = entry
+                if len(c) != 36 or len(r) != 36: raise BackendError('integrity')
+                catalog, record = UUID(c), UUID(r)
+                if not catalog.int or not record.int or str(catalog) != c or str(record) != r:
+                    raise BackendError('integrity')
+                if (not 1 <= len(token) <= 19 or not token.isascii() or not token.isdecimal()
+                        or token.startswith('0') or not 1 <= int(token) < 2**63): raise BackendError('integrity')
+                revisions.append(Revision(self.database_id,self.configuration_generation,catalog,record,token))
+            return (row[0], tuple(revisions))
         finally: connection.close()
 
     def close(self):
@@ -626,7 +649,7 @@ class SQLiteCatalogBackend:
 class _View:
     def __init__(self, backend, connection, operation_id):
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
-        self._closed = False; self._changes = []; self._intents = []
+        self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
         self._section_write_bytes = 0
         self._section_write_rows = 0
@@ -638,7 +661,7 @@ class _View:
             raise BackendError('schema_changed')
 
     def _require(self, write=False, mutate=False):
-        if self._closed: raise BackendError('closed')
+        if self._closed or self._poisoned: raise BackendError('closed')
         if write and self._operation_id is None: raise BackendError('unsupported')
         if mutate and len(self._changes) >= _MAX_ROWS: raise BackendError('unsupported')
 
@@ -672,6 +695,8 @@ class _View:
         if type(encoded) is not list: raise BackendError('integrity')
         if len(encoded) != len(schema.fields): raise BackendError('integrity')
         if type(row[1]) is not int or not 1 <= row[1] < 2**63 or type(row[2]) is not str or len(row[2]) > schema.code_length or type(row[3]) is not str or len(row[3]) > schema.description_length or type(row[4]) is not int or row[4] not in (0,1): raise BackendError('integrity')
+        validate_string(row[2], schema.code_length)
+        validate_string(row[3], schema.description_length)
         key = CatalogKey(self.database_id, catalog_id, UUID(row[0]))
         _uuid(key.record_id)
         revision = Revision(self.database_id,self.configuration_generation,catalog_id,key.record_id,str(row[1]))
@@ -1148,18 +1173,20 @@ class _View:
         if type(draft) is not CatalogDraft: raise BackendError('invalid_input')
         self._key(draft.key); _uuid(draft.key.record_id)
         schema = self.catalog_schema(draft.key.catalog_id)
-        if type(draft.code) is not str or len(draft.code)>schema.code_length or type(draft.description) is not str or len(draft.description)>schema.description_length or type(draft.deletion_mark) is not bool or type(draft.values) is not tuple or len(draft.values)!=len(schema.fields):
+        if type(draft.deletion_mark) is not bool or type(draft.values) is not tuple or len(draft.values)!=len(schema.fields):
             raise BackendError('invalid_input')
         try:
-            draft.code.encode('utf-8'); draft.description.encode('utf-8')
-        except UnicodeEncodeError: raise BackendError('invalid_input') from None
+            draft = replace(draft, code=normalize_string(draft.code,schema.code_length),
+                            description=normalize_string(draft.description,schema.description_length),
+                            values=tuple(normalize_field(v,f) for v,f in zip(draft.values,schema.fields)))
+        except (ValueError, TypeError): raise BackendError('invalid_input') from None
         values = [_encode(v,f,self.database_id) for v,f in zip(draft.values,schema.fields)]
         for value in draft.values:
             if type(value) is CatalogKey and value.record_id.int and not self._reference_exists(value):
                 raise BackendError('not_found')
         encoded = _json(values)
         if len(encoded.encode('utf-8')) > _MAX_ROW_BYTES: raise BackendError('invalid_input')
-        return encoded
+        return draft, encoded
 
     def _reference_exists(self, key):
         schema = self.catalog_schema(key.catalog_id)
@@ -1189,7 +1216,9 @@ class _View:
                 if identity in seen or type(row.values) is not tuple or len(row.values) != len(definition.fields):
                     raise BackendError('invalid_input')
                 seen.add(identity)
-                values = [_encode(v, f, self.database_id) for v, f in zip(row.values, definition.fields)]
+                try:
+                    values = [_encode(normalize_field(v, f), f, self.database_id) for v, f in zip(row.values, definition.fields)]
+                except (ValueError, TypeError): raise BackendError('invalid_input') from None
                 for value in row.values:
                     if type(value) is CatalogKey and value.record_id.int and not self._reference_exists(value):
                         raise BackendError('not_found')
@@ -1222,17 +1251,24 @@ class _View:
     @contextmanager
     def _atomic_record(self):
         # A caller may catch a failed write and still commit previous writes.
-        # Never leave an owner update or partial row replacement behind.
+        # SQL and its receipt bookkeeping are one atomic operation. Journal
+        # updates replace lists rather than mutating these saved references.
+        before = (self._changes, self._intents, self._section_write_bytes, self._section_write_rows)
         self._connection.execute('SAVEPOINT catalog_record_write')
         try:
             yield
             self._connection.execute('RELEASE catalog_record_write')
         except BaseException:
+            # An interrupted/failed restoration can never leave commit enabled.
+            self._poisoned = True
+            self._changes, self._intents, self._section_write_bytes, self._section_write_rows = before
             try:
                 self._connection.execute('ROLLBACK TO catalog_record_write')
                 self._connection.execute('RELEASE catalog_record_write')
-            except sqlite3.Error:
+            except BaseException:
                 self.close()
+            else:
+                self._poisoned = False
             raise
 
     def _section_write_budget(self, sections):
@@ -1244,7 +1280,7 @@ class _View:
 
     @_boundary
     def create(self,draft):
-        self._require(True, mutate=True); values = self._draft(draft)
+        self._require(True, mutate=True); draft, values = self._draft(draft)
         sections = self._draft_sections(draft); self._section_write_budget(sections)
         schema = self.catalog_schema(draft.key.catalog_id)
         table, columns, where, args = self._source(schema)
@@ -1260,11 +1296,11 @@ class _View:
             except sqlite3.IntegrityError:
                 raise BackendError('duplicate_identity' if self._reference_exists(draft.key) else 'duplicate_code') from None
             self._replace_sections(draft, schema, sections)
-        self._record_change(draft,1,values,sections)
+            self._record_change(draft,1,values,sections)
 
     @_boundary
     def update(self,draft,expected_revision):
-        self._require(True, mutate=True); values = self._draft(draft)
+        self._require(True, mutate=True); draft, values = self._draft(draft)
         sections = self._draft_sections(draft); self._section_write_budget(sections)
         r = expected_revision
         if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id)!=(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
@@ -1283,14 +1319,20 @@ class _View:
             except sqlite3.IntegrityError: raise BackendError('duplicate_code') from None
             if cursor.rowcount != 1: raise BackendError('conflict')
             self._replace_sections(draft, schema, sections)
-        self._record_change(draft,revision+1,values,sections)
+            self._record_change(draft,revision+1,values,sections)
 
     def _record_change(self,draft,revision,values,sections):
-        self._changes.append(Revision(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id,str(revision)))
-        self._intents.append(_intent(draft,revision,values,sections))
+        # Prepare every potentially allocating operation before replacing state.
+        # A later RELEASE failure can restore the old references without slicing
+        # or copying a possibly half-appended journal under memory pressure.
+        changes = [*self._changes, Revision(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id,str(revision))]
+        intents = [*self._intents, _intent(draft,revision,values,sections)]
+        size, rows = self._section_write_bytes, self._section_write_rows
         if sections is not None:
-            self._section_write_bytes += len(_json(sections))
-            self._section_write_rows += sum(len(rows) for _, rows in sections)
+            size += len(_json(sections))
+            rows += sum(len(part) for _, part in sections)
+        self._changes, self._intents = changes, intents
+        self._section_write_bytes, self._section_write_rows = size, rows
 
     @_boundary
     def commit(self):

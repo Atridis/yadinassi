@@ -74,6 +74,36 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT database_uuid,generation FROM database_info').fetchone(), (str(self.database_id),3))
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
+    def _legacy_supplementary_refuses_without_data_loss(self, column):
+        from dataclasses import replace
+        schema = replace(self.sa, **{column + '_length': 1})
+        self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',
+                     (_json(_schema_data(schema)), str(self.a)))
+        self.execute('UPDATE catalog_record SET %s=? WHERE catalog_id=?' % column,
+                     ('😀', str(self.a)))
+        plan = prepare_v1(self.path, maintenance=True)
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(BackendError, 'integrity'):
+            migrate_v1(self.path, plan, maintenance=True)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assert_v1()
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('SELECT %s FROM catalog_record WHERE catalog_id=?' % column,
+                                       (str(self.a),)).fetchone(), ('😀',))
+
+    def test_legacy_code_surrogate_units_refuse_migration_and_preserve_source(self):
+        self._legacy_supplementary_refuses_without_data_loss('code')
+
+    def test_legacy_description_surrogate_units_refuse_migration_and_preserve_source(self):
+        self._legacy_supplementary_refuses_without_data_loss('description')
+
+    def test_string_validation_exception_rolls_back_migration_changes(self):
+        before = self.path.read_bytes()
+        with mock.patch.object(migration, 'validate_string', side_effect=MemoryError('injected')):
+            with self.assertRaises(MemoryError): migrate_v1(self.path, self.plan, maintenance=True)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assert_v1()
+
     def test_v1_card_reads_reuse_schema_without_changing_values(self):
         from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
         # addCleanup runs after tearDown, too late for Windows file removal.
@@ -234,9 +264,12 @@ class MigrationTests(unittest.TestCase):
         self.assert_v1()
 
     def test_legacy_non_ascii_json_above_one_mib_bytes(self):
-        fields = tuple(FieldSchema(uuid4(), 'Field' + str(i), 'string', (65536,)) for i in range(5))
+        # Keep the aggregate byte-budget regression without exceeding an
+        # individual field's UTF-16-unit qualifier.
+        fields = tuple(FieldSchema(uuid4(), 'Field' + str(i), 'string', (65536,)) for i in range(10))
         schema = CatalogSchema(self.a, 'A', 8, 64, fields)
-        values = [['s', '😀' * 60000] for _ in fields]
+        values = [['s', '😀' * 30000] for _ in fields]
+        self.assertLessEqual(len(values[0][1].encode('utf-16-le')) // 2, 65536)
         raw = json.dumps(values, ensure_ascii=False, separators=(',', ':'))
         self.assertLess(len(raw), 1024 * 1024)
         self.assertGreater(len(raw.encode('utf-8')), 1024 * 1024)
@@ -257,6 +290,35 @@ class MigrationTests(unittest.TestCase):
             finally: view.close()
         finally: backend.close()
         self.assertEqual(resolve_migration(self.path, plan, maintenance=True), 'committed')
+
+    def test_legacy_codepoint_only_emoji_fields_refuse_read_and_migration_without_loss(self):
+        # Original budget fixture: formerly codepoint-valid but each field has
+        # 120,000 UTF-16 units. It must not be silently repaired or migrated.
+        fields = tuple(FieldSchema(uuid4(), 'Field' + str(i), 'string', (65536,)) for i in range(5))
+        schema = CatalogSchema(self.a, 'A', 8, 64, fields)
+        values = [['s', '😀' * 60000] for _ in fields]
+        raw = json.dumps(values, ensure_ascii=False, separators=(',', ':'))
+        self.assertLess(len(raw), 1024 * 1024)
+        self.assertGreater(len(raw.encode('utf-8')), 1024 * 1024)
+        self.assertGreater(len(values[0][1].encode('utf-16-le')) // 2, 65536)
+        self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?', (_json(_schema_data(schema)), str(self.a)))
+        self.execute('UPDATE catalog_record SET values_json=? WHERE record_id=?', (raw, str(self.ra)))
+        plan = prepare_v1(self.path, maintenance=True); before = self.path.read_bytes()
+        backend = SQLiteCatalogBackend(self.path)
+        try:
+            view = backend.begin_read()
+            try:
+                with self.assertRaisesRegex(BackendError, 'integrity'):
+                    view.read_catalog(CatalogKey(self.database_id, self.a, self.ra))
+            finally: view.close()
+        finally: backend.close()
+        self.assertEqual(self.path.read_bytes(), before)
+        with self.assertRaisesRegex(BackendError, 'integrity'): migrate_v1(self.path, plan, maintenance=True)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assert_v1()
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('SELECT values_json FROM catalog_record WHERE record_id=?',
+                                       (str(self.ra),)).fetchone(), (raw,))
 
     def test_sqlite_like_name_with_cascade_is_rejected(self):
         self.execute('CREATE TABLE sqliteXhidden(catalog_id TEXT, record_id TEXT, FOREIGN KEY(catalog_id,record_id) REFERENCES catalog_record(catalog_id,record_id) ON DELETE CASCADE)')

@@ -83,7 +83,7 @@ class BackendTests(unittest.TestCase):
         tx.close()
         with self.assertRaisesRegex(BackendError,'closed'):tx.catalogs()
     def test_exact_types_cross_database_and_bounds(self):
-        for amount in (1.25,decimal.Decimal('NaN'),decimal.Decimal('1.001')):
+        for amount in (1.25,decimal.Decimal('NaN'),decimal.Decimal('Infinity')):
             tx=self.backend.begin_write(uuid4())
             with self.assertRaises(BackendError):tx.create(self.draft(amount=amount))
             tx.close()
