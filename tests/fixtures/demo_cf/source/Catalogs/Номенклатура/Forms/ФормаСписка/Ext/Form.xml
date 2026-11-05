@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.8" xmlns:md="http://v8.1c.ru/8.3/MDClasses" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings">
+	<AutoCommandBar name="ФормаКоманднаяПанель" id="-1" />
+	<ChildItems>
+		<Button name="ПроверитьКарточку" id="1">
+			<Type>UsualButton</Type>
+			<CommandName>Form.Command.ПроверитьКарточку</CommandName>
+			<ExtendedTooltip name="ПроверитьКарточкуРасширеннаяПодсказка" id="2" />
+		</Button>
+		<Table name="Список" id="3">
+			<Representation>List</Representation>
+			<DefaultItem>true</DefaultItem>
+			<UseAlternationRowColor>true</UseAlternationRowColor>
+			<DataPath>Список</DataPath>
+			<RowPictureDataPath>Список.DefaultPicture</RowPictureDataPath>
+			<ContextMenu name="СписокКонтекстноеМеню" id="4" />
+			<AutoCommandBar name="СписокКоманднаяПанель" id="5" />
+			<ExtendedTooltip name="СписокРасширеннаяПодсказка" id="6" />
+			<ChildItems>
+				<LabelField name="Код" id="7">
+					<DataPath>Список.Code</DataPath>
+					<ContextMenu name="КодКонтекстноеМеню" id="8" />
+					<ExtendedTooltip name="КодРасширеннаяПодсказка" id="9" />
+				</LabelField>
+				<LabelField name="Наименование" id="10">
+					<DataPath>Список.Description</DataPath>
+					<ContextMenu name="НаименованиеКонтекстноеМеню" id="11" />
+					<ExtendedTooltip name="НаименованиеРасширеннаяПодсказка" id="12" />
+				</LabelField>
+				<LabelField name="ВидНоменклатуры" id="13">
+					<DataPath>Список.ВидНоменклатуры</DataPath>
+					<ContextMenu name="ВидНоменклатурыКонтекстноеМеню" id="14" />
+					<ExtendedTooltip name="ВидНоменклатурыРасширеннаяПодсказка" id="15" />
+				</LabelField>
+			</ChildItems>
+		</Table>
+	</ChildItems>
+	<Attributes>
+		<Attribute name="Список" id="1">
+			<Type>
+				<v8:Type>cfg:DynamicList</v8:Type>
+			</Type>
+			<MainAttribute>true</MainAttribute>
+			<Settings xsi:type="DynamicList">
+				<ManualQuery>false</ManualQuery>
+				<DynamicDataRead>true</DynamicDataRead>
+				<MainTable>Catalog.Номенклатура</MainTable>
+				<ListSettings />
+			</Settings>
+		</Attribute>
+	</Attributes>
+	<Commands>
+		<Command name="ПроверитьКарточку" id="1">
+			<Title>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Проверить карточку</v8:content>
+				</v8:item>
+			</Title>
+			<ToolTip>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Проверить вид номенклатуры и склады выбранной карточки без записи</v8:content>
+				</v8:item>
+			</ToolTip>
+			<Action>ПроверитьКарточку</Action>
+			<CurrentRowUse>DontUse</CurrentRowUse>
+		</Command>
+	</Commands>
+</Form>
