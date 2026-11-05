@@ -161,6 +161,11 @@ class CatalogScanRequest:
     Equal order keys use record identity as a stable backend-only tie breaker.
     String policy is explicit: codepoint or casefold_v1. Neither claims full
     native regional collation. Exact lookup keeps the codepoint default.
+
+    The section scan uses the same request shape. Its only standard field is
+    'ref' (the owner key); UUID fields belong to the chosen section. Its source
+    identity also includes the section UUID. Catalog and section scans share
+    the one active traversal, so starting either invalidates the other.
     """
     predicate: CatalogComparison | CatalogPredicate | None = None
     order: tuple[CatalogOrder, ...] = ()
@@ -172,6 +177,24 @@ class CatalogScanRequest:
 @dataclass(frozen=True, slots=True)
 class CatalogPage:
     cards: tuple[CatalogCard, ...]
+    continuation: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogSectionRecord:
+    """Detached section row; identity is (owner, section_id, row.identity).
+
+    The owner key is the section query's Ref. Internal row UUIDs are not BSL
+    references, and this result deliberately exposes no native line number.
+    """
+    owner: CatalogKey
+    section_id: UUID
+    row: TabularRow
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogSectionPage:
+    rows: tuple[CatalogSectionRecord, ...]
     continuation: str | None
 
 
@@ -192,6 +215,7 @@ class CatalogReadView(Protocol):
     def catalog_schema(self, catalog_id: UUID) -> CatalogSchema: ...
     def select_catalog(self, catalog_id: UUID, request: CatalogSelection) -> tuple[CatalogCard, ...]: ...
     def scan_catalog(self, catalog_id: UUID, request: CatalogScanRequest) -> CatalogPage: ...
+    def scan_catalog_section(self, catalog_id: UUID, section_id: UUID, request: CatalogScanRequest) -> CatalogSectionPage: ...
     def scan_catalog_values(self, catalog_id: UUID, request: CatalogScanRequest, fields: tuple[str | UUID, ...]) -> CatalogValuePage: ...
     def read_catalog(self, key: CatalogKey) -> CatalogCard | None: ...
     def close(self) -> None: ...
