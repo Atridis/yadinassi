@@ -343,3 +343,11 @@ The earlier blanket XDTO exclusion is superseded only by
 resolution, DTD/entities, recursive/mixed/choice schemas, inheritance/facets,
 full XMLSchema objects, XPath property selectors, callbacks and configuration
 model loading remain unsupported. Native40 semantics are still provisional.
+
+### Сообщения пользователю
+
+Для `СообщениеПользователю` пока отсутствуют native-подтверждение, автоматическая
+UI-привязка/навигация, очередь ПолучитьСообщенияПользователю, BSL-глобал привязки
+форм, SetData для документов/регистров и передача самого объекта сообщения между
+контекстами. TargetID сохраняется, но маршрутизация по нему не выполняется.
+Структурированная локальная доставка описана в [контракте](docs/user-messages.md).

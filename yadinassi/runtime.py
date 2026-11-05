@@ -20,6 +20,7 @@ from . import binary_streams
 from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
 from .text_documents import BSLTextDocument
+from .user_messages import BSLUserMessage, UserMessageContext
 from .value_storage import BSLValueStorage
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
 from .unique_identifiers import BSLUUID
@@ -169,7 +170,8 @@ class Interpreter:
     def __init__(self, output: Callable[[str], None] = print, *, encoding: str = "utf-8-sig",
                  native_target: str = WINDOWS_8_3_27_2342,
                  database_context: SQLiteDBContext | None = None,
-                 compilation_profile: str = "standalone"):
+                 compilation_profile: str = "standalone",
+                 user_message_sink: Callable | None = None):
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
@@ -201,6 +203,7 @@ class Interpreter:
         self.locals: dict[str, object] | None = None
         self.types: dict[str, HostFunction] = {}
         self.output = output
+        self.user_messages = UserMessageContext(output, user_message_sink)
         self.encoding = encoding
         self.imports: dict[str, _Module | _Namespace] = {}
         self._module_cache: dict[Path, _Module] = {}
@@ -271,6 +274,7 @@ class Interpreter:
         for ru, function, en, returns_value in file_io.FUNCTIONS:
             self.register_function(ru, function, en, returns_value=returns_value)
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
+        self.register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
         self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
@@ -427,6 +431,9 @@ class Interpreter:
         wrapper = HostFunction(name, factory)
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
+
+    def _new_user_message(self):
+        return BSLUserMessage(self.user_messages)
 
     def _message(self, value: object) -> None:
         self.output(to_string(value))
@@ -1248,6 +1255,7 @@ class Interpreter:
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
         server = self._activation_interpreter()
+        server.user_messages = self.user_messages
         server._scheduler = self._scheduler
         server._logical_side = "server"
         server._context_stack = self._context_stack
@@ -1510,6 +1518,7 @@ class Interpreter:
                                 native_target=self.native_target,
                                 database_context=self.database_context,
                                 compilation_profile=self.compilation_profile)
+            child.user_messages = self.user_messages
             child._scheduler = self._scheduler
             child._diagnostic_owner = self._diagnostic_owner
             child.functions = self.functions.copy()
