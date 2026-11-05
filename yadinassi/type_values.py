@@ -28,6 +28,7 @@ from .catalog_types import BSLCatalogReference, BSLCatalogType
 
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
 from .text_documents import BSLTextDocument
+from .value_storage import BSLValueStorage
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
@@ -151,6 +152,7 @@ _VALUE_TYPES = (
     (BSLJSONWriter, BSLType.JSON_WRITER, "JSONWriter"),
     (BSLJSONValueType, BSLType.JSON_VALUE_TYPE, "JSONValueType"),
     (BSLTextDocument, BSLType.TEXT_DOCUMENT, "TextDocument"),
+    (BSLValueStorage, BSLType.VALUE_STORAGE, "ValueStorage"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
     (BSLErrorInfo, BSLType.ERROR_INFO, "ErrorInfo"),

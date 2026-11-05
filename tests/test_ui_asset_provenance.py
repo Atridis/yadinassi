@@ -19,7 +19,7 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
 
     def test_actual_inventory_includes_all_assets_and_modules(self):
         result = source_provenance()
-        self.assertEqual(result['source_file_count'], 114)
+        self.assertEqual(result['source_file_count'], 118)
         # The aggregate changes if even a single packaged asset byte changes.
         original = full.read_regular
         def changed(path, *args, **kwargs):

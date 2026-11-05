@@ -57,7 +57,8 @@ Runner support does not guarantee this particular acquisition will succeed.
 5. With a dirty field, switch Light, Dark and System through the visible theme
    control. Verify the draft survives every switch and no RPC is sent. System
    follows the emulated OS light/dark changes without RPC or draft loss. Verify
-   the desktop list preview and locked navigation; leave an explicit Light theme.
+   the desktop list preview and locked navigation, and capture the dark desktop
+   editor with its populated preview and dirty draft; leave an explicit Light theme.
    Dirty close: dismiss confirmation and retain draft, then explicit discard and
    reopen unchanged persisted values.
 6. Reload under an emulated dark OS preference: explicit Light survives, while
@@ -65,8 +66,8 @@ Runner support does not guarantee this particular acquisition will succeed.
    only `yadinassi.catalog.theme=light`, session storage is empty and no cookies
    exist. Return to the original launch URL in the same tab and reattach without
    replaying a write; theme and the storage-only preference contract still hold.
-7. Existing reference remains visible/read-only. Restore Dark without RPC and
-   capture the full-width desktop workspace. After reload, the records panel
+7. Existing reference remains visible/read-only. Restore Dark without RPC.
+   After reload, the records panel
    explains that returning to records refreshes its memory-only list preview.
    Capture a 390 px narrow viewport, asserting no horizontal overflow and that
    the editor appears before any visible sidebar/records panels.

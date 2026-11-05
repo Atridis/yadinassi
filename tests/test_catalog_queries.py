@@ -60,7 +60,7 @@ R=Q.Выполнить();Message(R.Пустой());S=R.Выбрать();Message(
 
     def test_wrong_missing_and_foreign_parameters_refused_before_scan(self):
         query = BSLQuery(self.vm._catalogs, 'SELECT Code FROM Catalog.Products WHERE Amount=&N')
-        with patch.object(_View, 'scan_catalog', side_effect=AssertionError('must not scan')):
+        with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('must not scan')):
             with self.assertRaises(ValueError): query.execute()
             query.set_parameter('N', True)
             with self.assertRaises(TypeError): query.execute()
@@ -99,7 +99,7 @@ S=Q.Execute().Select();Message(S.Next());Message(S.Code);Message(S.Next());''')
     def test_continuation_keeps_page_size_and_top_truncates_only_last_page(self):
         from dataclasses import replace
         from uuid import UUID
-        from yadinassi.catalog_backend import CatalogPage, CatalogSelection
+        from yadinassi.catalog_backend import CatalogValuePage, CatalogValueRow, CatalogSelection
         manager = self.vm._catalogs.get_index('Products')
         view = manager._view()
         try:
@@ -107,12 +107,13 @@ S=Q.Execute().Select();Message(S.Next());Message(S.Code);Message(S.Next());''')
                 CatalogSelection())[0]
         finally:
             view.close()
-        cards = tuple(replace(card, key=replace(card.key, record_id=UUID(int=i+1))) for i in range(1002))
+        cards = tuple(CatalogValueRow(replace(card.key, record_id=UUID(int=i+1)),(card.code,)) for i in range(1002))
         requests = []
-        def scan(view, identity, request):
+        def scan(view, identity, request, fields):
+            self.assertEqual(fields, ('code',))
             requests.append(request)
-            return CatalogPage(cards[:1000], 'a'*32) if len(requests) == 1 else CatalogPage(cards[1000:], None)
-        with patch.object(_View, 'scan_catalog', scan):
+            return CatalogValuePage(cards[:1000], 'a'*32) if len(requests) == 1 else CatalogValuePage(cards[1000:], None)
+        with patch.object(_View, 'scan_catalog_values', scan):
             result = BSLQuery(self.vm._catalogs, 'SELECT TOP 1001 Code FROM Catalog.Products').execute()
         self.assertEqual(len(result._rows), 1001)
         self.assertEqual([r.page_size for r in requests], [1000, 1000])
@@ -120,10 +121,10 @@ S=Q.Execute().Select();Message(S.Next());Message(S.Code);Message(S.Next());''')
         self.vm.execute('O=Catalogs.Products.FindByCode("1").GetObject();O.Write();')
 
     def test_hostile_page_and_resources_refuse_and_close_read_view(self):
-        from yadinassi.catalog_backend import CatalogPage, BackendError
+        from yadinassi.catalog_backend import CatalogValuePage, BackendError
         query = BSLQuery(self.vm._catalogs, 'SELECT Code FROM Catalog.Products')
-        for page in (CatalogPage((), object()), CatalogPage((), 'x'), CatalogPage((), 'a'*32)):
-            with patch.object(_View, 'scan_catalog', return_value=page), self.assertRaises(BackendError):
+        for page in (CatalogValuePage((), object()), CatalogValuePage((), 'x'), CatalogValuePage((), 'a'*32)):
+            with patch.object(_View, 'scan_catalog_values', return_value=page), self.assertRaises(BackendError):
                 query.execute()
             # A refused read never strands the one-active-view lease.
             view = self.context.backend.begin_read(); view.close()

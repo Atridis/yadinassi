@@ -12,19 +12,25 @@ from hashlib import sha256
 import re
 import xml.etree.ElementTree as ET
 
-from .catalog_backend import CatalogSchema, FieldSchema
+from .catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
 
 MD = 'http://v8.1c.ru/8.3/MDClasses'
 V8 = 'http://v8.1c.ru/8.1/data/core'
 XS = 'http://www.w3.org/2001/XMLSchema'
 CFG = 'http://v8.1c.ru/8.1/data/enterprise/current-config'
 DUMP_INFO = 'http://v8.1c.ru/8.3/xcf/dumpinfo'
+_XML_WHITESPACE = ' \t\r\n'
 MAX_FILES = 2048
 MAX_FILE_BYTES = 1024 * 1024
 MAX_TOTAL_BYTES = 16 * 1024 * 1024
 _RESERVED = frozenset(('code','код','description','наименование','ref','ссылка',
     'deletionmark','пометкаудаления','write','записать','isnew','этоновый',
     'metadata','метаданные','getobject','получитьобъект','setnewobjectref','установитьссылкунового'))
+_CONFIGURATION_MODULES = ('ManagedApplicationModule', 'OrdinaryApplicationModule',
+                          'ExternalConnectionModule', 'SessionModule')
+_CATALOG_MODULES = ('ObjectModule', 'ManagerModule')
+_MODULE_PATH_DIAGNOSTIC_LIMIT = 32
+_MODULE_PATH_DIAGNOSTIC_JSON_LIMIT = 8192
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +123,7 @@ def _props(obj):
 def _text(props,name,default=None):
     node=props.get('{'+MD+'}'+name)
     if node is not None and len(node):_fail('structured scalar '+name)
-    return default if node is None else (node.text or '').strip()
+    return default if node is None else (node.text or '').strip(_XML_WHITESPACE)
 
 
 def _int(props,name,minimum,maximum):
@@ -129,15 +135,15 @@ def _int(props,name,minimum,maximum):
 
 
 def _qname(node,ns):
-    text=(node.text or '').strip();parts=text.split(':')
-    if len(parts)!=2 or parts[0] not in ns[id(node)]:_fail('unbound type QName')
+    text=(node.text or '').strip(_XML_WHITESPACE);parts=text.split(':')
+    if len(parts)!=2 or not parts[0] or not parts[1] or parts[0] not in ns[id(node)]:_fail('unbound type QName')
     return ns[id(node)][parts[0]],parts[1]
 
 
 def _type(props,ns,targets):
     t=props.get('{'+MD+'}Type')
     if t is None:_fail('missing field type')
-    if t.attrib or (t.text or '').strip() or any((n.tail or '').strip() for n in t):_fail('unsupported type envelope')
+    if t.attrib or (t.text or '').strip(_XML_WHITESPACE) or any((n.tail or '').strip(_XML_WHITESPACE) for n in t):_fail('unsupported type envelope')
     types=[n for n in t if n.tag=='{'+V8+'}Type']
     if len(types)!=1 or types[0].attrib:_fail('composite or absent field type unsupported')
     namespace,name=_qname(types[0],ns)
@@ -148,10 +154,10 @@ def _type(props,ns,targets):
     def qualifiers(kind):
         nodes=[n for n in t if n.tag=='{'+V8+'}'+kind+'Qualifiers']
         if len(nodes)!=1:_fail('missing qualifiers')
-        if nodes[0].attrib or (nodes[0].text or '').strip() or any((v.tail or '').strip() for v in nodes[0]):_fail('unsupported qualifier envelope')
+        if nodes[0].attrib or (nodes[0].text or '').strip(_XML_WHITESPACE) or any((v.tail or '').strip(_XML_WHITESPACE) for v in nodes[0]):_fail('unsupported qualifier envelope')
         d=_children(nodes[0])
         if any(len(v) or v.attrib for v in d.values()):_fail('structured qualifier')
-        return {k.removeprefix('{'+V8+'}'):(v.text or '').strip() for k,v in d.items()}
+        return {k.removeprefix('{'+V8+'}'):(v.text or '').strip(_XML_WHITESPACE) for k,v in d.items()}
     if namespace==XS and name=='string':
         q=qualifiers('String')
         if set(q)!={'Length','AllowedLength'} or q['AllowedLength']!='Variable':_fail('string qualifiers')
@@ -185,10 +191,21 @@ _GENERATED = {'Object': 'CatalogObject', 'Ref': 'CatalogRef',
 # Generated from scripts/catalog_object_behavior/generated/Catalog.xml after
 # its owned Designer round-trip. See docs/official-catalog-xml-profile.md.
 _PROFILE_SHA256 = '100592da54dc738bf82f1950f943a8408e848400082c7a38d7ab920274fed4bb'
-# Separate whole-object profile for catalog_query_behavior/generated/Catalog.xml.
+# Historical whole-object witness for catalog_query_behavior/generated/Catalog.xml.
 # Its strict Designer redump was verified in run 41511900693; that run is not
 # evidence of complete runtime parity. Defaults and qualifiers remain exact.
 _SCALAR_PROFILE_SHA256 = '96cf0df15e450ae7ed0cc4e03aa2d76269ce56764a1d4d5c5cd89599da0a0572'
+# Full normalized Attribute subtrees from that same unchanged owned fixture.
+# Composition is a local bounded admission rule, not a new native observation.
+_SCALAR_ATTRIBUTE_PROFILES = {
+    ('number', (12, 2, 'Any'), None): 'd55966272aef1e46a455ee6a87ecce689e8448fb0b786bbcac404811ad9a609e',
+    ('boolean', (), None): '0802cfae8fb0650b3def7d58ac06f0992d501936707383fe9609218a2edae03b',
+    ('datetime', ('DateTime',), None): '08e273466c565e58f11547dfc59b50810e6a40da4cc60558f381d536e924b4a6',
+}
+
+
+def _profile_sha256(value):
+    return sha256(json.dumps(value, ensure_ascii=True, separators=(',', ':')).encode('ascii')).hexdigest()
 
 
 def _valid_uuid(text):
@@ -200,7 +217,14 @@ def _valid_uuid(text):
     return value
 
 
-def _catalog_profile_fingerprint(catalog, namespaces, *, scalar_attributes=False):
+def _catalog_profile_fingerprint(catalog, namespaces, *, scalar_attributes=False, envelope_only=False):
+    """Normalize a complete object; optionally compose closed Attribute profiles.
+
+    The envelope projection excludes only fully visited, verified direct fields.
+    The original tree, source bytes, field order and namespace scopes stay intact.
+    """
+    if envelope_only and not scalar_attributes:
+        raise ValueError('profile mode')
     if catalog.tag != '{'+MD+'}Catalog' or set(catalog.attrib) != {'uuid'}:
         raise ValueError('catalog shape')
     catalog_uuid = _valid_uuid(catalog.get('uuid'))
@@ -210,7 +234,7 @@ def _catalog_profile_fingerprint(catalog, namespaces, *, scalar_attributes=False
     names = props.findall('{'+MD+'}Name')
     if len(names) != 1 or len(names[0]) or names[0].attrib:
         raise ValueError('name')
-    name = (names[0].text or '').strip()
+    name = (names[0].text or '').strip(_XML_WHITESPACE)
     if not name or (names[0].text or '') != name or not name.isidentifier() or len(name) > 128:
         raise ValueError('name')
     identities = {catalog_uuid}
@@ -219,16 +243,17 @@ def _catalog_profile_fingerprint(catalog, namespaces, *, scalar_attributes=False
     attribute_names = set()
     attribute_ids = set()
     type_nodes = set()
+    attribute_profiles = {}
+    child_objects = None
     if scalar_attributes:
-        # Recognize neither isolated fields nor a subset of a larger catalog.
-        # The digest below still covers every property, default and component.
+        # A catalog is admitted only when its entire envelope and every field
+        # match. Never infer safe behavior from a partial property whitelist.
         children = catalog.findall('{'+MD+'}ChildObjects')
-        expected = (('number', (12, 2, 'Any'), None),
-                    ('boolean', (), None), ('datetime', ('DateTime',), None))
-        if len(children) != 1 or len(children[0]) != len(expected):
+        if len(children) != 1 or len(children[0]) > 64:
             raise ValueError('scalar inventory')
+        child_objects = children[0]
         field_names = set(_RESERVED)
-        for field, description in zip(children[0], expected):
+        for field in child_objects:
             if field.tag != '{'+MD+'}Attribute' or set(field.attrib) != {'uuid'}:
                 raise ValueError('scalar attribute')
             field_id = _valid_uuid(field.get('uuid'))
@@ -244,18 +269,22 @@ def _catalog_profile_fingerprint(catalog, namespaces, *, scalar_attributes=False
             if value.casefold() in field_names:
                 raise ValueError('field name collision')
             field_names.add(value.casefold())
-            if _type(fp, namespaces, {}) != description:
+            expected = _SCALAR_ATTRIBUTE_PROFILES.get(_type(fp, namespaces, {}))
+            if expected is None:
                 raise ValueError('scalar type')
+            attribute_profiles[field] = expected
             attributes.add(field)
             attribute_names.add(field_name)
             type_nodes.add(fp['{'+MD+'}Type'].find('{'+V8+'}Type'))
 
     def node_value(node, parent=None):
-        if (node.tail or '').strip():
+        if (node.tail or '').strip(_XML_WHITESPACE):
             raise ValueError('mixed XML')
         text = node.text or ''
-        if len(node):
-            if text.strip():
+        if len(node) or node is child_objects:
+            # ChildObjects remains a structural container even with zero fields.
+            # Only XML formatting whitespace is inert, never Unicode spaces.
+            if text.strip(_XML_WHITESPACE):
                 raise ValueError('mixed XML')
             text = ''
         attrs = dict(node.attrib)
@@ -298,68 +327,73 @@ def _catalog_profile_fingerprint(catalog, namespaces, *, scalar_attributes=False
             if key == '{'+XSI+'}type':
                 parts = value.split(':')
                 scope = namespaces.get(id(node), {})
-                if len(parts) != 2 or not parts[1] or parts[0] not in scope:
+                if len(parts) != 2 or not parts[0] or not parts[1] or parts[0] not in scope:
                     raise ValueError('QName')
                 attrs[key] = '{'+scope[parts[0]]+'}'+parts[1]
-        return [node.tag, sorted(attrs.items()), text, [node_value(child, node) for child in node]]
+        result = [node.tag, sorted(attrs.items()), text, [node_value(child, node) for child in node]]
+        if node in attributes and _profile_sha256(result) != attribute_profiles[node]:
+            raise ValueError('scalar attribute profile')
+        if envelope_only and node is child_objects:
+            # Only after recursive validation: retain this container's tag,
+            # attributes, text/tail checks and position in the catalog envelope.
+            result[3] = []
+        return result
 
     result = node_value(catalog)
     if generated_seen != set(_GENERATED) or len(identities) != 11 + len(attribute_ids):
         raise ValueError('generated identities')
-    digest = sha256(json.dumps(result, ensure_ascii=True, separators=(',', ':')).encode('ascii')).hexdigest()
+    digest = _profile_sha256(result)
     return digest, frozenset(identities - {catalog_uuid} - attribute_ids)
 
 
 def _catalog_generated_identities(catalog, namespaces):
     """Return ten generated identities only for a whole admitted catalog."""
-    for scalar_attributes, expected in ((False, _PROFILE_SHA256),
-                                        (True, _SCALAR_PROFILE_SHA256)):
-        try:
-            digest, identities = _catalog_profile_fingerprint(
-                catalog, namespaces, scalar_attributes=scalar_attributes)
-            if digest == expected:
-                return identities
-        except (ValueError, TypeError, KeyError, RecursionError):
-            pass
+    try:
+        digest, identities = _catalog_profile_fingerprint(
+            catalog, namespaces, scalar_attributes=True, envelope_only=True)
+        if digest == _PROFILE_SHA256:
+            return identities
+    except (ValueError, TypeError, KeyError, RecursionError):
+        pass
     return None
 
 
 def _activation_properties(obj, allowed, issues, owner):
     # Unknown configuration behavior is archived, never silently activated.
-    if set(obj.attrib) != {'uuid'} or (obj.text or '').strip():
+    if set(obj.attrib) != {'uuid'} or (obj.text or '').strip(_XML_WHITESPACE):
         issues.append('unsupported object envelope:'+owner)
     for node in obj:
-        if (node.tail or '').strip():
+        if (node.tail or '').strip(_XML_WHITESPACE):
             issues.append('unsupported metadata mixed content:'+owner)
         if node.tag not in {'{'+MD+'}Properties','{'+MD+'}ChildObjects','{'+MD+'}InternalInfo'}:
             issues.append('unsupported object component:'+owner+':'+node.tag)
-        elif node.tag == '{'+MD+'}InternalInfo' and (node.attrib or len(node) or (node.text or '').strip()):
+        elif node.tag == '{'+MD+'}InternalInfo' and (node.attrib or len(node) or (node.text or '').strip(_XML_WHITESPACE)):
             issues.append('unsupported internal metadata:'+owner)
-        elif node.tag in ('{'+MD+'}Properties','{'+MD+'}ChildObjects') and (node.attrib or (node.text or '').strip()):
+        elif node.tag in ('{'+MD+'}Properties','{'+MD+'}ChildObjects') and (node.attrib or (node.text or '').strip(_XML_WHITESPACE)):
             issues.append('unsupported metadata container:'+owner)
         if obj.tag == '{'+MD+'}Attribute' and node.tag == '{'+MD+'}ChildObjects' and len(node):
             issues.append('unsupported attribute child objects:'+owner)
     allowed_tags = {'{'+MD+'}'+name for name in allowed}
     for tag,node in _props(obj).items():
-        if (node.tail or '').strip():
+        if (node.tail or '').strip(_XML_WHITESPACE):
             issues.append('unsupported property mixed content:'+owner+':'+tag)
         if tag not in allowed_tags:
             issues.append('unsupported metadata property:'+owner+':'+tag)
         elif node.attrib:
             issues.append('unsupported property attributes:'+owner+':'+tag)
-        elif tag in ('{'+MD+'}Synonym','{'+MD+'}Comment') and (len(node) or (node.text or '').strip()):
+        elif tag in ('{'+MD+'}Synonym','{'+MD+'}Comment') and (len(node) or (node.text or '').strip(_XML_WHITESPACE)):
             issues.append('unsupported presentation metadata:'+owner+':'+tag)
     for container in obj.findall('{'+MD+'}ChildObjects'):
         for node in container:
-            permitted = {'uuid'} if node.tag == '{'+MD+'}Attribute' else set()
-            if (set(node.attrib) != permitted or (node.tail or '').strip()
-                    or (len(node) and (node.text or '').strip())
+            permitted = {'uuid'} if node.tag == '{'+MD+'}Attribute' or (obj.tag == '{'+MD+'}Catalog' and node.tag == '{'+MD+'}TabularSection') else set()
+            if (set(node.attrib) != permitted or (node.tail or '').strip(_XML_WHITESPACE)
+                    or (len(node) and (node.text or '').strip(_XML_WHITESPACE))
                     or (node.tag == '{'+MD+'}Catalog' and len(node))):
                 issues.append('unsupported child metadata envelope:'+owner)
 
 
 def _envelope_issues(root, obj, issues, owner):
-    if root.attrib != {'version':'2.20'} or (root.text or '').strip() or (obj.tail or '').strip():
+    if root.attrib != {'version':'2.20'} or (root.text or '').strip(_XML_WHITESPACE) or (obj.tail or '').strip(_XML_WHITESPACE):
         issues.append('unsupported metadata document envelope:'+owner)
 
 
@@ -370,6 +404,10 @@ def _dump_info_matches(raw, config_uuid, name, catalogs, metadata_versions):
     evidence. A matching inventory never clears other activation issues.
     """
     root, _ = _parse(raw)
+    # The admitted PR201 inventory profile covers only catalog attributes.
+    # Do not accept an owner-only inventory while silently ignoring sections.
+    # A nested section inventory needs its own source-reviewed profile.
+    if any(catalog.tabular_sections for catalog in catalogs): return False
     # _parse decodes bytes itself. Do not admit a contradictory declaration
     # merely because ElementTree accepts an already decoded Unicode stream.
     text = raw.decode('utf-8-sig')
@@ -388,7 +426,7 @@ def _dump_info_matches(raw, config_uuid, name, catalogs, metadata_versions):
     if versions.tag != '{'+DUMP_INFO+'}ConfigVersions' or versions.attrib:
         return False
     # Only XML formatting whitespace is ignorable, not arbitrary Unicode text.
-    if any((node.text or '').strip(' \t\r\n') or (node.tail or '').strip(' \t\r\n')
+    if any((node.text or '').strip(_XML_WHITESPACE) or (node.tail or '').strip(_XML_WHITESPACE)
            for node in root.iter()):
         return False
     expected = {'Configuration.'+name: (config_uuid, {})}
@@ -449,7 +487,7 @@ def import_configuration(files):
     for node in children:
         if node.tag!='{'+MD+'}Catalog':
             issues.append('unsupported metadata family:'+node.tag.rsplit('}',1)[-1]);continue
-        catalog_names.append(_name((node.text or '').strip()))
+        catalog_names.append(_name((node.text or '').strip(_XML_WHITESPACE)))
     if not 1<=len(catalog_names)<=512 or len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
     for cname in catalog_names:
         path='Catalogs/'+cname+'.xml'
@@ -459,14 +497,14 @@ def import_configuration(files):
         used.add(identity)
         if _text(p,'Name')!=cname:_fail('catalog filename/name mismatch')
         objects[cname.casefold()]=(identity,obj,p,ns,root)
-    targets={key:v[0] for key,v in objects.items()};catalogs=[]
+    targets={key:v[0] for key,v in objects.items()};catalogs=[];section_count=0
     for cname in catalog_names:
         identity,obj,p,ns,root=objects[cname.casefold()]
-        # Admit only the entire, exact owned native profile; a mismatch follows
-        # the existing fail-closed path, never a partial property whitelist.
+        # Admit only the whole closed envelope with fully verified fields; any
+        # mismatch retains the fail-closed path, never a partial whitelist.
         generated = (_catalog_generated_identities(obj, ns)
-                     if root.attrib == {'version':'2.20'} and not (root.text or '').strip()
-                     and not (obj.tail or '').strip() else None)
+                     if root.attrib == {'version':'2.20'} and not (root.text or '').strip(_XML_WHITESPACE)
+                     and not (obj.tail or '').strip(_XML_WHITESPACE) else None)
         if generated is None:
             _envelope_issues(root,obj,issues,cname)
             _activation_properties(obj,{'Name','Synonym','Comment','Hierarchical','CodeType','CodeLength','DescriptionLength','Autonumbering','CheckUnique','CodeSeries','Owners'},issues,cname)
@@ -477,31 +515,84 @@ def import_configuration(files):
                 or _text(p,'Autonumbering','false')!='false' or _text(p,'CheckUnique','true')!='true'
                 or _text(p,'CodeSeries','WholeCatalog')!='WholeCatalog'):_fail('unsupported catalog semantics')
         owners=p.get('{'+MD+'}Owners')
-        if owners is not None and (len(owners) or (owners.text or '').strip()):_fail('catalog owners unsupported')
+        if owners is not None and (len(owners) or (owners.text or '').strip(_XML_WHITESPACE)):_fail('catalog owners unsupported')
         for node in obj.iter():
-            local=node.tag.rsplit('}',1)[-1];text=(node.text or '').strip()
+            local=node.tag.rsplit('}',1)[-1];text=(node.text or '').strip(_XML_WHITESPACE)
             if local=='FillChecking' and text not in ('','DontCheck'):issues.append('required field validation unsupported:'+cname)
             if local in ('FillFromFillingValue','DataHistory','RegisterRecords') and text not in ('','false','DontUse'):issues.append('automatic metadata behavior unsupported:'+cname)
-        fields=[];names=set(_RESERVED);child=obj.find('{'+MD+'}ChildObjects')
-        for field in () if child is None else child:
-            if field.tag!='{'+MD+'}Attribute':_fail('catalog child object unsupported')
-            # Rich Designer defaults require the whole catalog fingerprint.
+        fields=[];sections=[];names=set(_RESERVED);child=obj.find('{'+MD+'}ChildObjects')
+        def field_schema(field, field_names, owner, row=False):
+            if field.tag!='{'+MD+'}Attribute':_fail('child object unsupported')
+            if row:
+                section_components(field)
+                nested=field.find('{'+MD+'}ChildObjects')
+                if nested is not None and len(nested):_fail('attribute child object unsupported')
+            # Rich Designer defaults require the envelope and every full field.
             # Every unmatched field retains the restrictive activation path.
-            if generated is None:
-                _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,cname)
+            if generated is None or row:
+                _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,owner)
             fp=_props(field);fn=_name(_text(fp,'Name'));fid=_uuid(field.get('uuid'))
-            if fn.casefold() in names or fid in used:_fail('field identity/name collision')
-            names.add(fn.casefold());used.add(fid);kind,q,target=_type(fp,ns,targets)
-            fields.append(FieldSchema(fid,fn,kind,q,target))
+            if fn.casefold() in field_names or fid in used:_fail('field identity/name collision')
+            field_names.add(fn.casefold());used.add(fid);kind,q,target=_type(fp,ns,targets)
+            return FieldSchema(fid,fn,kind,q,target)
+        def section_components(section):
+            # Inline executable payloads are outside this bounded metadata format,
+            # even when hidden inside otherwise descriptive properties.
+            for node in section.iter():
+                local=node.tag.rsplit('}',1)[-1].casefold()
+                if local.endswith('module') or local in ('code','script','procedure','function'):
+                    _fail('embedded executable component unsupported')
+        for item in () if child is None else child:
+            if item.tag=='{'+MD+'}Attribute':
+                fields.append(field_schema(item,names,cname))
+            elif item.tag=='{'+MD+'}TabularSection':
+                section_components(item)
+                _activation_properties(item,{'Name','Synonym','Comment'},issues,cname)
+                sp=_props(item);sn=_name(_text(sp,'Name'));sid=_uuid(item.get('uuid'))
+                if sn.casefold() in names or sid in used:_fail('section identity/name collision')
+                names.add(sn.casefold());used.add(sid)
+                row_names=set(_RESERVED)|{'linenumber','номерстроки'}
+                rows=item.find('{'+MD+'}ChildObjects')
+                row_fields=tuple(field_schema(f,row_names,cname+'.'+sn,True)
+                                 for f in (() if rows is None else rows))
+                if len(row_fields)>64:_fail('section field count')
+                sections.append(TabularSectionSchema(sid,sn,row_fields));section_count+=1
+                if len(sections)>16 or section_count>512:_fail('tabular section count')
+            else:_fail('catalog child object unsupported')
         if len(fields)>64:_fail('field count')
-        catalogs.append(CatalogSchema(identity,cname,_int(p,'CodeLength',1,64),_int(p,'DescriptionLength',0,1024),tuple(fields)))
+        catalogs.append(CatalogSchema(identity,cname,_int(p,'CodeLength',1,64),_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections)))
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names)}
+    # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
+    # A source archive may contain unknown modules, but it must not activate or
+    # invent a Configuration owner for a file whose metadata owner is unknown.
+    module_paths = {f'Ext/{kind}.bsl': (config_uuid, kind)
+                    for kind in _CONFIGURATION_MODULES}
+    for cname in catalog_names:
+        for kind in _CATALOG_MODULES:
+            module_paths[f'Catalogs/{cname}/Ext/{kind}.bsl'] = (targets[cname.casefold()], kind)
+    unknown_module_count = 0
+    unknown_module_issues = []
+    unknown_module_json_size = 2  # The enclosing JSON array brackets.
     for entry in accepted:
         if entry.kind=='module':
-            parts=entry.path.split('/');owner=config_uuid;kind=parts[-1][:-4]
-            if len(parts)==4 and parts[0]=='Catalogs' and parts[2]=='Ext' and parts[1].casefold() in targets:owner=targets[parts[1].casefold()]
-            elif not (len(parts)==2 and parts[0]=='Ext'):issues.append('unsupported module path:'+entry.path)
-            modules.append(ConfigurationModule(owner,kind,entry.path))
+            binding = module_paths.get(entry.path)
+            if binding is None:
+                unknown_module_count += 1
+                if unknown_module_issues is not None:
+                    detail = 'unsupported module path:'+entry.path
+                    # Match SQLite's compact ensure_ascii=True representation,
+                    # including surrogate-pair escapes for astral characters.
+                    size = len(json.dumps(detail, ensure_ascii=True, separators=(',', ':')))
+                    size += bool(unknown_module_issues)  # Separator before this item.
+                    if (unknown_module_count > _MODULE_PATH_DIAGNOSTIC_LIMIT or
+                            unknown_module_json_size + size > _MODULE_PATH_DIAGNOSTIC_JSON_LIMIT):
+                        unknown_module_issues = None
+                    else:
+                        unknown_module_issues.append(detail)
+                        unknown_module_json_size += size
+            else:
+                owner, kind = binding
+                modules.append(ConfigurationModule(owner,kind,entry.path))
             code='\n'.join(line.split('//',1)[0] for line in entry.content.decode('utf-8-sig').splitlines()).strip()
             if code:issues.append('module execution unsupported:'+entry.path)
         elif entry.path == 'ConfigDumpInfo.xml':
@@ -510,4 +601,9 @@ def import_configuration(files):
                 issues.append('unsupported configuration file:'+entry.path)
         elif entry.path not in expected:
             _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
+    if unknown_module_issues is None:
+        issues.append('unsupported module paths:'+str(unknown_module_count)+
+                      ' (individual paths retained in configuration files)')
+    else:
+        issues.extend(unknown_module_issues)
     return ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))))

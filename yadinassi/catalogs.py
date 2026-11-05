@@ -8,7 +8,9 @@ from datetime import datetime
 from uuid import UUID, uuid4
 from .dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from .catalog_types import BSLCatalogReference, BSLCatalogType
-from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError
+from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow
+from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES
+from .catalog_backend import TabularSectionRows
 from .unique_identifiers import BSLUUID
 from .values import BSLObject, HostFunction
 
@@ -103,13 +105,13 @@ class BSLCatalogManager(BSLObject):
         if type(value) is not expected:raise TypeError('catalog field type mismatch')
         if field.kind=='number' and not value.is_finite():raise ValueError('finite Number required')
         return value
+    def _field_default(self,field):
+        if field.kind=='catalog_ref':return self._catalogs._manager_by_metadata_uuid(field.target_catalog_id).empty_ref()
+        if field.kind=='datetime':return BSLDate(0)
+        return {'string':'','number':Decimal(0),'boolean':False}[field.kind]
     def _defaults(self,ref=None):
         values={'code':'','description':'','deletionmark':False,'ref':ref}
-        for f in self._schema.fields:
-            if f.kind=='catalog_ref':v=self._catalogs._manager_by_metadata_uuid(f.target_catalog_id).empty_ref()
-            elif f.kind=='datetime':v=BSLDate(0)
-            else:v={'string':'','number':Decimal(0),'boolean':False}[f.kind]
-            values[f.name.casefold()]=v
+        values.update((f.name.casefold(),self._field_default(f)) for f in self._schema.fields)
         return values
     def _fields(self,card):
         if card.key.database_id!=self._key(_ZERO).database_id or card.key.catalog_id!=self._schema.identity or len(card.values)!=len(self._schema.fields):raise BackendError('integrity')
@@ -137,9 +139,21 @@ class BSLCatalogManager(BSLObject):
     def _find(self,field,value):
         view=self._view()
         try:
-            page=view.scan_catalog(self._schema.identity,CatalogScanRequest(
-                predicate=CatalogComparison(field,'eq',value),page_size=2))
-            matches=page.cards
+            page=view.scan_catalog_values(self._schema.identity,CatalogScanRequest(
+                predicate=CatalogComparison(field,'eq',value),page_size=2),('ref',))
+            if (type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows)>2
+                    or (page.continuation is not None and (type(page.continuation) is not str or len(page.continuation)!=32))):
+                raise BackendError('integrity')
+            matches=page.rows
+            for row in matches:
+                if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey
+                        or any(type(item) is not UUID for item in (row.key.database_id,row.key.catalog_id,row.key.record_id))
+                        or row.key.database_id!=view.database_id or row.key.catalog_id!=self._schema.identity
+                        or type(row.key.record_id) is not UUID or not row.key.record_id.int
+                        or type(row.values) is not tuple or len(row.values)!=1 or type(row.values[0]) is not CatalogKey
+                        or any(type(item) is not UUID for item in (row.values[0].database_id,row.values[0].catalog_id,row.values[0].record_id))
+                        or row.values[0]!=row.key):
+                    raise BackendError('integrity')
             if page.continuation is not None:raise ValueError('ambiguous exact catalog lookup')
         finally:view.close()
         if len(matches)>1:raise ValueError('ambiguous exact catalog lookup')
@@ -164,11 +178,34 @@ class BSLCatalogObject(BSLObject):
     """Detached edit buffer: only successful backend commit changes IsNew/revision."""
     def __init__(self,manager,card=None):
         self._manager=manager;self._object_type=manager._object_type
+        if manager._schema.tabular_sections and not manager._backend.capabilities().catalog_tabular_sections:
+            raise BackendError('unsupported')
         self._key=manager._key(uuid4()) if card is None else card.key
         self._revision=None if card is None else card.revision
         self._values=manager._defaults(manager.empty_ref()) if card is None else manager._fields(card)
         self._operation_id=uuid4()
         self._pending_write=None
+        self._sections={}
+        if card is not None and (type(card.tabular_sections) is not tuple
+                or any(type(s) is not TabularSectionRows for s in card.tabular_sections)):
+            raise BackendError('integrity')
+        contents={} if card is None else {s.section_id:s for s in card.tabular_sections}
+        if card is not None and (len(contents)!=len(card.tabular_sections)
+                or set(contents)!={s.identity for s in manager._schema.tabular_sections}):
+            raise BackendError('integrity')
+        reserved=set(self._values)|{'write','записать','isnew','этоновый','setnewobjectref',
+            'установитьссылкунового','metadata','метаданные'}|set(_ALIASES)
+        for schema in manager._schema.tabular_sections:
+            name=schema.name.casefold()
+            if name in reserved or name in self._sections:raise BackendError('unsupported')
+            self._sections[name]=BSLCatalogSection(self,schema,() if card is None else contents[schema.identity].rows)
+        if self._section_row_count()>_MAX_SECTION_ROWS or self._section_buffer_bytes()>_MAX_BUFFER_BYTES:
+            raise BackendError('unsupported')
+    def _section_row_count(self):return sum(len(section._rows) for section in self._sections.values())
+    def _section_buffer_bytes(self):return sum(section._bytes for section in self._sections.values())
+    def _section_draft(self):
+        if not any(section._dirty for section in self._sections.values()):return None
+        return tuple(section._stored_rows() for section in self._sections.values())
     def is_new(self):return self._revision is None
     def set_new_object_ref(self,ref):
         if self._pending_write is not None:raise BackendError('uncertain_commit')
@@ -185,9 +222,11 @@ class BSLCatalogObject(BSLObject):
         self._values['ref']=m._ref(self._key.record_id)
         self._operation_id=uuid4()
         self._pending_write=None
+        for section in self._sections.values():section._dirty=False
 
     def write(self):
         m=self._manager;caps=m._backend.capabilities()
+        if m._schema.tabular_sections and not caps.catalog_tabular_sections:raise BackendError('unsupported')
         if not caps.atomic_transactions or not (caps.catalog_create if self.is_new() else caps.catalog_update):raise BackendError('unsupported')
         if self._pending_write is not None:
             draft,expected=self._pending_write
@@ -197,7 +236,7 @@ class BSLCatalogObject(BSLObject):
                 return None
         else:
             draft=CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
-                               tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields))
+                               tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),self._section_draft())
             expected=self._revision
         tx=m._backend.begin_write(self._operation_id)
         try:
@@ -222,10 +261,12 @@ class BSLCatalogObject(BSLObject):
             'setnewobjectref':self.set_new_object_ref,'установитьссылкунового':self.set_new_object_ref,
             'metadata':lambda:self._manager._metadata,'метаданные':lambda:self._manager._metadata}
         if key in methods:return HostFunction(name,methods[key])
+        if key in self._sections:return self._sections[key]
         return _field(self._values,name)
     def set_member(self,name,value):
         if self._pending_write is not None:raise BackendError('uncertain_commit')
         key=_ALIASES.get(name.casefold(),name.casefold())
+        if key in self._sections:raise ValueError('tabular section replacement is unsupported')
         if key=='ref':raise ValueError('Ref is read-only')
         if key not in self._values:raise ValueError('catalog field not found')
         if key in ('code','description'):

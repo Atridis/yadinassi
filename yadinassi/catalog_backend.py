@@ -32,12 +32,33 @@ class FieldSchema:
 
 
 @dataclass(frozen=True, slots=True)
+class TabularSectionSchema:
+    identity: UUID
+    name: str
+    fields: tuple[FieldSchema, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogSchema:
     identity: UUID
     name: str
     code_length: int
     description_length: int
     fields: tuple[FieldSchema, ...] = ()
+    tabular_sections: tuple[TabularSectionSchema, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class TabularRow:
+    """Backend row identity, scoped to its owner and section; not a line number."""
+    identity: UUID
+    values: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class TabularSectionRows:
+    section_id: UUID
+    rows: tuple[TabularRow, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +85,30 @@ class CatalogCard:
     description: str
     deletion_mark: bool
     values: tuple
+    tabular_sections: tuple[TabularSectionRows, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogScalarRow:
+    """Validated owner scalars, deliberately not a partially loaded card."""
+    key: CatalogKey
+    revision: Revision
+    code: str
+    description: str
+    deletion_mark: bool
+    values: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogValueRow:
+    key: CatalogKey
+    values: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogValuePage:
+    rows: tuple[CatalogValueRow, ...]
+    continuation: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +118,9 @@ class CatalogDraft:
     description: str
     deletion_mark: bool
     values: tuple
+    # None preserves existing contents. An explicit tuple replaces all sections;
+    # omitted sections, including all sections when (), become empty.
+    tabular_sections: tuple[TabularSectionRows, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +180,7 @@ class Capabilities:
     catalog_update: bool = False
     atomic_transactions: bool = False
     read_consistency: str = 'transaction_snapshot'
+    catalog_tabular_sections: bool = False
 
 
 class CatalogReadView(Protocol):
@@ -141,6 +190,7 @@ class CatalogReadView(Protocol):
     def catalog_schema(self, catalog_id: UUID) -> CatalogSchema: ...
     def select_catalog(self, catalog_id: UUID, request: CatalogSelection) -> tuple[CatalogCard, ...]: ...
     def scan_catalog(self, catalog_id: UUID, request: CatalogScanRequest) -> CatalogPage: ...
+    def scan_catalog_values(self, catalog_id: UUID, request: CatalogScanRequest, fields: tuple[str | UUID, ...]) -> CatalogValuePage: ...
     def read_catalog(self, key: CatalogKey) -> CatalogCard | None: ...
     def close(self) -> None: ...
 

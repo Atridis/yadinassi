@@ -34,14 +34,23 @@ The documented integers are **unsigned**, with no floating-point API in this fam
 UTF-8/UTF-16LE/UTF-16BE and the existing finite FileIO codec allowlist are reused.
 A selected ReadChars prefix is decoded without interpreting later mixed binary
 or differently encoded fields. Line reading likewise decodes only its selected
-line. Strict decode errors preserve the logical reader position.
+line. Strict decode errors preserve the logical reader position. Bounded
+ReadChars requests read at most four bytes per requested UTF-16 unit plus a
+three-byte BOM probe. ReadLine and ReadTo scan in bounded blocks with marker
+lookahead instead of copying the entire remaining tail on every call. No
+lookahead is cached across calls, so shared stream writes remain visible.
+UTF-16 line delimiters match only at code-unit boundaries relative to the
+selected text prefix (after a BOM); binary marker APIs still match raw bytes.
 
 ## Bounds and authority
 
 Existing16MiB stream/file/buffer caps remain unchanged. Marker count is at most64,
 each marker at most4096bytes; result partitions at most4096. Each marker operation
 has a64MiB scan-work allowance, counted over every searched remaining span and
-marker, not reset per output part. Bounds are local admission policy, not claims
+marker, not reset per output part. Early-stop scans retain this conservative
+remaining-span admission charge; block overlap does not change admission. Blocks
+are at least as long as the largest marker, bounding overlap overhead below one
+extra span. Bounds are local admission policy, not claims
 about native maximums. Text encoding/conversion growth is checked before output
 allocation; failed partition construction does not advance the source cursor.
 

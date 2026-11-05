@@ -107,6 +107,7 @@ class BSLType(Enum):
     JSON_WRITER = "ЗаписьJSON"
     JSON_VALUE_TYPE = "ТипЗначенияJSON"
     TEXT_DOCUMENT = "ТекстовыйДокумент"
+    VALUE_STORAGE = "ХранилищеЗначения"
     UUID = "УникальныйИдентификатор"
     PROMISE = "Обещание"
     """Opaque, immutable type identities; presentations are not their identity."""
@@ -164,6 +165,8 @@ class BSLType(Enum):
     def __str__(self) -> str:
         # Native run 40221284540, collections record 856: TypeOf displays.
         # Enum values stay unspaced lookup names, not presentation aliases.
+        if self is BSLType.VALUE_STORAGE:
+            raise ValueError("ХранилищеЗначения: представление типа не измерено")
         if self is BSLType.TEXT_DOCUMENT:
             return "Текстовый документ"
         if self is BSLType.UUID:

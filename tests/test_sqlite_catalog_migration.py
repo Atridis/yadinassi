@@ -74,6 +74,27 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT database_uuid,generation FROM database_info').fetchone(), (str(self.database_id),3))
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
+    def test_v1_card_reads_reuse_schema_without_changing_values(self):
+        from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
+        # addCleanup runs after tearDown, too late for Windows file removal.
+        with closing(SQLiteCatalogBackend(self.path)) as backend, closing(backend.begin_read()) as view:
+            queries = []
+            view._connection.set_trace_callback(queries.append)
+            for read in (lambda: view.select_catalog(self.b),
+                         lambda: view.scan_catalog(self.b, CatalogScanRequest(
+                             order=(CatalogOrder('code'),))).cards):
+                queries.clear()
+                cards = read()
+                self.assertEqual([card.code for card in cards], ['2', '3'])
+                self.assertEqual(cards[0].values[0].record_id, self.ra)
+                self.assertEqual(cards[1].values[0].record_id, UUID(int=0))
+                self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
+                                     for query in queries), 1)
+            queries.clear()
+            self.assertEqual(view.read_catalog(cards[0].key), cards[0])
+            self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
+                                 for query in queries), 1)
+
     def test_backend_reopen_and_old_receipt_resolves_exact_intent(self):
         from yadinassi.catalog_backend import CatalogDraft, CatalogKey, Revision
         from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _decode
@@ -375,6 +396,40 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
                 raise sqlite3.OperationalError('injected close failure')
         with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'uncertain')
+
+    def test_section_metadata_is_not_silently_dropped_from_v1(self):
+        from dataclasses import replace
+        from yadinassi.catalog_backend import TabularSectionSchema
+        changed = replace(self.sa, tabular_sections=(TabularSectionSchema(uuid4(), 'Lines'),))
+        self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',
+                     (_json(_schema_data(changed)), str(self.a)))
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(BackendError, 'unsupported'):
+            prepare_v1(self.path, maintenance=True)
+        self.assertEqual(self.path.read_bytes(), before)
+        backend = SQLiteCatalogBackend(self.path)
+        try:
+            view = backend.begin_read()
+            try:
+                with self.assertRaisesRegex(BackendError, 'unsupported'):
+                    view.catalogs()
+            finally:
+                view.close()
+        finally:
+            backend.close()
+
+    def test_resolver_refuses_section_metadata_in_v2(self):
+        from dataclasses import replace
+        from yadinassi.catalog_backend import TabularSectionSchema
+        migrate_v1(self.path, self.plan, maintenance=True)
+        changed = replace(self.sa, tabular_sections=(TabularSectionSchema(uuid4(), 'Lines'),))
+        self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',
+                     (_json(_schema_data(changed)), str(self.a)))
+        before = self.path.read_bytes()
+        self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'uncertain')
+        self.assertEqual(self.path.read_bytes(), before)
+        with self.assertRaisesRegex(BackendError, 'unsupported'):
+            SQLiteCatalogBackend(self.path)
 
 
 if __name__ == '__main__': unittest.main()

@@ -34,6 +34,7 @@ def sibling(name):
 
 FULL=sibling('native_1c_full_host')
 SMOKE=sibling('native_1c_smoke')
+DOCKER=sibling('native_1c_docker_lifecycle')
 
 
 class CatalogObjectError(ValueError):pass
@@ -113,9 +114,10 @@ def validate_inputs(destination, hashes, smoke):
 
 def container_command(staged, hashes, name, nonce, smoke):
     validate_inputs(staged, hashes, smoke)
-    require(re.fullmatch('onec-catalog-object-[0-9a-f]{32}', name) and re.fullmatch('[0-9a-f]{32}', nonce))
+    require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}', nonce) and name == 'onec-catalog-object-' + nonce)
     require(',' not in str(staged) and staged.is_absolute())
-    return ['docker', 'run', '--name', name, '--hostname', 'onec-smoke',
+    return ['docker', 'create', '--name', name, '--label', DOCKER.OWNER_LABEL + '=' + nonce,
+            '--hostname', 'onec-smoke',
             '--pull', 'never', '--platform', 'linux/amd64', '--network', 'none',
             '--user', '1000:1000', '--read-only', '--no-healthcheck', '--cap-drop', 'ALL',
             '--security-opt', 'no-new-privileges:true', '--pids-limit', '256',
@@ -316,10 +318,12 @@ def run(root,temp_root,*,export_native_outputs=False,failure_state=None):
     state['stage']='credentials'
     token,actor=os.environ.pop('GHCR_TOKEN',''),os.environ.pop('GHCR_USER','')
     require(token and re.fullmatch('[A-Za-z0-9-]{1,39}',actor),'registry_credentials_missing')
-    name,nonce='onec-catalog-object-'+uuid.uuid4().hex,uuid.uuid4().hex
+    nonce=uuid.uuid4().hex
+    name='onec-catalog-object-'+nonce
     state['stage']='provenance'
     provenance=FULL.repository_provenance(root);interpreter=FULL.interpreter_provenance(root)
-    hosts=('scripts/native_1c_catalog_deletion_mark_profile.py','scripts/native_1c_smoke.py','scripts/native_1c_full_host.py')
+    hosts=('scripts/native_1c_catalog_deletion_mark_profile.py','scripts/native_1c_smoke.py','scripts/native_1c_full_host.py',
+           'scripts/native_1c_docker_lifecycle.py')
     identity={p:FULL.digest(FULL.read_regular(root/p,FULL.MAX_FILE,nonempty=True)) for p in hosts}
     goldens=FULL.windows_fingerprints(root)
     with private_work(temp_root,state) as directory:
@@ -337,29 +341,22 @@ def run(root,temp_root,*,export_native_outputs=False,failure_state=None):
         finally:
             token='';shutil.rmtree(auth)
         clean=work/'no-auth';clean.mkdir(mode=0o700);env=SMOKE.docker_environment(clean)
-        state['stage']='image_inspect'
-        code,image=SMOKE.bounded_run(['docker','image','inspect','--format','{{.Os}}/{{.Architecture}}|{{len .Config.Volumes}}',SMOKE.IMAGE],env,30,128)
-        require(code==0 and image.strip()==b'linux/amd64|0','unexpected_image_platform_or_volumes')
+        # The single lifecycle budget includes image inspection, create, ownership
+        # admission, attach, CLI reaping and verified removal of the owned full ID.
+        code,raw=DOCKER.run_owned(container_command(staged,hashes,name,nonce,SMOKE),env,
+            name=name,nonce=nonce,image=SMOKE.IMAGE,seconds=SMOKE.FULL_MAX_RUNTIME,
+            output_limit=MAX_TRANSPORT,state=state)
         native_failure=None
+        state['stage']='envelope'
         try:
-            state['stage']='container_run'
-            code,raw=SMOKE.bounded_run(container_command(staged,hashes,name,nonce,SMOKE),env,SMOKE.FULL_MAX_RUNTIME,MAX_TRANSPORT)
-            state['stage']='envelope'
-            try:
-                report,native=validate_envelope(raw,nonce,hashes)
-            except CatalogObjectError as error:
-                if not hasattr(error,'validated_report'):raise
-                native_failure=error.native_failure
-                report=error.validated_report
-                native=None
-            if native_failure is None:require(code==0,'catalog_object_container_failed')
-            del raw
-        finally:
-            prior=state['stage'];state['stage']='container_cleanup'
-            SMOKE.run_silent(['docker','rm','--force',name],env,30)
-            code,remaining=SMOKE.bounded_run(['docker','ps','--all','--filter','name=^/'+name+'$','--format','{{.Names}}'],env,30,128)
-            require(code==0 and not remaining.strip(),'container_cleanup_unverified');state['stage']=prior
-        state['stage']='comparison'
+            report,native=validate_envelope(raw,nonce,hashes)
+        except CatalogObjectError as error:
+            if not hasattr(error,'validated_report'):raise
+            native_failure=error.native_failure
+            report=error.validated_report
+            native=None
+        if native_failure is None:require(code==0,'catalog_object_container_failed')
+        del raw
         comparison=None  # Native observation only; no interpreter parity claim.
         state['stage']='final_provenance';validate_inputs(staged,hashes,SMOKE)
         require(all(FULL.digest(FULL.read_regular(root/p,FULL.MAX_FILE,nonempty=True))==h for p,h in hashes.items()),'catalog_object_source_changed')
@@ -370,7 +367,7 @@ def run(root,temp_root,*,export_native_outputs=False,failure_state=None):
                 'image':SMOKE.IMAGE,'platform':'linux/amd64','configured_timezone':'Etc/UTC',
                 'repository':provenance,'interpreter':interpreter,'host_source_sha256':identity,
                 'trusted_input_sha256':hashes,'native_report':report,'comparison':comparison,
-                'container_cleanup_verified':True,'native_measurement_accepted':native_failure is None,
+                'container_cleanup_verified':True,'docker_cli_reap_verified':True,'native_measurement_accepted':native_failure is None,
                 'runtime_parity_accepted':False}
         if native_failure is not None:
             result.update(status='failed',native_failure=native_failure,
@@ -388,13 +385,13 @@ def run(root,temp_root,*,export_native_outputs=False,failure_state=None):
 
 
 FAILURE_STAGES=('credentials','provenance','staging','adapter','registry_login','image_pull','image_inspect',
-                'container_run','envelope','container_cleanup','comparison','final_provenance','private_cleanup','artifact_export')
+                'container_create','container_ownership','container_start','container_exit','envelope','container_cleanup','comparison','final_provenance','private_cleanup','artifact_export')
 FAILURE_REASONS=('catalog_object_report_invalid','catalog_object_native_failed','registry_credentials_missing','catalog_object_source_changed',
     'catalog_object_inventory_invalid','catalog_object_staged_source_changed','docker_command_timeout','docker_command_unavailable',
     'docker_command_failed','container_timeout','container_output_limit','container_cleanup_unverified',
     'catalog_object_container_failed','catalog_object_host_changed','execution_provenance_changed','private_cleanup_unverified',
     'unexpected_image_platform_or_volumes','catalog_object_host_report_limit','native_artifact_export_failed',
-    'native_artifact_target_exists','windows_goldens_changed')
+    'native_artifact_target_exists','windows_goldens_changed',*DOCKER.FAILURE_CODES)
 
 
 def main():
@@ -412,6 +409,10 @@ def main():
                 'native_measurement_accepted':False,'runtime_parity_accepted':False,
                 'failure_diagnostic':{'stage':state['stage'] if state.get('stage') in FAILURE_STAGES else 'unknown',
                                       'reason':reason if reason in FAILURE_REASONS else 'unexpected_failure'}}
+        if isinstance(error,DOCKER.LifecycleError):
+            report.update(docker_cli_reap_verified=error.cli_reap_verified,
+                          container_cleanup_verified=error.container_cleanup_verified)
+            if error.cleanup_error is not None:report['cleanup_error']=error.cleanup_error
         # Unverified cleanup or provenance failures deliberately retain no native evidence.
     raw=(json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode()
     require(len(raw)<=FULL.MAX_REPORT)

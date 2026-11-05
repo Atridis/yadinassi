@@ -20,6 +20,7 @@ from . import binary_streams
 from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
 from .text_documents import BSLTextDocument
+from .value_storage import BSLValueStorage
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
 from .unique_identifiers import BSLUUID
 from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
@@ -33,6 +34,7 @@ from . import clocks, date_time_conversions, dates, formatting, number_in_words,
 from .chars import BSLChars, CHARS
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
 from .catalogs import BSLCatalogs
+from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .documents import BSLDocuments
 from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
@@ -71,11 +73,11 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
-_TABLE_COLLECTIONS = (BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+_TABLE_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
                       BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                       BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
@@ -171,7 +173,7 @@ class Interpreter:
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
-            database_context.require_active()
+            database_context.require_active(tabular_sections=True)
         self._database_context = database_context
         self._metadata = BSLMetadata(database_context)
         self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
@@ -269,6 +271,7 @@ class Interpreter:
         for ru, function, en, returns_value in file_io.FUNCTIONS:
             self.register_function(ru, function, en, returns_value=returns_value)
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
+        self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
@@ -367,10 +370,19 @@ class Interpreter:
 
     def run_until_idle(self, *, max_steps=100_000):
         """Resume queued language work; unresolved host promises remain pending."""
-        before = len(self._scheduler.procedure_errors)
-        self._pump_async(max_steps=max_steps)
-        if len(self._scheduler.procedure_errors) > before:
-            raise self._scheduler.procedure_errors[before]
+        if self._scheduler.is_active:
+            # A rejected nested pump is not a host boundary and must not consume
+            # the enclosing execution's procedure failures.
+            self._pump_async(max_steps=max_steps)
+            return
+        try:
+            self._pump_async(max_steps=max_steps)
+        finally:
+            # Preserve pump/host failure precedence, but never keep the batch
+            # as traceback-bearing history for a later execution.
+            error = self._scheduler.take_procedure_error()
+        if error is not None:
+            raise error
 
     def ensure_complete(self):
         """Reject silent process success while language tasks remain blocked."""
@@ -505,7 +517,15 @@ class Interpreter:
     def execute_program(self, program: list[ast.Node]) -> object:
         """Execute already-compiled AST; this does not select source branches."""
         outermost = not self._scheduler.is_active
-        procedure_errors = len(self._scheduler.procedure_errors)
+        try:
+            return self._execute_program_boundary(program, outermost)
+        finally:
+            if outermost:
+                # A synchronous root failure can bypass the pump altogether.
+                # Such a failure already takes precedence over procedure errors.
+                self._scheduler.procedure_errors.clear()
+
+    def _execute_program_boundary(self, program, outermost):
         with target_context(self.native_target):
             # A diagnostic source label need not name a readable filesystem path.
             if not any(isinstance(node, ast.Import) for node in program):
@@ -526,9 +546,7 @@ class Interpreter:
             # keep the same receiver, storage and public availability.
             self._self_module.ready = True
             if outermost:
-                self._pump_async()
-                if len(self._scheduler.procedure_errors) > procedure_errors:
-                    raise self._scheduler.procedure_errors[procedure_errors]
+                self.run_until_idle()
             return result
 
     def _execute_program(self, program: list[ast.Node]) -> object:
