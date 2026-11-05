@@ -2,7 +2,8 @@
 > see [catalog-editor.md](catalog-editor.md) for the current executable contract.
 > Historical read-only foundation limitations below describe `yadinassi-ui/0`,
 > not the separate `yadinassi-editor/0` adapter. Full native managed forms and
-> reference editing remain outside this slice.
+> native reference FormData remain outside this slice. The local editor supports
+> bounded host-owned fixed-reference choices; see the executable contract.
 
 # Third track: a usable catalog application, with 1C-compatible programming
 

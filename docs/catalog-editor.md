@@ -39,16 +39,30 @@ future client/server transport or a remotely accessible database service.
 
 ## Working flow and honest limits
 
-Choose a catalog, open or create a record, edit scalar values, Save, return to
+Choose a catalog, open or create a record, edit scalar values and bounded reference selections, Save, return to
 the list, close the application and reopen the same file. Persisted values are
 loaded again from SQLite, not a UI overlay. Strings, exact Decimal values,
 Boolean and naive whole-second dates are supported. Numbers stay text in JS;
 no floating-point or browser timezone conversion is applied. Qualifiers are
 applied by the runtime, not guessed by the renderer.
 
-- Catalog references are **read-only** and preserved as typed values on the
-  detached object. New records start with their supported empty references.
-  Native reference pickers/FormData transfer are not implemented.
+- Fixed catalog references can be selected from a host-captured list of at most
+  64 target records, plus the empty reference. Long choice labels are shortened
+  with an ellipsis; UUID identities are unchanged. Deleted rows are not choices.
+  Overflow, unavailable choices or a current dangling/deleted reference leave
+  the field explicitly read-only and preserve its typed value. Close and reopen
+  the card to refresh choices. Choices do not reserve target records or promise
+  foreign-key/liveness guarantees against concurrent changes.
+- This is a local host adapter, **not native reference FormData or a 1C picker**.
+  Its scalar form stores a UUID selection key; the renderer sends a typed wire
+  reference checked against the fixed field target and captured allowlist.
+  Only the owning catalog manager builds the actual runtime reference on Save.
+  Arbitrary UUIDs, wrong targets and raw strings reject without changing form
+  state. Dirty, discard, revision/conflict, uncertain-write locks and durable
+  refresh use the same path as scalar fields. An authoritative refresh containing
+  a reference outside the captured choices stays locked for refresh; no false
+  Saved state is reported. Large aggregate snapshots still fail closed at the
+  existing message limit.
 - Autoforms use real `FormAttribute`, `Items`, `Commands`, `DataPath`, `SetAction`
   and prebound BSL handlers. They are not imported managed forms. The closed host
   Save adapter is not a new BSL API, native standard Write or complete FormData.
