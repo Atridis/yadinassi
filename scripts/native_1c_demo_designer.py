@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-SCHEMA = 'native-demo-designer-v3'
+SCHEMA = 'native-demo-designer-v4'
 VERSION = '8.3.27.1508'
 IMAGE = 'ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728'
 ONEC = '/opt/1cv8t/x86_64/' + VERSION + '/1cv8t'
@@ -196,6 +196,96 @@ DIAGNOSTIC_COUNTS = ('namespace_bindings', 'root_name', 'root_version',
 DIAGNOSTIC_COMPARISONS = ('equal', 'namespace_only', 'expanded_tree', 'namespace_and_tree',
                           'unavailable')
 DIAGNOSTIC_REASONS = ('none', 'missing', 'input_limit', 'parse_rejected', 'analysis_limit')
+# Records contain only source preorder IDs, finite kinds, source attribute slots,
+# and bounded counts. Never serialize a name or value from the native dump.
+ADDRESS_KINDS = ('attribute_changed', 'attribute_removed', 'attributes_added',
+                 'text_changed', 'tail_changed', 'children_added', 'child_removed',
+                 'child_order_changed', 'children_ambiguous', 'element_name_changed')
+ADDRESS_MAX_RECORDS = 12
+ADDRESS_MAX_TOTAL = 32768
+
+
+def source_nodes(tree):
+    """Deterministic preorder of the acceptance signature, not native paths."""
+    result, pending = [], [tree]
+    while pending:
+        node = pending.pop()
+        result.append(node)
+        pending.extend(child for child, _ in reversed(node[3]))
+    return result
+
+
+def xml_addresses(left, right):
+    """Align unique sibling QNames only; repeated names never imply identity."""
+    nodes = source_nodes(left)
+    identifiers = {id(node): index for index, node in enumerate(nodes)}
+    records, total = [], 0
+
+    def add(node, kind, slot=0, count=1):
+        nonlocal total
+        total += 1
+        entry = [identifiers[id(node)], ADDRESS_KINDS.index(kind), slot, min(count, DIAGNOSTIC_MAX_NODES)]
+        records.append(entry)
+        # Structural changes first; common root-version churn must not crowd out
+        # source-addressed observations deeper in Configuration and form XML.
+        records.sort(key=lambda item: (9 if item[0] == 0 and item[1] in (0, 1) else
+                                      3 if item[1] in (0, 1, 2) else
+                                      2 if item[1] in (3, 4, 8) else 1))
+        del records[ADDRESS_MAX_RECORDS:]
+
+    pending = [(left, right)]
+    while pending:
+        before, after = pending.pop()
+        if before == after:
+            continue
+        if before[0] != after[0]:
+            add(before, 'element_name_changed')
+            # No asserted descendant identity across an expanded-name change.
+            continue
+        attrs_before, attrs_after = dict(before[1]), dict(after[1])
+        for slot, (name, value) in enumerate(before[1]):
+            if name not in attrs_after:
+                add(before, 'attribute_removed', slot)
+            elif value != attrs_after[name]:
+                add(before, 'attribute_changed', slot)
+        extra = len(attrs_after.keys() - attrs_before.keys())
+        if extra:
+            add(before, 'attributes_added', count=extra)
+        if before[2] != after[2]:
+            add(before, 'text_changed')
+        groups_before, groups_after = {}, {}
+        for child, tail in before[3]:
+            groups_before.setdefault(child[0], []).append((child, tail))
+        for child, tail in after[3]:
+            groups_after.setdefault(child[0], []).append((child, tail))
+        added = sum(len(children) for name, children in groups_after.items() if name not in groups_before)
+        if added:
+            add(before, 'children_added', count=added)
+        # Child-list order is an observation, never accepted as harmless.
+        # Compare stable name multiplicities, including repeated groups, so an
+        # unrelated insertion cannot hide movement of existing sibling groups.
+        stable = {name for name in groups_before.keys() & groups_after.keys()
+                  if len(groups_before[name]) == len(groups_after[name])}
+        old_order = [child[0] for child, _ in before[3] if child[0] in stable]
+        new_order = [child[0] for child, _ in after[3] if child[0] in stable]
+        if old_order != new_order:
+            add(before, 'child_order_changed')
+        children_to_visit = []
+        for name, group in groups_before.items():
+            other = groups_after.get(name, [])
+            if not other:
+                for child, _ in group:
+                    add(child, 'child_removed')
+            elif len(group) != 1 or len(other) != 1:
+                if group != other:
+                    add(group[0][0], 'children_ambiguous', count=max(len(group), len(other)))
+            else:
+                (child, tail), (other_child, other_tail) = group[0], other[0]
+                if tail != other_tail:
+                    add(child, 'tail_changed')
+                children_to_visit.append((child, other_child))
+        pending.extend(reversed(children_to_visit))
+    return records, total - len(records)
 
 
 def diagnostic_signature(raw):
@@ -234,7 +324,7 @@ def diagnostic_signature(raw):
 def xml_diagnostic(before, after):
     """Return only finite categories/counts and bounded-byte hashes; no XML text."""
     result = dict(comparison='unavailable', reason='missing', counts=[0] * len(DIAGNOSTIC_COUNTS),
-                  before_sha256=None, after_sha256=None)
+                  before_sha256=None, after_sha256=None, addresses=[], omitted=0)
     for field, raw in (('before_sha256', before), ('after_sha256', after)):
         if type(raw) is bytes and len(raw) <= DIAGNOSTIC_MAX_BYTES:
             result[field] = digest(raw)
@@ -268,6 +358,7 @@ def xml_diagnostic(before, after):
     result.update(comparison=('namespace_and_tree' if changed_ns and changed_tree else
                               'namespace_only' if changed_ns else 'expanded_tree' if changed_tree else 'equal'),
                   reason='none')
+    result['addresses'], result['omitted'] = xml_addresses(tree_left, tree_right)
     return result
 
 
@@ -277,12 +368,19 @@ def xml_diagnostics(expected, actual, mismatches):
         if name in mismatches:
             files.append(dict(file=index, **xml_diagnostic(expected.get(name), actual.get(name))))
     result = dict(state='available', files=files)
-    if len(json.dumps(result, separators=(',', ':')).encode()) > DIAGNOSTIC_MAX_OUTPUT:
-        return dict(state='budget_limit', files=[])
+    # Preserve all file summaries. Remove details round-robin from the largest
+    # lists first, with an explicit per-file omission count.
+    while len(json.dumps(result, separators=(',', ':')).encode()) > DIAGNOSTIC_MAX_OUTPUT:
+        candidates = [item for item in files if item['addresses']]
+        if not candidates:
+            return dict(state='budget_limit', files=[])
+        item = max(candidates, key=lambda entry: len(entry['addresses']))
+        item['addresses'].pop()
+        item['omitted'] += 1
     return result
 
 
-def validate_xml_diagnostics(value, mismatches):
+def validate_xml_diagnostics(value, mismatches, expected=None):
     require(type(value) is dict and set(value) == {'state', 'files'}
             and value['state'] in ('available', 'not_reached', 'budget_limit')
             and type(value['files']) is list and len(value['files']) <= len(XML_FILES), 'invalid_result')
@@ -291,9 +389,10 @@ def validate_xml_diagnostics(value, mismatches):
         require(value['files'] == [], 'invalid_result')
         return
     seen = set()
+    expected = source_files() if expected is None else expected
     for item in value['files']:
         require(type(item) is dict and set(item) == {'file', 'comparison', 'reason', 'counts',
-                'before_sha256', 'after_sha256'}, 'invalid_result')
+                'before_sha256', 'after_sha256', 'addresses', 'omitted'}, 'invalid_result')
         index = item['file']
         require(type(index) is int and 0 <= index < len(XML_FILES) and index not in seen
                 and XML_FILES[index] in mismatches, 'invalid_result')
@@ -307,6 +406,31 @@ def validate_xml_diagnostics(value, mismatches):
         for field in ('before_sha256', 'after_sha256'):
             require(item[field] is None or type(item[field]) is str
                     and re.fullmatch('[0-9a-f]{64}', item[field]) is not None, 'invalid_result')
+        addresses, omitted = item['addresses'], item['omitted']
+        require(type(addresses) is list and len(addresses) <= ADDRESS_MAX_RECORDS
+                and type(omitted) is int and 0 <= omitted <= ADDRESS_MAX_TOTAL, 'invalid_result')
+        if addresses or omitted:
+            signature, reason = diagnostic_signature(expected.get(XML_FILES[index]))
+            require(signature is not None and reason == 'none', 'invalid_result')
+            nodes = source_nodes(signature[1])
+            seen_addresses = set()
+            for entry in addresses:
+                require(type(entry) is list and len(entry) == 4
+                        and all(type(n) is int for n in entry), 'invalid_result')
+                node, kind, slot, count = entry
+                require(0 <= node < len(nodes) and 0 <= kind < len(ADDRESS_KINDS)
+                        and 1 <= count <= DIAGNOSTIC_MAX_NODES, 'invalid_result')
+                require((kind in (0, 1) and 0 <= slot < len(nodes[node][1]))
+                        or (kind not in (0, 1) and slot == 0), 'invalid_result')
+                require(kind in (2, 5, 8) or count == 1, 'invalid_result')
+                key = tuple(entry[:3])
+                require(key not in seen_addresses, 'invalid_result')
+                seen_addresses.add(key)
+        require(len(addresses) + omitted <= ADDRESS_MAX_TOTAL, 'invalid_result')
+        if item['comparison'] in ('unavailable', 'namespace_only'):
+            require(not addresses and omitted == 0, 'invalid_result')
+        else:
+            require(addresses or omitted > 0, 'invalid_result')
         if item['comparison'] == 'unavailable':
             require(item['reason'] != 'none' and not any(counts), 'invalid_result')
         else:
