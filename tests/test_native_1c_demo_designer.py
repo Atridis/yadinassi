@@ -122,7 +122,7 @@ class DemoDesignerTests(unittest.TestCase):
         self.assertNotIn('secret', json.dumps(demo.failure_report(ValueError('secret'))))
         hashes = demo.inventory(demo.ROOT)
         report = dict(schema=demo.SCHEMA, nonce='a'*32, status='ok', phase='complete', failure='none',
-                      input_sha256=hashes, mismatches={},
+                      input_sha256=hashes, mismatches={}, xml_diagnostics=dict(state='available', files=[]),
                       redump_sha256={n: demo.digest(b) for n, b in demo.source_files().items()})
         demo.validate_report(json.dumps(report).encode(), 'a'*32, hashes)
         for key, value in [('schema', 'native-demo-designer-v1'), ('archive_sha256', 'a'*64), ('nonce', 'b'*32), ('failure', 'native raw log'), ('redump_sha256', {}), ('input_sha256', {})]:

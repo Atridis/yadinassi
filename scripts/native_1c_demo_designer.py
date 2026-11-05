@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-SCHEMA = 'native-demo-designer-v2'
+SCHEMA = 'native-demo-designer-v3'
 VERSION = '8.3.27.1508'
 IMAGE = 'ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728'
 ONEC = '/opt/1cv8t/x86_64/' + VERSION + '/1cv8t'
@@ -183,6 +183,141 @@ def verify_redump(expected, actual):
     return {name: digest(actual[name]) for name in sorted(expected)}
 
 
+# Diagnostic metadata never participates in acceptance. Counts are positional
+# observations, not a claim that a native rewrite is semantically harmless.
+XML_FILES = tuple(name for name in SOURCE_FILES if name.endswith('.xml'))
+DIAGNOSTIC_MAX_BYTES = 1048576
+DIAGNOSTIC_MAX_NODES = 4096
+DIAGNOSTIC_MAX_DEPTH = 96
+DIAGNOSTIC_MAX_STRING = 65536
+DIAGNOSTIC_MAX_OUTPUT = 6144
+DIAGNOSTIC_COUNTS = ('namespace_bindings', 'root_name', 'root_version',
+                     'attributes', 'text', 'child_shape', 'element_names')
+DIAGNOSTIC_COMPARISONS = ('equal', 'namespace_only', 'expanded_tree', 'namespace_and_tree',
+                          'unavailable')
+DIAGNOSTIC_REASONS = ('none', 'missing', 'input_limit', 'parse_rejected', 'analysis_limit')
+
+
+def diagnostic_signature(raw):
+    """Bound work before using the unchanged acceptance signature."""
+    if type(raw) is not bytes or len(raw) > DIAGNOSTIC_MAX_BYTES:
+        return None, 'input_limit'
+    try:
+        text = raw.decode('utf-8-sig')
+        if ('\x00' in text or '<!DOCTYPE' in text.upper() or '<!ENTITY' in text.upper()
+                or '<?' in re.sub(r'^<\?xml\s+[^?]*\?>', '', text, count=1)):
+            return None, 'parse_rejected'
+        depth = nodes = attributes = declarations = 0
+        for event, node in ET.iterparse(io.StringIO(text), events=('start', 'end', 'start-ns')):
+            if event == 'start-ns':
+                declarations += 1
+                if declarations > DIAGNOSTIC_MAX_NODES or any(len(v) > DIAGNOSTIC_MAX_STRING for v in node):
+                    return None, 'analysis_limit'
+            elif event == 'start':
+                depth += 1
+                nodes += 1
+                attributes += len(node.attrib)
+                if (depth > DIAGNOSTIC_MAX_DEPTH or nodes > DIAGNOSTIC_MAX_NODES
+                        or attributes > DIAGNOSTIC_MAX_NODES or len(node.tag) > DIAGNOSTIC_MAX_STRING
+                        or any(len(k) > DIAGNOSTIC_MAX_STRING or len(v) > DIAGNOSTIC_MAX_STRING
+                               for k, v in node.attrib.items())):
+                    return None, 'analysis_limit'
+            else:
+                if len(node.text or '') > DIAGNOSTIC_MAX_STRING or len(node.tail or '') > DIAGNOSTIC_MAX_STRING:
+                    return None, 'analysis_limit'
+                depth -= 1
+        return xml_signature(raw), 'none'
+    except (DemoError, UnicodeError, ET.ParseError, RecursionError, ValueError):
+        return None, 'parse_rejected'
+
+
+def xml_diagnostic(before, after):
+    """Return only finite categories/counts and bounded-byte hashes; no XML text."""
+    result = dict(comparison='unavailable', reason='missing', counts=[0] * len(DIAGNOSTIC_COUNTS),
+                  before_sha256=None, after_sha256=None)
+    for field, raw in (('before_sha256', before), ('after_sha256', after)):
+        if type(raw) is bytes and len(raw) <= DIAGNOSTIC_MAX_BYTES:
+            result[field] = digest(raw)
+    if before is None or after is None:
+        return result
+    left, reason = diagnostic_signature(before)
+    right, other = diagnostic_signature(after)
+    if left is None or right is None:
+        result['reason'] = reason if left is None else other
+        return result
+    ns_left, tree_left = left
+    ns_right, tree_right = right
+    bindings_left, bindings_right = dict(ns_left), dict(ns_right)
+    counts = result['counts']
+    counts[0] = sum(bindings_left.get(k) != bindings_right.get(k)
+                    for k in bindings_left.keys() | bindings_right.keys())
+    counts[1] = int(tree_left[0] != tree_right[0])
+    counts[2] = int(dict(tree_left[1]).get('version') != dict(tree_right[1]).get('version'))
+    pending = [(tree_left, tree_right)]
+    while pending:
+        first, second = pending.pop()
+        counts[3] += int(first[1] != second[1])
+        counts[4] += int(first[2] != second[2])
+        counts[5] += int(len(first[3]) != len(second[3]))
+        counts[6] += int(first[0] != second[0])
+        for (child_a, tail_a), (child_b, tail_b) in zip(first[3], second[3]):
+            counts[4] += int(tail_a != tail_b)
+            pending.append((child_a, child_b))
+    result['counts'] = [min(value, DIAGNOSTIC_MAX_NODES) for value in counts]
+    changed_ns, changed_tree = ns_left != ns_right, tree_left != tree_right
+    result.update(comparison=('namespace_and_tree' if changed_ns and changed_tree else
+                              'namespace_only' if changed_ns else 'expanded_tree' if changed_tree else 'equal'),
+                  reason='none')
+    return result
+
+
+def xml_diagnostics(expected, actual, mismatches):
+    files = []
+    for index, name in enumerate(XML_FILES):
+        if name in mismatches:
+            files.append(dict(file=index, **xml_diagnostic(expected.get(name), actual.get(name))))
+    result = dict(state='available', files=files)
+    if len(json.dumps(result, separators=(',', ':')).encode()) > DIAGNOSTIC_MAX_OUTPUT:
+        return dict(state='budget_limit', files=[])
+    return result
+
+
+def validate_xml_diagnostics(value, mismatches):
+    require(type(value) is dict and set(value) == {'state', 'files'}
+            and value['state'] in ('available', 'not_reached', 'budget_limit')
+            and type(value['files']) is list and len(value['files']) <= len(XML_FILES), 'invalid_result')
+    require(len(json.dumps(value, separators=(',', ':')).encode()) <= DIAGNOSTIC_MAX_OUTPUT, 'invalid_result')
+    if value['state'] != 'available':
+        require(value['files'] == [], 'invalid_result')
+        return
+    seen = set()
+    for item in value['files']:
+        require(type(item) is dict and set(item) == {'file', 'comparison', 'reason', 'counts',
+                'before_sha256', 'after_sha256'}, 'invalid_result')
+        index = item['file']
+        require(type(index) is int and 0 <= index < len(XML_FILES) and index not in seen
+                and XML_FILES[index] in mismatches, 'invalid_result')
+        seen.add(index)
+        require(item['comparison'] in DIAGNOSTIC_COMPARISONS and item['comparison'] != 'equal'
+                and item['reason'] in DIAGNOSTIC_REASONS, 'invalid_result')
+        counts = item['counts']
+        require(type(counts) is list and len(counts) == len(DIAGNOSTIC_COUNTS)
+                and all(type(n) is int and 0 <= n <= DIAGNOSTIC_MAX_NODES for n in counts)
+                and counts[1] <= 1 and counts[2] <= 1, 'invalid_result')
+        for field in ('before_sha256', 'after_sha256'):
+            require(item[field] is None or type(item[field]) is str
+                    and re.fullmatch('[0-9a-f]{64}', item[field]) is not None, 'invalid_result')
+        if item['comparison'] == 'unavailable':
+            require(item['reason'] != 'none' and not any(counts), 'invalid_result')
+        else:
+            require(item['reason'] == 'none' and item['before_sha256'] is not None
+                    and item['after_sha256'] is not None, 'invalid_result')
+            ns, tree = counts[0] > 0, any(counts[1:])
+            require((item['comparison'], ns, tree) in (('namespace_only', True, False),
+                    ('expanded_tree', False, True), ('namespace_and_tree', True, True)), 'invalid_result')
+    require(seen == {i for i, name in enumerate(XML_FILES) if name in mismatches}, 'invalid_result')
+
+
 def operations(root):
     db = root / 'db'
     common = ['/AppAutoCheckVersion-', '/DisableStartupDialogs', '/DisableStartupMessages', '/L', 'ru']
@@ -222,7 +357,8 @@ def native_quiet():
 
 def native_run(nonce):
     report = dict(schema=SCHEMA, nonce=nonce, status='failed', phase='inputs', failure='invalid_input',
-                  input_sha256={}, redump_sha256={}, mismatches={})
+                  input_sha256={}, redump_sha256={}, mismatches={},
+                  xml_diagnostics=dict(state='not_reached', files=[]))
     try:
         require(re.fullmatch('[0-9a-f]{32}', nonce) is not None and os.getuid() == 1000)
         report['input_sha256'] = inventory(ROOT)
@@ -246,6 +382,7 @@ def native_run(nonce):
         report['phase'] = 'witness'
         actual = dump_files(root / 'redump')
         report['mismatches'] = redump_mismatches(expected, actual)
+        report['xml_diagnostics'] = xml_diagnostics(expected, actual, report['mismatches'])
         report['redump_sha256'] = verify_redump(expected, actual)
         require(inventory(ROOT) == report['input_sha256'])
         report.update(status='ok', phase='complete', failure='none')
@@ -253,7 +390,12 @@ def native_run(nonce):
         report['failure'] = 'timeout'
     except Exception as error:
         report['failure'] = str(error) if isinstance(error, DemoError) and str(error) in FAILURES else 'invalid_input'
-    print(json.dumps(report, sort_keys=True, separators=(',', ':')))
+    encoded = json.dumps(report, sort_keys=True, separators=(',', ':'))
+    if len(encoded.encode()) > 16384:
+        report['xml_diagnostics'] = dict(state='budget_limit', files=[])
+        encoded = json.dumps(report, sort_keys=True, separators=(',', ':'))
+    require(len(encoded.encode()) <= 16384, 'invalid_result')
+    print(encoded)
     return 0 if report['status'] == 'ok' else 1
 
 
@@ -290,7 +432,7 @@ def validate_report(raw, nonce, hashes):
     except (ValueError, UnicodeError):
         raise DemoError('invalid_result') from None
     require(type(report) is dict and set(report) == {'schema', 'nonce', 'status', 'phase', 'failure',
-            'input_sha256', 'redump_sha256', 'mismatches'}, 'invalid_result')
+            'input_sha256', 'redump_sha256', 'mismatches', 'xml_diagnostics'}, 'invalid_result')
     require(report['schema'] == SCHEMA and report['nonce'] == nonce
             and report['input_sha256'] == hashes and report['phase'] in PHASES
             and report['failure'] in FAILURES and report['status'] in ('ok', 'failed'), 'invalid_result')
@@ -298,6 +440,9 @@ def validate_report(raw, nonce, hashes):
     require(type(failures) is dict and set(failures) <= set(SOURCE_FILES) | {'$inventory'}
             and all(type(value) is str and value in ('unexpected_file', 'missing_file', 'module_changed',
                     'metadata_changed', 'invalid_encoding_or_xml') for value in failures.values()), 'invalid_result')
+    validate_xml_diagnostics(report['xml_diagnostics'], failures)
+    if report['xml_diagnostics']['state'] != 'not_reached':
+        require(report['phase'] in ('witness', 'complete'), 'invalid_result')
     witness = report['redump_sha256']
     require(type(witness) is dict, 'invalid_result')
     require(all(type(value) is str and re.fullmatch('[0-9a-f]{64}', value) for value in witness.values()), 'invalid_result')

@@ -86,3 +86,33 @@ Repeat with `-O` to ensure gates do not depend on assertions. These tests never
 start Docker or 1C. `bash -n scripts/native_1c_demo_designer.sh` checks shell syntax.
 The native entrypoint deliberately requires `--execute-approved-image`; do not
 run it as a unit test or substitute it for CI's exact-source admission.
+
+## Diagnostic-only XML mismatch evidence (schema v3)
+
+The unchanged strict XML/module witness remains the acceptance decision. The v3
+report additionally describes up to 15 mismatching known XML inputs without
+exporting XML, names, values, logs or database content. `xml_diagnostics.files`
+uses numeric `file` indexes into the profile's fixed `XML_FILES` order. Each item
+contains bounded raw-byte SHA-256 pairs, a finite reason/comparison and seven
+counts in `DIAGNOSTIC_COUNTS` order: namespace bindings, root expanded name,
+root unqualified `version` attribute, nodes with differing attributes, differing
+node text/tails, child-count differences, and expanded element-name differences.
+Counts overlap, compare corresponding positional nodes only and saturate at 4096.
+They are observations, not a structural diff or semantic-equivalence proof.
+
+`namespace_only` means the unchanged signature's namespace-binding map differs
+while its expanded tree tuple does not. Even unused declarations remain part of
+the strict acceptance signature. QName-valued attribute/text semantics are not
+resolved: namespace-only never means harmless or safe to accept. Root/version,
+attributes, text and child-shape categories help identify what needs examination;
+unknown semantics remain unknown and no normalization is approved automatically.
+
+Analysis is limited to 1 MiB per XML, 4096 nodes/attributes/declarations, 96 levels
+and 65536 characters per name/value/text segment. Missing, rejected or excessive
+input reports `unavailable` with a finite reason, never raw parser exceptions.
+Diagnostic JSON is capped at 6144 bytes and the existing whole native-report
+limit remains 16384 bytes. If a budget is exhausted, diagnostics become
+`budget_limit` with no entries; acceptance is never upgraded. `not_reached`
+means the witness stage did not produce diagnostic evidence. Host validation
+rejects unknown indexes, duplicate files, arbitrary strings, excessive counts,
+extra fields and entries not corresponding to known XML mismatches.
