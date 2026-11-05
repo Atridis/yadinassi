@@ -67,3 +67,9 @@ test('missing or malformed launch capability is never sent as a header',()=>{
     assert.equal(takeSessionCapability({hash,pathname:'/'},{replaceState(){}}),null);
   }
 });
+
+test('reference input uses only the field target and an offered selection',()=>{
+  const field={kind:'catalog_ref',value:{catalog:'target'},choices:[{value:'empty'},{value:'selected'}]};
+  assert.deepEqual(typedInput(field,'selected'),{type:'CatalogRef',catalog:'target',record:'selected'});
+  for(const value of ['unknown',{},null,4])assert.throws(()=>typedInput(field,value),/available reference/);
+});
