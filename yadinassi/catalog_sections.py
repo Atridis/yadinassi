@@ -58,6 +58,8 @@ class BSLCatalogSectionRow(BSLObject):
         self._require()
         if type(name) is not str: raise TypeError('tabular field name requires String')
         key = name.casefold()
+        if key in ('linenumber', 'номерстроки'):
+            return Decimal(self._section._rows.index(self) + 1)
         if key not in self._values: return super().get_member(name)
         return self._values[key]
 

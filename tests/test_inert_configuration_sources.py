@@ -1,4 +1,4 @@
-"""Closed synthetic source archives only: no native 1C, network or demo inputs."""
+"""Closed source archives and exact original demo admission; no native 1C run."""
 from contextlib import closing
 from dataclasses import replace
 import hashlib
@@ -346,3 +346,162 @@ class InertSourceStorageTests(unittest.TestCase):
         with self.assertRaises(BackendError) as error:
             self.backend.read_form_source(CATALOG)
         self.assertIn(error.exception.code, ('schema_changed', 'integrity'))
+
+
+class DemoKindsSourceImportTests(unittest.TestCase):
+    """Original source admission evidence only, never native 1C parity."""
+    ROOT = Path(__file__).parent / 'fixtures' / 'demo_cf' / 'source'
+    CATALOG = 'Catalogs/ВидыНоменклатуры.xml'
+    MODULE = 'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl'
+
+    def source(self):
+        return {p.relative_to(self.ROOT).as_posix(): p.read_bytes()
+                for p in self.ROOT.rglob('*') if p.is_file()}
+
+    def test_original_full_source_retained_with_only_numbered_kinds(self):
+        from yadinassi.configuration_xml import DEMO_KINDS_PROFILE, DEMO_KINDS_SOURCE_ISSUE, import_demo_kinds_configuration
+        files = self.source()
+        imported = import_demo_kinds_configuration(files)
+        self.assertEqual(DEMO_KINDS_PROFILE, 'demo_kinds_v1')
+        self.assertEqual(imported.catalogs, (CatalogSchema(
+            UUID('a4bf60fb-591d-5927-ba65-a2ae8af699fa'), 'ВидыНоменклатуры',
+            9, 100, numbering='decimal_v1'),))
+        self.assertEqual(imported.activation_issues, (DEMO_KINDS_SOURCE_ISSUE,))
+        self.assertEqual(imported.modules, ())
+        self.assertEqual(len(imported.files), 19)
+        self.assertEqual({f.path: f.content for f in imported.files}, files)
+        self.assertEqual(sum(f.kind == 'module' for f in imported.files), 4)
+        for f in imported.files:
+            self.assertIs(f.content, files[f.path])
+
+    def test_original_all_catalog_and_form_identity_inventory_retained(self):
+        from yadinassi.configuration_xml import _demo_kinds_configuration, _inert_configuration
+        files = self.source()
+        imported, inventory = _demo_kinds_configuration(files)
+        inert, expected = _inert_configuration(files)
+        self.assertEqual(inventory, expected)
+        self.assertEqual({c.name for c in inventory}, {'ВидыНоменклатуры', 'Номенклатура', 'Склады'})
+        self.assertEqual(sum(len(c.forms) for c in inventory), 3)
+        self.assertEqual(imported.config_uuid, inert.config_uuid)
+        self.assertEqual(imported.name, inert.name)
+        kinds = next(c for c in inventory if c.name == 'ВидыНоменклатуры')
+        self.assertEqual(kinds.identity, imported.catalogs[0].identity)
+        self.assertEqual(kinds.forms[0].identity, UUID('437eff36-576b-5d96-80e4-06117a7874e2'))
+        self.assertEqual(kinds.default_object_form, 'Catalog.ВидыНоменклатуры.Form.ФормаЭлемента')
+
+    def test_admission_uses_original_immutable_snapshot_and_stable_order(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        files = self.source()
+        snapshot = dict(files)
+        imported = import_demo_kinds_configuration(files)
+        self.assertEqual(imported, import_demo_kinds_configuration(dict(reversed(tuple(files.items())))))
+        self.assertEqual(files, snapshot)
+        files[self.MODULE] = b'changed after admission'
+        self.assertEqual({f.path: f.content for f in imported.files}, snapshot)
+
+    def test_every_source_is_hash_bound_even_harmless_whitespace(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        original = self.source()
+        for path in original:
+            files = dict(original); files[path] += b'\n'
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'demo_kinds_v1 source mismatch'):
+                import_demo_kinds_configuration(files)
+
+    def test_recognized_catalog_settings_are_not_projection_admission(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        for old, new in ((b'<CodeLength>9', b'<CodeLength>8'),
+                         (b'<DescriptionLength>100', b'<DescriptionLength>64'),
+                         (b'<Hierarchical>false', b'<Hierarchical>true'),
+                         (b'<Autonumbering>true', b'<Autonumbering>false'),
+                         (b'<CheckUnique>true', b'<CheckUnique>false'),
+                         (b'<CodeAllowedLength>Variable', b'<CodeAllowedLength>Fixed'),
+                         (b'<DataHistory>DontUse', b'<DataHistory>Use'),
+                         (b'<FullTextSearch>Use', b'<FullTextSearch>DontUse'),
+                         (b'<PredefinedDataUpdate>Auto', b'<PredefinedDataUpdate>DontAutoUpdate'),
+                         (b'<DataLockControlMode>Managed', b'<DataLockControlMode>Automatic')):
+            files = self.source()
+            self.assertIn(old, files[self.CATALOG])
+            files[self.CATALOG] = files[self.CATALOG].replace(old, new)
+            with self.subTest(setting=old), self.assertRaisesRegex(ValueError, 'demo_kinds_v1 source mismatch'):
+                import_demo_kinds_configuration(files)
+
+    def test_original_and_inert_module_changes_are_rejected(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        original = self.source()
+        for path in (p for p in original if p.endswith('.bsl')):
+            files = dict(original); files[path] += b'\n// harmless additional comment\n'
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'demo_kinds_v1 source mismatch'):
+                import_demo_kinds_configuration(files)
+        files = self.source()
+        old = 'Название вида должно'.encode()
+        self.assertIn(old, files[self.MODULE])
+        files[self.MODULE] = files[self.MODULE].replace(old, 'Имя вида должно'.encode())
+        with self.assertRaisesRegex(ValueError, 'demo_kinds_v1 source mismatch'):
+            import_demo_kinds_configuration(files)
+
+    def test_every_missing_file_fails_closed_including_inert_sources(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        original = self.source()
+        for path in original:
+            files = dict(original); del files[path]
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                import_demo_kinds_configuration(files)
+
+    def test_extra_files_and_path_aliases_fail_closed(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        for path, raw in (('Extra.xml', b'<x/>'), ('Ext/SessionModule.bsl', b''),
+                          ('Catalogs/ВидыНоменклатуры/Ext/ObjectModule.bsl', b''),
+                          ('Catalogs/Склады/Ext/ObjectModule.bsl', b''),
+                          ('configuration.xml', b'<x/>'), ('../Extra.xml', b'<x/>')):
+            files = self.source(); files[path] = raw
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                import_demo_kinds_configuration(files)
+        files = self.source(); files['Other/'+self.MODULE] = files.pop(self.MODULE)
+        with self.assertRaises(ValueError): import_demo_kinds_configuration(files)
+
+    def test_exact_bytes_do_not_normalize_bom_or_line_endings(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        original = self.source()
+        for raw in (b'\xef\xbb\xbf'+original[self.MODULE], original[self.MODULE].replace(b'\n', b'\r\n')):
+            files = dict(original); files[self.MODULE] = raw
+            with self.subTest(raw=raw[:20]), self.assertRaisesRegex(ValueError, 'demo_kinds_v1 source mismatch'):
+                import_demo_kinds_configuration(files)
+
+    def test_original_form_analyzer_runs_and_its_rejection_is_not_ignored(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi import form_module_analysis as analysis
+        files = self.source()
+        with patch.object(analysis, 'analyze_form_module', wraps=analysis.analyze_form_module) as analyze:
+            import_demo_kinds_configuration(files)
+        analyze.assert_called_once()
+        args, kwargs = analyze.call_args
+        self.assertEqual(args[0], files[self.MODULE])
+        self.assertEqual(args[1].catalog_name, 'ВидыНоменклатуры')
+        self.assertEqual(kwargs['catalog_xml'], files[self.CATALOG])
+        self.assertEqual(kwargs['module_path'], self.MODULE)
+        with patch.object(analysis, 'analyze_form_module', side_effect=analysis.FormModuleAnalysisError('refused')):
+            with self.assertRaises(analysis.FormModuleAnalysisError):
+                import_demo_kinds_configuration(files)
+
+    def test_generic_import_and_activation_remain_closed(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        files = self.source()
+        for policy in ('explicit', 'decimal_v1'):
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                import_configuration(files, numbering_policy=policy)
+        imported = import_demo_kinds_configuration(files)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)/'not-v6.sqlite'
+            with self.assertRaisesRegex(BackendError, 'unsupported'):
+                SQLiteCatalogBackend.create(target, imported)
+            self.assertFalse(target.exists())
+
+    def test_exact_input_types_and_source_budgets_remain_enforced(self):
+        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        for raw in (None, '', bytearray(b''), b'\xff', b' '*(1024*1024+1)):
+            files = self.source(); files[self.MODULE] = raw
+            with self.subTest(kind=type(raw)), self.assertRaises(ValueError):
+                import_demo_kinds_configuration(files)
+        for files in (None, (), [], {}):
+            with self.subTest(kind=type(files)), self.assertRaises(ValueError):
+                import_demo_kinds_configuration(files)

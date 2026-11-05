@@ -479,7 +479,13 @@ def _accept_source_files(files):
     return tuple(accepted)
 
 
-def import_configuration(files):
+def import_configuration(files, *, numbering_policy='explicit'):
+    """Import closed XML; decimal_v1 is an explicit local numbering choice.
+
+    It does not assert native numbering parity or waive other activation gates.
+    """
+    if type(numbering_policy) is not str or numbering_policy not in ('explicit', 'decimal_v1'):
+        _fail('unsupported numbering policy')
     accepted = _accept_source_files(files)
     if 'Configuration.xml' not in files:_fail('missing Configuration.xml')
     config,_,config_root=_object(files['Configuration.xml'],'Configuration',include_root=True);config_uuid=_uuid(config.get('uuid'));props=_props(config)
@@ -516,8 +522,11 @@ def import_configuration(files):
         else:
             if generated & used:_fail('duplicate generated metadata UUID')
             used.update(generated)
+        auto_numbering = _text(p, 'Autonumbering', 'false')
+        if auto_numbering not in ('false', 'true') or (auto_numbering == 'true' and numbering_policy != 'decimal_v1'):
+            _fail('unsupported catalog semantics')
         if (_text(p,'Hierarchical','false')!='false' or _text(p,'CodeType','String')!='String'
-                or _text(p,'Autonumbering','false')!='false' or _text(p,'CheckUnique','true')!='true'
+                or _text(p,'CheckUnique','true')!='true'
                 or _text(p,'CodeSeries','WholeCatalog')!='WholeCatalog'):_fail('unsupported catalog semantics')
         owners=p.get('{'+MD+'}Owners')
         if owners is not None and (len(owners) or (owners.text or '').strip(_XML_WHITESPACE)):_fail('catalog owners unsupported')
@@ -565,7 +574,9 @@ def import_configuration(files):
                 if len(sections)>16 or section_count>512:_fail('tabular section count')
             else:_fail('catalog child object unsupported')
         if len(fields)>64:_fail('field count')
-        catalogs.append(CatalogSchema(identity,cname,_int(p,'CodeLength',1,64),_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections)))
+        numbering = 'decimal_v1' if auto_numbering == 'true' else 'explicit'
+        code_length = _int(p, 'CodeLength', 1, 9 if numbering == 'decimal_v1' else 64)
+        catalogs.append(CatalogSchema(identity,cname,code_length,_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections),numbering))
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names)}
     # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
     # A source archive may contain unknown modules, but it must not activate or
@@ -721,3 +732,106 @@ def import_inert_configuration(files):
     This does not admit ordinary configuration import or execute any module.
     """
     return _inert_configuration(files)[0]
+
+
+# A complete byte envelope, not a semantic projection or general demo support.
+# These are the original editable demo sources introduced by 6111e02. Even inert
+# sources and presentation-only settings must stay exact. Changing this manifest
+# requires a fresh review of the entire profile, not an automatic fixture rehash.
+DEMO_KINDS_PROFILE = 'demo_kinds_v1'
+DEMO_KINDS_SOURCE_ISSUE = 'bounded configuration source profile:demo_kinds_v1'
+_DEMO_KINDS_SOURCE_SHA256 = {
+    'Catalogs/ВидыНоменклатуры.xml':
+        '723c973982629b92c183d68b24aef8fde1771b34e649e536749354d7a14cc2d0',
+    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml':
+        'ccf4960ad91cc507a0e8165c973f79d88c9fe5e1773d1bf8fd1bb90584275a28',
+    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form.xml':
+        '3d5d1cdf429fbc5ece392c4bc4df6621c8753f152c8260a1aa5a83557a2a088d',
+    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl':
+        '1362d0c9ab909625f98648a719e87422dd7665634e2cc2e55ce01517a198f53f',
+    'Catalogs/Номенклатура.xml':
+        '6418b0b403932a38b24c75bb5db5496837cef396897225fa0bc5b80f905fa156',
+    'Catalogs/Номенклатура/Ext/ObjectModule.bsl':
+        'b329bc9a92db51032415bc62f779672acff65beb081237105adedab0f16edec9',
+    'Catalogs/Номенклатура/Forms/ФормаСписка.xml':
+        'ce2e8373aab443a70990c7c1a7f1166e2efc45f025952959ae48de4553f474c2',
+    'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form.xml':
+        '192dcb7c76a5805afdff477c9bc27f1f67149f1aa53be5a0894dcae931c4afc6',
+    'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl':
+        'cedc20b94809fc639f72ee65d180eb5e6dadb647e02a2ed02d85af7dd1533127',
+    'Catalogs/Номенклатура/Forms/ФормаЭлемента.xml':
+        '0d55e449ebff7d194f09af8c92dff5fd53c05db17927a0c478dfae9ad9a7dc6e',
+    'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form.xml':
+        'ba70bc4129509c979033632d305d4866e0e311f5e25322369bdf3998b055add6',
+    'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl':
+        '86bccc60f288b6d8bec57dd01701b3535a73c297b1a42a97d2f5528f066426e3',
+    'Catalogs/Склады.xml':
+        '3f123ebb7eed85b1b845ae8867749e91cde2d6154cd6e8b5da16a74c9658bb3a',
+    'Configuration.xml':
+        '348fb96905c8e87e4803ee40fb6de3bca75902c939386346c6872223bec0c719',
+    'Ext/ClientApplicationInterface.xml':
+        '407d37fdc9c46dc9ef03573c8241f574c382e329cc9670bf5eba0d529860b16a',
+    'Ext/CommandInterface.xml':
+        'b36fdd6e977f07daa40e5b4efd4bf8ad1c536f08402642df470587600848315a',
+    'Ext/HomePageWorkArea.xml':
+        '16188438d96e87c4103ba71fe773543c1b71f3ca98e93476f3174d816672010e',
+    'Languages/Русский.xml':
+        'e0438b24e18c15da067173886270b2a4806aff1ea97031b2211c3f586181cf3c',
+    'Subsystems/НормативнаяИнформация.xml':
+        'e824868068ac9018757c8fea8adbe4eee1c597a82e0fd6d8215c8d2f94858412',
+}
+
+
+def _demo_kinds_configuration(files):
+    """Admit one local catalog from an exact full archive; inventory the rest.
+
+    The source hashes close every XML/BSL envelope before any activation grant.
+    The form analyzer is only a further structural check, never a replacement
+    for complete admission. Other catalogs/modules remain archived and inert.
+    """
+    archive, catalog_sources = _inert_configuration(files)
+    if {f.path: sha256(f.content).hexdigest() for f in archive.files} != _DEMO_KINDS_SOURCE_SHA256:
+        _fail('demo_kinds_v1 source mismatch')
+    # Read only the immutable accepted snapshot, never the caller's mapping again.
+    source = {f.path: f.content for f in archive.files}
+    catalog = next(c for c in catalog_sources if c.name == 'ВидыНоменклатуры')
+    form, = catalog.forms
+    obj, _ = _object(source[catalog.path], 'Catalog')
+    props = _props(obj)
+    code_length = _int(props, 'CodeLength', 1, 9)
+    description_length = _int(props, 'DescriptionLength', 0, 1024)
+    if (code_length != 9 or description_length != 100 or
+            _text(props, 'Autonumbering') != 'true' or
+            _text(props, 'Hierarchical') != 'false' or
+            _text(props, 'CodeType') != 'String' or
+            _text(props, 'CodeSeries') != 'WholeCatalog' or
+            _text(props, 'CheckUnique') != 'true'):
+        _fail('demo_kinds_v1 catalog semantics')
+    from .form_module_analysis import FormModuleBinding, analyze_form_module
+    raw = tuple(source[path] for path in (
+        form.module_path, catalog.path, form.path, form.definition_path))
+    # This pure import has no database yet. The sentinel is solely an analyzer
+    # input and is never returned or persisted as a storage/source capability.
+    binding = FormModuleBinding(UUID(int=1), archive.config_uuid, 1,
+        catalog.identity, catalog.name, form.identity, form.name,
+        *(sha256(content).hexdigest() for content in raw))
+    analyze_form_module(raw[0], binding, catalog_xml=raw[1], form_xml=raw[2],
+        definition_xml=raw[3], catalog_path=catalog.path, form_path=form.path,
+        definition_path=form.definition_path, module_path=form.module_path)
+    schema = CatalogSchema(catalog.identity, catalog.name, code_length,
+                           description_length, numbering='decimal_v1')
+    imported = ConfigurationImport(archive.config_uuid, archive.name, (schema,),
+        archive.files, (), (DEMO_KINDS_SOURCE_ISSUE,))
+    return imported, catalog_sources
+
+
+def import_demo_kinds_configuration(files):
+    """Admit only the exact original demo's kinds catalog for storage v6.
+
+    The complete 19-file archive is retained byte-for-byte. Only the original
+    ВидыНоменклатуры schema is eligible for the local decimal_v1 numbering policy;
+    Номенклатура, Склады, and their source modules remain inert. This does not
+    enable general configuration import, arbitrary forms, or native 1C parity.
+    The marker requires the dedicated storage profile, not ordinary activation.
+    """
+    return _demo_kinds_configuration(files)[0]

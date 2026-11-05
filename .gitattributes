@@ -130,3 +130,6 @@ tests/fixtures/value_storage/* -text
 
 # Source-bound ValueStorage fixed-profile measurement.
 integrational_tests/measurements/value_storage.bsl text eol=lf
+
+# Exact original source archive for the bounded demo_kinds_v1 profile.
+tests/fixtures/demo_cf/source/** -text
