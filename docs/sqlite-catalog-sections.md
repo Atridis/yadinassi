@@ -50,7 +50,7 @@ Commit receipts include canonical section UUIDs, ordered row UUIDs and typed val
 - At most 16 sections per catalog, 512 per database, and 64 fields per section. A serialized catalog schema remains bounded to 65,536 characters and all schema definitions to 16 MiB.
 - At most 1,000 rows across all sections of one owner and 1 MiB of canonical encoded section payload per explicit owner intent.
 - At most 10,000 supplied section rows and 16 MiB of section intents across one write transaction.
-- Before materializing a card, SQL aggregates bound its persisted section rows to 1,000 and typed-column bytes plus fixed row overhead to 1 MiB. A selection/scan additionally caps all nested section rows at 10,000 and 16 MiB across the result. Overflow refuses; it never truncates rows or omits sections.
+- Before materializing a card, SQL aggregates bound its persisted section rows to 1,000 and typed-column bytes plus fixed row overhead to 1 MiB. A full-card selection/scan additionally caps nested section rows at 10,000 and 16 MiB across its complete filtered result, not merely its current page. Unrelated owners do not consume that result budget. Full scans retain streamed integrity validation of unrelated section data without retaining its rows; scalar projections do not read sections. Overflow refuses; it never truncates rows or omits sections.
 - Existing owner, metadata, file, SQLite schema and 256 MiB database limits still apply. Some limits overlap, so individual maxima are not guaranteed simultaneously.
 
 All test data uses temporary owned SQLite fixtures. No real user database is modified by the test suite. Local fixture tests establish this implementation contract only; they do not replace future native behavior measurements.

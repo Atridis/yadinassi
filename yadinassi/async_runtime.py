@@ -187,6 +187,20 @@ class Scheduler:
         if promise.state == 'rejected':
             self.procedure_errors.append(promise.result)
 
+    def take_procedure_error(self):
+        """Consume a host-boundary batch, reporting its first failure only.
+
+        The scheduler is not an exception history. Return a detached exception:
+        the original can also belong to a rejected promise that BSL may await
+        again, and raising it in host code would retain that host's frames.
+        """
+        if not self.procedure_errors:
+            return None
+        first = self.procedure_errors[0]
+        self.procedure_errors.clear()
+        return BSLRuntimeError(first.message, first.source, first.line, first.column,
+                               info=first.info, source_line=first.source_line)
+
     def _resume(self, task, value=None, error=None):
         if task not in self._tasks:
             return

@@ -152,7 +152,7 @@ explicit approved command/count must precede execution. No 1C or Docker run is
 needed to test this intentionally local simulation profile.
 
 Adding the analyzer and simulation sources to the current catalog stack changes
-the source inventory from 117 to **119**: 110 runtime package files plus nine
+the source inventory from 119 to **121**: 112 runtime package files plus nine
 project/native files. Catalog schemas containing tabular sections are rejected
 instead of being silently reduced to a scalar-only schema. The two
 preprocessor budget test modules and UI asset provenance test update only their

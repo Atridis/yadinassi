@@ -17,6 +17,7 @@ MAX_PARTS = 4096
 MAX_MARKERS = 64
 MAX_MARKER_BYTES = 4096
 MAX_SCAN = 64 * 1024 * 1024
+_SCAN_BLOCK = 256
 _STREAMS = (BSLStream, BSLMemoryStream, BSLFileStream)
 _MISSING = object()
 
@@ -147,9 +148,12 @@ class BSLDataReader(_DataIO):
     def _available(self):
         stream = self._open(); stream._readable()
         return max(0, stream._size() - stream._state.position)
-    def _peek(self):
-        stream = self._open(); count = self._available(); position = stream._state.position
-        try: return stream._read_bytes(count)
+    def _peek(self, count=None, offset=0):
+        stream = self._open(); available = self._available(); position = stream._state.position
+        count = max(0, available - offset) if count is None else min(count, max(0, available - offset))
+        try:
+            stream._state.position = position + offset
+            return stream._read_bytes(count)
         finally: stream._state.position = position
     def _consume(self, count): self._stream._state.position += count
     # !todo Native DF02 rejects a read after out-of-band stream repositioning;
@@ -204,20 +208,44 @@ class BSLDataReader(_DataIO):
             markers.append(raw)
         return markers
     @staticmethod
-    def _find(data, start, markers, budget):
+    def _find(data, start, markers, budget, alignment=1, offset=0):
         cost = (len(data) - start) * len(markers)
         if cost > budget: raise ValueError('Данные: превышен предел поиска')
         best = None
         for index, marker in enumerate(markers):
             position = data.find(marker, start)
+            while position >= 0 and (offset + position) % alignment:
+                position = data.find(marker, position + 1)
             if position >= 0 and (best is None or position < best[0] or (position == best[0] and len(marker) > best[2])): best = (position, index, len(marker))
         return best, budget - cost
+    def _scan(self, markers, prefix=0, alignment=1):
+        available = max(0, self._available() - prefix)
+        # Retain the established conservative admission charge, even when an
+        # early delimiter lets the physical scan stop before the remaining tail.
+        if available * len(markers) > MAX_SCAN:
+            raise ValueError('Данные: превышен предел поиска')
+        overlap = max(map(len, markers)) - 1
+        block = max(_SCAN_BLOCK, overlap + 1)
+        output = bytearray(); offset = 0
+        while offset < available:
+            data = self._peek(block + overlap, prefix + offset)
+            found, _ = self._find(data, 0, markers, len(data) * len(markers), alignment, offset)
+            if found is not None and found[0] < block:
+                end, index, size = found
+                output.extend(data[:end])
+                return bytes(output), (offset + end, index, size)
+            # The overlap settles markers crossing a block boundary, including
+            # the longest marker at the earliest position. It is not retained
+            # across public calls, so shared writes cannot leave stale bytes.
+            part = data[:block]
+            output.extend(part); offset += len(part)
+            if not part: break
+        return bytes(output), None
     def read_to(self, marker, encoding=None):
-        markers = self._markers(marker, encoding); data = self._peek()
-        found, _ = self._find(data, 0, markers, MAX_SCAN)
-        if found is None: end, index, consumed = len(data), -1, len(data)
-        else: end, index, size = found; consumed = end + size
-        result = BSLReadDataResult._create(data[:end], index)
+        markers = self._markers(marker, encoding)
+        data, found = self._scan(markers)
+        index, consumed = (-1, len(data)) if found is None else (found[1], found[0] + found[2])
+        result = BSLReadDataResult._create(data, index)
         self._consume(consumed); self._completed = found is None; return result
     def skip_to(self, marker, encoding=None): return Decimal(self.read_to(marker, encoding)._marker)
     def split_parts(self, size):
@@ -237,12 +265,13 @@ class BSLDataReader(_DataIO):
             if found is None: break
             start = end + found[2]
         self._consume(len(data)); self._completed = True; return result
-    def _text_bytes(self, encoding):
-        codec = self._codec_for(encoding); data = self._peek(); prefix = 0
+    def _text_context(self, encoding):
+        codec = self._codec_for(encoding); prefix = 0
         if self._stream._state.position == 0:
+            data = self._peek(3)
             for mark, bom_codec in _BOMS:
                 if data.startswith(mark): prefix, codec = len(mark), bom_codec; break
-        return data[prefix:], codec, prefix
+        return codec, prefix
     @staticmethod
     def _prefix_size(data, codec, count):
         if count is None: return len(data)
@@ -259,7 +288,11 @@ class BSLDataReader(_DataIO):
         return position
     def read_chars(self, count=None, encoding=None):
         count = None if count is None else _number(count)
-        data, codec, prefix = self._text_bytes(encoding)
+        self._open()
+        codec, prefix = self._text_context(encoding)
+        # Four bytes cover one requested unit even at a surrogate boundary.
+        # No later binary field is decoded, and no buffer survives this call.
+        data = self._peek(None if count is None else min(MAX_BYTES, count * 4), prefix)
         size = self._prefix_size(data, codec, count)
         # Decode only the selected prefix: later fields may use another encoding
         # or contain binary data. Strict errors leave the cursor unchanged.
@@ -274,14 +307,16 @@ class BSLDataReader(_DataIO):
         self._completed = count is not None and units < count
         return result
     def read_line(self, encoding=None, splitter=None):
-        data, codec, prefix = self._text_bytes(encoding)
+        self._open()
+        codec, prefix = self._text_context(encoding)
         splitter = self._splitter if splitter is None else _string(splitter, MAX_MARKER_BYTES)
         markers = ('\r\n', '\r', '\n') if splitter is None else (splitter,)
         if not all(markers): raise ValueError('Пустой разделитель строки')
         raw_markers = [_encoded(marker, codec) for marker in markers]
-        found, _ = self._find(data, 0, raw_markers, MAX_SCAN)
-        end, consumed = (len(data), len(data)) if found is None else (found[0], found[0] + found[2])
-        result = data[:end].decode(codec)
+        alignment = 2 if codec in ('utf-16-le', 'utf-16-be') else 1
+        data, found = self._scan(raw_markers, prefix, alignment)
+        consumed = len(data) if found is None else found[0] + found[2]
+        result = data.decode(codec)
         self._consume(consumed + prefix); self._completed = found is None
         return result
     def copy_to(self, target, count=None):
