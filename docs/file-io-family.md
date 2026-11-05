@@ -20,7 +20,7 @@ Full/OS gates are separate; unit tests alone are not native evidence.
 - `Файл / File`: constructor, read-only Name/BaseName/Extension/Path/FullName,
   Exists, IsFile, IsDirectory and Size, with bilingual names.
 - TempFilesDir, GetTempFileName (name only; does not create a file),
-  CreateDirectory, CopyFile, MoveFile, nonrecursive FindFiles, exact-path
+  CreateDirectory, CopyFile, MoveFile, FindFiles, exact-path
   DeleteFiles for files and empty directories. Returned search entries are File
   objects. All are local OS paths, not URLs.
 - `ЧтениеТекста / TextReader`: empty/file constructors, Open, Close, Read,
@@ -43,7 +43,8 @@ Full/OS gates are separate; unit tests alone are not native evidence.
 
 Reads/writes open nonblocking, inspect the actual descriptor, reject nonregular
 files and bound data to 16 MiB. This is a Yadinassi resource budget, not a native
-1C limit. Directory searches inspect at most 100,000 entries. File exceptions
+1C limit. Directory searches inspect at most 100,000 entries across the entire
+search, including nonmatches and directory entries. File exceptions
 are converted to ordinary catchable BSL errors. Explicit local operations still
 have ordinary filesystem effects and permissions; this is not a new sandbox.
 
@@ -53,12 +54,45 @@ relations rather than equality of randomly generated paths across contexts.
 Cleanup is explicit and bounded to the fixture's fixed names. There is no
 session-wide temporary-file garbage collector.
 
+## Recursive FindFiles
+
+`FindFiles(Path, Mask, True)` / `НайтиФайлы(Путь, Маска, Истина)` searches
+the starting directory and its descendants. The mask matches entry names,
+not entire relative paths. Matching files and directories are returned as File
+objects; a directory need not match the mask for its children to be searched.
+Without a mask, a valid Boolean recursion flag has no effect: the result still
+contains only the exact existing path, or is empty. Omitted/False recursion
+retains the existing single-directory behavior.
+
+This follows the documented recursive-search contract summarized in the
+[FindFiles reference](https://www.about1c.ru/v83/language-reference/files/function-find-files).
+The original native33 capture above covers the previous nonrecursive workflow;
+it is **not evidence for recursive native parity**. No new native capture has
+been acquired. Result order, permission/race failures, platform-specific masks,
+case rules and native link/junction behavior remain unmeasured. The existing
+case-sensitive `fnmatchcase` mask policy is unchanged; no platform-independent
+ordering is promised.
+
+Traversal is iterative, closes each directory scanner before opening the next,
+and uses the existing global entry budget. Observed symbolic links and Windows
+reparse points may be returned when their names match, but are not traversed.
+A recursive search root must be an ordinary directory, not a link/reparse point.
+Trailing separators and terminal `.` components do not bypass that root check;
+filesystem roots are preserved without resolving interior `..` components.
+Queued directories are rechecked before scanning. Any directory/stat failure or
+budget exhaustion raises a catchable error without returning a partial array.
+These are local traversal policies, not assertions about native errors.
+Path-based checks do not constitute a sandbox or guarantee protection against
+concurrent path replacement, ancestor links, mounts, or hostile filesystem races.
+The operation reads directory metadata only and does not open matched file contents,
+change permissions, or perform deletion.
+
 ## Deferred `!todo` scope
 
 Stream/async overloads; ICU-only codecs and malformed-byte replacement;
 platform-specific sharing locks and concurrent-reader snapshots; modification
 attributes and permission setters; UNC/foreign-platform path semantics;
-recursive searches and wildcard/recursive deletion; cross-filesystem MoveFile;
+wildcard/recursive deletion; cross-filesystem MoveFile;
 exact diagnostics, unusual separators/surrogates and incompatible-encoding
 append. These limitations are explicit in code rather than hidden behind a
 broad claim of full platform compatibility. Ordinary failures, cleanup and data

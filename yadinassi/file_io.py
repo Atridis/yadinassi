@@ -399,20 +399,59 @@ def _array(items):
     result = BSLArray(); result.items = items
     return result
 
+
+def _search_root(path):
+    # lstat("link/") and lstat("link/.") follow a directory link on POSIX.
+    # Strip only terminal separators/dot components, never interior '..' or
+    # other components: normpath would change link/../directory semantics.
+    drive, tail = os.path.splitdrive(path)
+    separators = os.sep + (os.altsep or '')
+    while tail:
+        stripped = tail.rstrip(separators)
+        if not stripped:
+            break  # Preserve filesystem roots, including drive and UNC roots.
+        parent, name = os.path.split(stripped)
+        if name == '.' and parent:
+            tail = parent
+            continue
+        tail = stripped
+        break
+    return drive + tail
+
+
 @_file_errors
 def find_files(path, mask=None, recursive=None):
     path = _path(path)
-    if _bool(recursive):
-        raise ValueError("Рекурсивный поиск пока не поддерживается")
+    recursive = _bool(recursive)
     if mask is None:
         return _array([BSLFile(path)] if os.path.exists(path) else [])
     mask = _text(mask)
     if '/' in mask or '\\' in mask: raise ValueError("Маска не должна содержать путь")
-    result = []
-    with os.scandir(path) as entries:
-        for index, entry in enumerate(entries):
-            if index >= MAX_FILES: raise ValueError("Превышен предел числа файлов")
-            if fnmatch.fnmatchcase(entry.name, mask): result.append(BSLFile(entry.path))
+    if recursive:
+        path = _search_root(path)
+    result = []; pending = [path]; inspected = 0
+    while pending:
+        directory = pending.pop()
+        if recursive:
+            # Do not descend through observed links or Windows reparse points,
+            # including a directory replaced since it was queued. This ordinary
+            # path-based search is not a sandbox against concurrent path swaps.
+            info = os.lstat(directory)
+            if (not stat.S_ISDIR(info.st_mode) or
+                    getattr(info, 'st_file_attributes', 0) & 0x400):
+                raise ValueError("Рекурсивный поиск требует обычный каталог")
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if inspected >= MAX_FILES:
+                    raise ValueError("Превышен предел числа файлов")
+                inspected += 1
+                if fnmatch.fnmatchcase(entry.name, mask):
+                    result.append(BSLFile(entry.path))
+                if recursive:
+                    info = entry.stat(follow_symlinks=False)
+                    if (stat.S_ISDIR(info.st_mode) and
+                            not getattr(info, 'st_file_attributes', 0) & 0x400):
+                        pending.append(entry.path)
     return _array(result)
 
 @_file_errors
