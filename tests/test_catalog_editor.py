@@ -8,8 +8,8 @@ from ui_catalog_fixture import repository
 from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
 from yadinassi.database_context import SQLiteDBContext
 from yadinassi.sqlite_catalog import _View
-from yadinassi.ui.catalog_editor import CatalogEditorApplication
-from yadinassi.ui.protocol import UIError
+from yadinassi.ui.catalog_editor import CatalogEditorApplication, _reference_label
+from yadinassi.ui.protocol import UIError, CatalogRef
 
 
 class CatalogEditorTests(unittest.TestCase):
@@ -56,7 +56,7 @@ class CatalogEditorTests(unittest.TestCase):
             self.assertEqual(card.description, 'Created through form')
         finally: context.close()
 
-    def test_edit_typed_scalars_preserves_readonly_reference(self):
+    def test_edit_typed_scalars_preserves_reference(self):
         self.open_existing()
         references = self.app.editor.snapshot()['references']
         self.change('Text', 'edited'); self.change('Amount', '5.25')
@@ -145,11 +145,108 @@ class CatalogEditorTests(unittest.TestCase):
         with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')): self.save()
         self.assertFalse(self.app.editor.snapshot()['dirty'])
 
-    def test_reference_controls_are_not_editable_or_string_uuids(self):
+    def test_reference_choices_reject_unlisted_and_wrong_target_without_mutation(self):
         self.open_existing()
-        with self.assertRaises(UIError): self.app.event('change', control='InputCategory', value=self.ids['category'])
-        self.assertTrue(all(field['readOnly'] for field in self.app.editor.snapshot()['references']))
-        self.assertFalse(self.app.snapshot()['capabilities']['referenceEditing'])
+        before = self.app.editor.snapshot()
+        for value in (self.ids['category'], CatalogRef(self.ids['product'], str(UUID(int=0))),
+                      CatalogRef(self.ids['category'], str(uuid4())), {'record': str(UUID(int=0))}):
+            with self.assertRaises(UIError): self.change('Category', value)
+            self.assertEqual(self.app.editor.snapshot(), before)
+        self.assertTrue(self.app.snapshot()['capabilities']['referenceEditing'])
+        label = _reference_label('x' * 1024, '😀' * 1024)
+        self.assertLess(len(label.encode('utf-8')), 4096)
+        self.assertTrue(label.endswith('…'))
+        self.assertEqual(_reference_label('10', 'Category'), '10 · Category')
+
+    def test_reference_clear_save_and_reopen_is_durable(self):
+        self.open_existing()
+        empty = CatalogRef(self.ids['category'], str(UUID(int=0)))
+        self.change('Category', empty)
+        self.assertTrue(self.app.editor.snapshot()['dirty'])
+        self.save()
+        self.assertFalse(self.app.editor.snapshot()['dirty'])
+        self.assertEqual(self.row(self.reference.catalog, self.reference.record).values[-1].record_id, UUID(int=0))
+        self.app.event('closeCard'); self.app.close()
+        context = SQLiteDBContext(self.path)
+        try:
+            app = CatalogEditorApplication(context)
+            app.select(self.ids['product']); app.open(self.reference)
+            field = next(f for f in app.editor.snapshot()['fields'] if f['name'] == 'Category')
+            self.assertEqual(field['value']['record'], empty.record)
+        finally: context.close()
+
+    def test_new_record_selects_existing_typed_reference(self):
+        self.select(); self.app.event('create')
+        field = next(f for f in self.app.editor.snapshot()['fields'] if f['name'] == 'Category')
+        selected = field['choices'][1]['value']
+        self.change('Code', '99')
+        self.change('Category', CatalogRef(self.ids['category'], selected))
+        self.save()
+        record = self.app.editor.snapshot()['reference']['record']
+        self.assertEqual(self.row(self.ids['product'], record).values[-1].record_id, UUID(selected))
+        with mock.patch.object(self.app.editor.object, 'write', side_effect=AssertionError('repeat write')):
+            self.save()
+        self.assertEqual(self.app.editor.snapshot()['status'], 'No changes')
+
+    def test_reference_discard_and_dirty_close_preserve_database(self):
+        self.open_existing()
+        original = self.row(self.reference.catalog, self.reference.record)
+        self.change('Category', CatalogRef(self.ids['category'], str(UUID(int=0))))
+        self.app.event('closeCard')
+        self.assertIsNotNone(self.app.editor)
+        self.app.event('command', control='CancelButton')
+        self.assertIsNone(self.app.editor)
+        self.assertEqual(self.row(self.reference.catalog, self.reference.record), original)
+
+    def test_reference_selection_locked_until_pending_outcome_resolved(self):
+        self.open_existing()
+        for state in ('pending_commit', 'pending_refresh'):
+            setattr(self.app.editor, state, True)
+            with self.assertRaisesRegex(UIError, 'busy'):
+                self.change('Category', CatalogRef(self.ids['category'], str(UUID(int=0))))
+            setattr(self.app.editor, state, False)
+
+    def test_oversized_reference_catalog_remains_explicitly_readonly(self):
+        manager = self.app.catalogs.get_index('Categories')
+        for index in range(64):
+            obj = manager.create_item(); obj.set_member('Code', str(100 + index)); obj.write()
+        self.open_existing()
+        snapshot = self.app.editor.snapshot()
+        self.assertFalse(any(f['name'] == 'Category' for f in snapshot['fields']))
+        self.assertEqual(snapshot['references'][0]['reason'], 'reference-choice-limit')
+        self.change('Description', 'Scalar still editable'); self.save()
+        self.assertEqual(self.app.editor.snapshot()['saveState'], 'saved')
+
+    def test_reference_refresh_cannot_adopt_unlisted_key(self):
+        self.open_existing(); self.change('Text', 'committed')
+        editor = self.app.editor; baseline = editor.baseline; original = editor.object
+        previous = self.row(self.reference.catalog, self.reference.record).values[-1]
+        # A legitimate concurrent category created after choices were captured.
+        category = self.app.catalogs.get_index('Categories').create_item()
+        category.set_member('Code', '99'); category.write()
+        new_reference = category.get_member('Ref')
+        replacement = CatalogKey(previous.database_id, previous.catalog_id, new_reference.reference_uuid)
+        def replace_reference(key):
+            card = self.row(self.reference.catalog, self.reference.record)
+            tx = self.context.backend.begin_write(uuid4())
+            tx.update(CatalogDraft(card.key, card.code, card.description, False,
+                                   card.values[:-1] + (key,)), card.revision)
+            tx.commit()
+        refresh = editor._refresh
+        def concurrent_reference():
+            replace_reference(replacement)
+            return refresh()
+        with mock.patch.object(editor, '_refresh', concurrent_reference): self.save()
+        self.assertEqual(editor.snapshot()['saveState'], 'committed')
+        self.assertEqual(editor.snapshot()['error'], 'refresh_required')
+        self.assertTrue(editor.snapshot()['editingLocked'])
+        self.assertIs(editor.object, original); self.assertEqual(editor.baseline, baseline)
+        with mock.patch.object(_View, 'commit', side_effect=AssertionError('no second write')): self.save()
+        self.assertTrue(editor.snapshot()['editingLocked'])
+        replace_reference(previous)
+        with mock.patch.object(_View, 'commit', side_effect=AssertionError('refresh only')): self.save()
+        self.assertEqual(editor.snapshot()['saveState'], 'saved')
+        self.assertFalse(editor.snapshot()['editingLocked'])
 
     def test_invalid_typed_input_refused_without_mutating_form(self):
         self.open_existing()

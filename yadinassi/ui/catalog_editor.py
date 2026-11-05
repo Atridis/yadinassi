@@ -2,12 +2,14 @@
 
 This application adapter is not native FormData/standard Write or a remote API.
 It owns detached objects and their original optimistic revisions. Fixed references
-are preserved read-only; no UUID/string is presented as a native form reference.
+use a bounded host selection adapter; its scalar selection keys are not native
+FormData or managed-form references.
 """
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import re
+from types import MappingProxyType
 from uuid import UUID, uuid4
 
 from ..catalog_backend import BackendError
@@ -78,8 +80,16 @@ def _input_text(value):
     return str(value) if type(value) is Decimal else value
 
 
+def _reference_label(code, description):
+    # Presentation is finite even when valid metadata allows 1024 four-byte
+    # characters. UUID selection identity never depends on a truncated label.
+    def short(value, limit):
+        return value if len(value) <= limit else value[:limit] + '…'
+    return bounded_text(short(code, 64) + ' · ' + short(description, 512), 4096)
+
+
 class CatalogEditController:
-    """One detached object and scalar form. No persistent read transaction."""
+    """One detached object and scalar selection keys. No persistent read transaction."""
     def __init__(self, manager, schema, obj):
         self.identity = uuid4().hex
         self.manager, self.schema, self.object = manager, schema, obj
@@ -90,23 +100,48 @@ class CatalogEditController:
         self.error = None
         self.fields = []
         self.references = []
+        self.reference_fields = {}
         definitions = [('Code', 'string', (schema.code_length,)),
                        ('Description', 'string', (schema.description_length,))]
         definitions += [(f.name, f.kind, f.qualifiers) for f in schema.fields if f.kind != 'catalog_ref']
+        # Choices are captured through the logical read port, never supplied by
+        # the renderer. Overflow and dangling/deleted existing values stay read-only.
+        for field in schema.fields:
+            if field.kind != 'catalog_ref':
+                continue
+            value = obj.get_member(field.name)
+            repository = CatalogRepository(manager._backend, own_backend=False)
+            try:
+                target = repository.load(str(field.target_catalog_id))
+            except UIError as error:
+                if error.code != 'catalog_unavailable':
+                    raise
+                target = None
+            finally:
+                repository.close()
+            choices = {'00000000-0000-0000-0000-000000000000': 'Empty reference'}
+            if target is not None and len(target.cards) <= 64:
+                choices.update((card.reference.record, _reference_label(
+                    card.value('Code'), card.value('Description')))
+                    for card in target.cards if not card.value('DeletionMark'))
+            record = str(value.reference_uuid)
+            if target is None or len(target.cards) > 64 or record not in choices:
+                self.references.append({'name': field.name, 'readOnly': True,
+                    'reason': ('reference-options-unavailable' if target is None else
+                               'reference-choice-limit' if len(target.cards) > 64 else 'reference-not-selectable'),
+                    'value': encode_value(CatalogRef(str(field.target_catalog_id), record)),
+                    'presentation': bounded_text(str(value), 4096)})
+                continue
+            target_manager = manager._catalogs._manager_by_metadata_uuid(field.target_catalog_id)
+            self.reference_fields[field.name] = (str(field.target_catalog_id), target_manager, MappingProxyType(choices))
+            definitions.append((field.name, 'catalog_ref', (36,)))
         attributes, initial = [], {}
         for index, (field, kind, qualifiers) in enumerate(definitions):
             attribute = 'Data' + str(index)
-            descriptor = _descriptor(kind, qualifiers)
+            descriptor = _descriptor('string' if kind == 'catalog_ref' else kind, qualifiers)
             self.fields.append((field, kind, attribute, descriptor))
             attributes.append(BSLFormAttribute(attribute, descriptor, title=field))
-            initial[attribute] = obj.get_member(field)
-        for field in schema.fields:
-            if field.kind == 'catalog_ref':
-                value = obj.get_member(field.name)
-                self.references.append({'name': field.name, 'readOnly': True,
-                    'reason': 'native-form-reference-not-admitted',
-                    'value': encode_value(CatalogRef(str(field.target_catalog_id), str(value.reference_uuid))),
-                    'presentation': bounded_text(str(value), 4096)})
+            initial[attribute] = self._field_value(obj, field)
         attributes += [BSLFormAttribute('IsDirty', BSLTypeDescription('Boolean')),
                        BSLFormAttribute('DiscardChanges', BSLTypeDescription('Boolean')),
                        BSLFormAttribute('Status', BSLTypeDescription('String'))]
@@ -119,6 +154,14 @@ class CatalogEditController:
                 FormApplicationAction('Cancel', 'CancelCommand', (), ('DiscardChanges',), self._cancel)))
         self.form.open()
         self._check_size()
+
+    def _field_value(self, obj, field):
+        value = obj.get_member(field)
+        if field in self.reference_fields:
+            value = str(value.reference_uuid)
+            if value not in self.reference_fields[field][2]:
+                raise UIError('invalid_value')
+        return value
 
     def _values(self, attributes):
         data = dict(attributes)
@@ -133,7 +176,7 @@ class CatalogEditController:
         fresh = reference.get_object(reference)
         if fresh is None:
             raise BackendError('not_found')
-        values = tuple(fresh.get_member(field[0]) for field in self.fields)
+        values = tuple(self._field_value(fresh, field[0]) for field in self.fields)
         # Adoption must follow the form's complete result validation/application.
         # A backend-valid value need not be admitted by this bounded scalar form.
         self._refreshed = (fresh, values)
@@ -165,6 +208,11 @@ class CatalogEditController:
         try:
             if not self.pending_commit:
                 for field, value in zip(self.fields, values):
+                    if field[1] == 'catalog_ref':
+                        target, manager, choices = self.reference_fields[field[0]]
+                        if value not in choices:
+                            raise UIError('invalid_value')
+                        value = manager.get_ref(BSLUUID(value))
                     self.object.set_member(field[0], value)
             # A retained uncertain object resolves its exact submitted intent before
             # any retry. Never reload latest before Write or allocate another object.
@@ -200,6 +248,11 @@ class CatalogEditController:
 
     def _parse_input(self, field, value):
         kind = field[1]
+        if kind == 'catalog_ref':
+            target, manager, choices = self.reference_fields[field[0]]
+            if type(value) is not CatalogRef or value.catalog != target or value.record not in choices:
+                raise UIError('invalid_value')
+            return value.record
         if kind == 'number' and type(value) is str:
             if len(value) > 144 or not re.fullmatch(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:E[+-]?[0-9]+)?', value):
                 raise UIError('invalid_value')
@@ -255,10 +308,16 @@ class CatalogEditController:
         for field, kind, attribute, unused in self.fields:
             control = 'Input' + attribute
             item = items[control]
+            value = values[attribute]
+            choices = None
+            if kind == 'catalog_ref':
+                target, manager, options = self.reference_fields[field]
+                choices = [{'value': record, 'label': label} for record, label in options.items()]
+                value = CatalogRef(target, value)
             fields.append({'name': field, 'kind': kind, 'control': control,
-                'value': encode_value(values[attribute]), 'inputText': _input_text(values[attribute]),
+                'value': encode_value(value), 'inputText': _input_text(values[attribute]),
                 'title': item[2], 'visible': item[3], 'enabled': item[4], 'readOnly': item[5],
-                'view': views[control]})
+                'view': views[control], **({'choices': choices} if choices is not None else {})})
         return {'editorId': self.identity, 'catalog': str(self.schema.identity), 'catalogName': self.schema.name,
             'reference': encode_value(self._saved_reference()), 'isNew': self.object.is_new(),
             'formRevision': snapshot.revision, 'state': snapshot.state,
@@ -363,7 +422,7 @@ class CatalogEditorApplication:
                  'list': self.view.page(*self.page) if self.view is not None and self.editor is None else None,
                  'editor': self.editor.snapshot() if self.editor is not None else None}
         return {'capabilities': {'canCreate': writable, 'canEdit': writable, 'canWrite': writable,
-                'referenceEditing': False, 'actual1CForms': False, 'autoform': True,
+                'referenceEditing': True, 'referenceChoiceLimit': 64, 'actual1CForms': False, 'autoform': True,
                 'standardFormWrite': False, 'remoteService': False}, 'state': state}
 
     def close(self):

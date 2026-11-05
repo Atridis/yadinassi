@@ -43,6 +43,10 @@ export class EditorClient {
   }
 }
 export function typedInput(field,value){
+  if(field.kind==='catalog_ref'){
+    if(typeof value!=='string'||!field.choices?.some(choice=>choice.value===value))throw Error('Select an available reference');
+    return {type:'CatalogRef',catalog:field.value.catalog,record:value};
+  }
   if(field.kind==='boolean'){
     if(typeof value!=='boolean')throw Error('Boolean input required');
     return {type:'Boolean',value};
