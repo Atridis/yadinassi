@@ -74,6 +74,27 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT database_uuid,generation FROM database_info').fetchone(), (str(self.database_id),3))
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
+    def test_v1_card_reads_reuse_schema_without_changing_values(self):
+        from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
+        # addCleanup runs after tearDown, too late for Windows file removal.
+        with closing(SQLiteCatalogBackend(self.path)) as backend, closing(backend.begin_read()) as view:
+            queries = []
+            view._connection.set_trace_callback(queries.append)
+            for read in (lambda: view.select_catalog(self.b),
+                         lambda: view.scan_catalog(self.b, CatalogScanRequest(
+                             order=(CatalogOrder('code'),))).cards):
+                queries.clear()
+                cards = read()
+                self.assertEqual([card.code for card in cards], ['2', '3'])
+                self.assertEqual(cards[0].values[0].record_id, self.ra)
+                self.assertEqual(cards[1].values[0].record_id, UUID(int=0))
+                self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
+                                     for query in queries), 1)
+            queries.clear()
+            self.assertEqual(view.read_catalog(cards[0].key), cards[0])
+            self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
+                                 for query in queries), 1)
+
     def test_backend_reopen_and_old_receipt_resolves_exact_intent(self):
         from yadinassi.catalog_backend import CatalogDraft, CatalogKey, Revision
         from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _decode

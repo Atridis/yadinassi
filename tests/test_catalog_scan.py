@@ -35,6 +35,53 @@ class ScanTests(unittest.TestCase):
         view.close()
         with self.assertRaisesRegex(BackendError,'closed'):view.scan_catalog(self.product.identity,request)
 
+    def test_card_reads_reuse_one_schema_per_operation(self):
+        from unittest.mock import patch
+        import yadinassi.sqlite_catalog as storage
+        self.seed(20)
+        view = self.backend.begin_read()
+        self.addCleanup(view.close)
+        queries = []
+        view._connection.set_trace_callback(queries.append)
+        with patch.object(storage, '_schema', wraps=storage._schema) as parse_schema:
+            def schema_reads():
+                return [query for query in queries
+                        if query.startswith('SELECT definition FROM catalog_schema')]
+            cards = view.select_catalog(self.product.identity)
+            self.assertEqual(len(cards), 20)
+            self.assertEqual(len(schema_reads()), 1)
+            self.assertEqual(parse_schema.call_count, 1)
+            queries.clear(); parse_schema.reset_mock()
+            page = view.scan_catalog(self.product.identity, CatalogScanRequest(
+                CatalogComparison('code', 'eq', '0019'), page_size=1))
+            self.assertEqual(page.cards, (cards[-1],))
+            self.assertIsNone(page.continuation)
+            self.assertEqual(len(schema_reads()), 1)
+            self.assertEqual(parse_schema.call_count, 1)
+            queries.clear(); parse_schema.reset_mock()
+            self.assertEqual(view.read_catalog(cards[-1].key), cards[-1])
+            self.assertEqual(len(schema_reads()), 1)
+            self.assertEqual(parse_schema.call_count, 1)
+
+    def test_scan_schema_reuse_keeps_continuation_order_and_validation(self):
+        self.seed()
+        view = self.backend.begin_read()
+        self.addCleanup(view.close)
+        queries = []
+        view._connection.set_trace_callback(queries.append)
+        request = CatalogScanRequest(order=(CatalogOrder('code'),), page_size=2)
+        codes = []
+        for expected_length in (2, 2, 1):
+            queries.clear()
+            page = view.scan_catalog(self.product.identity, request)
+            self.assertEqual(len(page.cards), expected_length)
+            codes.extend(card.code for card in page.cards)
+            self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
+                                 for query in queries), 1)
+            request = replace(request, continuation=page.continuation)
+        self.assertEqual(codes, ['0000', '0001', '0002', '0003', '0004'])
+        self.assertIsNone(page.continuation)
+
     def test_predicates_exact_typed_and_boolean_composition(self):
         self.seed();view=self.backend.begin_read();amount=self.product.fields[1].identity
         predicate=CatalogPredicate('and',(CatalogComparison(amount,'ge',Decimal(2)),

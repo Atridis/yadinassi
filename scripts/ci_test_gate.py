@@ -15,6 +15,12 @@ import urllib.request
 
 REPOSITORY = 'Atridis/yadinassi'
 PLATFORMS = ('linux', 'mac-arm', 'windows', 'mac-x86')
+RUNNERS = (
+    ('windows', 'windows-2022', 'x64'),
+    ('linux', 'ubuntu-22.04', 'x64'),
+    ('mac-x86', 'macos-15-intel', 'x64'),
+    ('mac-arm', 'macos-15', 'arm64'),
+)
 MAX_JSON = 16 * 1024 * 1024
 SHA = re.compile(r'[0-9a-f]{40}')
 
@@ -54,11 +60,22 @@ def sha(value):
     return value
 
 
-def admit(event_name, event, source_sha, repository, fetch=api, *, run_id=1, run_attempt=1):
+def source_ref(value):
+    """Accept full branch/tag refs, never a free-form scope or path."""
+    require(type(value) is str and value.startswith(('refs/heads/', 'refs/tags/')), 'source ref')
+    require(not any(ord(c) < 33 or ord(c) == 127 or c in '~^:?*[\\' for c in value)
+            and '..' not in value and '@{' not in value and not value.endswith('.'), 'source ref')
+    require(all(part and not part.startswith('.') and not part.endswith('.lock')
+                for part in value.split('/')), 'source ref')
+    return value
+
+
+def event_binding(event_name, event, source_sha, repository, *, ref, run_id=1, run_attempt=1):
+    """Derive phase and route only from the current GitHub event/context."""
     require(repository == REPOSITORY, 'repository mismatch')
     source_sha = sha(source_sha)
-    binding = {'schema': 1, 'repository': repository, 'source_sha': source_sha,
-               'event': event_name, 'pr_number': None, 'head_sha': source_sha,
+    binding = {'schema': 2, 'repository': repository, 'source_sha': source_sha,
+               'event': event_name, 'ref': ref, 'pr_number': None, 'head_sha': source_sha,
                'base_sha': None, 'heavy': True, 'run_id': run_id, 'run_attempt': run_attempt}
     if event_name == 'pull_request':
         request = event['pull_request']
@@ -68,30 +85,82 @@ def admit(event_name, event, source_sha, repository, fetch=api, *, run_id=1, run
         require(type(request['draft']) is bool, 'PR draft state')
         binding.update(pr_number=number, head_sha=sha(request['head']['sha']),
                        base_sha=sha(request['base']['sha']), heavy=not request['draft'])
+    elif event_name == 'push':
+        require(event['ref'] == ref, 'push ref differs from GitHub context')
+        require(event['deleted'] is False, 'deleted push ref')
+        if ref == 'refs/heads/main':
+            require(sha(event['after']) == source_sha, 'main push source mismatch')
+        # Annotated tag payloads may identify a tag object rather than its
+        # commit. The trusted GITHUB_SHA and exact checkout bind the commit.
+    else:
+        require(event_name == 'workflow_dispatch', 'event not supported')
+    validate_binding(binding)
+    return binding
+
+
+def admit(event_name, event, source_sha, repository, fetch=api, *, ref, run_id=1, run_attempt=1):
+    binding = event_binding(event_name, event, source_sha, repository, ref=ref,
+                            run_id=run_id, run_attempt=run_attempt)
+    if event_name == 'pull_request':
         check_fresh(binding, fetch)
         commit = fetch('/repos/' + repository + '/git/commits/' + source_sha)
         require(commit['sha'] == source_sha, 'source commit mismatch')
         require([x['sha'] for x in commit['parents']] == [binding['base_sha'], binding['head_sha']],
                 'PR merge source does not bind current base and head')
-    else:
-        require(event_name in ('push', 'workflow_dispatch'), 'event not supported')
     return binding
 
 
 def validate_binding(binding):
     require(type(binding) is dict and set(binding) == {'schema', 'repository', 'source_sha', 'event',
-            'pr_number', 'head_sha', 'base_sha', 'heavy', 'run_id', 'run_attempt'}, 'binding shape')
-    require(type(binding['schema']) is int and binding['schema'] == 1 and binding['repository'] == REPOSITORY, 'binding repository/schema')
+            'ref', 'pr_number', 'head_sha', 'base_sha', 'heavy', 'run_id', 'run_attempt'}, 'binding shape')
+    require(type(binding['schema']) is int and binding['schema'] == 2 and binding['repository'] == REPOSITORY, 'binding repository/schema')
     require(all(type(binding[k]) is int and binding[k] > 0 for k in ('run_id', 'run_attempt')), 'run identity')
     sha(binding['source_sha']); sha(binding['head_sha'])
     require(type(binding['heavy']) is bool, 'binding phase')
     if binding['event'] == 'pull_request':
         require(type(binding['pr_number']) is int and binding['pr_number'] > 0, 'binding PR')
+        require(binding['ref'] == 'refs/pull/' + str(binding['pr_number']) + '/merge', 'binding PR ref')
         sha(binding['base_sha'])
     else:
         require(binding['event'] in ('push', 'workflow_dispatch') and binding['pr_number'] is None
                 and binding['base_sha'] is None and binding['head_sha'] == binding['source_sha']
                 and binding['heavy'], 'binding non-PR')
+        ref = source_ref(binding['ref'])
+        require(binding['event'] != 'push' or ref == 'refs/heads/main' or ref.startswith('refs/tags/'),
+                'unsupported push ref')
+
+
+def verify_context(binding, event, environ):
+    """Reject a valid-looking artifact for a different ref, phase, run or source."""
+    validate_binding(binding)
+    current = event_binding(environ['GITHUB_EVENT_NAME'], event, environ['GITHUB_SHA'],
+                            environ['GITHUB_REPOSITORY'], ref=environ['GITHUB_REF'],
+                            run_id=int(environ['GITHUB_RUN_ID']), run_attempt=int(environ['GITHUB_RUN_ATTEMPT']))
+    require(binding == current, 'binding differs from current GitHub event/context')
+
+
+def required_platforms(binding):
+    validate_binding(binding)
+    # TODO: restore mac-arm to ordinary PR/main CI when runner capacity permits.
+    # All tags (including non-v tags) and manual runs retain the full gate.
+    paused = binding['event'] == 'pull_request' or (
+        binding['event'] == 'push' and binding['ref'] == 'refs/heads/main')
+    return tuple(p for p in PLATFORMS if not (paused and p == 'mac-arm'))
+
+
+def job_matrix(binding, *, heavy=False):
+    platforms = required_platforms(binding)
+    rows = []
+    for target, os_name, architecture in RUNNERS:
+        if target not in platforms:
+            continue
+        count = 2 if heavy and target == 'mac-x86' else 1
+        for index in range(count):
+            row = {'target': target, 'os': os_name, 'architecture': architecture}
+            if heavy:
+                row.update(shard_count=count, shard_index=index)
+            rows.append(row)
+    return {'include': rows}
 
 
 def check_fresh(binding, fetch=api):
@@ -123,12 +192,13 @@ def ids(value):
 def coverage(binding, reports, heavy):
     validate_binding(binding)
     require(type(heavy) is bool and heavy == binding['heavy'], 'verdict phase')
-    expected = {(p, 'light', 0) for p in PLATFORMS}
+    platforms = required_platforms(binding)
+    expected = {(p, 'light', 0) for p in platforms}
     if heavy:
-        expected |= {(p, 'heavy', i) for p in PLATFORMS for i in range(2 if p == 'mac-x86' else 1)}
+        expected |= {(p, 'heavy', i) for p in platforms for i in range(2 if p == 'mac-x86' else 1)}
     require(set(reports) == expected, 'missing/extra platform partition report')
     output = {}
-    for platform in PLATFORMS:
+    for platform in platforms:
         selected = set(); discovered = None
         for (p, tier, index), report in reports.items():
             if p != platform:
@@ -151,8 +221,10 @@ def coverage(binding, reports, heavy):
             require(selected == discovered, 'full premerge coverage incomplete')
         output[platform] = {'covered': len(selected), 'discovered': len(discovered),
                             'ids_sha256': hashlib.sha256('\n'.join(sorted(selected)).encode()).hexdigest()}
-    return {'schema': 1, 'binding': binding, 'phase': 'heavy-premerge' if heavy else 'light-only',
-            'full_coverage': heavy, 'platforms': output}
+    excluded = [p for p in PLATFORMS if p not in platforms]
+    return {'schema': 2, 'binding': binding, 'phase': 'heavy-premerge' if heavy else 'light-only',
+            'full_coverage': heavy and not excluded, 'required_coverage': heavy,
+            'required_platforms': list(platforms), 'excluded_platforms': excluded, 'platforms': output}
 
 
 def write_json(path, value):
@@ -172,18 +244,23 @@ def main():
     if args.command == 'admit':
         binding = admit(os.environ['GITHUB_EVENT_NAME'], read_json(os.environ['GITHUB_EVENT_PATH']),
                         os.environ['GITHUB_SHA'], os.environ['GITHUB_REPOSITORY'],
-                        run_id=int(os.environ['GITHUB_RUN_ID']), run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']))
+                        ref=os.environ['GITHUB_REF'], run_id=int(os.environ['GITHUB_RUN_ID']), run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']))
         checkout(binding); write_json(args.output, binding)
         with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
             stream.write('heavy=' + str(binding['heavy']).lower() + '\nsource_sha=' + binding['source_sha'] + '\n')
+            for name, heavy in (('light_matrix', False), ('heavy_matrix', True)):
+                stream.write(name + '=' + json.dumps(job_matrix(binding, heavy=heavy), separators=(',', ':')) + '\n')
     else:
         binding = read_json(args.binding); validate_binding(binding)
+        if args.command != 'fresh':
+            verify_context(binding, read_json(os.environ['GITHUB_EVENT_PATH']), os.environ)
         if args.command == 'fresh':
             check_fresh(binding)
         elif args.command == 'checkout':
             checkout(binding)
         elif args.command == 'stamp':
             checkout(binding)
+            require(args.platform in required_platforms(binding), 'platform excluded from this event')
             report = read_json(args.report); report.update(binding=binding, platform=args.platform)
             write_json(args.report, report)
         else:
