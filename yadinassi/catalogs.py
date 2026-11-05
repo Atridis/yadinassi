@@ -8,10 +8,10 @@ from datetime import datetime
 from uuid import UUID, uuid4
 from .dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from .catalog_types import BSLCatalogReference, BSLCatalogType
-from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow
+from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow, CatalogWriteOutcome
 from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES
 from .catalog_backend import TabularSectionRows
-from .catalog_qualifiers import normalize_field, normalize_string
+from .catalog_qualifiers import normalize_field, normalize_string, validate_string
 from .unique_identifiers import BSLUUID
 from .values import BSLObject, HostFunction
 
@@ -216,33 +216,53 @@ class BSLCatalogObject(BSLObject):
         if not self.is_new():raise ValueError('object already persisted')
         if type(ref) is not BSLCatalogReference or ref.value_type!=self._manager._value_type or ref.is_empty():raise TypeError('new nonempty same-catalog reference required')
         self._key=self._manager._key(ref.reference_uuid)
-    def _accept_revision(self,revision):
+    def _accept_revision(self,revision,code=None):
         m=self._manager
         if (type(revision) is not Revision or
                 (revision.database_id,revision.configuration_generation,revision.catalog_id,revision.record_id) !=
                 (self._key.database_id,m._catalogs._metadata._generation,self._key.catalog_id,self._key.record_id)):
             raise BackendError('uncertain_commit')
         ref=m._ref(self._key.record_id);next_operation=uuid4()
+        values=dict(self._values);values['ref']=ref
+        if code is not None:values['code']=code
         self._revision=revision
-        self._values['ref']=ref
+        self._values=values
         self._operation_id=next_operation
         # Keep the exact intent locked until every section has accepted it.
         for section in self._sections.values():section._dirty=False
         self._pending_write=None
 
+    def _accept_outcome(self,outcome):
+        if type(outcome) is not CatalogWriteOutcome or self._pending_write is None:
+            raise BackendError('uncertain_commit')
+        draft=self._pending_write[0]
+        try:validate_string(outcome.code,self._manager._schema.code_length)
+        except (TypeError,ValueError):raise BackendError('uncertain_commit') from None
+        if draft.auto_number:
+            if (len(outcome.code)!=self._manager._schema.code_length or not outcome.code.isascii()
+                    or not outcome.code.isdecimal() or int(outcome.code)==0):
+                raise BackendError('uncertain_commit')
+        elif outcome.code!=draft.code:raise BackendError('uncertain_commit')
+        self._accept_revision(outcome.revision,outcome.code)
+
     def write(self):
         m=self._manager;caps=m._backend.capabilities()
         if m._schema.tabular_sections and not caps.catalog_tabular_sections:raise BackendError('unsupported')
         if not caps.atomic_transactions or not (caps.catalog_create if self.is_new() else caps.catalog_update):raise BackendError('unsupported')
+        outcomes=caps.catalog_write_outcomes
+        if m._schema.numbering!='explicit' and not outcomes:raise BackendError('unsupported')
         if self._pending_write is not None:
             draft,expected,operation=self._pending_write
-            revision=m._backend.resolve_write(operation,draft,expected)
+            revision=(m._backend.resolve_write_outcome(operation,draft,expected) if outcomes
+                      else m._backend.resolve_write(operation,draft,expected))
             if revision is not None:
-                self._accept_revision(revision)
+                if outcomes:self._accept_outcome(revision)
+                else:self._accept_revision(revision)
                 return None
         else:
             draft=CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
-                               tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),self._section_draft())
+                               tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),self._section_draft(),
+                               auto_number=self.is_new() and m._schema.numbering=='decimal_v1' and self._values['code']=='')
             expected=self._revision
             operation=self._operation_id
         tx=m._backend.begin_write(operation)
@@ -254,10 +274,11 @@ class BSLCatalogObject(BSLObject):
             # Keep the exact submitted intent across an uncertain commit response.
             self._pending_write=(draft,expected,operation)
             committing=True
-            revisions=tx.commit()
+            revisions=tx.commit_outcomes() if outcomes else tx.commit()
             if len(revisions)!=1:raise BackendError('uncertain_commit')
             tx.close()  # Cleanup must complete before the revision is accepted.
-            self._accept_revision(revisions[0])
+            if outcomes:self._accept_outcome(revisions[0])
+            else:self._accept_revision(revisions[0])
         except BaseException as error:
             if not committing:self._pending_write=None
             for cleanup in (tx.rollback,tx.close):

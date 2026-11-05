@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    USER_MESSAGE = "СообщениеПользователю"
     FORM = "ФормаКлиентскогоПриложения"
     FORM_ATTRIBUTE = "РеквизитФормы"
     FORM_FIELD = "ПолеФормы"

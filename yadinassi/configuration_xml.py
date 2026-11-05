@@ -458,7 +458,7 @@ def _dump_info_matches(raw, config_uuid, name, catalogs, metadata_versions):
     return not expected
 
 
-def import_configuration(files):
+def _accept_source_files(files):
     if type(files) is not dict or not 1<=len(files)<=MAX_FILES:_fail('file count')
     if any(type(path) is not str for path in files):_fail('invalid path type')
     accepted=[];total=0;normalized=set()
@@ -476,6 +476,11 @@ def import_configuration(files):
         except UnicodeError:_fail('non UTF-8 source')
         if p.suffix.lower()=='.xml':_parse(raw)
         accepted.append(ConfigurationFile(path,raw,'module' if p.suffix.lower()=='.bsl' else 'xml'))
+    return tuple(accepted)
+
+
+def import_configuration(files):
+    accepted = _accept_source_files(files)
     if 'Configuration.xml' not in files:_fail('missing Configuration.xml')
     config,_,config_root=_object(files['Configuration.xml'],'Configuration',include_root=True);config_uuid=_uuid(config.get('uuid'));props=_props(config)
     name=_name(_text(props,'Name'));issues=[];objects={};used={config_uuid}
@@ -607,3 +612,112 @@ def import_configuration(files):
     else:
         issues.extend(unknown_module_issues)
     return ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))))
+
+
+# This marker selects a durable inert-only storage profile. It is never an
+# activation issue that an ordinary importer may silently clear.
+INERT_SOURCE_ISSUE = 'inert configuration source archive:v1'
+_LOGFORM = 'http://v8.1c.ru/8.3/xcf/logform'
+
+
+@dataclass(frozen=True, slots=True)
+class _InertForm:
+    identity: UUID
+    name: str
+    path: str
+    definition_path: str
+    module_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class _InertCatalog:
+    identity: UUID
+    name: str
+    path: str
+    default_object_form: str
+    forms: tuple[_InertForm, ...]
+
+
+def _inert_configuration(files):
+    """Inventory identity/ownership only, never executable catalog semantics."""
+    accepted = _accept_source_files(files)
+    if 'Configuration.xml' not in files: _fail('missing Configuration.xml')
+    config, _ = _object(files['Configuration.xml'], 'Configuration')
+    config_id = _uuid(config.get('uuid'))
+    def scalar(props, name, default=None):
+        node = props.get('{'+MD+'}'+name)
+        if node is not None and (node.attrib or (node.tail or '').strip(_XML_WHITESPACE)):
+            _fail('inert scalar envelope')
+        return _text(props, name, default)
+
+    name = _name(scalar(_props(config), 'Name'))
+    used = {config_id}
+
+    def container(obj):
+        nodes = obj.findall('{'+MD+'}ChildObjects')
+        if len(nodes) != 1 or nodes[0].attrib or (nodes[0].text or '').strip(_XML_WHITESPACE):
+            _fail('inert ChildObjects envelope')
+        return nodes[0]
+
+    def declaration(node):
+        if node.attrib or len(node) or (node.tail or '').strip(_XML_WHITESPACE):
+            _fail('inert declaration envelope')
+        return _name((node.text or '').strip(_XML_WHITESPACE))
+
+    def identity(obj):
+        value = _uuid(obj.get('uuid'))
+        if value in used: _fail('duplicate metadata UUID')
+        used.add(value)
+        return value
+
+    cnames = [declaration(n) for n in container(config) if n.tag == '{'+MD+'}Catalog']
+    if not 1 <= len(cnames) <= 512 or len({n.casefold() for n in cnames}) != len(cnames):
+        _fail('catalog inventory')
+    catalogs = []
+    total_forms = 0
+    for cname in cnames:
+        path = 'Catalogs/'+cname+'.xml'
+        if path not in files: _fail('missing catalog XML')
+        obj, _ = _object(files[path], 'Catalog')
+        cid = identity(obj)
+        props = _props(obj)
+        if scalar(props, 'Name') != cname: _fail('catalog filename/name mismatch')
+        children = container(obj)
+        fnames = [declaration(n) for n in children if n.tag == '{'+MD+'}Form']
+        total_forms += len(fnames)
+        if len(fnames) > 32 or total_forms > 512 or len({n.casefold() for n in fnames}) != len(fnames):
+            _fail('form inventory')
+        # Attribute/section UUIDs cannot impersonate an indexed form or catalog.
+        for node in obj.iter():
+            if node is not obj and 'uuid' in node.attrib: identity(node)
+        forms = []
+        for fname in fnames:
+            prefix = 'Catalogs/'+cname+'/Forms/'+fname
+            fpath, dpath, mpath = prefix+'.xml', prefix+'/Ext/Form.xml', prefix+'/Ext/Form/Module.bsl'
+            if fpath not in files or dpath not in files: _fail('missing form source')
+            form, _ = _object(files[fpath], 'Form')
+            fid = identity(form)
+            fp = _props(form)
+            if scalar(fp, 'Name') != fname: _fail('form filename/name mismatch')
+            if scalar(fp, 'FormType') != 'Managed': _fail('unsupported inert form type')
+            definition, _ = _parse(files[dpath])
+            if definition.tag != '{'+_LOGFORM+'}Form': _fail('form definition envelope')
+            forms.append(_InertForm(fid, fname, fpath, dpath, mpath))
+        default = scalar(props, 'DefaultObjectForm', '')
+        allowed = {'Catalog.'+cname+'.Form.'+f.name for f in forms}
+        if default and default not in allowed: _fail('unbound default object form')
+        catalogs.append(_InertCatalog(cid, cname, path, default, tuple(forms)))
+    # Identity stubs have no usable fields, code or description. Inert storage
+    # is permanently denied all catalog read/write/activation entry points.
+    stubs = tuple(CatalogSchema(c.identity, c.name, 0, 0) for c in catalogs)
+    imported = ConfigurationImport(config_id, name, stubs, accepted, (), (INERT_SOURCE_ISSUE,))
+    return imported, tuple(catalogs)
+
+
+def import_inert_configuration(files):
+    """Preserve bounded Designer XML/BSL without admitting runtime semantics.
+
+    The result can only create an inert owned archive with activate=False.
+    This does not admit ordinary configuration import or execute any module.
+    """
+    return _inert_configuration(files)[0]

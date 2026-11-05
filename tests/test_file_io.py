@@ -163,7 +163,7 @@ class FileIOTests(unittest.TestCase):
         with self.assertRaises(ValueError): f.delete_files(str(self.root),'*')
         with self.assertRaises(ValueError): f.delete_files(str(self.root))
         self.assertEqual(self.path.read_bytes(),b'keep')
-        with self.assertRaises(ValueError): f.find_files(str(self.root),'*',True)
+        self.assertEqual(len(f.find_files(str(self.root),'*',True).items), 1)
         with self.assertRaises(ValueError): f.BSLFile('https://example.com/file')
 
 if __name__ == '__main__': unittest.main()
