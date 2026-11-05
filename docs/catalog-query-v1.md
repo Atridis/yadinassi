@@ -107,3 +107,51 @@ unchanged and uses the existing typed SQLite runtime. This is a bounded importer
 increment, not a new native runtime parity result. The minimal
 surrounding Configuration.xml remains synthetic; full Designer configurations
 and Language metadata are not admitted by this profile.
+
+## Read-only tabular-section source (local contract)
+
+An admitted section can be read using
+`FROM Catalog.Products.Lines AS L` or
+`ИЗ Справочник.Товары.Строки КАК С`. This is a separate implementation
+contract pending native measurements. The ordinary-catalog Query24 observations
+above do **not** establish native section query behavior, default labels or
+section-specific Unload metadata.
+
+```bsl
+Q = New Query;
+Q.Text = "SELECT L.Ref AS Owner, L.Text, L.Amount FROM Catalog.Products.Lines AS L WHERE L.Amount >= &Minimum ORDER BY L.Amount DESC";
+Q.SetParameter("Minimum", 20);
+Rows = Q.Execute().Select();
+```
+
+The source exposes only its own declared custom fields and `Ref` / `Ссылка`,
+which is a typed reference to the owning catalog item. Owner `Code`,
+`Description`, `DeletionMark` and owner custom fields are not inherited.
+Qualified field access uses the source alias, not owner dereferencing. Without
+an explicit source alias, the section name is the implicit alias. This is a local
+parser choice, not a native-observed alias rule. Section and field resolution are
+case-insensitive. The existing explicit projections, predicates, typed parameters,
+ordering and TOP bounds apply. Reference comparisons remain equality/inequality
+only. Custom reference fields preserve their declared target catalog and the
+active database/metadata snapshot.
+
+The backend's typed `scan_catalog_section` returns `CatalogSectionPage` rows as
+`CatalogSectionRecord(owner, section_id, row)`. Each row has its internal UUID
+and values in section metadata order. Row identities are unique within an owner
+and section, not globally: distinct owners may contain the same row UUID.
+No row UUID or line-number column is exposed to BSL. A single pinned read view
+supplies all pages and is closed on success or refusal. Result/cursor behavior and
+resource bounds reuse the ordinary Query implementation. Runtime validation
+checks every returned section field, even unprojected fields, and rejects malformed
+pages, duplicate complete row identities and repeated continuation handles.
+
+Scalar-only `Unload` uses the existing local ValueTable scalar/nullable metadata
+profile. It is not evidence that native section query column descriptions match.
+A result containing owner or custom references still refuses `Unload` before
+creating a table. Detached results and unloaded tables do not write section rows.
+
+Joins, owner dereferencing, LineNumber/НомерСтроки, row UUID APIs, section writes
+through Query, and UI support remain outside this increment. This source syntax
+does not widen the XML admission profile, accept additional standard Designer
+properties, or establish native compatibility. See the
+[section adapter boundary](catalog-tabular-sections.md).
