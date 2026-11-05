@@ -129,14 +129,23 @@ async function main(){
   });
   await scenario('dirty_back_discard_preserves_database',async()=>{
     await input().fill('Не сохранять');page.once('dialog',dialog=>dialog.accept());
-    await button('← Back to records').click();await button('+ New record').waitFor();
+    await button('← Back to records').click();
+    await page.locator('.editor').waitFor({state:'detached'});
+    await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent.trim()==='+ New record'&&!button.disabled));
     assert.equal(audit()[0].description,'Материалы');
   });
   await scenario('reload_reattach_and_host_restart_reopen',async()=>{
+    phase='reload_missing_capability';
     await page.reload();await page.getByText('Session capability missing.',{exact:false}).waitFor();
+    phase='reattach_existing_host';
     await page.goto(url);await button('+ New record').waitFor();
+    await page.locator('.editor').waitFor({state:'detached'});
+    await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent.trim()==='+ New record'&&!button.disabled));
+    phase='close_existing_host';
     await button('Close database').click();await page.getByRole('heading',{name:'Database closed',exact:true}).waitFor();
+    phase='restart_host';
     await stopHost();await startHost();await page.goto(url);
+    phase='reopen_durable_record';
     await page.getByRole('button',{name:/^ВидыНоменклатуры/}).click();await button('Open →').click();
     assert.equal(await input().inputValue(),'Материалы');assert.equal(audit().length,1);
   });
