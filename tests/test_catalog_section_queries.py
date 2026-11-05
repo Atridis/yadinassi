@@ -241,3 +241,44 @@ N=Catalogs.Products.CreateItem();R=N.Lines.Add();R.Text="unsaved owner";''')
         remaining = self.query().execute().select(); self.assertTrue(remaining.next())
         self.assertEqual(remaining.get_member('Text'), 'other owner')
         self.assertFalse(remaining.next())
+
+    def test_owner_query_keeps_scalar_projection_and_does_not_read_section_tables(self):
+        self.seed()
+        original = _View.scan_catalog_values
+        statements = []
+        def scan(view, catalog_id, request, fields):
+            view._connection.set_trace_callback(statements.append)
+            return original(view, catalog_id, request, fields)
+        with patch.object(_View, 'scan_catalog_values', scan), \
+                patch.object(_View, 'scan_catalog', side_effect=AssertionError('owner cards materialized')), \
+                patch.object(_View, 'scan_catalog_section', side_effect=AssertionError('section source scanned')):
+            result = self.query('SELECT Code AS Code FROM Catalog.Products ORDER BY Code').execute()
+        self.assertEqual(result._rows, (('10',), ('20',)))
+        manager = self.vm._catalogs.get_index('Products')
+        for section in manager._schema.tabular_sections:
+            table = self.context.backend._section_layout.table_name(manager._schema.identity, section.identity)
+            self.assertFalse(any(table in sql for sql in statements))
+        self.context.backend.begin_read().close()
+
+    def test_section_source_never_uses_owner_projection(self):
+        self.seed()
+        with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('owner source scanned')):
+            self.assertEqual(len(self.query().execute()._rows), 3)
+
+    def test_section_owner_and_custom_reference_ids_require_exact_uuid_before_comparison(self):
+        self.seed(); sample, manager, section = self.records()
+        class HostileIdentity:
+            def __eq__(self, other): raise AssertionError('untyped identity compared')
+            @property
+            def int(self): raise AssertionError('untyped identity interpreted')
+        bad = HostileIdentity()
+        for name in ('database_id', 'catalog_id', 'record_id'):
+            record = replace(sample, owner=replace(sample.owner, **{name: bad}))
+            with self.subTest(owner=name), patch.object(_View, 'scan_catalog_section', return_value=CatalogSectionPage((record,), None)):
+                with self.assertRaisesRegex(BackendError, 'integrity'): self.query().execute()
+            self.context.backend.begin_read().close()
+        field = next(f for f in section.fields if f.kind == 'catalog_ref')
+        for name in ('database_id', 'catalog_id', 'record_id'):
+            reference = CatalogKey(self.context.backend.database_id, field.target_catalog_id, UUID(int=0))
+            with self.subTest(reference=name), self.assertRaisesRegex(BackendError, 'integrity'):
+                _section_value(manager, field, replace(reference, **{name: bad}))

@@ -555,6 +555,25 @@ class CatalogSectionTests(unittest.TestCase):
             finally:
                 view.close()
 
+    def test_schema_reuse_preserves_full_section_cards(self):
+        from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
+        expected = []
+        for code in ('10', '20'):
+            draft = self.draft((self.section(self.row(text=code)),), code=code)
+            self.create(draft)
+            expected.append(self.read(draft.key))
+        view = self.backend.begin_read()
+        self.addCleanup(view.close)
+        queries = []
+        view._connection.set_trace_callback(queries.append)
+        for read in (lambda: view.select_catalog(self.product.identity),
+                     lambda: view.scan_catalog(self.product.identity, CatalogScanRequest(
+                         order=(CatalogOrder('code'),))).cards):
+            queries.clear()
+            self.assertEqual(read(), tuple(expected))
+            self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
+                                 for query in queries), 1)
+
     def test_commit_failure_before_actual_commit_has_no_receipt_or_rows(self):
         operation = uuid4()
         draft = self.draft((self.section(self.row()),))

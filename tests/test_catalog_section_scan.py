@@ -388,3 +388,23 @@ class CatalogSectionScanTests(unittest.TestCase):
                 view.close()
         finally:
             backend.close()
+
+    def test_all_scan_modes_reject_foreign_tokens_and_invalidate_previous_traversal(self):
+        self.seed(2, '10'); self.seed(2, '20')
+        view = self.view(); request = CatalogScanRequest(page_size=1)
+        modes = {
+            'section': lambda req: self.scan(view, req),
+            'cards': lambda req: view.scan_catalog(self.product.identity, req),
+            'values': lambda req: view.scan_catalog_values(self.product.identity, req, ('code',)),
+        }
+        for first_name, first in modes.items():
+            for next_name, next_scan in modes.items():
+                if first_name == next_name: continue
+                with self.subTest(first=first_name, next=next_name):
+                    token = first(request).continuation
+                    self.assertIsNotNone(token)
+                    with self.assertRaisesRegex(BackendError, 'invalid_input'):
+                        next_scan(replace(request, continuation=token))
+                    next_scan(request)
+                    with self.assertRaisesRegex(BackendError, 'invalid_input'):
+                        first(replace(request, continuation=token))

@@ -12,9 +12,8 @@ import sys
 
 from . import query_parser as syntax
 from .catalog_backend import (CatalogComparison, CatalogPredicate, CatalogOrder,
-                              CatalogScanRequest, CatalogPage, CatalogCard,
-                              CatalogKey, CatalogSectionPage, CatalogSectionRecord,
-                              TabularRow, BackendError)
+                              CatalogScanRequest, CatalogValuePage, CatalogValueRow,
+                              CatalogKey, CatalogSectionPage, CatalogSectionRecord, TabularRow, BackendError)
 from .catalog_qualifiers import bound_number, validate_string
 from .catalog_types import BSLCatalogReference
 from .dates import BSLDate
@@ -115,14 +114,20 @@ def _predicate(manager, node, alias, parameters, section=None):
     return CatalogComparison(column.field, node.operator, _stored(manager, column, value))
 
 
-def _logical(manager, column, card):
+def _logical(manager, column, value):
     if column.custom is not None:
-        index = manager._schema.fields.index(column.custom)
-        return manager._logical(column.custom, card.values[index])
+        return manager._logical(column.custom, value)
     if column.field == 'ref':
-        return manager._ref(card.key.record_id)
-    return {'code':card.code, 'description':card.description,
-            'deletion_mark':card.deletion_mark}[column.field]
+        if (type(value) is not CatalogKey
+                or any(type(item) is not UUID for item in (value.database_id,value.catalog_id,value.record_id))
+                or value.database_id != manager._key(UUID(int=0)).database_id
+                or value.catalog_id != manager._schema.identity or type(value.record_id) is not UUID):
+            raise BackendError('integrity')
+        return manager._ref(value.record_id)
+    if column.field in ('code', 'description'):
+        if type(value) is not str or len(value) > column.qualifiers[0]: raise BackendError('integrity')
+    elif type(value) is not bool: raise BackendError('integrity')
+    return value
 
 
 def _section_value(manager, field, value):
@@ -268,10 +273,11 @@ class BSLQuery(BSLObject):
                 request = CatalogScanRequest(predicate, order, size, continuation,
                                              string_comparison='casefold_v1')
                 if section is None:
-                    page = view.scan_catalog(manager._schema.identity, request)
-                    if type(page) is not CatalogPage:
+                    page = view.scan_catalog_values(manager._schema.identity, request,
+                        tuple(column.field for column in columns))
+                    if type(page) is not CatalogValuePage:
                         raise BackendError('integrity')
-                    records = page.cards
+                    records = page.rows
                 else:
                     page = view.scan_catalog_section(manager._schema.identity, section.identity, request)
                     if type(page) is not CatalogSectionPage:
@@ -282,24 +288,26 @@ class BSLQuery(BSLObject):
                             (type(page.continuation) is not str or len(page.continuation) != 32
                              or page.continuation in seen_continuations))):
                     raise BackendError('integrity')
-                # Validate every supplied record, even the tail beyond TOP.
-                for card in records:
+                # Validate the full supplied page, including any tail beyond TOP.
+                for projected in records:
                     if section is not None:
-                        row = _section_row(manager, section, card, columns, view, seen)
+                        row = _section_row(manager, section, projected, columns, view, seen)
                     else:
-                        if (type(card) is not CatalogCard or type(card.key) is not CatalogKey
-                                or card.key.database_id != view.database_id
-                                or card.key.catalog_id != manager._schema.identity
-                                or type(card.key.record_id) is not UUID or card.key.record_id.int == 0
-                                or type(card.code) is not str or type(card.description) is not str
-                                or len(card.code) > manager._schema.code_length
-                                or len(card.description) > manager._schema.description_length
-                                or type(card.deletion_mark) is not bool or type(card.values) is not tuple
-                                or len(card.values) != len(manager._schema.fields)
-                                or card.key.record_id in seen):
+                        if (type(projected) is not CatalogValueRow or type(projected.key) is not CatalogKey
+                                or any(type(item) is not UUID for item in (projected.key.database_id,projected.key.catalog_id,projected.key.record_id))
+                                or projected.key.database_id != view.database_id
+                                or projected.key.catalog_id != manager._schema.identity
+                                or type(projected.key.record_id) is not UUID or projected.key.record_id.int == 0
+                                or type(projected.values) is not tuple or len(projected.values) != len(columns)
+                                or projected.key.record_id in seen):
                             raise BackendError('integrity')
-                        seen.add(card.key.record_id)
-                        row = tuple(_logical(manager, column, card) for column in columns)
+                        for column, value in zip(columns,projected.values):
+                            if column.field == 'ref' and (type(value) is not CatalogKey
+                                    or any(type(item) is not UUID for item in (value.database_id,value.catalog_id,value.record_id))
+                                    or value != projected.key):
+                                raise BackendError('integrity')
+                        seen.add(projected.key.record_id)
+                        row = tuple(_logical(manager, column, value) for column,value in zip(columns,projected.values))
                     if len(rows) >= query.limit:
                         continue
                     text_units += sum(len(value) for value in row if type(value) is str)

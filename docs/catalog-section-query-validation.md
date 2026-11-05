@@ -7,8 +7,8 @@ tests. Those logs are not evidence for this later merged source: the qualifier,
 SQLite recovery and metadata stack have since changed. A fresh source-bound
 run must be separately approved and recorded for the exact candidate.
 
-The current focused section suite contains 41 local test methods: 3 parser,
-21 section-scan and 17 query methods. Two query methods additionally check a
+The current focused section suite contains 45 local test methods: 3 parser,
+22 section-scan and 20 query methods. Two query methods additionally check a
 hostile ambient Decimal context and UTF-16 string bounds at the logical port.
 No native section-query observation is implied by these tests.
 
@@ -87,3 +87,15 @@ authorize a source-bound official XML fixture and bounded output packet covering
 Existing owner-only Query24 and catalog XML observations do not establish these
 section behaviors. Keep native observations unchanged. This increment neither
 widens Designer XML activation nor changes UI, migration or integration lanes.
+
+## Integration with scalar SQL scans
+
+The current-main integration keeps owner Query on `scan_catalog_values`, with
+SQL projections on v2/v3 and the bounded v1 fallback. Section sources use their
+separate read-only scan. Regression checks cover all six directions of cursor
+mode changes between full cards, scalar projections and sections, no section
+table reads from owner Query, no owner projections from section Query, and
+exact UUID validation before interpreting logical-port identities. Full supplied
+pages are validated even when their tail is beyond TOP. The section source
+still uses bounded in-memory sorting after complete source validation; the
+owner SQL optimization does not imply an SQL section-query optimizer.

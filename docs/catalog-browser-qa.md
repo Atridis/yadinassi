@@ -45,20 +45,45 @@ Runner support does not guarantee this particular acquisition will succeed.
 
 ## Eight actual event flows
 
-1. Launch, choose Categories, inspect list, open existing record, return.
+1. Launch with an emulated light OS preference and empty browser storage; verify
+   the default theme is Dark. Choose Categories, inspect list, open an existing
+   record and verify the full-width desktop sidebar, records and editor occupy
+   three non-overlapping, vertically aligned columns at 1320 px. Catalog/record
+   navigation is disabled with a visible explanation while editing. Return.
 2. Create: duplicate code rejected; local draft retained; correct code and save.
 3. Edit/save the created description and existing product's String, exact Number,
    Boolean and whole-second Date through visible controls.
 4. Repeat completed Save twice: both report No changes, not duplicate creation.
-5. Dirty close: dismiss confirmation and retain draft, then explicit discard and
+5. With a dirty field, switch Light, Dark and System through the visible theme
+   control. Verify the draft survives every switch and no RPC is sent. System
+   follows the emulated OS light/dark changes without RPC or draft loss. Verify
+   the desktop list preview and locked navigation, and capture the dark desktop
+   editor with its populated preview and dirty draft; leave an explicit Light theme.
+   Dirty close: dismiss confirmation and retain draft, then explicit discard and
    reopen unchanged persisted values.
-6. Reload: missing in-memory capability reported; return to the original launch
-   URL in the same tab and reattach without replaying a write.
-7. Existing reference remains visible/read-only; capture desktop card and narrow
-   viewport, with a horizontal-overflow assertion.
+6. Reload under an emulated dark OS preference: explicit Light survives, while
+   the missing in-memory capability is reported. Verify local storage contains
+   only `yadinassi.catalog.theme=light`, session storage is empty and no cookies
+   exist. Return to the original launch URL in the same tab and reattach without
+   replaying a write; theme and the storage-only preference contract still hold.
+7. Existing reference remains visible/read-only. Restore Dark without RPC.
+   After reload, the records panel
+   explains that returning to records refreshes its memory-only list preview.
+   Capture a 390 px narrow viewport, asserting no horizontal overflow and that
+   the editor appears before any visible sidebar/records panels.
 8. Close database/process, reopen the same SQLite file in a fresh launcher,
    verify values again in the UI and close cleanly. Independent read-only backend
    audit after close checks exact row counts, scalars and preserved reference.
+
+These assertions extend the same eight scenarios, not a ninth flow or another
+browser acquisition. OS color preference is emulated through the browser API;
+application state, theme storage and RPC responses are never injected or mocked.
+Theme switches use the visible select. Only request counts and storage verdicts
+are checked; request bodies, cookie values and storage contents are not exported.
+The existing three screenshots show default-dark list, dark desktop editor and
+narrow dark editor states. Light/System behavior is asserted in the same report.
+Earlier accepted screenshots do not validate this redesigned UI; a new reviewed,
+source-bound acquisition and inspection of all three images are still required.
 
 The fixture is independently authored official XML from `tests/ui_catalog_fixture.py`,
 materialized as a fresh owned temporary SQLite database using public backend APIs.

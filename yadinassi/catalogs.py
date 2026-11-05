@@ -8,7 +8,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 from .dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from .catalog_types import BSLCatalogReference, BSLCatalogType
-from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError
+from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow
 from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES
 from .catalog_backend import TabularSectionRows
 from .catalog_qualifiers import normalize_field, normalize_string
@@ -143,9 +143,21 @@ class BSLCatalogManager(BSLObject):
     def _find(self,field,value):
         view=self._view()
         try:
-            page=view.scan_catalog(self._schema.identity,CatalogScanRequest(
-                predicate=CatalogComparison(field,'eq',value),page_size=2))
-            matches=page.cards
+            page=view.scan_catalog_values(self._schema.identity,CatalogScanRequest(
+                predicate=CatalogComparison(field,'eq',value),page_size=2),('ref',))
+            if (type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows)>2
+                    or (page.continuation is not None and (type(page.continuation) is not str or len(page.continuation)!=32))):
+                raise BackendError('integrity')
+            matches=page.rows
+            for row in matches:
+                if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey
+                        or any(type(item) is not UUID for item in (row.key.database_id,row.key.catalog_id,row.key.record_id))
+                        or row.key.database_id!=view.database_id or row.key.catalog_id!=self._schema.identity
+                        or type(row.key.record_id) is not UUID or not row.key.record_id.int
+                        or type(row.values) is not tuple or len(row.values)!=1 or type(row.values[0]) is not CatalogKey
+                        or any(type(item) is not UUID for item in (row.values[0].database_id,row.values[0].catalog_id,row.values[0].record_id))
+                        or row.values[0]!=row.key):
+                    raise BackendError('integrity')
             if page.continuation is not None:raise ValueError('ambiguous exact catalog lookup')
         finally:view.close()
         if len(matches)>1:raise ValueError('ambiguous exact catalog lookup')
