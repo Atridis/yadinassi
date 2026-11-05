@@ -52,3 +52,10 @@ Interpreter activation opts into this bounded section adapter. Existing UI activ
 Dynamic section/row TypeOf descriptors, presentation strings, external codecs/transport, LineNumber/НомерСтроки, row UUID APIs, nested metadata collections, Insert/Move/Sort/Find/Load/Unload/Copy and unlisted methods remain unsupported. Row identity and lifecycle are internal local choices until appropriate behavior evidence exists. References still obey the backend's create-time existence checks described in the [storage contract](sqlite-catalog-sections.md).
 
 `!todo`: acquire a bounded native behavior packet for collection methods, index conversions, detached row handles, iteration changes, default values, generated types and error semantics before widening compatibility claims. Keep native observations unchanged; internal storage and project-owned fixtures are not fixed before a public yadinassi release.
+
+Read-only section Query sources now have a separate
+[bounded implementation contract](catalog-query-v1.md#read-only-tabular-section-source-local-contract):
+`Catalog.<Catalog>.<Section>` exposes selected custom fields and the owner
+reference. That contract adds no collection methods, LineNumber, owner
+field dereferencing, UI support or Designer XML admission. Section query native
+behavior and metadata remain pending measurement.
