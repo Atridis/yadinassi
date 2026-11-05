@@ -37,6 +37,47 @@ _OWNER_BATCH = 128
 _UNLOADED = object()
 
 
+def _interruption(error):
+    return not isinstance(error, Exception) or isinstance(error, MemoryError)
+
+
+def _close_owned_connection(owner):
+    if owner._connection is not None:
+        # A failed close makes the owner unusable but does not prove that
+        # SQLite released its locks. Retain ownership until close succeeds.
+        owner._closed=True; owner._scan_cursor=None
+        rollback_error=None
+        try:
+            if owner._connection.in_transaction: owner._connection.execute('ROLLBACK')
+        except BaseException as error:
+            rollback_error=error
+        try:
+            owner._connection.close()
+        except BaseException as close_error:
+            if rollback_error is not None and _interruption(rollback_error): raise rollback_error
+            if isinstance(close_error,sqlite3.Error):raise BackendError('storage_error') from None
+            raise
+        else:
+            owner._connection=None
+            if owner._backend._active is owner: owner._backend._active=None
+        if rollback_error is not None:
+            if isinstance(rollback_error,sqlite3.Error):raise BackendError('storage_error') from None
+            raise rollback_error
+
+
+class _PendingConnection:
+    """Close-only owner while a read/write view has not passed admission."""
+    def __init__(self, backend):
+        self._backend=backend; self._connection=None
+        self._closed=True; self._scan_cursor=None
+
+    def close(self):
+        _close_owned_connection(self)
+        # Failure before sqlite3.connect returned did not acquire a handle.
+        if self._connection is None and self._backend._active is self:
+            self._backend._active=None
+
+
 def _boundary(function):
     @wraps(function)
     def call(*args, **kwargs):
@@ -330,11 +371,12 @@ class SQLiteCatalogBackend:
             _private_parent(self.path)
         except OSError: raise BackendError('storage_error') from None
 
-    def _connect(self):
+    def _connect(self, *, _owner=None):
         self._check_file()
         connection = None
         try:
             connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if self.read_only else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2)
+            if _owner is not None: _owner._connection=connection
             if self.read_only: connection.execute('PRAGMA query_only=ON')
             connection.execute('PRAGMA foreign_keys=ON')
             connection.execute('PRAGMA trusted_schema=OFF')
@@ -348,7 +390,11 @@ class SQLiteCatalogBackend:
                 raise BackendError('unsupported')
             return connection
         except BaseException:
-            if connection is not None: connection.close()
+            if _owner is not None:
+                # The caller already reserved ownership. Let its failure path
+                # close the handle without losing it or replacing this error.
+                if connection is not None: _owner._connection=connection
+            elif connection is not None: connection.close()
             raise
 
     @classmethod
@@ -389,9 +435,9 @@ class SQLiteCatalogBackend:
             raise BackendError('invalid_input')
         absolute = _private_parent(os.path.abspath(raw))
         connection = None
+        commit_started = False
         try:
             fd = os.open(absolute, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            created_identity = os.fstat(fd)
             os.close(fd)
         except OSError: raise BackendError('storage_error') from None
         try:
@@ -422,20 +468,27 @@ class SQLiteCatalogBackend:
                 connection.execute('INSERT INTO configuration_file VALUES(?,?,?,?)', (f.path,f.kind,f.content,hashlib.sha256(f.content).hexdigest()))
             connection.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
             connection.execute('PRAGMA user_version=%d' % storage_version)
+            # From this point the commit may have taken effect, even if its
+            # response or the subsequent close/open fails. Never unlink it.
+            commit_started = True
             connection.execute('COMMIT')
-        except BaseException:
+            connection.close(); connection = None
+            return cls(absolute)
+        except BaseException as error:
             if connection is not None:
-                if connection.in_transaction: connection.execute('ROLLBACK')
-                connection.close(); connection = None
-            # Only this newly created file is removed; never an existing database.
-            try:
-                current = os.lstat(absolute)
-                if (current.st_dev,current.st_ino) == (created_identity.st_dev,created_identity.st_ino): os.unlink(absolute)
-            except OSError: pass
-            raise
-        finally:
-            if connection is not None: connection.close()
-        return cls(absolute)
+                try:
+                    if connection.in_transaction: connection.execute('ROLLBACK')
+                except BaseException as cleanup_error:
+                    if _interruption(cleanup_error) and not _interruption(error): error=cleanup_error
+                try:
+                    connection.close()
+                except BaseException as cleanup_error:
+                    if _interruption(cleanup_error) and not _interruption(error): error=cleanup_error
+            # Never unlink the reserved path on failure: another process may
+            # have opened or changed even the same inode after our close.
+            if commit_started and not _interruption(error):
+                raise BackendError('uncertain_commit') from None
+            raise error
 
     @_boundary
     def capabilities(self):
@@ -454,29 +507,36 @@ class SQLiteCatalogBackend:
         if self._closed: raise BackendError('closed')
         if not self.activated: raise BackendError('unsupported')
         if self._active is not None: raise BackendError('busy')
-        connection = self._connect()
+        pending = _PendingConnection(self)
         try:
-            connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
-            if (connection.execute('PRAGMA user_version').fetchone()[0] != self.storage_version or
-                connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
-                raise BackendError('schema_changed')
-            if self.storage_version >= 2:
-                if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
-                for identity, name, definition in self._schema_snapshot:
-                    if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
-                layout = load_layout(connection, self._schemas)
-                if layout._tables != self._layout._tables or layout._fields != self._layout._fields: raise BackendError('schema_changed')
-                if self.storage_version == 3:
-                    section_layout = load_section_layout(connection, self._schemas, layout)
-                    if section_layout._tables != self._section_layout._tables or section_layout._fields != self._section_layout._fields:
-                        raise BackendError('schema_changed')
-            view = _View(self, connection, operation_id)
+            self._active = pending
+            connection = self._connect(_owner=pending)
+            try:
+                connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
+                if (connection.execute('PRAGMA user_version').fetchone()[0] != self.storage_version or
+                    connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
+                    raise BackendError('schema_changed')
+                if self.storage_version >= 2:
+                    if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
+                    for identity, name, definition in self._schema_snapshot:
+                        if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
+                    layout = load_layout(connection, self._schemas)
+                    if layout._tables != self._layout._tables or layout._fields != self._layout._fields: raise BackendError('schema_changed')
+                    if self.storage_version == 3:
+                        section_layout = load_section_layout(connection, self._schemas, layout)
+                        if section_layout._tables != self._section_layout._tables or section_layout._fields != self._section_layout._fields:
+                            raise BackendError('schema_changed')
+                view = _View(self, connection, operation_id)
+            except sqlite3.OperationalError:
+                raise BackendError('busy') from None
             self._active = view
             return view
-        except sqlite3.OperationalError:
-            connection.close(); raise BackendError('busy') from None
-        except BaseException:
-            connection.close(); raise
+        except BaseException as error:
+            try:
+                if self._active is not None: self._active.close()
+            except BaseException as cleanup_error:
+                if _interruption(cleanup_error) and not _interruption(error): raise
+            raise
 
     @_boundary
     def inspect_storage_mapping(self):
@@ -510,6 +570,8 @@ class SQLiteCatalogBackend:
         if self._closed: raise BackendError('closed')
         connection = self._connect()
         try:
+            # Pin preflight and payload reads to the same SQLite snapshot.
+            connection.execute('BEGIN')
             count,total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
             if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES: raise BackendError('integrity')
             result = {}
@@ -1238,21 +1300,16 @@ class _View:
         try:
             self._connection.execute('INSERT INTO commit_receipt VALUES(?,?,?)',(str(self._operation_id),digest,_json([[str(r.catalog_id),str(r.record_id),r.token] for r in revisions])))
             self._connection.execute('COMMIT')
-        except sqlite3.Error:
+            self.close()
+        except BaseException as error:
             # Caller must resolve persistent receipt after reopening, never blindly replay.
             try: self.close()
-            except BackendError: pass
+            except BaseException as cleanup_error:
+                if _interruption(cleanup_error) and not _interruption(error): raise
+            if _interruption(error): raise
             raise BackendError('uncertain_commit') from None
-        self.close()
         return revisions
 
     def rollback(self): self.close()
     def close(self):
-        if not self._closed:
-            try:
-                if self._connection.in_transaction: self._connection.execute('ROLLBACK')
-            except sqlite3.Error:
-                raise BackendError('storage_error') from None
-            finally:
-                self._connection.close(); self._closed=True; self._scan_cursor=None
-                if self._backend._active is self: self._backend._active=None
+        _close_owned_connection(self)

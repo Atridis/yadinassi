@@ -218,19 +218,21 @@ class BSLCatalogObject(BSLObject):
                 (revision.database_id,revision.configuration_generation,revision.catalog_id,revision.record_id) !=
                 (self._key.database_id,m._catalogs._metadata._generation,self._key.catalog_id,self._key.record_id)):
             raise BackendError('uncertain_commit')
+        ref=m._ref(self._key.record_id);next_operation=uuid4()
         self._revision=revision
-        self._values['ref']=m._ref(self._key.record_id)
-        self._operation_id=uuid4()
-        self._pending_write=None
+        self._values['ref']=ref
+        self._operation_id=next_operation
+        # Keep the exact intent locked until every section has accepted it.
         for section in self._sections.values():section._dirty=False
+        self._pending_write=None
 
     def write(self):
         m=self._manager;caps=m._backend.capabilities()
         if m._schema.tabular_sections and not caps.catalog_tabular_sections:raise BackendError('unsupported')
         if not caps.atomic_transactions or not (caps.catalog_create if self.is_new() else caps.catalog_update):raise BackendError('unsupported')
         if self._pending_write is not None:
-            draft,expected=self._pending_write
-            revision=m._backend.resolve_write(self._operation_id,draft,expected)
+            draft,expected,operation=self._pending_write
+            revision=m._backend.resolve_write(operation,draft,expected)
             if revision is not None:
                 self._accept_revision(revision)
                 return None
@@ -238,22 +240,31 @@ class BSLCatalogObject(BSLObject):
             draft=CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
                                tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),self._section_draft())
             expected=self._revision
-        tx=m._backend.begin_write(self._operation_id)
+            operation=self._operation_id
+        tx=m._backend.begin_write(operation)
+        committing=False
         try:
             if tx.database_id!=self._key.database_id or tx.configuration_generation!=m._catalogs._metadata._generation or tx.catalog_schema(m._schema.identity)!=m._schema:raise BackendError('schema_changed')
             if expected is None:tx.create(draft)
             else:tx.update(draft,expected)
             # Keep the exact submitted intent across an uncertain commit response.
-            self._pending_write=(draft,expected)
+            self._pending_write=(draft,expected,operation)
+            committing=True
             revisions=tx.commit()
             if len(revisions)!=1:raise BackendError('uncertain_commit')
+            tx.close()  # Cleanup must complete before the revision is accepted.
             self._accept_revision(revisions[0])
-        except BackendError as error:
-            if error.code!='uncertain_commit':self._pending_write=None
-            tx.rollback();raise
-        except BaseException:
-            tx.rollback();raise
-        finally:tx.close()
+        except BaseException as error:
+            if not committing:self._pending_write=None
+            for cleanup in (tx.rollback,tx.close):
+                try:cleanup()
+                except BaseException as cleanup_error:
+                    if ((not isinstance(cleanup_error,Exception) or isinstance(cleanup_error,MemoryError)) and
+                            isinstance(error,Exception) and not isinstance(error,MemoryError)):
+                        error=cleanup_error
+            if committing and isinstance(error,Exception) and not isinstance(error,MemoryError):
+                raise BackendError('uncertain_commit') from None
+            raise error
         return None
     def get_member(self,name):
         key=name.casefold()
