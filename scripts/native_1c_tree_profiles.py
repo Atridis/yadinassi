@@ -74,6 +74,10 @@ COLUMNS_DELETE_STRING = Profile('tree-columns-delete-string-v1', 'native-1c-tree
     'tree_columns_delete_string', 'ebb9728d4f4e42fbabbc8975be160989f669540cfbfc200994570e3aeb1beaaf',
     7, 'native_1c_tree_columns_delete_string_contract', '\nСообщить("DS-C1: [" + CCCalibrate() + "]");\n', 2, 'tree-columns-delete-string')
 
+VALUE_STORAGE = Profile('value-storage-v1', 'native-1c-value-storage-v1', 'native-1c-value-storage-stage-v1',
+    'value_storage', '08f35c3672b3f3436df451ad8f7a604e5db7729f3b42dbae645e1ac362d5ca23',
+    27, 'native_1c_value_storage_contract', '\nСообщить("VS-C1: [wire-v1]");\n', 5, 'value-storage')
+
 FORMAT_NUMBERS = Profile('format-numbers-v1', 'native-1c-format-numbers-v1', 'native-1c-format-numbers-stage-v1',
     'format_numbers', 'a7f8e3c6105d4a7f28ef08a0865abcf01f7465f236fffe189c2da7272df04d84',
     50, 'native_1c_format_numbers_contract', '\nСообщить("FM-C1: [" + FMEncode("") + "]");\n', 5, 'format-numbers')
@@ -169,6 +173,8 @@ def select(name='tree-v1'):
         return COLUMNS_DELETE_STRING
     if name == FORMAT_DATES.name:
         return FORMAT_DATES
+    if name == VALUE_STORAGE.name:
+        return VALUE_STORAGE
     if name == FORMAT_NUMBERS.name:
         return FORMAT_NUMBERS
     raise ValueError('invalid_tree_profile')

@@ -250,4 +250,98 @@ Try ValueToStringInternal(Q); Except Message("no-codec"); EndTry;''')
         self.assertIs(type_of(reader(b'a')),BSLType.DATA_READER)
         with self.assertRaises(ValueError): serialization.value_to_string_internal(reader(b'a'))
 
+class DataIOLookaheadTests(unittest.TestCase):
+    def test_read_chars_requested_bytes_scale_with_consumed_prefix(self):
+        for size in (8000, 16000):
+            source = reader(b'x' * size)
+            with mock.patch.object(source._stream, '_read_bytes', wraps=source._stream._read_bytes) as read:
+                for _ in range(size // 80): self.assertEqual(source.read_chars(80), 'x' * 80)
+            self.assertLessEqual(sum(call.args[0] for call in read.call_args_list), 4 * size + 3)
+            self.assertEqual(source.source_stream().current_position(), size)
+
+    def test_short_lines_and_markers_never_request_remaining_tail(self):
+        for operation, delimiter in (('read_line', b'\n'), ('read_to', b'|')):
+            source = reader((b'x' * 79 + delimiter) * 200)
+            with mock.patch.object(source._stream, '_read_bytes', wraps=source._stream._read_bytes) as read:
+                for _ in range(200):
+                    result = getattr(source, operation)(*(() if operation == 'read_line' else ('|',)))
+                    self.assertEqual(result if operation == 'read_line' else result._data.decode(), 'x' * 79)
+            self.assertLessEqual(max(call.args[0] for call in read.call_args_list), api._SCAN_BLOCK + 1)
+            self.assertLessEqual(sum(call.args[0] for call in read.call_args_list), 200 * (api._SCAN_BLOCK + 1) + 3)
+
+    def test_scan_boundaries_longest_markers_and_no_match(self):
+        for start in (api._SCAN_BLOCK - 1, api._SCAN_BLOCK, api._SCAN_BLOCK + 1):
+            source = reader(b'a' * start + b'::tail')
+            result = source.read_to(array(':', '::'))
+            self.assertEqual((result._data, result._marker), (b'a' * start, 1))
+            self.assertEqual(source.read_chars(), 'tail')
+        long = b'Z' * (api._SCAN_BLOCK + 7)
+        source = reader(b'a' * 255 + long + b'tail')
+        self.assertEqual(source.read_to(Buffer.from_bytes(long))._data, b'a' * 255)
+        self.assertEqual(source.read_chars(), 'tail')
+        self.assertEqual(reader(b'a' * 1000).read_to('!')._data, b'a' * 1000)
+
+    def test_utf16_false_delimiters_and_real_aligned_delimiters(self):
+        for codec, text in (('utf-16-le', '\u0a41\u0100'), ('utf-16-be', '\u0100\u0a41')):
+            for suffix in ('', '\nend'):
+                source = Reader(Binary.from_bytes((text + suffix).encode(codec)), codec)
+                self.assertEqual(source.read_line(), text)
+                self.assertEqual(source.read_line(), 'end' if suffix else '')
+            # General binary markers deliberately retain byte-level matching.
+            source = Reader(Binary.from_bytes(text.encode(codec)), codec)
+            self.assertEqual(source.read_to(Buffer.from_bytes('\n'.encode(codec)))._data, text.encode(codec)[:1])
+
+    def test_utf16_bom_custom_delimiter_and_block_boundary(self):
+        for codec, bom in (('utf-16-le', b'\xff\xfe'), ('utf-16-be', b'\xfe\xff')):
+            for count in (127, 128, 129):
+                text = 'x' * count + '😀'
+                source = Reader(Binary.from_bytes(bom + (text + '<>tail').encode(codec)), 'UTF-8')
+                self.assertEqual(source.read_line(splitter='<>'), text)
+                self.assertEqual(source.source_stream().current_position(), len(bom + (text + '<>').encode(codec)))
+                self.assertEqual(source.read_chars(4, codec), 'tail')
+            source = Reader(Binary.from_bytes(('x' * 127 + '\r\ntail').encode(codec)), codec)
+            self.assertEqual(source.read_line(), 'x' * 127)
+            self.assertEqual(source.read_chars(), 'tail')
+
+    def test_decode_failure_zero_count_and_surrogate_boundary_preserve_contract(self):
+        for codec, bom in (('utf-8', b'\xef\xbb\xbf'), ('utf-16-le', b'\xff\xfe'), ('utf-16-be', b'\xfe\xff')):
+            source = Reader(Binary.from_bytes(bom + '😀x'.encode(codec)), codec)
+            self.assertEqual(source.read_chars(0), '')
+            self.assertEqual(source.source_stream().current_position(), len(bom))
+            self.assertEqual(source.read_chars(1), '\ud83d')
+            self.assertEqual(source.read_chars(1), 'x')
+        for data, codec in ((b'\xff', 'utf-8'), (b'\xff\xfe\x00', 'utf-16-le'), (b'\xfe\xff\xd8\x00', 'utf-16-be')):
+            for method in ('read_chars', 'read_line'):
+                source = Reader(Binary.from_bytes(data), codec)
+                with self.assertRaises(UnicodeDecodeError): getattr(source, method)()
+                self.assertEqual(source.source_stream().current_position(), 0)
+                self.assertFalse(source.get_member('ReadCompleted'))
+
+    def test_shared_mutation_and_alias_cursor_do_not_use_stale_lookahead(self):
+        buffer = Buffer.from_bytes(b'a\nb\nc')
+        stream = Memory(buffer); source = Reader(stream); alias = source.source_stream()
+        self.assertEqual(source.read_line(), 'a')
+        self.assertEqual(alias.current_position(), 2)
+        buffer.set(2, ord('z'))
+        self.assertEqual(source.read_line(), 'z')
+        self.assertEqual(alias._read_bytes(1), b'c')
+        self.assertEqual(source.read_line(), '')
+        alias.close()
+        with self.assertRaises(ValueError): source.read_chars(1)
+
+    def test_scan_budget_and_failed_partition_leave_cursor_unchanged(self):
+        for method, args in (('read_line', ()), ('read_to', ('|',)), ('split', ('|',))):
+            source = reader(b'a|b|c')
+            with mock.patch.object(api, 'MAX_SCAN', 3), self.assertRaises(ValueError): getattr(source, method)(*args)
+            self.assertEqual(source.source_stream().current_position(), 0)
+            self.assertFalse(source.get_member('ReadCompleted'))
+        source = reader(b'a|b|c')
+        with mock.patch.object(api, 'MAX_SCAN', 8), self.assertRaises(ValueError): source.split('|')
+        self.assertEqual(source.source_stream().current_position(), 0)
+        source = reader(b'a' * (2 * api._SCAN_BLOCK))
+        with mock.patch.object(api, 'MAX_SCAN', 2 * api._SCAN_BLOCK):
+            self.assertEqual(source.read_to('!!')._data, b'a' * (2 * api._SCAN_BLOCK))
+        self.assertEqual(source.source_stream().current_position(), 2 * api._SCAN_BLOCK)
+
+
 if __name__=='__main__': unittest.main()

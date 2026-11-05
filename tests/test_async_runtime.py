@@ -1,8 +1,10 @@
 """Executable continuation coverage; host-injected pending signals are not native evidence."""
 from decimal import Decimal, getcontext
+import gc
 from pathlib import Path
 import tempfile
 import unittest
+import weakref
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.async_runtime import Promise
@@ -114,6 +116,125 @@ class AsyncRuntimeTests(unittest.TestCase):
             Try P(); Except Message("wrong"); EndTry; Message("returned");
             ''')
         self.assertEqual(self.output,['returned'])
+
+    def test_procedure_failure_releases_execute_caller_frames(self):
+        class Payload:
+            pass
+        references = []
+        self.run_code('Async Procedure P() x=Await 1; Raise "failure"; EndProcedure')
+        def invoke():
+            payload = Payload()
+            references.append(weakref.ref(payload))
+            try:
+                self.vm.execute('P();')
+            except BSLRuntimeError:
+                pass
+            else:
+                self.fail('procedure failure was not delivered')
+        for _ in range(50):
+            invoke()
+        gc.collect()
+        self.assertTrue(all(reference() is None for reference in references))
+        self.assertEqual(self.vm.pending_promises, ())
+        self.assertEqual(self.vm._scheduler.procedure_errors, [])
+
+    def test_procedure_failure_releases_pump_caller_frames(self):
+        class Payload:
+            pass
+        references = []
+        signal = self.vm._scheduler.new_pending()
+        self.vm.register_function('Signal', lambda: signal)
+        self.run_code('Async Procedure P() x=Await Signal(); Raise "failure"; EndProcedure P();')
+        self.vm._scheduler.resolve(signal)
+        def invoke():
+            payload = Payload()
+            references.append(weakref.ref(payload))
+            try:
+                self.vm.run_until_idle()
+            except BSLRuntimeError:
+                pass
+            else:
+                self.fail('procedure failure was not delivered')
+        invoke()
+        gc.collect()
+        self.assertIsNone(references[0]())
+        self.assertEqual(self.vm._scheduler.procedure_errors, [])
+        self.vm.run_until_idle()
+
+    def test_procedure_delivery_detaches_shared_promise_rejection(self):
+        class Payload:
+            pass
+        references = []
+        self.run_code('''
+        Var saved;
+        Async Function Bad() Raise("shared", ErrorCategory.ConfigurationError,
+            "code", "detail", Undefined); EndFunction
+        Async Procedure P() x=Await saved; EndProcedure saved=Bad();
+        ''')
+        original = self.vm.variables['saved'].result
+        def invoke():
+            payload = Payload()
+            references.append(weakref.ref(payload))
+            try:
+                self.vm.execute('P();')
+            except BSLRuntimeError as error:
+                self.assertIsNot(error, original)
+                self.assertIs(error.info, original.info)
+                self.assertEqual((error.message, error.source, error.line,
+                                  error.column, error.source_line),
+                                 (original.message, original.source, original.line,
+                                  original.column, original.source_line))
+            else:
+                self.fail('procedure failure was not delivered')
+        invoke()
+        gc.collect()
+        self.assertIsNone(references[0]())
+        self.assertIsNone(original.__traceback__)
+        self.run_code('''Async Procedure CatchAgain()
+            Try x=Await saved; Except Message(ErrorInfo().Code); EndTry;
+            EndProcedure CatchAgain();''')
+        self.assertEqual(self.output, ['code'])
+
+    def test_procedure_batch_reports_first_and_does_not_replay_remainder(self):
+        with self.assertRaisesRegex(BSLRuntimeError, 'first'):
+            self.run_code('''Async Procedure P(Val text)
+                x=Await 1; Raise text; EndProcedure
+                P("first"); P("second"); P("third");''')
+        self.assertEqual(self.vm._scheduler.procedure_errors, [])
+        self.vm.run_until_idle()
+        self.run_code('Message("success");')
+        self.assertEqual(self.output, ['success'])
+
+    def test_synchronous_failure_precedes_and_clears_eager_procedure_batch(self):
+        with self.assertRaisesRegex(BSLRuntimeError, 'root'):
+            self.run_code('''Async Procedure P() Raise "procedure"; EndProcedure
+                P(); Raise "root";''')
+        self.assertEqual(self.vm._scheduler.procedure_errors, [])
+        self.vm.run_until_idle()
+
+    def test_pump_limit_precedes_and_clears_completed_procedure_batch(self):
+        signal = self.vm._scheduler.new_pending()
+        self.vm.register_function('Signal', lambda: signal)
+        self.run_code('''Async Procedure Bad() x=Await Signal(); Raise "procedure"; EndProcedure
+            Async Procedure Long() x=Await Signal(); x=Await 1; EndProcedure
+            Bad(); Long();''')
+        self.vm._scheduler.resolve(signal)
+        with self.assertRaisesRegex(BSLRuntimeError, 'предел асинхронных'):
+            self.vm.run_until_idle(max_steps=1)
+        self.assertEqual(self.vm._scheduler.procedure_errors, [])
+        self.assertTrue(self.vm.pending_promises)
+        self.vm.run_until_idle()
+        self.assertEqual(self.vm.pending_promises, ())
+
+    def test_nested_pump_does_not_consume_outer_procedure_batch(self):
+        def nested():
+            with self.assertRaisesRegex(RuntimeError, 'Nested'):
+                self.vm.run_until_idle()
+        self.vm.register_function('Nested', nested, returns_value=False)
+        with self.assertRaisesRegex(BSLRuntimeError, 'procedure'):
+            self.run_code('''Async Procedure P() Raise "procedure"; EndProcedure
+                P(); Nested();''')
+        self.assertEqual(self.vm._scheduler.procedure_errors, [])
 
     def test_argument_failure_stays_in_caller(self):
         self.run_code('''

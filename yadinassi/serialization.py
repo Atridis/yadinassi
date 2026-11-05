@@ -111,7 +111,7 @@ BSLType.DOCUMENTS_MANAGER,
                                          BSLType.BINARY_DATA, BSLType.TEXT_ENCODING,
                                          BSLType.JSON_READER, BSLType.JSON_WRITER,
     BSLType.JSON_WRITER_SETTINGS, BSLType.JSON_VALUE_TYPE, BSLType.JSON_LINE_BREAK,
-    BSLType.TEXT_DOCUMENT, BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE}) | _TREE_CODEC_TYPES
+    BSLType.TEXT_DOCUMENT, BSLType.VALUE_STORAGE, BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE}) | _TREE_CODEC_TYPES
 _TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
 _ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
 _STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
@@ -273,6 +273,8 @@ class _Writer:
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация ДеревоЗначений пока не поддерживается")
         if kind is BSLType.TEXT_DOCUMENT or (kind is BSLType.TYPE and value is BSLType.TEXT_DOCUMENT):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация ТекстовыйДокумент пока не поддерживается")
+        if kind is BSLType.VALUE_STORAGE or (kind is BSLType.TYPE and value is BSLType.VALUE_STORAGE):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ХранилищеЗначения пока не поддерживается")
         if kind in _UNSUPPORTED_CODEC_TYPES or (
                 kind is BSLType.TYPE and value in _UNSUPPORTED_CODEC_TYPES):
             if kind is BSLType.PROMISE or (kind is BSLType.TYPE and value is BSLType.PROMISE):

@@ -91,6 +91,29 @@ class CatalogCard:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogScalarRow:
+    """Validated owner scalars, deliberately not a partially loaded card."""
+    key: CatalogKey
+    revision: Revision
+    code: str
+    description: str
+    deletion_mark: bool
+    values: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogValueRow:
+    key: CatalogKey
+    values: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogValuePage:
+    rows: tuple[CatalogValueRow, ...]
+    continuation: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogDraft:
     key: CatalogKey
     code: str
@@ -169,6 +192,7 @@ class CatalogReadView(Protocol):
     def catalog_schema(self, catalog_id: UUID) -> CatalogSchema: ...
     def select_catalog(self, catalog_id: UUID, request: CatalogSelection) -> tuple[CatalogCard, ...]: ...
     def scan_catalog(self, catalog_id: UUID, request: CatalogScanRequest) -> CatalogPage: ...
+    def scan_catalog_values(self, catalog_id: UUID, request: CatalogScanRequest, fields: tuple[str | UUID, ...]) -> CatalogValuePage: ...
     def read_catalog(self, key: CatalogKey) -> CatalogCard | None: ...
     def close(self) -> None: ...
 

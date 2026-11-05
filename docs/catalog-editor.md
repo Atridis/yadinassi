@@ -62,6 +62,32 @@ applied by the runtime, not guessed by the renderer.
   distinguishes actual create/open from directly called handlers. This adapter
   does not turn direct-handler observations into platform-dispatch evidence.
 
+### Themes and desktop layout
+
+The renderer starts in **Dark** mode, regardless of the operating-system theme.
+The header's **Color theme** selector offers Dark, Light and System. System tracks
+subsequent OS appearance changes. Only this choice is saved under the fixed
+`yadinassi.catalog.theme` browser preference key. A blocked browser storage policy
+falls back to Dark and does not interrupt editing. Session capabilities, records
+and unsaved fields are never stored with the preference. Theme changes do not
+send runtime events, save a record or discard its draft.
+
+Wide desktop windows (at least 1,200 CSS pixels) use the available width for
+catalog navigation, the record list and the editor side by side. The host still
+owns a single editor and refuses navigation during editing. Those navigation
+controls remain visible but disabled until the card is closed. The last loaded
+list is explicitly labelled as a read-only **preview** and refreshes on return;
+it does not pretend to reflect newly saved values. Reattaching directly to an
+open editor has no cached list and shows a return-to-records placeholder instead.
+No additional read or write API is introduced for this layout.
+
+Medium windows put the editor beside navigation with the preview underneath.
+At 760 CSS pixels and below the open editor takes priority and navigation/list
+are hidden until return. Controls, long labels and reference text wrap, while
+Save and Discard follow the fields and references in normal document flow, so
+the action row never covers editable or read-only content. A new local edit hides
+a stale success notice until the host reports the next outcome.
+
 ### Persistence, cancellation and failures
 
 An editor retains one detached `CatalogObject` and its **original opaque row

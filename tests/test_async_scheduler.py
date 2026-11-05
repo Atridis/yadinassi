@@ -346,6 +346,28 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(promise.state, 'rejected')
         self.assertFalse(self.scheduler.procedure_errors)
 
+    def test_procedure_batch_is_consumed_as_a_detached_first_error(self):
+        info = object()
+        first = BSLRuntimeError('first', 'source.bsl', 2, 3,
+                                info=info, source_line='Raise "first";')
+        second = failure('second')
+        def task(error):
+            yield AwaitRequest(None)
+            raise error
+        promises = [self.scheduler.start(task(error), procedure=True)
+                    for error in (first, second)]
+        self.scheduler.run_until_idle()
+        delivered = self.scheduler.take_procedure_error()
+        self.assertEqual(self.scheduler.procedure_errors, [])
+        self.assertIsNot(delivered, first)
+        self.assertIs(delivered.info, info)
+        self.assertEqual((delivered.message, delivered.source, delivered.line,
+                          delivered.column, delivered.source_line),
+                         ('first', 'source.bsl', 2, 3, 'Raise "first";'))
+        self.assertIs(promises[0].result, first)
+        self.assertIs(promises[1].result, second)
+        self.assertIsNone(self.scheduler.take_procedure_error())
+
     def test_host_exceptions_are_not_bsl_rejections(self):
         def task():
             yield AwaitRequest(None)

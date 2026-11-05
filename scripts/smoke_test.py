@@ -508,21 +508,21 @@ EVAL_OUTPUT = ('600\n40\n11\n11\n3\n12\n3\nДа\neval-syntax-caught\n42\n'
 
 
 def check_eval(executable: str, *, directory: Path, env: dict) -> None:
-    """Dynamic BSL expressions across every binary input mode."""
+    """Dynamic BSL expressions through BOM file and incremental console."""
     directory = directory.resolve()
     directory.mkdir()
     source = directory / 'ВычислениеВыражения.bsl'
     source.write_text(EVAL_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, EVAL_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], EVAL_PROGRAM),
-              ([], EVAL_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], EVAL_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, EVAL_OUTPUT, ''):
             raise AssertionError(f'Failed Eval {arguments!r}: {result!r}')
     print('Binary Eval passed: context, reference, parse/arity/depth errors, '
-          'BOM file, command flags, stdin and console recovery')
+          'BOM file and console recovery')
 
 
 STRING_PARITY_PROGRAM = """
@@ -917,27 +917,27 @@ def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     directory.mkdir()
     source = directory / 'ВхожденияШаблона.bsl'
     source.write_text(STRING_PARITY_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, STRING_PARITY_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], STRING_PARITY_PROGRAM),
-              ([], STRING_PARITY_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], STRING_PARITY_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_PARITY_OUTPUT, ''):
             raise AssertionError(f'Failed native string parity {arguments!r}: {result!r}')
     print('Binary string checks passed: native parity, extended StrFind/SearchDirection, lexical XML conversion, '
-          'BOM file, command flags, stdin and console recovery')
+          'BOM file and console recovery')
 
 
 def check_array_gap(executable: str, *, directory: Path, env: dict) -> None:
-    """Array gap insertion across all binary input modes."""
+    """Array gap insertion through BOM file and incremental console."""
     directory = directory.resolve()
     directory.mkdir()
     source = directory / 'ПромежуткиМассива.bsl'
     source.write_text(ARRAY_GAP_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, ARRAY_GAP_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], ARRAY_GAP_PROGRAM),
-              ([], ARRAY_GAP_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], ARRAY_GAP_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -956,25 +956,25 @@ def check_array_gap(executable: str, *, directory: Path, env: dict) -> None:
                 or 'предел роста массива Yadinassi' not in result.stderr or 'Traceback' in result.stderr):
             raise AssertionError(f'Failed array gap diagnostic {arguments!r}: {result!r}')
     print('Binary array constructors and gap insertion passed: dimensions, aliases, fixed snapshot, serialization, '
-          'BOM file, command flags, stdin and console recovery')
+          'BOM file and console recovery')
 
 
 def check_array_defaults(executable: str, *, directory: Path, env: dict) -> None:
-    """Optional array values across all binary input modes."""
+    """Optional array values through BOM file and incremental console."""
     directory = directory.resolve()
     directory.mkdir()
     source = directory / 'ПустыеЭлементы.bsl'
     source.write_text(ARRAY_DEFAULT_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, ARRAY_DEFAULT_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], ARRAY_DEFAULT_PROGRAM),
-              ([], ARRAY_DEFAULT_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], ARRAY_DEFAULT_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, ARRAY_DEFAULT_OUTPUT, ''):
             raise AssertionError(f'Failed array defaults {arguments!r}: {result!r}')
     print('Binary array defaults passed: aliases, mutation, fixed snapshot, serialization, '
-          'BOM file, command flags, stdin and console recovery')
+          'BOM file and console recovery')
 
 
 def check_value_filled(executable: str, *, directory: Path, env: dict) -> None:
@@ -983,9 +983,9 @@ def check_value_filled(executable: str, *, directory: Path, env: dict) -> None:
     directory.mkdir()
     source = directory / 'Заполненность.bsl'
     source.write_text(VALUE_FILLED_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, VALUE_FILLED_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], VALUE_FILLED_PROGRAM),
-              ([], VALUE_FILLED_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], VALUE_FILLED_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1007,7 +1007,7 @@ def check_value_filled(executable: str, *, directory: Path, env: dict) -> None:
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed value filled recovery {arguments!r}: {result!r}')
     print('Binary value filled passed: aliases, scalars, collections, '
-          'serialization, BOM file, command flags, stdin and console recovery')
+          'serialization, BOM file and console recovery')
 
 
 def check_string_lines(executable: str, *, directory: Path, env: dict) -> None:
@@ -1016,9 +1016,9 @@ def check_string_lines(executable: str, *, directory: Path, env: dict) -> None:
     directory.mkdir()
     source = directory / 'МногострочныйТекст.bsl'
     source.write_text(STRING_LINES_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, STRING_LINES_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], STRING_LINES_PROGRAM),
-              ([], STRING_LINES_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], STRING_LINES_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1040,7 +1040,7 @@ def check_string_lines(executable: str, *, directory: Path, env: dict) -> None:
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed string line recovery {arguments!r}: {result!r}')
     print('Binary string lines passed: aliases, CR/LF, indices, UTF-16, '
-          'serialization, BOM file, command flags, stdin and console recovery')
+          'serialization, BOM file and console recovery')
 
 
 def check_string_template(executable: str, *, directory: Path, env: dict) -> None:
@@ -1049,9 +1049,9 @@ def check_string_template(executable: str, *, directory: Path, env: dict) -> Non
     directory.mkdir()
     source = directory / 'ШаблонСтроки.bsl'
     source.write_text(STRING_TEMPLATE_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, STRING_TEMPLATE_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], STRING_TEMPLATE_PROGRAM),
-              ([], STRING_TEMPLATE_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], STRING_TEMPLATE_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1073,7 +1073,7 @@ def check_string_template(executable: str, *, directory: Path, env: dict) -> Non
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed string template recovery {arguments!r}: {result!r}')
     print('Binary string templates passed: aliases, markers, arity, UTF-16, '
-          'serialization, BOM file, command flags, stdin and console recovery')
+          'serialization, BOM file and console recovery')
 
 
 def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> None:
@@ -1082,9 +1082,9 @@ def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> N
     directory.mkdir()
     source = directory / 'ГраницыСтрок.bsl'
     source.write_text(STRING_BOUNDARY_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, STRING_BOUNDARY_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], STRING_BOUNDARY_PROGRAM),
-              ([], STRING_BOUNDARY_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], STRING_BOUNDARY_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1106,7 +1106,7 @@ def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> N
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed string boundary recovery {arguments!r}: {result!r}')
     print('Binary string boundaries passed: aliases, exact case, empty-search errors, UTF-16, '
-          'serialization, BOM file, command flags, stdin and console recovery')
+          'serialization, BOM file and console recovery')
 
 
 def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> None:
@@ -1228,9 +1228,9 @@ def check_characters(executable: str, *, directory: Path, env: dict) -> None:
     directory.mkdir()
     source = directory / 'Символы.bsl'
     source.write_text(CHARACTER_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, CHARACTER_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], CHARACTER_PROGRAM),
-              ([], CHARACTER_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], CHARACTER_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1252,7 +1252,7 @@ def check_characters(executable: str, *, directory: Path, env: dict) -> None:
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed character recovery {arguments!r}: {result!r}')
     print('Binary character functions passed: aliases, coercion, UTF-16 units, NUL/surrogate '
-          'serialization, ranges, BOM file, command flags, stdin and console recovery')
+          'serialization, ranges, BOM file and console recovery')
 
 
 def check_numeric_helpers(executable: str, *, directory: Path, env: dict) -> None:
@@ -1260,16 +1260,16 @@ def check_numeric_helpers(executable: str, *, directory: Path, env: dict) -> Non
     directory.mkdir()
     source = directory / 'ЦелаяЧасть.bsl'
     source.write_text(NUMERIC_HELPERS_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, NUMERIC_HELPERS_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], NUMERIC_HELPERS_PROGRAM),
-              ([], NUMERIC_HELPERS_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], NUMERIC_HELPERS_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, NUMERIC_HELPERS_OUTPUT, ''):
             raise AssertionError(f'Failed integer part {arguments!r}: {result!r}')
     print('Binary numeric helpers passed: aliases, signs, long coefficient, coercion, winning types, ties, '
-          'BOM file, command flags, stdin, console and catchable error')
+          'BOM file, console and catchable error')
 
 
 COMPARISON_PROGRAM = r'''
@@ -1295,9 +1295,9 @@ def check_numeric_boolean_comparisons(executable: str, *, directory: Path, env: 
     directory.mkdir()
     source = directory / 'Сравнения.bsl'
     source.write_text(COMPARISON_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, COMPARISON_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], COMPARISON_PROGRAM),
-              ([], COMPARISON_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], COMPARISON_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1353,9 +1353,9 @@ def check_goto(executable: str, *, directory: Path, env: dict) -> None:
     directory.mkdir()
     source = directory / 'Переходы.bsl'
     source.write_text(GOTO_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, GOTO_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], GOTO_PROGRAM),
-              ([], GOTO_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], GOTO_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1459,9 +1459,9 @@ def check_rounding(executable: str, *, directory: Path, env: dict) -> None:
     directory.mkdir()
     source = directory / 'Округление.bsl'
     source.write_text(ROUNDING_PROGRAM, encoding='utf-8-sig')
-    cases = [([flag, ROUNDING_PROGRAM], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], ROUNDING_PROGRAM),
-              ([], ROUNDING_PROGRAM + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], ROUNDING_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
@@ -1477,7 +1477,7 @@ def check_rounding(executable: str, *, directory: Path, env: dict) -> None:
                 or 'Traceback' in result.stderr):
             raise AssertionError(f'Failed rounding recovery {expression!r}: {result!r}')
     print('Binary rounding passed: aliases, signs, precision, numeric/enum modes, exact long '
-          'coefficient, enum/type codecs, BOM file, command flags, stdin and console recovery')
+          'coefficient, enum/type codecs, BOM file and console recovery')
 
 
 def check_internal_serialization(executable: str, *, directory: Path, env: dict) -> None:
@@ -2572,8 +2572,9 @@ def check_text_document(executable, *, directory, env):
     directory.mkdir()
     source = directory / 'ТекстовыйДокумент.bsl'
     source.write_text(code, encoding='utf-8-sig')
-    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], code + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory, env=env, timeout=30)
@@ -2582,7 +2583,7 @@ def check_text_document(executable, *, directory, env):
     if (directory / 'must-not-write').exists():
         raise AssertionError('TextDocument unexpectedly exposed filesystem Write')
     print('Binary TextDocument passed: bounded in-memory edits, exact separators, '
-          'RU/EN aliases, closed file API; command flags, BOM file, stdin and console')
+          'RU/EN aliases, closed file API; BOM file and console')
 
 
 def tree_findrows_smoke_program() -> tuple[str, str]:
@@ -2618,15 +2619,16 @@ def check_tree_findrows(executable, *, directory, env):
     directory.mkdir()
     source = directory / 'ПоискСтрокДерева.bsl'
     source.write_text(code, encoding='utf-8-sig')
-    cases = [([flag, code], None) for flag in ('-c', '-с', '--command')]
-    cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
+    # Shared transports: check_dates; independent semantic owners: see
+    # docs/ci-smoke-launch-inventory.md. Keep incremental console separately.
+    cases = [([str(source)], None), ([], code + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
                                 encoding='utf-8', cwd=directory, env=env, timeout=30)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed bounded tree FindRows {arguments!r}: {result!r}')
     print('Binary tree FindRows passed: hierarchy DFS, local default, shared rows, '
-          'numeric/string flags and observed errors; command flags, BOM file, stdin and console')
+          'numeric/string flags and observed errors; BOM file and console')
 
 
 def type_smoke_program() -> tuple[str, str]:

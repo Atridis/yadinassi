@@ -7,6 +7,7 @@ import argparse
 from dataclasses import dataclass
 import json
 import math
+import os
 from pathlib import Path
 import unittest
 
@@ -93,9 +94,18 @@ class Plan:
         suite = unittest.TestSuite(node for index, node in enumerate(self.nodes) if index in indexes)
         selected_ids = [test_id for index, node_ids in enumerate(self.ids)
                         if index in indexes for test_id in node_ids]
+        unknown = {name for group in self.groups for name in group['unknown_ids']}
+        unknown_ids = [name for names in self.ids for name in names if name in unknown]
         return suite, {'tier': tier, 'shard_count': shard_count, 'shard_index': shard_index,
                        'selected_ids': selected_ids, 'estimated_intel_seconds': totals[shard_index],
-                       'discovered_ids': [name for names in self.ids for name in names]}
+                       'discovered_ids': [name for names in self.ids for name in names],
+                       'unknown_ids': unknown_ids, 'unknown_count': len(unknown_ids),
+                       'unknown_fraction': len(unknown_ids) / sum(map(len, self.ids))
+                           if any(self.ids) else 0.0,
+                       'selected_unknown_count': sum(len(group['unknown_ids']) for group in chosen),
+                       'discovered_group_count': len(self.groups),
+                       'unknown_group_count': sum(group['unknown'] for group in self.groups),
+                       'selected_group_count': len(chosen)}
 
 
 def partition_suite(suite, history, threshold=3.0):
@@ -139,12 +149,14 @@ def partition_suite(suite, history, threshold=3.0):
     for component in components:
         indexes = sorted(component['nodes'])
         names = [name for index in indexes for name in ids[index]]
-        unknown = component['empty'] or any(name not in history for name in names)
+        unknown_ids = [name for name in names if name not in history]
+        unknown = component['empty'] or bool(unknown_ids)
         sums = {platform: sum(history.get(name, {}).get(platform, 0.0) for name in names)
                 for platform in WEIGHTS}
         groups.append({'nodes': indexes, 'ids': names or ['<empty-suite-%d>' % indexes[0]],
                        'tier': 'light' if unknown or sums['seconds'] <= threshold else 'heavy',
-                       'intel_seconds': sums['intel_seconds'], 'unknown': unknown})
+                       'intel_seconds': sums['intel_seconds'], 'unknown': unknown,
+                       'unknown_ids': unknown_ids})
     return Plan(nodes, groups, ids)
 
 
@@ -194,6 +206,23 @@ class PartitionRunner(TimedTextTestRunner):
         return result
 
 
+def write_summary(report, path):
+    """Append numeric diagnostics only; timing never changes placement or success."""
+    with Path(path).open('a', encoding='utf-8') as stream:
+        stream.write(
+            f"### Test partition: {report['tier']} ({report['shard_index']}/{report['shard_count']})\n\n"
+            f"- Unknown IDs in discovery: {report['unknown_count']} / {len(report['discovered_ids'])} "
+            f"({report['unknown_fraction']:.2%}).\n"
+            f"- Unknown IDs selected: {report['selected_unknown_count']}; "
+            f"selected fixture groups: {report['selected_group_count']}.\n"
+            f"- Discovery wall time: {report['discovery_seconds']:.3f} s.\n"
+            f"- Partition wall time: {report['partition_wall_seconds']:.3f} s "
+            "(includes class/module fixtures, cleanups and runner reporting).\n"
+            "- Per-test durations exclude class/module fixtures. Per-group wall time "
+            "is not measured; history affects placement only, never coverage.\n\n"
+        )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--tier', choices=('light', 'heavy', 'all'), required=True)
@@ -206,15 +235,20 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.plan_only and (not args.plan_output or args.report):
         parser.error('--plan-only requires --plan-output and forbids --report')
+    discovery_started = perf_counter()
     suite = unittest.TestLoader().discover('tests')
+    discovery_seconds = perf_counter() - discovery_started
     plan = partition_suite(suite, load_history(args.history))
     selected, report = plan.select(args.tier, args.shard_count, args.shard_index)
+    report['discovery_seconds'] = discovery_seconds
     if args.plan_output:
         Path(args.plan_output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.plan_output).write_text(json.dumps(report, sort_keys=True) + '\n', encoding='utf-8')
     if args.plan_only:
         return 0
+    partition_started = perf_counter()
     result = PartitionRunner(verbosity=2).run(selected)
+    report['partition_wall_seconds'] = perf_counter() - partition_started
     covered = result.executed_ids + result.skipped_fixture_ids
     success = (result.wasSuccessful() and len(covered) == len(set(covered))
                and set(covered) == set(report['selected_ids']))
@@ -229,6 +263,8 @@ def main(argv=None):
         Path(args.report).parent.mkdir(parents=True, exist_ok=True)
         Path(args.report).write_text(json.dumps(report, ensure_ascii=True, sort_keys=True) + '\n',
                                      encoding='utf-8')
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        write_summary(report, os.environ['GITHUB_STEP_SUMMARY'])
     return 0 if success else 1
 
 
