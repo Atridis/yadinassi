@@ -57,6 +57,7 @@ class Select:
     predicate: Comparison | Predicate | None
     order: tuple[Order, ...]
     limit: int
+    section: str | None = None
 
 
 _KEYWORDS = {
@@ -206,7 +207,8 @@ class _Parser:
             raise ValueError('Only one catalog source is supported')
         self.take('.')
         catalog = self.take('name')
-        alias = self.take('name') if self.accept('as') else catalog
+        section = self.take('name') if self.accept('.') else None
+        alias = self.take('name') if self.accept('as') else (section or catalog)
         predicate = self.condition() if self.accept('where') else None
         order = []
         if self.accept('order'):
@@ -222,7 +224,7 @@ class _Parser:
                 if not self.accept(','):
                     break
         self.take('end')
-        return Select(catalog, alias, tuple(projections), predicate, tuple(order), limit)
+        return Select(catalog, alias, tuple(projections), predicate, tuple(order), limit, section)
 
 
 def parse_query(text):
