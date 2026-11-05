@@ -1,0 +1,24 @@
+name: Native demo DESIGNER acceptance
+
+# Inert default-branch registration only. The reviewed implementation lives in
+# a separate PR and must be explicitly selected by ref and exact reviewed SHA.
+# This workflow does not check out code, obtain credentials, or run native 1C.
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_sha:
+        description: Exact source-reviewed SHA of the separate implementation branch
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  registration_only:
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Explain inert registration
+        shell: bash
+        run: printf '%s\n' 'Registration only. No demo validation was executed.'
