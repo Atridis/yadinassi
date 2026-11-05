@@ -1,8 +1,11 @@
 # Coverage map before CI cost reductions
 
-This is a proposed next-iteration map for audit C1–C3, not an implemented
-reduction or a claim of measured speedup. The present change removes no test,
-BSL observation, frozen scenario, native gate, fixture boundary or platform gate.
+This is the coverage map and implementation status for audit C1–C3.
+C1 now removes 60 duplicate success-route launches while preserving every BSL
+program/output assertion, file route and incremental console sequence. C3 reuses
+immutable, per-test provenance snapshots in six exhaustive enumerations. C2 is
+explicitly blocked on independent historical evidence and retains all replays.
+No native gate, fixture boundary or platform gate is removed.
 Ordinary PR/main macOS ARM remains explicitly paused; every tag/manual run retains
 ARM and release still requires full four-platform coverage.
 
@@ -55,6 +58,79 @@ Both `test_native_preprocessor_budget.py` and
   each removed invocation to a retained shape, status and limit check. Every
   codec/validator/size enumeration still runs; production limits stay unchanged.
 
-A later patch should include exact before/after counts and deterministic call
-instrumentation proving preparation reuse. CI wall-time measurements follow;
-the audit's historical timings alone do not establish the improvement.
+Any further reduction must include exact before/after counts and deterministic
+call instrumentation. The implemented reuse below includes this instrumentation;
+the audit's historical timings alone do not establish a wall-time improvement.
+
+## Repeat-audit implementation and remaining evidence
+
+### C1: implemented bounded transport reduction
+
+See [the complete family/transport inventory](ci-smoke-launch-inventory.md).
+Fifteen success matrices change from six launches to two: 90 → 30. The exact
+program and expected output remain in each BOM-file and incremental-console
+invocation. All negative loops, TextDocument no-write check, native checkpoints,
+resource checks, imports, live clocks and PTY/UI checks are unchanged. Dedicated
+frozen dates still exercise all six transports. The source CLI matrices and
+independent semantic-owner suites remain. This is a launch-count reduction,
+not an unmeasured timing claim.
+
+### C2: precise independent-oracle blocker, no coverage deletion
+
+The Total source is bound to SHA-256
+`55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c`;
+Move reconstructs the preceding source bound to
+`a0212150d3d5d2a7252971aa8ba509d439ced04e85b5a157ff1148bf3eff4574`.
+They are different programs, not interchangeable cached replays.
+
+The repository's complete Windows collections capture is independently bound to
+Git output blob `97e90791a4011bd7f6ef2922533f92f698557cbd` and reconstructed
+source blob `137dca5e4b6a47ea083a0dfe989e07c22d91a9e6`. Its reconstruction
+removes additional historical probe blocks; it is not an authenticated expected
+1021/1022-message prefix for either current source. The native32 Move and Total
+literals independently authenticate their respective suffixes only. The
+LoadColumn native45 observations authenticate another suffix, not every earlier
+message. A physical line count of a capture is also not a message-count proof.
+
+Consequently all eight full enabled/disabled executions, both targets, exact
+native32 suffix checks, source/literal integrity checks and missing-method
+expectations remain. Establishing the requested replacement requires an
+independently captured complete prefix for each bound source/target or a fully
+reviewed independent reconstruction covering *every* historical message.
+Generating an expected fixture from the current engine or extrapolating a
+Windows capture to the Linux target would not meet this requirement. No native
+measurement/source or trusted capture is modified by this CI-only reduction.
+
+### C3: implemented preparation reuse, exhaustive boundary coverage retained
+
+Each of the three large enumeration methods in both preprocessor budget modules
+builds source provenance once, serializes it into immutable bytes, and decodes a
+fresh recursive mutable copy for each report. The real builder is instrumented
+inside each method and must be called exactly once. This changes the six
+methods' combined real builds from 2 × (32 + 240 + 224) = **992** to **6**.
+No cache exists across test methods or in production. Other provenance tests
+continue hashing normally, including source mutation and artifact rejection.
+The copy-isolation regression mutates both the source dictionary and one report
+and verifies that neither alters the snapshot or another report.
+
+All **992** existing production CLI/filesystem projections remain, alongside
+all codecs, schema/mode rejections, status frontiers and byte-size bounds.
+Async/exceptional majorants and the independent native-artifact, cleanup,
+private-marker, readiness and source-substitution cases remain unchanged.
+The production entry point currently combines argument validation, acceptance
+revocation, report projection, artifact verification and output-file handling
+inside `scripts/native_1c_smoke.main`. There is no separate pure production
+projector to call. Reimplementing it in tests would create a weaker duplicate
+oracle. Extracting it safely is a separate production change with a full
+CLI-versus-projection equivalence matrix; this patch does not claim that
+additional reduction has been completed.
+
+### Local focused validation
+
+The 19-method focused set (test_smoke_launch_inventory,
+test_budget_provenance, and both complete preprocessor budget modules) passed
+normally in 35.546 seconds and under Python `-O` in 20.976 seconds in the pinned
+build environment. These are post-change runs, not a before/after benchmark.
+The run includes all six measured exhaustive enumerations and checks exactly
+one real provenance build in each. Full frozen validation and platform CI remain
+required before acceptance; this focused set is not a substitute for them.

@@ -15,6 +15,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+from budget_provenance import freeze_provenance, copy_provenance, one_provenance_build
+
 import test_native_infobase_budget as ib
 import test_native_async_budget as ab
 from test_native_1c_full_host import SyntheticFilesystemCase
@@ -59,9 +61,9 @@ def source_provenance():
     return result
 
 
-def report_for(stage,*,accepted=False,majorant=False):
+def report_for(stage,*,accepted=False,majorant=False,provenance=None):
     value=ib.report_for(stage,accepted=accepted)
-    value['interpreter']=source_provenance()
+    value['interpreter']=(source_provenance() if provenance is None else copy_provenance(provenance))
     if majorant:
         # 99.99.999 and 512 cover the larger accepted widths too. Actual inventory
         # remains explicitly exercised above, with all runtime source hashes.
@@ -111,13 +113,15 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
         self.assertLessEqual(len(wire),8192)
         return wire
 
+    @one_provenance_build(full)
     def test_all32_success_subsets_actual_envelope_and_schema_downgrade_rejection(self):
+        provenance = freeze_provenance(source_provenance())
         wire_bounds=[];summary_bounds=[];schemas=set()
         for selected in itertools.product((False,True),repeat=5):
             stage,inputs,modules=ib.parity_stage(selected);bind(stage,inputs,modules)
             options=dict(zip(ib.OPTION_NAMES,selected));wire=self.roundtrip(stage,inputs,modules,**options)
             schemas.add(json.loads(wire)['schema'])
-            public,code=summary(report_for(stage,accepted=True),selected=selected)
+            public,code=summary(report_for(stage,accepted=True,provenance=provenance),selected=selected)
             self.assertEqual(code,0);self.assertEqual(json.loads(public)['probe']['interpreter']['source_file_count'],118)
             for downgrade in ('schema','status','token','identity'):
                 raw=json.loads(wire)
@@ -136,7 +140,9 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
         BOUNDS['parity_success_wire']=max(wire_bounds);BOUNDS['parity_success_summary']=max(summary_bounds)
         self.assertLessEqual(max(wire_bounds),8192);self.assertLessEqual(max(summary_bounds),32768)
 
+    @one_provenance_build(full)
     def test_all240_client_failure_frontiers_real_validation_and_summary(self):
+        provenance = freeze_provenance(source_provenance())
         wires=[];summaries=[]
         for selected in itertools.product((False,True),repeat=5):
             stage,inputs,modules=ib.parity_stage(selected);bind(stage,inputs,modules)
@@ -145,20 +151,22 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
                 failed=ib.failed_frontier(stage,index,marker=diagnostic)
                 failed['preprocessor_status']='failed'
                 wire=self.roundtrip(failed,inputs,modules,**options)
-                value=report_for(failed,majorant=True);value['stage2']['diagnostics']=ab.maximum_bootstrap_diagnostics()
+                value=report_for(failed,majorant=True,provenance=provenance);value['stage2']['diagnostics']=ab.maximum_bootstrap_diagnostics()
                 public,_=summary(value,selected=selected,error=True)
                 self.assertNotIn('preprocessor_profile',json.loads(public)['probe']['stage3']['client_probe'])
                 digits=6+sum(selected[:4]);wires.append(len(wire)+digits);summaries.append(len(public)+digits)
             if 'client_collections' in order:
                 failed=ib.failed_frontier(stage,order.index('client_collections'),mismatch=True)
                 failed['preprocessor_status']='failed';wire=self.roundtrip(failed,inputs,modules,**options)
-                public,_=summary(report_for(failed,majorant=True),selected=selected,error=True)
+                public,_=summary(report_for(failed,majorant=True,provenance=provenance),selected=selected,error=True)
                 wires.append(len(wire)+6+sum(selected[:4]));summaries.append(len(public)+6+sum(selected[:4]))
         self.assertEqual(len(wires),240)
         BOUNDS['client_failure_wire']=max(wires);BOUNDS['client_failure_summary']=max(summaries)
         self.assertLessEqual(max(wires),8192);self.assertLessEqual(max(summaries),32768)
 
+    @one_provenance_build(full)
     def test_32_early_and192_server_frontiers_keep_full_report(self):
+        provenance = freeze_provenance(source_provenance())
         wires=[];summaries=[]
         for selected in itertools.product((False,True),repeat=5):
             successful,inputs,modules=ib.parity_stage(selected);bind(successful,inputs,modules)
@@ -166,7 +174,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
             stage=suite.empty_report(ab.NONCE,client_probe=True,preprocessor_measurement=True,**options)
             wire=self.roundtrip(stage,inputs,modules,**options)
             value=ab.majorant(early=True);value.pop('async_comparison');value['stage3']=stage
-            value['interpreter']=source_provenance()
+            value['interpreter']=copy_provenance(provenance)
             public,_=summary(value,selected=selected,error=True);wires.append(len(wire));summaries.append(len(public))
             for index,name in enumerate(full.SCENARIOS):
                 stage=suite.empty_report(ab.NONCE,client_probe=True,preprocessor_measurement=True,**options)
@@ -176,7 +184,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
                 for case in stage['cases'][:index]:case['message_count']=32768
                 stage['cases'][index].update(status='failed',output_sha256=None,output_size=None,message_count=None)
                 wire=self.roundtrip(stage,inputs,modules,**options)
-                value=ab.majorant();value.pop('async_comparison');value['stage3']=stage;value['interpreter']=source_provenance()
+                value=ab.majorant();value.pop('async_comparison');value['stage3']=stage;value['interpreter']=copy_provenance(provenance)
                 public,_=summary(value,selected=selected,error=True)
                 wires.append(len(wire)+6);summaries.append(len(public)+6)
         self.assertEqual(len(wires),224)

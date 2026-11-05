@@ -66,32 +66,53 @@ outcomes, not assumed native concurrency guarantees. The source-bound lane has p
 ## Typed catalog scans (Query v1 preparation)
 
 Each read, selection or scan parses its catalog schema once in the pinned
-transaction and reuses it for card decoding. No schema cache survives the
-operation or crosses configuration generations. Cards still include tabular
-sections, and scans retain their existing aggregate section budgets, Python
-filtering and ordering, including `casefold_v1`, exact Decimal values and UUID
-tie-breaking. This removes per-card schema queries without introducing SQL
-filter pushdown or a scalar-only projection contract.
+transaction. Scans no longer construct every full card before filtering.
+`scan_catalog_values(catalog_id, request, fields)` returns explicit
+`CatalogValueRow` projections in requested field order; it never represents
+unloaded tabular sections as empty sections. Query and exact Find use this
+scalar contract and never read section tables.
 
-The backend port adds `CatalogScanRequest` with exact typed comparisons, bounded
-AND/OR predicates and ordered field identities. It accepts no SQL, database handles
-or arbitrary callbacks. SQLite applies comparisons to canonical decoded scalars;
-Decimal values never pass through float or SQLite numeric coercion. References must
-belong to the same database and declared target catalog; only equality/inequality
-reference predicates are admitted. String policy is explicit and continuation-bound: default `codepoint` preserves
-exact Find behavior, while Query requests versioned `casefold_v1` Unicode casefold
-comparison/order. This is **not** a claim about native regional collations or a
-change to SQLite write uniqueness. Native evidence currently covers the owned
-ASCII case-pair fixture only; broader local tests are our implementation contract.
+The backend port accepts typed bounded predicates, ordered field identities and
+explicit projection fields, not SQL, connections or callbacks. On v2/v3, SQLite
+applies the typed predicate, ordering and page limit. Private connection-local
+collations implement Python `casefold_v1`, exact Decimal comparison and UUID
+integer comparison; SQLite numeric coercion and ASCII `NOCASE` are not used.
+Empty references compare as the zero UUID, including inequality. The legacy v1
+JSON storage path retains bounded Python filtering and ordering, including its
+historical stable source order for UUID aliases.
 
-A read view pins one SQLite transaction snapshot. Each view supports one active scan;
-continuation tokens are opaque, single-use and bound to that view and exact request.
-Starting a new scan invalidates the previous continuation. Pages contain at most
-1,000 cards; the existing 10,000-record catalog limit remains. Before materializing
-rows, same-snapshot SQL aggregates reject scans exceeding 16 MiB of selected text
-plus fixed row overhead, independently of page size/filter selectivity. Predicate
-limits are 64 nodes/depth 8 and 16 order terms. Exact numeric operands are bounded
-before coefficient expansion on supported CPython Decimal implementations.
+A catalog-wide bounded streaming pass still validates owner scalars before SQL
+selection. This intentionally preserves rejection of corrupt values outside a
+filter without retaining their payloads or cards. It is not an index-only lookup:
+existing catalog-wide count/16 MiB limits and integrity validation still cost a
+scan. Full-card scans also stream section integrity checks in bounded owner
+batches, but count nested-result budgets only for matching owners. They attach
+sections only to the returned page. Scalar projections deliberately have no
+section-integrity or nested-result-budget dependency; obtaining a full object
+still validates and loads its complete sections.
+
+A read view pins one SQLite transaction snapshot. Each view supports one active
+traversal. Opaque single-use continuation tokens bind the view, complete request,
+projection fields and full-card/scalar mode. Starting another traversal
+invalidates the old token. v2/v3 cursors retain an offset, not all result cards;
+continuation pages read the same pinned snapshot. Equal order keys retain UUID
+integer tie-breaking, including previously admitted parseable UUID spellings.
+
+Pages contain at most 1,000 rows; the 10,000-record catalog limit remains.
+Same-snapshot aggregates reject owner scans exceeding 16 MiB of text plus fixed
+row overhead before payload validation, independently of page size/selectivity.
+Full-card scans preflight per-owner and whole-filtered-result section budgets
+before any section payload is read, including when the first page is smaller
+than the complete result. Predicate limits remain 64 nodes/depth 8 and 16 order
+terms. Exact numeric operands remain bounded before coefficient expansion.
+
+Default `codepoint` preserves exact Find behavior; Query requests versioned
+`casefold_v1`. Neither claims native regional collation or changes write
+uniqueness. Native evidence still covers only the owned ASCII case-pair fixture;
+broader comparison tests establish this implementation contract.
+
+Measured statement counts and their scope are recorded in
+[catalog scan cost and integrity boundaries](catalog-scan-performance.md).
 
 `FindByCode` and exact `FindByDescription` use typed predicates across the complete
 admitted catalog, not a first-1,000-row window. Ambiguous description matches still
