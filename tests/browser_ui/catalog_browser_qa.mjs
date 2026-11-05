@@ -212,6 +212,12 @@ try{
     await save();await status('No changes');await save();await status('No changes');
   });
   await step(4,async()=>{
+    const originalReference=await input('Category').inputValue();
+    await input('Category').selectOption('00000000-0000-0000-0000-000000000000');
+    await save();await status('Saved');
+    await click('← Back to records');await open('Owned product 10');
+    assert.equal(await input('Category').inputValue(),'00000000-0000-0000-0000-000000000000');
+    await input('Category').selectOption(originalReference);await save();await status('Saved');
     await input('Text').fill('Discard me');
     assert.equal(await page.getByRole('status').count(),0,'stale_save_status_with_dirty_draft');
     await desktopWorkspace();await lockedNavigation();
@@ -243,8 +249,8 @@ try{
     await resolvedTheme('light');await storageContainsOnlyTheme('light');
   });
   await step(6,async()=>{
-    assert.equal(await page.locator('.references').getByText('Owned category',{exact:true}).count(),1);
-    assert.equal(await page.locator('.references input').count(),0);
+    assert.equal(await input('Category').locator('option:checked').textContent(),'10 · Owned category');
+    assert.equal(await input('Category').evaluate(node=>node.tagName),'SELECT');
     await themePreference('Dark','dark');await desktopWorkspace();
     await page.getByText('Return to records to refresh the list.',{exact:true}).waitFor();
     await page.setViewportSize({width:960,height:900});
@@ -261,7 +267,7 @@ try{
         'mobile_editor_not_prioritized');
     }
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    const referencesBox=await page.locator('.references').boundingBox();
+    const referencesBox=await input('Category').boundingBox();
     const actionsBox=await page.locator('.editor-actions').boundingBox();
     assert.ok(actionsBox.y>=referencesBox.y+referencesBox.height-1,'mobile_actions_overlap_references');
     await screenshot('narrow.png');

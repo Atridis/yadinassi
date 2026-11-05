@@ -88,7 +88,7 @@ function App(){
         onChange={e=>changeTheme(e.currentTarget.value)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>
       {snapshot&&state.kind!=='closed'&&<button class="quiet" disabled={busy||editor?.editingLocked} onClick={()=>run('close',{},true)}>Close database</button>}</div>
     </header>
-    <p class="scope">Auto-generated scalar editor · references read-only · no imported 1C forms</p>
+    <p class="scope">Auto-generated editor · bounded reference choices · no imported 1C forms</p>
     {error&&<section role="alert" class="notice error"><strong>Action not completed</strong><span>{error}</span>
       {client.uncertain&&token&&<button disabled={busy} onClick={resync}>Resynchronize — do not repeat Save</button>}</section>}
     {!snapshot&&<section class="panel empty">{busy?'Opening database…':'Use the host launcher to select a supported SQLite file.'}</section>}
@@ -118,7 +118,11 @@ function App(){
       <form onSubmit={e=>{e.preventDefault();run('command',{control:'SaveButton'},true);}}>
         <div class="fields">{editor.fields.filter(field=>field.visible).map(field=><label key={field.control} class={field.kind==='boolean'?'check-field':'field'}>
           <span>{field.title||field.name}</span>
-          {field.kind==='boolean'?<input type="checkbox" checked={draft[field.control]===true} disabled={busy||client.uncertain||editor.editingLocked||!field.enabled||field.readOnly}
+          {field.kind==='catalog_ref'?<select aria-label={field.name} value={draft[field.control]}
+            disabled={busy||client.uncertain||editor.editingLocked||!field.enabled||field.readOnly}
+            onChange={e=>setDraft({...draft,[field.control]:e.currentTarget.value})}>
+            {field.choices.map(choice=><option key={choice.value} value={choice.value}>{choice.label}</option>)}
+          </select>:field.kind==='boolean'?<input type="checkbox" checked={draft[field.control]===true} disabled={busy||client.uncertain||editor.editingLocked||!field.enabled||field.readOnly}
             onChange={e=>setDraft({...draft,[field.control]:e.currentTarget.checked})}/>:
           <input aria-label={field.name} type={field.kind==='datetime'?'datetime-local':'text'} step={field.kind==='datetime'?'1':undefined}
             inputMode={field.kind==='number'?'decimal':undefined} value={draft[field.control]??''}
@@ -128,7 +132,7 @@ function App(){
         </label>)}</div>
         {editor.references.length>0&&<section class="references"><h3>References <span class="badge">Read-only</span></h3>
           {editor.references.map(ref=><div key={ref.name}><strong>{ref.name}</strong><span>{ref.presentation||'Empty reference'}</span></div>)}
-          <p>Existing typed references are preserved. Reference editing and native FormData are not supported yet.</p></section>}
+          <p>These references are preserved: choices are unavailable, exceed 64 records, or the current value is not selectable. Native FormData is not supported.</p></section>}
         <div class="editor-actions"><button type="button" disabled={busy||editor.editingLocked} onClick={()=>run('command',{control:'CancelButton'})}>Discard &amp; return</button>
           <button type="submit" class="primary" disabled={busy}>{busy?'Working…':editor.editingLocked?'Resolve save outcome':'Save changes'}</button></div>
       </form>
