@@ -1,5 +1,7 @@
 """Separate, source-bound DESIGNER-only demo acquisition. No ENTERPRISE route."""
 from __future__ import annotations
+import base64
+import binascii
 import hashlib
 import io
 import json
@@ -17,7 +19,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-SCHEMA = 'native-demo-designer-v4'
+SCHEMA = 'native-demo-designer-v5'
 VERSION = '8.3.27.1508'
 IMAGE = 'ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728'
 ONEC = '/opt/1cv8t/x86_64/' + VERSION + '/1cv8t'
@@ -479,10 +481,151 @@ def native_quiet():
             require(not Path(executable).name.startswith('1cv8'), 'process_failed')
 
 
+EXPORT_SCHEMA = 'native-demo-xml-export-v1'
+WIRE_SCHEMA = 'native-demo-designer-wire-v1'
+EXPORT_MAX_FILE = 256 * 1024
+EXPORT_MAX_TOTAL = 1024 * 1024
+WIRE_MAX_BYTES = 1536 * 1024
+EXPORT_REASONS = ('none', 'not_reached', 'invalid_inventory', 'invalid_xml', 'export_limit')
+
+
+def xml_export(actual):
+    """Only the fixed public-demo XML inventory; no other dump bytes escape."""
+    result = dict(state='unavailable', reason='not_reached', files=[])
+    if actual is None:
+        return result
+    if (type(actual) is not dict or set(actual) - {'ConfigDumpInfo.xml'} != set(SOURCE_FILES)):
+        result['reason'] = 'invalid_inventory'
+        return result
+    files, total = [], 0
+    for index, name in enumerate(XML_FILES):
+        raw = actual[name]
+        if type(raw) is not bytes or not 0 < len(raw) <= EXPORT_MAX_FILE:
+            result['reason'] = 'export_limit'
+            return result
+        total += len(raw)
+        if total > EXPORT_MAX_TOTAL:
+            result['reason'] = 'export_limit'
+            return result
+        signature, reason = diagnostic_signature(raw)
+        if signature is None or reason != 'none':
+            result['reason'] = 'invalid_xml'
+            return result
+        files.append(dict(file=index, size=len(raw), sha256=digest(raw),
+                          base64=base64.b64encode(raw).decode('ascii')))
+    return dict(state='available', reason='none', files=files)
+
+
+def json_bytes(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':')).encode('utf-8')
+
+
+def validate_wire(raw, nonce, hashes, expected):
+    """Treat all native bytes as untrusted, including the indexed export."""
+    require(type(raw) is bytes and 0 < len(raw) <= WIRE_MAX_BYTES, 'invalid_result')
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'invalid_result')
+            result[key] = value
+        return result
+    try:
+        wire = json.loads(raw, object_pairs_hook=unique)
+    except (ValueError, UnicodeError):
+        raise DemoError('invalid_result') from None
+    require(type(wire) is dict and set(wire) == {'schema', 'report', 'export'}
+            and wire['schema'] == WIRE_SCHEMA, 'invalid_result')
+    report = validate_report(json_bytes(wire['report']), nonce, hashes)
+    export = wire['export']
+    require(type(export) is dict and set(export) == {'state', 'reason', 'files'}
+            and export['state'] in ('available', 'unavailable') and export['reason'] in EXPORT_REASONS
+            and type(export['files']) is list, 'invalid_result')
+    if export['state'] == 'unavailable':
+        require(export['reason'] != 'none' and export['files'] == [], 'invalid_result')
+        require((export['reason'] == 'not_reached') == (report['phase'] not in ('witness', 'complete')),
+                'invalid_result')
+        return report, export, {}
+    require(export['reason'] == 'none' and report['phase'] in ('witness', 'complete')
+            and len(export['files']) == len(XML_FILES), 'invalid_result')
+    require('$inventory' not in report['mismatches']
+            and not any(value == 'missing_file' for value in report['mismatches'].values()), 'invalid_result')
+    result, total = {}, 0
+    for index, item in enumerate(export['files']):
+        require(type(item) is dict and set(item) == {'file', 'size', 'sha256', 'base64'}
+                and type(item['file']) is int and item['file'] == index
+                and type(item['size']) is int and 0 < item['size'] <= EXPORT_MAX_FILE
+                and type(item['sha256']) is str and re.fullmatch('[0-9a-f]{64}', item['sha256']) is not None
+                and type(item['base64']) is str and len(item['base64']) <= 4 * ((EXPORT_MAX_FILE + 2) // 3),
+                'invalid_result')
+        total += item['size']
+        require(total <= EXPORT_MAX_TOTAL, 'invalid_result')
+        try:
+            decoded = base64.b64decode(item['base64'], validate=True)
+        except (ValueError, binascii.Error):
+            raise DemoError('invalid_result') from None
+        require(len(decoded) == item['size'] and digest(decoded) == item['sha256']
+                and base64.b64encode(decoded).decode('ascii') == item['base64'], 'invalid_result')
+        signature, reason = diagnostic_signature(decoded)
+        require(signature is not None and reason == 'none', 'invalid_result')
+        result[XML_FILES[index]] = decoded
+    expected_xml = {name: expected[name] for name in XML_FILES}
+    mismatches = redump_mismatches(expected_xml, result)
+    require(mismatches == {name: value for name, value in report['mismatches'].items() if name in XML_FILES},
+            'invalid_result')
+    require(xml_diagnostics(expected_xml, result, mismatches) == report['xml_diagnostics'], 'invalid_result')
+    for name, raw_xml in result.items():
+        if name in report['redump_sha256']:
+            require(report['redump_sha256'][name] == digest(raw_xml), 'invalid_result')
+    return report, export, result
+
+
+def publish_xml_evidence(destination, summary, exported):
+    """Exclusive output root; only a complete atomic payload is uploadable."""
+    require(summary.get('container_cleanup_verified') is True
+            and summary.get('docker_cli_reap_verified') is True
+            and summary.get('enterprise_executed') is False
+            and summary.get('security_settings_changed') is False, 'invalid_result')
+    require(set(exported) == set(XML_FILES), 'invalid_result')
+    # Recheck the exact byte inventory before creating any output artifact.
+    rows, total = [], 0
+    for index, name in enumerate(XML_FILES):
+        raw = exported[name]
+        require(type(raw) is bytes and 0 < len(raw) <= EXPORT_MAX_FILE, 'invalid_result')
+        total += len(raw)
+        require(total <= EXPORT_MAX_TOTAL and diagnostic_signature(raw)[0] is not None, 'invalid_result')
+        rows.append(dict(file=index, source=name, path=f'xml/{index:02d}.xml', size=len(raw), sha256=digest(raw)))
+    report_bytes = json_bytes(summary)
+    manifest = dict(schema=EXPORT_SCHEMA, source_sha=summary['source_sha'], nonce=summary['native']['nonce'],
+                    input_sha256=summary['native']['input_sha256'], report_sha256=digest(report_bytes), files=rows)
+    # The parent is the trusted checkout. A preexisting directory/file/symlink is
+    # never reused or removed. The newly reserved private root is ours alone.
+    require(destination.parent.is_dir() and not destination.parent.is_symlink(), 'invalid_result')
+    destination.mkdir(mode=0o700, exist_ok=False)
+    committed = False
+    try:
+        staging = destination / '.staging'
+        staging.mkdir(mode=0o700)
+        (staging / 'xml').mkdir(mode=0o700)
+        files = {'report.json': report_bytes, 'manifest.json': json_bytes(manifest),
+                 **{row['path']: exported[XML_FILES[row['file']]] for row in rows}}
+        for name, raw in files.items():
+            with (staging / name).open('xb') as target:
+                target.write(raw)
+            (staging / name).chmod(0o600)
+        # Publish all seventeen files together; the final path did not exist in
+        # this exclusively created directory. Workflow never uploads staging.
+        staging.rename(destination / 'payload')
+        committed = True
+    finally:
+        if not committed:
+            shutil.rmtree(destination)
+
+
 def native_run(nonce):
     report = dict(schema=SCHEMA, nonce=nonce, status='failed', phase='inputs', failure='invalid_input',
                   input_sha256={}, redump_sha256={}, mismatches={},
                   xml_diagnostics=dict(state='not_reached', files=[]))
+    actual = None
     try:
         require(re.fullmatch('[0-9a-f]{32}', nonce) is not None and os.getuid() == 1000)
         report['input_sha256'] = inventory(ROOT)
@@ -519,7 +662,13 @@ def native_run(nonce):
         report['xml_diagnostics'] = dict(state='budget_limit', files=[])
         encoded = json.dumps(report, sort_keys=True, separators=(',', ':'))
     require(len(encoded.encode()) <= 16384, 'invalid_result')
-    print(encoded)
+    export = xml_export(actual)
+    if actual is None and report['phase'] in ('witness', 'complete'):
+        export['reason'] = 'invalid_inventory'
+    # Preserve the finite strict summary even when export qualification fails.
+    wire = json_bytes(dict(schema=WIRE_SCHEMA, report=report, export=export))
+    require(len(wire) <= WIRE_MAX_BYTES, 'invalid_result')
+    print(wire.decode('utf-8'))
     return 0 if report['status'] == 'ok' else 1
 
 
@@ -598,7 +747,7 @@ def run_host():
         work = Path(directory).resolve()
         staged = work / 'staged'
         hashes = stage_inputs(ROOT, staged)
-        source_files()  # Verify bounded exact source inventory before native action.
+        expected = source_files()  # Exact public-source bytes for export validation.
         auth = work / 'auth'
         auth.mkdir(mode=0o700)
         try:
@@ -613,14 +762,18 @@ def run_host():
         clean.mkdir(mode=0o700)
         code, raw = lifecycle.run_owned(container_command(staged, nonce), smoke.docker_environment(clean),
                                        name='onec-demo-designer-' + nonce, nonce=nonce, image=IMAGE,
-                                       seconds=900, output_limit=16384)
-        report = validate_report(raw, nonce, hashes)
+                                       seconds=900, output_limit=WIRE_MAX_BYTES)
+        report, export, exported = validate_wire(raw, nonce, hashes, expected)
         require(code == (0 if report['status'] == 'ok' else 1), 'invalid_result')
         require(inventory(ROOT) == hashes and inventory(staged) == hashes and revision() == source_sha)
     # Only after verified owned-container removal and private directory cleanup.
-    return dict(schema=SCHEMA + '-host', source_sha=source_sha, image=IMAGE, expected_version=VERSION,
-                native=report, container_cleanup_verified=True, docker_cli_reap_verified=True,
-                enterprise_executed=False, security_settings_changed=False)
+    summary = dict(schema=SCHEMA + '-host', source_sha=source_sha, image=IMAGE, expected_version=VERSION,
+                   native=report, container_cleanup_verified=True, docker_cli_reap_verified=True,
+                   enterprise_executed=False, security_settings_changed=False,
+                   xml_export=dict(state=export['state'], reason=export['reason'], files=len(exported)))
+    if exported:
+        publish_xml_evidence(ROOT / 'demo-native-evidence', summary, exported)
+    return summary
 
 
 def failure_report(error):

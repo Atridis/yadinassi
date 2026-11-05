@@ -105,17 +105,61 @@ jobs:
           NATIVE_DISPATCH_INPUTS: ${{ toJSON(inputs) }}
         run: python3 -I -B scripts/native_1c_demo_ci_policy.py
       - name: Load, check, update and redump demo without ENTERPRISE
+        id: designer
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
         run: |
           mkdir -m 700 demo-native-report
-          python3 -B scripts/native_1c_demo_designer.py --execute-approved-image > demo-native-report/report.json
+          if python3 -B scripts/native_1c_demo_designer.py --execute-approved-image > demo-native-report/report.json; then
+            status=0
+          else
+            status=$?
+          fi
+          python3 -I -B - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          value = json.loads(Path('demo-native-report/report.json').read_bytes())
+          if (value.get('schema') == 'native-demo-designer-v5-host'
+                  and value.get('container_cleanup_verified') is True
+                  and value.get('docker_cli_reap_verified') is True
+                  and value.get('xml_export') == {'state': 'available', 'reason': 'none', 'files': 15}):
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                  print('xml_export=available', file=output)
+          PYTHON
+          exit "$status"
       - name: Upload finite validated report only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: demo-designer-summary
           path: demo-native-report/report.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload validated public-demo XML only
+        if: always() && steps.designer.outputs.xml_export == 'available'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: demo-designer-xml-evidence
+          path: |
+            demo-native-evidence/payload/report.json
+            demo-native-evidence/payload/manifest.json
+            demo-native-evidence/payload/xml/00.xml
+            demo-native-evidence/payload/xml/01.xml
+            demo-native-evidence/payload/xml/02.xml
+            demo-native-evidence/payload/xml/03.xml
+            demo-native-evidence/payload/xml/04.xml
+            demo-native-evidence/payload/xml/05.xml
+            demo-native-evidence/payload/xml/06.xml
+            demo-native-evidence/payload/xml/07.xml
+            demo-native-evidence/payload/xml/08.xml
+            demo-native-evidence/payload/xml/09.xml
+            demo-native-evidence/payload/xml/10.xml
+            demo-native-evidence/payload/xml/11.xml
+            demo-native-evidence/payload/xml/12.xml
+            demo-native-evidence/payload/xml/13.xml
+            demo-native-evidence/payload/xml/14.xml
           if-no-files-found: error
           retention-days: 7
