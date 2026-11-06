@@ -1,14 +1,16 @@
-"""Explicit host-only direct catalog handler preparation.
+"""Explicit host-only catalog handler preparation and atomic write coordination.
 
 Not configuration activation, a write hook, a transaction, or native parity.
 The caller owns source admission and a disposable candidate: errors/cancellation
-can leave candidate changes. Never repeat preparation to recover an uncertain
-commit. No backend write operation is exposed by this execution profile.
+can leave candidate changes. Receipt recovery does not execute preparation;
+only a confirmed absent outcome permits a validated retry. The BSL execution
+profile exposes no backend write operation. The host writer owns persistence.
 """
 from decimal import Decimal
 
 from .catalogs import BSLCatalogObject
 from .catalog_backend import BackendError
+from .catalog_types import BSLCatalogReference
 from .runtime import Interpreter
 from .syntax import ast
 from .syntax.parser import parse
@@ -25,12 +27,20 @@ _METHODS = frozenset(('getobject', 'получитьобъект', 'count', 'к�
 _MESSAGE_FIELDS = frozenset(('text', 'текст', 'field', 'поле'))
 
 
+class CatalogWriteRefused(ValueError):
+    """The original object handler refused a host-coordinated write."""
+    def __init__(self, messages):
+        super().__init__('catalog preparation: write refused')
+        self.messages = tuple(messages)
+
+
 class _ObjectInterpreter(Interpreter):
-    def __init__(self, receiver, sink):
+    def __init__(self, receiver, sink, write_view=None):
         def no_output(value):
             raise ValueError('catalog preparation: plain output forbidden')
         super().__init__(output=no_output, user_message_sink=sink)
         self.receiver_object = receiver
+        self.write_view = write_view
         schema = receiver._manager._schema
         self.object_names = _ALIASES | {f.name.casefold() for f in schema.fields} | {
             s.name.casefold() for s in schema.tabular_sections}
@@ -86,6 +96,23 @@ class _ObjectInterpreter(Interpreter):
         callee = self.ungroup(node.callee)
         if type(callee) is ast.Attribute and callee.name.casefold() not in _METHODS:
             raise ValueError('catalog preparation: unavailable method')
+        if (self.write_view is not None and type(callee) is ast.Attribute
+                and callee.name.casefold() in ('getobject', 'получитьобъект')):
+            if node.arguments:
+                raise TypeError('catalog preparation: GetObject takes no arguments')
+            reference = yield from self.receiver(callee.object)
+            catalogs = self.receiver_object._manager._catalogs
+            if (type(reference) is not BSLCatalogReference
+                    or reference.value_type.snapshot is not catalogs._metadata):
+                raise TypeError('catalog preparation: same snapshot reference required')
+            manager = catalogs._manager_by_metadata_uuid(reference.value_type.metadata_uuid)
+            view = self.write_view
+            if (view.database_id != catalogs._metadata._database_id
+                    or view.configuration_generation != catalogs._metadata._generation
+                    or view.catalog_schema(manager._schema.identity) != manager._schema):
+                raise BackendError('schema_changed')
+            card = view.read_catalog(manager._key(reference.reference_uuid))
+            return None if card is None else BSLCatalogObject(manager, card)
         return (yield from super().call(node, require_value=require_value))
 
     def visit_Attribute(self, node):
@@ -122,6 +149,10 @@ def prepare_catalog_object(source, receiver, *, cancel=False):
     from an archive here. Messages are host UserMessageRecord snapshots, not UI
     navigation authority. A false result alone is NOT permission to persist.
     """
+    return _prepare_catalog_object(source, receiver, cancel=cancel)
+
+
+def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None):
     if type(receiver) is not BSLCatalogObject or type(cancel) is not bool:
         raise TypeError('catalog preparation: exact object and Boolean required')
     if receiver._pending_write is not None:
@@ -143,7 +174,7 @@ def prepare_catalog_object(source, receiver, *, cancel=False):
         if len(records) >= 128:
             raise ValueError('catalog preparation: message limit')
         records.append(record)
-    vm = _ObjectInterpreter(receiver, sink)
+    vm = _ObjectInterpreter(receiver, sink, write_view)
     try:
         if any(n.name.casefold() in vm.object_names | _SELF | set(vm.functions)
                for n in program):
@@ -157,3 +188,19 @@ def prepare_catalog_object(source, receiver, *, cancel=False):
         return result, tuple(records)
     finally:
         vm.close()
+
+
+def write_prepared_catalog_object(source, receiver, *, cancel=False):
+    """Prepare and durably write one disposable object under the writer lock.
+
+    The host selects the source; this does not activate archived object modules.
+    GetObject reads use the same transaction as the write. Refusal/errors can
+    leave changes in this disposable receiver, never durable success. A pending
+    outcome is resolved first without BSL. Only proven absence permits another
+    transaction, which revalidates the frozen intent using its retained source.
+    """
+    if type(receiver) is not BSLCatalogObject or type(cancel) is not bool:
+        raise TypeError('catalog preparation: exact object and Boolean required')
+    if type(source) is not str or len(source.encode('utf-8')) > _MAX_SOURCE:
+        raise ValueError('catalog preparation: source limit')
+    return receiver._write(preparation=(source, cancel))

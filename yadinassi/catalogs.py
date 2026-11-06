@@ -10,7 +10,7 @@ from .dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow, CatalogWriteOutcome
 from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES
-from .catalog_backend import TabularSectionRows
+from .catalog_backend import CatalogCard, TabularSectionRows
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string
 from .unique_identifiers import BSLUUID
 from .values import BSLObject, HostFunction
@@ -189,6 +189,7 @@ class BSLCatalogObject(BSLObject):
         self._values=manager._defaults(manager.empty_ref()) if card is None else manager._fields(card)
         self._operation_id=uuid4()
         self._pending_write=None
+        self._pending_preparation=None
         self._sections={}
         if card is not None and (type(card.tabular_sections) is not tuple
                 or any(type(s) is not TabularSectionRows for s in card.tabular_sections)):
@@ -231,6 +232,7 @@ class BSLCatalogObject(BSLObject):
         # Keep the exact intent locked until every section has accepted it.
         for section in self._sections.values():section._dirty=False
         self._pending_write=None
+        self._pending_preparation=None
 
     def _accept_outcome(self,outcome):
         if type(outcome) is not CatalogWriteOutcome or self._pending_write is None:
@@ -246,11 +248,35 @@ class BSLCatalogObject(BSLObject):
         self._accept_revision(outcome.revision,outcome.code)
 
     def write(self):
+        self._write()
+        return None
+
+    def _write_draft(self, *, complete_sections=False):
+        m=self._manager
+        sections=(tuple(section._stored_rows() for section in self._sections.values())
+                  if complete_sections else self._section_draft())
+        return CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
+                            tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),sections,
+                            auto_number=self.is_new() and m._schema.numbering=='decimal_v1' and self._values['code']=='')
+
+    def _write(self, *, preparation=None):
+        """Shared host writer. Preparation is never an exposed BSL argument."""
         m=self._manager;caps=m._backend.capabilities()
         if m._schema.tabular_sections and not caps.catalog_tabular_sections:raise BackendError('unsupported')
         if not caps.atomic_transactions or not (caps.catalog_create if self.is_new() else caps.catalog_update):raise BackendError('unsupported')
         outcomes=caps.catalog_write_outcomes
         if m._schema.numbering!='explicit' and not outcomes:raise BackendError('unsupported')
+        if self._pending_preparation is not None:
+            retained,backend=self._pending_preparation
+            if m._backend is not backend:raise BackendError('schema_changed')
+            if preparation is not None and preparation!=retained:
+                raise BackendError('uncertain_commit')
+            preparation=retained
+        elif self._pending_write is not None and preparation is not None:
+            # Never reinterpret a previously submitted ordinary write as one
+            # protected by a new source/validation contract.
+            raise BackendError('uncertain_commit')
+        retry=self._pending_write is not None
         if self._pending_write is not None:
             draft,expected,operation=self._pending_write
             revision=(m._backend.resolve_write_outcome(operation,draft,expected) if outcomes
@@ -258,21 +284,39 @@ class BSLCatalogObject(BSLObject):
             if revision is not None:
                 if outcomes:self._accept_outcome(revision)
                 else:self._accept_revision(revision)
-                return None
+                return ()
         else:
-            draft=CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
-                               tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),self._section_draft(),
-                               auto_number=self.is_new() and m._schema.numbering=='decimal_v1' and self._values['code']=='')
+            draft=self._write_draft(complete_sections=preparation is not None)
             expected=self._revision
             operation=self._operation_id
         tx=m._backend.begin_write(operation)
         committing=False
+        messages=()
         try:
             if tx.database_id!=self._key.database_id or tx.configuration_generation!=m._catalogs._metadata._generation or tx.catalog_schema(m._schema.identity)!=m._schema:raise BackendError('schema_changed')
+            if preparation is not None:
+                from .catalog_object_preparation import _prepare_catalog_object, CatalogWriteRefused
+                if retry:
+                    # Receipt absence is already proved. Validate the frozen
+                    # submitted image, never a newly edited buffer or source.
+                    card=CatalogCard(draft.key,expected,draft.code,draft.description,
+                                     draft.deletion_mark,draft.values,draft.tabular_sections)
+                    candidate=BSLCatalogObject(m,card)
+                    if expected is None:candidate._values['ref']=m.empty_ref()
+                else:
+                    candidate=self
+                cancel,messages=_prepare_catalog_object(preparation[0],candidate,
+                    cancel=preparation[1],write_view=tx)
+                if cancel:raise CatalogWriteRefused(messages)
+                prepared=candidate._write_draft(complete_sections=True)
+                if retry and prepared!=draft:
+                    raise BackendError('conflict')
+                draft=prepared
             if expected is None:tx.create(draft)
             else:tx.update(draft,expected)
             # Keep the exact submitted intent across an uncertain commit response.
             self._pending_write=(draft,expected,operation)
+            self._pending_preparation=(preparation,m._backend) if preparation is not None else None
             committing=True
             revisions=tx.commit_outcomes() if outcomes else tx.commit()
             if len(revisions)!=1:raise BackendError('uncertain_commit')
@@ -280,7 +324,9 @@ class BSLCatalogObject(BSLObject):
             if outcomes:self._accept_outcome(revisions[0])
             else:self._accept_revision(revisions[0])
         except BaseException as error:
-            if not committing:self._pending_write=None
+            if not committing:
+                self._pending_write=None
+                self._pending_preparation=None
             for cleanup in (tx.rollback,tx.close):
                 try:cleanup()
                 except BaseException as cleanup_error:
@@ -290,7 +336,7 @@ class BSLCatalogObject(BSLObject):
             if committing and isinstance(error,Exception) and not isinstance(error,MemoryError):
                 raise BackendError('uncertain_commit') from None
             raise error
-        return None
+        return messages
     def get_member(self,name):
         key=name.casefold()
         methods={'write':self.write,'записать':self.write,'isnew':self.is_new,'этоновый':self.is_new,
