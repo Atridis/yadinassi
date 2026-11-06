@@ -1,5 +1,9 @@
 # Original demo kind editor (bounded local adapter)
 
+For a fresh database containing both original kinds and warehouses, see
+[Original demo kinds and warehouses](demo-directories.md). The kinds-only
+profile below remains unchanged; existing databases are not upgraded.
+
 Goal: open the original `ВидыНоменклатуры` form, edit Description, execute its
 original OnChange and BeforeWriteAtServer handlers, allocate its code, save to
 SQLite, close and reopen the persisted record. This is a local host form adapter,
