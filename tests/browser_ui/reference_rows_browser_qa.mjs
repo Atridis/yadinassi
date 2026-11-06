@@ -15,7 +15,7 @@ const temporary=process.env.RUNNER_TEMP;
 if(!temporary||!path.isAbsolute(temporary)||process.platform!=='linux'||process.getuid()===0)throw Error('ordinary_nonroot_runner_required');
 const output=path.join(temporary,'yadinassi-browser-artifacts');
 await mkdir(output); // Never reuse old evidence.
-const owned=await mkdtemp(path.join(temporary,'yadinassi-reference-rows-browser-'));
+const owned=await mkdtemp(path.join(temporary,'ydr-'));
 const home=path.join(owned,'home');await mkdir(home);
 const env=childEnvironment(process.env,home);env.PYTHONPATH=repo;
 let host,browser,context,page,origin='',url='',rpc=0,phase='seed',failure,aborted=false,browserGroup=null;
@@ -87,6 +87,9 @@ async function main(){
   report.versions={node:process.version,playwright:JSON.parse(await readFile(new URL('./node_modules/playwright/package.json',import.meta.url),'utf8')).version};
   assert.equal(report.versions.playwright,'1.64.1');
   phase='authored_fixture';assert.equal(fixture('seed').seeded,true);
+  phase='browser_socket_path_preflight';
+  assert.ok(Buffer.byteLength(path.join(home,'org.chromium.Chromium.XXXXXX','SingletonSocket'))<108,
+    'socket_path_too_long');
   phase='sandbox_launch';
   const childrenPath='/proc/'+process.pid+'/task/'+process.pid+'/children';
   const priorChildren=new Set(readFileSync(childrenPath,'utf8').trim().split(/\s+/).filter(Boolean));
@@ -193,7 +196,7 @@ const deadline=setTimeout(abort,Math.max(0,160000-(Date.now()-startedAt)));
 // Export only fixed codes. Assertion messages can append paths/actual values;
 // neither those details nor raw browser logs belong in the artifact.
 const safeFailureCodes=new Set([
-  'unexpected_launch_children','browser_not_direct_child','browser_process_group_not_owned',
+  'socket_path_too_long','unexpected_launch_children','browser_not_direct_child','browser_process_group_not_owned',
   'browser_uid_mismatch','browser_executable_mismatch','browser_command_budget',
   'browser_command_invalid','sandbox_command_missing','sandbox_disabled','unexpected_browser_transport',
   'browser_process_missing','browser_pid_mismatch','browser_pid_invalid',
@@ -204,7 +207,8 @@ function failureReason(error){
   const message=typeof error?.message==='string'?error.message:'';
   for(const code of safeFailureCodes)if(message===code||message.startsWith(code+'\n'))return code;
   if(['EACCES','EPERM','ENOENT','ESRCH'].includes(error?.code))return 'verification_'+error.code.toLowerCase();
-  if(phase==='sandbox_launch'&&/Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(message))
+  if(/Socket path too long/i.test(message))return 'socket_path_too_long';
+  if(phase==='sandbox_launch'&&/Operation not permitted|No usable sandbox|Failed to move to new namespace|Chromium sandboxing failed!/i.test(message))
     return 'sandbox_start_denied';
   return 'step_failed';
 }
