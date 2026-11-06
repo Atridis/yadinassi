@@ -1,6 +1,6 @@
 # Local catalog editor (experimental U1/U2)
 
-The optional Preact renderer now connects real scalar form events to detached
+The optional Preact renderer now connects real scalar form events and bounded reference-row edits to detached
 `CatalogObject.Write` and the admitted SQLite backend. This is a **bounded
 application**, not a native 1C visual clone or support for arbitrary configurations.
 The original `yadinassi-ui/0` read-only bridge remains unchanged.
@@ -133,7 +133,9 @@ implemented.
 `yadinassi-editor/0` is a separate, provisional profile. JSON-RPC methods are
 `editor.hello`, `editor.snapshot`, `editor.event`. Event names are exactly
 `selectCatalog`, `create`, `openCard`, `page`, `change`, `command`, `closeCard`,
-`close`. Every admitted event attempt advances the **editor sequence**, even
+`close`, `addRow`, `deleteRow`, `changeRow`. Row events name a known section;
+change/delete use an opaque host-issued row UUID, never a visible row number.
+Every admitted event attempt advances the **editor sequence**, even
 when its handler fails. This sequence is distinct from form and database
 revisions. Invalid/stale envelopes do not dispatch. Replies are bounded, exact
 integer IDs are required, and sessions cap requests at 4,096. Snapshots are full
@@ -170,3 +172,38 @@ The Python unit tests use authored XML and owned temporary SQLite files; they
 cover real save/reopen, optimistic conflicts, exact uncertain intent, repeated
 Save, cancel/close, authoritative failure snapshots and loopback security.
 Actual browser QA is a separate gate, not implied by protocol unit tests.
+
+
+### Reference-row sections (experimental host adapter)
+
+Already-admitted logical SQLite schemas can now edit a tabular section with
+exactly one fixed catalog-reference column. For example, a product with a
+warehouse-reference section can add a row, select a warehouse, remove a row,
+Save, and reopen the same database to see its persisted warehouse rows. Owner
+fields and rows use the same detached object, optimistic revision and atomic
+Write. This is real storage, not a preview or a renderer-only table.
+
+The host captures at most 64 target records per column, excludes deletion-marked
+choices and includes an empty reference. A current value outside those choices
+is displayed read-only; its row can be removed explicitly. Choices do not reserve
+records or add business rules: this autoform does not install object handlers.
+In particular an empty or duplicate warehouse row is not automatically refused
+by the original Номенклатура handler, which is not activated by this editor.
+
+The editor admits at most 32 rows across the object's sections, subject also to
+the existing full-message byte limit. Add/change is checked before adoption.
+Other section shapes, unavailable choice sets and existing over-limit sections
+have an explicit read-only summary and are preserved on scalar saves. They are
+not truncated into an editable subset. There is no sorting or row reordering.
+
+Row edits participate in dirty-close/discard, pending-save locks, authoritative
+refresh, conflict detection and exact uncertain-write recovery. The browser
+flushes scalar and row inputs before structural actions or Save; Discard does
+not flush or write. Opaque row identity, rather than a shifting index, prevents a
+stale row event from accidentally targeting the following row.
+
+This does **not** activate the original imported Номенклатура or v6 tabular
+capabilities. Its original fields, form handlers and pinned object source need
+a separate admission/integration step. The original demo-directories profile is
+unchanged. No native FormData, native GUI parity or arbitrary table-cell editing
+is claimed.

@@ -845,7 +845,7 @@ class CatalogSectionTests(unittest.TestCase):
                 finally:
                     tx.rollback()
 
-    def test_interpreter_opts_into_v3_without_enabling_ui(self):
+    def test_interpreter_opts_into_v3_while_default_context_stays_closed(self):
         from yadinassi import Interpreter
         from yadinassi.database_context import SQLiteDBContext
         before = self.path.read_bytes()
@@ -859,14 +859,22 @@ class CatalogSectionTests(unittest.TestCase):
             self.assertIsNone(context.backend._active)
         self.assertEqual(self.path.read_bytes(), before)
 
-    def test_ui_application_refuses_v3_before_creating_partial_editor(self):
+    def test_ui_opts_into_v3_but_unsupported_section_shapes_remain_readonly(self):
         from yadinassi.database_context import SQLiteDBContext
         from yadinassi.ui.catalog_editor import CatalogEditorApplication
         before = self.path.read_bytes()
         with SQLiteDBContext(self.path) as context:
-            with self.assertRaisesRegex(BackendError, 'unsupported'):
-                CatalogEditorApplication(context)
+            application = CatalogEditorApplication(context)
+            application.select(str(self.product.identity))
+            application.open()
+            sections = application.editor.snapshot()['sections']
+            self.assertEqual([section['name'] for section in sections], ['Lines', 'Notes'])
+            self.assertTrue(all(section['readOnly'] and not section['canAdd'] for section in sections))
+            self.assertTrue(all(section['reason'] == 'section-profile-unsupported' for section in sections))
+            self.assertTrue(application.editor.object.is_new())
             self.assertIsNone(context.backend._active)
+            application.event('command', control='CancelButton')
+            self.assertIsNone(application.editor)
         self.assertEqual(self.path.read_bytes(), before)
 
 

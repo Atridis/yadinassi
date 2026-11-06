@@ -2,7 +2,7 @@
 
 ## Scope and evidence
 
-This document describes the logical catalog backend and its owned SQLite adapter. A separate [bounded XML/BSL adapter](catalog-tabular-sections.md) now supports authored tabular-section metadata and detached runtime collections. Native row-number semantics, UI editing and configuration migration are not implemented. UI activation remains blocked for section-bearing databases; unsupported XML/module behavior still blocks activation. No native 1C section behavior has been measured for these increments; the semantics below are explicit yadinassi backend choices, not native-parity claims. No 1CD/CF/DT parsing or MongoDB physical schema is involved.
+This document describes the logical catalog backend and its owned SQLite adapter. A separate [bounded XML/BSL adapter](catalog-tabular-sections.md) now supports authored tabular-section metadata and detached runtime collections. General UI table editing and configuration migration are not implemented. The [local reference-row editor](catalog-editor.md#reference-row-sections-experimental-host-adapter) supports a bounded single-reference-column section; unsupported XML/module behavior still blocks activation. No native 1C section behavior has been measured for these increments; the semantics below are explicit yadinassi backend choices, not native-parity claims. No 1CD/CF/DT parsing or MongoDB physical schema is involved.
 
 The internal format is not a public compatibility contract before a public yadinassi release. The v3 marker identifies this implementation; future development may change internal storage and project-owned fixtures. Native observation data is not rewritten to match the implementation.
 
