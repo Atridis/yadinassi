@@ -210,9 +210,15 @@ async function main(){
         assert.equal(await diagnostics().innerText(),validMessage,'saved_check_diagnostic_mismatch');
         assert.deepEqual(audit(),durableBefore,'list_check_changed_durable_identity_or_revision');
       };
+      const visibleList=async()=>{
+        assert.equal(await page.locator('.records .table-scroll').evaluate(element=>
+          element.scrollWidth<=element.clientWidth+1&&element.scrollLeft===0),true,'list_table_overflow');
+        assert.equal(await page.locator('.records tbody td.code').innerText(),'000000001','saved_code_not_visible');
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'viewport_overflow');
+      };
       phase='check_saved_product';await checkSaved();
       phase='repeat_saved_product_check';await checkSaved();
-      await screenshot('list.png');
+      await visibleList();await screenshot('list.png');
       phase='dirty_editor_cannot_check';
       await button('Open →').click();await persistedRow();
       await button('Delete row 1 from Склады').click();
@@ -236,7 +242,7 @@ async function main(){
       assert.equal(await diagnostics().count(),0,'stale_list_diagnostic_after_restart');
       await checkSaved();
       await page.setViewportSize({width:390,height:844});
-      await screenshot('narrow.png');
+      await visibleList();await screenshot('narrow.png');
       phase='close_and_audit_list_check';await closeHostThroughUI();
       assert.deepEqual(audit(),durableBefore,'list_check_restart_changed_saved_card');
       report.durable={products:1,warehouses:1,kinds:1,referenceRows:1,processRestartVerified:true,

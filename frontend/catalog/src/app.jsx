@@ -125,7 +125,7 @@ function App(){
         {listCheck.messages.length>0&&<div role="status" class="notice" aria-label="Результат проверки карточки">
           {listCheck.messages.map((message,index)=><div key={index}>{message.field&&<strong>{message.field}: </strong>}<span>{message.text}</span></div>)}
         </div>}
-        <div class="table-scroll"><table><thead><tr><th>Code</th><th>Description</th><th></th></tr></thead><tbody>
+        <div class="table-scroll"><table class={listCheck.available?'list-check-table':undefined}><thead><tr><th>Code</th><th>Description</th><th></th></tr></thead><tbody>
           {list.rows.map(row=><tr key={row.reference.record} class={editor?.reference?.record===row.reference.record?'current-record':undefined}><td class="code">{text(row.code)}</td><td>{text(row.description)||<span class="muted">Untitled</span>}</td>
             <td>{listCheck.available&&<button disabled={navigationLocked} onClick={()=>run('checkCard',{reference:row.reference})}>Проверить карточку</button>} <button disabled={navigationLocked} onClick={()=>run('openCard',{reference:row.reference})}>Open →</button></td></tr>)}</tbody></table></div>
         {!list.rows.length&&<div class="empty">No records on this page.
